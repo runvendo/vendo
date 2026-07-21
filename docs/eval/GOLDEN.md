@@ -97,6 +97,22 @@ never as a quality number.
 - D5. demo-accounting: "a revenue vs expenses summary with a chart"
 - D6. demo-accounting: "a new-client intake form"
 
+D7–D16 were authored fresh for, and burned by, the 2026-07-21 fetch-then-generate
+v4 revisit (`docs/verification/w1-bench/fetch-then-gen-v4-revisit.md`). They run
+against the w1-bench Maple fixture host (`packages/apps/src/bench/fixtures.ts`),
+not the demo apps. D15–D16 are deliberate negatives (no tool for the ask).
+
+- D7. w1-bench Maple: "A headline card saying exactly how much money we're owed right now, with the overdue invoices behind the number."
+- D8. w1-bench Maple: "Which client owes us the most? Show them prominently with their invoices and a way to nudge them."
+- D9. w1-bench Maple: "A cash position dashboard: our total cash and each account's balance with its trend."
+- D10. w1-bench Maple: "Show this quarter's spending by category as a donut, and call out the biggest category by name."
+- D11. w1-bench Maple: "A revenue check-in: are we growing? Show the latest month's revenue with the trend behind it."
+- D12. w1-bench Maple: "An invoice detail page for our most overdue invoice, with its line items and a mark-paid button."
+- D13. w1-bench Maple: "A collections workspace: every overdue invoice with a reminder button per row and a total at the top."
+- D14. w1-bench Maple: "A Monday-morning finance digest: cash on hand, overdue total, spending hotspots, and what to chase first."
+- D15. w1-bench Maple: "Show our payroll costs per employee for this month." [negative]
+- D16. w1-bench Maple: "A dashboard of our stock portfolio performance with today's gains." [negative]
+
 Any golden prompt discussed in a fix PR joins this list (rule 4).
 
 ## Tranche 2 — the F-set (frozen 2026-07-20 after its single fresh run)

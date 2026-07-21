@@ -1,0 +1,1774 @@
+{
+  "experiment": "exp5-fetch-then-generate-v4-revisit",
+  "generatedAt": "2026-07-21T15:28:23.961Z",
+  "config": {
+    "contract": "wireContractV4 (pipeline.promptRewrite: true; endPass off; single-shot, no repair)",
+    "genModel": "claude-sonnet-4-6",
+    "judgeModel": "claude-opus-4-8",
+    "prompts": 10,
+    "negatives": 2,
+    "attemptsPerArm": 2,
+    "digestRowCap": 2
+  },
+  "summaries": {
+    "all": [
+      {
+        "arm": "A: blind (v4)",
+        "n": 20,
+        "genErrorRate": 0.05,
+        "compileOkRate": 1,
+        "refErrorFreeRate": 0.7894736842105263,
+        "meanRefErrors": 0.21052631578947367,
+        "meanBindingErrors": 0.10526315789473684,
+        "bindingErrorFreeRate": 0.8947368421052632,
+        "meanLabelTruthErrors": 1.4736842105263157,
+        "labelTruthCleanRate": 0.3157894736842105,
+        "fabricationRate": 0,
+        "answersAskRate": 1,
+        "meanQuality": 3.526315789473684,
+        "qualityStdev": 0.9385555000066848,
+        "p50GenMs": 9228,
+        "p50TotalMs": 9228,
+        "meanTotalMs": 11261.894736842105,
+        "meanPlannerMs": 0,
+        "p50OutputTokens": 509,
+        "meanInputTokens": 8358.263157894737,
+        "meanOutputTokens": 815.2631578947369
+      },
+      {
+        "arm": "B: fetch-then-generate (v4)",
+        "n": 20,
+        "genErrorRate": 0,
+        "compileOkRate": 1,
+        "refErrorFreeRate": 0.85,
+        "meanRefErrors": 0.15,
+        "meanBindingErrors": 0.15,
+        "bindingErrorFreeRate": 0.85,
+        "meanLabelTruthErrors": 1,
+        "labelTruthCleanRate": 0.35,
+        "fabricationRate": 0,
+        "answersAskRate": 1,
+        "meanQuality": 3.95,
+        "qualityStdev": 0.8046738469715539,
+        "p50GenMs": 10174,
+        "p50TotalMs": 11400,
+        "meanTotalMs": 14080,
+        "meanPlannerMs": 1526.4,
+        "p50OutputTokens": 578,
+        "meanInputTokens": 8851.2,
+        "meanOutputTokens": 941.05
+      }
+    ],
+    "positives": [
+      {
+        "arm": "A: blind (v4, positives)",
+        "n": 16,
+        "genErrorRate": 0.0625,
+        "compileOkRate": 1,
+        "refErrorFreeRate": 0.7333333333333333,
+        "meanRefErrors": 0.26666666666666666,
+        "meanBindingErrors": 0.13333333333333333,
+        "bindingErrorFreeRate": 0.8666666666666667,
+        "meanLabelTruthErrors": 1.4666666666666666,
+        "labelTruthCleanRate": 0.26666666666666666,
+        "fabricationRate": 0,
+        "answersAskRate": 1,
+        "meanQuality": 3.533333333333333,
+        "qualityStdev": 1.0241527663824812,
+        "p50GenMs": 11172,
+        "p50TotalMs": 11172,
+        "meanTotalMs": 11983.2,
+        "meanPlannerMs": 0,
+        "p50OutputTokens": 844,
+        "meanInputTokens": 8360.6,
+        "meanOutputTokens": 907.9333333333333
+      },
+      {
+        "arm": "B: fetch (v4, positives)",
+        "n": 16,
+        "genErrorRate": 0,
+        "compileOkRate": 1,
+        "refErrorFreeRate": 0.8125,
+        "meanRefErrors": 0.1875,
+        "meanBindingErrors": 0.1875,
+        "bindingErrorFreeRate": 0.8125,
+        "meanLabelTruthErrors": 1,
+        "labelTruthCleanRate": 0.3125,
+        "fabricationRate": 0,
+        "answersAskRate": 1,
+        "meanQuality": 3.9375,
+        "qualityStdev": 0.8267972847076845,
+        "p50GenMs": 14794,
+        "p50TotalMs": 16610,
+        "meanTotalMs": 15308.0625,
+        "meanPlannerMs": 1603.625,
+        "p50OutputTokens": 1233,
+        "meanInputTokens": 8901,
+        "meanOutputTokens": 1071.5625
+      }
+    ],
+    "negatives": [
+      {
+        "arm": "A: blind (v4, negatives)",
+        "n": 4,
+        "genErrorRate": 0,
+        "compileOkRate": 1,
+        "refErrorFreeRate": 1,
+        "meanRefErrors": 0,
+        "meanBindingErrors": 0,
+        "bindingErrorFreeRate": 1,
+        "meanLabelTruthErrors": 1.5,
+        "labelTruthCleanRate": 0.5,
+        "fabricationRate": 0,
+        "answersAskRate": 1,
+        "meanQuality": 3.5,
+        "qualityStdev": 0.5,
+        "p50GenMs": 9228,
+        "p50TotalMs": 9228,
+        "meanTotalMs": 8557,
+        "meanPlannerMs": 0,
+        "p50OutputTokens": 509,
+        "meanInputTokens": 8349.5,
+        "meanOutputTokens": 467.75
+      },
+      {
+        "arm": "B: fetch (v4, negatives)",
+        "n": 4,
+        "genErrorRate": 0,
+        "compileOkRate": 1,
+        "refErrorFreeRate": 1,
+        "meanRefErrors": 0,
+        "meanBindingErrors": 0,
+        "bindingErrorFreeRate": 1,
+        "meanLabelTruthErrors": 1,
+        "labelTruthCleanRate": 0.5,
+        "fabricationRate": 0,
+        "answersAskRate": 1,
+        "meanQuality": 4,
+        "qualityStdev": 0.7071067811865476,
+        "p50GenMs": 7357,
+        "p50TotalMs": 8583,
+        "meanTotalMs": 9167.75,
+        "meanPlannerMs": 1217.5,
+        "p50OutputTokens": 386,
+        "meanInputTokens": 8652,
+        "meanOutputTokens": 419
+      }
+    ]
+  },
+  "planner": [
+    {
+      "prompt": "A headline card saying exactly how much money we're owed right now, with the overdue invoices behind the number.",
+      "reads": [
+        {
+          "tool": "invoices.list",
+          "input": {
+            "status": "overdue"
+          }
+        },
+        {
+          "tool": "invoices.list",
+          "input": {
+            "status": "sent"
+          }
+        }
+      ],
+      "ms": 1586
+    },
+    {
+      "prompt": "Which client owes us the most? Show them prominently with their invoices and a way to nudge them.",
+      "reads": [
+        {
+          "tool": "clients.list",
+          "input": {}
+        },
+        {
+          "tool": "invoices.list",
+          "input": {
+            "status": "overdue"
+          }
+        },
+        {
+          "tool": "invoices.list",
+          "input": {
+            "status": "sent"
+          }
+        }
+      ],
+      "ms": 1641
+    },
+    {
+      "prompt": "A cash position dashboard: our total cash and each account's balance with its trend.",
+      "reads": [
+        {
+          "tool": "accounts.list",
+          "input": {}
+        }
+      ],
+      "ms": 1825
+    },
+    {
+      "prompt": "A revenue check-in: are we growing? Show the latest month's revenue with the trend behind it.",
+      "reads": [
+        {
+          "tool": "revenue.monthly",
+          "input": {}
+        }
+      ],
+      "ms": 1371
+    },
+    {
+      "prompt": "An invoice detail page for our most overdue invoice, with its line items and a mark-paid button.",
+      "reads": [
+        {
+          "tool": "invoices.list",
+          "input": {
+            "status": "overdue"
+          }
+        }
+      ],
+      "ms": 1273
+    },
+    {
+      "prompt": "Show this quarter's spending by category as a donut, and call out the biggest category by name.",
+      "reads": [
+        {
+          "tool": "spending.byCategory",
+          "input": {
+            "period": "quarter"
+          }
+        }
+      ],
+      "ms": 1979
+    },
+    {
+      "prompt": "A collections workspace: every overdue invoice with a reminder button per row and a total at the top.",
+      "reads": [
+        {
+          "tool": "invoices.list",
+          "input": {
+            "status": "overdue"
+          }
+        },
+        {
+          "tool": "clients.list",
+          "input": {}
+        }
+      ],
+      "ms": 1338
+    },
+    {
+      "prompt": "Show our payroll costs per employee for this month.",
+      "reads": [],
+      "ms": 1209
+    },
+    {
+      "prompt": "A Monday-morning finance digest: cash on hand, overdue total, spending hotspots, and what to chase first.",
+      "reads": [
+        {
+          "tool": "accounts.list",
+          "input": {}
+        },
+        {
+          "tool": "invoices.list",
+          "input": {
+            "status": "overdue"
+          }
+        },
+        {
+          "tool": "spending.byCategory",
+          "input": {
+            "period": "month"
+          }
+        },
+        {
+          "tool": "revenue.monthly",
+          "input": {}
+        }
+      ],
+      "ms": 1816
+    },
+    {
+      "prompt": "A dashboard of our stock portfolio performance with today's gains.",
+      "reads": [],
+      "ms": 1226
+    }
+  ],
+  "samples": [
+    {
+      "prompt": "A headline card saying exactly how much money we're owed right now, with the overdue invoices behind the number.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "<App name=\"Money owed\">\n  <Stack gap={5}>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"caption\" text=\"Total outstanding\"/>\n        <Row gap={4}>\n          <Stat label=\"All outstanding\" value={invoices.list({status:\"sent\"}).totalCents} format=\"money\" tone=\"accent\"/>\n          <Stat label=\"Overdue\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n          <Stat label=\"Overdue invoices\" value={invoices.list({status:\"overdue\"}).count}/>\n        </Row>\n      </Stack>\n    </Surface>\n    <DataTable\n      rows={invoices.list({status:\"overdue\"}).data}\n      sortBy=\"dueDate asc\"\n      searchable\n      columns={[\n        {key:\"client.name\", label:\"Client\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n        {key:\"dueDate\", label:\"Due date\", format:\"date\"},\n        {key:\"status\", label:\"Status\"}\n      ]}\n      emptyState=\"No overdue invoices — you're all caught up.\"\n      caption=\"Overdue invoices\"\n    />\n    <Button\n      label=\"Send reminders to all overdue\"\n      variant=\"primary\"\n      onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds: invoices.list({status:\"overdue\"}).data.0.id}}}\n    />\n  </Stack>\n</App>",
+      "genMs": 5743,
+      "plannerMs": 0,
+      "totalMs": 5743,
+      "inputTokens": 8363,
+      "outputTokens": 379,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 11,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'All outstanding'/'Total outstanding' headline is bound to sent-only invoices, excluding overdue, so it is not the true total owed (525000)"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Good structure with overdue table behind it, but the headline 'all outstanding' stat filters to sent-only and misrepresents total owed."
+      }
+    },
+    {
+      "prompt": "A headline card saying exactly how much money we're owed right now, with the overdue invoices behind the number.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Money owed\">\n  <Stack gap={5}>\n    <Card tone=\"accent\">\n      <Stack gap={3}>\n        <Text variant=\"caption\" text=\"Total currently owed\"/>\n        <Stat label=\"Outstanding balance\" value={invoices.list({status:\"sent\"}).totalCents} format=\"money\" tone=\"accent\"/>\n        <Row gap={4}>\n          <Stat label=\"Invoices sent\" value={invoices.list({status:\"sent\"}).count}/>\n          <Stat label=\"Overdue total\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\" tone=\"default\"/>\n          <Stat label=\"Invoices overdue\" value={invoices.list({status:\"overdue\"}).count}/>\n        </Row>\n      </Stack>\n    </Card>\n    <DataTable\n      rows={invoices.list({status:\"overdue\"}).data}\n      sortBy=\"dueDate asc\"\n      searchable\n      columns={[\n        {key:\"client.name\", label:\"Client\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n        {key:\"dueDate\", label:\"Due\", format:\"date\"},\n        {key:\"status\", label:\"Status\"}\n      ]}\n      emptyState=\"No overdue invoices — you're all caught up.\"\n      caption=\"Overdue invoices\"\n    />\n    <Button label=\"Send reminders to all overdue clients\" variant=\"primary\" onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds: invoices.list({status:\"overdue\"}).data.0.id}}}/>\n  </Stack>\n</App>",
+      "genMs": 6462,
+      "plannerMs": 0,
+      "totalMs": 6462,
+      "inputTokens": 8363,
+      "outputTokens": 404,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 12,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total currently owed'/'Outstanding balance' headline is bound to sent-only invoices, excluding overdue, so it understates the true total owed (525000)"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Card headline claims total owed but binds to sent-only status, missing the overdue amounts that are the main money owed."
+      }
+    },
+    {
+      "prompt": "A headline card saying exactly how much money we're owed right now, with the overdue invoices behind the number.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Amount owed\">\n  <Stack gap={5}>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"caption\" text=\"Total overdue right now\"/>\n        <Stat label=\"\" value={invoices.list({\"status\":\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n        <Row gap={4}>\n          <Stat label=\"Overdue invoices\" value={invoices.list({\"status\":\"overdue\"}).count}/>\n          <Stat label=\"Oldest due\" value={invoices.list({\"status\":\"overdue\"}).data.0.dueDate} format=\"date\"/>\n        </Row>\n      </Stack>\n    </Surface>\n    <DataTable\n      rows={invoices.list({\"status\":\"overdue\"}).data}\n      sortBy=\"dueDate asc\"\n      columns={[\n        {key:\"client.name\", label:\"Client\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n        {key:\"dueDate\", label:\"Due\", format:\"date\"},\n        {key:\"status\", label:\"Status\"}\n      ]}\n      emptyState=\"No overdue invoices — you're all caught up.\"\n      caption=\"Overdue invoices\"\n    />\n    <Button label=\"Send reminders to all overdue\" variant=\"primary\" onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds:[invoices.list({\"status\":\"overdue\"}).data.0.id, invoices.list({\"status\":\"overdue\"}).data.1.id, invoices.list({\"status\":\"overdue\"}).data.2.id]}}}/>\n  </Stack>\n</App>",
+      "genMs": 7206,
+      "plannerMs": 1586,
+      "totalMs": 8792,
+      "inputTokens": 8607,
+      "outputTokens": 408,
+      "plannerInputTokens": 259,
+      "plannerOutputTokens": 48,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 11,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total overdue right now' binds to totalCents (525000) which includes the non-overdue inv_3 (98000); true overdue total is 427000",
+          "'Overdue invoices' count and table include inv_3 which has status 'sent', not overdue"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Good structure and correct components, but overdue filter likely not reflected so total/count/table/reminders include the 'sent' invoice."
+      }
+    },
+    {
+      "prompt": "A headline card saying exactly how much money we're owed right now, with the overdue invoices behind the number.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Amount owed\">\n  <Stack gap={5}>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"caption\" text=\"Total overdue right now\"/>\n        <Stat label=\"\" value={invoices.list({\"status\":\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n        <Row gap={4}>\n          <Stat label=\"Overdue invoices\" value={invoices.list({\"status\":\"overdue\"}).count}/>\n          <Stat label=\"Oldest due\" value={invoices.list({\"status\":\"overdue\"}).data.0.dueDate} format=\"date\"/>\n        </Row>\n      </Stack>\n    </Surface>\n    <DataTable\n      rows={invoices.list({\"status\":\"overdue\"}).data}\n      sortBy=\"dueDate asc\"\n      columns={[\n        {key:\"client.name\", label:\"Client\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n        {key:\"dueDate\", label:\"Due\", format:\"date\"},\n        {key:\"status\", label:\"Status\"}\n      ]}\n      emptyState=\"No overdue invoices — you're all clear.\"\n      caption=\"Overdue invoices\"\n    />\n    <Button label=\"Send reminders to all overdue clients\" variant=\"primary\" onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds:[invoices.list({\"status\":\"overdue\"}).data.0.id, invoices.list({\"status\":\"overdue\"}).data.1.id, invoices.list({\"status\":\"overdue\"}).data.2.id]}}}/>\n  </Stack>\n</App>",
+      "genMs": 6215,
+      "plannerMs": 1586,
+      "totalMs": 7801,
+      "inputTokens": 8607,
+      "outputTokens": 408,
+      "plannerInputTokens": 259,
+      "plannerOutputTokens": 48,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 11,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total overdue right now' binds to totalCents (525000) which includes the non-overdue inv_3 (98000); true overdue total is 427000",
+          "'Overdue invoices' count and table include inv_3 which has status 'sent', not overdue"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Identical to wire 1 aside from copy wording; same overdue-filter contamination issue."
+      }
+    },
+    {
+      "prompt": "Which client owes us the most? Show them prominently with their invoices and a way to nudge them.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "<App name=\"Top owing client\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Client\" value={clients.list({}).data.0.name}/>\n      <Stat label=\"Outstanding balance\" value={clients.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Tier\" value={clients.list({}).data.0.tier}/>\n      <Stat label=\"Email\" value={clients.list({}).data.0.email}/>\n    </Row>\n    <DataTable\n      rows={invoices.list({}).data}\n      sortBy=\"amountCents desc\"\n      searchable\n      filterableBy={[\"status\"]}\n      columns={[\n        {key:\"client.name\", label:\"Client\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n        {key:\"dueDate\", label:\"Due\", format:\"date\"},\n        {key:\"status\", label:\"Status\"}\n      ]}\n      emptyState=\"No invoices found.\"\n      caption=\"All invoices — filter by status to find outstanding ones\"\n    />\n    <Island name=\"NudgePanel\">\nexport default function NudgePanel() {\n  const [invoices, setInvoices] = useState([]);\n  const [clients, setClients] = useState([]);\n  const [selected, setSelected] = useState([]);\n  const [phase, setPhase] = useState(\"idle\");\n  const [result, setResult] = useState(null);\n\n  useEffect(() => {\n    tools.clients.list({}).then((r) => setClients(r.data));\n    tools.invoices.list({ status: \"overdue\" }).then((r) => {\n      setInvoices(r.data);\n      // Pre-select invoices for the top owing client\n      if (r.data.length > 0) {\n        const topClientId = r.data[0]?.client?.id;\n        setSelected(r.data.filter(inv => inv.client?.id === topClientId).map(inv => inv.id));\n      }\n    });\n  }, []);\n\n  const topClient = clients.sort((a, b) => b.balanceCents - a.balanceCents)[0];\n  const topClientInvoices = invoices.filter(inv => inv.client?.id === topClient?.id);\n\n  const toggle = (id) => {\n    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);\n  };\n\n  const send = async () => {\n    if (selected.length === 0) return;\n    setPhase(\"sending\");\n    const res = await tools.invoices.sendReminders({ invoiceIds: selected });\n    setResult(res);\n    setPhase(\"awaiting\");\n  };\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", display: \"grid\", gap: 16, padding: 20, background: \"var(--vendo-color-surface)\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-medium)\" }}>\n      <div style={{ fontWeight: 700, fontSize: 15, color: \"var(--vendo-color-text)\" }}>\n        Send reminders to {topClient ? topClient.name : \"top client\"}\n      </div>\n      {topClientInvoices.length === 0 && phase === \"idle\" && (\n        <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 13 }}>No overdue invoices for this client.</div>\n      )}\n      {topClientInvoices.length > 0 && phase === \"idle\" && (\n        <div style={{ display: \"grid\", gap: 8 }}>\n          {topClientInvoices.map(inv => (\n            <label key={inv.id} style={{ display: \"flex\", alignItems: \"center\", gap: 10, cursor: \"pointer\", fontSize: 13, color: \"var(--vendo-color-text)\" }}>\n              <input type=\"checkbox\" checked={selected.includes(inv.id)} onChange={() => toggle(inv.id)} style={{ accentColor: \"var(--vendo-color-accent)\" }}/>\n              <span style={{ flex: 1 }}>{inv.client.name}</span>\n              <span style={{ color: \"var(--vendo-color-muted)\" }}>{fmt.money(inv.amountCents)}</span>\n              <span style={{ color: \"var(--vendo-color-danger)\", fontSize: 12 }}>Due {fmt.dateTime(inv.dueDate)}</span>\n            </label>\n          ))}\n          <button\n            onClick={send}\n            disabled={selected.length === 0}\n            style={{ marginTop: 8, padding: \"10px 20px\", background: \"var(--vendo-color-accent)\", color: \"var(--vendo-color-accent-text)\", border: \"none\", borderRadius: \"var(--vendo-radius-small)\", fontFamily: \"var(--vendo-font-family)\", fontSize: 14, fontWeight: 600, cursor: selected.length === 0 ? \"not-allowed\" : \"pointer\", opacity: selected.length === 0 ? 0.5 : 1 }}\n          >\n            Send {selected.length} reminder{selected.length !== 1 ? \"s\" : \"\"}\n          </button>\n        </div>\n      )}\n      {phase === \"awaiting\" && (\n        <div style={{ display: \"grid\", gap: 8 }}>\n          <div style={{ padding: 14, background: \"#EEF3FD\", border: \"1px solid var(--vendo-color-accent)\", borderRadius: \"var(--vendo-radius-small)\", color: \"var(--vendo-color-accent)\", fontSize: 14, fontWeight: 600 }}>\n            ⏳ Awaiting your approval to send {selected.length} reminder{selected.length !== 1 ? \"s\" : \"\"}…\n          </div>\n          {result && (\n            <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n              {result.sent} sent · {result.failed} failed\n            </div>\n          )}\n        </div>\n      )}\n    </div>\n  );\n}\n    </Island>\n  </Stack>\n</App>",
+      "genMs": 20169,
+      "plannerMs": 0,
+      "totalMs": 20169,
+      "inputTokens": 8362,
+      "outputTokens": 1583,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 8,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 5,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Correctly identifies Northwind as top owing client via sorted binding, shows invoices, and wires a per-client reminder action with approval flow."
+      }
+    },
+    {
+      "prompt": "Which client owes us the most? Show them prominently with their invoices and a way to nudge them.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Top owing client\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Largest balance owed\" value={clients.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Client\" value={clients.list({}).data.0.name}/>\n      <Stat label=\"Tier\" value={clients.list({}).data.0.tier}/>\n    </Row>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Open invoices\"/>\n        <DataTable\n          rows={invoices.list({status:\"sent\"}).data}\n          sortBy=\"amountCents desc\"\n          searchable\n          filterableBy={[\"status\"]}\n          columns={[\n            {key:\"client.name\", label:\"Client\"},\n            {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n            {key:\"dueDate\", label:\"Due\", format:\"date\"},\n            {key:\"status\", label:\"Status\"}\n          ]}\n          emptyState=\"No open invoices found.\"\n        />\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Overdue invoices\"/>\n        <DataTable\n          rows={invoices.list({status:\"overdue\"}).data}\n          sortBy=\"dueDate asc\"\n          columns={[\n            {key:\"client.name\", label:\"Client\"},\n            {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n            {key:\"dueDate\", label:\"Due date\", format:\"date\"},\n            {key:\"status\", label:\"Status\"}\n          ]}\n          emptyState=\"No overdue invoices.\"\n        />\n      </Stack>\n    </Surface>\n    <Island name=\"NudgePanel\">\nexport default function NudgePanel() {\n  const [clients, setClients] = useState([]);\n  const [invoices, setInvoices] = useState([]);\n  const [phase, setPhase] = useState(\"idle\");\n  const [result, setResult] = useState(null);\n\n  useEffect(() => {\n    Promise.all([\n      tools.clients_list({}),\n      tools.invoices_list({ status: \"overdue\" }),\n    ]).then(([c, i]) => {\n      const sorted = [...(c.data || [])].sort((a, b) => b.balanceCents - a.balanceCents);\n      setClients(sorted);\n      setInvoices(i.data || []);\n    });\n  }, []);\n\n  const topClient = clients[0];\n  const clientInvoices = topClient\n    ? invoices.filter((inv) => inv.client?.id === topClient.id)\n    : [];\n  const invoiceIds = clientInvoices.map((inv) => inv.id);\n\n  const nudge = async () => {\n    if (!invoiceIds.length) return;\n    setPhase(\"sending\");\n    const res = await tools.invoices_sendReminders({ invoiceIds });\n    setResult(res);\n    setPhase(res ? \"awaiting\" : \"idle\");\n  };\n\n  if (!topClient) {\n    return (\n      <div style={{ padding: 16, color: \"var(--vendo-color-muted)\", fontFamily: \"var(--vendo-font-family)\" }}>\n        Loading client data…\n      </div>\n    );\n  }\n\n  return (\n    <div style={{\n      padding: 20,\n      background: \"var(--vendo-color-surface)\",\n      border: \"1px solid var(--vendo-color-border)\",\n      borderRadius: \"var(--vendo-radius-medium)\",\n      fontFamily: \"var(--vendo-font-family)\",\n      display: \"grid\",\n      gap: 14,\n    }}>\n      <div style={{ fontWeight: 600, fontSize: 15, color: \"var(--vendo-color-text)\" }}>\n        Send payment reminder to {topClient.name}\n      </div>\n      <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 13 }}>\n        {invoiceIds.length > 0\n          ? `This will send a reminder for ${invoiceIds.length} overdue invoice${invoiceIds.length > 1 ? \"s\" : \"\"} totalling ${fmt.money(clientInvoices.reduce((s, i) => s + i.amountCents, 0))}.`\n          : \"No overdue invoices found for this client — nothing to send a reminder for.\"}\n      </div>\n      {phase === \"awaiting\" && result && (\n        <div style={{\n          padding: \"10px 14px\",\n          background: \"var(--vendo-color-background)\",\n          border: \"1px solid var(--vendo-color-border)\",\n          borderRadius: \"var(--vendo-radius-small)\",\n          color: \"var(--vendo-color-text)\",\n          fontSize: 13,\n        }}>\n          ✓ Awaiting approval — {result.sent ?? 0} reminder{result.sent !== 1 ? \"s\" : \"\"} queued, {result.failed ?? 0} failed.\n        </div>\n      )}\n      <button\n        onClick={nudge}\n        disabled={invoiceIds.length === 0 || phase !== \"idle\"}\n        style={{\n          padding: \"10px 18px\",\n          background: invoiceIds.length === 0 || phase !== \"idle\" ? \"var(--vendo-color-border)\" : \"var(--vendo-color-accent)\",\n          color: invoiceIds.length === 0 || phase !== \"idle\" ? \"var(--vendo-color-muted)\" : \"var(--vendo-color-accent-text)\",\n          border: \"none\",\n          borderRadius: \"var(--vendo-radius-small)\",\n          fontFamily: \"var(--vendo-font-family)\",\n          fontWeight: 600,\n          fontSize: 14,\n          cursor: invoiceIds.length === 0 || phase !== \"idle\" ? \"not-allowed\" : \"pointer\",\n        }}\n      >\n        {phase === \"sending\" ? \"Sending…\" : phase === \"awaiting\" ? \"Reminder sent — awaiting approval\" : \"Send reminder\"}\n      </button>\n    </div>\n  );\n}\n    </Island>\n    <NudgePanel/>\n  </Stack>\n</App>",
+      "genMs": 20106,
+      "plannerMs": 0,
+      "totalMs": 20106,
+      "inputTokens": 8362,
+      "outputTokens": 1595,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 3,
+        "nodeCount": 15,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Correct top client and truthful labels, but the 'Open invoices' sent-filter table surfaces Fabrikam's invoice unrelated to the top owing client, slightly diluting focus."
+      }
+    },
+    {
+      "prompt": "Which client owes us the most? Show them prominently with their invoices and a way to nudge them.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Top debtor\">\n  <Stack gap={6}>\n    <Surface>\n      <Stack gap={4}>\n        <Row gap={3}>\n          <Text variant=\"heading\" text={clients.list({}).data.0.name}/>\n          <EnumBadge value={clients.list({}).data.0.tier}/>\n        </Row>\n        <Row gap={5}>\n          <Stat label=\"Outstanding balance\" value={clients.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n          <Stat label=\"Email\" value={clients.list({}).data.0.email}/>\n        </Row>\n        <Button label=\"Send payment reminder\" variant=\"primary\" onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds:[invoices.list({status:\"overdue\"}).data.0.id, invoices.list({status:\"overdue\"}).data.2.id]}}}/>\n      </Stack>\n    </Surface>\n\n    <Stack gap={2}>\n      <Text variant=\"heading\" text=\"Overdue invoices — Northwind Traders\"/>\n      <DataTable\n        rows={invoices.list({status:\"overdue\"}).data}\n        columns={[\n          {key:\"client.name\", label:\"Client\"},\n          {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n          {key:\"dueDate\", label:\"Due date\", format:\"date\"},\n          {key:\"status\", label:\"Status\"}\n        ]}\n        sortBy=\"dueDate asc\"\n        emptyState=\"No overdue invoices found.\"\n      />\n    </Stack>\n\n    <Row gap={4}>\n      <Stat label=\"Total overdue (all clients)\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\"/>\n      <Stat label=\"Overdue invoices\" value={invoices.list({status:\"overdue\"}).count}/>\n    </Row>\n  </Stack>\n</App>",
+      "genMs": 6555,
+      "plannerMs": 1641,
+      "totalMs": 8196,
+      "inputTokens": 8729,
+      "outputTokens": 479,
+      "plannerInputTokens": 258,
+      "plannerOutputTokens": 61,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 17,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Overdue invoices — Northwind Traders' heading over a table containing all clients' overdue invoices (includes Contoso)",
+          "Reminder payload references invoices.list overdue data.2 which is out of bounds (only 2 overdue rows) — nudges wrong invoice set"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Identifies top debtor correctly but mislabels the all-client overdue table as Northwind-only and the nudge action targets an out-of-range invoice index."
+      }
+    },
+    {
+      "prompt": "Which client owes us the most? Show them prominently with their invoices and a way to nudge them.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Top debtor\">\n  <Stack gap={5}>\n    <Surface>\n      <Stack gap={3}>\n        <Row gap={3}>\n          <Text variant=\"heading\" text={clients.list({}).data.0.name}/>\n          <EnumBadge value={clients.list({}).data.0.tier}/>\n        </Row>\n        <Row gap={4}>\n          <Stat label=\"Outstanding balance\" value={clients.list({}).data.0.balanceCents} format=\"money\" tone=\"danger\"/>\n          <Stat label=\"Email\" value={clients.list({}).data.0.email}/>\n          <Stat label=\"Account tier\" value={clients.list({}).data.0.tier}/>\n        </Row>\n      </Stack>\n    </Surface>\n\n    <DataTable\n      rows={invoices.list({status:\"overdue\"}).data}\n      sortBy=\"dueDate asc\"\n      columns={[\n        {key:\"client.name\", label:\"Client\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n        {key:\"dueDate\", label:\"Due date\", format:\"date\"},\n        {key:\"status\", label:\"Status\"}\n      ]}\n      emptyState=\"No overdue invoices found.\"\n      caption=\"Overdue invoices\"\n    />\n\n    <Row gap={3}>\n      <Stat label=\"Total overdue across all clients\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\"/>\n      <Stat label=\"Overdue invoices\" value={invoices.list({status:\"overdue\"}).count}/>\n    </Row>\n\n    <Island name=\"NudgePanel\">\nexport default function NudgePanel() {\n  const [phase, setPhase] = React.useState(\"idle\");\n  const [result, setResult] = React.useState(null);\n\n  const sendNudge = async () => {\n    setPhase(\"sending\");\n    const overdue = await tools.invoices_list({ status: \"overdue\" });\n    const northwindIds = overdue.data\n      .filter(inv => inv.client.id === \"cl_1\")\n      .map(inv => inv.id);\n    if (northwindIds.length === 0) {\n      setPhase(\"none\");\n      return;\n    }\n    const res = await tools.invoices_sendReminders({ invoiceIds: northwindIds });\n    setResult(res);\n    setPhase(res && res.status === \"pending-approval\" ? \"awaiting\" : \"sent\");\n  };\n\n  return (\n    <div style={{\n      padding: 16,\n      background: \"var(--vendo-color-surface)\",\n      border: \"1px solid var(--vendo-color-border)\",\n      borderRadius: \"var(--vendo-radius-medium)\",\n      display: \"flex\",\n      flexDirection: \"column\",\n      gap: 12,\n      fontFamily: \"var(--vendo-font-family)\"\n    }}>\n      <div style={{ fontWeight: 600, fontSize: 15, color: \"var(--vendo-color-text)\" }}>\n        Nudge Northwind Traders\n      </div>\n      <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n        Send a payment reminder for all of Northwind Traders' overdue invoices.\n      </div>\n      {phase === \"sent\" && result && (\n        <div style={{ padding: \"8px 12px\", background: \"#e6f4ea\", borderRadius: \"var(--vendo-radius-small)\", color: \"#1a6b34\", fontSize: 13 }}>\n          Reminder sent for {result.sent} invoice{result.sent !== 1 ? \"s\" : \"\"}.\n          {result.failed > 0 ? ` ${result.failed} failed.` : \"\"}\n        </div>\n      )}\n      {phase === \"awaiting\" && (\n        <div style={{ padding: \"8px 12px\", background: \"#fff8e1\", borderRadius: \"var(--vendo-radius-small)\", color: \"#7a5c00\", fontSize: 13 }}>\n          Awaiting your approval to send reminders…\n        </div>\n      )}\n      {phase === \"none\" && (\n        <div style={{ padding: \"8px 12px\", background: \"#fdecea\", borderRadius: \"var(--vendo-radius-small)\", color: \"var(--vendo-color-danger)\", fontSize: 13 }}>\n          No overdue invoices found for Northwind Traders.\n        </div>\n      )}\n      <button\n        onClick={sendNudge}\n        disabled={phase === \"sending\" || phase === \"awaiting\" || phase === \"sent\"}\n        style={{\n          padding: \"10px 18px\",\n          background: phase === \"sent\" ? \"#aaa\" : \"var(--vendo-color-accent)\",\n          color: \"var(--vendo-color-accent-text)\",\n          border: \"none\",\n          borderRadius: \"var(--vendo-radius-small)\",\n          fontFamily: \"var(--vendo-font-family)\",\n          fontSize: 14,\n          fontWeight: 600,\n          cursor: phase === \"idle\" ? \"pointer\" : \"not-allowed\",\n          alignSelf: \"flex-start\"\n        }}\n      >\n        {phase === \"sending\" ? \"Sending…\" : phase === \"awaiting\" ? \"Awaiting approval…\" : phase === \"sent\" ? \"Reminder sent\" : \"Send payment reminder\"}\n      </button>\n    </div>\n  );\n}\n    </Island>\n    <NudgePanel/>\n  </Stack>\n</App>",
+      "genMs": 19775,
+      "plannerMs": 1641,
+      "totalMs": 21416,
+      "inputTokens": 8729,
+      "outputTokens": 1397,
+      "plannerInputTokens": 258,
+      "plannerOutputTokens": 61,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 16,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 5,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Correctly features top debtor, shows overdue invoices with neutral caption, and the nudge island properly filters to Northwind's invoices with approval-aware states."
+      }
+    },
+    {
+      "prompt": "A cash position dashboard: our total cash and each account's balance with its trend.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "",
+      "genMs": 26,
+      "plannerMs": 0,
+      "totalMs": 26,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "genError": "Cannot connect to API: other side closed",
+      "metrics": {
+        "compileOk": false,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 0,
+        "nodeCount": 1,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": true
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 1,
+        "answersAsk": false,
+        "fabricated": false,
+        "notes": "empty output"
+      }
+    },
+    {
+      "prompt": "A cash position dashboard: our total cash and each account's balance with its trend.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Cash position\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total cash\" value={accounts.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Accounts\" value={accounts.list({}).data.length}/>\n    </Row>\n    <Island name=\"CashPositionCards\">\nexport default function CashPositionCards() {\n  const [accounts, setAccounts] = useState([]);\n  useEffect(() => { tools.accounts_list({}).then(r => setAccounts(r.data)); }, []);\n  return (\n    <div style={{ display: \"grid\", gridTemplateColumns: \"repeat(auto-fill, minmax(280px, 1fr))\", gap: 16 }}>\n      {accounts.map(account => {\n        const sparkMin = Math.min(...account.sparkline);\n        const sparkMax = Math.max(...account.sparkline);\n        const latest = account.sparkline[account.sparkline.length - 1];\n        const prev = account.sparkline[account.sparkline.length - 2];\n        const trendUp = latest >= prev;\n        const trendPct = prev !== 0 ? ((latest - prev) / Math.abs(prev)) : 0;\n        const svgW = 120, svgH = 36;\n        const range = sparkMax - sparkMin || 1;\n        const pts = account.sparkline.map((v, i) => {\n          const x = (i / (account.sparkline.length - 1)) * svgW;\n          const y = svgH - ((v - sparkMin) / range) * svgH;\n          return `${x},${y}`;\n        }).join(\" \");\n        return (\n          <div key={account.id} style={{\n            background: \"var(--vendo-color-surface)\",\n            border: \"1px solid var(--vendo-color-border)\",\n            borderRadius: \"var(--vendo-radius-large)\",\n            padding: 20,\n            display: \"flex\",\n            flexDirection: \"column\",\n            gap: 12,\n          }}>\n            <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\" }}>\n              <div>\n                <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 13, color: \"var(--vendo-color-muted)\", marginBottom: 4 }}>{account.name}</div>\n                <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 22, fontWeight: 700, color: \"var(--vendo-color-text)\" }}>\n                  {fmt.money(account.balanceCents)}\n                </div>\n              </div>\n              <span style={{\n                fontFamily: \"var(--vendo-font-family)\",\n                fontSize: 11,\n                fontWeight: 600,\n                padding: \"3px 8px\",\n                borderRadius: \"var(--vendo-radius-small)\",\n                background: \"var(--vendo-color-background)\",\n                color: \"var(--vendo-color-muted)\",\n                border: \"1px solid var(--vendo-color-border)\",\n                textTransform: \"uppercase\",\n                letterSpacing: \"0.04em\",\n              }}>{account.type}</span>\n            </div>\n            <div style={{ display: \"flex\", alignItems: \"center\", gap: 12 }}>\n              <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} style={{ flex: \"0 0 auto\" }}>\n                <polyline\n                  points={pts}\n                  fill=\"none\"\n                  stroke={trendUp ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-danger)\"}\n                  strokeWidth={2}\n                  strokeLinejoin=\"round\"\n                  strokeLinecap=\"round\"\n                />\n              </svg>\n              <div style={{\n                fontFamily: \"var(--vendo-font-family)\",\n                fontSize: 13,\n                fontWeight: 600,\n                color: trendUp ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-danger)\",\n              }}>\n                {trendUp ? \"▲\" : \"▼\"} {Math.abs(trendPct * 100).toFixed(1)}%\n              </div>\n            </div>\n          </div>\n        );\n      })}\n    </div>\n  );\n}\n    </Island>\n    <CashPositionCards/>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Balance trend — all accounts\"/>\n        <LineChart data={revenue.monthly({}).data} xKey=\"month\" series={[\"revenueCents\"]} format=\"money\" height={200} emptyState=\"No trend data available.\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 16122,
+      "plannerMs": 0,
+      "totalMs": 16122,
+      "inputTokens": 8355,
+      "outputTokens": 1246,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 1,
+        "bindingShapeErrors": 1,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 10,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total cash' stat bound to only accounts.list().data.0.balanceCents (Operating alone, not sum of both accounts)",
+          "'Balance trend — all accounts' chart bound to revenue.monthly, which is company revenue not account balances"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Per-account cards with trends are correct, but total cash is wrong (single account) and the trend chart shows unrelated revenue data."
+      }
+    },
+    {
+      "prompt": "A cash position dashboard: our total cash and each account's balance with its trend.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Cash Position\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total cash\" value={accounts.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Accounts\" value={accounts.list({}).data.length}/>\n    </Row>\n    <Island name=\"CashSummary\">\nexport default function CashSummary() {\n  const [accounts, setAccounts] = React.useState([]);\n  React.useEffect(() => {\n    tools.accounts.list({}).then(r => setAccounts(r.data));\n  }, []);\n\n  const total = accounts.reduce((sum, a) => sum + a.balanceCents, 0);\n\n  return (\n    <div style={{ display: \"grid\", gap: 12, fontFamily: \"var(--vendo-font-family)\", fontSize: 14, color: \"var(--vendo-color-text)\" }}>\n      <div style={{ background: \"var(--vendo-color-accent)\", color: \"var(--vendo-color-accent-text)\", borderRadius: \"var(--vendo-radius-large)\", padding: \"24px 28px\", display: \"flex\", justifyContent: \"space-between\", alignItems: \"center\" }}>\n        <div>\n          <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>Total cash position</div>\n          <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: \"-0.5px\" }}>{fmt.money(total)}</div>\n        </div>\n        <div style={{ fontSize: 13, opacity: 0.75 }}>{accounts.length} accounts</div>\n      </div>\n\n      <div style={{ display: \"grid\", gridTemplateColumns: \"1fr 1fr\", gap: 12 }}>\n        {accounts.map(account => {\n          const sparkline = account.sparkline || [];\n          const min = Math.min(...sparkline);\n          const max = Math.max(...sparkline);\n          const range = max - min || 1;\n          const w = 120;\n          const h = 44;\n          const points = sparkline.map((v, i) => {\n            const x = (i / (sparkline.length - 1)) * w;\n            const y = h - ((v - min) / range) * h;\n            return `${x},${y}`;\n          }).join(\" \");\n          const last = sparkline[sparkline.length - 1];\n          const prev = sparkline[sparkline.length - 2];\n          const trending = last >= prev ? \"up\" : \"down\";\n          const trendColor = trending === \"up\" ? \"#2ecc71\" : \"#e74c3c\";\n\n          return (\n            <div key={account.id} style={{ background: \"var(--vendo-color-surface)\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-large)\", padding: \"20px 24px\", display: \"flex\", flexDirection: \"column\", gap: 12 }}>\n              <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\" }}>\n                <div>\n                  <div style={{ fontWeight: 600, fontSize: 16 }}>{account.name}</div>\n                  <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\", textTransform: \"capitalize\", marginTop: 2 }}>{account.type}</div>\n                </div>\n                <span style={{ fontSize: 11, fontWeight: 600, padding: \"3px 8px\", borderRadius: \"var(--vendo-radius-small)\", background: trending === \"up\" ? \"#eafaf1\" : \"#fdf0ef\", color: trendColor }}>\n                  {trending === \"up\" ? \"↑\" : \"↓\"} Trending\n                </span>\n              </div>\n\n              <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: \"-0.3px\" }}>{fmt.money(account.balanceCents)}</div>\n\n              <svg width={w} height={h} style={{ display: \"block\" }}>\n                <polyline\n                  points={points}\n                  fill=\"none\"\n                  stroke={trendColor}\n                  strokeWidth=\"2\"\n                  strokeLinejoin=\"round\"\n                  strokeLinecap=\"round\"\n                />\n                <circle\n                  cx={(sparkline.length - 1) / (sparkline.length - 1) * w}\n                  cy={h - ((last - min) / range) * h}\n                  r=\"3\"\n                  fill={trendColor}\n                />\n              </svg>\n              <div style={{ fontSize: 11, color: \"var(--vendo-color-muted)\" }}>Last 12 periods</div>\n            </div>\n          );\n        })}\n      </div>\n    </div>\n  );\n}\n    </Island>\n    <CashSummary/>\n    <DataTable\n      rows={accounts.list({}).data}\n      columns={[\n        {key:\"name\", label:\"Account\"},\n        {key:\"type\", label:\"Type\"},\n        {key:\"balanceCents\", label:\"Balance\", format:\"money\", align:\"end\"}\n      ]}\n      caption=\"All accounts\"\n      emptyState=\"No accounts found.\"\n    />\n  </Stack>\n</App>",
+      "genMs": 17692,
+      "plannerMs": 1825,
+      "totalMs": 19517,
+      "inputTokens": 8558,
+      "outputTokens": 1351,
+      "plannerInputTokens": 251,
+      "plannerOutputTokens": 16,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 1,
+        "bindingShapeErrors": 1,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 7,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "Top 'Total cash' Stat bound to data.0.balanceCents (Operating only, $48,200) not the true total $173,200"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Island correctly computes total and per-account trends, but the declarative Total cash Stat is bound to a single account's balance, making it false."
+      }
+    },
+    {
+      "prompt": "A cash position dashboard: our total cash and each account's balance with its trend.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Cash position\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total cash\" value={accounts.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Accounts\" value={accounts.list({}).data.length}/>\n    </Row>\n    <Island name=\"TotalCashStat\">\nexport default function TotalCashStat() {\n  const [accounts, setAccounts] = React.useState([]);\n  React.useEffect(() => {\n    tools.accounts_list({}).then(r => setAccounts(r.data));\n  }, []);\n  const total = accounts.reduce((sum, a) => sum + a.balanceCents, 0);\n  return (\n    <div style={{\n      background: \"var(--vendo-color-surface)\",\n      border: \"1px solid var(--vendo-color-border)\",\n      borderRadius: \"var(--vendo-radius-large)\",\n      padding: \"24px 28px\",\n      display: \"flex\",\n      flexDirection: \"column\",\n      gap: 4,\n      fontFamily: \"var(--vendo-font-family)\"\n    }}>\n      <span style={{ fontSize: 12, color: \"var(--vendo-color-muted)\", textTransform: \"uppercase\", letterSpacing: \"0.06em\" }}>Total cash across all accounts</span>\n      <span style={{ fontSize: 36, fontWeight: 700, color: \"var(--vendo-color-accent)\", letterSpacing: \"-0.02em\" }}>{fmt.money(total)}</span>\n      <span style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>{accounts.length} account{accounts.length !== 1 ? \"s\" : \"\"}</span>\n    </div>\n  );\n}\n    </Island>\n    <TotalCashStat/>\n    <Island name=\"AccountCards\">\nexport default function AccountCards() {\n  const [accounts, setAccounts] = React.useState([]);\n  React.useEffect(() => {\n    tools.accounts_list({}).then(r => setAccounts(r.data));\n  }, []);\n\n  function MiniSparkline({ data }) {\n    const min = Math.min(...data);\n    const max = Math.max(...data);\n    const range = max - min || 1;\n    const w = 120, h = 40;\n    const pts = data.map((v, i) => {\n      const x = (i / (data.length - 1)) * w;\n      const y = h - ((v - min) / range) * (h - 6) - 3;\n      return `${x},${y}`;\n    }).join(\" \");\n    const last = data[data.length - 1];\n    const first = data[0];\n    const trending = last >= first;\n    return (\n      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: \"block\" }}>\n        <polyline points={pts} fill=\"none\" stroke={trending ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-danger)\"} strokeWidth={2} strokeLinejoin=\"round\" strokeLinecap=\"round\"/>\n      </svg>\n    );\n  }\n\n  return (\n    <div style={{ display: \"grid\", gridTemplateColumns: \"repeat(auto-fit, minmax(280px, 1fr))\", gap: 16, fontFamily: \"var(--vendo-font-family)\" }}>\n      {accounts.map(acc => {\n        const spark = acc.sparkline || [];\n        const first = spark[0] ?? 0;\n        const last = spark[spark.length - 1] ?? 0;\n        const trending = last >= first;\n        const changePct = first !== 0 ? ((last - first) / Math.abs(first)) : 0;\n        return (\n          <div key={acc.id} style={{\n            background: \"var(--vendo-color-surface)\",\n            border: \"1px solid var(--vendo-color-border)\",\n            borderRadius: \"var(--vendo-radius-large)\",\n            padding: \"20px 24px\",\n            display: \"flex\",\n            flexDirection: \"column\",\n            gap: 12\n          }}>\n            <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\" }}>\n              <div>\n                <div style={{ fontSize: 16, fontWeight: 600, color: \"var(--vendo-color-text)\" }}>{acc.name}</div>\n                <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\", textTransform: \"capitalize\", marginTop: 2 }}>{acc.type}</div>\n              </div>\n              <span style={{\n                fontSize: 11,\n                fontWeight: 600,\n                padding: \"3px 8px\",\n                borderRadius: 99,\n                background: trending ? \"#EAF0FD\" : \"#FDEDED\",\n                color: trending ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-danger)\"\n              }}>\n                {trending ? \"▲\" : \"▼\"} {fmt.percent(Math.abs(changePct))}\n              </span>\n            </div>\n            <div style={{ fontSize: 28, fontWeight: 700, color: \"var(--vendo-color-text)\", letterSpacing: \"-0.01em\" }}>\n              {fmt.money(acc.balanceCents)}\n            </div>\n            <div>\n              <MiniSparkline data={spark}/>\n              <div style={{ fontSize: 11, color: \"var(--vendo-color-muted)\", marginTop: 4 }}>12-period trend</div>\n            </div>\n          </div>\n        );\n      })}\n    </div>\n  );\n}\n    </Island>\n    <AccountCards/>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Balance trend by account\"/>\n        <LineChart data={accounts.list({}).data.0.sparkline} xKey=\"index\" series={[\"value\"]} height={180} emptyState=\"No trend data available.\"/>\n      </Stack>\n    </Surface>\n    <DataTable\n      rows={accounts.list({}).data}\n      columns={[\n        {key:\"name\", label:\"Account\"},\n        {key:\"type\", label:\"Type\"},\n        {key:\"balanceCents\", label:\"Balance\", format:\"money\", align:\"end\"}\n      ]}\n      caption=\"All accounts\"\n      emptyState=\"No accounts found.\"\n    />\n  </Stack>\n</App>",
+      "genMs": 21877,
+      "plannerMs": 1825,
+      "totalMs": 23702,
+      "inputTokens": 8558,
+      "outputTokens": 1668,
+      "plannerInputTokens": 251,
+      "plannerOutputTokens": 16,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 1,
+        "bindingShapeErrors": 1,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 12,
+        "islandCount": 2,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "Top 'Total cash' Stat bound to data.0.balanceCents (Operating only) not the true total",
+          "'Balance trend by account' LineChart bound only to data.0.sparkline (Operating), not all accounts"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Account cards and total island are correct, but the top Stat and the LineChart headline both misrepresent single-account data as the whole picture."
+      }
+    },
+    {
+      "prompt": "Show this quarter's spending by category as a donut, and call out the biggest category by name.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "<App name=\"Spending by category — Q3 2026\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total spending this quarter\" value={spending.byCategory({period:\"quarter\"}).totalCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Categories tracked\" value={spending.byCategory({period:\"quarter\"}).data.length}/>\n    </Row>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Category breakdown\"/>\n        <DonutChart data={spending.byCategory({period:\"quarter\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={320} emptyState=\"No spending recorded this quarter.\"/>\n      </Stack>\n    </Surface>\n    <Island name=\"TopCategoryCallout\">\nexport default function TopCategoryCallout() {\n  const [top, setTop] = React.useState(null);\n\n  React.useEffect(() => {\n    tools.spending_byCategory({ period: \"quarter\" }).then((r) => {\n      if (!r.data || r.data.length === 0) return;\n      const sorted = [...r.data].sort((a, b) => b.amountCents - a.amountCents);\n      setTop(sorted[0]);\n    });\n  }, []);\n\n  if (!top) return null;\n\n  return (\n    <div style={{\n      background: \"var(--vendo-color-surface)\",\n      border: \"1px solid var(--vendo-color-border)\",\n      borderRadius: \"var(--vendo-radius-medium)\",\n      padding: \"16px 20px\",\n      display: \"flex\",\n      alignItems: \"center\",\n      gap: 16,\n      fontFamily: \"var(--vendo-font-family)\",\n    }}>\n      <div style={{\n        background: \"var(--vendo-color-accent)\",\n        borderRadius: \"var(--vendo-radius-small)\",\n        padding: \"8px 14px\",\n        color: \"var(--vendo-color-accent-text)\",\n        fontWeight: 700,\n        fontSize: 13,\n        whiteSpace: \"nowrap\",\n      }}>\n        Biggest category\n      </div>\n      <div style={{ flex: 1 }}>\n        <div style={{ fontWeight: 700, fontSize: 16, color: \"var(--vendo-color-text)\" }}>\n          {top.category}\n        </div>\n        <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 13, marginTop: 2 }}>\n          {fmt.money(top.amountCents)} &mdash; {fmt.percent(top.pct / 100)} of total spending this quarter\n        </div>\n      </div>\n    </div>\n  );\n}\n    </Island>\n    <TopCategoryCallout/>\n    <DataTable\n      rows={spending.byCategory({period:\"quarter\"}).data}\n      sortBy=\"amountCents desc\"\n      columns={[\n        {key:\"category\", label:\"Category\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n        {key:\"pct\", label:\"Share\", format:\"percent\", align:\"end\"}\n      ]}\n      emptyState=\"No spending data for this quarter.\"\n      caption=\"Q3 2026 spending by category\"\n    />\n  </Stack>\n</App>",
+      "genMs": 11172,
+      "plannerMs": 0,
+      "totalMs": 11172,
+      "inputTokens": 8359,
+      "outputTokens": 844,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 1,
+        "bindingShapeErrors": 1,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 11,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "Top category callout percent shows pct/100 (~0.49%) instead of 49% of total spending"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Correctly identifies biggest category (payroll) via sort and shows donut, but percent formatting in callout is off by 100x."
+      }
+    },
+    {
+      "prompt": "Show this quarter's spending by category as a donut, and call out the biggest category by name.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Spending by category — Q3 2026\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total spending this quarter\" value={spending.byCategory({period:\"quarter\"}).totalCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Categories tracked\" value={spending.byCategory({period:\"quarter\"}).data.0.category} tone=\"default\"/>\n    </Row>\n    <Callout tone=\"warning\" title={spending.byCategory({period:\"quarter\"}).data.0.category}>\n      <Text text=\"This is your biggest spending category this quarter.\"/>\n    </Callout>\n    <Surface>\n      <DonutChart data={spending.byCategory({period:\"quarter\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={320} emptyState=\"No spending recorded for this quarter yet.\"/>\n    </Surface>\n    <DataTable rows={spending.byCategory({period:\"quarter\"}).data} sortBy=\"amountCents desc\" columns={[{key:\"category\",label:\"Category\"},{key:\"amountCents\",label:\"Amount\",format:\"money\",align:\"end\"},{key:\"pct\",label:\"Share\",format:\"percent\",align:\"end\"}]} emptyState=\"No spending data for this quarter.\"/>\n  </Stack>\n</App>",
+      "genMs": 5821,
+      "plannerMs": 0,
+      "totalMs": 5821,
+      "inputTokens": 8359,
+      "outputTokens": 322,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 10,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "Callout titled 'software' claims it is the biggest category, but biggest is payroll",
+          "'Categories tracked' stat is bound to data.0.category ('software'), not a count"
+        ],
+        "quality": 2,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Uses first row instead of biggest, so it calls out the wrong category and mislabels the count stat."
+      }
+    },
+    {
+      "prompt": "Show this quarter's spending by category as a donut, and call out the biggest category by name.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Q3 2026 Spending by Category\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total spend this quarter\" value={spending.byCategory({period:\"quarter\"}).totalCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Biggest category\" value=\"Payroll\"/>\n      <Stat label=\"Payroll share\" value={spending.byCategory({period:\"quarter\"}).data.1.pct} format=\"percent\"/>\n    </Row>\n    <Callout tone=\"warning\" title=\"Payroll is your largest spend category this quarter\">\n      At <Money cents={spending.byCategory({period:\"quarter\"}).data.1.amountCents}/>, payroll accounts for <Percent value={spending.byCategory({period:\"quarter\"}).data.1.pct}/> of all spending.\n    </Callout>\n    <DonutChart data={spending.byCategory({period:\"quarter\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={320} emptyState=\"No spending data for this quarter.\"/>\n    <DataTable rows={spending.byCategory({period:\"quarter\"}).data} sortBy=\"amountCents desc\" columns={[{key:\"category\",label:\"Category\"},{key:\"amountCents\",label:\"Amount\",format:\"money\",align:\"end\"},{key:\"pct\",label:\"Share\",format:\"percent\",align:\"end\"}]} emptyState=\"No categories found.\"/>\n  </Stack>\n</App>",
+      "genMs": 6001,
+      "plannerMs": 1979,
+      "totalMs": 7980,
+      "inputTokens": 8509,
+      "outputTokens": 365,
+      "plannerInputTokens": 255,
+      "plannerOutputTokens": 21,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 14,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 5,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Donut, biggest-category callout, and stats all correctly bound to payroll (index 1, the true largest)."
+      }
+    },
+    {
+      "prompt": "Show this quarter's spending by category as a donut, and call out the biggest category by name.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Q3 2026 Spending by Category\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total spending this quarter\" value={spending.byCategory({period:\"quarter\"}).totalCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Biggest category\" value={spending.byCategory({period:\"quarter\"}).data.1.category}/>\n      <Stat label=\"Biggest category share\" value={spending.byCategory({period:\"quarter\"}).data.1.pct} format=\"percent\"/>\n    </Row>\n    <Callout tone=\"warning\" title=\"Payroll is your largest spend this quarter\">\n      Payroll accounts for <Percent value={spending.byCategory({period:\"quarter\"}).data.1.pct}/> of total spending — <Money cents={spending.byCategory({period:\"quarter\"}).data.1.amountCents}/> this quarter.\n    </Callout>\n    <DonutChart data={spending.byCategory({period:\"quarter\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={320} emptyState=\"No spending data for this quarter.\"/>\n    <DataTable rows={spending.byCategory({period:\"quarter\"}).data} sortBy=\"amountCents desc\" columns={[{key:\"category\",label:\"Category\"},{key:\"amountCents\",label:\"Amount\",format:\"money\",align:\"end\"},{key:\"pct\",label:\"Share\",format:\"percent\",align:\"end\"}]} emptyState=\"No spending data for this quarter.\"/>\n  </Stack>\n</App>",
+      "genMs": 5930,
+      "plannerMs": 1979,
+      "totalMs": 7909,
+      "inputTokens": 8509,
+      "outputTokens": 383,
+      "plannerInputTokens": 255,
+      "plannerOutputTokens": 21,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 14,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 5,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Biggest category dynamically bound to category name; all claims match ground truth payroll as largest."
+      }
+    },
+    {
+      "prompt": "A revenue check-in: are we growing? Show the latest month's revenue with the trend behind it.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "<App name=\"Revenue check-in\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Latest month revenue\" value={revenue.monthly({}).data.5.revenueCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Month\" value={revenue.monthly({}).data.5.month} format=\"date\"/>\n    </Row>\n    <LineChart data={revenue.monthly({}).data} xKey=\"month\" series={[{key:\"revenueCents\",label:\"Revenue\"}]} format=\"money\" height={260} emptyState=\"No revenue data available yet.\"/>\n    <DataTable rows={revenue.monthly({}).data} sortBy=\"month asc\" columns={[{key:\"month\",label:\"Month\",format:\"date\"},{key:\"revenueCents\",label:\"Revenue\",format:\"money\",align:\"end\"}]} emptyState=\"No monthly revenue data found.\"/>\n  </Stack>\n</App>",
+      "genMs": 3892,
+      "plannerMs": 0,
+      "totalMs": 3892,
+      "inputTokens": 8360,
+      "outputTokens": 226,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 7,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Latest month revenue' bound to data.5 which doesn't exist (only 3 rows); latest is data.2 = 2026-04",
+          "'Month'/'Latest month' bound to non-existent data.5"
+        ],
+        "quality": 2,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Chart and table are correct and traceable, but the headline stat binds to a non-existent index 5 (only 3 rows), so the key 'latest month' number is broken."
+      }
+    },
+    {
+      "prompt": "A revenue check-in: are we growing? Show the latest month's revenue with the trend behind it.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Revenue check-in\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Latest month revenue\" value={revenue.monthly({}).data.5.revenueCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Latest month\" value={revenue.monthly({}).data.5.month} format=\"date\"/>\n    </Row>\n    <LineChart data={revenue.monthly({}).data} xKey=\"month\" series={[{key:\"revenueCents\",label:\"Revenue\"}]} format=\"money\" height={260} emptyState=\"No monthly revenue data available yet.\"/>\n    <DataTable rows={revenue.monthly({}).data} sortBy=\"month asc\" columns={[{key:\"month\",label:\"Month\",format:\"date\"},{key:\"revenueCents\",label:\"Revenue\",format:\"money\",align:\"end\"}]} emptyState=\"No revenue records found.\"/>\n  </Stack>\n</App>",
+      "genMs": 4367,
+      "plannerMs": 0,
+      "totalMs": 4367,
+      "inputTokens": 8360,
+      "outputTokens": 227,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 7,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Latest month revenue' bound to data.5 which doesn't exist (only 3 rows); latest is data.2 = 2026-04",
+          "'Latest month' bound to non-existent data.5"
+        ],
+        "quality": 2,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Identical structure to wire 1 with the same out-of-range data.5 binding breaking the latest-month stat, though the chart/table correctly show the trend."
+      }
+    },
+    {
+      "prompt": "A revenue check-in: are we growing? Show the latest month's revenue with the trend behind it.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Revenue check-in\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Latest month revenue\" value={revenue.monthly({}).data.2.revenueCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Prior month\" value={revenue.monthly({}).data.1.revenueCents} format=\"money\"/>\n      <Stat label=\"Month\" value={revenue.monthly({}).data.2.month}/>\n    </Row>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Revenue trend — trailing 3 months\"/>\n        <LineChart data={revenue.monthly({}).data} xKey=\"month\" series={[\"revenueCents\"]} format=\"money\" height={220} emptyState=\"No revenue data to display.\"/>\n      </Stack>\n    </Surface>\n    <Row gap={4}>\n      <Stat label=\"Earliest month shown\" value={revenue.monthly({}).data.0.revenueCents} format=\"money\"/>\n      <Stat label=\"Months tracked\" value={revenue.monthly({}).count}/>\n    </Row>\n  </Stack>\n</App>",
+      "genMs": 4681,
+      "plannerMs": 1371,
+      "totalMs": 6052,
+      "inputTokens": 8478,
+      "outputTokens": 285,
+      "plannerInputTokens": 256,
+      "plannerOutputTokens": 16,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 1,
+        "bindingShapeErrors": 1,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 13,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Months tracked' bound to revenue.monthly().count which does not exist in the tool return (no count field)"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Solid latest-month stat plus trend chart; only issue is the count field isn't in the ground truth return."
+      }
+    },
+    {
+      "prompt": "A revenue check-in: are we growing? Show the latest month's revenue with the trend behind it.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Revenue check-in\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Latest month revenue\" value={revenue.monthly({}).data.2.revenueCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Prior month\" value={revenue.monthly({}).data.1.revenueCents} format=\"money\"/>\n      <Stat label=\"Month\" value={revenue.monthly({}).data.2.month}/>\n    </Row>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Revenue trend — trailing 3 months\"/>\n        <LineChart data={revenue.monthly({}).data} xKey=\"month\" series={[\"revenueCents\"]} format=\"money\" height={240} emptyState=\"No revenue data to display yet.\"/>\n      </Stack>\n    </Surface>\n    <DataTable rows={revenue.monthly({}).data} sortBy=\"month asc\" columns={[{key:\"month\",label:\"Month\"},{key:\"revenueCents\",label:\"Revenue\",format:\"money\",align:\"end\"}]} emptyState=\"No monthly revenue records found.\"/>\n  </Stack>\n</App>",
+      "genMs": 5262,
+      "plannerMs": 1371,
+      "totalMs": 6633,
+      "inputTokens": 8478,
+      "outputTokens": 285,
+      "plannerInputTokens": 256,
+      "plannerOutputTokens": 16,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 11,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 5,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Latest month stat, prior comparison, trend chart, and backing table all trace correctly to revenue.monthly."
+      }
+    },
+    {
+      "prompt": "An invoice detail page for our most overdue invoice, with its line items and a mark-paid button.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "<App name=\"Most overdue invoice\">\n  <Stack gap={5}>\n    <Row gap={3}>\n      <Text variant=\"heading\" text={invoices.list({status:\"overdue\"}).data.0.client.name}/>\n      <EnumBadge value={invoices.list({status:\"overdue\"}).data.0.status} tones={{overdue:\"danger\",paid:\"success\",sent:\"accent\",draft:\"neutral\"}}/>\n    </Row>\n    <Row gap={4}>\n      <Stat label=\"Amount due\" value={invoices.list({status:\"overdue\"}).data.0.amountCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Due date\" value={invoices.list({status:\"overdue\"}).data.0.dueDate} format=\"date\"/>\n      <Stat label=\"Client email\" value={invoices.get({id: invoices.list({status:\"overdue\"}).data.0.id}).client.email}/>\n    </Row>\n    <Divider/>\n    <Text variant=\"heading\" text=\"Line items\"/>\n    <DataTable\n      rows={invoices.get({id: invoices.list({status:\"overdue\"}).data.0.id}).lineItems}\n      columns={[\n        {key:\"description\", label:\"Description\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"}\n      ]}\n      emptyState=\"No line items on this invoice.\"\n    />\n    <Divider/>\n    <Row gap={3}>\n      <Button\n        label=\"Mark as paid\"\n        variant=\"primary\"\n        onClick={{action:\"invoices.markPaid\", payload:{id: invoices.list({status:\"overdue\"}).data.0.id}}}\n      />\n      <Button\n        label=\"Send payment reminder\"\n        variant=\"secondary\"\n        onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds: [invoices.list({status:\"overdue\"}).data.0.id]}}}\n      />\n    </Row>\n  </Stack>\n</App>",
+      "genMs": 7145,
+      "plannerMs": 0,
+      "totalMs": 7145,
+      "inputTokens": 8360,
+      "outputTokens": 499,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 1,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 1,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 16,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 5,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Correctly binds to inv_1 (earliest due, most overdue), shows line items via get, mark-paid wired."
+      }
+    },
+    {
+      "prompt": "An invoice detail page for our most overdue invoice, with its line items and a mark-paid button.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Most overdue invoice\">\n  <Stack gap={5}>\n    <Row gap={3}>\n      <Text variant=\"heading\" text={invoices.list({status:\"overdue\"}).data.0.client.name}/>\n      <EnumBadge value={invoices.list({status:\"overdue\"}).data.0.status} tones={{overdue:\"danger\",paid:\"success\",sent:\"accent\",draft:\"neutral\"}}/>\n    </Row>\n    <Row gap={4}>\n      <Stat label=\"Amount due\" value={invoices.list({status:\"overdue\"}).data.0.amountCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Due date\" value={invoices.list({status:\"overdue\"}).data.0.dueDate} format=\"date\" tone=\"danger\"/>\n      <Stat label=\"Client email\" value={invoices.get({id: invoices.list({status:\"overdue\"}).data.0.id}).client.email}/>\n    </Row>\n    <Divider/>\n    <Text variant=\"heading\" text=\"Line items\"/>\n    <DataTable\n      rows={invoices.get({id: invoices.list({status:\"overdue\"}).data.0.id}).lineItems}\n      columns={[\n        {key:\"description\", label:\"Description\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"}\n      ]}\n      emptyState=\"No line items found on this invoice.\"\n    />\n    <Divider/>\n    <Row gap={3}>\n      <Button\n        label=\"Mark as paid\"\n        variant=\"primary\"\n        onClick={{action:\"invoices.markPaid\", payload:{id: invoices.list({status:\"overdue\"}).data.0.id}}}\n      />\n      <Button\n        label=\"Send payment reminder\"\n        variant=\"secondary\"\n        onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds: [invoices.list({status:\"overdue\"}).data.0.id]}}}\n      />\n    </Row>\n  </Stack>\n</App>",
+      "genMs": 6757,
+      "plannerMs": 0,
+      "totalMs": 6757,
+      "inputTokens": 8360,
+      "outputTokens": 504,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 1,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 1,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 16,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 5,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Identical to WIRE 1 with due-date danger tone added; correct and complete."
+      }
+    },
+    {
+      "prompt": "An invoice detail page for our most overdue invoice, with its line items and a mark-paid button.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Most Overdue Invoice\">\n  <Stack gap={5}>\n    <Row gap={3}>\n      <Text variant=\"heading\" text={invoices.list({\"status\":\"overdue\"}).data.0.client.name}/>\n      <EnumBadge value={invoices.list({\"status\":\"overdue\"}).data.0.status} tones={{overdue:\"danger\"}}/>\n    </Row>\n    <Row gap={4}>\n      <Stat label=\"Amount due\" value={invoices.list({\"status\":\"overdue\"}).data.0.amountCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Due date\" value={invoices.list({\"status\":\"overdue\"}).data.0.dueDate} format=\"date\"/>\n      <Stat label=\"Invoice ID\" value={invoices.list({\"status\":\"overdue\"}).data.0.id}/>\n    </Row>\n    <Island name=\"LineItemsAndPay\">\nexport default function LineItemsAndPay() {\n  const [invoice, setInvoice] = React.useState(null);\n  const [phase, setPhase] = React.useState(\"idle\");\n\n  React.useEffect(() => {\n    tools.invoices.get({ id: \"inv_1\" }).then(setInvoice);\n  }, []);\n\n  const markPaid = async () => {\n    setPhase(\"sending\");\n    const result = await tools.invoices.markPaid({ id: \"inv_1\" });\n    setPhase(result && result.ok ? \"awaiting\" : \"idle\");\n  };\n\n  return (\n    <div style={{ display: \"grid\", gap: 16, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-text)\", fontSize: 14 }}>\n      <div style={{ background: \"var(--vendo-color-surface)\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-medium)\", overflow: \"hidden\" }}>\n        <div style={{ padding: \"12px 16px\", borderBottom: \"1px solid var(--vendo-color-border)\", fontWeight: 600, fontSize: 13, color: \"var(--vendo-color-muted)\", textTransform: \"uppercase\", letterSpacing: \"0.04em\" }}>\n          Line items\n        </div>\n        {!invoice ? (\n          <div style={{ padding: 24, color: \"var(--vendo-color-muted)\", textAlign: \"center\" }}>Loading…</div>\n        ) : invoice.lineItems && invoice.lineItems.length > 0 ? (\n          <table style={{ width: \"100%\", borderCollapse: \"collapse\" }}>\n            <thead>\n              <tr style={{ background: \"var(--vendo-color-background)\" }}>\n                <th style={{ padding: \"10px 16px\", textAlign: \"left\", fontWeight: 600, fontSize: 13, color: \"var(--vendo-color-muted)\", borderBottom: \"1px solid var(--vendo-color-border)\" }}>Description</th>\n                <th style={{ padding: \"10px 16px\", textAlign: \"right\", fontWeight: 600, fontSize: 13, color: \"var(--vendo-color-muted)\", borderBottom: \"1px solid var(--vendo-color-border)\" }}>Amount</th>\n              </tr>\n            </thead>\n            <tbody>\n              {invoice.lineItems.map((item, i) => (\n                <tr key={i} style={{ borderBottom: \"1px solid var(--vendo-color-border)\" }}>\n                  <td style={{ padding: \"12px 16px\" }}>{item.description}</td>\n                  <td style={{ padding: \"12px 16px\", textAlign: \"right\", fontVariantNumeric: \"tabular-nums\" }}>{fmt.money(item.amountCents)}</td>\n                </tr>\n              ))}\n            </tbody>\n            <tfoot>\n              <tr style={{ background: \"var(--vendo-color-background)\" }}>\n                <td style={{ padding: \"12px 16px\", fontWeight: 700 }}>Total</td>\n                <td style={{ padding: \"12px 16px\", textAlign: \"right\", fontWeight: 700, fontVariantNumeric: \"tabular-nums\" }}>{fmt.money(invoice.amountCents)}</td>\n              </tr>\n            </tfoot>\n          </table>\n        ) : (\n          <div style={{ padding: 24, color: \"var(--vendo-color-muted)\", textAlign: \"center\" }}>No line items on this invoice.</div>\n        )}\n      </div>\n\n      {invoice && (\n        <div style={{ display: \"flex\", alignItems: \"center\", gap: 12 }}>\n          <button\n            onClick={markPaid}\n            disabled={phase !== \"idle\"}\n            style={{\n              background: phase === \"awaiting\" ? \"var(--vendo-color-muted)\" : \"var(--vendo-color-accent)\",\n              color: \"var(--vendo-color-accent-text)\",\n              border: \"none\",\n              borderRadius: \"var(--vendo-radius-small)\",\n              padding: \"10px 20px\",\n              fontFamily: \"var(--vendo-font-family)\",\n              fontWeight: 600,\n              fontSize: 14,\n              cursor: phase !== \"idle\" ? \"not-allowed\" : \"pointer\",\n              opacity: phase !== \"idle\" ? 0.75 : 1,\n              transition: \"opacity 0.15s\"\n            }}\n          >\n            {phase === \"sending\" ? \"Marking paid…\" : phase === \"awaiting\" ? \"Awaiting approval…\" : \"Mark as paid\"}\n          </button>\n          {phase === \"awaiting\" && (\n            <span style={{ color: \"var(--vendo-color-muted)\", fontSize: 13 }}>Your approval is required to complete this action.</span>\n          )}\n        </div>\n      )}\n    </div>\n  );\n}\n    </Island>\n    <LineItemsAndPay/>\n    <Callout tone=\"warning\" title=\"19 days overdue\">This invoice was due on 2 July 2026. Consider sending a reminder to Northwind Traders.</Callout>\n    <Button label=\"Send payment reminder\" onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds:[\"inv_1\"]}}}/>\n  </Stack>\n</App>",
+      "genMs": 19394,
+      "plannerMs": 1273,
+      "totalMs": 20667,
+      "inputTokens": 8604,
+      "outputTokens": 1605,
+      "plannerInputTokens": 256,
+      "plannerOutputTokens": 30,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 13,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 5,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Correctly identifies inv_1 as most overdue, shows line items with total, mark-paid button wired; callout date matches ground truth."
+      }
+    },
+    {
+      "prompt": "An invoice detail page for our most overdue invoice, with its line items and a mark-paid button.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Most Overdue Invoice\">\n  <Stack gap={5}>\n    <Row gap={3}>\n      <Text variant=\"heading\" text={invoices.list({\"status\":\"overdue\"}).data.0.client.name}/>\n      <EnumBadge value={invoices.list({\"status\":\"overdue\"}).data.0.status} tones={{overdue:\"danger\"}}/>\n    </Row>\n    <Row gap={4}>\n      <Stat label=\"Amount due\" value={invoices.list({\"status\":\"overdue\"}).data.0.amountCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Due date\" value={invoices.list({\"status\":\"overdue\"}).data.0.dueDate} format=\"date\"/>\n      <Stat label=\"Invoice ID\" value={invoices.list({\"status\":\"overdue\"}).data.0.id}/>\n    </Row>\n    <Island name=\"InvoiceDetail\">\nexport default function InvoiceDetail() {\n  const [invoice, setInvoice] = React.useState(null);\n  const [phase, setPhase] = React.useState(\"idle\");\n\n  React.useEffect(() => {\n    tools.invoices.get({ id: \"inv_1\" }).then((res) => setInvoice(res));\n  }, []);\n\n  const markPaid = async () => {\n    setPhase(\"sending\");\n    const result = await tools.invoices.markPaid({ id: \"inv_1\" });\n    setPhase(result && result.ok ? \"awaiting\" : \"idle\");\n  };\n\n  if (!invoice) {\n    return (\n      <div style={{ padding: 24, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\" }}>\n        Loading line items…\n      </div>\n    );\n  }\n\n  const lineItems = invoice.lineItems || [];\n\n  return (\n    <div style={{ display: \"grid\", gap: 16, fontFamily: \"var(--vendo-font-family)\" }}>\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-medium)\",\n        overflow: \"hidden\"\n      }}>\n        <div style={{ padding: \"12px 16px\", borderBottom: \"1px solid var(--vendo-color-border)\", background: \"var(--vendo-color-background)\" }}>\n          <span style={{ fontSize: 13, fontWeight: 600, color: \"var(--vendo-color-muted)\", textTransform: \"uppercase\", letterSpacing: \"0.04em\" }}>Line items</span>\n        </div>\n        {lineItems.length === 0 ? (\n          <div style={{ padding: 24, color: \"var(--vendo-color-muted)\", fontSize: 14 }}>No line items on this invoice.</div>\n        ) : (\n          <table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 14 }}>\n            <thead>\n              <tr style={{ borderBottom: \"1px solid var(--vendo-color-border)\" }}>\n                <th style={{ textAlign: \"left\", padding: \"10px 16px\", color: \"var(--vendo-color-muted)\", fontWeight: 500 }}>Description</th>\n                <th style={{ textAlign: \"right\", padding: \"10px 16px\", color: \"var(--vendo-color-muted)\", fontWeight: 500 }}>Amount</th>\n              </tr>\n            </thead>\n            <tbody>\n              {lineItems.map((item, i) => (\n                <tr key={i} style={{ borderBottom: i < lineItems.length - 1 ? \"1px solid var(--vendo-color-border)\" : \"none\" }}>\n                  <td style={{ padding: \"12px 16px\", color: \"var(--vendo-color-text)\" }}>{item.description}</td>\n                  <td style={{ padding: \"12px 16px\", textAlign: \"right\", color: \"var(--vendo-color-text)\", fontVariantNumeric: \"tabular-nums\" }}>{fmt.money(item.amountCents)}</td>\n                </tr>\n              ))}\n            </tbody>\n            <tfoot>\n              <tr style={{ borderTop: \"2px solid var(--vendo-color-border)\" }}>\n                <td style={{ padding: \"12px 16px\", fontWeight: 600, color: \"var(--vendo-color-text)\" }}>Total</td>\n                <td style={{ padding: \"12px 16px\", textAlign: \"right\", fontWeight: 700, color: \"var(--vendo-color-text)\", fontVariantNumeric: \"tabular-nums\" }}>{fmt.money(invoice.amountCents)}</td>\n              </tr>\n            </tfoot>\n          </table>\n        )}\n      </div>\n\n      <div style={{ display: \"flex\", gap: 12, alignItems: \"center\" }}>\n        <button\n          onClick={markPaid}\n          disabled={phase !== \"idle\"}\n          style={{\n            background: phase === \"awaiting\" ? \"var(--vendo-color-muted)\" : \"var(--vendo-color-accent)\",\n            color: \"var(--vendo-color-accent-text)\",\n            border: \"none\",\n            borderRadius: \"var(--vendo-radius-small)\",\n            padding: \"10px 20px\",\n            fontSize: 14,\n            fontWeight: 600,\n            cursor: phase !== \"idle\" ? \"not-allowed\" : \"pointer\",\n            opacity: phase !== \"idle\" ? 0.75 : 1,\n            fontFamily: \"var(--vendo-font-family)\"\n          }}\n        >\n          {phase === \"sending\" ? \"Submitting…\" : phase === \"awaiting\" ? \"Awaiting approval…\" : \"Mark as paid\"}\n        </button>\n        {phase === \"awaiting\" && (\n          <span style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>This change is pending your approval.</span>\n        )}\n      </div>\n    </div>\n  );\n}\n    </Island>\n    <InvoiceDetail/>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"caption\" text=\"Other overdue invoices\"/>\n        <DataTable\n          rows={invoices.list({\"status\":\"overdue\"}).data}\n          columns={[\n            {key:\"client.name\", label:\"Client\"},\n            {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n            {key:\"dueDate\", label:\"Due date\", format:\"date\"},\n            {key:\"status\", label:\"Status\"}\n          ]}\n          sortBy=\"dueDate asc\"\n          emptyState=\"No other overdue invoices.\"\n        />\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 20027,
+      "plannerMs": 1273,
+      "totalMs": 21300,
+      "inputTokens": 8604,
+      "outputTokens": 1737,
+      "plannerInputTokens": 256,
+      "plannerOutputTokens": 30,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 14,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Other overdue invoices' table includes inv_1 itself, which is the current invoice, not an 'other'"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Solid detail page with correct line items and mark-paid, but the 'other overdue' list mislabels by including the shown invoice."
+      }
+    },
+    {
+      "prompt": "A collections workspace: every overdue invoice with a reminder button per row and a total at the top.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "<App name=\"Collections workspace\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Overdue total\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Invoices overdue\" value={invoices.list({status:\"overdue\"}).count}/>\n      <Stat label=\"Oldest due\" value={invoices.list({status:\"overdue\"}).data.0.dueDate} format=\"date\"/>\n    </Row>\n    <Island name=\"OverdueTable\">\nexport default function OverdueTable() {\n  const [rows, setRows] = useState([]);\n  const [sending, setSending] = useState({});\n  const [sent, setSent] = useState({});\n\n  useEffect(() => {\n    tools.invoices_list({ status: \"overdue\" }).then((r) => setRows(r.data ?? []));\n  }, []);\n\n  const remind = async (id) => {\n    setSending((s) => ({ ...s, [id]: true }));\n    await tools.invoices_sendReminders({ invoiceIds: [id] });\n    setSending((s) => ({ ...s, [id]: false }));\n    setSent((s) => ({ ...s, [id]: true }));\n  };\n\n  if (!rows.length) return (\n    <div style={{ padding: 24, textAlign: \"center\", color: \"var(--vendo-color-muted)\", fontFamily: \"var(--vendo-font-family)\", fontSize: 14 }}>\n      No overdue invoices — all clear.\n    </div>\n  );\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 14, color: \"var(--vendo-color-text)\" }}>\n      <table style={{ width: \"100%\", borderCollapse: \"collapse\" }}>\n        <thead>\n          <tr style={{ borderBottom: \"2px solid var(--vendo-color-border)\", background: \"var(--vendo-color-background)\" }}>\n            <th style={{ textAlign: \"left\", padding: \"10px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\" }}>Client</th>\n            <th style={{ textAlign: \"right\", padding: \"10px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\" }}>Amount</th>\n            <th style={{ textAlign: \"left\", padding: \"10px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\" }}>Due date</th>\n            <th style={{ textAlign: \"left\", padding: \"10px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\" }}>Status</th>\n            <th style={{ textAlign: \"right\", padding: \"10px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\" }}>Action</th>\n          </tr>\n        </thead>\n        <tbody>\n          {rows.map((inv, i) => {\n            const isSending = sending[inv.id];\n            const isSent = sent[inv.id];\n            const due = new Date(inv.dueDate);\n            const daysOverdue = Math.floor((Date.now() - due.getTime()) / 86400000);\n            return (\n              <tr key={inv.id} style={{ borderBottom: \"1px solid var(--vendo-color-border)\", background: i % 2 === 0 ? \"var(--vendo-color-surface)\" : \"var(--vendo-color-background)\" }}>\n                <td style={{ padding: \"11px 12px\", fontWeight: 500 }}>{inv.client?.name ?? \"—\"}</td>\n                <td style={{ padding: \"11px 12px\", textAlign: \"right\", fontVariantNumeric: \"tabular-nums\" }}>{fmt.money(inv.amountCents)}</td>\n                <td style={{ padding: \"11px 12px\" }}>\n                  <span>{fmt.dateTime(inv.dueDate)}</span>\n                  {daysOverdue > 0 && (\n                    <span style={{ marginLeft: 6, fontSize: 12, color: \"var(--vendo-color-danger)\", fontWeight: 600 }}>\n                      {daysOverdue}d overdue\n                    </span>\n                  )}\n                </td>\n                <td style={{ padding: \"11px 12px\" }}>\n                  <span style={{\n                    display: \"inline-block\",\n                    padding: \"2px 8px\",\n                    borderRadius: \"var(--vendo-radius-small)\",\n                    fontSize: 12,\n                    fontWeight: 600,\n                    background: \"#FDECEA\",\n                    color: \"var(--vendo-color-danger)\",\n                    textTransform: \"capitalize\"\n                  }}>\n                    Overdue\n                  </span>\n                </td>\n                <td style={{ padding: \"11px 12px\", textAlign: \"right\" }}>\n                  {isSent ? (\n                    <span style={{ fontSize: 12, color: \"#2E7D32\", fontWeight: 600 }}>✓ Reminder sent</span>\n                  ) : (\n                    <button\n                      onClick={() => remind(inv.id)}\n                      disabled={isSending}\n                      style={{\n                        padding: \"6px 14px\",\n                        fontSize: 13,\n                        fontWeight: 600,\n                        fontFamily: \"var(--vendo-font-family)\",\n                        background: isSending ? \"var(--vendo-color-muted)\" : \"var(--vendo-color-accent)\",\n                        color: \"var(--vendo-color-accent-text)\",\n                        border: \"none\",\n                        borderRadius: \"var(--vendo-radius-small)\",\n                        cursor: isSending ? \"not-allowed\" : \"pointer\",\n                        whiteSpace: \"nowrap\",\n                        opacity: isSending ? 0.7 : 1,\n                        transition: \"opacity 0.15s\"\n                      }}\n                    >\n                      {isSending ? \"Sending…\" : \"Send reminder\"}\n                    </button>\n                  )}\n                </td>\n              </tr>\n            );\n          })}\n        </tbody>\n      </table>\n    </div>\n  );\n}\n    </Island>\n    <OverdueTable/>\n  </Stack>\n</App>",
+      "genMs": 19529,
+      "plannerMs": 0,
+      "totalMs": 19529,
+      "inputTokens": 8359,
+      "outputTokens": 1641,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 7,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Overdue total' bound to totalCents (525000) is the total of all invoices; the true overdue total is 427000"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Clean table with per-row reminder buttons and total, but the overdue-total stat binds to the all-invoices total field."
+      }
+    },
+    {
+      "prompt": "A collections workspace: every overdue invoice with a reminder button per row and a total at the top.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Collections workspace\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total overdue\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Overdue invoices\" value={invoices.list({status:\"overdue\"}).count}/>\n    </Row>\n    <DataTable\n      rows={invoices.list({status:\"overdue\"}).data}\n      sortBy=\"dueDate asc\"\n      searchable\n      columns={[\n        {key:\"client.name\", label:\"Client\"},\n        {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n        {key:\"dueDate\", label:\"Due date\", format:\"date\"},\n        {key:\"status\", label:\"Status\"}\n      ]}\n      emptyState=\"No overdue invoices — your collections queue is clear.\"\n    />\n    <Island name=\"OverdueReminders\">\nexport default function OverdueReminders() {\n  const [invoices, setInvoices] = React.useState([]);\n  const [states, setStates] = React.useState({});\n\n  React.useEffect(() => {\n    tools.invoices.list({ status: \"overdue\" }).then((r) => setInvoices(r.data ?? []));\n  }, []);\n\n  const sendReminder = async (id) => {\n    setStates((s) => ({ ...s, [id]: \"sending\" }));\n    const result = await tools.invoices.sendReminders({ invoiceIds: [id] });\n    setStates((s) => ({ ...s, [id]: result && result.sent > 0 ? \"awaiting\" : \"failed\" }));\n  };\n\n  const sendAll = async () => {\n    const ids = invoices.map((inv) => inv.id);\n    ids.forEach((id) => setStates((s) => ({ ...s, [id]: \"sending\" })));\n    const result = await tools.invoices.sendReminders({ invoiceIds: ids });\n    const newStates = {};\n    ids.forEach((id) => { newStates[id] = result && result.sent > 0 ? \"awaiting\" : \"failed\"; });\n    setStates(newStates);\n  };\n\n  if (invoices.length === 0) return null;\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-text)\", display: \"flex\", flexDirection: \"column\", gap: 12 }}>\n      <div style={{ display: \"flex\", alignItems: \"center\", justifyContent: \"space-between\" }}>\n        <span style={{ fontWeight: 600, fontSize: 15 }}>Send reminders</span>\n        <button\n          onClick={sendAll}\n          style={{\n            background: \"var(--vendo-color-accent)\",\n            color: \"var(--vendo-color-accent-text)\",\n            border: \"none\",\n            borderRadius: \"var(--vendo-radius-medium)\",\n            padding: \"8px 16px\",\n            fontFamily: \"var(--vendo-font-family)\",\n            fontSize: 14,\n            cursor: \"pointer\",\n            fontWeight: 500\n          }}\n        >\n          Remind all\n        </button>\n      </div>\n      <div style={{ display: \"flex\", flexDirection: \"column\", gap: 8 }}>\n        {invoices.map((inv) => {\n          const st = states[inv.id];\n          return (\n            <div\n              key={inv.id}\n              style={{\n                display: \"flex\",\n                alignItems: \"center\",\n                justifyContent: \"space-between\",\n                background: \"var(--vendo-color-surface)\",\n                border: \"1px solid var(--vendo-color-border)\",\n                borderRadius: \"var(--vendo-radius-medium)\",\n                padding: \"10px 14px\",\n                gap: 12\n              }}\n            >\n              <div style={{ display: \"flex\", flexDirection: \"column\", gap: 2 }}>\n                <span style={{ fontWeight: 600, fontSize: 14 }}>{inv.client?.name ?? \"—\"}</span>\n                <span style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n                  {fmt.money(inv.amountCents)} · Due {fmt.dateTime(inv.dueDate)}\n                </span>\n              </div>\n              <button\n                onClick={() => sendReminder(inv.id)}\n                disabled={!!st}\n                style={{\n                  background: st === \"awaiting\" ? \"var(--vendo-color-background)\" : st === \"failed\" ? \"var(--vendo-color-danger)\" : \"var(--vendo-color-accent)\",\n                  color: st === \"awaiting\" ? \"var(--vendo-color-muted)\" : \"var(--vendo-color-accent-text)\",\n                  border: st === \"awaiting\" ? \"1px solid var(--vendo-color-border)\" : \"none\",\n                  borderRadius: \"var(--vendo-radius-small)\",\n                  padding: \"6px 14px\",\n                  fontFamily: \"var(--vendo-font-family)\",\n                  fontSize: 13,\n                  fontWeight: 500,\n                  cursor: st ? \"default\" : \"pointer\",\n                  whiteSpace: \"nowrap\",\n                  minWidth: 120\n                }}\n              >\n                {st === \"sending\" ? \"Sending…\" : st === \"awaiting\" ? \"Awaiting approval\" : st === \"failed\" ? \"Failed\" : \"Send reminder\"}\n              </button>\n            </div>\n          );\n        })}\n      </div>\n    </div>\n  );\n}\n    </Island>\n    <OverdueReminders/>\n  </Stack>\n</App>",
+      "genMs": 17326,
+      "plannerMs": 0,
+      "totalMs": 17326,
+      "inputTokens": 8359,
+      "outputTokens": 1459,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 7,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total overdue' bound to totalCents (525000) is the all-invoice total, not the overdue total of 427000"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Table plus per-row reminder list answers the ask well, though same total mismatch and slight redundancy between table and reminder cards."
+      }
+    },
+    {
+      "prompt": "A collections workspace: every overdue invoice with a reminder button per row and a total at the top.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Collections Workspace\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total overdue\" value={invoices.list({\"status\":\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Overdue invoices\" value={invoices.list({\"status\":\"overdue\"}).count}/>\n      <Stat label=\"Oldest due\" value={invoices.list({\"status\":\"overdue\"}).data.0.dueDate} format=\"date\"/>\n    </Row>\n    <Island name=\"OverdueWorklist\">\nexport default function OverdueWorklist() {\n  const [invoices, setInvoices] = React.useState([]);\n  const [sending, setSending] = React.useState({});\n  const [sent, setSent] = React.useState({});\n\n  React.useEffect(() => {\n    tools.invoices.list({ status: \"overdue\" }).then((r) => setInvoices(r.data));\n  }, []);\n\n  const sendReminder = async (id) => {\n    setSending((s) => ({ ...s, [id]: true }));\n    const result = await tools.invoices.sendReminders({ invoiceIds: [id] });\n    setSending((s) => ({ ...s, [id]: false }));\n    setSent((s) => ({ ...s, [id]: result }));\n  };\n\n  if (!invoices.length) {\n    return (\n      <div style={{ padding: 24, textAlign: \"center\", color: \"var(--vendo-color-muted)\", fontFamily: \"var(--vendo-font-family)\" }}>\n        No overdue invoices — nothing to chase.\n      </div>\n    );\n  }\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 14, background: \"var(--vendo-color-surface)\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-medium)\", overflow: \"hidden\" }}>\n      <table style={{ width: \"100%\", borderCollapse: \"collapse\" }}>\n        <thead>\n          <tr style={{ background: \"var(--vendo-color-background)\", borderBottom: \"1px solid var(--vendo-color-border)\" }}>\n            <th style={{ padding: \"10px 16px\", textAlign: \"left\", color: \"var(--vendo-color-muted)\", fontWeight: 500 }}>Client</th>\n            <th style={{ padding: \"10px 16px\", textAlign: \"right\", color: \"var(--vendo-color-muted)\", fontWeight: 500 }}>Amount</th>\n            <th style={{ padding: \"10px 16px\", textAlign: \"left\", color: \"var(--vendo-color-muted)\", fontWeight: 500 }}>Due date</th>\n            <th style={{ padding: \"10px 16px\", textAlign: \"left\", color: \"var(--vendo-color-muted)\", fontWeight: 500 }}>Status</th>\n            <th style={{ padding: \"10px 16px\", textAlign: \"right\", color: \"var(--vendo-color-muted)\", fontWeight: 500 }}>Action</th>\n          </tr>\n        </thead>\n        <tbody>\n          {invoices.map((inv, i) => {\n            const isSending = sending[inv.id];\n            const wasSent = sent[inv.id];\n            const daysOverdue = Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86400000);\n            return (\n              <tr key={inv.id} style={{ borderBottom: i < invoices.length - 1 ? \"1px solid var(--vendo-color-border)\" : \"none\", background: \"var(--vendo-color-surface)\" }}>\n                <td style={{ padding: \"14px 16px\" }}>\n                  <div style={{ fontWeight: 600, color: \"var(--vendo-color-text)\" }}>{inv.client.name}</div>\n                  <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 12, marginTop: 2 }}>{inv.id}</div>\n                </td>\n                <td style={{ padding: \"14px 16px\", textAlign: \"right\", fontWeight: 600, color: \"var(--vendo-color-danger)\", fontVariantNumeric: \"tabular-nums\" }}>\n                  {fmt.money(inv.amountCents)}\n                </td>\n                <td style={{ padding: \"14px 16px\" }}>\n                  <div style={{ color: \"var(--vendo-color-text)\" }}>{fmt.dateTime(inv.dueDate)}</div>\n                  <div style={{ color: \"var(--vendo-color-danger)\", fontSize: 12, marginTop: 2 }}>{daysOverdue}d overdue</div>\n                </td>\n                <td style={{ padding: \"14px 16px\" }}>\n                  <span style={{ display: \"inline-block\", padding: \"2px 10px\", borderRadius: 99, fontSize: 12, fontWeight: 600, background: \"#fde8e6\", color: \"var(--vendo-color-danger)\" }}>\n                    Overdue\n                  </span>\n                </td>\n                <td style={{ padding: \"14px 16px\", textAlign: \"right\" }}>\n                  {wasSent ? (\n                    wasSent.status === \"pending-approval\" ? (\n                      <span style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>Awaiting approval…</span>\n                    ) : (\n                      <span style={{ fontSize: 12, color: \"#2a7a4b\", fontWeight: 600 }}>✓ Reminder sent</span>\n                    )\n                  ) : (\n                    <button\n                      onClick={() => sendReminder(inv.id)}\n                      disabled={isSending}\n                      style={{\n                        padding: \"6px 14px\",\n                        borderRadius: \"var(--vendo-radius-small)\",\n                        border: \"1px solid var(--vendo-color-accent)\",\n                        background: isSending ? \"var(--vendo-color-background)\" : \"var(--vendo-color-accent)\",\n                        color: isSending ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-accent-text)\",\n                        fontFamily: \"var(--vendo-font-family)\",\n                        fontSize: 13,\n                        fontWeight: 600,\n                        cursor: isSending ? \"not-allowed\" : \"pointer\",\n                        transition: \"opacity 0.15s\"\n                      }}\n                    >\n                      {isSending ? \"Sending…\" : \"Send reminder\"}\n                    </button>\n                  )}\n                </td>\n              </tr>\n            );\n          })}\n        </tbody>\n      </table>\n    </div>\n  );\n}\n    </Island>\n    <OverdueWorklist/>\n    <Row gap={4}>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Clients with overdue balances\"/>\n          <DataTable\n            rows={clients.list({}).data}\n            columns={[\n              {key:\"name\", label:\"Client\"},\n              {key:\"email\", label:\"Email\"},\n              {key:\"tier\", label:\"Tier\"},\n              {key:\"balanceCents\", label:\"Outstanding balance\", format:\"money\", align:\"end\"}\n            ]}\n            emptyState=\"No client data available.\"\n          />\n        </Stack>\n      </Surface>\n    </Row>\n  </Stack>\n</App>",
+      "genMs": 22937,
+      "plannerMs": 1338,
+      "totalMs": 24275,
+      "inputTokens": 8726,
+      "outputTokens": 1932,
+      "plannerInputTokens": 255,
+      "plannerOutputTokens": 43,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 12,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total overdue' bound to totalCents (525000) which includes the non-overdue inv_3, not the actual overdue total of 427000"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Complete worklist with per-row reminder buttons and total; extra clients table is truthful but the total-overdue stat likely overstates by including the sent invoice."
+      }
+    },
+    {
+      "prompt": "A collections workspace: every overdue invoice with a reminder button per row and a total at the top.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Collections Workspace\">\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Total overdue\" value={invoices.list({\"status\":\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Overdue invoices\" value={invoices.list({\"status\":\"overdue\"}).count}/>\n    </Row>\n    <Island name=\"OverdueWorklist\">\nexport default function OverdueWorklist() {\n  const [invoices, setInvoices] = React.useState([]);\n  const [reminderState, setReminderState] = React.useState({});\n\n  React.useEffect(() => {\n    tools.invoices_list({ status: \"overdue\" }).then((r) => setInvoices(r.data));\n  }, []);\n\n  const sendReminder = async (inv) => {\n    setReminderState((s) => ({ ...s, [inv.id]: \"sending\" }));\n    const result = await tools.invoices_sendReminders({ invoiceIds: [inv.id] });\n    setReminderState((s) => ({\n      ...s,\n      [inv.id]: result && result.status === \"pending-approval\" ? \"awaiting\" : \"sent\",\n    }));\n  };\n\n  const statusLabel = (id) => {\n    const st = reminderState[id];\n    if (st === \"sending\") return \"Sending…\";\n    if (st === \"awaiting\") return \"Awaiting approval…\";\n    if (st === \"sent\") return \"Reminder sent\";\n    return \"Send reminder\";\n  };\n\n  const daysOverdue = (dueDate) => {\n    const due = new Date(dueDate);\n    const now = new Date(\"2026-07-21\");\n    const diff = Math.floor((now - due) / (1000 * 60 * 60 * 24));\n    return diff > 0 ? diff : 0;\n  };\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 14, color: \"var(--vendo-color-text)\" }}>\n      <table style={{ width: \"100%\", borderCollapse: \"collapse\" }}>\n        <thead>\n          <tr style={{ borderBottom: \"2px solid var(--vendo-color-border)\", textAlign: \"left\" }}>\n            <th style={{ padding: \"8px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\" }}>Client</th>\n            <th style={{ padding: \"8px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\" }}>Due date</th>\n            <th style={{ padding: \"8px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\", textAlign: \"center\" }}>Days overdue</th>\n            <th style={{ padding: \"8px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\", textAlign: \"right\" }}>Amount</th>\n            <th style={{ padding: \"8px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\", textAlign: \"right\" }}>Status</th>\n            <th style={{ padding: \"8px 12px\", fontWeight: 600, color: \"var(--vendo-color-muted)\" }}></th>\n          </tr>\n        </thead>\n        <tbody>\n          {invoices.map((inv, i) => {\n            const days = daysOverdue(inv.dueDate);\n            const st = reminderState[inv.id];\n            const sent = st === \"sent\";\n            const pending = st === \"sending\" || st === \"awaiting\";\n            return (\n              <tr key={inv.id} style={{ borderBottom: \"1px solid var(--vendo-color-border)\", background: i % 2 === 0 ? \"var(--vendo-color-surface)\" : \"var(--vendo-color-background)\" }}>\n                <td style={{ padding: \"12px 12px\", fontWeight: 500 }}>{inv.client.name}</td>\n                <td style={{ padding: \"12px 12px\", color: \"var(--vendo-color-muted)\" }}>\n                  {new Date(inv.dueDate).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\", year: \"numeric\" })}\n                </td>\n                <td style={{ padding: \"12px 12px\", textAlign: \"center\" }}>\n                  <span style={{\n                    display: \"inline-block\",\n                    padding: \"2px 8px\",\n                    borderRadius: \"var(--vendo-radius-small)\",\n                    background: days >= 14 ? \"rgba(192,57,43,0.1)\" : \"rgba(43,92,230,0.08)\",\n                    color: days >= 14 ? \"var(--vendo-color-danger)\" : \"var(--vendo-color-accent)\",\n                    fontWeight: 600,\n                    fontSize: 13\n                  }}>\n                    {days}d\n                  </span>\n                </td>\n                <td style={{ padding: \"12px 12px\", textAlign: \"right\", fontWeight: 600 }}>\n                  {fmt.money(inv.amountCents)}\n                </td>\n                <td style={{ padding: \"12px 12px\", textAlign: \"right\" }}>\n                  <span style={{\n                    display: \"inline-block\",\n                    padding: \"2px 8px\",\n                    borderRadius: \"var(--vendo-radius-small)\",\n                    background: \"rgba(192,57,43,0.1)\",\n                    color: \"var(--vendo-color-danger)\",\n                    fontSize: 12,\n                    fontWeight: 600,\n                    textTransform: \"capitalize\"\n                  }}>\n                    {inv.status}\n                  </span>\n                </td>\n                <td style={{ padding: \"12px 12px\", textAlign: \"right\" }}>\n                  <button\n                    onClick={() => sendReminder(inv)}\n                    disabled={pending || sent}\n                    style={{\n                      padding: \"6px 14px\",\n                      borderRadius: \"var(--vendo-radius-small)\",\n                      border: \"none\",\n                      background: sent ? \"rgba(43,92,230,0.08)\" : pending ? \"rgba(43,92,230,0.08)\" : \"var(--vendo-color-accent)\",\n                      color: sent || pending ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-accent-text)\",\n                      fontFamily: \"var(--vendo-font-family)\",\n                      fontSize: 13,\n                      fontWeight: 600,\n                      cursor: pending || sent ? \"not-allowed\" : \"pointer\",\n                      whiteSpace: \"nowrap\",\n                      transition: \"opacity 0.15s\"\n                    }}\n                  >\n                    {statusLabel(inv.id)}\n                  </button>\n                </td>\n              </tr>\n            );\n          })}\n        </tbody>\n      </table>\n      {invoices.length === 0 && (\n        <div style={{ padding: 32, textAlign: \"center\", color: \"var(--vendo-color-muted)\" }}>\n          No overdue invoices — you're all caught up.\n        </div>\n      )}\n    </div>\n  );\n}\n    </Island>\n    <OverdueWorklist/>\n  </Stack>\n</App>",
+      "genMs": 26366,
+      "plannerMs": 1338,
+      "totalMs": 27704,
+      "inputTokens": 8726,
+      "outputTokens": 1903,
+      "plannerInputTokens": 255,
+      "plannerOutputTokens": 43,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 6,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total overdue' bound to totalCents (525000) which includes the non-overdue inv_3, not the actual overdue total of 427000"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Focused, on-ask collections table with days-overdue and wired reminder buttons; only flaw is the overdue-total stat likely includes the sent invoice."
+      }
+    },
+    {
+      "prompt": "A Monday-morning finance digest: cash on hand, overdue total, spending hotspots, and what to chase first.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "<App name=\"Monday morning finance digest\">\n  <Stack gap={6}>\n    <!-- Hero: cash & receivables at a glance -->\n    <Row gap={4}>\n      <Stat label=\"Cash on hand\" value={accounts.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Total overdue\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Overdue invoices\" value={invoices.list({status:\"overdue\"}).count}/>\n      <Stat label=\"This month's revenue\" value={revenue.monthly({}).data.5.revenueCents} format=\"money\"/>\n    </Row>\n\n    <Divider/>\n\n    <!-- Revenue trend -->\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Revenue — trailing 6 months\"/>\n        <LineChart data={revenue.monthly({}).data} xKey=\"month\" series={[\"revenueCents\"]} format=\"money\" height={180} emptyState=\"No monthly revenue data yet.\"/>\n      </Stack>\n    </Surface>\n\n    <Grid columns={2}>\n      <!-- Spending hotspots -->\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Spending hotspots this month\"/>\n          <DonutChart data={spending.byCategory({period:\"month\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={220} emptyState=\"No spending data for this month.\"/>\n          <DataTable rows={spending.byCategory({period:\"month\"}).data} columns={[{key:\"category\",label:\"Category\"},{key:\"amountCents\",label:\"Spend\",format:\"money\",align:\"end\"},{key:\"pct\",label:\"Share\",format:\"percent\",align:\"end\"}]} emptyState=\"No spending breakdown available.\" limit={6}/>\n        </Stack>\n      </Surface>\n\n      <!-- Account balances -->\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Account balances\"/>\n          <DataTable rows={accounts.list({}).data} columns={[{key:\"name\",label:\"Account\"},{key:\"type\",label:\"Type\"},{key:\"balanceCents\",label:\"Balance\",format:\"money\",align:\"end\"}]} emptyState=\"No accounts found.\"/>\n        </Stack>\n      </Surface>\n    </Grid>\n\n    <Divider/>\n\n    <!-- Chase list -->\n    <Surface>\n      <Stack gap={3}>\n        <Row gap={3}>\n          <Text variant=\"heading\" text=\"What to chase first\"/>\n          <Badge label=\"Overdue\" tone=\"danger\"/>\n        </Row>\n        <DataTable\n          rows={invoices.list({status:\"overdue\"}).data}\n          sortBy=\"dueDate asc\"\n          searchable\n          columns={[\n            {key:\"client.name\", label:\"Client\"},\n            {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n            {key:\"dueDate\", label:\"Due\", format:\"date\"},\n            {key:\"status\", label:\"Status\"}\n          ]}\n          emptyState=\"No overdue invoices — clean slate this Monday.\"\n        />\n        <Island name=\"ReminderPanel\">\nexport default function ReminderPanel() {\n  const [invoices, setInvoices] = React.useState([]);\n  const [selected, setSelected] = React.useState([]);\n  const [phase, setPhase] = React.useState(\"idle\");\n\n  React.useEffect(() => {\n    tools.invoices.list({ status: \"overdue\" }).then((r) => setInvoices(r.data || []));\n  }, []);\n\n  const toggle = (id) =>\n    setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);\n\n  const send = async () => {\n    setPhase(\"sending\");\n    const result = await tools.invoices.sendReminders({ invoiceIds: selected });\n    setPhase(result.status === \"pending-approval\" ? \"awaiting\" : \"done\");\n  };\n\n  if (invoices.length === 0) return null;\n\n  return (\n    <div style={{ display: \"grid\", gap: 12, padding: 16, background: \"var(--vendo-color-surface)\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-medium)\", fontFamily: \"var(--vendo-font-family)\" }}>\n      <div style={{ fontWeight: 600, color: \"var(--vendo-color-text)\", fontSize: 14 }}>Send reminders</div>\n      <div style={{ display: \"grid\", gap: 8 }}>\n        {invoices.map((inv) => (\n          <label key={inv.id} style={{ display: \"flex\", alignItems: \"center\", gap: 10, cursor: \"pointer\", color: \"var(--vendo-color-text)\", fontSize: 14 }}>\n            <input\n              type=\"checkbox\"\n              checked={selected.includes(inv.id)}\n              onChange={() => toggle(inv.id)}\n              disabled={phase !== \"idle\"}\n            />\n            <span style={{ flex: 1 }}>{inv.client?.name}</span>\n            <span style={{ color: \"var(--vendo-color-muted)\", fontSize: 13 }}>{fmt.money(inv.amountCents)}</span>\n            <span style={{ color: \"var(--vendo-color-danger)\", fontSize: 12 }}>Due {fmt.dateTime(inv.dueDate)}</span>\n          </label>\n        ))}\n      </div>\n      <button\n        onClick={send}\n        disabled={selected.length === 0 || phase !== \"idle\"}\n        style={{\n          padding: \"8px 16px\",\n          background: selected.length === 0 || phase !== \"idle\" ? \"var(--vendo-color-border)\" : \"var(--vendo-color-accent)\",\n          color: selected.length === 0 || phase !== \"idle\" ? \"var(--vendo-color-muted)\" : \"var(--vendo-color-accent-text)\",\n          border: \"none\",\n          borderRadius: \"var(--vendo-radius-small)\",\n          fontFamily: \"var(--vendo-font-family)\",\n          fontWeight: 600,\n          fontSize: 14,\n          cursor: selected.length === 0 || phase !== \"idle\" ? \"not-allowed\" : \"pointer\",\n          transition: \"background 0.15s\"\n        }}\n      >\n        {phase === \"awaiting\" ? \"⏳ Awaiting approval…\" : phase === \"done\" ? \"✓ Reminders sent\" : `Send reminder${selected.length !== 1 ? \"s\" : \"\"} (${selected.length})`}\n      </button>\n    </div>\n  );\n}\n        </Island>\n        <ReminderPanel/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 22210,
+      "plannerMs": 0,
+      "totalMs": 22210,
+      "inputTokens": 8364,
+      "outputTokens": 1730,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 4,
+        "nodeCount": 30,
+        "islandCount": 1,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Cash on hand' bound to only accounts.data.0 (Operating) balance, not total cash across accounts",
+          "'This month's revenue' bound to revenue.monthly().data.5 which does not exist (only 3 rows)",
+          "'Revenue — trailing 6 months' but only 3 months of data exist",
+          "'Spending hotspots this month' — spending.byCategory carries no period claim"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Covers all four asks with real bindings and a wired reminder island, but cash uses one account and revenue index 5 is out of range."
+      }
+    },
+    {
+      "prompt": "A Monday-morning finance digest: cash on hand, overdue total, spending hotspots, and what to chase first.",
+      "negative": false,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Monday morning digest\">\n  <Stack gap={6}>\n    <Row gap={2}>\n      <Text variant=\"heading\" text=\"Monday morning digest\"/>\n      <Text variant=\"caption\" text=\"Week of 21 July 2026\"/>\n    </Row>\n\n    <Row gap={4}>\n      <Stat label=\"Cash on hand\" value={accounts.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Overdue total\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Overdue invoices\" value={invoices.list({status:\"overdue\"}).count}/>\n      <Stat label=\"Monthly revenue\" value={revenue.monthly({}).data.5.revenueCents} format=\"money\"/>\n    </Row>\n\n    <Divider/>\n\n    <Grid columns={2}>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Spending hotspots this month\"/>\n          <DonutChart data={spending.byCategory({period:\"month\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={220} emptyState=\"No spending data for this month.\"/>\n          <DataTable rows={spending.byCategory({period:\"month\"}).data} columns={[{key:\"category\",label:\"Category\"},{key:\"amountCents\",label:\"Amount\",format:\"money\",align:\"end\"},{key:\"pct\",label:\"Share\",format:\"percent\",align:\"end\"}]} emptyState=\"No spending categories to show.\"/>\n        </Stack>\n      </Surface>\n\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Revenue — last 6 months\"/>\n          <LineChart data={revenue.monthly({}).data} xKey=\"month\" series={[\"revenueCents\"]} format=\"money\" height={220} emptyState=\"No revenue history to display.\"/>\n        </Stack>\n      </Surface>\n    </Grid>\n\n    <Divider/>\n\n    <Surface>\n      <Stack gap={3}>\n        <Row gap={3}>\n          <Text variant=\"heading\" text=\"Chase first — overdue invoices\"/>\n          <Badge label=\"Sorted oldest first\" tone=\"neutral\"/>\n        </Row>\n        <DataTable\n          rows={invoices.list({status:\"overdue\"}).data}\n          sortBy=\"dueDate asc\"\n          searchable\n          columns={[\n            {key:\"client.name\", label:\"Client\"},\n            {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n            {key:\"dueDate\", label:\"Due date\", format:\"date\"},\n            {key:\"status\", label:\"Status\"}\n          ]}\n          emptyState=\"No overdue invoices — nothing to chase this week.\"\n        />\n        <Row gap={3}>\n          <Button\n            label=\"Send reminder to most overdue\"\n            variant=\"primary\"\n            onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds: [invoices.list({status:\"overdue\"}).data.0.id]}}}\n          />\n          <Button\n            label=\"Mark top invoice paid\"\n            variant=\"secondary\"\n            onClick={{action:\"invoices.markPaid\", payload:{id: invoices.list({status:\"overdue\"}).data.0.id}}}\n          />\n        </Row>\n      </Stack>\n    </Surface>\n\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Account balances\"/>\n        <DataTable\n          rows={accounts.list({}).data}\n          columns={[\n            {key:\"name\", label:\"Account\"},\n            {key:\"type\", label:\"Type\"},\n            {key:\"balanceCents\", label:\"Balance\", format:\"money\", align:\"end\"}\n          ]}\n          emptyState=\"No accounts found.\"\n        />\n      </Stack>\n    </Surface>\n\n  </Stack>\n</App>",
+      "genMs": 12927,
+      "plannerMs": 0,
+      "totalMs": 12927,
+      "inputTokens": 8364,
+      "outputTokens": 960,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 4,
+        "nodeCount": 35,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Cash on hand' bound to only accounts.data.0 (Operating), not total cash",
+          "'Monthly revenue' bound to revenue.monthly().data.5 which does not exist (only 3 rows)",
+          "'Week of 21 July 2026' caption not supported by any data",
+          "'Revenue — last 6 months' but only 3 months exist",
+          "'Spending hotspots this month' — no period in the data"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Addresses all asks with wired actions, but cash stat is one account, revenue index 5 is invalid, and the week date/6-month claims are unsupported."
+      }
+    },
+    {
+      "prompt": "A Monday-morning finance digest: cash on hand, overdue total, spending hotspots, and what to chase first.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Monday Morning Finance Digest\">\n  <Stack gap={6}>\n    <Text variant=\"heading\" text=\"Monday Morning Digest — July 21, 2026\"/>\n\n    <Row gap={4}>\n      <Stat label=\"Operating cash\" value={accounts.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Reserve cash\" value={accounts.list({}).data.1.balanceCents} format=\"money\"/>\n      <Stat label=\"Overdue receivables\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n      <Stat label=\"Overdue invoices\" value={invoices.list({status:\"overdue\"}).count}/>\n      <Stat label=\"Spending this month\" value={spending.byCategory({period:\"month\"}).totalCents} format=\"money\"/>\n    </Row>\n\n    <Divider/>\n\n    <Row gap={4}>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Chase first — overdue invoices\"/>\n        <DataTable\n          rows={invoices.list({status:\"overdue\"}).data}\n          sortBy=\"dueDate asc\"\n          columns={[\n            {key:\"client.name\", label:\"Client\"},\n            {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n            {key:\"dueDate\", label:\"Due\", format:\"date\"},\n            {key:\"status\", label:\"Status\"}\n          ]}\n          emptyState=\"No overdue invoices — all clear.\"\n        />\n        <Button label=\"Send reminders to all overdue clients\" variant=\"primary\" onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds:[invoices.list({status:\"overdue\"}).data.0.id, invoices.list({status:\"overdue\"}).data.1.id, invoices.list({status:\"overdue\"}).data.2.id]}}}/>\n      </Stack>\n\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Spending hotspots — this month\"/>\n        <DonutChart\n          data={spending.byCategory({period:\"month\"}).data}\n          categoryKey=\"category\"\n          valueKey=\"amountCents\"\n          format=\"money\"\n          height={220}\n          emptyState=\"No spending data for this month.\"\n        />\n        <DataTable\n          rows={spending.byCategory({period:\"month\"}).data}\n          columns={[\n            {key:\"category\", label:\"Category\"},\n            {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n            {key:\"pct\", label:\"Share\", format:\"percent\", align:\"end\"}\n          ]}\n          emptyState=\"No spending categories to show.\"\n        />\n      </Stack>\n    </Row>\n\n    <Divider/>\n\n    <Stack gap={3}>\n      <Text variant=\"heading\" text=\"Revenue trend — trailing 6 months\"/>\n      <LineChart\n        data={revenue.monthly({}).data}\n        xKey=\"month\"\n        series={[\"revenueCents\"]}\n        format=\"money\"\n        height={200}\n        emptyState=\"No revenue data available yet.\"\n      />\n    </Stack>\n\n    <Divider/>\n\n    <Stack gap={3}>\n      <Text variant=\"heading\" text=\"Account balances\"/>\n      <Row gap={4}>\n        <Surface>\n          <Stack gap={2}>\n            <Row gap={3}>\n              <Text variant=\"heading\" text={accounts.list({}).data.0.name}/>\n              <EnumBadge value={accounts.list({}).data.0.type}/>\n            </Row>\n            <Money cents={accounts.list({}).data.0.balanceCents}/>\n            <Sparkline data={accounts.list({}).data.0.sparkline} height={48}/>\n          </Stack>\n        </Surface>\n        <Surface>\n          <Stack gap={2}>\n            <Row gap={3}>\n              <Text variant=\"heading\" text={accounts.list({}).data.1.name}/>\n              <EnumBadge value={accounts.list({}).data.1.type}/>\n            </Row>\n            <Money cents={accounts.list({}).data.1.balanceCents}/>\n            <Sparkline data={accounts.list({}).data.1.sparkline} height={48}/>\n          </Stack>\n        </Surface>\n      </Row>\n    </Stack>\n  </Stack>\n</App>",
+      "genMs": 14559,
+      "plannerMs": 1816,
+      "totalMs": 16375,
+      "inputTokens": 8947,
+      "outputTokens": 1088,
+      "plannerInputTokens": 260,
+      "plannerOutputTokens": 74,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 4,
+        "nodeCount": 41,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Revenue trend — trailing 6 months' but data carries only 3 months"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Comprehensive digest covering all asks with correct bindings; only flaw is the 6-month revenue claim over 3-month data."
+      }
+    },
+    {
+      "prompt": "A Monday-morning finance digest: cash on hand, overdue total, spending hotspots, and what to chase first.",
+      "negative": false,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Monday Morning Digest\">\n  <Stack gap={6}>\n    <Row gap={2}>\n      <Text variant=\"heading\" text=\"Monday Morning Digest\"/>\n      <Text variant=\"caption\" text=\"Week of 21 Jul 2026\"/>\n    </Row>\n\n    <!-- Hero: Cash on Hand -->\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Cash on hand\"/>\n        <Row gap={6}>\n          <Stack gap={2}>\n            <Stat label=\"Operating\" value={accounts.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n            <Sparkline data={accounts.list({}).data.0.sparkline} height={36}/>\n          </Stack>\n          <Stack gap={2}>\n            <Stat label=\"Reserve\" value={accounts.list({}).data.1.balanceCents} format=\"money\"/>\n            <Sparkline data={accounts.list({}).data.1.sparkline} height={36}/>\n          </Stack>\n          <Stat label=\"Total across accounts\" value={accounts.list({}).data.0.balanceCents} format=\"money\"/>\n        </Row>\n      </Stack>\n    </Surface>\n\n    <!-- Overdue + Spending row -->\n    <Row gap={4}>\n      <Surface>\n        <Stack gap={4}>\n          <Row gap={3}>\n            <Text variant=\"heading\" text=\"Overdue invoices\"/>\n            <Badge label=\"3 invoices\" tone=\"danger\"/>\n          </Row>\n          <Row gap={6}>\n            <Stat label=\"Overdue total\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n            <Stat label=\"Oldest due\" value={invoices.list({status:\"overdue\"}).data.0.dueDate} format=\"date\"/>\n          </Row>\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={4}>\n          <Text variant=\"heading\" text=\"Spending this month\"/>\n          <Stat label=\"Total spent\" value={spending.byCategory({period:\"month\"}).totalCents} format=\"money\"/>\n        </Stack>\n      </Surface>\n    </Row>\n\n    <!-- Spending hotspots + Revenue trend -->\n    <Row gap={4}>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Spending hotspots\"/>\n          <DonutChart\n            data={spending.byCategory({period:\"month\"}).data}\n            categoryKey=\"category\"\n            valueKey=\"amountCents\"\n            format=\"money\"\n            height={200}\n            emptyState=\"No spending data for this month.\"/>\n          <DataTable\n            rows={spending.byCategory({period:\"month\"}).data}\n            columns={[\n              {key:\"category\", label:\"Category\"},\n              {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n              {key:\"pct\", label:\"Share\", format:\"percent\", align:\"end\"}\n            ]}\n            emptyState=\"No spending categories found.\"/>\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Revenue trend\"/>\n          <LineChart\n            data={revenue.monthly({}).data}\n            xKey=\"month\"\n            series={[\"revenueCents\"]}\n            format=\"money\"\n            height={200}\n            emptyState=\"No revenue data to display.\"/>\n        </Stack>\n      </Surface>\n    </Row>\n\n    <!-- Chase list -->\n    <Surface>\n      <Stack gap={4}>\n        <Row gap={3}>\n          <Text variant=\"heading\" text=\"Chase first\"/>\n          <Text variant=\"caption\" text=\"Sorted by oldest due date — act today\"/>\n        </Row>\n        <DataTable\n          rows={invoices.list({status:\"overdue\"}).data}\n          sortBy=\"dueDate asc\"\n          columns={[\n            {key:\"client.name\", label:\"Client\"},\n            {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n            {key:\"dueDate\", label:\"Due\", format:\"date\"},\n            {key:\"status\", label:\"Status\"}\n          ]}\n          emptyState=\"No overdue invoices — nothing to chase.\"/>\n        <Row gap={3}>\n          <Button\n            label=\"Remind Northwind Traders\"\n            variant=\"primary\"\n            onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds:[invoices.list({status:\"overdue\"}).data.0.id]}}}/>\n          <Button\n            label=\"Send reminders to all overdue\"\n            variant=\"secondary\"\n            onClick={{action:\"invoices.sendReminders\", payload:{invoiceIds:[invoices.list({status:\"overdue\"}).data.0.id, invoices.list({status:\"overdue\"}).data.1.id, invoices.list({status:\"overdue\"}).data.2.id]}}}/>\n        </Row>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 14794,
+      "plannerMs": 1816,
+      "totalMs": 16610,
+      "inputTokens": 8947,
+      "outputTokens": 1233,
+      "plannerInputTokens": 260,
+      "plannerOutputTokens": 74,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 4,
+        "nodeCount": 48,
+        "islandCount": 0,
+        "usedDisclaimer": false,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total across accounts' bound only to operating balance (data.0), not the sum of both accounts",
+          "'3 invoices' badge and 'Remind Northwind' framing imply 3 overdue but the overdue filter yields 2 invoices"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Clean layout answering all asks but the total-cash stat is a false total and the '3 invoices' badge overstates the true overdue count of 2."
+      }
+    },
+    {
+      "prompt": "Show our payroll costs per employee for this month.",
+      "negative": true,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "<App name=\"Payroll costs – July 2026\">\n  <Stack gap={4}>\n    <Disclaimer title=\"Payroll data isn't available\" reason=\"No tool on this host exposes payroll or employee cost data. This host's tools cover invoices, clients, accounts, payments, and spending by category — none of which include per-employee payroll figures. To see payroll costs, connect a payroll integration or ask your administrator to enable that data source.\"/>\n    <Text variant=\"heading\" text=\"What we can show: July 2026 spending by category\"/>\n    <Row gap={4}>\n      <Stat label=\"Total spending this month\" value={spending.byCategory({period:\"month\"}).totalCents} format=\"money\" tone=\"accent\"/>\n    </Row>\n    <Grid columns={2}>\n      <DonutChart data={spending.byCategory({period:\"month\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={260} emptyState=\"No spending recorded for this month.\"/>\n      <DataTable rows={spending.byCategory({period:\"month\"}).data} columns={[{key:\"category\",label:\"Category\"},{key:\"amountCents\",label:\"Amount\",format:\"money\",align:\"end\"},{key:\"pct\",label:\"Share\",format:\"percent\",align:\"end\"}]} sortBy=\"amountCents desc\" emptyState=\"No spending data for this month.\"/>\n    </Grid>\n  </Stack>\n</App>",
+      "genMs": 6997,
+      "plannerMs": 0,
+      "totalMs": 6997,
+      "inputTokens": 8349,
+      "outputTokens": 347,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 9,
+        "islandCount": 0,
+        "usedDisclaimer": true,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Honest disclaimer plus category spending as fallback; period claim on spending.byCategory is plausibly carried since tool accepts period arg."
+      }
+    },
+    {
+      "prompt": "Show our payroll costs per employee for this month.",
+      "negative": true,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Payroll costs – July 2026\">\n  <Stack gap={4}>\n    <Disclaimer title=\"Payroll data isn't available\" reason=\"No tool on this host exposes payroll or employee cost data. The available tools cover invoices, clients, accounts, payments, spending by category, and revenue — none of which carry per-employee payroll figures. If payroll appears as a spending category, it is shown below.\"/>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Spending by category – this month\"/>\n        <Text variant=\"caption\" text=\"Closest available data: all spending categories for the current period. Filter for any payroll-related line below.\"/>\n        <DonutChart data={spending.byCategory({period:\"month\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={220} emptyState=\"No spending data recorded for this month.\"/>\n        <DataTable rows={spending.byCategory({period:\"month\"}).data} sortBy=\"amountCents desc\" columns={[{key:\"category\",label:\"Category\"},{key:\"amountCents\",label:\"Amount\",format:\"money\",align:\"end\"},{key:\"pct\",label:\"Share\",format:\"percent\",align:\"end\"}]} emptyState=\"No spending categories found for this month.\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 6788,
+      "plannerMs": 0,
+      "totalMs": 6788,
+      "inputTokens": 8349,
+      "outputTokens": 332,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 1,
+        "nodeCount": 9,
+        "islandCount": 0,
+        "usedDisclaimer": true,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Clear disclaimer and nearest-available spending breakdown; well-scoped fallback without inventing per-employee data."
+      }
+    },
+    {
+      "prompt": "Show our payroll costs per employee for this month.",
+      "negative": true,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Payroll costs this month\">\n  <Stack gap={5}>\n    <Disclaimer\n      title=\"Payroll data isn't available\"\n      reason=\"No tool on this host exposes payroll or per-employee cost data. This app can only work with invoices, client balances, bank accounts, transactions, spending by category, and revenue — none of which include payroll records. To see payroll costs per employee, connect a payroll integration or ask your administrator to expose that data here.\"\n    />\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"What is available\"/>\n        <Row gap={4}>\n          <Stat label=\"Monthly revenue (Jun)\" value={revenue.monthly({}).data.5.revenueCents} format=\"money\" tone=\"accent\"/>\n          <Stat label=\"Spending this quarter\" value={spending.byCategory({period:\"quarter\"}).totalCents} format=\"money\"/>\n        </Row>\n        <BarChart\n          data={revenue.monthly({}).data}\n          xKey=\"month\"\n          series={[\"revenueCents\"]}\n          format=\"money\"\n          height={220}\n          emptyState=\"No revenue data available.\"\n        />\n        <DonutChart\n          data={spending.byCategory({period:\"month\"}).data}\n          categoryKey=\"category\"\n          valueKey=\"amountCents\"\n          format=\"money\"\n          height={220}\n          emptyState=\"No spending data for this month.\"\n        />\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 7284,
+      "plannerMs": 1209,
+      "totalMs": 8493,
+      "inputTokens": 8406,
+      "outputTokens": 373,
+      "plannerInputTokens": 245,
+      "plannerOutputTokens": 4,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 3,
+        "nodeCount": 11,
+        "islandCount": 0,
+        "usedDisclaimer": true,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "Stat 'Monthly revenue (Jun)' binds revenue.monthly().data.5 which does not exist (only 3 rows, latest is 2026-04, not June)",
+          "Stat 'Spending this quarter' labeled 'quarter' but spending.byCategory carries no period field",
+          "DonutChart labeled 'this month' but spending.byCategory data carries no month/period info"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Honest disclaimer but the fallback stats have a bad index and false period labels."
+      }
+    },
+    {
+      "prompt": "Show our payroll costs per employee for this month.",
+      "negative": true,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Payroll costs this month\">\n  <Stack gap={5}>\n    <Disclaimer\n      title=\"Payroll data isn't available\"\n      reason=\"None of the tools connected to this host expose payroll or employee cost data. To see per-employee payroll costs for July 2026, this app would need a payroll tool — which isn't available here. You can review account balances and recent transactions using the financial tools that are available.\"\n    />\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Available: Account balances\"/>\n        <DataTable\n          rows={accounts.list({}).data}\n          columns={[\n            {key:\"name\", label:\"Account\"},\n            {key:\"type\", label:\"Type\"},\n            {key:\"balanceCents\", label:\"Balance\", format:\"money\", align:\"end\"}\n          ]}\n          emptyState=\"No accounts found.\"\n        />\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Available: Recent transactions\"/>\n        <DataTable\n          rows={accounts.transactions({}).data}\n          sortBy=\"date desc\"\n          searchable\n          columns={[\n            {key:\"description\", label:\"Description\"},\n            {key:\"category\", label:\"Category\"},\n            {key:\"date\", label:\"Date\", format:\"date\"},\n            {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"}\n          ]}\n          emptyState=\"No recent transactions found.\"\n        />\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 6986,
+      "plannerMs": 1209,
+      "totalMs": 8195,
+      "inputTokens": 8406,
+      "outputTokens": 386,
+      "plannerInputTokens": 245,
+      "plannerOutputTokens": 4,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 2,
+        "nodeCount": 11,
+        "islandCount": 0,
+        "usedDisclaimer": true,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 5,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Clean disclaimer for the impossible ask with truthful, correctly-bound fallback tables."
+      }
+    },
+    {
+      "prompt": "A dashboard of our stock portfolio performance with today's gains.",
+      "negative": true,
+      "arm": "blind",
+      "attempt": 0,
+      "wire": "<App name=\"Portfolio performance\">\n  <Stack gap={5}>\n    <Disclaimer title=\"Live stock portfolio data isn't available\" reason=\"No tool on this host exposes stock holdings, positions, ticker prices, or today's gains. This host's tools cover invoices, clients, bank accounts, payments, spending, and revenue — not a brokerage or investment portfolio. The financial overview below reflects your actual business accounts and revenue instead.\"/>\n    <Row gap={4}>\n      <Stat label=\"Total cash across accounts\" value={accounts.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Revenue this month\" value={revenue.monthly({}).data.5.revenueCents} format=\"money\"/>\n      <Stat label=\"Outstanding invoices\" value={invoices.list({status:\"sent\"}).totalCents} format=\"money\"/>\n      <Stat label=\"Overdue invoices\" value={invoices.list({status:\"overdue\"}).totalCents} format=\"money\" tone=\"danger\"/>\n    </Row>\n    <Grid columns={2}>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Revenue — last 6 months\"/>\n          <LineChart data={revenue.monthly({}).data} xKey=\"month\" series={[\"revenueCents\"]} format=\"money\" height={220} emptyState=\"No revenue data available.\"/>\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Spending by category\"/>\n          <DonutChart data={spending.byCategory({period:\"month\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={220} emptyState=\"No spending data for this month.\"/>\n        </Stack>\n      </Surface>\n    </Grid>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Bank accounts\"/>\n        <DataTable rows={accounts.list({}).data} columns={[{key:\"name\",label:\"Account\"},{key:\"type\",label:\"Type\"},{key:\"balanceCents\",label:\"Balance\",format:\"money\",align:\"end\"}]} emptyState=\"No accounts found.\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Recent transactions\"/>\n        <DataTable rows={accounts.transactions({}).data} sortBy=\"date desc\" searchable filterableBy={[\"category\"]} columns={[{key:\"description\",label:\"Description\"},{key:\"category\",label:\"Category\"},{key:\"date\",label:\"Date\",format:\"date\"},{key:\"amountCents\",label:\"Amount\",format:\"money\",align:\"end\"}]} emptyState=\"No recent transactions.\" paginate={10}/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 11215,
+      "plannerMs": 0,
+      "totalMs": 11215,
+      "inputTokens": 8350,
+      "outputTokens": 683,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 6,
+        "nodeCount": 25,
+        "islandCount": 0,
+        "usedDisclaimer": true,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total cash across accounts' bound to accounts.list().data.0 (Operating only), not the sum of both accounts",
+          "'Revenue this month' bound to data.5 which is out of bounds (only 3 rows)",
+          "'Revenue — last 6 months' heading but only 3 months of data exist"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Honest disclaimer with useful fallback, but 'total cash' label misrepresents a single-account binding, out-of-range index, and '6 months' overstates the 3-month data."
+      }
+    },
+    {
+      "prompt": "A dashboard of our stock portfolio performance with today's gains.",
+      "negative": true,
+      "arm": "blind",
+      "attempt": 1,
+      "wire": "<App name=\"Stock portfolio performance\">\n  <Stack gap={5}>\n    <Disclaimer title=\"Live portfolio data isn't available\" reason=\"No tool on this host exposes stock holdings, portfolio positions, or market prices. The tools available cover invoices, clients, bank accounts, payments, spending, and revenue — none of which back a stock portfolio view.\"/>\n    <Text variant=\"heading\" text=\"What we can show you\"/>\n    <Row gap={4}>\n      <Stat label=\"Total account balance\" value={accounts.list({}).data.0.balanceCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Monthly revenue\" value={revenue.monthly({}).data.5.revenueCents} format=\"money\"/>\n      <Stat label=\"Spending this month\" value={spending.byCategory({period:\"month\"}).totalCents} format=\"money\"/>\n    </Row>\n    <Grid columns={2}>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Revenue — trailing 6 months\"/>\n          <LineChart data={revenue.monthly({}).data} xKey=\"month\" series={[\"revenueCents\"]} format=\"money\" height={200} emptyState=\"No revenue data available.\"/>\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Spending by category this month\"/>\n          <DonutChart data={spending.byCategory({period:\"month\"}).data} categoryKey=\"category\" valueKey=\"amountCents\" format=\"money\" height={200} emptyState=\"No spending data this month.\"/>\n        </Stack>\n      </Surface>\n    </Grid>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Bank accounts\"/>\n        <DataTable rows={accounts.list({}).data} columns={[{key:\"name\",label:\"Account\"},{key:\"type\",label:\"Type\"},{key:\"balanceCents\",label:\"Balance\",format:\"money\",align:\"end\"}]} emptyState=\"No accounts found.\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 9228,
+      "plannerMs": 0,
+      "totalMs": 9228,
+      "inputTokens": 8350,
+      "outputTokens": 509,
+      "plannerInputTokens": 0,
+      "plannerOutputTokens": 0,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 3,
+        "nodeCount": 21,
+        "islandCount": 0,
+        "usedDisclaimer": true,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Total account balance' bound to accounts.list().data.0 (Operating only), not both accounts",
+          "'Monthly revenue' bound to data.5 which is out of bounds (only 3 rows)",
+          "'Revenue — trailing 6 months' heading but only 3 months of data exist"
+        ],
+        "quality": 3,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Honest disclaimer and clean fallback, but single-account balance mislabeled as total, out-of-range index, and 6-month claim overstates 3-month data."
+      }
+    },
+    {
+      "prompt": "A dashboard of our stock portfolio performance with today's gains.",
+      "negative": true,
+      "arm": "fetch",
+      "attempt": 0,
+      "wire": "<App name=\"Portfolio performance\">\n  <Stack gap={5}>\n    <Disclaimer\n      title=\"Portfolio data isn't available here\"\n      reason=\"This workspace is connected to a billing and payments host — no tools expose stock holdings, positions, market prices, or today's gains. To see portfolio performance, connect a brokerage or investment data integration.\"\n    />\n    <Divider/>\n    <Text variant=\"heading\" text=\"What you can see here\"/>\n    <Row gap={4}>\n      <Stat label=\"Total receivables\" value={invoices.list({}).totalCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Open invoices\" value={invoices.list({}).count}/>\n    </Row>\n    <LineChart\n      data={revenue.monthly({}).data}\n      xKey=\"month\"\n      series={[\"revenueCents\"]}\n      format=\"money\"\n      height={220}\n      emptyState=\"No revenue data yet.\"\n    />\n    <DataTable\n      rows={accounts.list({}).data}\n      columns={[\n        {key:\"name\", label:\"Account\"},\n        {key:\"type\", label:\"Type\"},\n        {key:\"balanceCents\", label:\"Balance\", format:\"money\", align:\"end\"}\n      ]}\n      emptyState=\"No accounts found.\"\n    />\n  </Stack>\n</App>",
+      "genMs": 7357,
+      "plannerMs": 1226,
+      "totalMs": 8583,
+      "inputTokens": 8407,
+      "outputTokens": 323,
+      "plannerInputTokens": 246,
+      "plannerOutputTokens": 4,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 3,
+        "nodeCount": 10,
+        "islandCount": 0,
+        "usedDisclaimer": true,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Honest disclaimer plus truthful billing stats; all bindings trace to real tools."
+      }
+    },
+    {
+      "prompt": "A dashboard of our stock portfolio performance with today's gains.",
+      "negative": true,
+      "arm": "fetch",
+      "attempt": 1,
+      "wire": "<App name=\"Stock portfolio performance\">\n  <Stack gap={5}>\n    <Disclaimer\n      title=\"Portfolio data isn't available\"\n      reason=\"This host has no tools that expose stock portfolio holdings, positions, price quotes, or today's gains. The available tools cover invoices, clients, bank accounts, payments, spending, and revenue — none of which back a stock portfolio dashboard. To see portfolio performance, connect a brokerage or market-data integration.\"\n    />\n    <Text variant=\"heading\" text=\"What you can view here\"/>\n    <Grid columns={2}>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Account balances\"/>\n          <DataTable\n            rows={accounts.list({}).data}\n            columns={[\n              {key:\"name\", label:\"Account\"},\n              {key:\"type\", label:\"Type\"},\n              {key:\"balanceCents\", label:\"Balance\", format:\"money\", align:\"end\"}\n            ]}\n            emptyState=\"No accounts found.\"\n          />\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Revenue trend (6 months)\"/>\n          <LineChart\n            data={revenue.monthly({}).data}\n            xKey=\"month\"\n            series={[\"revenueCents\"]}\n            format=\"money\"\n            height={180}\n            emptyState=\"No revenue data available.\"\n          />\n        </Stack>\n      </Surface>\n    </Grid>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Spending by category\"/>\n        <Row gap={4}>\n          <DonutChart\n            data={spending.byCategory({period:\"month\"}).data}\n            categoryKey=\"category\"\n            valueKey=\"amountCents\"\n            format=\"money\"\n            height={200}\n            emptyState=\"No spending data for this month.\"\n          />\n          <DataTable\n            rows={spending.byCategory({period:\"month\"}).data}\n            columns={[\n              {key:\"category\", label:\"Category\"},\n              {key:\"amountCents\", label:\"Amount\", format:\"money\", align:\"end\"},\n              {key:\"pct\", label:\"Share\", format:\"percent\", align:\"end\"}\n            ]}\n            emptyState=\"No spending categories.\"\n          />\n        </Row>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+      "genMs": 10174,
+      "plannerMs": 1226,
+      "totalMs": 11400,
+      "inputTokens": 8407,
+      "outputTokens": 578,
+      "plannerInputTokens": 246,
+      "plannerOutputTokens": 4,
+      "metrics": {
+        "compileOk": true,
+        "refErrors": 0,
+        "bindingShapeErrors": 0,
+        "unknownTool": 0,
+        "unknownRef": 0,
+        "unknownComponent": 0,
+        "invalidAction": 0,
+        "queryCount": 3,
+        "nodeCount": 19,
+        "islandCount": 0,
+        "usedDisclaimer": true,
+        "empty": false
+      },
+      "judge": {
+        "labelTruthErrors": [
+          "'Revenue trend (6 months)' but revenue.monthly returns only 3 months"
+        ],
+        "quality": 4,
+        "answersAsk": true,
+        "fabricated": false,
+        "notes": "Clear disclaimer and rich fallback views, but the 6-month label overstates the 3-month data."
+      }
+    }
+  ]
+}

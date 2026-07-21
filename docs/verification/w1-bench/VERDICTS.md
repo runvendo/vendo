@@ -65,6 +65,13 @@ Quality difference (B−A): +0.19 ± 0.61 → **not outside noise**. Negatives f
 
 **Verdict: DEFER** (spec rule: adopt only if it beats cards outside noise — it does not). The binding-error elimination is the reason this is DEFER, not REJECT. Revisit when paired with (a) the pipeline's structured-repair + end-pass (already ADOPTED in the spec) to catch the compile drift, and (b) a phase-2 prompt that forces the `Disclaimer` component on an empty fetch. If those close the compile-ok gap, the 0.00 binding-error result makes it a likely adopt for data-dense apps.
 
+**Revisited 2026-07-21 under the v4 create contract** — see
+`fetch-then-gen-v4-revisit.md`: the compile regression is gone (100% both
+arms, negatives 4/4 honest Disclaimers), the binding-error win is moot (v4
+blind is already 0.11/app), and the live axis is now label-truth, where fetch
+cuts the data-ignorance lie classes roughly in half but stays inside noise at
+n=20. Upgraded to ADOPT-CANDIDATE with revisit conditions in that file.
+
 ---
 
 ## Experiment 4 — llguidance CFG-JSX replay — **DEFER (grammar + protocol ready to run)**
