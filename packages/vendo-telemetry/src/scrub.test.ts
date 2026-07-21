@@ -100,6 +100,19 @@ describe("scrubErrorDetail", () => {
     expect(scrubErrorDetail(`${key} tail`).startsWith("[secret] tail")).toBe(true);
   });
 
+  it("redacts a secret that straddles the 200-char truncation boundary", () => {
+    // The key STARTS at char 185, so a truncate-before-redact implementation
+    // would slice mid-key, leaving "vnd_" plus ~11 hex chars that no pass
+    // matches (the vnd_ pattern needs all 40, the hex/base64 nets need 32+).
+    // Only redact-before-truncate removes every fragment.
+    const key = `vnd_${"0123456789abcdef".repeat(2)}01234567`; // vnd_ + 40 hex
+    const input = `${"x".repeat(184)} ${key} rejected`;
+    const out = scrubErrorDetail(input);
+    expect(out.length).toBeLessThanOrEqual(200);
+    expect(out).not.toContain("vnd_");
+    expect(out).toContain("[secret]");
+  });
+
   it("never throws", () => {
     expect(() => scrubErrorDetail("\0".repeat(10_000))).not.toThrow();
   });

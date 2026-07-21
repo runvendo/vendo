@@ -233,6 +233,16 @@ describe("cloud lane (VENDO_API_KEY)", () => {
     expect(detail).toBe("ENOENT [path] for [email] key [secret]");
   });
 
+  it("never lets the raw key into the serialized request body", async () => {
+    const deps = makeDeps({ env: { VENDO_API_KEY: CLOUD_KEY } });
+    const t = createTelemetry(deps);
+    // errorDetail even carries the key itself — the scrubbed hash-only
+    // markers are all that may reach the wire.
+    await t.track("init_failed", { errorDetail: `401: key ${CLOUD_KEY} rejected` });
+    const rawBody = (deps.fetchImpl.mock.calls[0][1] as { body: string }).body;
+    expect(rawBody).not.toContain(CLOUD_KEY);
+  });
+
   it("bounds cloud prop values like any other prop", async () => {
     const deps = makeDeps({ env: { VENDO_API_KEY: CLOUD_KEY } });
     const t = createTelemetry(deps);
