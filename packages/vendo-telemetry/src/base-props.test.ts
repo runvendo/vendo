@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { baseProps, normalizeRemoteUrl, projectProps, PROJECT_ID_SALT } from "./base-props.js";
+import { baseProps, normalizeRemoteUrl, projectProps, repoHost, PROJECT_ID_SALT } from "./base-props.js";
 
 describe("baseProps", () => {
   it("returns only allowlisted base keys with primitive values", () => {
@@ -127,6 +127,33 @@ describe("projectProps.projectIdHash", () => {
     writeFileSync(join(broken, "package.json"), "{ malformed json");
     expect(() => projectProps({}, broken)).not.toThrow();
     expect(projectProps({}, broken).projectIdHash).toBeUndefined();
+  });
+});
+
+describe("repoHost", () => {
+  it.each([
+    ["https://github.com/runvendo/vendo.git", "github.com"],
+    ["git@github.com:RunVendo/Vendo.git", "github.com"],
+    ["https://gitlab.com/group/repo.git", "gitlab.com"],
+    ["git@bitbucket.org:team/repo.git", "bitbucket.org"],
+  ])("classifies %s as %s", (url, expected) => {
+    expect(repoHost(gitRepoDir(url))).toBe(expected);
+  });
+
+  it("classifies any unrecognized forge as other — never the hostname itself", () => {
+    expect(repoHost(gitRepoDir("https://git.corp.example:8443/group/repo.git"))).toBe("other");
+  });
+
+  it("is undefined when there is no repo or no origin remote", () => {
+    expect(repoHost(tempDir())).toBeUndefined();
+    expect(repoHost(gitRepoDir(undefined))).toBeUndefined();
+  });
+
+  it("never throws on malformed git state", () => {
+    const broken = tempDir();
+    writeFileSync(join(broken, ".git"), "not a real gitdir pointer");
+    expect(() => repoHost(broken)).not.toThrow();
+    expect(repoHost(broken)).toBeUndefined();
   });
 });
 

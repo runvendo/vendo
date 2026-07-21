@@ -119,6 +119,29 @@ function projectIdHash(cwd: string): string | undefined {
   return undefined;
 }
 
+const KNOWN_REPO_HOSTS = ["github.com", "gitlab.com", "bitbucket.org"] as const;
+export type RepoHost = (typeof KNOWN_REPO_HOSTS)[number] | "other";
+
+/**
+ * Classified git-remote host for the cloud lane's `repoHost` prop: the origin
+ * remote's hostname when it is a well-known forge, "other" for any other
+ * remote, undefined (key omitted) when no remote exists. Host classification
+ * only — never the URL, path, or repo name. Never throws.
+ */
+export function repoHost(cwd: string = process.cwd()): RepoHost | undefined {
+  try {
+    const configPath = findGitConfigPath(cwd);
+    if (!configPath) return undefined;
+    const url = parseOriginUrl(readFileSync(configPath, "utf8"));
+    if (!url) return undefined;
+    const host = normalizeRemoteUrl(url).split("/")[0] ?? "";
+    if (host === "") return undefined;
+    return (KNOWN_REPO_HOSTS as readonly string[]).includes(host) ? (host as RepoHost) : "other";
+  } catch {
+    return undefined;
+  }
+}
+
 function packageManagerFromUserAgent(userAgent: string | undefined): PackageManager | undefined {
   if (!userAgent) return undefined;
   const name = userAgent.trim().split("/")[0]?.toLowerCase();
