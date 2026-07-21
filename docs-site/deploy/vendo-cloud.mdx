@@ -52,6 +52,11 @@ vendo login
 
 `vendo cloud device-login` is the same command, kept as an alias.
 
+If the polling process dies before you approve (common when a coding agent
+runs the command), just run `vendo login` again: it resumes the pending claim
+from `~/.vendo/pending-claim.json` and the code you were already shown still
+works.
+
 ### Email-OTP fallback
 
 `vendo cloud login <email>` sends a 6-10 digit code to your inbox, prompts for

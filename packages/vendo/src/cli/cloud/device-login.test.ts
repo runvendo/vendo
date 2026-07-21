@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -72,6 +72,7 @@ describe("runDeviceLogin", () => {
       output: messages.sink,
       fetchImpl,
       root,
+      home: await tempRoot(),
       sleep: async (ms) => {
         sleeps.push(ms);
       },
@@ -113,6 +114,7 @@ describe("runDeviceLogin", () => {
       output: output().sink,
       fetchImpl,
       root,
+      home: await tempRoot(),
       sleep: async () => {},
       env: {},
       isTty: false,
@@ -135,6 +137,7 @@ describe("runDeviceLogin", () => {
         output: messages.sink,
         fetchImpl,
         root: await tempRoot(),
+        home: await tempRoot(),
         sleep: async () => {},
         env: {},
         isTty: false,
@@ -154,6 +157,7 @@ describe("runDeviceLogin", () => {
       output: messages.sink,
       fetchImpl,
       root: await tempRoot(),
+      home: await tempRoot(),
       sleep: async (ms) => {
         clock += ms;
       },
@@ -174,6 +178,7 @@ describe("runDeviceLogin", () => {
       output: output().sink,
       fetchImpl,
       root,
+      home: await tempRoot(),
       sleep: async () => {},
       env: {},
       isTty: false,
@@ -193,6 +198,7 @@ describe("runDeviceLogin", () => {
       output: messages.sink,
       fetchImpl,
       root: await tempRoot(),
+      home: await tempRoot(),
       sleep: async () => {},
       env: {},
       isTty: false,
@@ -211,6 +217,7 @@ describe("runDeviceLogin", () => {
       output: messages.sink,
       fetchImpl,
       root: await tempRoot(),
+      home: await tempRoot(),
       sleep: async () => {},
       env: {},
       isTty: true,
@@ -233,6 +240,7 @@ describe("runDeviceLogin", () => {
       output: output().sink,
       fetchImpl,
       root: await tempRoot(),
+      home: await tempRoot(),
       sleep: async () => {},
       env: {},
       isTty: false,
@@ -251,6 +259,7 @@ describe("runDeviceLogin", () => {
       output: messages.sink,
       fetchImpl,
       root: await tempRoot(),
+      home: await tempRoot(),
       sleep: async () => {},
       env: {},
       isTty: false,
@@ -258,6 +267,134 @@ describe("runDeviceLogin", () => {
     });
     expect(exit).toBe(0);
     expect(messages.logs.join("\n")).not.toContain("Re-run `vendo init`");
+  });
+});
+
+// The pending-claim file (#479): a claim survives the process that opened it,
+// so a fresh `vendo login` can resume polling after the original process dies
+// and a late human approval still lands the key.
+describe("pending claim persistence", () => {
+  const pendingPath = (home: string) => join(home, ".vendo", "pending-claim.json");
+
+  async function writePending(home: string, overrides: Record<string, unknown> = {}): Promise<void> {
+    await mkdir(join(home, ".vendo"), { recursive: true });
+    await writeFile(pendingPath(home), JSON.stringify({
+      claim_token: `vct_${"c".repeat(64)}`,
+      user_code: "WXYZ-PQRS",
+      verification_uri_complete: "https://console.test/claim?code=WXYZ-PQRS",
+      expires_at: Date.now() + 600_000,
+      interval: 5,
+      api_url: "https://console.test",
+      cwd: home,
+      ...overrides,
+    }));
+  }
+
+  it("persists the claim (mode 0600) while polling and removes it on success", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    const seenDuringPoll: unknown[] = [];
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async () => {
+        const mode = (await stat(pendingPath(home))).mode & 0o777;
+        seenDuringPoll.push({ ...JSON.parse(await readFile(pendingPath(home), "utf8")), mode });
+      },
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // The claim was on disk for every poll, owner-only, carrying the resume state.
+    expect(seenDuringPoll[0]).toMatchObject({
+      claim_token: CEREMONY.claim_token,
+      user_code: CEREMONY.user_code,
+      verification_uri_complete: CEREMONY.verification_uri_complete,
+      interval: CEREMONY.interval,
+      api_url: "https://console.test",
+      cwd: root,
+      mode: 0o600,
+    });
+    expect(typeof (seenDuringPoll[0] as { expires_at: unknown }).expires_at).toBe("number");
+    // Redeemed — nothing left to resume.
+    await expect(stat(pendingPath(home))).rejects.toThrow();
+  });
+
+  it("resumes a pending claim: polls the same claim_token without re-opening a claim", async () => {
+    const home = await tempRoot();
+    const originalCwd = await tempRoot();
+    const otherCwd = await tempRoot();
+    await writePending(home, { cwd: originalCwd });
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root: otherCwd,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // No new claim was opened — the first request already polls the token endpoint.
+    expect(requests.some((request) => request.url.endsWith("/api/v1/agent/claim"))).toBe(false);
+    expect(new URLSearchParams(requests[0].body).get("claim_token")).toBe(`vct_${"c".repeat(64)}`);
+    // The human is told the old code is still the one to approve.
+    expect(messages.logs.join("\n")).toContain(
+      "Resuming pending approval — code WXYZ-PQRS, approve at https://console.test/claim?code=WXYZ-PQRS",
+    );
+    // The key lands where the ORIGINAL run intended, and the output says so.
+    const envLocal = await readFile(join(originalCwd, ".env.local"), "utf8");
+    expect(envLocal).toContain(`VENDO_API_KEY=${KEY}`);
+    await expect(readFile(join(otherCwd, ".env.local"), "utf8")).rejects.toThrow();
+    expect(messages.logs.join("\n")).toContain(join(originalCwd, ".env.local"));
+    await expect(stat(pendingPath(home))).rejects.toThrow();
+  });
+
+  it("discards an expired pending claim and opens a fresh one", async () => {
+    const home = await tempRoot();
+    await writePending(home, { expires_at: Date.now() - 1_000 });
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root: await tempRoot(),
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // The stale claim is ignored: a fresh ceremony opens and its token is polled.
+    expect(requests[0].url).toBe("https://console.test/api/v1/agent/claim");
+    expect(new URLSearchParams(requests[1].body).get("claim_token")).toBe(CEREMONY.claim_token);
+  });
+
+  it("removes the pending claim when the human denies the request", async () => {
+    const home = await tempRoot();
+    const { fetchImpl } = scriptedFetch([{ status: 400, body: { error: "access_denied" } }]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root: await tempRoot(),
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(1);
+    await expect(stat(pendingPath(home))).rejects.toThrow();
   });
 });
 
@@ -273,6 +410,7 @@ describe("login telemetry (runLoginCommand)", () => {
       output: output().sink,
       fetchImpl: approved.fetchImpl,
       root,
+      home: await tempRoot(),
       sleep: async () => {},
       env: {},
       isTty: false,
@@ -290,6 +428,7 @@ describe("login telemetry (runLoginCommand)", () => {
       output: output().sink,
       fetchImpl: deniedConsole.fetchImpl,
       root,
+      home: await tempRoot(),
       sleep: async () => {},
       env: {},
       isTty: false,

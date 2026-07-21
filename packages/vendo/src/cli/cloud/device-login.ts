@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
+import { join } from "node:path";
 import { option, positionals } from "./args.js";
 import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
+import { deletePendingClaim, readPendingClaim, writePendingClaim } from "./pending-claim.js";
 import { upsertEnvLocal } from "../cloud-init.js";
 import { browserOpenCommand } from "../playground.js";
 import { CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
@@ -40,6 +42,9 @@ export interface DeviceLoginOptions {
   /** init runs the ceremony inline and picks the key up in the same run —
       it suppresses the standalone "re-run `vendo init`" tail. */
   rerunHint?: boolean;
+  /** Where ~/.vendo lives (default: the home directory) — the pending-claim
+      file that lets a fresh run resume a still-open ceremony (#479). */
+  home?: string;
 }
 
 function defaultOpenBrowser(url: string): void {
@@ -130,41 +135,81 @@ export async function runDeviceLogin(
     env: options.env ?? process.env,
   });
 
+  const pendingHome = options.home === undefined ? {} : { home: options.home };
+
   try {
-    // Optional email hint — shown to the human on the approval page.
-    const email = option(args, "--email") ?? positionals(args, ["--api-url", "--email"])[0];
-    const claim = await postJson(
-      fetchImpl,
-      `${base}${CLAIM_PATH}`,
-      "application/json",
-      JSON.stringify(email === undefined ? {} : { login_hint: email }),
-    );
-    if (claim.status !== 200) {
-      const envelope = claim.body as { error?: { message?: unknown } } | null;
-      throw new Error(
-        typeof envelope?.error?.message === "string"
-          ? envelope.error.message
-          : `Vendo Cloud could not open a claim (${claim.status})`,
+    // A still-open claim from a dead process (#479): resume polling it so the
+    // human's late approval — against the code they were already shown —
+    // still lands the key. An expired or unreadable file is discarded (a
+    // fresh ceremony overwrites it below).
+    const pending = await readPendingClaim(pendingHome);
+    const resume = pending !== null && pending.api_url === base && pending.expires_at > now()
+      ? pending
+      : null;
+
+    let claimToken: string;
+    let deadline: number;
+    let intervalMs: number;
+    let root: string;
+    if (resume !== null) {
+      output.log(`Resuming pending approval — code ${resume.user_code}, approve at ${resume.verification_uri_complete}`);
+      output.log(`Waiting for approval (the code expires in ${Math.max(1, Math.round((resume.expires_at - now()) / 60_000))} minutes)…`);
+      claimToken = resume.claim_token;
+      deadline = resume.expires_at;
+      intervalMs = Math.max(resume.interval, 1) * 1000;
+      // The key lands where the ORIGINAL run intended, not where the resume runs.
+      root = resume.cwd;
+    } else {
+      // Optional email hint — shown to the human on the approval page.
+      const email = option(args, "--email") ?? positionals(args, ["--api-url", "--email"])[0];
+      const claim = await postJson(
+        fetchImpl,
+        `${base}${CLAIM_PATH}`,
+        "application/json",
+        JSON.stringify(email === undefined ? {} : { login_hint: email }),
       );
-    }
-    const ceremony = ceremonyFrom(claim.body);
+      if (claim.status !== 200) {
+        const envelope = claim.body as { error?: { message?: unknown } } | null;
+        throw new Error(
+          typeof envelope?.error?.message === "string"
+            ? envelope.error.message
+            : `Vendo Cloud could not open a claim (${claim.status})`,
+        );
+      }
+      const ceremony = ceremonyFrom(claim.body);
 
-    const approvalUrl = ceremony.verification_uri_complete ?? ceremony.verification_uri;
-    output.log("Vendo Cloud device login — ask your human to approve this request:");
-    output.log(`  1. Open ${approvalUrl}`);
-    output.log(`  2. Confirm the code: ${ceremony.user_code}`);
-    const tty = options.isTty ?? (process.stdout.isTTY === true);
-    if (tty) {
-      output.log("Opening your browser… (approve there, then come back here)");
-      (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
-    }
-    output.log(`Waiting for approval (the code expires in ${Math.round(ceremony.expires_in / 60)} minutes)…`);
+      const approvalUrl = ceremony.verification_uri_complete ?? ceremony.verification_uri;
+      output.log("Vendo Cloud device login — ask your human to approve this request:");
+      output.log(`  1. Open ${approvalUrl}`);
+      output.log(`  2. Confirm the code: ${ceremony.user_code}`);
+      const tty = options.isTty ?? (process.stdout.isTTY === true);
+      if (tty) {
+        output.log("Opening your browser… (approve there, then come back here)");
+        (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+      }
+      output.log(`Waiting for approval (the code expires in ${Math.round(ceremony.expires_in / 60)} minutes)…`);
 
-    const deadline = now() + ceremony.expires_in * 1000;
-    let intervalMs = Math.max(ceremony.interval, 1) * 1000;
+      claimToken = ceremony.claim_token;
+      deadline = now() + ceremony.expires_in * 1000;
+      intervalMs = Math.max(ceremony.interval, 1) * 1000;
+      root = options.root ?? process.cwd();
+      // Persist the ceremony so a fresh run can resume it if this process
+      // dies mid-poll. Deleted on redemption/denial/expiry; deliberately left
+      // in place on transient errors and interrupts.
+      await writePendingClaim({
+        claim_token: claimToken,
+        user_code: ceremony.user_code,
+        verification_uri_complete: approvalUrl,
+        expires_at: deadline,
+        interval: ceremony.interval,
+        api_url: base,
+        cwd: root,
+      }, pendingHome);
+    }
+
     const pollBody = new URLSearchParams({
       grant_type: CLAIM_GRANT_TYPE,
-      claim_token: ceremony.claim_token,
+      claim_token: claimToken,
     }).toString();
 
     while (now() < deadline) {
@@ -181,10 +226,12 @@ export async function runDeviceLogin(
         if (typeof key !== "string" || !isVendoKey(key)) {
           throw new Error("Vendo Cloud returned an invalid credential");
         }
-        const root = options.root ?? process.cwd();
         await upsertEnvLocal(root, "VENDO_API_KEY", key);
-        // Never print the key itself — .env.local is the hand-off, last4 the receipt.
-        output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to .env.local.`);
+        await deletePendingClaim(pendingHome);
+        // Never print the key itself — .env.local is the hand-off, last4 the
+        // receipt. A resumed run names the full path: it may differ from cwd.
+        output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to ${
+          resume !== null ? join(root, ".env.local") : ".env.local"}.`);
         if (options.rerunHint !== false) {
           output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
         }
@@ -199,9 +246,11 @@ export async function runDeviceLogin(
         continue;
       }
       if (error === "expired_token") {
+        await deletePendingClaim(pendingHome);
         throw new Error("The code expired before it was approved; run `vendo login` again.");
       }
       if (error === "access_denied") {
+        await deletePendingClaim(pendingHome);
         throw new Error("Your human denied the request — no key was minted.");
       }
       const description = (poll.body as { error_description?: unknown } | null)?.error_description;
@@ -211,6 +260,7 @@ export async function runDeviceLogin(
           : `Vendo Cloud token polling failed (${typeof error === "string" ? error : poll.status})`,
       );
     }
+    await deletePendingClaim(pendingHome);
     throw new Error("The code expired before it was approved; run `vendo login` again.");
   } catch (error) {
     output.error(errorMessage(error));
