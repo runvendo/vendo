@@ -1,0 +1,191 @@
+- complementary:
+  - link "Cadence dashboard":
+    - /url: /
+    - text: cadence .
+  - navigation "Main":
+    - list:
+      - listitem:
+        - link "Dashboard":
+          - /url: /
+      - listitem:
+        - link "Vendo":
+          - /url: /assistant
+    - paragraph: Workspace
+    - list:
+      - listitem:
+        - link "Clients":
+          - /url: /clients
+      - listitem:
+        - link "Work":
+          - /url: /work
+      - listitem:
+        - link "Calendar":
+          - /url: /calendar
+      - listitem:
+        - link "Inbox":
+          - /url: /inbox
+    - paragraph: Firm
+    - list:
+      - listitem:
+        - link "Team":
+          - /url: /team
+      - listitem:
+        - link "Integrations":
+          - /url: /integrations
+      - listitem:
+        - link "Settings":
+          - /url: /settings
+  - paragraph: Hartwell & Associates
+  - paragraph: Tax season 2026
+- banner:
+  - search:
+    - searchbox "Search"
+    - text: ⌘K
+  - text: Hartwell & Associates
+  - button "Notifications"
+  - button "M maya@cadence.test"
+- main:
+  - main "Vendo workspace":
+    - tablist "Workspace sections":
+      - tab "Chat"
+      - tab "Apps" [selected]
+      - tab "Automations"
+      - tab "Accounts"
+      - tab "Activity"
+    - tabpanel "Apps":
+      - form "Create app":
+        - text: Describe a new app
+        - textbox "Describe a new app"
+        - button "Create" [disabled]
+      - article:
+        - strong: Document bottlenecks
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Morning triage
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Next week's work plan
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Blue Bottle Coffee — Client Detail
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client filing progress — Q3 2026
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Staff performance review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Deadline risk
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: End-of-week status report
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document completion by staff
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Update filing deadline
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Season progress
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client contacts
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Tax document collection tracker
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Payroll summary
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase list — this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client onboarding checklist
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Filing deadlines — next 90 days
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Workload by staff member
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase missing documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document collection progress
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients — staff & deadlines
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client health — document status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients missing documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - region "Open app":
+        - article:
+          - paragraph: Clients missing documents
+          - text: 8 clients missing documents
+          - paragraph: of 12 active clients need chasing
+        - article "Documents outstanding":
+          - text: Documents outstanding
+          - strong: "21"
+        - article "Documents received (clients with missing docs)":
+          - text: Documents received (clients with missing docs)
+          - strong: "38"
+        - article "Nearest deadline":
+          - text: Nearest deadline
+          - strong: Jul 23, 2026
+        - iframe
+- button "AI agent"
+- alert
