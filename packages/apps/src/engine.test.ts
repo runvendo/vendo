@@ -188,6 +188,74 @@ describe("generation engine through createApps", () => {
     expect(prompts.at(-1)).toContain(`CURRENT DATE: ${today}`);
   });
 
+  describe("data-sighted verification pass (pipeline.endPass at the runtime seam)", () => {
+    const appWire = '<App name="Client board"><Query id="metric" tool="host_metric"/><Stack><Stat label="Total clients" value={metric.headline}/></Stack></App>';
+    const metricTools: ToolRegistry = {
+      async descriptors() {
+        return [{ name: "host_metric", description: "Client metrics", risk: "read", inputSchema: { type: "object", properties: {} } }];
+      },
+      async execute(call) {
+        if (call.tool === "host_metric") return { status: "ok", output: { headline: "cl_rivera", clientCount: 12 } };
+        return { status: "error", error: { code: "not-found", message: "missing" } };
+      },
+    };
+
+    it("sees the RESOLVED data, relabels a lying headline, and persists the corrected app", async () => {
+      let verifyPrompt = "";
+      let calls = 0;
+      const model = scriptedLanguageModel((call) => {
+        calls += 1;
+        const text = promptText(call);
+        if (text.includes("ACTUAL data")) {
+          verifyPrompt = text;
+          return '<Edit><Set id="stat-1" label="Latest client id"/></Edit>';
+        }
+        return appWire;
+      });
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools: metricTools,
+        catalog: [],
+        model,
+        pipeline: { endPass: true },
+      });
+
+      const app = await runtime.create({ prompt: "how many clients do we have" }, ctx);
+
+      // The verifier saw the real resolved value next to the wire.
+      expect(verifyPrompt).toContain("cl_rivera");
+      expect(verifyPrompt).toContain('label="Total clients"');
+      // The lie was corrected before persistence; the stored app matches.
+      const stat = (app.tree as { nodes: Array<{ component: string; props?: Record<string, unknown> }> }).nodes
+        .find(({ component }) => component === "Stat");
+      expect(stat?.props?.label).toBe("Latest client id");
+      expect(await runtime.get(app.id, ctx)).toEqual(app);
+      // Exactly two model calls: create + the sighted pass (the blind engine
+      // end pass must NOT also run — the runtime owns the flag now).
+      expect(calls).toBe(2);
+    });
+
+    it("ships the original app untouched when the verifier finds nothing or fails", async () => {
+      const model = scriptedLanguageModel((call) =>
+        promptText(call).includes("ACTUAL data") ? "<Edit></Edit>" : appWire);
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools: metricTools,
+        catalog: [],
+        model,
+        pipeline: { endPass: true },
+      });
+
+      const app = await runtime.create({ prompt: "how many clients do we have" }, ctx);
+
+      const stat = (app.tree as { nodes: Array<{ component: string; props?: Record<string, unknown> }> }).nodes
+        .find(({ component }) => component === "Stat");
+      expect(stat?.props?.label).toBe("Total clients");
+    });
+  });
+
   describe("v4 create contract (pipeline.promptRewrite)", () => {
     it("selects the rewritten contract only under the flag", async () => {
       const prompts: string[] = [];
