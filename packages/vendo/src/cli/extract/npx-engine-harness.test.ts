@@ -1,5 +1,5 @@
 import type { ExecFileException } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createLineSplitter,
   ENGINE_PACKAGE_NAME,
@@ -8,7 +8,28 @@ import {
   resolveNpmExecResult,
 } from "./npx-engine-harness.js";
 
+// The harness now judges credentials against {...process.env, ...input.env}
+// (the env the child actually spawns with), so ambient credentials on the
+// machine running the suite must be cleared for these controlled-env
+// expectations to hold anywhere.
+const AMBIENT_CREDENTIAL_VARS = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_CUSTOM_HEADERS",
+  "VENDO_API_KEY",
+  "VENDO_CLOUD_URL",
+] as const;
+
 describe("npxEngineHarness", () => {
+  beforeEach(() => {
+    for (const name of AMBIENT_CREDENTIAL_VARS) vi.stubEnv(name, undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   describe("availability", () => {
     it("is unavailable with no credential at all", async () => {
       const harness = npxEngineHarness();
@@ -244,6 +265,31 @@ describe("npxEngineHarness", () => {
       // the child completely untouched — composeGatewayFuel must not clobber
       // a dev's already-configured BYO endpoint just because VENDO_API_KEY is
       // also present, matching the label availability() now gives this case.
+      // AI-review fix: the guard must see the child's REAL env. The child
+      // spawns with {...process.env, ...input.env, ...overlay}, so an
+      // ambient (process.env) BYO credential with a partial input.env
+      // carrying only VENDO_API_KEY previously slipped past the
+      // input.env-only guard and got its endpoint clobbered by the overlay.
+      it("does not overlay when ANTHROPIC_AUTH_TOKEN is ambient in process.env and input.env carries only VENDO_API_KEY", async () => {
+        vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "ambient-corp-token");
+        let capturedEnv: NodeJS.ProcessEnv | undefined;
+        const harness = npxEngineHarness({
+          exec: async (_args, options) => { capturedEnv = options.env; return { stdout: "ok", stderr: "", code: 0 }; },
+        });
+        await harness.run({ root: "/x", env: { VENDO_API_KEY: "vnd_x" }, instructions: "go" });
+        // The ambient token survives untouched — the overlay must not clobber it.
+        expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBe("ambient-corp-token");
+        expect(capturedEnv?.ANTHROPIC_BASE_URL).toBeUndefined();
+        expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+      });
+
+      it("labels the rung with the ambient ANTHROPIC_AUTH_TOKEN, not the Vendo Cloud key (labels agree with run())", async () => {
+        vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "ambient-corp-token");
+        const harness = npxEngineHarness();
+        expect(await harness.availability({ root: "/x", env: { VENDO_API_KEY: "vnd_x" } }))
+          .toBe("your ANTHROPIC_AUTH_TOKEN (via the Vendo engine, ~250MB one-time download)");
+      });
+
       it("passes ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL through untouched even with VENDO_API_KEY set (no CUSTOM_HEADERS)", async () => {
         let capturedEnv: NodeJS.ProcessEnv | undefined;
         const harness = npxEngineHarness({
@@ -316,6 +362,23 @@ describe("npxEngineHarness", () => {
       expect(result.stderr).toContain("SIGTERM");
       expect(result.stderr).not.toMatch(/npm could not be launched/);
       expect(result.stderr).not.toMatch(/is npm installed/);
+    });
+
+    // AI-review fix: a maxBuffer kill sets BOTH killed: true and the
+    // ERR_CHILD_PROCESS_STDIO_MAXBUFFER code — checking killed first
+    // mislabeled a >10MB narration stream as the 15-minute timeout.
+    it("labels a maxBuffer kill honestly (10MB buffer message wins over the timeout branch even with killed: true)", () => {
+      const error = Object.assign(new Error("stderr maxBuffer length exceeded"), {
+        killed: true,
+        signal: "SIGTERM",
+        code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+      }) as unknown as ExecFileException;
+      const result = resolveNpmExecResult(error, "", "");
+      expect(result.code).toBe(1);
+      expect(result.stderr).toMatch(/10MB buffer/);
+      expect(result.stderr).toMatch(/narration stream/);
+      expect(result.stderr).not.toMatch(/timeout/);
+      expect(result.stderr).not.toMatch(/npm could not be launched/);
     });
 
     it("checks killed before the spawn-failure branch even if a stray string code is also present", () => {

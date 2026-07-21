@@ -60,12 +60,14 @@ type Exec = (
 ) => Promise<ExecResult>;
 
 /** Pure mapping from a completed `execFile` callback into an ExecResult —
- *  pulled out of the real spawn so the three ways `error` shows up (a normal
- *  nonzero exit, a real spawn-layer failure, or the RUN_TIMEOUT_MS kill) each
- *  get direct unit coverage without actually spawning anything (mirrors
- *  resolveCodexExecResult in codex-cli-harness.ts). The three are easy to
- *  conflate — all leave `error.code` non-numeric — but they need different
- *  messages: a killed 15-minute extraction run is not npm being uninstalled. */
+ *  pulled out of the real spawn so the four ways `error` shows up (a normal
+ *  nonzero exit, a real spawn-layer failure, the RUN_TIMEOUT_MS kill, or the
+ *  MAX_BUFFER_BYTES kill) each get direct unit coverage without actually
+ *  spawning anything (mirrors resolveCodexExecResult in
+ *  codex-cli-harness.ts). The four are easy to conflate — all leave
+ *  `error.code` non-numeric — but they need different messages: a killed
+ *  15-minute extraction run is not npm being uninstalled, and a >10MB
+ *  narration stream is not a timeout. */
 export function resolveNpmExecResult(
   error: ExecFileException | null,
   stdout: string,
@@ -73,6 +75,19 @@ export function resolveNpmExecResult(
 ): ExecResult {
   if (error === null) return { stdout, stderr, code: 0 };
   if (typeof error.code === "number") return { stdout, stderr, code: error.code };
+  if (error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+    // execFile's `maxBuffer` kill also sets error.killed, so this must be
+    // checked BEFORE the killed branch below — a >10MB narration stream is
+    // not the 15-minute timeout, and labeling it as one would send the dev
+    // chasing a slowness that isn't there.
+    const megabytes = Math.round(MAX_BUFFER_BYTES / (1024 * 1024));
+    return {
+      stdout: "",
+      stderr: `npm exec output exceeded the ${megabytes}MB buffer — the engine's narration stream was `
+        + "larger than expected, so the child was killed before finishing",
+      code: 1,
+    };
+  }
   if (error.killed === true) {
     // execFile's `timeout` option SIGTERMs a still-running child — a
     // legitimate long extraction run, not a broken npm install. This must be
@@ -184,30 +199,41 @@ export function npxEngineHarness(options: NpxEngineHarnessOptions = {}): Extract
   return {
     id: "npx-engine",
     async availability({ env }) {
-      if (isSet(env["ANTHROPIC_API_KEY"])) return `your ANTHROPIC_API_KEY${DOWNLOAD_SUFFIX}`;
+      // The child spawns with {...process.env, ...input.env} (see run()), so
+      // the label must be judged against that SAME merged view — an ambient
+      // (process.env) own credential is the one the child would actually
+      // use, even when the caller's partial env carries only VENDO_API_KEY.
+      const merged = { ...process.env, ...env };
+      if (isSet(merged["ANTHROPIC_API_KEY"])) return `your ANTHROPIC_API_KEY${DOWNLOAD_SUFFIX}`;
       // The corporate-gateway/custom-endpoint env vars are an own credential
       // too (see gateway-fuel.ts's INVARIANT) — composeGatewayFuel refuses to
       // overlay onto them regardless of what run() passes, so labeling this
       // rung "your Vendo Cloud key" here would be a lie about what actually
       // runs. Per-var labels (same priority order as claude-cli-harness.ts)
       // so the consent line names the credential that's really in play.
-      if (hasOwnAnthropicEnvOverride(env)) {
-        if (isSet(env["ANTHROPIC_AUTH_TOKEN"])) return `your ANTHROPIC_AUTH_TOKEN${DOWNLOAD_SUFFIX}`;
-        if (isSet(env["CLAUDE_CODE_OAUTH_TOKEN"])) return `your CLAUDE_CODE_OAUTH_TOKEN${DOWNLOAD_SUFFIX}`;
+      if (hasOwnAnthropicEnvOverride(merged)) {
+        if (isSet(merged["ANTHROPIC_AUTH_TOKEN"])) return `your ANTHROPIC_AUTH_TOKEN${DOWNLOAD_SUFFIX}`;
+        if (isSet(merged["CLAUDE_CODE_OAUTH_TOKEN"])) return `your CLAUDE_CODE_OAUTH_TOKEN${DOWNLOAD_SUFFIX}`;
         return `your ANTHROPIC_BASE_URL${DOWNLOAD_SUFFIX}`;
       }
-      if (isSet(env["VENDO_API_KEY"])) {
+      if (isSet(merged["VENDO_API_KEY"])) {
         return `your Vendo Cloud key (managed inference, ${DOWNLOAD_NOTE})`;
       }
       return null;
     },
     async run(input: ExtractionRunInput): Promise<string> {
-      // composeGatewayFuel already refuses to overlay onto any of these env
-      // vars on its own (defense in depth) — computed explicitly here too so
-      // this rung's own-credential verdict matches availability()'s exactly,
-      // the same belt-and-suspenders style as claude-cli-harness.ts.
-      const hasOwnKey = isSet(input.env["ANTHROPIC_API_KEY"]) || hasOwnAnthropicEnvOverride(input.env);
-      const overlay = composeGatewayFuel({ env: input.env, ownCredentialAvailable: hasOwnKey });
+      // Merge FIRST, then guard — the child is spawned with the caller's env
+      // over process.env, so the own-credential verdict and composeGatewayFuel
+      // must evaluate that same merged env. Guarding input.env alone would
+      // let the overlay clobber an ambient (process.env) BYO endpoint the
+      // child would otherwise have used. composeGatewayFuel already refuses
+      // to overlay onto these env vars on its own (defense in depth) —
+      // computed explicitly here too so this rung's own-credential verdict
+      // matches availability()'s exactly, the same belt-and-suspenders style
+      // as claude-cli-harness.ts.
+      const merged = { ...process.env, ...input.env };
+      const hasOwnKey = isSet(merged["ANTHROPIC_API_KEY"]) || hasOwnAnthropicEnvOverride(merged);
+      const overlay = composeGatewayFuel({ env: merged, ownCredentialAvailable: hasOwnKey });
 
       // Visible-never-silent: the ~250MB fetch is a real surprise on a
       // machine with nothing installed, so it's disclosed up front, before
@@ -224,7 +250,7 @@ export function npxEngineHarness(options: NpxEngineHarnessOptions = {}): Extract
       // applicable) wins last — mirrors claude-cli-harness.ts.
       const result = await exec(args, {
         cwd: input.root,
-        env: { ...process.env, ...input.env, ...overlay },
+        env: { ...merged, ...overlay },
         input: job,
         onStderrLine: input.onProgress,
       });

@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { adapt } from "./sdk-seam.js";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import { adapt, confineToolToRoot } from "./sdk-seam.js";
 
 async function* streamOf(...messages: Record<string, unknown>[]): AsyncGenerator<Record<string, unknown>> {
   for (const m of messages) yield m;
@@ -75,5 +78,80 @@ describe("adapt (raw SDK message stream -> EngineMessage)", () => {
 
   it("yields nothing for message types it doesn't recognize", async () => {
     await expect(collect(adapt(streamOf({ type: "system", subtype: "init" })))).resolves.toEqual([]);
+  });
+});
+
+describe("confineToolToRoot (read confinement for the canUseTool callback)", () => {
+  // Real directories so the symlink case is a real symlink, not a mock.
+  // realpathSync because tmpdir() itself sits behind a symlink on macOS
+  // (/var -> /private/var) — same normalization createSdkQuery applies.
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "vendo-engine-outside-")));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "vendo-engine-root-")));
+  writeFileSync(join(root, "in-root.txt"), "in-root", "utf8");
+  writeFileSync(join(outside, "secret.txt"), "credentials", "utf8");
+  mkdirSync(join(root, "sub"));
+  symlinkSync(outside, join(root, "escape-link"));
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  const allow = (input: Record<string, unknown>) => ({ behavior: "allow", updatedInput: input });
+
+  it("allows a Read of a relative path inside the root", () => {
+    const input = { file_path: "in-root.txt" };
+    expect(confineToolToRoot("Read", input, root)).toEqual(allow(input));
+  });
+
+  it("allows a Read of an absolute path inside the root", () => {
+    const input = { file_path: join(root, "sub", "not-yet-created.txt") };
+    expect(confineToolToRoot("Read", input, root)).toEqual(allow(input));
+  });
+
+  it("denies a Read of an absolute path outside the root", () => {
+    const verdict = confineToolToRoot("Read", { file_path: join(outside, "secret.txt") }, root);
+    expect(verdict.behavior).toBe("deny");
+    expect(verdict).toMatchObject({ message: expect.stringContaining("outside the engine job root") });
+  });
+
+  it("denies a ../ escape even when the traversal is buried mid-path", () => {
+    const verdict = confineToolToRoot("Read", { file_path: `sub/../../${"secret.txt"}` }, root);
+    expect(verdict.behavior).toBe("deny");
+  });
+
+  it("denies a Read through a symlink inside the root that points outside it", () => {
+    const verdict = confineToolToRoot("Read", { file_path: "escape-link/secret.txt" }, root);
+    expect(verdict.behavior).toBe("deny");
+  });
+
+  it("denies a prefix-sibling of the root (root + suffix without a separator)", () => {
+    const verdict = confineToolToRoot("Read", { file_path: `${root}-sibling/file.txt` }, root);
+    expect(verdict.behavior).toBe("deny");
+  });
+
+  it("confines Grep's path search root, and allows Grep with no path (defaults to cwd)", () => {
+    expect(confineToolToRoot("Grep", { pattern: "secret", path: outside }, root).behavior).toBe("deny");
+    const input = { pattern: "/etc/passwd" }; // regex, not a path — must not be confined
+    expect(confineToolToRoot("Grep", input, root)).toEqual(allow(input));
+  });
+
+  it("confines Glob's path field and an absolute pattern's static base", () => {
+    expect(confineToolToRoot("Glob", { pattern: "**/*.ts", path: outside }, root).behavior).toBe("deny");
+    expect(confineToolToRoot("Glob", { pattern: `${outside}/**/*.txt` }, root).behavior).toBe("deny");
+    expect(confineToolToRoot("Glob", { pattern: "../**/*.txt" }, root).behavior).toBe("deny");
+    expect(confineToolToRoot("Glob", { pattern: "/*" }, root).behavior).toBe("deny");
+    const relative = { pattern: "**/*.ts" };
+    expect(confineToolToRoot("Glob", relative, root)).toEqual(allow(relative));
+  });
+
+  it("allows the root itself as a target", () => {
+    const input = { path: root, pattern: "**/*" };
+    expect(confineToolToRoot("Glob", input, root)).toEqual(allow(input));
+  });
+
+  it("allows tools without path-shaped inputs (the tools option already bounds the set)", () => {
+    const input = { anything: "goes" };
+    expect(confineToolToRoot("SomeOtherTool", input, root)).toEqual(allow(input));
   });
 });

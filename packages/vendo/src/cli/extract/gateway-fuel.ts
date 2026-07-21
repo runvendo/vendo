@@ -60,6 +60,13 @@ export interface GatewayFuelOverlay {
 }
 
 export interface GatewayFuelOptions {
+  /** The CHILD'S real env — i.e. the same merged {...process.env,
+   *  ...input.env} the harness is about to spawn with, never the caller's
+   *  partial input env alone. The INVARIANT above is only worth anything if
+   *  it is checked against the env the subprocess will actually read: an
+   *  ambient (process.env) ANTHROPIC_AUTH_TOKEN/ANTHROPIC_BASE_URL is a
+   *  live BYO endpoint that an overlay composed from input.env alone would
+   *  silently clobber. */
   env: Record<string, string | undefined>;
   /** True when the rung already has a working credential of its own (its
    *  own ANTHROPIC_API_KEY, a satisfied Claude Code login, ...). Each

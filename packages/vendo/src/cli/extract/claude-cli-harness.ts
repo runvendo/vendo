@@ -113,12 +113,19 @@ export function claudeCliHarness(options: ClaudeCliHarnessOptions = {}): Extract
     id: "claude-cli",
     async availability({ env }) {
       if (!(await hasBinary())) return null;
-      if (isSet(env["ANTHROPIC_API_KEY"])) return "your ANTHROPIC_API_KEY";
-      if (isSet(env["ANTHROPIC_AUTH_TOKEN"])) return "your ANTHROPIC_AUTH_TOKEN";
-      if (isSet(env["CLAUDE_CODE_OAUTH_TOKEN"])) return "your CLAUDE_CODE_OAUTH_TOKEN";
-      if (isSet(env["ANTHROPIC_BASE_URL"])) return "your ANTHROPIC_BASE_URL";
+      // The child spawns with {...process.env, ...input.env} (see run()), so
+      // credential checks and labels must see that SAME merged view: a
+      // programmatic caller passing a partial env (say VENDO_API_KEY only)
+      // while ambient process.env carries an ANTHROPIC_AUTH_TOKEN really
+      // runs on that ambient token — labeling (or fueling) it as the Vendo
+      // Cloud key would lie about, or worse clobber, the dev's own endpoint.
+      const merged = { ...process.env, ...env };
+      if (isSet(merged["ANTHROPIC_API_KEY"])) return "your ANTHROPIC_API_KEY";
+      if (isSet(merged["ANTHROPIC_AUTH_TOKEN"])) return "your ANTHROPIC_AUTH_TOKEN";
+      if (isSet(merged["CLAUDE_CODE_OAUTH_TOKEN"])) return "your CLAUDE_CODE_OAUTH_TOKEN";
+      if (isSet(merged["ANTHROPIC_BASE_URL"])) return "your ANTHROPIC_BASE_URL";
       if (await probe()) return "your Claude Code login";
-      if (isSet(env["VENDO_API_KEY"])) return "your Vendo Cloud key (managed inference)";
+      if (isSet(merged["VENDO_API_KEY"])) return "your Vendo Cloud key (managed inference)";
       return null;
     },
     async run(input: ExtractionRunInput): Promise<string> {
@@ -130,11 +137,14 @@ export function claudeCliHarness(options: ClaudeCliHarnessOptions = {}): Extract
         "--setting-sources", "",
         ...(model === undefined ? [] : ["--model", model]),
       ];
-      const overlay = await resolveGatewayFuelOverlay(input.env, probe);
-      // Forward the caller's env so a key present only in the passed map
-      // (not process.env) still authenticates the subprocess; gateway fuel
-      // (if applicable) wins last.
-      const result = await exec(args, { cwd: input.root, env: { ...process.env, ...input.env, ...overlay } });
+      // Merge FIRST, then guard: the child is spawned with the caller's env
+      // over process.env, so the own-credential check and gateway fuel must
+      // evaluate that same merged env — guarding input.env alone would let
+      // the overlay clobber an ambient (process.env) BYO endpoint the child
+      // would otherwise have used. Gateway fuel (if applicable) wins last.
+      const merged = { ...process.env, ...input.env };
+      const overlay = await resolveGatewayFuelOverlay(merged, probe);
+      const result = await exec(args, { cwd: input.root, env: { ...merged, ...overlay } });
       if (result.code !== 0) {
         throw new Error(`claude exited with code ${result.code}: ${result.stderr.trim() || "(no stderr)"}`);
       }

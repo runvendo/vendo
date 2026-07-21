@@ -1,3 +1,5 @@
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { EngineDeps, EngineJob, EngineMessage } from "./types.js";
 
 /**
@@ -19,6 +21,86 @@ const DISALLOWED_TOOLS = [
 const MAX_TURNS = 60;
 
 const SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk";
+
+/** The subset of a PermissionResult (the SDK's canUseTool return union) this
+ *  file produces. Local shape for the same reason as SdkModule below: the
+ *  real type lives behind the dynamic import. */
+type ConfinementVerdict =
+  | { behavior: "allow"; updatedInput: Record<string, unknown> }
+  | { behavior: "deny"; message: string };
+
+/** The path-shaped inputs of the three allowed read-only tools. A Glob
+ *  `pattern` can itself be an absolute path (or climb with `..`), so its
+ *  static, glob-free base directory is confined too — not just the `path`
+ *  search-root field. Grep's `pattern` is a regex, never a path. */
+function candidatePaths(toolName: string, input: Record<string, unknown>): string[] {
+  const paths: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value === "string" && value.length > 0) paths.push(value);
+  };
+  if (toolName === "Read") push(input["file_path"]);
+  if (toolName === "Grep") push(input["path"]);
+  if (toolName === "Glob") {
+    push(input["path"]);
+    const pattern = input["pattern"];
+    if (typeof pattern === "string") {
+      // Static prefix: everything before the first glob metacharacter,
+      // trimmed back to the last full path segment.
+      const magic = pattern.search(/[*?[{]/);
+      const prefix = magic === -1 ? pattern : pattern.slice(0, magic);
+      const cut = prefix.lastIndexOf("/");
+      // cut 0 means a filesystem-root pattern like "/*" — the base is "/".
+      if (cut === 0) push(sep);
+      else if (cut > 0) push(prefix.slice(0, cut));
+    }
+  }
+  return paths;
+}
+
+/** Realpath of the deepest existing ancestor, with the not-yet-existing tail
+ *  re-appended — so a symlink anywhere on the path is resolved to its real
+ *  target before containment is judged, and a path that does not exist yet
+ *  still gets an honest verdict from its existing parent. */
+function resolveThroughSymlinks(target: string): string {
+  let current = target;
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...tail);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return target; // hit the filesystem root; nothing existed
+      tail.unshift(basename(current));
+      current = parent;
+    }
+  }
+}
+
+/** The pure(-ish: it reads the filesystem for realpath, never writes) heart
+ *  of the read confinement, exported for direct unit tests. Denies any
+ *  Read/Glob/Grep whose path input — absolute, relative, `..`-climbing, or
+ *  reached through a symlink — resolves outside `rootRealpath` (which must
+ *  already be a realpath, see createSdkQuery). Everything else is allowed:
+ *  the session's `tools` option already bounds the tool set to the read-only
+ *  three, so this callback is a path check, not a second allowlist. */
+export function confineToolToRoot(
+  toolName: string,
+  input: Record<string, unknown>,
+  rootRealpath: string,
+): ConfinementVerdict {
+  for (const candidate of candidatePaths(toolName, input)) {
+    const resolved = resolveThroughSymlinks(resolve(rootRealpath, candidate));
+    if (resolved !== rootRealpath && !resolved.startsWith(rootRealpath + sep)) {
+      return {
+        behavior: "deny",
+        message:
+          `${toolName} of ${candidate} denied: it resolves outside the engine job root (${rootRealpath}). `
+          + "This engine only reads within the directory it was given.",
+      };
+    }
+  }
+  return { behavior: "allow", updatedInput: input };
+}
 
 /** Loosely-typed shape of the bits of the real SDK module this file uses.
  *  Not the full official types: the SDK's message union has ~40 variants
@@ -83,10 +165,18 @@ export async function* adapt(stream: AsyncIterable<Record<string, unknown>>): As
  *  - `settingSources: []` — never load the dev's ~/.claude or project
  *    settings/hooks (the whole point of running this as a separate,
  *    npx-fetched process rather than the dev's own `claude` session).
- *  - `tools`/`allowedTools` restrict AND auto-allow the read-only set so a
- *    headless run never blocks on a permission prompt nobody can answer;
+ *  - `tools` restricts the tool set to the read-only three;
  *    `disallowedTools` is belt-and-suspenders against upstream additions to
  *    the default tool set.
+ *  - `canUseTool` (not a blanket `allowedTools` auto-allow, which would
+ *    grant Read/Glob/Grep on ANY path and never consult a callback) answers
+ *    every permission ask programmatically, so a headless run still never
+ *    blocks on a prompt nobody can answer — but reads outside the job root
+ *    are DENIED. A hostile repo's content can prompt-inject the agent into
+ *    `Read /Users/dev/.aws/credentials`; the package contract ("tool policy
+ *    rooted at the given directory") means that must fail, not ship the
+ *    dev's unrelated local files to the model. Containment is judged
+ *    against the realpath of job.root so symlinks can't smuggle either side.
  *  - `persistSession: false` — one-shot job, no ~/.claude/projects/
  *    transcript left behind on whatever machine runs this.
  *  - No `env` option is set: per the SDK's own default, omitting it means
@@ -96,15 +186,20 @@ export async function* adapt(stream: AsyncIterable<Record<string, unknown>>): As
 export function createSdkQuery(): EngineDeps["query"] {
   return async function* query(job: EngineJob): AsyncGenerator<EngineMessage> {
     const sdk = await loadSdk();
+    // Realpath once up front: if job.root is itself reached through a
+    // symlink (macOS /tmp -> /private/tmp), tool paths resolve to the real
+    // side and a string-prefix check against the raw root would misjudge.
+    const rootRealpath = realpathSync(job.root);
     const stream = sdk.query({
       prompt: job.instructions,
       options: {
         cwd: job.root,
         settingSources: [],
         tools: ALLOWED_TOOLS,
-        allowedTools: ALLOWED_TOOLS,
         disallowedTools: DISALLOWED_TOOLS,
         permissionMode: "default",
+        canUseTool: async (toolName: string, input: Record<string, unknown>) =>
+          confineToolToRoot(toolName, input, rootRealpath),
         maxTurns: MAX_TURNS,
         persistSession: false,
       },
