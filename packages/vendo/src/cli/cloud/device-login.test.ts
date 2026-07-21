@@ -398,6 +398,154 @@ describe("pending claim persistence", () => {
   });
 });
 
+// A bounded per-invocation poll budget (#479): `--wait <seconds>` caps how
+// long ONE call polls before exiting resumably, so a coding agent can loop
+// short re-runs (each resuming the same claim) instead of a 10-min block.
+describe("bounded --wait budget (#479)", () => {
+  const pendingPath = (home: string) => join(home, ".vendo", "pending-claim.json");
+  const tokenPolls = (requests: Array<{ url: string }>) =>
+    requests.filter((request) => request.url.endsWith("/api/v1/oauth/token"));
+
+  async function writePending(home: string, overrides: Record<string, unknown> = {}): Promise<void> {
+    await mkdir(join(home, ".vendo"), { recursive: true });
+    await writeFile(pendingPath(home), JSON.stringify({
+      claim_token: `vct_${"c".repeat(64)}`,
+      user_code: "WXYZ-PQRS",
+      verification_uri_complete: "https://console.test/claim?code=WXYZ-PQRS",
+      expires_at: Date.now() + 600_000,
+      interval: 5,
+      api_url: "https://console.test",
+      cwd: home,
+      ...overrides,
+    }));
+  }
+
+  it("(a) exits 0 and leaves the claim resumable when the budget elapses while pending", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    let clock = 0;
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "10"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+      env: {},
+      isTty: false,
+    });
+    // Pending is not a failure — exit 0, no throw.
+    expect(exit).toBe(0);
+    expect(messages.errors).toEqual([]);
+    // The claim file stays on disk for the next re-run to resume.
+    await expect(stat(pendingPath(home))).resolves.toBeTruthy();
+    // No key was written.
+    await expect(readFile(join(root, ".env.local"), "utf8")).rejects.toThrow();
+    // The resumable line + budget hint were printed, with the JSON pending shape.
+    const joined = messages.logs.join("\n");
+    expect(joined).toContain("This call polls for up to 10s");
+    expect(joined).toContain(
+      "Still waiting on approval — code BCDF-GHJK. Re-run `vendo login` to resume (it continues this same request).",
+    );
+    expect(messages.logs).toContainEqual(JSON.stringify({
+      deviceLogin: true,
+      pending: true,
+      userCode: "BCDF-GHJK",
+      verificationUriComplete: "https://console.test/claim?code=BCDF-GHJK",
+    }, null, 2));
+  });
+
+  it("(b) a --wait re-run resumes the same claim_token and lands the key when approval arrives", async () => {
+    const home = await tempRoot();
+    const originalCwd = await tempRoot();
+    const otherCwd = await tempRoot();
+    await writePending(home, { cwd: originalCwd });
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "90"], {
+      output: output().sink,
+      fetchImpl,
+      root: otherCwd,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // No new claim opened — it polls the persisted claim_token directly.
+    expect(requests.some((request) => request.url.endsWith("/api/v1/agent/claim"))).toBe(false);
+    expect(new URLSearchParams(requests[0].body).get("claim_token")).toBe(`vct_${"c".repeat(64)}`);
+    // The key lands where the ORIGINAL run intended, and the pending file is gone.
+    const envLocal = await readFile(join(originalCwd, ".env.local"), "utf8");
+    expect(envLocal).toContain(`VENDO_API_KEY=${KEY}`);
+    await expect(stat(pendingPath(home))).rejects.toThrow();
+  });
+
+  it("(c) without --wait the call still blocks to the claim deadline (unchanged)", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    let clock = 0;
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+      env: {},
+      isTty: false,
+    });
+    // Legacy path: it runs to the deadline and reports expiry (exit 1), never
+    // the resumable pending exit, and clears the pending file.
+    expect(exit).toBe(1);
+    expect(messages.errors.join("\n")).toContain("expired");
+    expect(messages.logs.join("\n")).not.toContain("Still waiting on approval");
+    await expect(stat(pendingPath(home))).rejects.toThrow();
+  });
+
+  it("(d) --wait 0 does exactly one poll then exits resumably if still pending", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    const sleeps: number[] = [];
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "0"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // Exactly one token poll, and no pacing sleep before that single poll.
+    expect(tokenPolls(requests)).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+    // Still resumable: claim on disk, no key, resumable line printed.
+    await expect(stat(pendingPath(home))).resolves.toBeTruthy();
+    await expect(readFile(join(root, ".env.local"), "utf8")).rejects.toThrow();
+    expect(messages.logs.join("\n")).toContain("Still waiting on approval — code BCDF-GHJK");
+  });
+});
+
 describe("login telemetry (runLoginCommand)", () => {
   it("tracks command_run login with ok reflecting the ceremony's exit code", async () => {
     const root = await tempRoot();
