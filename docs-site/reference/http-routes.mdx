@@ -39,7 +39,7 @@ stream over SSE.
 | `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }`; refused for ephemeral and synthetic (`webhook:` / `vendo:`) subjects |
 | `/connections/:id?connector=` | GET · DELETE | status (poll while connecting) · disconnect through the broker |
 | `/orgs` · `/orgs/:id` and every other `/orgs/*` path | any | always `cloud-required` (`402`); organizations are a [Vendo Cloud](/deploy/vendo-cloud) capability, not an OSS wire route |
-| `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open, `blocks.sandbox` reporting the execution venue (`"e2b"`, `"modal"`, `"custom"`, or `false` when none is wired), and `blocks.connections` reporting the connected-accounts broker posture (`"byo"`, `"cloud"`, or `false`) |
+| `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open, `blocks.sandbox` reporting the execution venue (`"e2b"`, `"cloud"`, `"custom"`, or `false` when none is wired), and `blocks.connections` reporting the connected-accounts broker posture (`"byo"`, `"cloud"`, or `false`) |
 | `/sync/impact` | POST | dev-only. `{ tools: string[] }` → per-tool reference counts across enabled apps, enabled automations, and active standing grants. Accepts up to 200 tool names per call and returns `404` in production |
 
 ## Development routes

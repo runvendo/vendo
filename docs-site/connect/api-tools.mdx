@@ -20,6 +20,35 @@ Vendo sync extracts OpenAPI operations from your spec into `.vendo/tools.json`,
 using the shared naming and risk-label rules above. See [Extraction
 reference](#extractor-order) for where OpenAPI sits in the extraction order.
 
+```json
+{
+  "name": "host_deleteTask",
+  "description": "Permanently delete a Relay task",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "id": { "type": "string", "description": "Relay task id" } },
+    "required": ["id"]
+  },
+  "risk": "destructive",
+  "binding": {
+    "kind": "openapi",
+    "operationId": "deleteTask",
+    "method": "DELETE",
+    "path": "/api/tasks/{id}"
+  }
+}
+```
+
+Each tool name is `host_` plus the operation's `operationId` (or, when a spec
+omits one, the method-and-path fallback shared with route tools). The input
+schema comes from the operation's path/query parameters plus its
+`application/json` request body under a `body` property. The binding records
+the `operationId`, `method`, and `path` so the runtime can execute without
+re-reading the spec, plus `baseUrl` when the spec declares an absolute
+`servers[0].url`; omitted, the call goes same-origin. Risk labels follow the
+same rules as route tools: `DELETE` is always `destructive`, and the
+destructive word list can lift any other method.
+
 ### tRPC procedures
 
 If your app mounts a tRPC router, sync extracts each procedure as its own tool.
