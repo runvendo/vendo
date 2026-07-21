@@ -25,7 +25,13 @@ import type { UIMessage } from "ai";
 export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
   | { kind: "http"; url: string }
-  | { kind: "resuming"; cover?: string };
+  | { kind: "resuming"; cover?: string }
+  /**
+   * The build turn terminally FAILED (model error, quota, timeout): the app
+   * will never become servable. The embed resolves promptly to the failed
+   * vocabulary with this reason instead of polling to its build deadline.
+   */
+  | { kind: "failed"; reason: string; retryable?: boolean };
 
 /** Existing-agents polish — the flag-gated build-window answer: what
  *  `GET /apps/:id/open?pending=1` returns while the app is not yet servable

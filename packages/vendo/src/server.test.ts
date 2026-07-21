@@ -251,6 +251,24 @@ describe("09 §3 public wire", () => {
     expect(blocked.status).toBe(403);
   });
 
+  it("open passes a terminal build failure through as 200 {kind:'failed'} (#492)", async () => {
+    // A failed build persists a record, so open() returns {kind:"failed"} — not
+    // a not-found. It must flow through the wire verbatim (flagged or not) so
+    // the embed resolves promptly with the reason instead of the ?pending=1
+    // arm swallowing it into a spinning {kind:"pending"}.
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+    vi.spyOn(vendo.apps, "open").mockResolvedValue({ kind: "failed", reason: "quota exhausted", retryable: false });
+
+    const bare = await vendo.handler(request("GET", "/apps/app_doomed/open"));
+    expect(bare.status).toBe(200);
+    expect(await bare.json()).toEqual({ kind: "failed", reason: "quota exhausted", retryable: false });
+
+    const flagged = await vendo.handler(request("GET", "/apps/app_doomed/open?pending=1"));
+    expect(flagged.status).toBe(200);
+    expect(await flagged.json()).toEqual({ kind: "failed", reason: "quota exhausted", retryable: false });
+  });
+
   it("does not read history for an unowned app on GET or undo", async () => {
     const { vendo } = await setup();
     stubRouteBlocks(vendo);

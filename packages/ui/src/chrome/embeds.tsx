@@ -199,7 +199,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   const { client, components } = useVendoContext();
   const { appId, title } = refValue;
   const [surface, setSurface] = useState<OpenSurface>();
-  const [failed, setFailed] = useState<Error>();
+  const [failed, setFailed] = useState<{ reason: string }>();
 
   useEffect(() => {
     setSurface(undefined);
@@ -213,23 +213,31 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     // serve the flagged poll answers a quiet `{kind:"pending"}` (a wire that
     // predates the flag still 404s — the catch arm keeps the same cadence, so
     // older servers only lose the quiet console). Keep asking until the app
-    // lands or the deadline turns the beat into the failed vocabulary.
+    // lands, the build reports a terminal failure, or the deadline turns the
+    // beat into the failed vocabulary.
     const attempt = async () => {
       try {
         const next = await client.apps.open(appId, { pending: true });
         if (cancelled) return;
+        // A terminal build failure resolves the embed PROMPTLY with its
+        // reason — the same in-place resolution a denied/expired approval
+        // gets — never a wait for the client build deadline.
+        if (next.kind === "failed") {
+          setFailed({ reason: next.reason });
+          return;
+        }
         if (next.kind !== "pending") {
           setSurface(next);
           return;
         }
         if (Date.now() - startedAt >= APP_BUILD_DEADLINE_MS) {
-          setFailed(new Error(`app never became servable: ${appId}`));
+          setFailed({ reason: "the build never finished" });
           return;
         }
       } catch (reason) {
         if (cancelled) return;
         if (Date.now() - startedAt >= APP_BUILD_DEADLINE_MS) {
-          setFailed(asError(reason));
+          setFailed({ reason: asError(reason).message });
           return;
         }
       }
@@ -264,7 +272,10 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
               onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})}
             />
           ) : failed !== undefined ? (
-            <BeatLine state="error">{title} — couldn't finish</BeatLine>
+            <>
+              <BeatLine state="error">{title} — couldn't finish</BeatLine>
+              <div className="fl-approval-more">{failed.reason}</div>
+            </>
           ) : (
             <span className="fl-slot-skel" role="status" aria-label={`Building ${title}`}>
               <span className="fl-skel-line" style={{ width: "54%" }} />
