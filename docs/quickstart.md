@@ -24,8 +24,9 @@ Every init question has a value-flag answer, so a coding agent never hangs
 on a prompt: `--auth <preset>` (authJs, clerk, supabase, auth0, jwt, none)
 answers the auth confirm and picker, `--framework <next|express>` overrides
 detection, `--cloud-key <key>` or `--byo` answers the Cloud offer,
-`--ai-polish` grants the extraction consent, and `--theme slot=value`
-(repeatable) answers uncertain theme slots. When a decision has no flag and
+`--ai-polish` grants consent for the AI pass (tool judgment and theme-slot
+filling, one consent for both), and `--theme slot=value` (repeatable)
+overrides a theme slot value directly. When a decision has no flag and
 no detected default — an undetectable framework — a non-interactive run
 errors with the exact flag to pass instead of guessing or prompting.
 
@@ -60,21 +61,27 @@ To see every Vendo surface and state (streaming, approvals, slots, the
 workspace page) against scripted data first — no model key, no wiring — run
 `npx vendo playground`.
 
-## AI polish (extraction judgment)
+## AI polish (tool judgment and theme)
 
-Static extraction gets the facts; a coding agent adds the judgment. During an
-interactive `vendo init`, when `@anthropic-ai/claude-agent-sdk` is resolvable
-and a Claude Code login or `ANTHROPIC_API_KEY` exists, init asks once for
-consent and lets the agent read your codebase (read-only: Read/Glob/Grep;
-source goes to your model provider under your own account). It drafts
+Static extraction gets the facts; a coding agent adds the judgment. The
+deterministic exact pass always reads conventional CSS tokens into
+`theme.json` first; whatever slots it can't read ride this same
+consent-gated pass. During an interactive `vendo init`, when the `claude` CLI
+is on PATH (or `@anthropic-ai/claude-agent-sdk` is resolvable) and a Claude
+Code login or `ANTHROPIC_API_KEY` exists, init asks once for consent and lets
+the agent read your codebase (read-only: Read/Glob/Grep; source goes to your
+model provider under your own account). Nothing needs installing in your app
+for this pass: no `@ai-sdk/anthropic`, no bundled SDK. It drafts
 task-oriented tool descriptions, reviews risk grades, wakes statically
-unclassifiable tools with reasoning, and writes the product brief.
+unclassifiable tools with reasoning, fills theme slots the exact pass
+couldn't resolve, and writes the product brief.
 
 The pass runs as a staged pipeline, not one shot: a cheap survey maps the
 repo and groups tools into surfaces (`VENDO_EXTRACTION_SURVEY_MODEL` can
 point it at a faster model), one focused pass drafts each surface, a
-cross-check reviews the combined draft for consistency, and the brief is
-drafted last from what the stages learned. Each stage writes its artifact to
+cross-check reviews the combined draft for consistency, the brief is
+drafted from what the stages learned, and an optional theme stage runs
+last, filling whatever the exact CSS read couldn't. Each stage writes its artifact to
 `.vendo/data/extract/<stage>.json` (gitignored) for inspection, and failures
 degrade per stage — a failed surface is skipped with a note instead of
 aborting the run.

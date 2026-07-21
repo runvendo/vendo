@@ -1,6 +1,5 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 import { contrastingText, normalizeColor, normalizeLength, resolveCssVarRefs } from "./color.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
@@ -8,14 +7,19 @@ import { ENTRY_FILE_CANDIDATES } from "./entry-candidates.js";
 import { walk } from "./walk.js";
 
 /**
- * Theme extraction, exact-or-model (kill-list §B2):
+ * Theme extraction, exact-then-staged (kill-list §B2, re-derived Task 2/4):
  *
  * 1. Allowlist fast-path — conventional shadcn/Tailwind tokens are read
  *    EXACTLY (`--primary`, `--background`, `--font-sans`, ... and their
- *    Tailwind-v4 `--color-*` spellings). No name scoring, no inference.
- * 2. LLM pass — when the allowlist leaves brand slots unfilled, ONE model
- *    call reads the collected CSS + Tailwind config + root layout and fills
- *    the rest, flagging slots it is genuinely unsure about.
+ *    Tailwind-v4 `--color-*` spellings). No name scoring, no inference. This
+ *    file does ONLY this: `extractTheme` is fully deterministic — no model
+ *    call, no network, no credential.
+ * 2. Whatever the allowlist leaves unfilled rides init's consent-gated AI
+ *    pass (`runAiExtraction` → `runStagedExtraction`'s theme stage, in
+ *    `../extract/stages.ts`) — the SAME harness seam as the tool-description
+ *    polish, over Read/Glob/Grep instead of a fixed evidence-file set.
+ *    `applyThemeDraft` below merges that stage's parsed artifact back onto
+ *    this file's exact-only summary.
  * 3. Anything neither path fills falls back to neutral defaults and is
  *    reported as defaulted — a miss is visible, never a silent wrong brand.
  *
@@ -57,18 +61,18 @@ export interface ThemeSummary {
   usedModel: boolean;
   errors: string[];
   hasDarkVariant: boolean;
+  /** Slots the exact allowlist pass did not read exactly — the staged theme
+   *  pass's `needed` input, and the only slots `applyThemeDraft` may fill. */
+  needed: SlotKey[];
+  /** The CSS/layout/tailwind-config paths the context gatherer collected,
+   *  repo-relative — seeded as evidence-path hints for the staged pass. */
+  evidencePaths: string[];
 }
 
-export interface ExtractThemeOptions {
-  /**
-   * Lazily resolves the model for the LLM pass — the SAME seam `vendo refine`
-   * uses (`resolveRefineModel`: --model-import, else the host's key +
-   * installed provider). Vendo-hosted inference will swap in behind this same
-   * seam later. Absent or failing resolution degrades to allowlist + defaults.
-   */
-  resolveModel?: () => Promise<LanguageModel>;
-}
-
+/** Key ORDER is load-bearing: assembleTheme derives accentText from the
+ *  already-settled accent and headingFamily from fontFamily within one pass
+ *  over SLOT_KEYS, so accent must precede accentText and fontFamily must
+ *  precede headingFamily. Do not alphabetize. */
 const DEFAULT_THEME_SLOTS: ThemeSlotValues = {
   accent: "#2563eb",
   accentText: "#ffffff",
@@ -190,6 +194,14 @@ async function gatherContext(targetDir: string): Promise<ThemeContext> {
   return { layout, css: await collectCss(layout, targetDir), tailwindConfig };
 }
 
+function evidencePathsOf(context: ThemeContext): string[] {
+  return [
+    ...(context.layout ? [context.layout.path] : []),
+    ...context.css.map((file) => file.path),
+    ...(context.tailwindConfig ? [context.tailwindConfig.path] : []),
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Allowlist fast-path — exact reads of documented shadcn/Tailwind tokens.
 // ---------------------------------------------------------------------------
@@ -237,7 +249,12 @@ function lastLightDecl(vars: CssVarDecl[], names: string[]): CssVarDecl | undefi
 }
 
 function normalizeFontStack(value: string): string {
-  const stack = value.split(",").map((part) => part.trim()).filter(Boolean).join(", ");
+  // Quotes are optional CSS syntax around family names, not identity: "Outfit"
+  // and Outfit are the same family (unquoted multi-word names are valid too).
+  const stack = value.split(",")
+    .map((part) => part.trim().replace(/^(["'])(.*)\1$/, "$2").trim())
+    .filter(Boolean)
+    .join(", ");
   return /(?:^|,\s*)(?:sans-serif|serif|monospace|cursive|fantasy)(?:\s*,|$)/i.test(stack)
     ? stack
     : `${stack}, sans-serif`;
@@ -285,23 +302,25 @@ function readExact(vars: CssVarDecl[]): ExactReads {
 }
 
 // ---------------------------------------------------------------------------
-// LLM pass — one structured call fills what the allowlist could not read.
+// Staged-pass artifact schema — parsed by `runStagedExtraction`'s theme stage
+// (../extract/stages.ts), merged back here by `applyThemeDraft`.
 // ---------------------------------------------------------------------------
 
-/** Brand-defining slots: any of these missing after the exact pass consults
- *  the model, and only doubt about these becomes an init question. The
- *  remaining slots (accentText, headingFamily, baseSize, density, motion)
- *  derive or default safely — accentText derives from the accent by WCAG
- *  contrast, headingFamily inherits fontFamily, and the rest have safe
- *  brand-neutral defaults — so they never trigger a call or a question. */
-const BRAND_SLOTS: readonly SlotKey[] = [
+/** Brand-defining slots: any of these missing after the exact pass triggers
+ *  the staged theme pass, and only doubt about these becomes an init
+ *  question. The remaining slots (accentText, headingFamily, baseSize,
+ *  density, motion) derive or default safely — accentText derives from the
+ *  accent by WCAG contrast, headingFamily inherits fontFamily, and the rest
+ *  have safe brand-neutral defaults — so they never trigger a call or a
+ *  question on their own. */
+export const BRAND_SLOTS: readonly SlotKey[] = [
   "accent", "background", "surface", "text", "mutedText",
   "border", "danger", "radius", "fontFamily",
 ];
 
 const SLOT_KEYS = Object.keys(DEFAULT_THEME_SLOTS) as SlotKey[];
 
-const modelThemeSchema = z.object({
+export const modelThemeSchema = z.object({
   slots: z.object({
     accent: z.string().optional(),
     accentText: z.string().optional(),
@@ -320,52 +339,6 @@ const modelThemeSchema = z.object({
   }),
   uncertain: z.array(z.object({ slot: z.string(), note: z.string() })).optional(),
 });
-
-const MODEL_SYSTEM_PROMPT = [
-  "You extract a product's brand theme from its source files for Vendo's theme.json.",
-  "Slots: accent (the brand's primary interactive color), accentText (text on accent),",
-  "background (page), surface (cards/panels), text (body), mutedText (secondary text),",
-  "border (default hairline), danger (destructive/error), radius (default control corner",
-  "radius, canonical px), fontFamily (body stack), headingFamily (heading stack, only if",
-  "distinct), baseSize (body font size, px), density (compact|comfortable), motion (full|reduced).",
-  "",
-  "Rules:",
-  "- Fill ONLY the requested slots, ONLY from evidence in the provided files.",
-  "- Colors must be 6-digit hex. Resolve CSS variables and color functions yourself.",
-  "- next/font: the imported font's export name is the family (underscores become spaces).",
-  "- A design-token sheet outranks scattered utility classes; dominant usage outranks one-offs.",
-  "- Status/state colors (success, positive, negative, warning, error, overdue, verified,",
-  "  and colors a comment demotes to data/status-only) are NEVER the brand accent.",
-  "- Monochrome brands exist: when the sheet declares no saturated non-status brand color,",
-  "  the ink/text color itself is the accent (primary buttons are painted with it).",
-  "- radius is the default CONTROL radius (buttons/inputs); a token named for cards or",
-  "  popovers rounds cards, which are typically larger than controls.",
-  "- An accessibility-only prefers-reduced-motion override does NOT make the brand 'reduced'.",
-  "- Omit any slot the files do not evidence. Do not invent plausible values.",
-  "- List a slot in `uncertain` ONLY when the files genuinely support multiple different",
-  "  answers (a real fork, e.g. two plausible brand colors). A value settled by the rules",
-  "  above — monochrome accent, contrast-derived accentText, single-font inheritance,",
-  "  browser-default sizing — is NOT uncertain.",
-].join("\n");
-
-async function modelPass(
-  model: LanguageModel,
-  context: ThemeContext,
-  exact: ExactReads,
-  needed: SlotKey[],
-): Promise<z.infer<typeof modelThemeSchema>> {
-  const prompt = JSON.stringify({
-    neededSlots: needed,
-    alreadyExact: exact.values,
-    files: [
-      ...(context.layout ? [context.layout] : []),
-      ...context.css,
-      ...(context.tailwindConfig ? [context.tailwindConfig] : []),
-    ],
-  });
-  const result = await generateObject({ model, schema: modelThemeSchema, system: MODEL_SYSTEM_PROMPT, prompt });
-  return result.object;
-}
 
 /** Deterministic validation of a proposed slot value (model or human). */
 export function validateSlotValue(slot: SlotKey, raw: string): string | null {
@@ -387,72 +360,117 @@ export function validateSlotValue(slot: SlotKey, raw: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Assembly
+// Assembly — ONE shared precedence loop used both by extractTheme's
+// exact-only pass (fromModel = {}) and applyThemeDraft's merge.
 // ---------------------------------------------------------------------------
 
-export async function extractTheme(
-  targetDir: string,
-  options: ExtractThemeOptions = {},
-): Promise<ThemeSummary> {
-  const errors: string[] = [];
-  const context = await gatherContext(targetDir);
-  const vars: CssVarDecl[] = context.css.flatMap((file) => parseCssVars(file.content, file.path));
-  const exact = readExact(vars);
+interface AssembledTheme {
+  slots: ThemeSlotValues;
+  matched: Record<string, string>;
+  defaulted: string[];
+}
 
-  const needed = SLOT_KEYS.filter((slot) => exact.values[slot] === undefined);
-  const coreMissing = BRAND_SLOTS.some((slot) => exact.values[slot] === undefined);
-  const fromModel: Partial<Record<SlotKey, string>> = {};
-  let uncertain: ThemeUncertainty[] = [];
-  let usedModel = false;
-  if (coreMissing && options.resolveModel !== undefined) {
-    try {
-      const model = await options.resolveModel();
-      const proposed = await modelPass(model, context, exact, needed);
-      usedModel = true;
-      for (const slot of needed) {
-        const raw = proposed.slots[slot];
-        if (raw === undefined) continue;
-        const value = validateSlotValue(slot, String(raw));
-        if (value !== null) fromModel[slot] = value;
-      }
-      uncertain = (proposed.uncertain ?? [])
-        .filter((entry): entry is ThemeUncertainty => (BRAND_SLOTS as string[]).includes(entry.slot))
-        .filter((entry) => exact.values[entry.slot] === undefined);
-    } catch (error) {
-      errors.push(`theme model pass unavailable: ${error instanceof Error ? error.message : "unknown error"}`);
-    }
-  }
-
+function assembleTheme(
+  values: Partial<ThemeSlotValues>,
+  matchedExact: Record<string, string>,
+  fromModel: Partial<Record<SlotKey, string>>,
+): AssembledTheme {
   const slots = { ...DEFAULT_THEME_SLOTS };
   const matched: Record<string, string> = {};
   const defaulted: string[] = [];
   for (const slot of SLOT_KEYS) {
-    const exactValue = exact.values[slot];
+    const exactValue = values[slot];
     const modelValue = fromModel[slot];
     if (exactValue !== undefined) {
       (slots as Record<string, unknown>)[slot] = exactValue;
-      matched[slot] = exact.matched[slot]!;
+      matched[slot] = matchedExact[slot]!;
     } else if (modelValue !== undefined) {
       (slots as Record<string, unknown>)[slot] = modelValue;
       matched[slot] = "(model)";
-    } else if (slot === "accentText" && (exact.values.accent !== undefined || fromModel.accent !== undefined)) {
+    } else if (slot === "accentText" && (values.accent !== undefined || fromModel.accent !== undefined)) {
       slots.accentText = contrastingText(slots.accent);
       matched[slot] = "(contrast) accent";
-    } else if (slot === "headingFamily" && (exact.values.fontFamily !== undefined || fromModel.fontFamily !== undefined)) {
+    } else if (slot === "headingFamily" && (values.fontFamily !== undefined || fromModel.fontFamily !== undefined)) {
       slots.headingFamily = slots.fontFamily;
       matched[slot] = "(inherit) fontFamily";
     } else {
       defaulted.push(slot);
     }
   }
+  return { slots, matched, defaulted };
+}
+
+// ---------------------------------------------------------------------------
+// Exact-only extraction
+// ---------------------------------------------------------------------------
+
+export async function extractTheme(targetDir: string): Promise<ThemeSummary> {
+  const context = await gatherContext(targetDir);
+  const vars: CssVarDecl[] = context.css.flatMap((file) => parseCssVars(file.content, file.path));
+  const exact = readExact(vars);
+  const needed = SLOT_KEYS.filter((slot) => exact.values[slot] === undefined);
+  const { slots, matched, defaulted } = assembleTheme(exact.values, exact.matched, {});
 
   return {
     slots,
     matched,
     defaulted,
+    uncertain: [],
+    usedModel: false,
+    errors: [],
+    hasDarkVariant: vars.some((v) => v.darkScope),
+    needed,
+    evidencePaths: evidencePathsOf(context),
+  };
+}
+
+/**
+ * Merges a parsed theme-stage artifact (`modelThemeSchema`) onto an
+ * exact-only `ThemeSummary` — the precedence law (kill-list §B2, Task 2):
+ * exact reads are never overwritten; only `needed` slots may be filled; every
+ * proposed value passes through `validateSlotValue` (invalid values are
+ * ignored, the slot stays defaulted/derived); a model-provided accentText
+ * stands; accentText re-derives by contrast only when the model filled
+ * accent but not accentText and accentText itself wasn't an exact read;
+ * headingFamily inherits fontFamily under the mirror condition.
+ */
+export function applyThemeDraft(
+  summary: ThemeSummary,
+  draft: z.infer<typeof modelThemeSchema>,
+): ThemeSummary {
+  const neededSet = new Set(summary.needed);
+  const fromModel: Partial<Record<SlotKey, string>> = {};
+  for (const slot of summary.needed) {
+    const raw = draft.slots[slot];
+    if (raw === undefined) continue;
+    const value = validateSlotValue(slot, String(raw));
+    if (value !== null) fromModel[slot] = value;
+  }
+
+  // Reconstruct the "already exact" values/provenance: everything NOT in
+  // `needed` was an exact read (or, for a re-applied summary, already
+  // settled) and must never be reconsidered here.
+  const exactValues: Partial<ThemeSlotValues> = {};
+  const exactMatched: Record<string, string> = {};
+  for (const slot of SLOT_KEYS) {
+    if (!neededSet.has(slot)) {
+      (exactValues as Record<string, unknown>)[slot] = summary.slots[slot];
+      exactMatched[slot] = summary.matched[slot]!;
+    }
+  }
+
+  const { slots, matched, defaulted } = assembleTheme(exactValues, exactMatched, fromModel);
+  const usedModel = Object.keys(fromModel).length > 0;
+  const uncertain = (draft.uncertain ?? [])
+    .filter((entry): entry is ThemeUncertainty => (BRAND_SLOTS as string[]).includes(entry.slot))
+    .filter((entry) => neededSet.has(entry.slot as SlotKey));
+
+  return {
+    ...summary,
+    slots,
+    matched,
+    defaulted,
     uncertain,
     usedModel,
-    errors,
-    hasDarkVariant: vars.some((v) => v.darkScope),
   };
 }
