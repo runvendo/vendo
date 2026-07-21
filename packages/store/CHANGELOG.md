@@ -1,5 +1,12 @@
 # @vendoai/store
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [b7a860f]
+  - @vendoai/core@0.4.1
+
 ## 0.4.0
 
 ### Minor Changes
