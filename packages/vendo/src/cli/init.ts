@@ -12,7 +12,6 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
-import type { LanguageModel } from "ai";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
@@ -29,9 +28,9 @@ import {
   wiringServerActions,
 } from "./init-scaffolds.js";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
-import { devModel, NO_CREDENTIAL_MESSAGE } from "../dev-creds/model.js";
 import { contrastingText } from "./theme/color.js";
 import {
+  applyThemeDraft,
   extractTheme as extractThemeSlots,
   validateSlotValue,
   type ThemeSlotValues,
@@ -176,27 +175,8 @@ export interface InitOptions {
   confirmStar?: (question: string, defaultYes: boolean) => Promise<boolean>;
   /** Test seam: the gh spawn behind a "yes" to the star ask. */
   spawnStar?: (command: string, args: string[]) => StarProcess;
-  /** Test seam: the theme LLM pass's model; default rides the refine seam. */
-  themeModel?: () => Promise<LanguageModel>;
   /** Uncertain-slot review — asked ONLY when the model reports uncertainty. */
   themeReview?: (summary: ThemeSummary) => Promise<Record<string, string>>;
-}
-
-/**
- * Theme extraction's model rides the devModel ladder — the same env resolution
- * the runtime composes when `model` is omitted: provider env keys, then
- * VENDO_API_KEY via the Cloud gateway. That is what makes the same-run pickup
- * real: a starter key minted moments earlier in this init powers this pass.
- * No credential throws the honest instructions instead of constructing a model
- * that can only fail later; total failure is handled by extractTheme's
- * graceful degradation to reported defaults.
- */
-function themeModelResolver(root: string, env: Record<string, string | undefined>): () => Promise<LanguageModel> {
-  return async () => {
-    const credential = await resolveDevCredential({ env });
-    if (credential.rung === "none") throw new Error(NO_CREDENTIAL_MESSAGE);
-    return devModel({ root, env });
-  };
 }
 
 const THEME_PALETTE_SLOTS = ["accent", "background", "surface", "text", "mutedText", "border", "danger"] as const;
@@ -923,59 +903,21 @@ export async function runInit(options: InitOptions): Promise<number> {
       BRIEF_PLACEHOLDER,
       options.force === true,
     );
-    // Exact-or-model theme extraction (§B2). Skipped entirely when a
-    // theme.json already exists (it is the editable source of truth) so
-    // reruns never spend a model call or overwrite hand edits.
+    // Theme (Task 2/4 re-derive): the exact-only allowlist pass runs and
+    // writes theme.json right away — never overwriting an existing one (it
+    // is the editable source of truth) unless --force. Whatever brand slots
+    // the allowlist left unfilled ride the consent-gated AI-polish pass
+    // below; the merge, --theme answers, the one-glance palette print, and
+    // the uncertain-slot review all happen AFTER that pass returns, further
+    // down this function — a pre-existing theme.json is never touched.
     const themePath = join(root, ".vendo", "theme.json");
-    if (options.force === true || !(await exists(themePath))) {
+    const themeCreatedThisRun = options.force === true || !(await exists(themePath));
+    let themeSummary: ThemeSummary | null = null;
+    if (themeCreatedThisRun) {
       pretty?.spin("Capturing your theme");
-      const summary = await extractThemeSlots(root, {
-        resolveModel: options.themeModel ?? themeModelResolver(root, effectiveEnv),
-      });
+      themeSummary = await extractThemeSlots(root);
       pretty?.stopSpin();
-      // --theme answers land first; the review prompt then covers only the
-      // uncertain slots the flags left unanswered (non-interactive runs keep
-      // the extracted values for those, exactly as before).
-      const answers: Record<string, string> = { ...(options.themeAnswers ?? {}) };
-      const unanswered = summary.uncertain.filter((entry) => !Object.hasOwn(answers, entry.slot));
-      if (unanswered.length > 0 && options.yes !== true) {
-        const reviewed = await (options.themeReview ?? defaultThemeReview)(
-          unanswered.length === summary.uncertain.length ? summary : { ...summary, uncertain: unanswered },
-        );
-        for (const [slot, raw] of Object.entries(reviewed)) {
-          if (!Object.hasOwn(answers, slot)) answers[slot] = raw;
-        }
-      }
-      if (Object.keys(answers).length > 0) {
-        for (const [slot, raw] of Object.entries(answers)) {
-          if (!Object.hasOwn(summary.slots, slot)) {
-            output.error(`ignored unknown theme slot ${JSON.stringify(slot)}`);
-            continue;
-          }
-          const value = validateSlotValue(slot as keyof ThemeSlotValues, raw);
-          if (value === null) {
-            output.error(`ignored invalid theme ${slot} value ${JSON.stringify(raw)}`);
-          } else {
-            (summary.slots as unknown as Record<string, string>)[slot] = value;
-            summary.matched[slot] = "(you)";
-            // The slot no longer defaulted — the human just set it.
-            summary.defaulted = summary.defaulted.filter((name) => name !== slot);
-          }
-        }
-        // A replaced accent invalidates an accentText nobody chose — one that
-        // was contrast-derived, or still the neutral default because the model
-        // omitted the accent too. Re-derive against the new accent; an explicit
-        // token or a direct human/model answer stays authoritative.
-        const accentTextUnchosen = summary.matched["accentText"] === "(contrast) accent"
-          || summary.defaulted.includes("accentText");
-        if (summary.matched["accent"] === "(you)" && accentTextUnchosen) {
-          summary.slots.accentText = contrastingText(summary.slots.accent);
-          summary.matched["accentText"] = "(contrast) accent";
-          summary.defaulted = summary.defaulted.filter((name) => name !== "accentText");
-        }
-      }
-      await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
-      printThemeSummary(summary, output);
+      await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
     }
     await writeIfMissing(join(root, ".vendo", "data", ".gitignore"), "*\n!.gitignore\n", options.force === true);
 
@@ -1023,8 +965,73 @@ export async function runInit(options: InitOptions): Promise<number> {
       ...(options.aiPolish === true ? { consent: true } : {}),
       ...(options.force === true ? { force: true } : {}),
       ...(pretty === null ? {} : { confirm: pretty.confirm }),
+      ...(themeCreatedThisRun && themeSummary !== null ? {
+        theme: {
+          needed: themeSummary.needed,
+          alreadyExact: Object.fromEntries(
+            Object.entries(themeSummary.matched)
+              .filter(([, provenance]) => provenance.startsWith("--"))
+              .map(([slot]) => [slot, String(themeSummary!.slots[slot as keyof ThemeSlotValues])]),
+          ),
+          evidencePaths: themeSummary.evidencePaths,
+        },
+      } : {}),
       ...(options.extract ?? {}),
     });
+
+    // Theme finalization (Task 4): merge whatever the AI pass filled — if
+    // consent was declined or unavailable, `polish.theme` is simply absent
+    // and the exact-only summary stands — then --theme answers (a human
+    // "(you)" wins over a model value), the one-glance palette print, and
+    // finally the uncertain-slot review. Skipped entirely when theme.json
+    // pre-existed this run (nothing above ran either).
+    if (themeCreatedThisRun && themeSummary !== null) {
+      const summary = polish.theme === undefined ? themeSummary : applyThemeDraft(themeSummary, polish.theme);
+      // --theme answers land first; the review prompt then covers only the
+      // uncertain slots the flags left unanswered (non-interactive runs keep
+      // the extracted/merged values for those, exactly as before).
+      const answers: Record<string, string> = { ...(options.themeAnswers ?? {}) };
+      const unanswered = summary.uncertain.filter((entry) => !Object.hasOwn(answers, entry.slot));
+      if (unanswered.length > 0 && options.yes !== true) {
+        const reviewed = await (options.themeReview ?? defaultThemeReview)(
+          unanswered.length === summary.uncertain.length ? summary : { ...summary, uncertain: unanswered },
+        );
+        for (const [slot, raw] of Object.entries(reviewed)) {
+          if (!Object.hasOwn(answers, slot)) answers[slot] = raw;
+        }
+      }
+      if (Object.keys(answers).length > 0) {
+        for (const [slot, raw] of Object.entries(answers)) {
+          if (!Object.hasOwn(summary.slots, slot)) {
+            output.error(`ignored unknown theme slot ${JSON.stringify(slot)}`);
+            continue;
+          }
+          const value = validateSlotValue(slot as keyof ThemeSlotValues, raw);
+          if (value === null) {
+            output.error(`ignored invalid theme ${slot} value ${JSON.stringify(raw)}`);
+          } else {
+            (summary.slots as unknown as Record<string, string>)[slot] = value;
+            summary.matched[slot] = "(you)";
+            // The slot no longer defaulted — the human just set it.
+            summary.defaulted = summary.defaulted.filter((name) => name !== slot);
+          }
+        }
+        // A replaced accent invalidates an accentText nobody chose — one that
+        // was contrast-derived, or still the neutral default because the
+        // model omitted the accent too. Re-derive against the new accent; an
+        // explicit token or a direct human/model answer stays authoritative.
+        const accentTextUnchosen = summary.matched["accentText"] === "(contrast) accent"
+          || summary.defaulted.includes("accentText");
+        if (summary.matched["accent"] === "(you)" && accentTextUnchosen) {
+          summary.slots.accentText = contrastingText(summary.slots.accent);
+          summary.matched["accentText"] = "(contrast) accent";
+          summary.defaulted = summary.defaulted.filter((name) => name !== "accentText");
+        }
+      }
+      await writeText(themePath, `${JSON.stringify(toVendoTheme(summary.slots), null, 2)}\n`);
+      printThemeSummary(summary, output);
+    }
+
     if (polish.ran) {
       const resynced = await vendoSync({ root, out: join(root, ".vendo") });
       for (const warning of resynced.warnings) output.error(`warning: ${warning}`);

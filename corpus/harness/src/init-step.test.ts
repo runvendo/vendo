@@ -201,6 +201,42 @@ describe("runVendoInitStep", () => {
     await expect(readFile(result.artifacts.diff, "utf8")).resolves.toBe("");
   });
 
+  it("appends --ai-polish when the aiPolish option is set", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = { name: "fixture-next-app" };
+    const repoDir = await copyFixtureRepo(context);
+    const fakeCli = await writeFakeVendoCli(corpusRoot);
+
+    const result = await runVendoInitStep(repo, {
+      context,
+      cliCommand: process.execPath,
+      cliArgs: [fakeCli],
+      aiPolish: true,
+    });
+
+    const log = await readFile(result.artifacts.log, "utf8");
+    expect(log).toContain(`"init","${repoDir}","--yes","--ai-polish"`);
+  });
+
+  it("omits --ai-polish when the option is unset", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = { name: "fixture-next-app" };
+    const repoDir = await copyFixtureRepo(context);
+    const fakeCli = await writeFakeVendoCli(corpusRoot);
+
+    const result = await runVendoInitStep(repo, {
+      context,
+      cliCommand: process.execPath,
+      cliArgs: [fakeCli],
+    });
+
+    const log = await readFile(result.artifacts.log, "utf8");
+    expect(log).toContain(`"init","${repoDir}","--yes"`);
+    expect(log).not.toContain("--ai-polish");
+  });
+
   it("returns a nonzero init exit code while still writing log and diff artifacts", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
