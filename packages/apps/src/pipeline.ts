@@ -28,6 +28,10 @@ export interface PipelineConfig {
   structuredRepair?: boolean;
   regionParallel?: boolean;
   endPass?: boolean;
+  /** v4 wave — the rewritten create contract (single-voice sections, principles
+   *  stated once, worked exemplars; scar-tissue rules retired to validators +
+   *  repair). Opt-in while the A/B against the current contract is measured. */
+  promptRewrite?: boolean;
 }
 
 /** W4 pipeline — opt-in per-stage diagnostics: rounds, no-valid-fix
