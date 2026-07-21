@@ -1,5 +1,5 @@
 import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
@@ -94,13 +94,18 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
    *  for a layout decision) and must not start a second poll. */
   discover?: boolean;
   /** Remix folds into Slot as a flag (ui-usage-dx §2): show the hover Remix
-   *  affordance on the slot's content; activating it opens the mounted overlay
-   *  preloaded with the remix prompt. The slot id should match a registered
-   *  (remixable) host component so the agent can fork the captured source —
-   *  init/doctor verify the flag against catalog registrations. */
+   *  affordance on the slot's content. Gesture-owned forking (2026-07-21):
+   *  activating it on an EMPTY slot forks the captured component
+   *  DETERMINISTICALLY (the engine copies the trusted source and records the
+   *  pin — no model call, no model fork decision) and the fork mounts in
+   *  place; on a slot already holding an app it opens the overlay composer
+   *  prefilled so the instruction rides an ordinary edit. The slot id should
+   *  match a registered (remixable) host component so sync has captured its
+   *  source — init/doctor verify the flag against catalog registrations. */
   remix?: boolean;
-  /** Override for the remix request; defaults to a prompt naming the slot's
-   *  registered component. */
+  /** Override for the composer prefill when remixing a slot that already
+   *  holds an app; defaults to a prompt naming the slot's component. (The
+   *  empty-slot gesture itself never sends text to the model.) */
   remixPrompt?: string;
   /** Empty-state invitation config (ui-lane-entry pick S-A×S-D). Every string
    *  is host-customizable with white-label defaults; suggestions are 3
@@ -123,19 +128,20 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   };
   children?: ReactNode;
 }) {
-  const { components } = useVendoContext();
+  const { client, components } = useVendoContext();
   // Self-discovery (ui-usage-dx §2): with no explicit `appId`/`pin`, the slot
   // resolves its own pinned app — hosts never write the polling dance.
   const discovery = useSlotApp(id, { enabled: discover && appIdProp === undefined && pin === undefined });
   const appId = appIdProp ?? (pin === undefined ? discovery.appId : undefined);
+  const [remixBusy, setRemixBusy] = useState(false);
 
-  // Dev rail: the remix flow forks the component captured under this slot's
-  // registered name — an unregistered name means the agent has nothing to fork.
+  // Dev rail: the remix gesture forks the component captured under this slot's
+  // registered name — an unregistered name means there is nothing to fork.
   // (The client can't see catalog `remixable` flags; init verifies those.)
   useEffect(() => {
     if (!remix || !developmentMode() || components[id] !== undefined) return;
     console.warn(
-      `[vendo] VendoSlot "${id}" sets remix, but no host component is registered under that name — register it (marked remixable) so the agent can capture and fork it.`,
+      `[vendo] VendoSlot "${id}" sets remix, but no host component is registered under that name — register it (marked remixable) so sync captures the source the Remix gesture forks.`,
     );
   }, [remix, id, components]);
 
@@ -161,21 +167,39 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
     }
   };
 
+  // Gesture-owned forking (2026-07-21): the Remix gesture on an EMPTY slot
+  // executes the fork DETERMINISTICALLY through the wire (the engine copies
+  // the captured source and records the pin — no model call, and the model
+  // never decides to fork); the fork then mounts via slot discovery. On a
+  // slot already holding an app the fork exists, so the gesture opens the
+  // composer prefilled — the instruction rides an ordinary edit.
   const startRemix = () => {
-    const prompt = remixPrompt
-      ?? `Remix the ${id} component — I want to make this view my own.`;
-    const opened = openVendoConversation({ prompt, send: true });
-    if (!opened && developmentMode()) {
-      console.warn(`[vendo] VendoSlot "${id}": remix opens the conversation surface — mount a VendoOverlay for it to land in.`);
+    if (appId !== undefined) {
+      const prompt = remixPrompt ?? `Update my ${id} remix: `;
+      const opened = openVendoConversation({ prompt, send: false });
+      if (!opened && developmentMode()) {
+        console.warn(`[vendo] VendoSlot "${id}": remix opens the conversation surface — mount a VendoOverlay for it to land in.`);
+      }
+      return;
     }
+    if (remixBusy) return;
+    setRemixBusy(true);
+    client.apps.forkPin({ slot: id })
+      .then(() => discovery.refresh())
+      .catch((error: unknown) => {
+        if (developmentMode()) {
+          console.warn(`[vendo] VendoSlot "${id}": the remix fork failed — ${error instanceof Error ? error.message : String(error)}`);
+        }
+      })
+      .finally(() => setRemixBusy(false));
   };
 
   const remixButton = remix ? (
-    <button type="button" className="fl-slot-remix" aria-label={`Remix ${id} with Vendo`} onClick={startRemix}>
+    <button type="button" className="fl-slot-remix" aria-label={`Remix ${id} with Vendo`} aria-busy={remixBusy || undefined} disabled={remixBusy} onClick={startRemix}>
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z" />
       </svg>
-      Remix
+      {remixBusy ? "Remixing…" : "Remix"}
     </button>
   ) : null;
 

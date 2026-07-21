@@ -20,6 +20,8 @@ export {
   type EditResult,
   type MachineEditResult,
   type OpenSurface,
+  type PinForkInput,
+  type PinForkResult,
   type PinRebaseResult,
   type SecretExposureState,
   type SetExposureResult,

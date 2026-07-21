@@ -143,6 +143,16 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
       },
       shipDiff: async (id) => ({ appId: id, versionHash: "sha256:playground", pins: [], generated: [] }),
       pinDrift: async () => [],
+      forkPin: async ({ appId, slot }) => {
+        const target = appId === undefined ? state.apps[0] : app(appId);
+        if (target === undefined) throw new VendoError("not-found", "no playground app to fork into");
+        return {
+          app: { ...target, pins: [...(target.pins ?? []), { slot, base: "sha256:playground" }] },
+          version: { at: new Date().toISOString(), intent: `Remix the host component "${slot}"`, rung: 2 },
+          slot,
+          componentName: `Pinned${slot}`,
+        };
+      },
       rebasePin: async (id, slot) => ({
         status: "rebased",
         app: app(id),

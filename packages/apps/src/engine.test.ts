@@ -283,9 +283,13 @@ describe("generation engine through createApps", () => {
           : message.content.map((part) => part.text ?? "").join("")).join("\n");
         expect(prompt).toContain("REMIXABLE HOST SLOTS");
         expect(prompt).toContain(slot);
-        expect(prompt).toContain("MapleNetWorthCard");
-        expect(prompt).toContain("$1.2M");
         expect(prompt).toContain(componentName);
+        // Gesture-owned forking (2026-07-21): the dialect no longer teaches
+        // <ForkPin> and the captured source no longer rides the prompt (a
+        // fork's source is in CURRENT_APP once it exists) — but a stored-app
+        // model response that emits the op anyway still compiles below.
+        expect(prompt).not.toContain("<ForkPin");
+        expect(prompt).not.toContain("$1.2M");
         return `<Edit><ForkPin slot="${slot}" into="root"/></Edit>`;
       },
       `<Edit><Island name="${componentName}">${source.replace("$1.2M", "$1.4M")}</Island></Edit>`,

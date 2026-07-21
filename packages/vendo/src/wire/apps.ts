@@ -2,7 +2,8 @@ import { VendoError, type Json } from "@vendoai/core";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
 /** 06-apps / 09 §3 — the /apps wire area: CRUD, open/call/edit, history,
-    ship-diff, pin drift/rebase, export/import, fork. */
+    ship-diff, pin drift/rebase, the gesture fork (fork-pin), export/import,
+    fork (whole-app copy — a different feature from fork-pin). */
 export const appRoutes: RouteEntry[] = [
   // Grouped like the old if-chain arm: ANY method on /apps resolves context
   // first; an unhandled method falls through to the table's not-found.
@@ -16,6 +17,19 @@ export const appRoutes: RouteEntry[] = [
       return json(await deps.apps.create({ prompt: string(body["prompt"], "prompt") }, ctx));
     }
     return undefined;
+  }),
+  // 06-apps §8 — gesture-owned forking (2026-07-21): the deterministic fork
+  // the user's Remix gesture on an EMPTY slot invokes. The engine mints a
+  // minimal app, copies the captured baseline, and records the pin — no model
+  // call. An optional instruction then rides the ordinary edit path, already
+  // scoped to the forked component. The model never decides to fork.
+  route("POST", "/apps/fork-pin", async ({ request, deps, context }) => {
+    const ctx = await context("app");
+    const body = await requestJson(request);
+    return json(await deps.apps.pins.fork({
+      slot: string(body["slot"], "slot"),
+      ...(body["instruction"] === undefined ? {} : { instruction: string(body["instruction"], "instruction") }),
+    }, ctx));
   }),
   route("POST", "/apps/import", async ({ request, deps, context }) => {
     // The CSRF floor exempts import (binary body), so it must instead require
@@ -100,6 +114,16 @@ export const appRoutes: RouteEntry[] = [
     if (request.method === "POST" && operation === "rebase-pin" && segments.length === 3) {
       const body = await requestJson(request);
       return json(await deps.apps.pins.rebase({ appId, slot: string(body["slot"], "slot") }, ctx));
+    }
+    // 06-apps §8 — the same gesture fork landing in an EXISTING app (the
+    // filled-slot / driver surface). Owner-scoped like every app route.
+    if (request.method === "POST" && operation === "fork-pin" && segments.length === 3) {
+      const body = await requestJson(request);
+      return json(await deps.apps.pins.fork({
+        appId,
+        slot: string(body["slot"], "slot"),
+        ...(body["instruction"] === undefined ? {} : { instruction: string(body["instruction"], "instruction") }),
+      }, ctx));
     }
     // Wave 7 H2 — the embed surface's keepalive: user activity on an embedded
     // served app rides one host-proxied HEAD through the machine (re-arming

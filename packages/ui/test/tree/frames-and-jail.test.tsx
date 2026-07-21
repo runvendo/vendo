@@ -188,6 +188,39 @@ describe("generated component jail structure", () => {
     }), "*");
   });
 
+  it("merges live node props OVER the furnishing sampleProps instead of clobbering them", () => {
+    // Remix eval fail class 4: a pinned fork whose node sets only SOME props
+    // (initialRange) must keep the captured sample seed for the rest
+    // (valueCents/series) — a wholesale replace crashed the captured component.
+    const generatedTree = {
+      formatVersion: VENDO_TREE_FORMAT_V2,
+      root: "root",
+      nodes: [{ id: "root", component: "Furnished", source: "generated", props: { initialRange: "1Y" } }],
+      components: {
+        Furnished: "export default function Furnished({ initialRange, valueCents }) { return <strong>{initialRange}:{valueCents}</strong>; }",
+      },
+      furnishings: {
+        Furnished: {
+          sampleProps: { initialRange: "1M", valueCents: 120, series: [1, 2, 3] },
+        },
+      },
+    } as UIPayload & { furnishings: Record<string, unknown> };
+
+    render(<TreeView tree={generatedTree} components={{}} onAction={ok} />);
+    const iframe = screen.getByTitle("Generated component: Furnished") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "booted" },
+    }));
+
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "render",
+      // The node's value wins per-prop; everything it left unset keeps the seed.
+      props: { initialRange: "1Y", valueCents: 120, series: [1, 2, 3] },
+    }), "*");
+  });
+
   it("uses an opaque-origin iframe with CSP and never evaluates source in the host", () => {
     const evalSpy = vi.spyOn(globalThis, "eval");
     const source = [
