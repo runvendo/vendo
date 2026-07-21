@@ -179,6 +179,20 @@ const SERVED_APP_INSTRUCTION = /\b(full web app|served web app|custom (?:ui|clie
  *  kanban board heading blue" is a tree ask); same ENG-349 rule as the
  *  ambiguous server terms. */
 const AMBIGUOUS_SERVED_TERM = /\b(kanban|whiteboard|draggable)\b/gi;
+/** Wave 9 (escalation ladder, rung c) — UNAMBIGUOUS custom-code signals: real
+ *  computation or bespoke logic no tool composition can express, so only a box
+ *  (in-box agent writes server code) can serve the ask. */
+const BOX_INSTRUCTION = /\b(custom (?:code|logic|parser|parsing|algorithm|scoring|dedup\w*)|write (?:a |an )?(?:parser|algorithm|script)|state machine|levenshtein|fuzzy[- ]?match\w*)\b/i;
+/** Wave 9 — custom-code words that can also LABEL a visible element ("make the
+ *  parse errors card blue", "show the ledger table"); same ENG-349 rule. */
+const AMBIGUOUS_BOX_TERM = /\b(parse|parsing|parser|csv|xlsx|regex|algorithm|dedup\w*|de-dup\w*|reconcil\w*|ledger)\b/gi;
+/** Wave 9 (rung b) — UNAMBIGUOUS per-run-judgment signals: each firing needs a
+ *  model's call (who, which, what tone), but every effect is tool-reachable —
+ *  the agentic automation run model, never a box. */
+const AGENTIC_INSTRUCTION = /\b(decide|decides|deciding|judgment|judgement|discretion|deserv\w+|as appropriate|appropriately)\b/i;
+/** Wave 9 — judgment words that can also LABEL a visible element ("rename the
+ *  triage board"); same ENG-349 rule. */
+const AMBIGUOUS_AGENTIC_TERM = /\b(triage|classify|prioriti[sz]e|assess|judge|escalate)\b/gi;
 const reserved = new Set<string>(WIRE_COMPONENT_NAMES);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -1465,12 +1479,55 @@ export const modelEngine: GenerationEngine = {
  * labeling a visible element — "make the API status card blue" must stay on
  * the cheap tree path (ENG-349).
  */
-export const instructionRequiresServer = (app: AppDocument, instruction: string): boolean =>
+export const instructionRequiresServer = (app: Pick<AppDocument, "ui">, instruction: string): boolean =>
   SERVER_INSTRUCTION.test(instruction)
   || SERVED_APP_INSTRUCTION.test(instruction)
   || app.ui === "http"
-  || [...instruction.matchAll(AMBIGUOUS_SERVER_TERM)].some((match) =>
+  || matchesOutsideElementLabel(instruction, AMBIGUOUS_SERVER_TERM);
+
+/** The ENG-349 rule as a helper: an ambiguous term counts only when it is not
+ *  labeling a visible element ("watch my invoices" escalates; "the watch list"
+ *  stays on the cheap tree path). */
+const matchesOutsideElementLabel = (instruction: string, term: RegExp): boolean =>
+  [...instruction.matchAll(term)].some((match) =>
     !VISIBLE_ELEMENT_LABEL.test(instruction.slice(match.index + match[0].length).trimStart()));
+
+/**
+ * execution-v2 Wave 9 — the server-work ESCALATION LADDER (Yousef's economics
+ * ruling: box graduation costs minutes of model round trips; the existing
+ * automations engine covers most server-shaped needs in seconds). For a
+ * server-shaped instruction the runtime prefers, in order:
+ *
+ *   (a) "steps"   — expressible as deterministic tool calls (host + connected
+ *                   tools + existing fn: refs) with jsonata reshaping, forEach,
+ *                   and park/resume approval gates. A steps automation on the
+ *                   EXISTING automations engine; no machine.
+ *   (b) "agentic" — needs per-run judgment, but every effect is tool-reachable.
+ *                   An agentic automation (the agent-loop run model); no machine.
+ *   (c) "box"     — only when actual custom code is required (real computation,
+ *                   libraries, complex persistent state, non-tool-shaped egress,
+ *                   latency-sensitive logic). Box graduation — EXPERIMENTAL,
+ *                   gated by `experimentalMachines`.
+ *
+ * `null` means the instruction is not server-shaped at all (pure tree path).
+ * Same judge shape as {@link instructionRequiresServer}: deterministic word
+ * classes with the ENG-349 visible-element rule for ambiguous terms. A served
+ * (ui: "http") app is always box-shaped — its whole surface lives in its
+ * machine.
+ */
+export const serverWorkRung = (
+  app: Pick<AppDocument, "ui">,
+  instruction: string,
+): "steps" | "agentic" | "box" | null => {
+  if (app.ui === "http") return "box";
+  if (BOX_INSTRUCTION.test(instruction) || matchesOutsideElementLabel(instruction, AMBIGUOUS_BOX_TERM)) {
+    return "box";
+  }
+  if (AGENTIC_INSTRUCTION.test(instruction) || matchesOutsideElementLabel(instruction, AMBIGUOUS_AGENTIC_TERM)) {
+    return "agentic";
+  }
+  return instructionRequiresServer(app, instruction) ? "steps" : null;
+};
 
 /**
  * execution-v2 Wave 4 — the 2→3 escalation judgment (same judge shape as

@@ -11,18 +11,30 @@ user owns their own copy. Import, fork, sharing, and publishing mint a fresh
 
 1. **Tree app**: no server. The tree document, rendered by the host-embedded
    renderer, interactive via `$state`, code islands, and guarded host tools.
-   Most apps stay here.
+   Most apps stay here. Server-shaped needs (schedules, away runs) usually
+   ride an **automation** on the same document — the escalation ladder below —
+   not a machine.
 2. **Tree app + machine**: the same tree UI plus a persistent per-app sandbox
-   where execution lives: schedules, third-party egress with secrets, heavy
-   logic, working data. The tree reaches it through `fn:<name>` references
-   that resolve to `POST /fn/<name>` on the box. The machine never draws UI.
+   where execution lives: custom server code, third-party egress with
+   secrets, heavy logic, working data. The tree reaches it through `fn:<name>`
+   references that resolve to `POST /fn/<name>` on the box. The machine never
+   draws UI. Experimental and off by default; the host enables it per project
+   with `createVendo({ apps: { experimentalMachines: true } })`.
 3. **Machine everything**: the machine also serves a real web app and the host
    embeds its URL as the app surface. Experimental and off by default; the
    host enables it per project with
-   `createVendo({ apps: { experimentalServedApps: true } })`.
+   `createVendo({ apps: { experimentalServedApps: true, experimentalMachines: true } })`
+   (served apps require machines).
 
-The agent escalates when an instruction demands it. Users do not choose a
-layer. The last working surface keeps serving while the next layer builds.
+The agent escalates when an instruction demands it, preferring the cheapest
+rung that can express the work: a **steps automation** (deterministic tool
+calls on a trigger — created in seconds, no machine), then an **agentic
+automation** (per-run judgment, still tool-only), and a **box machine** only
+when actual custom code is required. With machines off (the default), a
+request only a box can express refuses with a typed error naming the flag;
+apps that already carry a machine keep working — only new graduation is
+gated. Users do not choose a layer. The last working surface keeps serving
+while the next layer builds.
 
 Tree-only creates and edits run without an approval card because they cannot
 reach host tools, cannot perform egress, and render in the jailed UI surface.

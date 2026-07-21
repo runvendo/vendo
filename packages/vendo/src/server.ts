@@ -294,13 +294,20 @@ export interface CreateVendoConfig {
   approvals?: {
     parkedCallTtlMs?: number;
   };
-  /** execution-v2 Wave 4 — apps-block options. `experimentalServedApps` is the
-      per-project layer-3 opt-in: a machine may serve the app surface itself
-      (the host embeds its URL in a sandboxed iframe). OFF by default — layer-3
-      generation, the 2→3 surface flip, and open() on a served app all refuse
-      with a typed VendoError naming this flag until the host enables it. */
+  /** execution-v2 Waves 4+9 — apps-block options. `experimentalMachines` is
+      the per-project layer-2 opt-in: NEW box graduation (the escalation
+      ladder's last rung) and machine provisioning refuse with a typed
+      VendoError naming this flag until the host enables it; steps/agentic
+      automations (the ladder's first two rungs) never need it, and apps that
+      already carry a machine keep every runtime path. `experimentalServedApps`
+      is the layer-3 opt-in on top: a machine may serve the app surface itself
+      (the host embeds its URL in a sandboxed iframe) — it REQUIRES
+      `experimentalMachines` (layer 3 is served by a layer-2 machine). OFF by
+      default — layer-3 generation, the 2→3 surface flip, and open() on a
+      served app all refuse with a typed VendoError naming the flag. */
   apps?: {
     experimentalServedApps?: boolean;
+    experimentalMachines?: boolean;
   };
 }
 
@@ -1209,6 +1216,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // environment — VENDO_API_KEY fills its CloudAppsClient slot HERE, at the
   // composition seam; unfilled, share/publish refuse with cloud-required.
   const appsCloud = cloudKeyOptions();
+  // Wave 9 — the arming seam for ladder-authored automations: filled with the
+  // automations engine composed BELOW (arming only happens inside requests,
+  // which run after createVendo returns, so the closure reference is safe —
+  // same pattern as the connections loadout seed).
+  let automationsForArming: AutomationsEngine | undefined;
   const apps = createApps({
     store,
     guard,
@@ -1216,10 +1228,20 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     model: inference.model,
     catalog,
     pinBaselines,
-    // execution-v2 Wave 4 — the layer-3 experimental opt-in, host-config only
-    // (never an env var: enabling a surface that runs generated web apps is a
-    // deliberate per-project decision).
+    // execution-v2 Waves 4+9 — the layer-2/3 experimental opt-ins, host-config
+    // only (never an env var: enabling machine-backed execution or a surface
+    // that runs generated web apps is a deliberate per-project decision).
     ...(config.apps?.experimentalServedApps === undefined ? {} : { experimentalServedApps: config.apps.experimentalServedApps }),
+    ...(config.apps?.experimentalMachines === undefined ? {} : { experimentalMachines: config.apps.experimentalMachines }),
+    // Wave 9 — a ladder-authored automation is armed through the automations
+    // engine's own enable(), so the 07 §3 grant-capture flow runs at creation
+    // and the missing standing-grant approvals surface on the edit result.
+    armAutomation: async (appId, armCtx) => {
+      if (automationsForArming === undefined) {
+        throw new VendoError("not-implemented", "the automations engine is not composed yet");
+      }
+      return automationsForArming.enable(appId, armCtx);
+    },
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
@@ -1372,6 +1394,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     runner: agent.asRunner(),
   });
+  automationsForArming = automations;
   // 04-actions §3 — per-principal connected accounts, selected by the adapter
   // rule at this composition seam (selectConnections above).
   const connections = selectConnections(config.connections, resolvedConnectors);

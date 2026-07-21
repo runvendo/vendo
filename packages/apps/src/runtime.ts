@@ -13,6 +13,7 @@ import {
   type NormalizedCatalog,
   type RunContext,
   type ApprovalId,
+  type ApprovalRequest,
   type RiskLabel,
   type SecretsProvider,
   type ShapeType,
@@ -23,6 +24,7 @@ import {
   type ToolSemantics,
   type TreeV2,
   type ToolRegistry,
+  type Trigger,
   type UIPayload,
   type VendoViewPart,
   type VendoTheme,
@@ -42,12 +44,13 @@ import type {
 import {
   distinctIssues,
   instructionRequiresServedApp,
-  instructionRequiresServer,
   modelEngine,
   prewarmModels,
+  serverWorkRung,
   type GenerationDependencies,
   type GenerationEngine,
 } from "./engine.js";
+import { planAutomation } from "./automation-plan.js";
 import { createAppHistory } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
 import { createAppInterchange } from "./interchange.js";
@@ -65,7 +68,7 @@ import {
   type BoxEditResult,
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
-import { createAppOpener, createProgressiveQueryResolver, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
+import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
@@ -126,8 +129,36 @@ export interface AppsConfig {
    * flip, and open() on a served app all refuse with a typed VendoError naming
    * this flag. The host enables it per project
    * (`createVendo({ apps: { experimentalServedApps: true } })`).
+   * Layer 3 is a machine surface, so this flag REQUIRES
+   * {@link AppsConfig.experimentalMachines}; createApps refuses the
+   * combination `experimentalServedApps` without `experimentalMachines`.
    */
   experimentalServedApps?: boolean;
+  /**
+   * execution-v2 Wave 9 — the layer-2 (machine-backed execution) experimental
+   * opt-in, gating ALL of the box machinery for NEW graduation: machine
+   * provisioning, box-agent delegation, and fn: generation targeting a new
+   * machine. OFF by default: when the escalation ladder concludes only a box
+   * can express a request (rung c), the create/edit refuses with a typed
+   * VendoError naming this flag — NEVER a silent degrade to a broken
+   * automation. Rungs (a) steps and (b) agentic automations need no machine
+   * and work regardless of this flag. Apps that ALREADY carry a machine are
+   * never stranded: every runtime path over an existing machine (wake, sleep,
+   * fn: calls, schedules, box edits, open) keeps working with the flag off —
+   * only NEW graduation/provisioning is gated.
+   */
+  experimentalMachines?: boolean;
+  /**
+   * execution-v2 Wave 9 — the arming seam for ladder-authored automations
+   * (the same seam pattern as AutomationsConfig.runner: this block never
+   * imports the automations engine). When set, a freshly authored trigger is
+   * armed through it — the umbrella wires `automations.enable`, which runs
+   * the 07 §3 grant-capture flow and surfaces the missing standing-grant
+   * approvals (they ride EditResult.automation.pendingGrants). Unset, the
+   * runtime arms the stored row directly and grant capture stays lazy: the
+   * first away run's ungranted step parks the normal approval card.
+   */
+  armAutomation?: (appId: AppId, ctx: RunContext) => Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
   model?: LanguageModel;
   /** v2 spec §4 — tier-0 paint lane knob, passed to the generation engine.
    *  `model` is the no-think switch (a thinking-disabled model instance);
@@ -182,6 +213,23 @@ export interface EditResult {
    * once the owner approves this card.
    */
   pendingEgress?: { approvalId?: ApprovalId; domains: string[] };
+  /**
+   * execution-v2 Wave 9 — set when this edit rode the escalation ladder to an
+   * automation instead of a box: the authored trigger was written onto the
+   * document and ARMED on the existing automations engine (the enabled row the
+   * tick/emit machinery fires). Grant capture stays lazy — an away run's first
+   * ungranted mutating step parks the normal approval card. No machine is
+   * involved. `resultsCollection` names the app records collection the
+   * automation writes displayable results into (the rows the tree queries).
+   * `pendingGrants` carries the standing-grant approvals the arming seam's
+   * capture flow parked — approving them lets away runs complete unattended.
+   */
+  automation?: {
+    mode: "steps" | "agentic";
+    trigger: Trigger;
+    resultsCollection?: string;
+    pendingGrants?: ApprovalRequest[];
+  };
 }
 
 export interface EditFailure {
@@ -509,6 +557,15 @@ const touchedPinSlots = (previous: AppDocument, next: AppDocument): string[] => 
 
 /** 06-apps §1 — construct the app lifecycle, generation, execution, and interchange surface. */
 export const createApps = (config: AppsConfig): AppsRuntime => {
+  // Wave 9 — the experimental-flag relationship: a served (layer-3) surface
+  // lives in a machine, so layer 3 cannot be enabled without layer 2. Refuse
+  // the combination at composition time, loudly, instead of at first use.
+  if (config.experimentalServedApps === true && config.experimentalMachines !== true) {
+    throw new VendoError(
+      "validation",
+      "experimentalServedApps requires experimentalMachines: a served (layer-3) app surface is served BY a machine, so enable both — createVendo({ apps: { experimentalServedApps: true, experimentalMachines: true } })",
+    );
+  }
   const engine: GenerationEngine = modelEngine;
   const apps = config.store.records("vendo_apps");
   const data = createAppData(config.store);
@@ -900,6 +957,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     version: VersionEntry,
     subject: string,
     pinSlots?: readonly string[],
+    options: {
+      /** Wave 9 — an edit that AUTHORED the trigger arms it in the same write
+       *  (the ladder's automation path); every other edit keeps the disarm-on-
+       *  trigger-change rule below. */
+      armTrigger?: boolean;
+    } = {},
   ): Promise<AppDocument> => {
     // Best-effort optimistic concurrency. The core StoreAdapter seam (01-core §12) has
     // no compare-and-swap or transactions, so a narrow TOCTOU window between the final
@@ -928,7 +991,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     await history.append(app.id, previous, version, pinSlots ?? touchedPinSlots(previous, app));
     const wasEnabled = await assertCurrent();
     // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
-    const enabled = enabledAfterDocumentEdit(previous, app, wasEnabled);
+    const enabled = options.armTrigger === true && app.trigger !== undefined
+      ? true
+      : enabledAfterDocumentEdit(previous, app, wasEnabled);
     const appRow = appRecordInput(app, subject, enabled);
     await apps.put(appRow);
     return structuredClone(appRow.data.doc);
@@ -1299,6 +1364,134 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     });
   };
 
+  /**
+   * Wave 9 — the escalation ladder's rungs (a) and (b): author a STEPS or
+   * AGENTIC automation for a server-shaped instruction instead of graduating
+   * to a box. One structured model call plans the trigger (seconds, no
+   * machine); the trigger and its results-collection declaration land on the
+   * document through the normal edit persist, ARMED so the existing
+   * automations engine fires it; then the tree gains a query over the results
+   * rows through the same tree-edit dialect graduation uses for fn: bindings.
+   * Grant capture stays lazy: an away run's first ungranted mutating step
+   * parks the standard approval card (park/resume already handles it).
+   */
+  const automate = async (
+    previous: AppDocument,
+    instruction: string,
+    ctx: RunContext,
+    mode: "steps" | "agentic",
+  ): Promise<EditResult> => {
+    if (config.model === undefined) {
+      throw new VendoError("not-implemented", "generation requires a model");
+    }
+    const toolContext = await generationToolContext(ctx);
+    const planned = await planAutomation({
+      appId: previous.id,
+      appName: previous.name,
+      instruction,
+      mode,
+      tools: toolContext.tools ?? [],
+      ...(toolContext.toolShapes === undefined ? {} : { toolShapes: toolContext.toolShapes }),
+    }, config.model);
+    if (planned.kind === "failure") {
+      return failedEdit(previous, instruction, [
+        `this instruction needs ${mode === "steps" ? "a scheduled/triggered steps" : "an agentic"} automation, but no valid plan validated`,
+        ...planned.issues,
+      ]);
+    }
+    const { plan } = planned;
+    const automated = structuredClone(previous);
+    automated.trigger = structuredClone(plan.trigger);
+    if (plan.resultsCollection !== undefined && automated.storage?.[plan.resultsCollection] === undefined) {
+      automated.storage = {
+        ...automated.storage,
+        [plan.resultsCollection]: {
+          about: `Latest results written by the "${plan.name ?? "automation"}" automation for the app board.`,
+          kind: "records",
+        },
+      };
+    }
+    // Bind the tree to the results rows BEFORE the single persist, so one
+    // version entry carries the whole edit. A failed rebind never blocks the
+    // automation (same rule as graduation's fn: bindings): the trigger still
+    // lands and the miss is reported for a retry edit.
+    let bound = automated;
+    const issues: string[] = [];
+    if (plan.resultsCollection !== undefined && automated.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+      const rebindInstruction = `The app now has a ${mode} automation${plan.name === undefined ? "" : ` ("${plan.name}")`} that runs while the user is away and writes its latest displayable result into the app data collection "${plan.resultsCollection}" (record id "latest"). Rewire the tree to show those results:
+- Add (or repoint) a query over the results rows: <Query id="results" tool="vendo_apps_data_list" input={{appId:"${previous.id}", collection:"${plan.resultsCollection}"}}/> — the input is LITERAL JSON exactly as written. The tool's result shape is {records: [{id, data: <what the automation stored>}]}, so bind node props against /results/records/... paths (e.g. {results.records.0.data.summary}).
+- Keep the layout; change only what is needed to surface the automation's results (add a small section if none fits).
+- Emit no id attributes on nodes (ids are compiler-owned); a <Query> id is its name.`;
+      let treeIssues: string[] = [];
+      let rebound: AppDocument | undefined;
+      for (let attempt = 0; attempt < 2 && rebound === undefined; attempt += 1) {
+        const generated = await engine.edit(
+          {
+            app: structuredClone(automated),
+            instruction: rebindInstruction,
+            ...(treeIssues.length === 0 ? {} : { repairIssues: treeIssues }),
+          },
+          generationDependencies(config, config.model, toolContext),
+        );
+        if (generated.kind === "document") {
+          rebound = { ...generated.document, id: previous.id };
+        } else {
+          treeIssues = distinctIssues(treeIssues, generated.issues);
+        }
+      }
+      if (rebound === undefined) {
+        issues.push(
+          "automation armed, but the tree binding to its results collection did not validate — retry the edit to wire the board",
+          ...treeIssues,
+        );
+      } else {
+        // The rebind must never drop the just-authored automation fields.
+        rebound.trigger = structuredClone(plan.trigger);
+        rebound.storage = structuredClone(automated.storage);
+        bound = rebound;
+      }
+    }
+    if (bound.tree !== undefined) stripServerAuthoritativeFields(bound.tree);
+    const version: VersionEntry = { at: new Date().toISOString(), intent: instruction, rung: rungFor(bound) };
+    // Arming: through the seam when the host wired one (the umbrella wires
+    // automations.enable — the 07 §3 grant-capture flow), directly otherwise.
+    const persisted = await persistEdit(previous, bound, version, ctx.principal.subject, undefined, {
+      armTrigger: config.armAutomation === undefined,
+    });
+    let pendingGrants: ApprovalRequest[] | undefined;
+    if (config.armAutomation !== undefined) {
+      try {
+        const armed = await config.armAutomation(previous.id, ctx);
+        if (armed.missing.length > 0) pendingGrants = structuredClone(armed.missing);
+        // A seam that answers without arming is the same miss as a thrown one:
+        // the trigger must never sit silently disarmed.
+        if (!armed.enabled) {
+          issues.push("the automation was authored but the arming seam left it disabled — enable it explicitly via the automations engine (automations.enable / POST /automations/:appId/enable)");
+        }
+      } catch (error) {
+        // Never a silently dead automation: the trigger is on the document but
+        // disarmed — say so, with the arming surface to use.
+        issues.push(`the automation was authored but arming it failed (${error instanceof Error ? error.message : "unknown error"}) — enable it explicitly via the automations engine (automations.enable / POST /automations/:appId/enable)`);
+      }
+    }
+    await reportGuard(ctx.principal.subject, previous.id, ctx, {
+      operation: "automation-created",
+      mode,
+      triggerKind: plan.trigger.on.kind,
+    });
+    return withPinDrift({
+      app: persisted,
+      version: { ...version },
+      ...(issues.length === 0 ? {} : { issues }),
+      automation: {
+        mode,
+        trigger: structuredClone(plan.trigger),
+        ...(plan.resultsCollection === undefined ? {} : { resultsCollection: plan.resultsCollection }),
+        ...(pendingGrants === undefined ? {} : { pendingGrants }),
+      },
+    });
+  };
+
   const runtime: AppsRuntime = {
     async prewarm() {
       const models = [config.model, config.paint?.model].filter(
@@ -1315,6 +1508,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // that could only disappoint, and the error names the flag.
       if (config.experimentalServedApps !== true && instructionRequiresServedApp({}, input.prompt)) {
         throw servedAppsDisabledError();
+      }
+      // execution-v2 Wave 9 — same rule for a prompt whose server work only a
+      // box can express (the ladder's rung c) while machines are off: a typed
+      // refusal naming the flag, never a silent degrade. Automation-shaped
+      // prompts (rungs a/b) proceed — they never need a machine.
+      if (config.experimentalMachines !== true && serverWorkRung({ ui: "tree" }, input.prompt) === "box") {
+        throw machinesDisabledError();
       }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
@@ -1373,37 +1573,53 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await apps.put(appRecordInput(app, ctx.principal.subject));
       await reportLifecycle("create", app.id, ctx);
       if (finalTree !== undefined) emit(finalTree);
-      // execution-v2 Wave 3 — graduate on create when the prompt needs server
-      // capability (schedule / egress / heavy logic / app state). The tree is
-      // already on screen; the machine, the box-written server code, and the
-      // tree's fn: bindings land additively (the user never picks a tier).
-      // Best-effort: a graduation failure leaves the working tree app to retry
-      // via edit, so create never regresses to a white box.
+      // execution-v2 Wave 9 — escalate on create when the prompt needs server
+      // capability, walking the ladder: a steps/agentic automation (seconds,
+      // no machine) before box graduation. The tree is already on screen; the
+      // trigger (or the machine + fn: bindings) lands additively — the user
+      // never picks a tier. Best-effort: an escalation failure leaves the
+      // working tree app to retry via edit, so create never regresses to a
+      // white box.
       const servedCreate = instructionRequiresServedApp(app, input.prompt);
-      if (lifecycle.available() && (servedCreate || instructionRequiresServer(app, input.prompt))) {
+      const rung = servedCreate ? "box" : serverWorkRung(app, input.prompt);
+      // The streamed view parts are last-write-wins, and the pre-escalation
+      // emit above already painted resolved query data — so this emit must
+      // resolve the escalated tree's queries too (fn: refs are resolvable —
+      // the machine exists; a results query reads the app's own rows). On a
+      // resolver failure, emit nothing rather than a data-less tree that
+      // would blank the screen.
+      const emitEscalated = async (escalated: AppDocument): Promise<void> => {
+        if (input.onView === undefined || escalated.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return;
+        try {
+          const tree = assembleTree({ tree: escalated.tree, components: escalated.components, componentTools: escalated.componentTools });
+          stripServerAuthoritativeFields(tree);
+          const escalatedResolver = createProgressiveQueryResolver(caller, escalated, ctx);
+          escalatedResolver.update(tree);
+          tree.data = await escalatedResolver.complete();
+          emit(tree);
+        } catch {
+          // Best-effort: the pre-escalation view stands until open().
+        }
+      };
+      if (rung === "steps" || rung === "agentic") {
+        try {
+          const automated = await automate(structuredClone(app), input.prompt, ctx, rung);
+          if (automated.failure === undefined) {
+            await emitEscalated(automated.app);
+            return structuredClone(automated.app);
+          }
+        } catch {
+          // Automation is best-effort on create; the working tree app stands.
+        }
+      } else if (rung === "box" && lifecycle.available()) {
+        // Rung (c) reaches here only with experimentalMachines on — the
+        // flag-off case refused before generation above.
         try {
           const graduated = await graduate(structuredClone(app), input.prompt, ctx, {
             served: servedCreate,
           });
           if (graduated.failure === undefined) {
-            if (input.onView !== undefined && graduated.app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
-              // The streamed view parts are last-write-wins, and the pre-
-              // graduation emit above already painted resolved query data —
-              // so this emit must resolve the graduated tree's queries too
-              // (its fn: refs are resolvable: the machine exists). On a
-              // resolver failure, emit nothing rather than a data-less tree
-              // that would blank the screen.
-              try {
-                const tree = assembleTree({ tree: graduated.app.tree, components: graduated.app.components, componentTools: graduated.app.componentTools });
-                stripServerAuthoritativeFields(tree);
-                const graduatedResolver = createProgressiveQueryResolver(caller, graduated.app, ctx);
-                graduatedResolver.update(tree);
-                tree.data = await graduatedResolver.complete();
-                emit(tree);
-              } catch {
-                // Best-effort: the pre-graduation view stands until open().
-              }
-            }
+            await emitEscalated(graduated.app);
             return structuredClone(graduated.app);
           }
         } catch {
@@ -1491,7 +1707,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       const app = await owned(args.appId, ctx.principal.subject);
       if (app === null) return "write";
-      return instructionRequiresServer(app, args.instruction) ? "write" : "read";
+      // Wave 9 — any ladder rung (steps/agentic automation or box work) is a
+      // write-class edit; only pure-tree instructions stay read-class.
+      return serverWorkRung(app, args.instruction) !== null ? "write" : "read";
     },
 
     async edit(appId, instruction, ctx) {
@@ -1506,11 +1724,23 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       if (served && config.experimentalServedApps !== true) {
         throw servedAppsDisabledError();
       }
-      // execution-v2 Wave 3 — an instruction that needs server capability
-      // graduates the app (provision a machine, delegate to the in-box agent,
-      // land fn: bindings). A pure-UI instruction stays on the cheap tree
-      // path. A served ask is a fortiori a graduation ask (Wave 4).
-      if (served || instructionRequiresServer(previous, instruction)) {
+      // execution-v2 Wave 9 — server-shaped instructions walk the escalation
+      // ladder: (a) a steps automation, (b) an agentic automation (both ride
+      // the existing automations engine — seconds, no machine), (c) box
+      // graduation only when custom code is required (experimental). A served
+      // ask is a fortiori a box ask (Wave 4), and an app that ALREADY has a
+      // machine keeps its box workflow — existing apps are never rerouted.
+      // A pure-UI instruction stays on the cheap tree path.
+      const rung = served ? "box" : serverWorkRung(previous, instruction);
+      if (rung !== null) {
+        if (previous.machine === undefined && (rung === "steps" || rung === "agentic")) {
+          return automate(previous, instruction, ctx, rung);
+        }
+        // Rung (c): NEW graduation (no machine yet) is gated by the
+        // experimental flag — a typed refusal, never a silent degrade.
+        if (previous.machine === undefined && config.experimentalMachines !== true) {
+          throw machinesDisabledError();
+        }
         return graduate(previous, instruction, ctx, { served });
       }
       let repairIssues: string[] | undefined;
@@ -1759,6 +1989,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async provision(appId, ctx) {
         const app = await requireOwned(appId, ctx.principal.subject);
         const alreadyProvisioned = app.machine !== undefined;
+        // Wave 9 — provisioning a NEW machine is experimental (typed refusal
+        // while the flag is off); an already-provisioned app stays idempotent
+        // here so existing apps are never stranded.
+        if (!alreadyProvisioned && config.experimentalMachines !== true) {
+          throw machinesDisabledError();
+        }
         // Lane E — first provision is the "approve once" moment: unapproved
         // declared egress parks the approval card and refuses loudly here.
         await ensureEgressApproved(app, ctx);

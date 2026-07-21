@@ -272,7 +272,9 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     policy: { file: ".vendo/policy.json" },
     ...(options.telemetry === true ? { telemetry: true } : {}),
     ...(options.connectors === undefined ? {} : { connectors: options.connectors }),
-    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+    // Wave 9 — machine provisioning is flag-gated; a stack composed WITH a
+    // sandbox is here to exercise the box machinery, so opt in.
+    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox, apps: { experimentalMachines: true } }),
   });
 
   // J6 — the MCP door, composed from the umbrella's OWN parts (the hookup note's
