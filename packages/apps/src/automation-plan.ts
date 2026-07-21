@@ -209,12 +209,13 @@ const validatePlan = (
       }
       // Law 1 for automations: a published result must be BUILT from a PRIOR
       // step's output (or the trigger event) — a hand-typed data payload is
-      // invented data on the board. Quoted jsonata string literals are
-      // stripped first so 'a steps guide' cannot smuggle past the check, and
-      // the referenced step id must be one that ran EARLIER (a bare "steps"
-      // token or a forward reference publishes nothing at run time).
+      // invented data on the board. Quoted jsonata string literals (BOTH legal
+      // quote forms) are stripped first so 'a steps guide' or "steps.rows"
+      // cannot smuggle past the check, and the referenced step id must be one
+      // that ran EARLIER (a bare "steps" token or a forward reference
+      // publishes nothing at run time).
       if (step.tool === RESULTS_TOOL) {
-        const dataExpression = (step.args?.data ?? "").replace(/'[^']*'/g, "");
+        const dataExpression = (step.args?.data ?? "").replace(/'[^']*'|"[^"]*"/g, "");
         const referencedPrior = [...dataExpression.matchAll(/\bsteps\.([A-Za-z_][A-Za-z0-9_]*)/g)]
           .some((match) => priorIds.has(match[1] as string));
         if (!referencedPrior && !/\bevent\b/.test(dataExpression)) {
