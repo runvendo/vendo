@@ -13,12 +13,12 @@ describe("cloud command dispatch", () => {
     expect(await runCloud(["--help"], { output: messages.sink })).toBe(0);
     expect(messages.logs.join("\n")).toContain("login EMAIL");
     expect(messages.logs.join("\n")).not.toContain("validate");
-    // The retired machine trio is gone from the surface entirely.
-    for (const removed of ["share", "publish", "pin-ship"]) {
+    // The retired machine trio is gone from the surface entirely, and so is
+    // the deployments read (its org-scoped endpoint died with spine v2 and
+    // the console Deployments page was removed 2026-07-21).
+    for (const removed of ["share", "publish", "pin-ship", "deployments"]) {
       expect(messages.logs.join("\n")).not.toContain(removed);
     }
-    // "deploy" itself is gone too — matched with a word boundary since
-    // "deployments" (the org-deployments read command) legitimately stays.
     expect(messages.logs.join("\n")).not.toMatch(/\bdeploy\b/);
   });
 

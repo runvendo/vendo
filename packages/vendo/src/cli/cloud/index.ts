@@ -4,7 +4,7 @@ import { runDeviceLogin, type DeviceLoginOptions } from "./device-login.js";
 import { runKeys } from "./keys.js";
 import { runInvite, runMembers } from "./members.js";
 import { consoleOutput } from "../shared.js";
-import { runBilling, runDeployments, runOrgs, runUsage } from "./read.js";
+import { runBilling, runOrgs, runUsage } from "./read.js";
 
 const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
 
@@ -23,7 +23,6 @@ User commands:
   keys list --org <id>                  List API keys
   keys create --org <id> --name <name> Create an API key
   keys revoke --org <id> --id <keyId>  Revoke an API key
-  deployments --org <id>               List deployments
   usage --org <id> [--days <days>]     Show usage (default 30 days)
   members --org <id>                   List organization members
   invite --org <id> --email <email> --role <admin|member>
@@ -49,7 +48,6 @@ export async function runCloud(args: string[], options: RunCloudOptions = {}): P
   if (command === "whoami") return runWhoami(commandArgs, options);
   if (command === "orgs") return runOrgs(commandArgs, options);
   if (command === "keys") return runKeys(commandArgs, options);
-  if (command === "deployments") return runDeployments(commandArgs, options);
   if (command === "usage") return runUsage(commandArgs, options);
   if (command === "members") return runMembers(commandArgs, options);
   if (command === "invite") return runInvite(commandArgs, options);

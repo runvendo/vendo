@@ -25,10 +25,6 @@ function orgRead(
   });
 }
 
-export function runDeployments(args: string[], options: CloudCommandOptions = {}): Promise<number> {
-  return orgRead(args, options, "deployments");
-}
-
 export function runUsage(args: string[], options: CloudCommandOptions = {}): Promise<number> {
   const days = option(args, "--days") ?? "30";
   return orgRead(args, options, "usage", `?days=${encodeURIComponent(days)}`);
