@@ -93,7 +93,10 @@ export interface GenerationDependencies {
   /** The composition-normalized catalog (01 §14): propsJsonSchema is derived. */
   catalog: NormalizedCatalog;
   theme?: VendoTheme;
-  designRules?: string;
+  /** Host design rules for the generation prompt. The function form is
+   *  resolved every time prompt sections are built, so a per-call source
+   *  (e.g. `.vendo/design-rules.md`) is re-read on each create/edit. */
+  designRules?: string | (() => string | undefined);
   pinBaselines?: readonly PinBaseline[];
   /** v2 spec §3 — shape-card outputs keyed by tool; when present, create and
    *  edit compiles type-check bindings and surface shape-mismatch repair. */
@@ -261,7 +264,7 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
   content: `THEME TOKENS:\n${JSON.stringify(deps.theme ?? null, null, 2)}`,
 }, {
   id: "design-rules",
-  content: `HOST DESIGN RULES:\n${deps.designRules?.trim() || "(none provided)"}`,
+  content: `HOST DESIGN RULES:\n${(typeof deps.designRules === "function" ? deps.designRules() : deps.designRules)?.trim() || "(none provided)"}`,
 }, {
   id: "remixable-slots",
   content: `REMIXABLE HOST SLOTS:

@@ -171,7 +171,9 @@ export interface AppsConfig {
   catalog: NormalizedCatalog;
   theme?: VendoTheme;
   secrets?: SecretsProvider;
-  designRules?: string;
+  /** Host design rules for generation prompts; the function form is re-read
+   *  per create/edit (engine.ts GenerationDependencies). */
+  designRules?: string | (() => string | undefined);
   pinBaselines?: PinBaseline[];
   /** ADAPTER RULE — the share/publish seam (see cloud.ts): the umbrella wires
    * the Cloud console client when VENDO_API_KEY fills the unset slot; this

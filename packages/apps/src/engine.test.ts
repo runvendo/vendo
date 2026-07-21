@@ -934,6 +934,33 @@ describe("v2 wire create", () => {
     expect(capturedPrompt).not.toContain("CREATE DIALECT: emit exactly");
   });
 
+  it("resolves a designRules provider per generation, so edits apply without recomposing", async () => {
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return wireCreate();
+    });
+    let rules = "Dense layouts, no emoji.";
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+      designRules: () => rules,
+    });
+
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+    const firstPassPrompts = [...prompts];
+    rules = "Airy layouts, plenty of whitespace.";
+    prompts.length = 0;
+    await runtime.create({ prompt: "Build another dashboard" }, ctx);
+
+    expect(firstPassPrompts.some((prompt) => prompt.includes("HOST DESIGN RULES:\nDense layouts, no emoji."))).toBe(true);
+    expect(firstPassPrompts.every((prompt) => !prompt.includes("Airy layouts"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("HOST DESIGN RULES:\nAiry layouts, plenty of whitespace."))).toBe(true);
+  });
+
   it("carries islands to document-level components, never on the tree", async () => {
     const wire = [
       '<App name="Noted"><RevenueNote/>',
