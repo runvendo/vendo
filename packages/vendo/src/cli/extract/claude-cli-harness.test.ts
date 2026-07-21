@@ -137,6 +137,42 @@ describe("claudeCliHarness", () => {
         .toBe("your Claude Code login");
     });
 
+    it("labels the rung with ANTHROPIC_AUTH_TOKEN, not the Vendo Cloud key, when both are set (corporate gateway)", async () => {
+      const harness = claudeCliHarness({ probeBinary: async () => true, probeLogin: async () => false });
+      expect(await harness.availability({
+        root: "/x",
+        env: { ANTHROPIC_AUTH_TOKEN: "corp-token", VENDO_API_KEY: "vnd_x" },
+      })).toBe("your ANTHROPIC_AUTH_TOKEN");
+    });
+
+    it("labels the rung with ANTHROPIC_AUTH_TOKEN even with a custom ANTHROPIC_BASE_URL set alongside it", async () => {
+      const harness = claudeCliHarness({ probeBinary: async () => true, probeLogin: async () => false });
+      expect(await harness.availability({
+        root: "/x",
+        env: {
+          ANTHROPIC_AUTH_TOKEN: "corp-token",
+          ANTHROPIC_BASE_URL: "https://anthropic.corp.example.com",
+          VENDO_API_KEY: "vnd_x",
+        },
+      })).toBe("your ANTHROPIC_AUTH_TOKEN");
+    });
+
+    it("labels the rung with CLAUDE_CODE_OAUTH_TOKEN, not the Vendo Cloud key, when both are set", async () => {
+      const harness = claudeCliHarness({ probeBinary: async () => true, probeLogin: async () => false });
+      expect(await harness.availability({
+        root: "/x",
+        env: { CLAUDE_CODE_OAUTH_TOKEN: "oauth-token", VENDO_API_KEY: "vnd_x" },
+      })).toBe("your CLAUDE_CODE_OAUTH_TOKEN");
+    });
+
+    it("labels the rung with ANTHROPIC_BASE_URL when only a custom base URL is set (no token), not the Vendo Cloud key", async () => {
+      const harness = claudeCliHarness({ probeBinary: async () => true, probeLogin: async () => false });
+      expect(await harness.availability({
+        root: "/x",
+        env: { ANTHROPIC_BASE_URL: "https://anthropic.corp.example.com", VENDO_API_KEY: "vnd_x" },
+      })).toBe("your ANTHROPIC_BASE_URL");
+    });
+
     it("does not overlay the env when ANTHROPIC_API_KEY is present (own credential wins)", async () => {
       let capturedEnv: NodeJS.ProcessEnv | undefined;
       const harness = claudeCliHarness({
@@ -181,6 +217,101 @@ describe("claudeCliHarness", () => {
         exec: async () => ({ stdout: "ok", stderr: "", code: 0 }),
       });
       await harness.run({ root: "/x", env: {}, instructions: "go" });
+      expect(probeCalls).toBe(0);
+    });
+
+    it("does not overlay when ANTHROPIC_AUTH_TOKEN is set (corporate gateway), and skips the login probe", async () => {
+      let capturedEnv: NodeJS.ProcessEnv | undefined;
+      let probeCalls = 0;
+      const harness = claudeCliHarness({
+        probeLogin: async () => {
+          probeCalls += 1;
+          return false;
+        },
+        exec: async (_args, options) => {
+          capturedEnv = options.env;
+          return { stdout: "ok", stderr: "", code: 0 };
+        },
+      });
+      await harness.run({
+        root: "/x",
+        env: { ANTHROPIC_AUTH_TOKEN: "corp-token", VENDO_API_KEY: "vnd_x" },
+        instructions: "go",
+      });
+      expect(capturedEnv?.ANTHROPIC_BASE_URL).toBeUndefined();
+      expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+      // the caller's own ANTHROPIC_AUTH_TOKEN must survive untouched
+      expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBe("corp-token");
+      expect(probeCalls).toBe(0);
+    });
+
+    it("does not overlay when ANTHROPIC_AUTH_TOKEN is paired with a custom ANTHROPIC_BASE_URL (corporate gateway)", async () => {
+      let capturedEnv: NodeJS.ProcessEnv | undefined;
+      const harness = claudeCliHarness({
+        probeLogin: async () => false,
+        exec: async (_args, options) => {
+          capturedEnv = options.env;
+          return { stdout: "ok", stderr: "", code: 0 };
+        },
+      });
+      await harness.run({
+        root: "/x",
+        env: {
+          ANTHROPIC_AUTH_TOKEN: "corp-token",
+          ANTHROPIC_BASE_URL: "https://anthropic.corp.example.com",
+          VENDO_API_KEY: "vnd_x",
+        },
+        instructions: "go",
+      });
+      expect(capturedEnv?.ANTHROPIC_BASE_URL).toBe("https://anthropic.corp.example.com");
+      expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBe("corp-token");
+      expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+    });
+
+    it("does not overlay when CLAUDE_CODE_OAUTH_TOKEN is set, and skips the login probe", async () => {
+      let capturedEnv: NodeJS.ProcessEnv | undefined;
+      let probeCalls = 0;
+      const harness = claudeCliHarness({
+        probeLogin: async () => {
+          probeCalls += 1;
+          return false;
+        },
+        exec: async (_args, options) => {
+          capturedEnv = options.env;
+          return { stdout: "ok", stderr: "", code: 0 };
+        },
+      });
+      await harness.run({
+        root: "/x",
+        env: { CLAUDE_CODE_OAUTH_TOKEN: "oauth-token", VENDO_API_KEY: "vnd_x" },
+        instructions: "go",
+      });
+      expect(capturedEnv?.ANTHROPIC_BASE_URL).toBeUndefined();
+      expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+      expect(capturedEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-token");
+      expect(probeCalls).toBe(0);
+    });
+
+    it("does not overlay when only ANTHROPIC_BASE_URL is set (no token), and skips the login probe", async () => {
+      let capturedEnv: NodeJS.ProcessEnv | undefined;
+      let probeCalls = 0;
+      const harness = claudeCliHarness({
+        probeLogin: async () => {
+          probeCalls += 1;
+          return false;
+        },
+        exec: async (_args, options) => {
+          capturedEnv = options.env;
+          return { stdout: "ok", stderr: "", code: 0 };
+        },
+      });
+      await harness.run({
+        root: "/x",
+        env: { ANTHROPIC_BASE_URL: "https://anthropic.corp.example.com", VENDO_API_KEY: "vnd_x" },
+        instructions: "go",
+      });
+      expect(capturedEnv?.ANTHROPIC_BASE_URL).toBe("https://anthropic.corp.example.com");
+      expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
       expect(probeCalls).toBe(0);
     });
 

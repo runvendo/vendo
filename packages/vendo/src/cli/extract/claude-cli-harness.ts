@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { composeGatewayFuel, type GatewayFuelOverlay } from "./gateway-fuel.js";
+import { composeGatewayFuel, hasOwnAnthropicEnvOverride, type GatewayFuelOverlay } from "./gateway-fuel.js";
 import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
 
 /**
@@ -16,11 +16,12 @@ import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
  * Code settings/hooks — same intent as claude-harness.ts's
  * `settingSources: []`), read-only tool allowlist, no shell/web/write surface.
  *
- * Gateway fuel: when neither an ANTHROPIC_API_KEY nor a Claude Code login is
- * available but VENDO_API_KEY is set, the rung runs on Vendo Cloud's model
- * gateway instead of degrading to unavailable (see gateway-fuel.ts). Own
- * credential always wins — this never overrides a working ANTHROPIC_API_KEY
- * or login.
+ * Gateway fuel: when the dev has none of ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
+ * CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_BASE_URL (the corporate-gateway/custom-
+ * endpoint path), or a Claude Code login, but VENDO_API_KEY is set, the rung
+ * runs on Vendo Cloud's model gateway instead of degrading to unavailable
+ * (see gateway-fuel.ts). Own credential always wins — this never overrides a
+ * working ANTHROPIC_API_KEY, login, or any of those env vars.
  */
 
 const ALLOWED_TOOLS = ["Read", "Glob", "Grep"];
@@ -83,18 +84,24 @@ export interface ClaudeCliHarnessOptions {
   exec?: Exec;
 }
 
+function isSet(value: string | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 /** Gateway fuel only ever matters when VENDO_API_KEY is set — skip the
  *  (async) login probe entirely otherwise, so the own-credential path never
- *  pays for or is affected by this check. */
+ *  pays for or is affected by this check. Env-based own-credential checks
+ *  (ANTHROPIC_API_KEY, then OWN_CREDENTIAL_ENV_VARS) run before the probe
+ *  too, since they're cheap and the probe is a subprocess spawn. */
 async function resolveGatewayFuelOverlay(
   env: Record<string, string | undefined>,
   probeLogin: () => Promise<boolean>,
 ): Promise<GatewayFuelOverlay | null> {
   const cloudKey = env["VENDO_API_KEY"];
-  if (typeof cloudKey !== "string" || cloudKey.trim().length === 0) return null;
-  const ownKey = env["ANTHROPIC_API_KEY"];
-  const hasOwnKey = typeof ownKey === "string" && ownKey.trim().length > 0;
-  const ownCredentialAvailable = hasOwnKey || (await probeLogin());
+  if (!isSet(cloudKey)) return null;
+  const ownCredentialAvailable = isSet(env["ANTHROPIC_API_KEY"])
+    || hasOwnAnthropicEnvOverride(env)
+    || (await probeLogin());
   return composeGatewayFuel({ env, ownCredentialAvailable });
 }
 
@@ -106,13 +113,12 @@ export function claudeCliHarness(options: ClaudeCliHarnessOptions = {}): Extract
     id: "claude-cli",
     async availability({ env }) {
       if (!(await hasBinary())) return null;
-      const key = env["ANTHROPIC_API_KEY"];
-      if (typeof key === "string" && key.trim().length > 0) return "your ANTHROPIC_API_KEY";
+      if (isSet(env["ANTHROPIC_API_KEY"])) return "your ANTHROPIC_API_KEY";
+      if (isSet(env["ANTHROPIC_AUTH_TOKEN"])) return "your ANTHROPIC_AUTH_TOKEN";
+      if (isSet(env["CLAUDE_CODE_OAUTH_TOKEN"])) return "your CLAUDE_CODE_OAUTH_TOKEN";
+      if (isSet(env["ANTHROPIC_BASE_URL"])) return "your ANTHROPIC_BASE_URL";
       if (await probe()) return "your Claude Code login";
-      const cloudKey = env["VENDO_API_KEY"];
-      if (typeof cloudKey === "string" && cloudKey.trim().length > 0) {
-        return "your Vendo Cloud key (managed inference)";
-      }
+      if (isSet(env["VENDO_API_KEY"])) return "your Vendo Cloud key (managed inference)";
       return null;
     },
     async run(input: ExtractionRunInput): Promise<string> {

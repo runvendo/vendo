@@ -59,4 +59,67 @@ describe("composeGatewayFuel", () => {
     expect(INIT_PURPOSE_HEADER_NAME).toBe("x-vendo-purpose");
     expect(INIT_PURPOSE_HEADER_VALUE).toBe("init");
   });
+
+  it("trims VENDO_API_KEY before assigning it to ANTHROPIC_AUTH_TOKEN", () => {
+    const overlay = composeGatewayFuel({
+      env: { VENDO_API_KEY: "  vnd_x  " },
+      ownCredentialAvailable: false,
+    });
+    expect(overlay?.ANTHROPIC_AUTH_TOKEN).toBe("vnd_x");
+  });
+
+  describe("defense in depth: a user-set Anthropic env override is always its own credential", () => {
+    it("never overlays when ANTHROPIC_AUTH_TOKEN is set, even if the caller wrongly says ownCredentialAvailable=false", () => {
+      expect(
+        composeGatewayFuel({
+          env: { VENDO_API_KEY: "vnd_x", ANTHROPIC_AUTH_TOKEN: "corp-token" },
+          ownCredentialAvailable: false,
+        }),
+      ).toBeNull();
+    });
+
+    it("never overlays when ANTHROPIC_AUTH_TOKEN is paired with a custom ANTHROPIC_BASE_URL (corporate gateway)", () => {
+      expect(
+        composeGatewayFuel({
+          env: {
+            VENDO_API_KEY: "vnd_x",
+            ANTHROPIC_AUTH_TOKEN: "corp-token",
+            ANTHROPIC_BASE_URL: "https://anthropic.corp.example.com",
+          },
+          ownCredentialAvailable: false,
+        }),
+      ).toBeNull();
+    });
+
+    it("never overlays when CLAUDE_CODE_OAUTH_TOKEN is set", () => {
+      expect(
+        composeGatewayFuel({
+          env: { VENDO_API_KEY: "vnd_x", CLAUDE_CODE_OAUTH_TOKEN: "oauth-token" },
+          ownCredentialAvailable: false,
+        }),
+      ).toBeNull();
+    });
+
+    it("never overlays when only ANTHROPIC_BASE_URL is set (no token — e.g. mTLS/proxy auth)", () => {
+      expect(
+        composeGatewayFuel({
+          env: { VENDO_API_KEY: "vnd_x", ANTHROPIC_BASE_URL: "https://anthropic.corp.example.com" },
+          ownCredentialAvailable: false,
+        }),
+      ).toBeNull();
+    });
+
+    it("ignores a blank ANTHROPIC_AUTH_TOKEN/CLAUDE_CODE_OAUTH_TOKEN/ANTHROPIC_BASE_URL (still composes)", () => {
+      const overlay = composeGatewayFuel({
+        env: {
+          VENDO_API_KEY: "vnd_x",
+          ANTHROPIC_AUTH_TOKEN: "   ",
+          CLAUDE_CODE_OAUTH_TOKEN: "",
+          ANTHROPIC_BASE_URL: "   ",
+        },
+        ownCredentialAvailable: false,
+      });
+      expect(overlay).not.toBeNull();
+    });
+  });
 });
