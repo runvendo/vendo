@@ -168,6 +168,10 @@ export interface AppsConfig {
   /** W4 pipeline knobs, passed to the generation engine: structured repair
    *  (default on), outline+region-parallel tier-2 and the end pass (opt-in). */
   pipeline?: GenerationDependencies["pipeline"];
+  /** W4 pipeline — opt-in per-stage diagnostics (repair rounds, end-pass
+   *  adoption, wall-clock), forwarded verbatim to the generation engine.
+   *  Pure observability: the engine only reports through it. */
+  onPipeline?: GenerationDependencies["onPipeline"];
   /** The composition-normalized catalog (01 §14): derived schemas included. */
   catalog: NormalizedCatalog;
   theme?: VendoTheme;
@@ -548,6 +552,7 @@ const generationDependencies = (
   ...toolContext,
   ...(config.paint === undefined ? {} : { paint: config.paint }),
   ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
+  ...(config.onPipeline === undefined ? {} : { onPipeline: config.onPipeline }),
   ...(onPartial === undefined ? {} : { onPartial }),
 });
 

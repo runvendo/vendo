@@ -43,6 +43,9 @@ export const vendo = createVendo({
     // Gate candidate config (v4 final gate, 2026-07-21): the measured stack is
     // v4 create contract + end pass ON. Configuration selection, not tuning.
     pipeline: { promptRewrite: true, endPass: true },
+    // Gate observability only — server-log per-stage diagnostics so the run
+    // ledger can report end-pass adoption and repair engagement per prompt.
+    onPipeline: (event) => console.log("[vendo pipeline]", JSON.stringify(event)),
   },
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
