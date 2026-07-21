@@ -75,6 +75,7 @@ describe("runDeviceLogin", () => {
         sleeps.push(ms);
       },
       env: {},
+      isTty: false,
     });
 
     expect(exit).toBe(0);
@@ -113,6 +114,7 @@ describe("runDeviceLogin", () => {
       root,
       sleep: async () => {},
       env: {},
+      isTty: false,
     });
     expect(exit).toBe(0);
     const envLocal = await readFile(join(root, ".env.local"), "utf8");
@@ -134,6 +136,7 @@ describe("runDeviceLogin", () => {
         root: await tempRoot(),
         sleep: async () => {},
         env: {},
+        isTty: false,
       });
       expect(exit).toBe(1);
       expect(messages.errors.join("\n")).toContain(fragment);
@@ -155,6 +158,7 @@ describe("runDeviceLogin", () => {
       },
       now: () => clock,
       env: {},
+      isTty: false,
     });
     expect(exit).toBe(1);
     expect(messages.errors.join("\n")).toContain("expired");
@@ -171,6 +175,7 @@ describe("runDeviceLogin", () => {
       root,
       sleep: async () => {},
       env: {},
+      isTty: false,
     });
     expect(exit).toBe(1);
     await expect(readFile(join(root, ".env.local"), "utf8")).rejects.toThrow();
@@ -189,8 +194,68 @@ describe("runDeviceLogin", () => {
       root: await tempRoot(),
       sleep: async () => {},
       env: {},
+      isTty: false,
     });
     expect(exit).toBe(1);
     expect(messages.errors.join("\n")).toContain("Too many open claims");
+  });
+
+  it("opens the browser at verification_uri_complete when a TTY human is watching", async () => {
+    const opened: string[] = [];
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root: await tempRoot(),
+      sleep: async () => {},
+      env: {},
+      isTty: true,
+      openBrowser: (url) => opened.push(url),
+    });
+    expect(exit).toBe(0);
+    expect(opened).toEqual(["https://console.test/claim?code=BCDF-GHJK"]);
+    // The printed URL + code stay — the browser open is best-effort, text is the fallback.
+    const joined = messages.logs.join("\n");
+    expect(joined).toContain("BCDF-GHJK");
+    expect(joined).toContain("https://console.test/claim?code=BCDF-GHJK");
+  });
+
+  it("never launches a browser for a non-TTY (agent) caller", async () => {
+    const opened: string[] = [];
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root: await tempRoot(),
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+      openBrowser: (url) => opened.push(url),
+    });
+    expect(exit).toBe(0);
+    expect(opened).toEqual([]);
+  });
+
+  it("suppresses the standalone re-run hint when init drives the ceremony", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root: await tempRoot(),
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+      rerunHint: false,
+    });
+    expect(exit).toBe(0);
+    expect(messages.logs.join("\n")).not.toContain("Re-run `vendo init`");
   });
 });

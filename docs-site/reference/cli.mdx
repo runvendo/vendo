@@ -1,10 +1,10 @@
 ---
-title: "CLI reference: vendo init, doctor, sync, eject, extract, refine, playground, mcp, cloud"
+title: "CLI reference: vendo init, login, doctor, sync, eject, extract, refine, playground, mcp, cloud"
 sidebarTitle: "CLI"
-description: "Reference for the vendo bin commands: init, doctor for wiring checks, sync for build-time extraction, eject, extract, refine, playground, mcp, and cloud."
+description: "Reference for the vendo bin commands: init, login for a Vendo Cloud key, doctor for wiring checks, sync for build-time extraction, eject, extract, refine, playground, mcp, and cloud."
 ---
 
-The umbrella owns the `vendo` bin. It has nine commands.
+The umbrella owns the `vendo` bin. It has ten commands.
 
 ## `vendo init [dir]`
 
@@ -81,6 +81,27 @@ your dev and build scripts:
 
 If either script already exists, `vendo sync` is prepended. Existing formatting
 is preserved.
+
+## `vendo login [email]`
+
+Claims a Vendo Cloud key through the [auth.md](https://vendo.run/auth.md)
+user-claimed ceremony: the CLI opens a claim, shows the pairing code and
+approval URL, and polls until the request is approved in the browser. The
+minted `VENDO_API_KEY` is written to `.env.local` — never printed.
+
+In a terminal (TTY) the browser opens automatically at the approval URL; the
+URL and code stay printed as the fallback. For a non-TTY caller — a coding
+agent driving the CLI — nothing opens: the command prints the approval URL and
+pairing code for the human to act on, exactly as before.
+
+Options:
+
+- `[email]` or `--email <address>` pre-fills the approval page (login hint).
+- `--api-url <url>` overrides `VENDO_CLOUD_URL` (default
+  `https://console.vendo.run`).
+
+`vendo cloud device-login` is the same command (kept as an alias). The
+email-OTP `vendo cloud login <email>` remains available as a fallback.
 
 ## `vendo doctor [dir]`
 
@@ -348,12 +369,14 @@ authenticating.
 
 ## `vendo cloud`
 
-Client for the Vendo Cloud API. `vendo cloud login <email>` sends a 6-10 digit
-email OTP, prompts for it, and stores the session at
-`~/.vendo/cloud-session.json`; `--token <jwt>` stores an access token instead.
+Client for the Vendo Cloud API. `vendo cloud device-login` is the alias of
+[`vendo login`](#vendo-login-email) — the headline way to get a key. The
+email-OTP fallback `vendo cloud login <email>` sends a 6-10 digit code,
+prompts for it, and stores the session at `~/.vendo/cloud-session.json`;
+`--token <jwt>` stores an access token instead.
 Other subcommands: `logout`, `whoami`, `orgs`, `keys` (`list`, `create`,
-`revoke`), `members`, `invite`, `deployments`, `usage`, `billing`,
-`deploy`, `share`, `publish`, and `pin-ship`. Read results print as JSON, with
+`revoke`), `members`, `invite`, `deployments`, `usage`, `billing`, and
+`deploy`. Read results print as JSON, with
 one exception: `deploy` prints a concise summary table by default and switches
 to raw JSON with `--json`. There is no validate subcommand: key problems
 surface on the first real call, and `vendo cloud usage` and
@@ -369,10 +392,9 @@ full walkthrough.
 Global options:
 
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default `https://console.vendo.run`).
-- `--key <vnd_...>` overrides `VENDO_API_KEY` for the machine commands
-  (`deploy`, `share`, `publish`, `pin-ship`). Keys must match
-  `vnd_` followed by 40 hex characters or the command exits before any
-  network call.
+- `--key <vnd_...>` overrides `VENDO_API_KEY` for the machine command
+  (`deploy`). Keys must match `vnd_` followed by 40 hex characters or the
+  command exits before any network call.
 
 Org-scoped commands take `--org <id>`; omit it only when your account has one
 organization. Run `vendo cloud help` for the full list. See

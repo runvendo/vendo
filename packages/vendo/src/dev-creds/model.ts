@@ -87,7 +87,7 @@ const CLOUD_MODEL: (typeof DEFAULT_MODELS)[string] = {
 
 export const NO_CREDENTIAL_MESSAGE =
   "Vendo found no model key. Set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY "
-  + "in .env.local (with the matching @ai-sdk provider installed), or run `vendo cloud login` for a "
+  + "in .env.local (with the matching @ai-sdk provider installed), or run `vendo login` for a "
   + "free dev key. Production always needs a real server-side key.";
 
 /** Bundler-proof dynamic import: this module runs inside the host's dev server

@@ -40,10 +40,11 @@ this order:
    `GOOGLE_GENERATIVE_AI_API_KEY` (install the matching `@ai-sdk/*@^3`
    provider). This same rung serves production.
 2. `VENDO_API_KEY` — a Vendo Cloud dev key. When init finds no key, it offers
-   `vendo cloud login`: it emails you a one-time code, prompts for it on
-   stdin (the browser flow is the separate `vendo cloud device-login`
-   command), then mints a metered dev-mode starter key and writes it to
-   `.env.local` for you. You never paste a key.
+   `vendo login`: your browser opens on the approval page (a non-TTY caller
+   gets the URL and pairing code printed instead), you approve the code, and
+   the minted metered dev-mode key is written to `.env.local` for you. You
+   never paste a key. (`vendo cloud login <email>` remains as an email-OTP
+   fallback.)
    Model calls go through the Vendo Cloud model gateway (curated aliases:
    `vendo-default`, `vendo-fast`, `vendo-strong` — pick with
    `VENDO_CLOUD_MODEL`, served via the installed `@ai-sdk/anthropic`) and
@@ -56,7 +57,7 @@ of the model (BYO-LLM), pass any ai-SDK model to `createVendo({ model })`.
 
 Vendo Cloud is optional. When `VENDO_API_KEY` is set, init validates it and
 states the plan and what it unlocks; when it is absent, init prints one calm
-line and offers `vendo cloud login` only when a starter key would help.
+line and offers `vendo login` only when a starter key would help.
 
 To see every Vendo surface and state (streaming, approvals, slots, the
 workspace page) against scripted data first — no model key, no wiring — run

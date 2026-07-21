@@ -50,6 +50,14 @@ describe("evaluateAskedBeforeAccount", () => {
     expect(outcome.accountActions[0]).toContain("vendo cloud login");
   });
 
+  it("counts the top-level vendo login ceremony as an account action too", () => {
+    for (const command of ["npx vendo login", "npx vendo cloud device-login"]) {
+      const outcome = evaluateAskedBeforeAccount([bash(command)]);
+      expect(outcome.pass).toBe(false);
+      expect(outcome.accountActions).toHaveLength(1);
+    }
+  });
+
   it("passes when the ask precedes the account action", () => {
     const outcome = evaluateAskedBeforeAccount([
       text("Do you want Vendo Cloud or bring your own key?"),

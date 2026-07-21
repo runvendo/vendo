@@ -252,7 +252,7 @@ describe("runAiExtraction", () => {
     expect(message).toContain("codex login");
     expect(message).toContain("OPENAI_API_KEY");
     expect(message).toContain("VENDO_API_KEY");
-    expect(message).toContain("vendo cloud login");
+    expect(message).toContain("vendo login");
   });
 
   it("picks the first rung when every rung is available (order matters)", async () => {
