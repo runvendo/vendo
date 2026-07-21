@@ -183,7 +183,10 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   // slot already holding an app the fork exists, so the gesture opens the
   // composer prefilled — the instruction rides an ordinary edit.
   const startRemix = () => {
-    if (appId !== undefined) {
+    // A slot is FILLED when it holds an app OR a host-supplied pin (the pin
+    // branch mounts through AppFrame the same way) — either way the fork
+    // already exists, so the gesture opens the composer, never the wire fork.
+    if (appId !== undefined || pin !== undefined) {
       const prompt = remixPrompt ?? `Update my ${id} remix: `;
       const opened = openVendoConversation({ prompt, send: false });
       if (!opened && developmentMode()) {

@@ -111,6 +111,27 @@ describe("VendoSlot remix flag + overlay registry", () => {
     expect(wire.requests.filter(r => r.method === "POST" && r.path.endsWith("fork-pin")).length).toBe(0);
   });
 
+  it("treats a pin-mounted slot as FILLED — Remix opens the composer, never a wire fork (review P1)", async () => {
+    const pinPayload = {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [{ id: "root", component: "Text", props: { text: "Pinned revenue card" } }],
+    };
+    render(
+      <VendoProvider client={client} components={{ hero: HostHero }}>
+        <VendoSlot id="hero" pin={{ payload: pinPayload as never }} remix remixPrompt="Update my hero remix"><HostHero /></VendoSlot>
+        <VendoOverlay launcher="none" />
+      </VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /remix/i }));
+    expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
+    await waitFor(() => {
+      const composer = screen.getByRole("textbox") as HTMLTextAreaElement;
+      expect(composer.value).toBe("Update my hero remix");
+    });
+    expect(wire.requests.filter(r => r.method === "POST" && r.path.endsWith("fork-pin")).length).toBe(0);
+  });
+
   it("warns in dev when remix is set but the slot has no registered component", () => {
     vi.stubEnv("NODE_ENV", "development");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
