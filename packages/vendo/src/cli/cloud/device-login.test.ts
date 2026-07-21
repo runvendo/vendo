@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -274,18 +275,22 @@ describe("runDeviceLogin", () => {
 // so a fresh `vendo login` can resume polling after the original process dies
 // and a late human approval still lands the key.
 describe("pending claim persistence", () => {
-  const pendingPath = (home: string) => join(home, ".vendo", "pending-claim.json");
+  // Claims are scoped per project directory (0.4.2): the file name is the
+  // cwd hash, so concurrent logins in different repos cannot clobber or
+  // resume each other's ceremonies.
+  const pendingPath = (home: string, cwd: string) =>
+    join(home, ".vendo", "pending-claims", `${createHash("sha256").update(cwd).digest("hex").slice(0, 16)}.json`);
 
-  async function writePending(home: string, overrides: Record<string, unknown> = {}): Promise<void> {
-    await mkdir(join(home, ".vendo"), { recursive: true });
-    await writeFile(pendingPath(home), JSON.stringify({
+  async function writePending(home: string, cwd: string, overrides: Record<string, unknown> = {}): Promise<void> {
+    await mkdir(join(pendingPath(home, cwd), ".."), { recursive: true });
+    await writeFile(pendingPath(home, cwd), JSON.stringify({
       claim_token: `vct_${"c".repeat(64)}`,
       user_code: "WXYZ-PQRS",
       verification_uri_complete: "https://console.test/claim?code=WXYZ-PQRS",
       expires_at: Date.now() + 600_000,
       interval: 5,
       api_url: "https://console.test",
-      cwd: home,
+      cwd,
       ...overrides,
     }));
   }
@@ -304,8 +309,8 @@ describe("pending claim persistence", () => {
       root,
       home,
       sleep: async () => {
-        const mode = (await stat(pendingPath(home))).mode & 0o777;
-        seenDuringPoll.push({ ...JSON.parse(await readFile(pendingPath(home), "utf8")), mode });
+        const mode = (await stat(pendingPath(home, root))).mode & 0o777;
+        seenDuringPoll.push({ ...JSON.parse(await readFile(pendingPath(home, root), "utf8")), mode });
       },
       env: {},
       isTty: false,
@@ -323,14 +328,13 @@ describe("pending claim persistence", () => {
     });
     expect(typeof (seenDuringPoll[0] as { expires_at: unknown }).expires_at).toBe("number");
     // Redeemed — nothing left to resume.
-    await expect(stat(pendingPath(home))).rejects.toThrow();
+    await expect(stat(pendingPath(home, root))).rejects.toThrow();
   });
 
-  it("resumes a pending claim: polls the same claim_token without re-opening a claim", async () => {
+  it("resumes this project's pending claim: polls the same claim_token without re-opening", async () => {
     const home = await tempRoot();
-    const originalCwd = await tempRoot();
-    const otherCwd = await tempRoot();
-    await writePending(home, { cwd: originalCwd });
+    const projectCwd = await tempRoot();
+    await writePending(home, projectCwd);
     const { fetchImpl, requests } = scriptedFetch([
       { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
     ]);
@@ -338,7 +342,7 @@ describe("pending claim persistence", () => {
     const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
       output: messages.sink,
       fetchImpl,
-      root: otherCwd,
+      root: projectCwd,
       home,
       sleep: async () => {},
       env: {},
@@ -352,24 +356,82 @@ describe("pending claim persistence", () => {
     expect(messages.logs.join("\n")).toContain(
       "Resuming pending approval — code WXYZ-PQRS, approve at https://console.test/claim?code=WXYZ-PQRS",
     );
-    // The key lands where the ORIGINAL run intended, and the output says so.
-    const envLocal = await readFile(join(originalCwd, ".env.local"), "utf8");
+    const envLocal = await readFile(join(projectCwd, ".env.local"), "utf8");
     expect(envLocal).toContain(`VENDO_API_KEY=${KEY}`);
-    await expect(readFile(join(otherCwd, ".env.local"), "utf8")).rejects.toThrow();
-    expect(messages.logs.join("\n")).toContain(join(originalCwd, ".env.local"));
-    await expect(stat(pendingPath(home))).rejects.toThrow();
+    await expect(stat(pendingPath(home, projectCwd))).rejects.toThrow();
   });
 
-  it("discards an expired pending claim and opens a fresh one", async () => {
+  it("never resumes ANOTHER project's claim — a fresh ceremony opens and theirs survives (0.4.2)", async () => {
     const home = await tempRoot();
-    await writePending(home, { expires_at: Date.now() - 1_000 });
+    const otherProject = await tempRoot();
+    const thisProject = await tempRoot();
+    await writePending(home, otherProject);
     const { fetchImpl, requests } = scriptedFetch([
       { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
     ]);
     const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
       output: output().sink,
       fetchImpl,
-      root: await tempRoot(),
+      root: thisProject,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // A fresh ceremony was opened for THIS project…
+    expect(requests[0].url).toBe("https://console.test/api/v1/agent/claim");
+    // …the key lands here, not in the other project…
+    expect(await readFile(join(thisProject, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
+    await expect(readFile(join(otherProject, ".env.local"), "utf8")).rejects.toThrow();
+    // …and the other project's pending ceremony is untouched, still resumable.
+    await expect(stat(pendingPath(home, otherProject))).resolves.toBeTruthy();
+  });
+
+  it("migrates a matching pre-0.4.2 machine-global claim file and resumes it", async () => {
+    const home = await tempRoot();
+    const projectCwd = await tempRoot();
+    const legacyPath = join(home, ".vendo", "pending-claim.json");
+    await mkdir(join(home, ".vendo"), { recursive: true });
+    await writeFile(legacyPath, JSON.stringify({
+      claim_token: `vct_${"c".repeat(64)}`,
+      user_code: "WXYZ-PQRS",
+      verification_uri_complete: "https://console.test/claim?code=WXYZ-PQRS",
+      expires_at: Date.now() + 600_000,
+      interval: 5,
+      api_url: "https://console.test",
+      cwd: projectCwd,
+    }));
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root: projectCwd,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // Resumed (no fresh claim), key landed, and the legacy file is gone.
+    expect(requests.some((request) => request.url.endsWith("/api/v1/agent/claim"))).toBe(false);
+    expect(await readFile(join(projectCwd, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
+    await expect(stat(legacyPath)).rejects.toThrow();
+  });
+
+  it("discards an expired pending claim and opens a fresh one", async () => {
+    const home = await tempRoot();
+    const root = await tempRoot();
+    await writePending(home, root, { expires_at: Date.now() - 1_000 });
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root,
       home,
       sleep: async () => {},
       env: {},
@@ -383,18 +445,19 @@ describe("pending claim persistence", () => {
 
   it("removes the pending claim when the human denies the request", async () => {
     const home = await tempRoot();
+    const root = await tempRoot();
     const { fetchImpl } = scriptedFetch([{ status: 400, body: { error: "access_denied" } }]);
     const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
       output: output().sink,
       fetchImpl,
-      root: await tempRoot(),
+      root,
       home,
       sleep: async () => {},
       env: {},
       isTty: false,
     });
     expect(exit).toBe(1);
-    await expect(stat(pendingPath(home))).rejects.toThrow();
+    await expect(stat(pendingPath(home, root))).rejects.toThrow();
   });
 });
 
@@ -402,20 +465,24 @@ describe("pending claim persistence", () => {
 // long ONE call polls before exiting resumably, so a coding agent can loop
 // short re-runs (each resuming the same claim) instead of a 10-min block.
 describe("bounded --wait budget (#479)", () => {
-  const pendingPath = (home: string) => join(home, ".vendo", "pending-claim.json");
+  // Claims are scoped per project directory (0.4.2): the file name is the
+  // cwd hash, so concurrent logins in different repos cannot clobber or
+  // resume each other's ceremonies.
+  const pendingPath = (home: string, cwd: string) =>
+    join(home, ".vendo", "pending-claims", `${createHash("sha256").update(cwd).digest("hex").slice(0, 16)}.json`);
   const tokenPolls = (requests: Array<{ url: string }>) =>
     requests.filter((request) => request.url.endsWith("/api/v1/oauth/token"));
 
-  async function writePending(home: string, overrides: Record<string, unknown> = {}): Promise<void> {
-    await mkdir(join(home, ".vendo"), { recursive: true });
-    await writeFile(pendingPath(home), JSON.stringify({
+  async function writePending(home: string, cwd: string, overrides: Record<string, unknown> = {}): Promise<void> {
+    await mkdir(join(pendingPath(home, cwd), ".."), { recursive: true });
+    await writeFile(pendingPath(home, cwd), JSON.stringify({
       claim_token: `vct_${"c".repeat(64)}`,
       user_code: "WXYZ-PQRS",
       verification_uri_complete: "https://console.test/claim?code=WXYZ-PQRS",
       expires_at: Date.now() + 600_000,
       interval: 5,
       api_url: "https://console.test",
-      cwd: home,
+      cwd,
       ...overrides,
     }));
   }
@@ -444,7 +511,7 @@ describe("bounded --wait budget (#479)", () => {
     expect(exit).toBe(0);
     expect(messages.errors).toEqual([]);
     // The claim file stays on disk for the next re-run to resume.
-    await expect(stat(pendingPath(home))).resolves.toBeTruthy();
+    await expect(stat(pendingPath(home, root))).resolves.toBeTruthy();
     // No key was written.
     await expect(readFile(join(root, ".env.local"), "utf8")).rejects.toThrow();
     // The resumable line + budget hint were printed, with the JSON pending shape.
@@ -463,16 +530,15 @@ describe("bounded --wait budget (#479)", () => {
 
   it("(b) a --wait re-run resumes the same claim_token and lands the key when approval arrives", async () => {
     const home = await tempRoot();
-    const originalCwd = await tempRoot();
-    const otherCwd = await tempRoot();
-    await writePending(home, { cwd: originalCwd });
+    const projectCwd = await tempRoot();
+    await writePending(home, projectCwd);
     const { fetchImpl, requests } = scriptedFetch([
       { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
     ]);
     const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "90"], {
       output: output().sink,
       fetchImpl,
-      root: otherCwd,
+      root: projectCwd,
       home,
       sleep: async () => {},
       env: {},
@@ -482,10 +548,10 @@ describe("bounded --wait budget (#479)", () => {
     // No new claim opened — it polls the persisted claim_token directly.
     expect(requests.some((request) => request.url.endsWith("/api/v1/agent/claim"))).toBe(false);
     expect(new URLSearchParams(requests[0].body).get("claim_token")).toBe(`vct_${"c".repeat(64)}`);
-    // The key lands where the ORIGINAL run intended, and the pending file is gone.
-    const envLocal = await readFile(join(originalCwd, ".env.local"), "utf8");
+    // The key landed and the pending file is gone.
+    const envLocal = await readFile(join(projectCwd, ".env.local"), "utf8");
     expect(envLocal).toContain(`VENDO_API_KEY=${KEY}`);
-    await expect(stat(pendingPath(home))).rejects.toThrow();
+    await expect(stat(pendingPath(home, projectCwd))).rejects.toThrow();
   });
 
   it("(c) without --wait the call still blocks to the claim deadline (unchanged)", async () => {
@@ -513,7 +579,7 @@ describe("bounded --wait budget (#479)", () => {
     expect(exit).toBe(1);
     expect(messages.errors.join("\n")).toContain("expired");
     expect(messages.logs.join("\n")).not.toContain("Still waiting on approval");
-    await expect(stat(pendingPath(home))).rejects.toThrow();
+    await expect(stat(pendingPath(home, root))).rejects.toThrow();
   });
 
   it("(d) --wait 0 does exactly one poll then exits resumably if still pending", async () => {
@@ -540,7 +606,7 @@ describe("bounded --wait budget (#479)", () => {
     expect(tokenPolls(requests)).toHaveLength(1);
     expect(sleeps).toEqual([]);
     // Still resumable: claim on disk, no key, resumable line printed.
-    await expect(stat(pendingPath(home))).resolves.toBeTruthy();
+    await expect(stat(pendingPath(home, root))).resolves.toBeTruthy();
     await expect(readFile(join(root, ".env.local"), "utf8")).rejects.toThrow();
     expect(messages.logs.join("\n")).toContain("Still waiting on approval — code BCDF-GHJK");
   });
@@ -548,7 +614,7 @@ describe("bounded --wait budget (#479)", () => {
   it("(f) a terminal token error (invalid_grant) deletes the pending claim — no resume trap", async () => {
     const root = await tempRoot();
     const home = await tempRoot();
-    await writePending(home, { cwd: root });
+    await writePending(home, root);
     // Server says the claim is consumed/denied: single-use, never succeeds again.
     const { fetchImpl } = scriptedFetch([
       { status: 400, body: { error: "invalid_grant" } },
@@ -565,7 +631,7 @@ describe("bounded --wait budget (#479)", () => {
     });
     expect(exit).toBe(1);
     // The dead claim is gone: the next `vendo login` opens a fresh one.
-    await expect(stat(pendingPath(home))).rejects.toThrow();
+    await expect(stat(pendingPath(home, root))).rejects.toThrow();
   });
 
   it("(e) caps the pacing sleep to the remaining budget so a sub-interval --wait honors its bound", async () => {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -28,7 +29,17 @@ export interface PendingClaimOptions {
   home?: string;
 }
 
-function pendingClaimPath(options: PendingClaimOptions = {}): string {
+/** Claims are keyed by the project directory they were opened for. A single
+    machine-global file let two concurrent `vendo login` runs clobber each
+    other, and let project A resume (and receive the key for) project B's
+    ceremony — found by the 0.4.1 E2E certification campaign. */
+function pendingClaimPath(cwd: string, options: PendingClaimOptions = {}): string {
+  const name = `${createHash("sha256").update(cwd).digest("hex").slice(0, 16)}.json`;
+  return join(options.home ?? homedir(), ".vendo", "pending-claims", name);
+}
+
+/** The pre-0.4.2 machine-global location — read once for migration. */
+function legacyPendingClaimPath(options: PendingClaimOptions = {}): string {
   return join(options.home ?? homedir(), ".vendo", "pending-claim.json");
 }
 
@@ -44,24 +55,38 @@ function isPendingClaim(value: unknown): value is PendingClaim {
     && typeof claim.cwd === "string";
 }
 
-/** An unreadable or malformed file reads as "no pending claim" — the caller
-    discards it by opening (and persisting) a fresh ceremony. */
-export async function readPendingClaim(options: PendingClaimOptions = {}): Promise<PendingClaim | null> {
+async function readClaimFile(path: string): Promise<PendingClaim | null> {
   try {
-    const value: unknown = JSON.parse(await readFile(pendingClaimPath(options), "utf8"));
+    const value: unknown = JSON.parse(await readFile(path, "utf8"));
     return isPendingClaim(value) ? value : null;
   } catch {
     return null;
   }
 }
 
+/** An unreadable or malformed file reads as "no pending claim" — the caller
+    discards it by opening (and persisting) a fresh ceremony. Only a claim
+    opened for THIS cwd is ever returned. A pre-0.4.2 machine-global file is
+    honored (and migrated) only when its recorded cwd matches; someone else's
+    ceremony is never resumed. */
+export async function readPendingClaim(cwd: string, options: PendingClaimOptions = {}): Promise<PendingClaim | null> {
+  const scoped = await readClaimFile(pendingClaimPath(cwd, options));
+  if (scoped !== null) return scoped.cwd === cwd ? scoped : null;
+
+  const legacy = await readClaimFile(legacyPendingClaimPath(options));
+  if (legacy === null || legacy.cwd !== cwd) return null;
+  await writePendingClaim(legacy, options);
+  await rm(legacyPendingClaimPath(options), { force: true });
+  return legacy;
+}
+
 export async function writePendingClaim(claim: PendingClaim, options: PendingClaimOptions = {}): Promise<void> {
-  const path = pendingClaimPath(options);
+  const path = pendingClaimPath(claim.cwd, options);
   await mkdir(join(path, ".."), { recursive: true, mode: 0o700 });
   await writeFile(path, `${JSON.stringify(claim, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await chmod(path, 0o600);
 }
 
-export async function deletePendingClaim(options: PendingClaimOptions = {}): Promise<void> {
-  await rm(pendingClaimPath(options), { force: true });
+export async function deletePendingClaim(cwd: string, options: PendingClaimOptions = {}): Promise<void> {
+  await rm(pendingClaimPath(cwd, options), { force: true });
 }
