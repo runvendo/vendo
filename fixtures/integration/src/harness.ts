@@ -298,14 +298,17 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
         return control.revoked.has(subject) ? null : { kind: "user", subject };
       },
     };
-    // AppsPort adapter over vendo.apps — AppsRuntime.open has an extra "resuming"
-    // variant AppsPort does not, so map it (the door is a viewer + runner, 10-mcp §4).
+    // AppsPort adapter over vendo.apps — AppsRuntime.open has extra "resuming"
+    // and "failed" variants AppsPort does not, so map positively like the
+    // production adapter in @vendoai/vendo server.ts (the door is a viewer +
+    // runner, 10-mcp §4).
     const appsPort: AppsPort = {
       list: (ctx) => vendo.apps.list(ctx),
       async open(appId, ctx) {
         const opened = await vendo.apps.open(appId, ctx);
-        if (opened.kind === "resuming") throw new Error("app is resuming; unreachable for the door viewer role");
-        return opened.kind === "tree" ? { kind: "tree", payload: opened.payload } : opened;
+        if (opened.kind === "tree") return { kind: "tree", payload: opened.payload };
+        if (opened.kind === "http") return { kind: "http", url: opened.url };
+        throw new Error(`app surface "${opened.kind}" is unreachable for the door viewer role`);
       },
       call: (appId, ref, args, ctx) => vendo.apps.call(appId, ref, args, ctx),
     };
