@@ -17,6 +17,15 @@ describe("cloud command dispatch", () => {
     expect(messages.logs.join("\n")).not.toContain("validate");
   });
 
+  it("help leads with the ceremony and demotes email OTP to a fallback", async () => {
+    const messages = output();
+    expect(await runCloud(["--help"], { output: messages.sink })).toBe(0);
+    const help = messages.logs.join("\n");
+    expect(help.indexOf("device-login")).toBeLessThan(help.indexOf("login EMAIL"));
+    expect(help).toContain("alias of `vendo login`");
+    expect(help).toContain("Fallback");
+  });
+
   it("returns one for unknown cloud commands", async () => {
     const messages = output();
     expect(await runCloud(["unknown"], { output: messages.sink })).toBe(1);

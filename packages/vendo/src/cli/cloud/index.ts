@@ -13,11 +13,12 @@ const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
 Usage: vendo cloud <command> [options]
 
 User commands:
-  login EMAIL                           Send an email OTP (6-10 digits) and prompt for it
-  login --token <jwt>                   Store an access-token fallback
-  device-login [EMAIL]                  auth.md user-claimed flow: your human approves a
-                                        code in the browser; the minted VENDO_API_KEY is
-                                        written to .env.local (never printed)
+  device-login [EMAIL]                  alias of \`vendo login\` — the auth.md user-claimed
+                                        flow: your human approves a code in the browser;
+                                        the minted VENDO_API_KEY is written to .env.local
+                                        (never printed)
+  login EMAIL                           Fallback: send an email OTP (6-10 digits) and prompt for it
+  login --token <jwt>                   Fallback: store an access token directly
   logout                               Delete the stored cloud session
   whoami [--token <jwt>]                List organizations for the current user
   orgs                                  List organizations
