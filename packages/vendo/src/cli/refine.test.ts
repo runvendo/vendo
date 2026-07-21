@@ -212,4 +212,56 @@ describe("resolveRefineModel", () => {
     const root = await makeRoot();
     await expect(resolveRefineModel({ root, env: {} })).rejects.toThrow(/ANTHROPIC_API_KEY|--model-import/);
   });
+
+  // Release-gap fix (2026-07-20): the default rides the shared dev-credential
+  // ladder (the resolver init, doctor, and createVendo compose), so a
+  // VENDO_API_KEY-only host gets the Cloud model gateway instead of
+  // "no model configured".
+  it("resolves VENDO_API_KEY through the Cloud model gateway (the devModel ladder)", async () => {
+    const root = await makeRoot();
+    const created: Array<{ apiKey: string; baseURL?: string }> = [];
+    const model = await resolveRefineModel({
+      root,
+      env: { VENDO_API_KEY: "vnd_refine_key" },
+      importModule: async (_root, specifier) => {
+        expect(specifier).toBe("@ai-sdk/anthropic");
+        return {
+          createAnthropic: (config: { apiKey: string; baseURL?: string }) => {
+            created.push(config);
+            return (modelId: string) => ({ specificationVersion: "v3", provider: "anthropic", modelId });
+          },
+        };
+      },
+    });
+    expect(created).toEqual([{ apiKey: "vnd_refine_key", baseURL: "https://console.vendo.run/api/v1" }]);
+    expect((model as { modelId: string }).modelId).toBe("claude-sonnet-4-6");
+  });
+
+  it("a provider env key still outranks VENDO_API_KEY on the ladder", async () => {
+    const root = await makeRoot();
+    const created: Array<{ apiKey: string; baseURL?: string }> = [];
+    await resolveRefineModel({
+      root,
+      env: { ANTHROPIC_API_KEY: "sk-ant-refine", VENDO_API_KEY: "vnd_refine_key" },
+      importModule: async () => ({
+        createAnthropic: (config: { apiKey: string; baseURL?: string }) => {
+          created.push(config);
+          return (modelId: string) => ({ specificationVersion: "v3", provider: "anthropic", modelId });
+        },
+      }),
+    });
+    expect(created).toEqual([{ apiKey: "sk-ant-refine" }]);
+  });
+
+  it("--model-import stays the explicit override even with ladder keys set", async () => {
+    const root = await makeRoot();
+    await writeFile(join(root, "model.mjs"), "export const model = { specificationVersion: 'v3', provider: 'test', modelId: 'own' };\n");
+    const model = await resolveRefineModel({
+      root,
+      modelImport: "./model.mjs",
+      env: { ANTHROPIC_API_KEY: "sk-ant", VENDO_API_KEY: "vnd_key" },
+      importModule: async () => { throw new Error("the ladder must not resolve when --model-import is passed"); },
+    });
+    expect((model as { modelId: string }).modelId).toBe("own");
+  });
 });

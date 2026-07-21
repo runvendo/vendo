@@ -7,7 +7,7 @@ description: "Every environment variable Vendo reads across host process, app ma
 
 | Variable | Effect |
 | --- | --- |
-| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and selects Cloud defaults for adapter slots the host left unset, including the hosted sandbox; an explicitly passed adapter always wins, and key problems surface on the first real call |
+| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and selects Cloud defaults for adapter slots the host left unset: the hosted sandbox, and the hosted store — with no `store` passed, threads, apps, records, grants, and audit persist in Vendo Cloud instead of local PGlite (pass `store: createStore(...)` to keep data local). An explicitly passed adapter always wins, and key problems surface on the first real call |
 | `VENDO_CLOUD_URL` | overrides the Vendo Cloud base URL for the runtime and CLI; defaults to `https://console.vendo.run` |
 | `VENDO_TELEMETRY_DISABLED=1` | disables build and development telemetry |
 | `VENDO_TICK_SECRET` | bearer secret required by `POST /tick` |
@@ -22,7 +22,7 @@ description: "Every environment variable Vendo reads across host process, app ma
 | `VENDO_BOX_EDIT_TIMEOUT_MS` | long-poll budget for one in-box agent edit; default 8 minutes |
 | `VENDO_BOX_EDIT_POLL_MS` | poll interval while an in-box agent edit runs |
 | `VENDO_E2B_TIMEOUT_MS` | E2B machine lifetime; when unset, a raised `VENDO_BOX_EDIT_TIMEOUT_MS` implies a matching lifetime (budget plus 5 minutes) so the provider TTL cannot kill a long build |
-| `VENDO_INFERENCE_URL` · `VENDO_INFERENCE_KEY` | the in-box agent's model endpoint and key, injected into every machine; when unset, `ANTHROPIC_API_KEY` rides `https://api.anthropic.com`, and with neither the box gets no inference |
+| `VENDO_INFERENCE_URL` · `VENDO_INFERENCE_KEY` | the in-box agent's model endpoint and key, injected into every machine; when unset, `ANTHROPIC_API_KEY` rides `https://api.anthropic.com`, then `VENDO_API_KEY` rides the Vendo Cloud model gateway, and with none of them the box gets no inference |
 | `VENDO_INFERENCE_MODEL` | optional model choice passed through to the box harness |
 | `VERCEL`, `CF_PAGES`, `AWS_LAMBDA_FUNCTION_NAME` | prevent the default PGlite store from opening on an ephemeral serverless filesystem; pass a Postgres URL instead |
 | `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default composition uses to encrypt secret values in `vendo_secrets`; read when no store is passed to `createVendo`. An explicitly configured store ignores it |

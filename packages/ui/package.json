@@ -80,7 +80,7 @@
     "recharts": "^3.2.0",
     "remark-gfm": "^4.0.0",
     "sucrase": "^3.35.0",
-    "zod": "^3.25.0"
+    "zod": "^3.25.76"
   },
   "peerDependencies": {
     "ai": "^6.0.0",

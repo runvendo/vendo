@@ -1,7 +1,8 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { composioConnector } from "@vendoai/actions";
 import { createStore } from "@vendoai/store";
-import { authJs, createVendo } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo } from "@vendoai/vendo/server";
 import { authSecret, resolveMapleSubject } from "@/server/users";
 import { mapleMcpConfig } from "./mcp-config";
 import { mapleRegistry } from "./registry";
@@ -36,7 +37,10 @@ export const vendo = createVendo({
   apps: { experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1" },
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
-  connectors: composioApiKey
-    ? [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "slack"] })]
-    : [],
+  // BYO Composio when Maple brings its own key; otherwise the slot stays
+  // UNSET so a VENDO_API_KEY deployment composes the Cloud tools connector
+  // (an explicit [] would read as "no connectors, ever" — the seam honors it).
+  ...(composioApiKey
+    ? { connectors: [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "slack"] })] }
+    : {}),
 });

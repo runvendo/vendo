@@ -2,6 +2,7 @@
 export { ActivityPanel } from "./activity-panel.js";
 export { VendoActivities, type VendoActivitiesProps } from "./vendo-activities.js";
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
+export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./embeds.js";
 export { ApprovalSheet } from "./approval-sheet.js";
 export { AutomationsPanel } from "./automations-panel.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";

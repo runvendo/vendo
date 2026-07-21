@@ -21,6 +21,7 @@ import type {
 } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import type {
+  ApprovalResolution,
   AutomationEntry,
   ConnectableToolkit,
   ConnectionAccount,
@@ -28,6 +29,7 @@ import type {
   EnableResult,
   InitiatedConnection,
   OpenSurface,
+  PendingSurface,
   PinDrift,
   PinRebaseResult,
   RunPlan,
@@ -62,6 +64,9 @@ export interface VendoClient {
     pending(): Promise<ApprovalRequest[]>;
     /** Batch-capable: POST /approvals/decide { ids, decision }. */
     decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision): Promise<void>;
+    /** Existing-agents — GET /approvals/:id, the per-approval state
+        `<VendoApprovalEmbed>` polls (pending/executed/declined/expired). */
+    get(id: ApprovalId): Promise<ApprovalResolution>;
   };
 
   grants: {
@@ -88,6 +93,11 @@ export interface VendoClient {
     get(id: AppId): Promise<AppDocument>;
     delete(id: AppId): Promise<void>;
     open(id: AppId): Promise<OpenSurface>;
+    /** Existing-agents polish — the embed's build-window poll: with
+        `pending: true` a not-yet-servable app answers `{ kind: "pending" }`
+        over HTTP 200 instead of the contracted 404, so the poll never logs
+        browser console errors while the build streams. */
+    open(id: AppId, options: { pending: true }): Promise<OpenSurface | PendingSurface>;
     call(id: AppId, ref: string, args: Json): Promise<ToolOutcome>;
     edit(id: AppId, instruction: string): Promise<EditResult>;
     history(id: AppId): Promise<VersionEntry[]>;

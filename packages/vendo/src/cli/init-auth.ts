@@ -2,9 +2,22 @@ import { join } from "node:path";
 import type { SelectOption } from "./pretty.js";
 import { readOptional } from "./shared.js";
 
-/** The auth families init detects in package.json (09-vendo §2.1). Preset
-    names double as the zero-arg `@vendoai/vendo/server` export names. */
+/** The auth families init detects in package.json (09-vendo §2.1). */
 export type AuthPresetName = "authJs" | "clerk" | "supabase" | "auth0";
+
+/** Each zero-arg preset function ships on its own subpath — not
+    `@vendoai/vendo/server` — so importing one preset never resolves the
+    others' optional peer deps (corpus-triage Task 9: a shared barrel meant
+    ANY host importing the server entry statically re-resolved every
+    preset's optional peer, e.g. @auth/core, even unused). Scaffolded code
+    imports the preset from here and createVendo/nextVendoHandler from
+    "@vendoai/vendo/server" separately. */
+export const AUTH_PRESET_SPECIFIER: Record<AuthPresetName, string> = {
+  authJs: "@vendoai/vendo/auth/auth-js",
+  clerk: "@vendoai/vendo/auth/clerk",
+  supabase: "@vendoai/vendo/auth/supabase",
+  auth0: "@vendoai/vendo/auth/auth0",
+};
 
 export interface AuthMatch {
   preset: AuthPresetName;

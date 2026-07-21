@@ -1,0 +1,21 @@
+{
+  "written": [
+    ".gitignore",
+    "app/api/chat/route.ts",
+    "app/globals.css",
+    "app/layout.tsx",
+    "app/page.tsx",
+    "eslint.config.mjs",
+    "next-env.d.ts",
+    "next.config.ts",
+    "package.json",
+    "postcss.config.mjs",
+    "tsconfig.json",
+    "tsconfig.tsbuildinfo"
+  ],
+  "vendoOwned": [
+    ".vendo/tools.json",
+    "app/api/vendo/[...vendo]/route.ts",
+    "lib/vendo.ts"
+  ]
+}

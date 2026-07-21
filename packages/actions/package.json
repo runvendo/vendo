@@ -35,6 +35,10 @@
     "./presets": {
       "types": "./dist/presets/index.d.ts",
       "default": "./dist/presets/index.js"
+    },
+    "./presets/auth-js": {
+      "types": "./dist/presets/auth-js.d.ts",
+      "default": "./dist/presets/auth-js.js"
     }
   },
   "files": [
@@ -72,6 +76,7 @@
     "jose": "^6.2.3",
     "next": "16.2.9",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "zod-to-json-schema": "^3.25.2"
   }
 }

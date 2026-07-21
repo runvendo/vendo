@@ -1,0 +1,8 @@
+[
+  ".vendo/tools.json",
+  "app/api/chat/route.ts",
+  "app/api/vendo/[...vendo]/route.ts",
+  "app/page.tsx",
+  "lib/vendo.ts",
+  "next.config.ts"
+]

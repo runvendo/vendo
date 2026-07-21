@@ -4,7 +4,7 @@ import {
   serverActionRegistrations,
   type ServerActionRegistration,
 } from "@vendoai/actions";
-import { AUTH_FAMILY_INFO, type AuthMatch } from "./init-auth.js";
+import { AUTH_FAMILY_INFO, AUTH_PRESET_SPECIFIER, type AuthMatch } from "./init-auth.js";
 
 /** The wired preset line plus its escape-hatch comment. The lead-in stays
     honest about how the preset got here: detection cites the found
@@ -43,20 +43,36 @@ export function registrySource(variant: "tsx" | "mjs"): string {
     ` *\n` +
     ` * (\`props\` is an optional zod schema; a schema-less entry is legal.)\n` +
     ` */\n`;
+  // The type comes from @vendoai/vendo, not @vendoai/core: a host only gets
+  // @vendoai/vendo (and @vendoai/ui) as a direct dependency, so under pnpm
+  // strict linking @vendoai/core (transitive) doesn't resolve for the host
+  // (TS2307). @vendoai/vendo's root entry already re-exports the full
+  // @vendoai/core type surface (index.ts: `export type * from "@vendoai/core"`),
+  // and the bare root — not /server or /react — is the neutral entry for a
+  // type this file needs in both the server route and the client wrap.
   return variant === "tsx"
-    ? `${header}import type { ComponentRegistry } from "@vendoai/core";\n\nexport const registry = {} satisfies ComponentRegistry;\n`
+    ? `${header}import type { ComponentRegistry } from "@vendoai/vendo";\n\nexport const registry = {} satisfies ComponentRegistry;\n`
     : `${header}export const registry = {};\n`;
 }
 
+/** The preset's own import line (its own subpath, never "@vendoai/vendo/server"
+    — corpus-triage Task 9: a shared barrel meant any host importing the
+    server entry statically re-resolved every preset's optional peer dep,
+    even unused ones), or empty when no preset was wired. */
+function authImportLine(auth: AuthMatch | null): string {
+  return auth === null ? "" : `import { ${auth.preset} } from ${JSON.stringify(AUTH_PRESET_SPECIFIER[auth.preset])};\n`;
+}
+
 export function routeSource(options: { serverActions: boolean; auth: AuthMatch | null; registrySpecifier: string }): string {
-  const named = [...(options.auth === null ? [] : [options.auth.preset]), "createVendo", "nextVendoHandler"].sort();
-  return `import { ${named.join(", ")} } from "@vendoai/vendo/server";\n` +
+  return authImportLine(options.auth) +
+    `import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";\n` +
     (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
     `import { registry } from ${JSON.stringify(options.registrySpecifier)};\n` +
     `\nconst vendo = createVendo({\n` +
     (options.auth === null ? `  principal: async () => null,\n` : authConfigLines(options.auth)) +
     `  catalog: registry,\n` +
     (options.serverActions ? `  serverActions,\n` : "") +
+    `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);\n`;
 }
@@ -148,20 +164,20 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
       ` *   import { registry } from "<path-to>/vendo/registry.mjs";\n` +
       ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
       ` *   root.render(<VendoRoot components={registry} theme={theme}><App /></VendoRoot>);\n`;
-  const serverNamed = [...(auth === null ? [] : [auth.preset]), "createVendo"].sort();
-
   return `/**\n` +
     ` * Add these wiring lines in your host:\n` +
     ` *   app.use("/api/vendo", mountVendo());\n` +
     clientHint +
     ` */\n` +
     imports +
-    `import { ${serverNamed.join(", ")} } from "@vendoai/vendo/server";\n` +
+    authImportLine(auth) +
+    `import { createVendo } from "@vendoai/vendo/server";\n` +
     `import { registry } from ${JSON.stringify(registrySpecifier)};\n` +
     types +
     `\nconst vendo = createVendo({\n` +
     (auth === null ? `  principal: async () => null,\n` : authConfigLines(auth)) +
     `  catalog: registry,\n` +
+    `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
     `function requestHeaders${signatures.requestHeaders} {\n` +
     `  const result = new Headers();\n` +

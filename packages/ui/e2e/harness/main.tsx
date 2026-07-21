@@ -33,6 +33,7 @@ import {
   VendoStage,
   VendoThread,
   VendoToasts,
+  VendoToolResult,
   WaitingQueue,
   vendoToast,
   type VendoCommand,
@@ -1603,6 +1604,22 @@ const pinnedViewTree: UIPayload = {
   ],
 };
 
+/** Existing-agents polish — a BYO chat page: plain host markup (Georgia serif,
+ *  no Vendo chrome, like the examples' quickstarts) rendering a `vendo_*` tool
+ *  output through `VendoToolResult` against the real wire fixture. */
+function ByoEmbedScenario({ appId, title }: { appId: string; title: string }) {
+  return (
+    <VendoProvider client={baseClient} components={components}>
+      <div style={{ maxWidth: 640, margin: "0 auto", fontFamily: "Georgia, serif", display: "grid", gap: 12 }}>
+        <p style={{ margin: 0 }}>User: make me a dashboard comparing the weather in three cities</p>
+        <p style={{ margin: 0 }}>AI: building it now — it will appear below.</p>
+        <VendoToolResult output={{ kind: "vendo/app-ref@1", appId, title }} />
+        <p style={{ margin: 0 }} data-testid="after-embed">AI: let me know if you want more cities.</p>
+      </div>
+    </VendoProvider>
+  );
+}
+
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
@@ -1659,6 +1676,8 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/slot-pinned": return { title: "Inline slot — pinned component", theme: mapleTheme, content: <VendoSlot id="hero" pin={{ payload: pinnedViewTree }}><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-fallback": return { title: "Slot pin fallback", content: <SlotFallbackScenario />, ownProvider: true };
     case "/appframe": return { title: "App execution planes", content: <AppFrameScenario /> };
+    case "/byo-embed-app": return { title: "BYO chat — inline generated app", content: <ByoEmbedScenario appId="app_island" title="Weather dashboard" />, ownProvider: true };
+    case "/byo-embed-building": return { title: "BYO chat — app mid-build", content: <ByoEmbedScenario appId="app_building_lands" title="Trip planner" />, ownProvider: true };
     case "/affordances": return { title: "Affordances (Maple) — copy, attach, connect dock", content: <AffordancesScenario theme={mapleTheme} />, ownProvider: true };
     case "/affordances-dark": return { title: "Affordances — dark", content: <AffordancesScenario theme={darkTheme} />, ownProvider: true };
     case "/waiting": return { title: "Waiting on you", content: <WaitingScenario />, ownProvider: true };

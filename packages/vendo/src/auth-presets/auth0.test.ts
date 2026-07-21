@@ -2,8 +2,11 @@ import { auth0Preset } from "@vendoai/actions/presets";
 import type { AuthMaterial, PermissionGrant } from "@vendoai/core";
 import { SignJWT } from "jose";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-// Imported through the same entry hosts use, pinning the re-export.
-import { auth0, hostAuthPresetConformance } from "./index.js";
+// auth0 is pinned via its own module — the same file the
+// "@vendoai/vendo/auth/auth0" subpath re-exports (corpus-triage Task 9);
+// hostAuthPresetConformance still comes through the shared barrel.
+import { auth0 } from "./auth0.js";
+import { hostAuthPresetConformance } from "./index.js";
 
 /** Hermetic tenant: jose is real (RS256 sign + verify run locally); ONLY the
     network-touching JWKS fetch is mocked at the lazy-import seam, resolving

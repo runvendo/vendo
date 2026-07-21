@@ -25,6 +25,18 @@
  *      dependency — devDeps are invisible to consumers and would let layering
  *      violations hide in tests. (Non-@vendoai devDeps like vitest are fine.)
  *
+ *   4. ZOD FLOOR FOR ai PEERS — any package declaring "ai" in peerDependencies
+ *      must also declare its own "zod" floor at ZOD_V4_EXPORT_FLOOR or higher.
+ *      ai imports `zod/v4`; a host that pins an older zod satisfies ai's own
+ *      peer range on paper (ai@6 declares "^3.25.76 || ^4.1.8") but still
+ *      lacks the ./v4 subpath at runtime — zod 3.24.x has no ./v4 export,
+ *      every 3.25.x patch from .0 onward does (verified empirically against
+ *      the npm registry's published exports maps). pnpm then resolves the
+ *      package's own low floor for a stale host lockfile entry and the
+ *      host's post-init build fails with ERR_PACKAGE_PATH_NOT_EXPORTED
+ *      ./v4 (skateshop landmine; six packages fixed in 174aa430, ui+agent
+ *      missed and fixed alongside this rule).
+ *
  * Runs in `pnpm lint` at the root. No dependencies; Node >= 20.
  *
  * Known residual gaps (accepted): computed dynamic imports (import(`@vendoai/${x}`))
@@ -62,6 +74,44 @@ const LAYERS = {
   // orthogonal to the campaign (00-overview: "stays as-is"); no vendo deps
   "@vendoai/telemetry": [],
 };
+
+/**
+ * First zod 3.25.x patch confirmed (empirically, against the npm registry's
+ * published exports maps) to ship the `./v4` subpath — 3.24.x has no ./v4
+ * export at all; every 3.25.x patch checked, from .0 through ai@6.0.28's own
+ * peer floor 3.25.76, already has it. Packages declaring "ai" as a peer must
+ * carry a zod floor at least this high (rule 4 above).
+ */
+const ZOD_V4_EXPORT_FLOOR = [3, 25, 0];
+
+/** A range token whose x.y.z IS its floor: "^3.25.76", "~3.25.0",
+ * ">=3.25.76", or a bare "3.25.76". Anything else (upper bounds like
+ * "<=3.25.0", wildcards, comparator intersections) is not modeled. */
+const FLOOR_TOKEN = /^(?:\^|~|>=)?\s*(\d+)\.(\d+)\.(\d+)$/;
+
+/** Extracts a [major, minor, patch] floor from a semver range: a single
+ * floor-shaped token, or a `||` union of them. A union is only as safe as
+ * its LOWEST satisfiable alternative, so the floor is the minimum across
+ * every `||` branch; any branch that is not floor-shaped (e.g. "<=3.25.0",
+ * whose x.y.z is a ceiling, not a floor) returns null so the guard fails
+ * closed instead of trusting a range it cannot model. */
+function parseVersionFloor(range) {
+  let floor = null;
+  for (const alternative of String(range).split("||")) {
+    const match = FLOOR_TOKEN.exec(alternative.trim());
+    if (!match) return null;
+    const version = [Number(match[1]), Number(match[2]), Number(match[3])];
+    if (!floor || compareVersions(version, floor) < 0) floor = version;
+  }
+  return floor;
+}
+
+function compareVersions(a, b) {
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
 
 /** Retired names that only exist as pre-v0 npm publishes. */
 const RETIRED = [
@@ -135,6 +185,27 @@ for (const dir of dirs) {
         // conscious edit here, not a silent pass.
         errors.push(
           `${pkg.name}: dependency "${dep}" must use the workspace: protocol (got "${version}") — a registry range resolves to pre-v0 npm publishes.`,
+        );
+      }
+    }
+  }
+
+  // 4 on the manifest
+  if (pkg.peerDependencies?.ai) {
+    const zodRange = pkg.dependencies?.zod ?? pkg.peerDependencies?.zod;
+    if (!zodRange) {
+      errors.push(
+        `${pkg.name}: declares "ai" in peerDependencies but no "zod" floor — ai imports zod/v4, so a host's older pinned zod satisfies ai's peer range yet lacks the ./v4 export at runtime (ERR_PACKAGE_PATH_NOT_EXPORTED).`,
+      );
+    } else {
+      const floor = parseVersionFloor(zodRange);
+      if (!floor) {
+        errors.push(
+          `${pkg.name}: "zod" range "${zodRange}" has no modelable floor (rule 4 accepts ^x.y.z, ~x.y.z, >=x.y.z, or bare x.y.z tokens, or a || union of them) — declare a simple floor at or above ${ZOD_V4_EXPORT_FLOOR.join(".")}.`,
+        );
+      } else if (compareVersions(floor, ZOD_V4_EXPORT_FLOOR) < 0) {
+        errors.push(
+          `${pkg.name}: "zod" floor "${zodRange}" is below ${ZOD_V4_EXPORT_FLOOR.join(".")}, the first zod release with the ./v4 export ai needs — raise it (see 174aa430).`,
         );
       }
     }

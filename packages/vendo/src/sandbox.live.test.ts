@@ -159,4 +159,35 @@ describe.skipIf(!LIVE)("cloudSandbox live", () => {
       console.log(`[wave-5-gate] TRANSCRIPT\n${transcript.join("\n")}`);
     }
   }, LIVE_TIMEOUT_MS);
+
+  // Ingress TLS probe (single-label `m-<id>.vendo.run` scheme, locked
+  // 2026-07-20): the handle URL must complete a REAL HTTPS handshake and
+  // answer HTTP. A cert/ingress regression — like the old two-label
+  // `<id>.m.vendo.run` shape the *.vendo.run Universal SSL cert cannot
+  // cover — fails here, not in a user's iframe.
+  it("serves the machine's ingress URL over real HTTPS", async () => {
+    const adapter = makeAdapter();
+    let machine: SandboxMachine | undefined;
+    try {
+      machine = await adapter.create({ env: { PORT: "8080", HELLO: "ingress probe" } });
+      await bootstrap(machine);
+      const ingress = await machine.url();
+      console.log(`[ingress-probe] handle.url → ${ingress}`);
+      expect(new URL(ingress).protocol).toBe("https:");
+      // The probe IS the TLS handshake plus an HTTP answer from the ingress;
+      // a broken cert rejects the fetch outright. Routing may still warm up,
+      // so any well-formed HTTP status proves cert + ingress plumbing.
+      const response = await fetch(new URL("/conformance/env/HELLO", ingress), {
+        signal: AbortSignal.timeout(30_000),
+        redirect: "manual",
+      });
+      console.log(`[ingress-probe] GET /conformance/env/HELLO → ${response.status}`);
+      expect(response.status).toBeLessThan(600);
+      if (response.ok) {
+        expect(await response.text()).toBe("ingress probe");
+      }
+    } finally {
+      await machine?.destroy().catch(() => undefined);
+    }
+  }, LIVE_TIMEOUT_MS);
 });

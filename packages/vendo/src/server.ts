@@ -60,15 +60,16 @@ export { eraseStore, type EraseReport, type EraseTable } from "@vendoai/store";
 // imports these from "@vendoai/vendo/server"); hosts never need to install
 // @vendoai/store directly.
 export { createStore, envSecrets, secretStore, storeSecrets } from "@vendoai/store";
-// 09-vendo §2.1 — host-identity presets, shipped on the server entry: one
-// `auth` key fills the principal, actAs, and oauth seams from one config.
+// 09-vendo §2.1 — host-identity presets: one `auth` key fills the principal,
+// actAs, and oauth seams from one config. The conformance kit + shared types
+// ship here (safe — no peer deps reachable through them); the five zero-arg
+// preset FUNCTIONS ship on their own subpath instead
+// (@vendoai/vendo/auth/auth0, /auth/auth-js, /auth/clerk, /auth/jwt,
+// /auth/supabase) so importing this server entry never forces a host to
+// have every preset's optional peer dep installed (corpus-triage Task 9 —
+// see auth-presets/index.ts for why).
 export {
-  auth0,
-  authJs,
-  clerk,
   hostAuthPresetConformance,
-  jwt,
-  supabase,
   type HostAuthPreset,
   type HostAuthPresetConformanceOptions,
   type HostAuthPresetOptions,
@@ -77,6 +78,7 @@ export {
   type SupabaseHostAuthPresetOptions,
 } from "./auth-presets/index.js";
 import type { HostAuthPreset } from "./auth-presets/index.js";
+import { createByoApprovals } from "./byo-approvals.js";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 import {
@@ -110,12 +112,13 @@ import { cloudSandbox } from "./sandbox.js";
 // adapters: a host can pass it explicitly via createVendo({ sandbox }) with
 // its own options instead of relying on the VENDO_API_KEY default.
 export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
+import { cloudApps } from "./cloud-apps.js";
 import { cloudTools } from "./cloud-tools.js";
 // The Cloud tools adapter (the execution half of the zero-key Composio seam)
 // rides the server surface the same way: pass it explicitly via
 // createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
 export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
-import { hostedStore, type HostedStore } from "./hosted-store.js";
+import { HostedSessionDoorsMissingError, hostedStore, type HostedStore } from "./hosted-store.js";
 // The hosted-store adapter rides the server surface like the other Cloud
 // adapters: a host can pass it explicitly via createVendo({ store }) with its
 // own options instead of relying on the VENDO_API_KEY default.
@@ -168,6 +171,13 @@ export interface Vendo {
   emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;
   agent: VendoAgent;
   guard: VendoGuard;
+  /** Existing-agents — the guard-bound registry with BYO approval parking:
+      the registry the `vendo_*` tool pack executes through. Same binding
+      chat, apps, and automations ride (no unguarded route); the one addition
+      is that a `pending-approval` outcome parks the exact call so the wire
+      resumes it on approve, discards it on deny, and expires it on the
+      parked-call TTL sweep. */
+  guardedTools: ToolRegistry;
   apps: AppsRuntime;
   automations: AutomationsEngine;
   actions: ActionsRegistry;
@@ -251,6 +261,11 @@ export interface CreateVendoConfig {
         discoverable via `vendo_tools_search`. Defaults to the agent block's
         DEFAULT_MAX_INITIAL_TOOLS. */
     maxInitialTools?: number;
+    /** ENG-252 — explicit curated initial loadout by tool name. When set,
+        exactly these host tools (that exist and are enabled) start active —
+        the cap is not applied; the rest stay discoverable via
+        `vendo_tools_search`. Vendo's own `vendo_*` tools are always active. */
+    loadout?: string[];
     /** AGENT-7: agent-loop step cap per turn (default 20). Exhaustion streams a
         renderable `data-vendo-step-limit` part instead of ending silently. */
     maxSteps?: number;
@@ -269,6 +284,16 @@ export interface CreateVendoConfig {
     sweepIntervalMs?: number;
     now?: () => number;
   };
+  /** Existing-agents — approval lifecycle knobs.
+      - `parkedCallTtlMs` idle timeout for a guarded call parked from a BYO
+        agent loop (a `vendo/approval-ref@1` envelope with no Vendo thread to
+        resume through). Past it, the sweep denies the approval through the
+        existing abandonment semantics and `<VendoApprovalEmbed>` reads
+        "expired". Default 60 min; `0` disables expiry. Vendo-thread approvals
+        are untouched — their abandonment stays turn-driven (AGENT-6). */
+  approvals?: {
+    parkedCallTtlMs?: number;
+  };
   /** execution-v2 Wave 4 — apps-block options. `experimentalServedApps` is the
       per-project layer-3 opt-in: a machine may serve the app surface itself
       (the host embeds its URL in a sandboxed iframe). OFF by default — layer-3
@@ -283,6 +308,11 @@ export interface CreateVendoConfig {
     09-vendo contract text). */
 const DEFAULT_SESSION_TTL_MS = 30 * 60_000;
 const DEFAULT_SESSION_SWEEP_INTERVAL_MS = 60_000;
+/** Existing-agents — a BYO loop has no turn-driven abandonment sweep, so an
+    orphaned approval card in a foreign chat expires on time instead: generous
+    enough to walk away and come back, bounded enough that stale writes can't
+    be approved days later. */
+const DEFAULT_PARKED_CALL_TTL_MS = 60 * 60_000;
 
 interface ResolvedSessions {
   ttlMs: number;
@@ -302,6 +332,17 @@ function validateSessionsConfig(sessions: CreateVendoConfig["sessions"]): Resolv
     throw new VendoError("validation", "sessions.sweepIntervalMs must be a positive integer");
   }
   return { ttlMs, sweepIntervalMs, ...(sessions?.now === undefined ? {} : { now: sessions.now }) };
+}
+
+function validateParkedCallTtl(approvals: CreateVendoConfig["approvals"]): number {
+  const parkedCallTtlMs = approvals?.parkedCallTtlMs ?? DEFAULT_PARKED_CALL_TTL_MS;
+  if (!Number.isInteger(parkedCallTtlMs) || parkedCallTtlMs < 0) {
+    throw new VendoError(
+      "validation",
+      "approvals.parkedCallTtlMs must be a non-negative integer (0 disables parked-call expiry)",
+    );
+  }
+  return parkedCallTtlMs;
 }
 
 /** Operator-tuned env knobs must be positive integer milliseconds. A typo
@@ -465,8 +506,27 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
   // registered on the console; entries retire with the session (adopt/sweep),
   // so the map tracks at most the live anonymous sessions of this process.
   const wireTouched = new Map<string, number>();
+  // vendo-web@7cd0a02 (2026-07-19) removed the console's session doors per a
+  // newer spec (anonymous visitor = end_user row; adoption = PUT
+  // /users/{externalId}); against that console every door op meets a bare
+  // 404. The doors then go quiet for the process — one warn, no per-request
+  // failures, no per-interval sweep retries — because anonymous traffic must
+  // keep serving and there is nothing to retry INTO. The full contract catch-
+  // up (merge + TTL lifecycle on the new surface) is the vendo-web follow-up
+  // tracked in docs/verification/existing-agents/polish/hosted-sessions-404.md.
+  let doorsMissing = false;
+  const disableDoors = (): void => {
+    if (doorsMissing) return;
+    doorsMissing = true;
+    console.warn(
+      "[vendo] Vendo Cloud console does not serve the hosted session doors (/api/v1/store/sessions/* was removed in vendo-web@7cd0a02): "
+      + "anonymous-session registration, the anonymous→signed-in merge, and the hosted TTL sweep are disabled for this process. "
+      + "Hosted anonymous sessions will not be swept until the console grows a replacement surface.",
+    );
+  };
   return {
     async register(subject, now) {
+      if (doorsMissing) return;
       // In-process debounce: skip the wire touch when this subject's LAST
       // successful touch is younger than sweepIntervalMs/2. TTLs are hours
       // while the debounce window is seconds, and the claim leg re-checks
@@ -479,6 +539,12 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
         await store.sessions.register(subject, now);
         wireTouched.set(subject, now);
       } catch (error) {
+        // The registry itself is gone: failing closed would 500 every
+        // anonymous request while protecting a sweep that cannot run.
+        if (error instanceof HostedSessionDoorsMissingError) {
+          disableDoors();
+          return;
+        }
         // INVARIANT: registered ⇒ sweepable. The FIRST registration must fail
         // closed — if it doesn't land, rows written under this subject would
         // be unreachable by the TTL sweep forever. A subsequent touch only
@@ -490,21 +556,37 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
       }
     },
     async adopt(from, to) {
-      const report = await store.sessions.adopt(from, to);
-      wireTouched.delete(from);
-      return report;
+      // No doors, no merge report: the caller still retires the anon cookie
+      // (the linkage is unrecoverable either way) and skips the merge audit.
+      if (doorsMissing) return null;
+      try {
+        const report = await store.sessions.adopt(from, to);
+        wireTouched.delete(from);
+        return report;
+      } catch (error) {
+        if (!(error instanceof HostedSessionDoorsMissingError)) throw error;
+        disableDoors();
+        wireTouched.delete(from);
+        return null;
+      }
     },
     // The HOST-driven sweep (hosted-store one-pager): list stale candidates,
     // claim each (the wire claim repeats the idleness predicate — a re-touch
     // defeats it, same serialization as sweepEphemeralSubjects), and finish
     // every claimed subject through the erase cascade.
     async sweep(idleMs, now) {
+      if (doorsMissing) return [];
       const evicted: string[] = [];
-      for (const subject of await store.sessions.stale(idleMs, now)) {
-        if (!(await store.sessions.claim(subject, idleMs, now))) continue;
-        await store.erase.bySubject(subject);
-        wireTouched.delete(subject);
-        evicted.push(subject);
+      try {
+        for (const subject of await store.sessions.stale(idleMs, now)) {
+          if (!(await store.sessions.claim(subject, idleMs, now))) continue;
+          await store.erase.bySubject(subject);
+          wireTouched.delete(subject);
+          evicted.push(subject);
+        }
+      } catch (error) {
+        if (!(error instanceof HostedSessionDoorsMissingError)) throw error;
+        disableDoors();
       }
       return evicted;
     },
@@ -720,7 +802,7 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   // failed sweep just means idle sessions live until the next interval.
   let lastSweepAt = deps.sessions.now();
   const maybeSweep = async (): Promise<void> => {
-    if (deps.sessions.ttlMs <= 0) return;
+    if (!deps.sweepEnabled) return;
     const now = deps.sessions.now();
     if (now - lastSweepAt < deps.sessions.sweepIntervalMs) return;
     lastSweepAt = now;
@@ -1009,6 +1091,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // execution path. createActions reads invokeTool at execution time (same
   // pattern as baseUrl above), so assigning after guard.bind is sound.
   actionsConfig.invokeTool = (call, ctx) => boundTools.execute(call, ctx);
+  // Existing-agents Lane B — parked guarded calls with no Vendo thread: the
+  // parking registry the BYO tool pack executes through (guardedTools below),
+  // the resume-on-decide subscriber (same onApprovalDecision seam apps and
+  // automations ride), the wire's per-approval read, and the TTL sweep leg.
+  const byoApprovals = createByoApprovals({ guard, tools: boundTools, store });
+  const parkedCallTtlMs = validateParkedCallTtl(config.approvals);
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
   const pinBaselines = dotVendoPinBaselines();
@@ -1042,8 +1130,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // injection path as any other key.
   // execution-v2 Wave 3 — the box's inference door (the in-box coding agent's
   // model). Explicit VENDO_INFERENCE_URL/KEY win; otherwise the BYO Anthropic
-  // key rides api.anthropic.com. The Cloud metered gateway is the Wave-5
-  // slot-in behind the same two env vars — no host change needed then.
+  // key rides api.anthropic.com; otherwise VENDO_API_KEY rides the console's
+  // Anthropic-compatible model gateway — the same key that provisions the
+  // Cloud machine funds its model (chat inference already does, via devModel's
+  // vendo-cloud rung; a machine without this rung fails every in-box task).
   const boxInference = (): { url: string; key: string; model?: string } | undefined => {
     const url = environment("VENDO_INFERENCE_URL");
     const key = environment("VENDO_INFERENCE_KEY");
@@ -1054,6 +1144,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     const anthropic = environment("ANTHROPIC_API_KEY");
     if (anthropic !== undefined) {
       return { url: "https://api.anthropic.com", key: anthropic, ...(model === undefined ? {} : { model }) };
+    }
+    const cloud = cloudKeyOptions();
+    if (cloud !== undefined) {
+      // The gateway base mirrors devModel's vendo-cloud rung: `<console>/api/v1`.
+      const base = (cloud.baseUrl ?? "https://console.vendo.run").replace(/\/+$/, "");
+      return {
+        url: base.endsWith("/api/v1") ? base : `${base}/api/v1`,
+        key: cloud.apiKey,
+        ...(model === undefined ? {} : { model }),
+      };
     }
     return undefined;
   };
@@ -1105,6 +1205,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const boxTemplate = environment("VENDO_BOX_TEMPLATE");
   const boxEditTimeoutMs = positiveIntegerEnv("VENDO_BOX_EDIT_TIMEOUT_MS");
   const boxEditPollMs = positiveIntegerEnv("VENDO_BOX_EDIT_POLL_MS");
+  // ADAPTER RULE, share/publish seam: the apps block never reads the
+  // environment — VENDO_API_KEY fills its CloudAppsClient slot HERE, at the
+  // composition seam; unfilled, share/publish refuse with cloud-required.
+  const appsCloud = cloudKeyOptions();
   const apps = createApps({
     store,
     guard,
@@ -1119,6 +1223,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
+    ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     ...(semanticsFile === undefined ? {} : { semantics: semanticsFile.tools, domains: semanticsFile.domains }),
     secrets: config.secrets ?? envSecrets(),
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
@@ -1176,23 +1281,78 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // agent executes through — a searched-in tool has no unguarded path.
     toolSearch: {
       search: (query, options) => actions.search(query, options),
+      // Connection-scoped loadout seed (spec 2026-07-20): each turn starts
+      // with host tools + the principal's connected toolkits — never an
+      // alphabetical slice of a lazy catalog. `connections` is declared below
+      // this composition; turns only run after createVendo returns, so the
+      // closure reference is safe.
+      seed: (ctx) => loadoutSeedFor(ctx),
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
+      ...(config.agent?.loadout === undefined ? {} : { loadout: config.agent.loadout }),
     },
   });
+  // Per-subject connected-toolkit lookups are cached briefly so a turn never
+  // pays a broker round-trip it doesn't need; failures degrade to host tools
+  // only (warn, never the turn). Bounded so long-lived deployments don't grow.
+  const CONNECTED_TOOLKITS_TTL_MS = 60_000;
+  const connectedToolkitsCache = new Map<string, { at: number; toolkits: string[] }>();
+  async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
+    const subject = ctx.principal.subject;
+    const cached = connectedToolkitsCache.get(subject);
+    let toolkits: string[];
+    if (cached !== undefined && Date.now() - cached.at < CONNECTED_TOOLKITS_TTL_MS) {
+      toolkits = cached.toolkits;
+    } else {
+      try {
+        const accounts = await connections.list(ctx.principal);
+        toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
+      } catch (error) {
+        console.warn(
+          "[vendo] connected-toolkits lookup failed; seeding host tools only:",
+          error instanceof Error ? error.message : error,
+        );
+        toolkits = [];
+      }
+      if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
+      connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+    }
+    return actions.loadoutSeed(toolkits);
+  }
   // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
   // disk rows, then cascade each swept subject into the agent's in-memory
   // threads (store-first — a concurrent request then fails closed at the store
   // rather than finding threads without store state). Disabled when ttlMs is 0.
   const runSweep = async (): Promise<void> => {
+    // Existing-agents Lane B — expire orphaned parked BYO calls on the same
+    // cadence (deny path, idempotent); disabled by parkedCallTtlMs 0.
+    if (parkedCallTtlMs > 0) {
+      await byoApprovals.sweepExpired(parkedCallTtlMs, sessionNow());
+      // Spec 2026-07-20 (#5): the same backstop over the general approvals
+      // collection. Chat approvals are abandoned on the next thread turn and
+      // BYO parked calls swept above, but away/automation/app approvals and
+      // approvals stranded by a mid-stream turn failure have no resuming turn —
+      // this TTL sweep denies them (idempotent) so the queue self-heals instead
+      // of piling up. Shares the parked-call TTL; disabled by the same 0.
+      if (guard.sweepExpiredApprovals !== undefined) {
+        try {
+          await guard.sweepExpiredApprovals(parkedCallTtlMs, sessionNow());
+        } catch (error) {
+          console.error("[vendo] approval TTL sweep failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
     if (sessionsConfig.ttlMs <= 0) return;
     for (const subject of await sessionOps.sweep(sessionsConfig.ttlMs, sessionNow())) {
       agent.evictSubject(subject);
     }
   };
+  const sweepEnabled = sessionsConfig.ttlMs > 0 || parkedCallTtlMs > 0;
   // Long-lived hosts also get a background sweep on an UNREF'd timer (automations
   // engine pattern) so an idle process still reclaims sessions with no traffic;
   // unref'd means it never keeps the event loop alive. Torn down with the store.
-  if (sessionsConfig.ttlMs > 0) {
+  if (sweepEnabled) {
     const sweepTimer = setInterval(() => {
       runSweep().catch((error: unknown) => {
         console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
@@ -1308,6 +1468,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     tools: boundTools,
     appTokens,
     automations,
+    byoApprovals,
     connections,
     sandbox: sandbox.venue,
     model: inference.venue,
@@ -1321,6 +1482,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
     sessionStore: sessionOps,
     sweep: runSweep,
+    sweepEnabled,
     ...(door === undefined ? {} : { door }),
     ...(runtimeCapture === null ? {} : { runtimeCapture }),
     onRequestOrigin: (origin) => {
@@ -1348,6 +1510,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
     agent,
     guard,
+    guardedTools: byoApprovals.registry,
     apps,
     automations,
     actions,

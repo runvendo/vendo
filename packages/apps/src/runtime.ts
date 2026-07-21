@@ -34,11 +34,10 @@ import { createAppData } from "./app-data.js";
 import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
-import {
-  publish,
-  share,
-  type PublishRecord,
-  type ShareSnapshot,
+import type {
+  CloudAppsClient,
+  PublishRecord,
+  ShareSnapshot,
 } from "./cloud.js";
 import {
   distinctIssues,
@@ -143,6 +142,11 @@ export interface AppsConfig {
   secrets?: SecretsProvider;
   designRules?: string;
   pinBaselines?: PinBaseline[];
+  /** ADAPTER RULE — the share/publish seam (see cloud.ts): the umbrella wires
+   * the Cloud console client when VENDO_API_KEY fills the unset slot; this
+   * block never reads the environment. Unset → share/publish fail with
+   * VendoError("cloud-required"). */
+  cloud?: CloudAppsClient;
   /** W3 — per-tool field semantics from `.vendo/semantics.json`, passed to
    *  the generation engine (annotated shape cards, law checks, Kit format
    *  defaults). */
@@ -1586,17 +1590,23 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async share(appId, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
+      if (config.cloud === undefined) {
+        throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
+      }
       // Lane E grant hygiene — a share copy never carries the owner's egress
       // approval; whoever runs the copy approves its declaration themselves.
       const { egressApproved: _egressApproved, ...shared } = app;
-      return share(appId, shared, ctx);
+      return config.cloud.share(appId, shared);
     },
 
     async publish(appId, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
+      if (config.cloud === undefined) {
+        throw new VendoError("cloud-required", "Vendo Cloud requires VENDO_API_KEY");
+      }
       // Lane E grant hygiene — same rule as share: approval never travels.
       const { egressApproved: _published, ...published } = app;
-      return publish(appId, published, ctx);
+      return config.cloud.publish(appId, published);
     },
 
     agentTools() {

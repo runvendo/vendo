@@ -1,6 +1,6 @@
 import { VendoError, type Principal } from "@vendoai/core";
 import type { Connector, ConnectorAccount, ConnectorConnections } from "@vendoai/actions";
-import { deploymentIdentityHeaders } from "./deployment-identity.js";
+import { consoleSender, raiseCloudError } from "./cloud-console.js";
 
 /** Subjects the runtime mints for machine principals (automations webhook
  * triggers today; the reserved `vendo:` namespace going forward). A synthetic
@@ -26,6 +26,8 @@ export interface ConnectableToolkit {
   toolkit: string;
   connector: string;
   label?: string;
+  /** One-line capability blurb — feeds the OSS discovery index. */
+  description?: string;
 }
 
 /** 04-actions §3 (block-actions design §B) — the umbrella's per-principal
@@ -137,7 +139,22 @@ export interface CloudConnectionsOptions {
    * the console's catalog serves. */
   apps?: string[];
   fetch?: typeof fetch;
+  /** Per-request abort budget (default 30s, hosted-store's) — a hung console
+   * must never wedge the connections surface. */
+  timeoutMs?: number;
 }
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** The shared console error table (cloud-console.ts): 401/402 → cloud-required
+ * (fix your Cloud standing), wire-legal envelope codes forward as VendoErrors,
+ * and anything else (unknown codes, 5xx, non-JSON bodies) rides a plain Error
+ * with the server's code attached — never a "validation" error blaming the
+ * caller for the console misbehaving (hosted-store's posture). */
+const raiseConnectionsError = (response: Response): Promise<never> =>
+  raiseCloudError(response, "connections", (code, message) => {
+    throw Object.assign(new Error(message), { code: code ?? "unavailable" });
+  });
 
 /** The Cloud adapter — the OSS side of the zero-key cloud seam: same surface,
  * brokered by the Vendo Cloud console (which holds Vendo's Composio
@@ -146,36 +163,29 @@ export interface CloudConnectionsOptions {
 export function cloudConnections(options: CloudConnectionsOptions): ConnectionsService {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const fetchImpl = options.fetch ?? globalThis.fetch;
+  // The key-authed console sender (cloud-console.ts): Bearer auth + deployment
+  // identity (the console meters usage from real traffic) + per-request abort
+  // timeout, raising through the shared error table on any non-2xx.
+  const send = consoleSender({
+    base,
+    mountPath: "",
+    apiKey: options.apiKey,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    fetchImpl,
+    raise: raiseConnectionsError,
+  });
 
   async function cloudFetch(path: string, init?: RequestInit): Promise<unknown> {
-    const response = await fetchImpl(`${base}${path}`, {
+    const response = await send(path, {
       ...init,
       headers: {
-        authorization: `Bearer ${options.apiKey}`,
-        accept: "application/json",
-        // Interaction model: key-authed Cloud requests carry the deployment
-        // identity; the console meters usage from real traffic.
-        ...(await deploymentIdentityHeaders()),
         ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
         ...init?.headers,
       },
     });
-    let payload: unknown = {};
-    let parsed = true;
     try {
-      payload = await response.json();
+      return await response.json();
     } catch {
-      // Non-JSON bodies fall through to the status check below.
-      parsed = false;
-    }
-    if (!response.ok) {
-      const error = (payload as { error?: { message?: unknown } }).error;
-      const message = typeof error?.message === "string"
-        ? error.message
-        : `Vendo Cloud connections request failed with ${response.status}`;
-      throw new VendoError(response.status === 402 ? "cloud-required" : "validation", message);
-    }
-    if (!parsed) {
       // A 2xx that isn't JSON means a misdeployed Cloud base (an SPA host or
       // reverse proxy that 200s unknown paths with text/html). Fail loudly —
       // hosted-store's malformed-200 posture — instead of reading as an empty
@@ -185,7 +195,6 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
         `Vendo Cloud connections returned a non-JSON ${response.status} response — check VENDO_CLOUD_URL`,
       );
     }
-    return payload;
   }
 
   const subjectQuery = (principal: Principal): string => `subject=${encodeURIComponent(principal.subject)}`;

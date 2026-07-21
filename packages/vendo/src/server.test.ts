@@ -19,7 +19,10 @@ import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoa
 import { createHmac, randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { authJs, createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
+// authJs now ships on its own subpath (@vendoai/vendo/auth/auth-js), not
+// "./server.js" — corpus-triage Task 9.
+import { authJs } from "./auth-presets/auth-js.js";
+import { createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -214,6 +217,39 @@ describe("09 §3 public wire", () => {
     }
   });
 
+  it("open answers 200 {kind:'pending'} for a not-yet-servable app only under the ?pending=1 flag", async () => {
+    // Existing-agents polish — the embed's build-window poll: the app record
+    // lands at build completion, so open() 404s until then and every poll
+    // logged a browser console error. The flag turns ONLY that expected
+    // pre-servable miss into a quiet 200 envelope; unflagged callers keep the
+    // contracted 404.
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+    vi.spyOn(vendo.apps, "open").mockRejectedValue(new VendoError("not-found", "app not found: app_building"));
+
+    const bare = await vendo.handler(request("GET", "/apps/app_building/open"));
+    expect(bare.status).toBe(404);
+
+    const flagged = await vendo.handler(request("GET", "/apps/app_building/open?pending=1"));
+    expect(flagged.status).toBe(200);
+    expect(await flagged.json()).toEqual({ kind: "pending" });
+  });
+
+  it("open?pending=1 serves a servable app unchanged and passes through non-not-found failures", async () => {
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+
+    const served = await vendo.handler(request("GET", "/apps/app_wire/open?pending=1"));
+    expect(served.status).toBe(200);
+    expect((await served.json() as { kind: string }).kind).toBe("tree");
+
+    // Only the expected pre-servable miss goes quiet — a real failure keeps
+    // its envelope and status.
+    vi.spyOn(vendo.apps, "open").mockRejectedValueOnce(new VendoError("blocked", "no"));
+    const blocked = await vendo.handler(request("GET", "/apps/app_wire/open?pending=1"));
+    expect(blocked.status).toBe(403);
+  });
+
   it("does not read history for an unowned app on GET or undo", async () => {
     const { vendo } = await setup();
     stubRouteBlocks(vendo);
@@ -404,7 +440,7 @@ describe("09 §3 public wire", () => {
       });
       const url = new URL(sent.url);
       if (url.pathname === "/api/v1/sandboxes/resume") {
-        return Response.json({ id: machineId, url: `https://${machineId}.m.vendo.run` });
+        return Response.json({ id: machineId, url: `https://m-${machineId}.vendo.run` });
       }
       if (url.pathname.endsWith("/snapshot")) {
         return Response.json({ ref: `vendo:snap_${"b".repeat(40)}` });
@@ -503,12 +539,29 @@ describe("09 §3 public wire", () => {
     // connector resolves real descriptors without leaving the test.
     const { createServer } = await import("node:http");
     const stub = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://stub");
       res.setHeader("content-type", "application/json");
-      if (req.url?.startsWith("/api/v1/tools")) {
+      if (url.pathname === "/api/v1/connections/catalog") {
+        res.end(JSON.stringify({ available: [
+          { toolkit: "gmail", connector: "composio", description: "Send and read email with Gmail" },
+          { toolkit: "slack", connector: "composio", description: "Post messages to Slack channels" },
+        ] }));
+        return;
+      }
+      if (url.pathname === "/api/v1/connections") {
+        // gmail is ACTIVE for the composed principal; nothing else.
+        res.end(JSON.stringify({ connections: [
+          { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" },
+        ] }));
+        return;
+      }
+      if (url.pathname === "/api/v1/tools") {
+        const toolkit = url.searchParams.get("toolkits") ?? "gmail";
+        const raw = `${toolkit.toUpperCase()}_SEND_THING`;
         res.end(JSON.stringify({ tools: [{
-          slug: "GMAIL_SEND_EMAIL",
-          toolkit: "gmail",
-          description: "Send email",
+          slug: toolkit === "gmail" ? "GMAIL_SEND_EMAIL" : raw,
+          toolkit,
+          description: toolkit === "gmail" ? "Send email" : `use ${toolkit}`,
           inputParameters: { type: "object" },
           tags: [],
         }] }));
@@ -542,16 +595,64 @@ describe("09 §3 public wire", () => {
       return vendo;
     };
 
-    // Unset slot + key → the Cloud tools connector composes; its descriptors
-    // ride the console broker and carry BYO-identical names.
+    // Unset slot + key → the Cloud tools connector composes LAZILY: nothing
+    // eager at boot; expansion pulls exactly the asked-for toolkit through
+    // the console broker with BYO-identical names.
     const auto = await compose({});
-    const autoNames = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
-    expect(autoNames).toContain("gmail_GMAIL_SEND_EMAIL");
+    const bootNames = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(bootNames.some((name) => name.startsWith("gmail_") || name.startsWith("slack_"))).toBe(false);
+    await auto.actions.expandToolkits(["gmail"]);
+    const expanded = (await auto.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(expanded).toContain("gmail_GMAIL_SEND_EMAIL");
+
+    // The loadout seed: connected toolkits' tools in, unconnected out.
+    const seed = await auto.actions.loadoutSeed(["gmail"]);
+    expect(seed).toContain("gmail_GMAIL_SEND_EMAIL");
+    expect(seed.some((name) => name.startsWith("slack_"))).toBe(false);
+
+    // Search discovers the UNCONNECTED toolkit by intent and annotates it.
+    const matches = await auto.actions.search("post a message to slack channels");
+    const slack = matches.find((match) => match.name.startsWith("slack_"));
+    expect(slack).toBeDefined();
+    expect(slack!.description).toMatch(/connect/i);
 
     // An explicit connectors array — even empty — always wins over the key.
     const explicit = await compose({ connectors: [] });
     const explicitNames = (await explicit.actions.descriptors()).map((descriptor) => descriptor.name);
     expect(explicitNames).not.toContain("gmail_GMAIL_SEND_EMAIL");
+  });
+
+  it("wires the Cloud share/publish client into the apps seam from VENDO_API_KEY (adapter rule)", async () => {
+    vi.stubEnv("VENDO_API_KEY", "vnd_apps_key");
+    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-apps.test");
+    const calls: Array<{ url: string; authorization: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const sent = new Request(input, init);
+      calls.push({ url: sent.url, authorization: sent.headers.get("authorization") });
+      return Response.json({ id: "share_1", doc: app("app_share"), createdAt: new Date().toISOString() });
+    }));
+    const store = await tempStore("vendo-apps-cloud-");
+    await store.ensureSchema();
+    await store.records("vendo_apps").put({
+      id: "app_share",
+      data: { subject: principal.subject, enabled: true, doc: app("app_share") },
+      refs: { subject: principal.subject },
+    });
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+
+    const snapshot = await vendo.apps.share("app_share", ctx);
+    expect(snapshot.id).toBe("share_1");
+    expect(calls[0]).toMatchObject({
+      url: "https://cloud-apps.test/api/v1/apps/share",
+      authorization: "Bearer vnd_apps_key",
+    });
+
+    // No key → the seam stays unfilled and refuses honestly, without a fetch.
+    vi.stubEnv("VENDO_API_KEY", "");
+    const bare = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    const sent = calls.length;
+    await expect(bare.apps.share("app_share", ctx)).rejects.toMatchObject({ code: "cloud-required" });
+    expect(calls).toHaveLength(sent);
   });
 
   it("selects the inference adapter with the adapter-rule precedence", async () => {
@@ -1665,6 +1766,65 @@ describe("09 §3 conversational turn against the real composed store", () => {
     expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
     expect(views.at(-1)?.data.payload.nodes).toHaveLength(3);
     expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
+  });
+});
+
+describe("ENG-252 agent.loadout through createVendo", () => {
+  it("forwards agent.loadout to the tool-search seam: only curated host tools are offered", async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const toolNamesPerCall: string[][] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async (request) => {
+        toolNamesPerCall.push(((request as { tools?: Array<{ name: string }> }).tools ?? []).map((tool) => tool.name));
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "t1" },
+              { type: "text-delta", id: "t1", delta: "Done." },
+              { type: "text-end", id: "t1" },
+              {
+                type: "finish",
+                usage: {
+                  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 0, text: 0, reasoning: 0 },
+                },
+                finishReason: { unified: "stop", raw: undefined },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    const connector: Connector = {
+      name: "host",
+      descriptors: async () => [
+        { name: "host_alpha", description: "Alpha", inputSchema: { type: "object" }, risk: "read" },
+        { name: "host_beta", description: "Beta", inputSchema: { type: "object" }, risk: "read" },
+      ],
+      execute: async () => ({ status: "ok", output: {} }),
+    };
+    const store = await tempStore("vendo-loadout-");
+    const vendo = createVendo({
+      model: model as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      connectors: [connector],
+      agent: { loadout: ["host_beta"] },
+    });
+
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_loadout",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    // The curated loadout gates the host surface: only the named tool is
+    // offered; the rest stay discoverable via vendo_tools_search.
+    expect(toolNamesPerCall).toHaveLength(1);
+    expect(toolNamesPerCall[0]).toContain("host_beta");
+    expect(toolNamesPerCall[0]).not.toContain("host_alpha");
+    expect(toolNamesPerCall[0]).toContain("vendo_tools_search");
   });
 });
 

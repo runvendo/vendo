@@ -27,6 +27,14 @@ export type OpenSurface =
   | { kind: "http"; url: string }
   | { kind: "resuming"; cover?: string };
 
+/** Existing-agents polish — the flag-gated build-window answer: what
+ *  `GET /apps/:id/open?pending=1` returns while the app is not yet servable
+ *  (the record lands at build completion). Only flagged polls ever see it;
+ *  unflagged callers keep the contracted not-found. */
+export interface PendingSurface {
+  kind: "pending";
+}
+
 /**
  * 06-apps §9 — the additive in-client venue verdict riding a tree payload
  * (`payload.inClient`). SERVER-AUTHORITATIVE: only the runtime's hash-pin
@@ -129,6 +137,8 @@ export interface ConnectableToolkit {
   toolkit: string;
   connector: string;
   label?: string;
+  /** One-line capability blurb (provider metadata); surfaces may ignore it. */
+  description?: string;
 }
 
 /** 07-automations §5 */
@@ -164,6 +174,18 @@ export interface EnableResult {
   enabled: boolean;
   missing: ApprovalRequest[];
 }
+
+/** Existing-agents — what `GET /approvals/:id` returns for a parked BYO
+ *  guarded call: the frozen `VendoApprovalEmbedState` vocabulary, carrying
+ *  the full request while pending (the consent card shows real inputs) and
+ *  the resumed call's outcome once executed (errors included — the embed
+ *  renders them with the existing failed vocabulary, never a blank).
+ *  Mirrors the umbrella's `ByoApprovalResolution`. */
+export type ApprovalResolution =
+  | { state: "pending"; request: ApprovalRequest }
+  | { state: "executed"; outcome: ToolOutcome }
+  | { state: "declined" }
+  | { state: "expired" };
 
 /** 03-agent §5 — what `GET /threads/:id` returns. */
 export interface Thread {

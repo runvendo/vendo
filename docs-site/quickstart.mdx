@@ -19,6 +19,14 @@ detects your auth provider in package.json it asks once to confirm the
 preset (Enter accepts; `--yes` and non-interactive runs accept it
 silently). It never edits code you wrote.
 
+<Note>
+  **Already have an agent?** This quickstart wires Vendo as your product's
+  agent, loop and UI included. If your product already runs its own AI SDK
+  or Mastra agent, keep it: spread Vendo's guarded tool pack into that loop
+  and render generated apps and approvals in your own chat. See
+  [Use with your existing agent](/existing-agents).
+</Note>
+
 ## The two files you own
 
 A host's entire server wiring is two files: `vendo/registry.tsx`, the shared
@@ -63,20 +71,27 @@ JSON Schema is derived from `props` internally; you never hand-write it.
 ```ts
 // app/api/vendo/[...vendo]/route.ts — what `vendo init` scaffolds
 import { anthropic } from "@ai-sdk/anthropic";
-import { authJs, createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+import { authJs } from "@vendoai/vendo/auth/auth-js";
+import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
 import { registry } from "@/vendo/registry";
 
 const vendo = createVendo({
   model: anthropic("claude-sonnet-4-6"),
   auth: authJs(),
   catalog: registry,
+  policy: {}, // .vendo/policy.json: destructive asks, reads run
 });
 
-export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
 Every key is optional — a bare `createVendo()` boots with an env-resolved
-model, anonymous ephemeral sessions, and PGlite persistence. `authJs()` is
+model, anonymous ephemeral sessions, and PGlite persistence (with
+`VENDO_API_KEY` set and no `store` passed, persistence is the Cloud hosted
+store instead — see [Vendo Cloud](/deploy/vendo-cloud#hosted-store)). The
+`policy: {}` line activates the `.vendo/policy.json` file init wrote, so the
+scaffolded posture is: destructive tools ask, reads run. Without a `policy`
+key, every call auto-runs. `authJs()` is
 zero-argument in the standard case: it reads `AUTH_SECRET` (mirroring Auth.js
 itself) and derives the principal's display name and email from the
 session-token claims. `auth` is one preset that fills all three identity
@@ -98,7 +113,7 @@ then shrinks to a re-export:
 import { nextVendoHandler } from "@vendoai/vendo/server";
 import { vendo } from "@/vendo/server";
 
-export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
 Place the catch-all route under `/api/vendo`. The fetch handler itself is
@@ -187,12 +202,15 @@ message stream. App views arrive as `data-vendo-view` parts. Approval metadata
 arrives as `data-vendo-approval` parts.
 
 <Note>
-  With no policy or judge configured, tool calls auto-run and are audited.
-  Shipped chrome displays the unconfigured-policy notice. Add a named
-  `policy` preset — `"cautious"` (writes ask, reads run), `"readonly"`
-  (reads run, everything else blocked), or `"autopilot"` (everything runs) —
-  once you want a real posture; `.vendo/policy.json` and inline `{ rules }`
-  stay available for anything a preset doesn't cover.
+  The scaffolded route passes `policy: {}`, which reads `.vendo/policy.json`:
+  destructive tools ask before running, reads run. Remove the `policy` key and
+  every call auto-runs (audited), with the unconfigured-policy notice in
+  shipped chrome. The file is read fail-soft: deleting it while keeping
+  `policy: {}` also auto-runs, without the notice — keep it in version
+  control. Named presets replace the file — `"cautious"` (writes ask,
+  reads run), `"readonly"` (reads run, everything else blocked), or
+  `"autopilot"` (everything runs) — and inline `{ rules }` covers anything a
+  preset doesn't.
 </Note>
 
 ## Set the trusted origin

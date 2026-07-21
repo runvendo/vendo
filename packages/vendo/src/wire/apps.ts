@@ -48,6 +48,23 @@ export const appRoutes: RouteEntry[] = [
       }
     }
     if (request.method === "GET" && operation === "open" && segments.length === 3) {
+      // Existing-agents polish — the embed's build-window poll. The app record
+      // lands only at build completion, so until then open() (and the meta
+      // route alike) answers not-found, and every 1.2s poll logged a browser
+      // console 404. Under the additive ?pending=1 flag, ONLY that expected
+      // pre-servable miss becomes a quiet 200 {kind:"pending"}; unflagged
+      // callers keep the contracted 404, and every other failure keeps its
+      // envelope and status either way.
+      if (wire.url.searchParams.get("pending") === "1") {
+        try {
+          return json(await deps.apps.open(appId, ctx));
+        } catch (reason) {
+          if (reason instanceof VendoError && reason.code === "not-found") {
+            return json({ kind: "pending" });
+          }
+          throw reason;
+        }
+      }
       return json(await deps.apps.open(appId, ctx));
     }
     if (request.method === "POST" && operation === "call" && segments.length === 3) {

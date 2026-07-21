@@ -5,15 +5,34 @@ its `$PORT`. The host then embeds the machine's public URL as the app surface
 instead of rendering a tree. This is layer 3 of the execution model: the tree
 is gone, the box owns the surface.
 
-Layer 3 ships fully built but disabled. Enable it per project:
+The layer-3 code path ships fully built but disabled, and currently has one
+working venue (BYO e2b — see the matrix below). Enable it per project:
 
 ```ts
 createVendo({ apps: { experimentalServedApps: true } });
 ```
 
+Both venues serve layer-3 URLs: a BYO sandbox (`E2B_API_KEY`) on the
+provider's own hosts, and the Vendo Cloud sandbox on single-label
+`<id-suffix>-m.vendo.run` ingress hosts.
+
 With the flag off (the default), three things refuse with a typed
 `VendoError("not-implemented")` naming the flag: layer-3 generation, the 2-to-3
 surface flip, and `open()` on an app whose surface is already served.
+
+## Venues
+
+Serving needs a sandbox provider with working public ingress:
+
+| Sandbox venue | Served apps |
+| --- | --- |
+| BYO e2b (`E2B_API_KEY` or an explicit `e2bSandbox`) | works |
+| Vendo Cloud hosted sandbox | works — single-label `<id-suffix>-m.vendo.run` ingress |
+
+The Cloud ingress moved to single-label hosts (`<id-suffix>-m.vendo.run`,
+ports as `<id-suffix>-<port>-m.vendo.run`) so the stock `*.vendo.run`
+certificate covers them; the earlier `*.m.vendo.run` TLS limitation no
+longer applies.
 
 ## How an app reaches layer 3
 
