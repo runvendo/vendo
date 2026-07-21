@@ -1,6 +1,7 @@
 import type { ExecFileException } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
+  createLineSplitter,
   ENGINE_PACKAGE_NAME,
   ENGINE_PACKAGE_VERSION,
   npxEngineHarness,
@@ -285,6 +286,94 @@ describe("npxEngineHarness", () => {
       expect(result.stderr).toMatch(/npm could not be launched/);
       expect(result.stderr).toMatch(/is npm installed and on PATH\?/);
       expect(result.stderr).toContain("spawn npm ENOENT");
+    });
+
+    // Code-review follow-up: EACCES (npm present but not executable — a
+    // permissions problem, not a missing install) is "similar spawn-level
+    // string code" to ENOENT and must route the same way, not fall through
+    // to the timeout/generic branches.
+    it("treats EACCES the same as ENOENT — a real spawn-layer failure", () => {
+      const error = Object.assign(new Error("spawn npm EACCES"), { code: "EACCES" }) as ExecFileException;
+      const result = resolveNpmExecResult(error, "", "");
+      expect(result.code).toBe(1);
+      expect(result.stderr).toMatch(/npm could not be launched/);
+      expect(result.stderr).toContain("spawn npm EACCES");
+    });
+
+    // Code-review follow-up: previously this fell into the SAME "npm could
+    // not be launched" branch as ENOENT (error.code is null here, which also
+    // fails `typeof error.code === "number"`), falsely telling a dev whose
+    // 15-minute extraction just timed out that npm isn't installed.
+    it("gives a killed/timeout its own honest message naming the timeout duration — never the npm-not-installed message", () => {
+      const error = Object.assign(new Error("Command failed"), {
+        killed: true,
+        signal: "SIGTERM",
+        code: null,
+      }) as unknown as ExecFileException;
+      const result = resolveNpmExecResult(error, "", "");
+      expect(result.code).toBe(1);
+      expect(result.stderr).toMatch(/15-minute timeout/);
+      expect(result.stderr).toContain("SIGTERM");
+      expect(result.stderr).not.toMatch(/npm could not be launched/);
+      expect(result.stderr).not.toMatch(/is npm installed/);
+    });
+
+    it("checks killed before the spawn-failure branch even if a stray string code is also present", () => {
+      const error = Object.assign(new Error("Command failed"), {
+        killed: true,
+        signal: "SIGTERM",
+        code: "SOMETHING",
+      }) as unknown as ExecFileException;
+      const result = resolveNpmExecResult(error, "", "");
+      expect(result.stderr).toMatch(/timeout/);
+      expect(result.stderr).not.toMatch(/npm could not be launched/);
+    });
+
+    it("forwards npm's own stderr without fabricating a diagnosis for any other non-numeric, non-killed shape", () => {
+      const error = Object.assign(new Error("weird"), {}) as ExecFileException;
+      const result = resolveNpmExecResult(error, "", "npm warn deprecated foo@1.0.0");
+      expect(result).toEqual({ stdout: "", stderr: "npm warn deprecated foo@1.0.0", code: 1 });
+    });
+  });
+
+  describe("createLineSplitter", () => {
+    it("emits each line from a single multi-line chunk", () => {
+      const lines: string[] = [];
+      const splitter = createLineSplitter((line) => lines.push(line));
+      splitter.push("first\nsecond\nthird\n");
+      expect(lines).toEqual(["first", "second", "third"]);
+    });
+
+    it("reassembles a line split across two chunks", () => {
+      const lines: string[] = [];
+      const splitter = createLineSplitter((line) => lines.push(line));
+      splitter.push("resolving depend");
+      splitter.push("encies…\n");
+      expect(lines).toEqual(["resolving dependencies…"]);
+    });
+
+    it("flushes a trailing line with no final newline instead of dropping it", () => {
+      const lines: string[] = [];
+      const splitter = createLineSplitter((line) => lines.push(line));
+      splitter.push("complete line\nno trailing newline");
+      expect(lines).toEqual(["complete line"]);
+      splitter.flush();
+      expect(lines).toEqual(["complete line", "no trailing newline"]);
+    });
+
+    it("flush is a no-op when there is no pending partial line", () => {
+      const lines: string[] = [];
+      const splitter = createLineSplitter((line) => lines.push(line));
+      splitter.push("one\n");
+      splitter.flush();
+      expect(lines).toEqual(["one"]);
+    });
+
+    it("skips blank lines, matching the child protocol's narration framing", () => {
+      const lines: string[] = [];
+      const splitter = createLineSplitter((line) => lines.push(line));
+      splitter.push("a\n\nb\n");
+      expect(lines).toEqual(["a", "b"]);
     });
   });
 });

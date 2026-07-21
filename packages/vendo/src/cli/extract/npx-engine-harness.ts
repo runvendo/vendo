@@ -60,10 +60,12 @@ type Exec = (
 ) => Promise<ExecResult>;
 
 /** Pure mapping from a completed `execFile` callback into an ExecResult —
- *  pulled out of the real spawn so the npm-not-found case (execFile's error
- *  has a string `code` like "ENOENT", not a process exit number) has direct
- *  unit coverage without actually spawning a missing binary (mirrors
- *  resolveCodexExecResult in codex-cli-harness.ts). */
+ *  pulled out of the real spawn so the three ways `error` shows up (a normal
+ *  nonzero exit, a real spawn-layer failure, or the RUN_TIMEOUT_MS kill) each
+ *  get direct unit coverage without actually spawning anything (mirrors
+ *  resolveCodexExecResult in codex-cli-harness.ts). The three are easy to
+ *  conflate — all leave `error.code` non-numeric — but they need different
+ *  messages: a killed 15-minute extraction run is not npm being uninstalled. */
 export function resolveNpmExecResult(
   error: ExecFileException | null,
   stdout: string,
@@ -71,16 +73,64 @@ export function resolveNpmExecResult(
 ): ExecResult {
   if (error === null) return { stdout, stderr, code: 0 };
   if (typeof error.code === "number") return { stdout, stderr, code: error.code };
-  // npm itself could not be launched — not installed, not on PATH, or the OS
-  // refused to spawn it (error.code is a string like "ENOENT", not a process
-  // exit number). execFile's own stdout/stderr are empty in this case, so the
-  // actionable detail has to come from error.message; an offline registry, by
-  // contrast, still lets npm launch and exit non-zero with its own
-  // descriptive stderr, handled by the branch above and forwarded verbatim.
+  if (error.killed === true) {
+    // execFile's `timeout` option SIGTERMs a still-running child — a
+    // legitimate long extraction run, not a broken npm install. This must be
+    // checked before the spawn-failure branch below: a kill leaves
+    // error.code null (not a string), so it would otherwise fall into "npm
+    // could not be launched" and mislabel the dev's own long-running job as
+    // a missing npm.
+    const minutes = Math.round(RUN_TIMEOUT_MS / 60_000);
+    return {
+      stdout: "",
+      stderr: `npm exec was killed for exceeding the ${minutes}-minute timeout`
+        + (error.signal !== undefined ? ` (${error.signal})` : ""),
+      code: 1,
+    };
+  }
+  if (typeof error.code === "string") {
+    // A real spawn-layer failure (error.code is an errno string like
+    // "ENOENT" or "EACCES", set when the OS never launched the child at
+    // all) — npm itself could not be launched: not installed, not on PATH,
+    // or not executable. execFile's own stdout/stderr are empty in this
+    // case, so the actionable detail has to come from error.message.
+    return {
+      stdout: "",
+      stderr: `npm could not be launched (${error.message}) — is npm installed and on PATH?`,
+      code: 1,
+    };
+  }
+  // Any other shape (no numeric exit code, not killed, no string spawn
+  // code) — don't fabricate a diagnosis; forward whatever npm itself wrote.
+  // An offline registry lands here: npm still launches and exits non-zero
+  // with its own descriptive stderr (e.g. "npm error code ENOTFOUND"),
+  // which run()'s nonzero-exit handling forwards to the dev verbatim.
+  return { stdout, stderr, code: 1 };
+}
+
+/** Line-buffered splitter for a live-streaming descriptor, extracted out of
+ *  execNpmEngine so it's directly unit-testable without a real child
+ *  process: a line split across two `data` chunks, and — the bug this
+ *  fixes — a trailing line with no final newline, which `flush()` still
+ *  delivers instead of silently dropping the child's last progress line
+ *  when the stream ends without one. */
+export function createLineSplitter(onLine: (line: string) => void): { push(chunk: string): void; flush(): void } {
+  let buffer = "";
   return {
-    stdout: "",
-    stderr: `npm could not be launched (${error.message}) — is npm installed and on PATH?`,
-    code: 1,
+    push(chunk: string) {
+      buffer += chunk;
+      let index = buffer.indexOf("\n");
+      while (index !== -1) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        if (line.length > 0) onLine(line);
+        index = buffer.indexOf("\n");
+      }
+    },
+    flush() {
+      if (buffer.length > 0) onLine(buffer);
+      buffer = "";
+    },
   };
 }
 
@@ -89,27 +139,27 @@ function execNpmEngine(
   options: { cwd: string; env: NodeJS.ProcessEnv; input: string; onStderrLine?: (line: string) => void },
 ): Promise<ExecResult> {
   return new Promise((resolve) => {
+    // stderr is progress/narration per the child protocol — forward it line
+    // by line as it streams in, not just once the process exits; flush()
+    // in the callback below delivers any trailing partial line too.
+    const splitter = createLineSplitter((line) => options.onStderrLine?.(line));
     const child = execFile(
       "npm",
       args,
       { cwd: options.cwd, env: options.env, timeout: RUN_TIMEOUT_MS, maxBuffer: MAX_BUFFER_BYTES },
       (error, stdout, stderr) => {
+        splitter.flush();
         resolve(resolveNpmExecResult(error, stdout, stderr));
       },
     );
-    // stderr is progress/narration per the child protocol — forward it line
-    // by line as it streams in, not just once the process exits.
-    let buffer = "";
-    child.stderr?.on("data", (chunk: Buffer | string) => {
-      buffer += chunk.toString();
-      let index = buffer.indexOf("\n");
-      while (index !== -1) {
-        const line = buffer.slice(0, index);
-        buffer = buffer.slice(index + 1);
-        if (line.length > 0) options.onStderrLine?.(line);
-        index = buffer.indexOf("\n");
-      }
-    });
+    child.stderr?.on("data", (chunk: Buffer | string) => splitter.push(chunk.toString()));
+    // If the child exits (or is killed by the timeout) before the stdin
+    // write drains, Node emits an unhandled EPIPE 'error' on this stream —
+    // with no listener, that's an uncaughtException that aborts all of
+    // `vendo init`, bypassing extraction.ts's graceful per-rung degradation.
+    // The real outcome always arrives via the execFile callback's exit code
+    // + stderr above, so this handler is intentionally a no-op.
+    child.stdin?.on("error", () => {});
     child.stdin?.write(options.input);
     child.stdin?.end();
   });
