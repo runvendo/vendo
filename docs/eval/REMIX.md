@@ -203,3 +203,11 @@ one edit on the scenario's fresh base app.
 
 | Date | Set | Score | Main @ | Evidence |
 |---|---|---|---|---|
+| 2026-07-21 | frozen 12 (baseline) | **2/12** | 4cb6cdb6 | `docs/eval/runs/2026-07-21-remix-baseline/` |
+
+Baseline headline: the drift→rebase machinery is solid end-to-end, but the
+headline "remix X so that Y" journey fails 6/8 times it was asked — 4× the
+engine rejects the model's one-patch ForkPin+Island (component-already-exists),
+2× the model forks without the modification and reports success. Fork-then-edit
+chains (fork first, modify in a later instruction) are the only shape that
+passed. Full classes + machinery findings in the run README.

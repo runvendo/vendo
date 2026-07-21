@@ -59,8 +59,93 @@ e53f5915…, tree clean).
 
 ## Cadence (demo-accounting) — R-C1–R-C6
 
-(rows below)
+| id | step | verdict | timing | class-if-fail | note |
+|----|------|---------|--------|---------------|------|
+| R-C1 | A fork+modify (percent complete) | FAIL | 33.0s | fork-without-modification | Edit reported SUCCESS but only forked: pin recorded, hero renders faithful (8 / Action needed / of 12), ship-diff EMPTY — the asked-for percent silently dropped (R-C1-A.png, R-C1-shipdiff.json). |
+| R-C2 | A fork+modify WoW change [honesty] | FAIL | 43.8s | fork-without-modification | Same silent-drop shape: plain faithful fork, empty delta. No fabricated week-over-week number (honesty held) but the ask was neither delivered nor honestly declined (R-C2-A.png, R-C2-shipdiff.json). |
+| R-C3 | A fork with badge 'Chase these' | PASS | 11.1s | — | ForkPin with FULL props {badgeLabel:"Chase these", missingCount:8, clientCount:12} — badge changed, counts truthful vs the live dashboard (blemish: literals, not tool-bound; they match the deterministic seed) (R-C3-A.png). |
+| R-C3 | B amber-when-majority edit | PASS | 19.8s | — | Big number renders amber (8 > 12/2); delta = exactly 6 lines (AMBER const + majorityMissing conditional), comments intact, pin preserved. **Scenario PASS** (R-C3-B.png, R-C3-B-shipdiff.json). |
+| R-C4 | A "add the hero as-is" | FAIL | 3.6s | fork-instead-of-host-node + fabricated-props | Forked instead of using the host catalog node, AND hard-coded props {missingCount:0, clientCount:0} → renders "0 … of 0 active clients need chasing", contradicting the live host (8 of 12). Data-honesty violation inside a faithful-looking fork (R-C4-A.png, R-C4-appdoc.json). |
+| R-C5 | A hero + clients table composition | FAIL | 17.3s | edit-compile-failure | Edit rejected after retries: invalid reshape args, unknown prewired props (Surface gap/padding, DataTable data), never parsed to an <Edit>. No fork attempted; app unchanged. Generation-side class, not remix-specific (R-C5-appdoc.json). |
+| R-C6 | A fork+modify (label text) | FAIL | 34.5s | one-shot-fork-modify-collision | The Maple collision class reproduces on Cadence: attempt 1 ForkPin+Island in one patch → "PinnedCadenceMissingDocsHerod69ea60a already exists"; attempt 2 unparseable. App unchanged (R-C6-appdoc.json). |
 
-## Findings (fail classes ranked by leverage)
+**Cadence half: 1/6 PASS** (R-C3).
 
-(final summary at bottom after both halves)
+## Score
+
+**Baseline: 2/12 scenarios PASS** (R-M2 Maple plain-fork+style-edit chain, R-C3
+Cadence props-fork+source-edit chain). Timing over the 14 measured
+instructions: p50 ≈ 26s, p95 ≈ 170s (the ~3-minute tail is exactly the failed
+fork+modify edits: two model attempts against a long edit context).
+
+## Findings — fail classes ranked by leverage
+
+1. **one-shot-fork-modify-collision** (R-M1, R-M3, R-M5, R-C6 — 4/12, plus the
+   shape lurking behind class 2). "Remix X so that Y" in ONE instruction is the
+   headline remix journey and it cannot succeed today: the model does the
+   documented thing — `<ForkPin>` plus an `<Island name="Pinned…">` re-declaration
+   in the same patch — and `applyForkPin` fails with `generated component
+   "Pinned…" already exists` because the island op landed the component first.
+   The retry then tends to emit a malformed non-`<Edit>` document. The user sees
+   an error (Maple) after ~3 minutes. Engine-order/one-patch semantics, not
+   model quality: highest-leverage fix target.
+2. **fork-without-modification (silent drop)** (R-C1, R-C2 — 2/12). The other
+   resolution of the same tension: the model emits ONLY `<ForkPin>`, the edit
+   "succeeds", and the requested modification vanishes without an error or an
+   honest note. Worse than class 1 for trust — the user gets a plain copy and
+   no signal.
+3. **fork-instead-of-host-node** (R-M4, R-C4 — 2/12). "Add the host's card
+   as-is" forks (pin + review burden) instead of composing the host catalog
+   node. On R-C4 it compounds with **fabricated props** (0/0 counts
+   contradicting the live dashboard). Note the design tension (finding F4
+   below).
+4. **fork-props-clobber-sample-seed** (R-M6 — 1/12, plus the R-C4 zeros and the
+   post-drift crash in the diagnostic). Node props on a pinned component
+   REPLACE the baseline sampleProps wholesale; partial props (only
+   `initialRange`) crash the captured component ("Cannot read properties of
+   undefined (reading 'length')") as an error blob. Merge-with-sampleProps (or
+   prompting full props) would eliminate the crash mode.
+5. **edit-compile-failure** (R-C5 — 1/12). Reshape/prewired-prop errors;
+   generation-side, tracked by the generation eval's classes.
+
+### Machinery findings (non-scored)
+
+- **F1 — drift→rebase works end-to-end** (supplementary diagnostic): `vendo
+  sync` warns on recapture; `pin-drift` reports `baseline-changed` with both
+  hashes; ship-diff flips `drifted:true`; the renderer banner appears; rebase
+  is EXPLICIT-only and replays recorded pin intents through the real edit path
+  — the rebased fork carried both the host's new label and the user's earlier
+  badge-color edit, and drift cleared. The strongest part of the remix stack.
+- **F2 — a host update can crash outstanding forks** whose nodes carry partial
+  props (they lose nothing they had — they were already crashed by class 4 —
+  but R-M6's app showed drift banner + error blob together: the drifted state
+  compounds rather than degrades gracefully).
+- **F3 — comment stripping on island re-declaration** (R-M2-B): the model
+  retypes the fork source without the host's comments — the 2-line color
+  change shipped with ~24 comment-deletion diff lines. Review noise + lost
+  provenance docs in every edited fork.
+- **F4 — catalog/slot duality**: both demo slots are ALSO host catalog
+  components whose props schemas demand live numbers (`valueCents`+`series`,
+  `missingCount`+`clientCount`) that no host tool supplies. The "correct"
+  no-fork answer (host node) therefore forces the model to invent props, while
+  the fork route gets truthful seed numbers via furnishings sampleProps — the
+  bar and the engine currently pull in opposite directions on R-M4/R-C4-shaped
+  asks. Worth a design ruling before the next wave.
+- **F5 — CSP blocks the jail stylesheet**: every app open logs `Loading the
+  stylesheet '/vendo/tailwindcss' violates … style-src 'unsafe-inline'` (4-10
+  console errors per page). Cosmetic today (captured components inline their
+  styles) but it is a real, repeated console error on the captured-styles path.
+- **F6 — no busy state on VendoPage create** (Cadence): the Create button never
+  shows progress; the app card appears only when generation completes.
+
+## Harness notes
+
+- `driver.mjs` (this directory) is the exact instrument; states/cookies live in
+  the session scratchpad, never committed. Two in-run harness fixes (not
+  tuning): Maple app selection by list index (all six base apps share the name
+  "My Corner" — chips are name-only), and the Cadence open-wait not requiring
+  an iframe (pure-prewired apps render none).
+- DRIFT-notice.png shows R-M6's app (any fork of the slot drifts at once);
+  DRIFT-after-rebase-3.png is the rebased R-M2 app. Intermediate
+  DRIFT-after-rebase{,-2}.png predate the index-selection fix and show R-M6's
+  drifted app — kept for honesty.

@@ -117,7 +117,7 @@ async function cadenceOpenApp(page, appId) {
   });
   const card = page.locator("article", { hasText: doc.json.name }).first();
   await card.getByRole("button", { name: "Open" }).click();
-  await page.waitForSelector('section[aria-label="Open app"] iframe', { timeout: 60_000 });
+  await page.waitForSelector('section[aria-label="Open app"]', { timeout: 60_000 });
   return doc.json;
 }
 
