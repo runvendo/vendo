@@ -90,4 +90,117 @@ describe("claudeCliHarness", () => {
     await expect(harness.run({ root: "/x", env: {}, instructions: "go" }))
       .rejects.toThrow(/auth failed: token expired/);
   });
+
+  it("relays a gateway refusal message verbatim, without truncation", async () => {
+    const refusal =
+      "init-inference-blocked: Vendo Cloud gateway inference is not available on the free plan during "
+      + "`vendo init`. Bring your own Claude Code login or ANTHROPIC_API_KEY, or upgrade your org's plan.";
+    const harness = claudeCliHarness({
+      exec: async () => ({ stdout: "", stderr: refusal, code: 1 }),
+    });
+    await expect(harness.run({ root: "/x", env: {}, instructions: "go" }))
+      .rejects.toThrow(new RegExp(refusal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  });
+
+  describe("Vendo Cloud gateway fuel", () => {
+    it("does not label or fuel the rung on VENDO_API_KEY alone when the binary is absent", async () => {
+      const harness = claudeCliHarness({ probeBinary: async () => false, probeLogin: async () => false });
+      expect(await harness.availability({ root: "/x", env: { VENDO_API_KEY: "vnd_x" } })).toBeNull();
+    });
+
+    it("labels the rung with the Vendo Cloud key when no own credential is available", async () => {
+      const harness = claudeCliHarness({
+        probeBinary: async () => true,
+        probeLogin: async () => false,
+      });
+      expect(await harness.availability({ root: "/x", env: { VENDO_API_KEY: "vnd_x" } }))
+        .toBe("your Vendo Cloud key (managed inference)");
+    });
+
+    it("prefers ANTHROPIC_API_KEY's label over the Vendo Cloud key when both are set", async () => {
+      const harness = claudeCliHarness({
+        probeBinary: async () => true,
+        probeLogin: async () => false,
+      });
+      expect(await harness.availability({
+        root: "/x",
+        env: { ANTHROPIC_API_KEY: "sk", VENDO_API_KEY: "vnd_x" },
+      })).toBe("your ANTHROPIC_API_KEY");
+    });
+
+    it("prefers the Claude Code login label over the Vendo Cloud key when both are usable", async () => {
+      const harness = claudeCliHarness({
+        probeBinary: async () => true,
+        probeLogin: async () => true,
+      });
+      expect(await harness.availability({ root: "/x", env: { VENDO_API_KEY: "vnd_x" } }))
+        .toBe("your Claude Code login");
+    });
+
+    it("does not overlay the env when ANTHROPIC_API_KEY is present (own credential wins)", async () => {
+      let capturedEnv: NodeJS.ProcessEnv | undefined;
+      const harness = claudeCliHarness({
+        probeLogin: async () => false,
+        exec: async (_args, options) => {
+          capturedEnv = options.env;
+          return { stdout: "ok", stderr: "", code: 0 };
+        },
+      });
+      await harness.run({
+        root: "/x",
+        env: { ANTHROPIC_API_KEY: "sk", VENDO_API_KEY: "vnd_x" },
+        instructions: "go",
+      });
+      expect(capturedEnv?.ANTHROPIC_BASE_URL).toBeUndefined();
+      expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+      expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+    });
+
+    it("does not overlay the env when the Claude Code login is satisfied (own credential wins)", async () => {
+      let capturedEnv: NodeJS.ProcessEnv | undefined;
+      const harness = claudeCliHarness({
+        probeLogin: async () => true,
+        exec: async (_args, options) => {
+          capturedEnv = options.env;
+          return { stdout: "ok", stderr: "", code: 0 };
+        },
+      });
+      await harness.run({ root: "/x", env: { VENDO_API_KEY: "vnd_x" }, instructions: "go" });
+      expect(capturedEnv?.ANTHROPIC_BASE_URL).toBeUndefined();
+      expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+      expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+    });
+
+    it("does not probe the Claude Code login (no side effect) when VENDO_API_KEY is unset", async () => {
+      let probeCalls = 0;
+      const harness = claudeCliHarness({
+        probeLogin: async () => {
+          probeCalls += 1;
+          return false;
+        },
+        exec: async () => ({ stdout: "ok", stderr: "", code: 0 }),
+      });
+      await harness.run({ root: "/x", env: {}, instructions: "go" });
+      expect(probeCalls).toBe(0);
+    });
+
+    it("overlays the gateway env, tagged with the init-purpose header, when unauthenticated and VENDO_API_KEY is set", async () => {
+      let capturedEnv: NodeJS.ProcessEnv | undefined;
+      const harness = claudeCliHarness({
+        probeLogin: async () => false,
+        exec: async (_args, options) => {
+          capturedEnv = options.env;
+          return { stdout: "ok", stderr: "", code: 0 };
+        },
+      });
+      await harness.run({
+        root: "/x",
+        env: { VENDO_API_KEY: "vnd_x", VENDO_CLOUD_URL: "http://localhost:3001/" },
+        instructions: "go",
+      });
+      expect(capturedEnv?.ANTHROPIC_BASE_URL).toBe("http://localhost:3001/api/v1");
+      expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBe("vnd_x");
+      expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBe("x-vendo-purpose: init");
+    });
+  });
 });
