@@ -84,6 +84,19 @@ function round(n, places = 3) {
   return String(Math.round((n + Number.EPSILON) * f) / f).replace(/^-0$/, '0');
 }
 
+// Cursor positions are built by repeated float `+=` across a whole text run
+// (advance + kerning + letter-spacing, char after char), which accumulates
+// epsilon noise — e.g. 424 becomes 424.0000000000002. opentype.js 2.0.0's
+// curve-flattening in Glyph.getPath() divides by a term that can be exactly
+// zero for a "clean" coordinate but not for its epsilon-perturbed neighbor,
+// so the perturbed value silently produces NaN control points instead of
+// throwing. Snapping every coordinate handed to getPath() to a fixed
+// (small) precision closes that gap without visibly changing layout.
+function snapCoord(n, places = 4) {
+  const f = 10 ** places;
+  return Math.round(n * f) / f;
+}
+
 // ---------------------------------------------------------------------------
 // Font fetch + cache
 // ---------------------------------------------------------------------------
@@ -358,11 +371,11 @@ function textToPath({ content, x, y, fontFamily, fontWeight, fontSize, letterSpa
     const r = resolved[i];
     cursor += kerningPx[i];
     if (r.kind === 'glyph') {
-      const path = r.glyph.getPath(cursor, y, fontSize);
+      const path = r.glyph.getPath(snapCoord(cursor), snapCoord(y), fontSize);
       const d = path.toPathData(3);
       if (d) segments.push(d);
     } else {
-      segments.push(starPathD(cursor + ownAdvancePx[i] / 2, y, capHeightPx));
+      segments.push(starPathD(snapCoord(cursor + ownAdvancePx[i] / 2), snapCoord(y), capHeightPx));
     }
     cursor += ownAdvancePx[i] + letterSpacingPx;
   }
@@ -395,6 +408,13 @@ async function main() {
     const out = applyReplacements(raw, replacements).replace(/\s+font-family="[^"]*"/g, '');
     if (/<text[\s>]/.test(out) || /font-family/.test(out)) {
       throw new Error(`${file}: output still contains <text> or font-family after conversion`);
+    }
+    // Belt-and-suspenders: opentype.js curve flattening can silently emit
+    // NaN control points for certain coordinates (see snapCoord() above).
+    // A NaN in path data makes browsers abort mid-parse, truncating
+    // everything after it — fail the build loudly instead of shipping that.
+    if (/NaN/.test(out)) {
+      throw new Error(`${file}: emitted path data contains NaN — a glyph coordinate was not finite`);
     }
     writeFileSync(join(OUT_DIR, basename(file)), out);
   }
