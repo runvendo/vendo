@@ -14,10 +14,19 @@ export interface Connector {
   execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
 }
 
-export function composioConnector(config: { apiKey: string; apps?: string[] }): Connector;
+export function composioConnector(config: {
+  apiKey: string;
+  apps?: string[];
+}): Connector;
 export function mcpConnector(config: {
   url: string;
-  headers?: Record<string, string> | ((ctx: { principal: Principal; presence: Presence; grant?: Grant }) => Promise<Record<string, string>>);
+  headers?:
+    | Record<string, string>
+    | ((ctx: {
+        principal: Principal;
+        presence: Presence;
+        grant?: Grant;
+      }) => Promise<Record<string, string>>);
   name?: string;
 }): Connector;
 ```
@@ -35,7 +44,7 @@ Composio is the sole broker. Vendo builds no OAuth flows of its own. A
 connection is a Composio connected account whose `entityId` is the Vendo
 principal subject, so isolation is structural: every list, initiate, and
 disconnect operation is scoped to exactly one subject. No token ever enters
-Vendo — the broker holds the credentials, and initiate hands back only the
+Vendo: the broker holds the credentials, and initiate hands back only the
 hosted redirect URL.
 
 This connector support is distinct from the MCP door, which runs the other
@@ -87,7 +96,7 @@ following the same pattern as approvals:
 1. The user selects **Connect**. The card opens the broker's hosted OAuth
    page in a popup.
 2. The card polls the connection until it becomes active.
-3. The thread retries the original tool call through the fresh connection —
+3. The thread retries the original tool call through the fresh connection,
    no re-prompting required.
 
 Automations and MCP door calls do not have a browser surface, so they surface
@@ -108,7 +117,7 @@ hook from `@vendoai/ui`.
 ## Connection endpoints
 
 Every connection route is per-principal. The wire uses exactly the resolved
-principal's subject — there is no caller-supplied subject and no cross-user
+principal's subject: there is no caller-supplied subject and no cross-user
 read.
 
 | Route | Method | Purpose |
@@ -118,7 +127,7 @@ read.
 | `/api/vendo/connections/:id?connector=` | GET | status; poll while connecting |
 | `/api/vendo/connections/:id?connector=` | DELETE | disconnect |
 
-Anonymous (ephemeral) visitors cannot initiate a connection — an external
+Anonymous (ephemeral) visitors cannot initiate a connection: an external
 account would outlive the session it was minted for. Synthetic subjects
 (webhook principals, reserved `webhook:` and `vendo:` prefixes) are refused
 for the same reason.
@@ -160,7 +169,7 @@ With a resolver, each subject gets its own cached MCP session (bounded by an
 LRU of 500 subjects). Descriptor listing still resolves without a principal,
 so tool discovery keeps working.
 
-Every connector execution is audited with its account identity — connector,
-toolkit, `entityId`, and whether the credential was shared or per-principal —
+Every connector execution is audited with its account identity (connector,
+toolkit, `entityId`, and whether the credential was shared or per-principal)
 in the tool-call event's `detail`. The identity is stripped from the outcome
 the model and UI see, so no broker identifier leaks into a message.
