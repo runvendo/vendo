@@ -240,17 +240,19 @@ describe("runAiExtraction", () => {
     const sink = output();
     const result = await runAiExtraction({
       root, output: sink.output, env: {}, yes: false, interactive: true,
-      harnesses: [fakeHarness("x", null), fakeHarness("x", null), fakeHarness("x", null)],
+      harnesses: [fakeHarness("x", null), fakeHarness("x", null), fakeHarness("x", null), fakeHarness("x", null)],
     });
     expect(result.ran).toBe(false);
     const message = sink.logs.join("\n");
     expect(message).toContain("AI polish: unavailable");
-    // Every rung's remedy is named — visible-never-silent (Task 2).
+    // Every rung's remedy is named — visible-never-silent (Task 2/4).
     expect(message).toContain("Claude Code installed");
     expect(message).toContain("ANTHROPIC_API_KEY");
     expect(message).toContain("codex");
     expect(message).toContain("codex login");
     expect(message).toContain("OPENAI_API_KEY");
+    expect(message).toContain("VENDO_API_KEY");
+    expect(message).toContain("vendo cloud login");
   });
 
   it("picks the first rung when every rung is available (order matters)", async () => {
@@ -264,6 +266,7 @@ describe("runAiExtraction", () => {
         fakeHarness(scripted, "Agent SDK credential"),
         fakeHarness(scripted, "claude CLI credential"),
         fakeHarness(scripted, "codex CLI credential"),
+        fakeHarness(scripted, "npx engine credential"),
       ],
       confirm: async () => true,
     });
@@ -272,6 +275,7 @@ describe("runAiExtraction", () => {
     expect(logs).toContain("Reading your product (Agent SDK credential)");
     expect(logs).not.toContain("claude CLI credential");
     expect(logs).not.toContain("codex CLI credential");
+    expect(logs).not.toContain("npx engine credential");
   });
 
   it("falls through to the claude CLI rung when the Agent SDK rung is unavailable", async () => {
@@ -305,11 +309,33 @@ describe("runAiExtraction", () => {
         fakeHarness("x", null),
         fakeHarness("x", null),
         fakeHarness(scripted, "codex CLI credential"),
+        fakeHarness(scripted, "npx engine credential"),
       ],
       confirm: async () => true,
     });
     expect(result.ran).toBe(true);
-    expect(sink.logs.join("\n")).toContain("Reading your product (codex CLI credential)");
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Reading your product (codex CLI credential)");
+    expect(logs).not.toContain("npx engine credential");
+  });
+
+  it("falls through past three unavailable rungs to the npx engine rung (fourth and last)", async () => {
+    const root = await fixture();
+    const sink = output();
+    const draft = { brief: "b", tools: [] };
+    const scripted = "```json\n" + JSON.stringify(draft) + "\n```";
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        fakeHarness("x", null),
+        fakeHarness("x", null),
+        fakeHarness("x", null),
+        fakeHarness(scripted, "npx engine credential"),
+      ],
+      confirm: async () => true,
+    });
+    expect(result.ran).toBe(true);
+    expect(sink.logs.join("\n")).toContain("Reading your product (npx engine credential)");
   });
 
   it("respects a declined consent", async () => {
