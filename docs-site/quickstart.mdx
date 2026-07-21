@@ -80,7 +80,10 @@ runtime (Node 20 or later). Init flags live in the
     export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
     ```
 
-    Every key is optional. `authJs()` reads `AUTH_SECRET` and derives the
+    Every key is optional, with one exception: `oauth` (or an `auth` preset
+    that carries one) is required once you turn on [`mcp: true`](#serve-your-product-to-mcp-clients),
+    since the door cannot mint principals without it; `createVendo` throws at
+    compose time otherwise. `authJs()` reads `AUTH_SECRET` and derives the
     principal from the session-token claims; presets also exist for Clerk,
     Supabase, Auth0, and a generic JWT scheme
     ([actAs presets](/connect/act-as-presets)). Every `createVendo` key lives
@@ -91,11 +94,21 @@ runtime (Node 20 or later). Init flags live in the
     ```tsx
     import { VendoRoot } from "@vendoai/vendo/react";
     import { registry } from "@/vendo/registry";
+    import theme from "@/.vendo/theme.json";
+    import type { VendoTheme } from "@vendoai/vendo";
 
     export function Root({ children }: { children: React.ReactNode }) {
-      return <VendoRoot components={registry}>{children}</VendoRoot>;
+      return (
+        <VendoRoot components={registry} theme={theme as VendoTheme}>
+          {children}
+        </VendoRoot>
+      );
     }
     ```
+
+    `vendo init` captures your extracted brand into `.vendo/theme.json`; the
+    `theme` prop is what applies it. The cast narrows TypeScript's widened
+    JSON-module string literals.
 
     ## Add the overlay
 
@@ -119,9 +132,10 @@ runtime (Node 20 or later). Init flags live in the
     ## Wire the Express adapter
 
     On Express, `vendo init` proposes a diff-gated `vendo/server.ts` holding a
-    `createVendo()` composition and a Node HTTP-to-fetch adapter, plus a
-    starter `vendo/ai.ts` model module. Two wiring steps remain. Mount the
-    exported adapter under one base path, normally `/api/vendo`:
+    `createVendo()` composition and a Node HTTP-to-fetch adapter. It does not
+    scaffold a model module; `model` stays optional and resolves from the
+    environment. Two wiring steps remain. Mount the exported adapter under one
+    base path, normally `/api/vendo`:
 
     ```ts
     import express from "express";
@@ -132,13 +146,15 @@ runtime (Node 20 or later). Init flags live in the
     app.listen(3000);
     ```
 
-    Wrap the client root in `<VendoRoot>`:
+    Wrap the client root in `<VendoRoot>`, passing the theme `vendo init`
+    captured into `.vendo/theme.json`:
 
     ```tsx
     import { VendoRoot } from "@vendoai/vendo/react";
+    import theme from "./.vendo/theme.json";
 
     root.render(
-      <VendoRoot>
+      <VendoRoot theme={theme}>
         <App />
       </VendoRoot>,
     );
@@ -150,14 +166,17 @@ runtime (Node 20 or later). Init flags live in the
 
     ```ts
     import { createVendo } from "@vendoai/vendo/server";
-    import { model } from "./ai";
 
     const vendo = createVendo({
-      model,
       principal: async () => null,
       policy: {}, // .vendo/policy.json: destructive asks, reads run
     });
     ```
+
+    `model` is optional and omitted here on purpose: `vendo init` does not
+    scaffold a model module, so a bare `createVendo()` resolves the model
+    from the environment (see [Persistence](#persistence)). Pass an explicit
+    `model` only if you need a specific one.
 
     Replace `principal` with your session resolver. It receives the `Request` and
     returns a `Principal`, or `null` for an anonymous session:

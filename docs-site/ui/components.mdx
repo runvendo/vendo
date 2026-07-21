@@ -115,16 +115,17 @@ Without any configuration, chrome prettifies the raw id and args:
 
 - `host_email_send` renders as "Email send".
 - `gmail_GMAIL_CREATE_EMAIL_DRAFT` renders as "Gmail create email draft".
-- Object arguments render as a `Key: value` preview in the approval card and a
-  compact `Key value · Key value` summary on the chip. Non-object args fall
-  back to the server-formatted input preview.
+- Object arguments render as a `Key: value` preview in the approval card.
+  Non-object args fall back to the server-formatted input preview. The tool
+  chip itself shows only the humanized label, never an argument summary.
 - Consecutive identical chips (same tool, same args) collapse into one entry
   with an `×N` count.
 - The chip's spinner, check, or error icon carries lifecycle state; no
   `output-available` or `Tool:` text ever renders.
-- The in-thread approval card no longer prints a fabricated context byline.
-  Standalone and queue approval cards keep their real server-provided
-  principal, venue, and presence context.
+- The in-thread approval card no longer prints a fabricated context byline
+  (the live conversation is already the context). Standalone and queue
+  approval cards render their real server-provided venue and app context;
+  neither surface displays principal or presence as separate fields.
 
 The fallback is enough for demos and internal tools. Pass friendly metadata
 when you want your own copy for user-facing surfaces.
@@ -255,9 +256,10 @@ Voice is a UI entry point:
 | `useVoice()` | state, start, stop, and transcript |
 | `<VendoStage />` | shipped voice surface |
 
-`useVoice` drives a WebRTC voice stage session. The shipped surface uses the
-same resolved theme tokens and accessibility requirements as the rest of the
-chrome.
+`useVoice` drives whatever `VoiceDriver` is injected through `VendoProvider`;
+WebRTC is one driver implementation (`realtimeVoiceDriver`), not something
+`useVoice` provides itself. The shipped surface uses the same resolved theme
+tokens and accessibility requirements as the rest of the chrome.
 
 Tool calls initiated from voice still use the composition's normal tool
 registry and guard treatment. Voice does not add a second authority path.

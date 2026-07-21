@@ -24,15 +24,15 @@ export function composioConnector(config: {
   apiKey: string;
   apps?: string[];
 }): Connector;
+// Descriptor listing calls the resolver with no principal (a system
+// context), so every field is optional; a sync return is also allowed.
+export type McpHeadersResolver = (
+  auth: { principal?: Principal; presence?: RunContext["presence"]; grant?: PermissionGrant },
+) => Promise<Record<string, string>> | Record<string, string>;
+
 export function mcpConnector(config: {
   url: string;
-  headers?:
-    | Record<string, string>
-    | ((ctx: {
-        principal: Principal;
-        presence: Presence;
-        grant?: Grant;
-      }) => Promise<Record<string, string>>);
+  headers?: Record<string, string> | McpHeadersResolver;
   name?: string;
 }): Connector;
 ```
