@@ -4,9 +4,9 @@ import { CLI_VERSION } from "./shared.js";
  * Agent-install DX (design 2026-07-19 §CLI-3) — the doctor error-code
  * registry. Every failure mode doctor can report (static and live) has one
  * stable, grep-able code here: E-<AREA>-<NNN>, where the area groups related
- * checks (WIRE wiring, CFG config files, UI eject drift, DEV probe server,
- * LIVE composition/status, AUTH credentials, MCP door, TURN model turn,
- * CLOUD key). Codes are append-only: never renumber or reuse one — the
+ * checks (WIRE wiring, CFG config files, DEP host dependency versions, UI
+ * eject drift, DEV probe server, LIVE composition/status, AUTH credentials,
+ * MCP door, TURN model turn, CLOUD key). Codes are append-only: never renumber or reuse one — the
  * verify page anchors (`fix_ref`) and agents' remediation notes depend on
  * them staying put.
  *
@@ -21,6 +21,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-WIRE-005": "the @vendoai/vendo (or vendoai alias) dependency is not declared",
   "E-CFG-001": "a required .vendo/ config file is missing",
   "E-CFG-002": ".vendo/data/.gitignore is missing",
+  "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
   "E-UI-001": "an ejected surface predates the installed @vendoai/ui",
   "E-DEV-001": "the dev server could not be started for the probe",
   "E-LIVE-001": "/status returned an invalid composition response",

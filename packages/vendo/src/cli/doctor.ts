@@ -9,6 +9,7 @@ import {
   type CloudDoctorResult,
   type LiveTurnResult,
 } from "./doctor-live.js";
+import { installedAiVersion } from "./dep-versions.js";
 import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { detectFramework, detectVendoWiring } from "./framework.js";
@@ -139,6 +140,20 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
 
   if (await hasDependency(root)) pass("wiring/dependency", "@vendoai/vendo dependency is declared");
   else fail("wiring/dependency", "E-WIRE-005", "@vendoai/vendo (or vendoai alias) is not declared");
+
+  // #478 short-term — @vendoai/vendo speaks AI SDK v6 to the host's `ai`
+  // package (peer `ai >=6 <7`), but npm installs the peer conflict anyway:
+  // the static checks all pass and every internal turn then throws
+  // AI_InvalidPromptError (v7 removed system-role messages). Fail fast on the
+  // installed major. An absent install is the wiring/turn checks' story, and
+  // pre-v6 installs predate the peer contract — both skip silently.
+  const aiVersion = await installedAiVersion(root);
+  const aiMajor = aiVersion === null ? Number.NaN : Number.parseInt(aiVersion, 10);
+  if (aiMajor >= 7) {
+    fail("deps/ai-sdk-major", "E-DEP-001", `installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
+  } else if (aiMajor === 6) {
+    pass("deps/ai-sdk-major", `installed ai@${aiVersion} is the supported AI SDK major (v6)`);
+  }
 
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
     if (await exists(join(root, ".vendo", file))) pass(`config/${file}`, `.vendo/${file}`);
