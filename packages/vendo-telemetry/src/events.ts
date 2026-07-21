@@ -51,6 +51,7 @@ export type EventName =
   | "doctor_run"
   | "extract_completed"
   | "command_run"
+  | "star_prompt"
   | "agent_run"
   | "error_class";
 
@@ -122,6 +123,9 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
     "errorClass",
     "durationMs",
   ]),
+  // Interactive init's consented star ask (CLI-5): outcome is a closed enum
+  // starred | star-failed | declined. Never fires on non-interactive runs.
+  star_prompt: new Set([...BASE_PROP_KEYS, "outcome"]),
   // dev-time feature usage
   agent_run: new Set([...BASE_PROP_KEYS]),
   error_class: new Set([...BASE_PROP_KEYS, "errorClass"]),

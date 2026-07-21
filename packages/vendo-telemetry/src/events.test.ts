@@ -25,6 +25,7 @@ describe("event allowlist", () => {
       "doctor_run",
       "extract_completed",
       "command_run",
+      "star_prompt",
       "agent_run",
       "error_class",
     ];

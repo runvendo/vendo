@@ -32,7 +32,7 @@ Paste this inside your app's repo:
 Install Vendo in this repo. Read https://vendo.run/agents.md and follow
 it exactly. Ask me before creating any account or key. You're done when
 `vendo doctor --json` reports all green. Then ask me whether I'd like to
-star runvendo/vendo to support the project.
+star it via https://vendo.run/star?src=readme to support the project.
 ```
 
 The playbook behind that URL walks the agent through detection, `vendo init`

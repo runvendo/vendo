@@ -33,7 +33,7 @@ describe("extractNorthStarPrompt", () => {
     expect(prompt).toContain("https://vendo.run/agents.md");
     expect(prompt).toContain("vendo doctor --json");
     expect(prompt).toContain("Ask me before creating any account or key");
-    expect(prompt).toContain("star runvendo/vendo");
+    expect(prompt).toContain("star it via https://vendo.run/star?src=readme");
     // The prompt must match the README byte-for-byte, not a copy.
     const source = await readFile(path.join(workspaceRoot, "README.md"), "utf8");
     expect(source).toContain(prompt);

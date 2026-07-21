@@ -1349,7 +1349,7 @@ describe("vendo init (zero-question)", () => {
         return child;
       },
     })).toBe(0);
-    const missingUrls = missingSink.logs.filter((line) => line.includes("https://github.com/runvendo/vendo"));
+    const missingUrls = missingSink.logs.filter((line) => line.includes("https://vendo.run/star?src=cli"));
     expect(missingUrls).toHaveLength(1);
     expect(missingSink.errors.join("\n")).not.toContain("gh"); // no error noise
 
@@ -1365,7 +1365,7 @@ describe("vendo init (zero-question)", () => {
         return child;
       },
     })).toBe(0);
-    expect(failingSink.logs.filter((line) => line.includes("https://github.com/runvendo/vendo"))).toHaveLength(1);
+    expect(failingSink.logs.filter((line) => line.includes("https://vendo.run/star?src=cli"))).toHaveLength(1);
 
     // Even a spawn seam that throws synchronously never fails the init.
     const throwing = await fixture();
@@ -1375,7 +1375,7 @@ describe("vendo init (zero-question)", () => {
       confirmStar: async () => true,
       spawnStar: () => { throw new Error("no spawn at all"); },
     })).toBe(0);
-    expect(throwingSink.logs.filter((line) => line.includes("https://github.com/runvendo/vendo"))).toHaveLength(1);
+    expect(throwingSink.logs.filter((line) => line.includes("https://vendo.run/star?src=cli"))).toHaveLength(1);
   });
 
   it("declining the star ask does nothing: no gh, no URL, no guilt text", async () => {
@@ -1393,6 +1393,7 @@ describe("vendo init (zero-question)", () => {
     expect(spawnCount).toBe(0);
     const logs = sink.logs.join("\n");
     expect(logs).not.toContain("github.com/runvendo/vendo");
+    expect(logs).not.toContain("vendo.run/star");
     expect(logs).not.toContain("Star");
   });
 
@@ -1485,6 +1486,56 @@ describe("init telemetry enrichment", () => {
         JSON.parse((call[1] as { body: string }).body) as { event: string; properties: Record<string, unknown> });
     return { events, telemetry: { home, env, posthogKey: "phc_test", fetchImpl } };
   }
+
+  it("star_prompt telemetry mirrors the ask's closed outcomes and stays silent non-interactively", async () => {
+    // Consented + gh succeeds → starred.
+    const starredRoot = await fixture();
+    const starredTele = await telemetrySink();
+    expect(await run(starredRoot, output(), {
+      interactive: true,
+      telemetry: starredTele.telemetry,
+      confirmStar: async () => true,
+      spawnStar: () => {
+        const child = new EventEmitter();
+        setImmediate(() => child.emit("exit", 0));
+        return child;
+      },
+    })).toBe(0);
+    expect(starredTele.events().find((e) => e.event === "star_prompt")?.properties.outcome).toBe("starred");
+
+    // Consented + gh fails → star-failed.
+    const failedRoot = await fixture();
+    const failedTele = await telemetrySink();
+    expect(await run(failedRoot, output(), {
+      interactive: true,
+      telemetry: failedTele.telemetry,
+      confirmStar: async () => true,
+      spawnStar: () => {
+        const child = new EventEmitter();
+        setImmediate(() => child.emit("exit", 1));
+        return child;
+      },
+    })).toBe(0);
+    expect(failedTele.events().find((e) => e.event === "star_prompt")?.properties.outcome).toBe("star-failed");
+
+    // Declined → declined.
+    const declinedRoot = await fixture();
+    const declinedTele = await telemetrySink();
+    expect(await run(declinedRoot, output(), {
+      interactive: true,
+      telemetry: declinedTele.telemetry,
+      confirmStar: async () => false,
+      spawnStar: () => new EventEmitter(),
+    })).toBe(0);
+    expect(declinedTele.events().find((e) => e.event === "star_prompt")?.properties.outcome).toBe("declined");
+
+    // Non-interactive default run: the ask never shows, so no event at all.
+    const silentRoot = await fixture();
+    const silentTele = await telemetrySink();
+    expect(await run(silentRoot, output(), { telemetry: silentTele.telemetry })).toBe(0);
+    expect(silentTele.events().some((e) => e.event === "star_prompt")).toBe(false);
+  });
+
 
   it("init_completed carries the project-shape enums and versions (anonymous lane)", async () => {
     const root = await fixture();

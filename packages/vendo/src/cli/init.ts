@@ -527,7 +527,9 @@ export interface StarProcess {
 }
 
 const STAR_REPO = "runvendo/vendo";
-const STAR_REPO_URL = `https://github.com/${STAR_REPO}`;
+// Tracked star link (vendo-web star-worker): captures star_link_clicked
+// {src: cli} server-side, then redirects to the repo.
+const STAR_LINK = "https://vendo.run/star?src=cli";
 
 /** Star the repo via gh (agent-install-dx §CLI-5). Every failure mode — gh
     not installed (spawn error), a non-zero exit, a throwing seam, or a gh
@@ -1143,7 +1145,12 @@ export async function runInit(options: InitOptions): Promise<number> {
           const starred = await starViaGh(
             options.spawnStar ?? ((command, args) => spawn(command, args, { stdio: "ignore" })),
           );
-          if (!starred) output.log(`Star it anytime: ${STAR_REPO_URL}`);
+          if (!starred) output.log(`Star it anytime: ${STAR_LINK}`);
+          // Star attribution: `starred` is an exact star-from-the-CLI signal
+          // (closed outcome enum; counts-and-enums promise holds).
+          await telemetry.track("star_prompt", { outcome: starred ? "starred" : "star-failed" });
+        } else {
+          await telemetry.track("star_prompt", { outcome: "declined" });
         }
       } catch {
         // The ask is best-effort by design; init already succeeded.
