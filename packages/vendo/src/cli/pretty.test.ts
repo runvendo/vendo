@@ -113,7 +113,7 @@ describe("createPrettyOutput (visual system)", () => {
     const out = sink();
     const pretty = createPrettyOutput(out.write);
     pretty.log("\nVendo Cloud (optional): not configured. A key unlocks team sharing & org governance; hosted automations; the MCP broker.");
-    pretty.log("Run `vendo cloud login` to grab a free dev-mode starter key; the wizard writes it to .env.local on your next `vendo init`.");
+    pretty.log("Run `vendo login` to claim a free dev-mode key; it lands in .env.local.");
     const plain = out.plain();
     expect(plain).toContain("◆  Vendo Cloud");
     expect(plain).toContain("✦ team sharing & org governance");
@@ -121,7 +121,7 @@ describe("createPrettyOutput (visual system)", () => {
     expect(plain).toContain("✦ the MCP broker");
     // The CTA line gets the arrow treatment and keeps the command visible.
     expect(plain).toContain("→ ");
-    expect(plain).toContain("vendo cloud login");
+    expect(plain).toContain("vendo login");
     // The header is bold + brand blue (the most prominent block on screen).
     expect(out.raw()).toContain(`${ESC}[34mVendo Cloud${ESC}[39m`);
     expect(out.raw()).toContain(`${ESC}[1m`);

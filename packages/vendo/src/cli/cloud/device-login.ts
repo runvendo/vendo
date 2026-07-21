@@ -7,12 +7,13 @@ import { browserOpenCommand } from "../playground.js";
 import { CLI_VERSION, consoleOutput, type Output } from "../shared.js";
 
 /**
- * `vendo cloud device-login` — the auth.md user-claimed flow end to end
- * (https://vendo.run/auth.md): open a claim on the console, show the human
- * the pairing code + approval URL, poll the RFC 8628 token endpoint, and
- * land the minted VENDO_API_KEY in .env.local — exactly where init's
- * --cloud-key flag and the interactive mint put it, so a re-run of
- * `vendo init` picks it up with no key ever pasted or printed.
+ * `vendo login` (alias: `vendo cloud device-login`) — the auth.md
+ * user-claimed flow end to end (https://vendo.run/auth.md): open a claim on
+ * the console, show the human the pairing code + approval URL (a TTY gets
+ * the browser opened too), poll the RFC 8628 token endpoint, and land the
+ * minted VENDO_API_KEY in .env.local — exactly where init's --cloud-key flag
+ * and the interactive ceremony put it, so a re-run of `vendo init` picks it
+ * up with no key ever pasted or printed.
  *
  * The token endpoint speaks RFC 8628 §3.5 (top-level `error` string), which
  * the console-envelope-shaped cloudFetch would flatten to http-400 — so this

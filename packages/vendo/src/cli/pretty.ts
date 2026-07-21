@@ -198,9 +198,9 @@ export function createPrettyOutput(
       cloudBullet(cloud[1]!);
       return;
     }
-    if (raw.includes("`vendo cloud login`") || raw.includes("vendo cloud login")) {
+    if (/`?vendo (cloud )?login`?/.test(raw)) {
       // The CTA: bright, factual, pointing at the free dev-mode key.
-      body(`${bold(brightCyan("→"))} ${raw.replace(/`?vendo cloud login`?/g, bold(brightCyan("vendo cloud login")))}`);
+      body(`${bold(brightCyan("→"))} ${raw.replace(/`?vendo (cloud )?login`?/g, (m) => bold(brightCyan(m.replaceAll("`", ""))))}`);
       return;
     }
     if (raw === "Last steps are yours:") {
