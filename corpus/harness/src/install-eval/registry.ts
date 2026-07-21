@@ -21,12 +21,15 @@ export interface LocalRegistryPackage {
   version: string;
   tarballFile: string;
   dependencies: Record<string, string>;
+  /** npm links CLI bins from the packument version metadata, not the
+   * extracted package.json — omit this and installs get no .bin symlink. */
+  bin?: string | Record<string, string>;
 }
 
 /** Read `package/package.json` out of an npm tarball (gzip + ustar). The
  * packed manifest is the truth: pnpm pack has already rewritten workspace:*
  * specs into real versions there. */
-export function readTarballManifest(tarball: Buffer): { name: string; version: string; dependencies: Record<string, string> } {
+export function readTarballManifest(tarball: Buffer): { name: string; version: string; dependencies: Record<string, string>; bin?: string | Record<string, string> } {
   const tar = gunzipSync(tarball);
   for (let offset = 0; offset + 512 <= tar.length; ) {
     const header = tar.subarray(offset, offset + 512);
@@ -38,11 +41,12 @@ export function readTarballManifest(tarball: Buffer): { name: string; version: s
         name?: string;
         version?: string;
         dependencies?: Record<string, string>;
+        bin?: string | Record<string, string>;
       };
       if (typeof manifest.name !== "string" || typeof manifest.version !== "string") {
         throw new Error("tarball package/package.json lacks name/version");
       }
-      return { name: manifest.name, version: manifest.version, dependencies: manifest.dependencies ?? {} };
+      return { name: manifest.name, version: manifest.version, dependencies: manifest.dependencies ?? {}, bin: manifest.bin };
     }
     offset += 512 + Math.ceil(size / 512) * 512;
   }
@@ -59,6 +63,7 @@ export async function indexLocalTarballs(tarballDir: string): Promise<Map<string
       version: manifest.version,
       tarballFile: entry,
       dependencies: manifest.dependencies,
+      bin: manifest.bin,
     });
   }
   return packages;
@@ -85,6 +90,7 @@ function packumentFor(pkg: LocalRegistryPackage, registryUrl: string, tarball: B
         name: pkg.name,
         version: pkg.version,
         dependencies: pkg.dependencies,
+        bin: pkg.bin,
         dist: {
           tarball: `${registryUrl}/-/local/${pkg.tarballFile}`,
           shasum: createHash("sha1").update(tarball).digest("hex"),
