@@ -48,6 +48,7 @@ import {
   modelEngine,
   prewarmModels,
   serverWorkRung,
+  verifyDocumentAgainstData,
   type GenerationDependencies,
   type GenerationEngine,
 } from "./engine.js";
@@ -1583,17 +1584,23 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           if (latestTree === undefined) return;
           emit({ ...structuredClone(latestTree), data, streaming: true } as TreeV2);
         });
-      const generated = await engine.create(
-        { prompt: input.prompt },
-        generationDependencies(config, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
-          // v2 spec §1 — the payload carries islands at payload level (the
-          // renderer lifts them); a mid-stream payload is marked streaming.
-          latestTree = assembleTree(partial);
-          emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
-          queryResolver?.update(latestTree);
-        }),
-      );
-      const app: AppDocument = {
+      // v4 data-verify — the runtime owns the endPass flag now: queries
+      // resolve HERE, so the verification runs data-sighted at this seam and
+      // the engine's blind end pass is suppressed (it demonstrably could not
+      // catch label-vs-data lies it never saw — gate 2026-07-21).
+      const verifyEnabled = config.pipeline?.endPass === true;
+      const engineConfig = verifyEnabled
+        ? { ...config, pipeline: { ...config.pipeline, endPass: false } }
+        : config;
+      const generationDeps = generationDependencies(engineConfig, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
+        // v2 spec §1 — the payload carries islands at payload level (the
+        // renderer lifts them); a mid-stream payload is marked streaming.
+        latestTree = assembleTree(partial);
+        emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
+        queryResolver?.update(latestTree);
+      });
+      const generated = await engine.create({ prompt: input.prompt }, generationDeps);
+      let app: AppDocument = {
         ...generated,
         id: appId,
       };
@@ -1603,12 +1610,31 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // Lane E — same rule for egress grant state: a freshly generated app
       // has approved nothing, whatever the model emitted.
       delete app.egressApproved;
+      // v4 data-verify: resolve the finished app's queries once, show the
+      // verifier the ACTUAL values next to the labels, adopt the (copy-only,
+      // revalidated) correction before anything persists or paints. The
+      // resolved data stays valid across the patch — the guard forbids
+      // touching queries — so the final view reuses it. Best-effort: any
+      // failure ships the unverified app.
+      let verifiedData: Record<string, Json> | undefined;
+      if (verifyEnabled && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+        try {
+          const verifyResolver = createProgressiveQueryResolver(caller, app, ctx);
+          verifyResolver.update(assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools }));
+          verifiedData = await verifyResolver.complete();
+          const { id: _verifyId, ...unidentified } = structuredClone(app);
+          const verified = await verifyDocumentAgainstData(unidentified, input.prompt, verifiedData, generationDeps);
+          app = { ...verified, id: appId };
+        } catch {
+          // The unverified app ships; open() resolves its data as always.
+        }
+      }
       let finalTree: TreeV2 | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
         finalTree = assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools });
         latestTree = structuredClone(finalTree);
         queryResolver?.update(finalTree);
-        finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
+        finalTree.data = verifiedData ?? await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
       }
       await apps.put(appRecordInput(app, ctx.principal.subject));
       await reportLifecycle("create", app.id, ctx);

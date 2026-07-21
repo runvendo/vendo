@@ -40,7 +40,8 @@ export interface PipelineConfig {
 export type PipelineEvent =
   | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; ms: number }
   | { stage: "region-parallel"; fallback?: "no-outline" | "sections-failed" | "assembly-invalid"; sectionsPlanned?: number; sectionsLanded?: number; ms: number }
-  | { stage: "end-pass"; applied: boolean; ms: number };
+  | { stage: "end-pass"; applied: boolean; ms: number }
+  | { stage: "data-verify"; applied: boolean; ms: number };
 
 /** The engine's create validation, passed in as a callback so pipeline.ts
  *  never imports engine internals (engine → pipeline stays one-directional). */
@@ -1021,6 +1022,89 @@ export const endPass = async (
     if (patched.appliedOps === 0 || patched.appliedOps > 4 || patched.extensionOps.length > 0) return finish(document);
     // Structural proofread guard: the patch may only relabel, remove, and
     // rename — a Set that rebinds or rewrites data drops the whole patch.
+    if (endPassViolations(base.tree, patched.tree, base.components, patched.components).length > 0) {
+      return finish(document);
+    }
+    const validated = await context.validate(recompile({
+      tree: patched.tree,
+      components: patched.components,
+      ...(patched.name === undefined ? {} : { name: patched.name }),
+    }, context));
+    return finish(validated.document ?? document);
+  } catch {
+    return finish(document);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Data-sighted verification — the v4 gate's lesson (14/21 fails were headline
+// lies the model wrote BLIND: queries resolve after generation, so labels are
+// claims about values the writer never saw, and the blind end pass could not
+// check them either). This pass runs at the runtime seam AFTER queries
+// resolve: the model sees the app AND the actual values, and may emit the
+// same copy-only, revalidated patch the end pass is limited to.
+// ---------------------------------------------------------------------------
+
+const DATA_VERIFY_CONTRACT = `You are the Vendo verification editor. You see a finished app AND the ACTUAL data its queries returned. Compare every label, title, badge text, caption, and the app name against the real values beneath them: a label claiming "total", "all", "this month", "largest", or a specific meaning must be TRUE of the value actually displayed. A raw identifier under a count label, a stale period under a "current" label, a single row's value under an aggregate label — these are lies to fix. Return ONLY one vendo-genui/v2 <Edit>...</Edit> patch document. No prose, no markdown, no JSON.
+AT MOST 4 ops, copy-only: <Set id="..." label=.../> (or another string copy prop), <SetName name="..."/>, <Remove id="..."/> for a node whose claim cannot be made true by rewording. RELABEL to describe what the data actually is — never invent numbers, never rebind, never touch queries or islands. If every claim is truthful, emit exactly <Edit></Edit>.`;
+
+/** A trimmed, prompt-safe digest of the resolved query data: arrays capped at
+ *  3 sample rows (+count), long strings truncated, whole digest hard-capped.
+ *  The verifier needs representative VALUES, not the full payload. */
+export const dataDigest = (data: Record<string, unknown>, capBytes = 6000): string => {
+  const trimValue = (value: unknown, depth: number): unknown => {
+    if (typeof value === "string") return value.length > 200 ? `${value.slice(0, 200)}…` : value;
+    if (Array.isArray(value)) {
+      const rows = value.slice(0, 3).map((item) => trimValue(item, depth + 1));
+      return value.length > 3 ? [...rows, `… (+${value.length - 3} more rows)`] : rows;
+    }
+    if (isRecord(value) && depth < 6) {
+      return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, trimValue(child, depth + 1)]));
+    }
+    return value;
+  };
+  const digest = JSON.stringify(trimValue(data, 0), null, 1) ?? "{}";
+  return digest.length > capBytes ? `${digest.slice(0, capBytes)}\n… (digest truncated)` : digest;
+};
+
+/** The data-sighted verification pass. Same survival gauntlet as the end
+ *  pass — compile clean, ≤4 ops, copy-only structural guard, full
+ *  revalidation — so it structurally cannot break the app; the only new
+ *  input is the resolved data digest. The caller owns the flag decision. */
+export const dataSightedVerify = async (
+  document: GeneratedAppDocument,
+  userRequest: string,
+  resolvedData: Record<string, unknown>,
+  context: PipelineContext,
+): Promise<GeneratedAppDocument> => {
+  const { deps } = context;
+  const startedAtMs = Date.now();
+  const finish = (verified: GeneratedAppDocument): GeneratedAppDocument => {
+    deps.onPipeline?.({ stage: "data-verify", applied: verified !== document, ms: Date.now() - startedAtMs });
+    return verified;
+  };
+  try {
+    const base = {
+      tree: structuredClone(document.tree) as unknown as TreeV2,
+      components: { ...(document.components ?? {}) },
+      name: document.name,
+    };
+    const wire = printWireV2(base, { includeIds: true });
+    const model = deps.paint?.model ?? deps.model;
+    const { generateText } = await import("ai");
+    const result = await generateText({
+      model,
+      system: DATA_VERIFY_CONTRACT,
+      prompt: `USER_ASK: ${userRequest}\nCURRENT_APP (wire markup; id attributes are your anchors):\n${wire}\nACTUAL data the queries returned (trimmed sample):\n${dataDigest(resolvedData)}`,
+      temperature: 0,
+      maxRetries: 0,
+    });
+    const patched = compileWirePatchV2(extractEdit(result.text), base, {
+      hostComponents: [...context.hostComponents],
+      ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
+    });
+    if (!patched.complete || patched.issues.length > 0 || patched.bindingErrors.length > 0) return finish(document);
+    if (patched.appliedOps === 0 || patched.appliedOps > 4 || patched.extensionOps.length > 0) return finish(document);
     if (endPassViolations(base.tree, patched.tree, base.components, patched.components).length > 0) {
       return finish(document);
     }

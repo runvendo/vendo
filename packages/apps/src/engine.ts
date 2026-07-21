@@ -41,6 +41,7 @@ import {
 import type { LanguageModel } from "ai";
 import {
   actionFaults,
+  dataSightedVerify,
   endPass,
   extractEdit,
   literalDataFaults,
@@ -1083,6 +1084,23 @@ const validateCompiledCreate = async (
   if (!appValidation.ok) return { issues: [appValidation.error.message] };
   return { document, issues: [] };
 };
+
+/** v4 data-sighted verification (pipeline.ts) at the runtime seam: the
+ *  runtime resolves the app's queries after create and hands the ACTUAL
+ *  values here, so labels get checked against the data the writer never saw.
+ *  Same validator, same copy-only guard as the end pass — cannot break the
+ *  app; on any failure the original document ships. */
+export const verifyDocumentAgainstData = async (
+  document: GeneratedAppDocument,
+  userRequest: string,
+  resolvedData: Record<string, unknown>,
+  deps: GenerationDependencies,
+): Promise<GeneratedAppDocument> => dataSightedVerify(document, userRequest, resolvedData, {
+  deps,
+  hostComponents: deps.catalog.map(({ name }) => name),
+  startedAt: Date.now(),
+  validate: (compiled) => validateCompiledCreate(compiled, deps),
+});
 
 const withoutId = (app: AppDocument): GeneratedAppDocument => {
   const { id: _id, ...document } = structuredClone(app);
