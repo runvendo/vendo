@@ -32,6 +32,12 @@ export interface PipelineConfig {
    *  stated once, worked exemplars; scar-tissue rules retired to validators +
    *  repair). Opt-in while the A/B against the current contract is measured. */
   promptRewrite?: boolean;
+  /** v4 wave — the smoke-render gate: every island renders once in a headless
+   *  DOM (dedicated worker + jsdom, ambient scope stubbed) inside create
+   *  validation; a crash routes to repair like any issue. On by default;
+   *  `false` disables. Catches the crash classes the 2026-07-21 gate shipped
+   *  (C11's React #310 hooks-in-map, undefined names, unguarded-data throws). */
+  smokeRender?: boolean;
 }
 
 /** W4 pipeline — opt-in per-stage diagnostics: rounds, no-valid-fix
