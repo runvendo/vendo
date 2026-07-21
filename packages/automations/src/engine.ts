@@ -363,6 +363,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const abortControllers = new Map<string, AbortController>();
   const engineInstanceId = globalThis.crypto.randomUUID();
   let tickTail: Promise<void> = Promise.resolve();
+  // Absent localTriggerKinds → every kind fires locally (today's behavior, unchanged).
+  const firesLocally = (kind: "schedule" | "external"): boolean =>
+    config.localTriggerKinds === undefined || config.localTriggerKinds.has(kind);
 
   const appRecord = async (appId: string): Promise<{ record: VendoRecord; row: AppRow } | null> => {
     const record = await config.store.records(APPS).get(appId);
@@ -1084,6 +1087,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
   const runTick: AutomationsEngine["tick"] = async (providedNow) => {
     await sweepParked();
+    // Cloud (or whatever other authority) already fires schedule automations for this
+    // deployment — firing them here too would double-run them. Approval resumption
+    // (sweepParked, above) is not a firing path, so it stays unconditional.
+    if (!firesLocally("schedule")) return [];
     const at = providedNow ?? now();
     const atIso = at.toISOString();
     // Fetch only schedule-triggered apps (indexed trigger_kind ref) instead of scanning every
@@ -1206,6 +1213,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const webhook: AutomationsEngine["webhook"] = async (request) => {
+    // Cloud (or whatever other authority) already delivers external events for this
+    // deployment (Composio → Cloud) — launching a run here too would double-run it. No
+    // verification, no audit: this is not a rejection, just a no-op the other authority
+    // is already handling.
+    if (!firesLocally("external")) return Response.json({ deferred: true }, { status: 200 });
     const source = new URL(request.url).pathname.split("/").filter(Boolean).at(-1) ?? "";
     const headerResult = z.object({
       id: z.string().min(1),

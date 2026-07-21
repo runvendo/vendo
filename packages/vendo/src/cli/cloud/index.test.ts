@@ -12,12 +12,14 @@ describe("cloud command dispatch", () => {
     const messages = output();
     expect(await runCloud(["--help"], { output: messages.sink })).toBe(0);
     expect(messages.logs.join("\n")).toContain("login EMAIL");
-    expect(messages.logs.join("\n")).toContain("deploy [--app <id>] [--secret NAME=VALUE]");
     expect(messages.logs.join("\n")).not.toContain("validate");
     // The retired machine trio is gone from the surface entirely.
     for (const removed of ["share", "publish", "pin-ship"]) {
       expect(messages.logs.join("\n")).not.toContain(removed);
     }
+    // "deploy" itself is gone too — matched with a word boundary since
+    // "deployments" (the org-deployments read command) legitimately stays.
+    expect(messages.logs.join("\n")).not.toMatch(/\bdeploy\b/);
   });
 
   it("help leads with the ceremony and demotes email OTP to a fallback", async () => {
@@ -43,40 +45,9 @@ describe("cloud command dispatch", () => {
     }
   });
 
-  it("dispatches deploy with the machine principal", async () => {
+  it("rejects the removed deploy command", async () => {
     const messages = output();
-    const fetcher = vi.fn().mockResolvedValue({
-      org: { id: "org_1", slug: "acme" },
-      instance: { status: "active" },
-      applied: { apps: 1, grants: 0, secrets: 0 },
-      webhooks: [],
-    });
-    const localProjectReader = vi.fn().mockResolvedValue({
-      subject: "user_a",
-      apps: [{
-        enabled: true,
-        doc: {
-          format: "vendo/app@1",
-          id: "app_auto",
-          name: "Automation",
-          trigger: {
-            on: { kind: "schedule", every: "1h" },
-            run: { kind: "steps", steps: [] },
-          },
-        },
-      }],
-      grants: [],
-    });
-
-    expect(await runCloud(["deploy", "--key", "vnd_test", "--json"], {
-      output: messages.sink,
-      env: {},
-      fetcher,
-      localProjectReader,
-    })).toBe(0);
-    expect(fetcher).toHaveBeenCalledWith("/api/v1/hosted/deploy", expect.objectContaining({
-      auth: "key",
-      apiKey: "vnd_test",
-    }));
+    expect(await runCloud(["deploy", "--key", "vnd_test"], { output: messages.sink, env: {} })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("Unknown cloud command");
   });
 });

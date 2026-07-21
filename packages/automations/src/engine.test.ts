@@ -847,6 +847,98 @@ describe("schedule, webhook, and host triggers", () => {
   });
 });
 
+// wave 2 (Cloud auto): under the hosted store, Vendo Cloud's own scheduler and Composio
+// delivery already fire schedule/external automations for the deployment — the local engine
+// composed alongside it must not ALSO fire them (double-run). `localTriggerKinds` scopes which
+// trigger kinds this engine instance fires; host-event (vendo.emit) is never gated by it.
+describe("localTriggerKinds: deferring schedule/external firing to another authority (Cloud)", () => {
+  it("skips due schedule apps on tick, keeps the [] response shape, launches nothing, and leaves the cursor untouched for the other authority", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    let calls = 0;
+    const apps = appsDouble(async () => {
+      calls += 1;
+      return { status: "ok", output: {} };
+    });
+    const doc = app("app_cloud_schedule", {
+      on: { kind: "schedule", every: "15m" },
+      run: { kind: "steps", steps: [{ id: "run", tool: "fn:main" }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    await store.records("automations:schedule").put({
+      id: doc.id,
+      data: { lastFiredAt: "2026-07-12T08:00:00.000Z" },
+    });
+    const engine = createAutomations({
+      apps, tools: registry(), guard, store, now: () => NOW,
+      localTriggerKinds: new Set(),
+    });
+
+    await expect(engine.tick()).resolves.toEqual([]);
+    expect(calls).toBe(0);
+    expect((await store.records("vendo_runs").list()).records).toHaveLength(0);
+    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+      lastFiredAt: "2026-07-12T08:00:00.000Z",
+    });
+  });
+
+  it("answers a validly-signed external delivery with a deferred-to-Cloud no-op, launching no run and reporting no rejection", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const tools = registry([readTool], async () => ({ status: "ok", output: {} }));
+    const external = app("app_cloud_webhook", {
+      on: { kind: "external", connector: "github", event: "push" },
+      run: { kind: "steps", steps: [{ id: "handle", tool: readTool.name, args: { payload: "event" } }] },
+    });
+    await seedApp(store, external);
+    const engine = createAutomations({
+      apps: appsDouble(), tools, guard, store, now: () => NOW,
+      localTriggerKinds: new Set(),
+    });
+    await engine.enable(external.id, ctx());
+    const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
+    const body = JSON.stringify({ answer: 42 });
+    const timestamp = String(NOW.getTime() / 1_000);
+    const signature = await sign(secret, "delivery_1", timestamp, body);
+    const request = new Request("https://example.test/api/webhooks/github", {
+      method: "POST",
+      headers: {
+        "webhook-id": "delivery_1",
+        "webhook-timestamp": timestamp,
+        "webhook-signature": `v1,${signature}`,
+      },
+      body,
+    });
+
+    const response = await engine.webhook(request);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deferred: true });
+    expect((await store.records("vendo_runs").list()).records).toHaveLength(0);
+    expect(guard.audit.filter((event) => (event.detail as { status?: string }).status === "webhook-rejected")).toHaveLength(0);
+  });
+
+  it("still fires host-event automations via emit exactly as before", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const tools = registry([readTool], async () => ({ status: "ok", output: {} }));
+    const host = app("app_cloud_host", {
+      on: { kind: "host-event", event: "invoice.paid" },
+      run: { kind: "steps", steps: [{ id: "handle", tool: readTool.name, args: { payload: "event" } }] },
+    });
+    await seedApp(store, host, "user_a", true);
+    const engine = createAutomations({
+      apps: appsDouble(), tools, guard, store, now: () => NOW,
+      localTriggerKinds: new Set(),
+    });
+
+    const ids = await engine.emit("invoice.paid", { invoice: "inv_1" }, ctx().principal);
+
+    expect(ids).toHaveLength(1);
+    expect((await store.records("vendo_runs").list()).records).toHaveLength(1);
+  });
+});
+
 describe("dry runs, run visibility, agentic execution, and stopping", () => {
   it("previews concrete steps without persistence and reports critical asks separately from missing grants", async () => {
     const store = memoryStoreAdapter();
