@@ -893,7 +893,7 @@ export const structuredRepair = async (
 // ---------------------------------------------------------------------------
 
 const END_PASS_CONTRACT = `You are the Vendo end-pass editor: one quick read-through of a finished app against the user's ask. Return ONLY one vendo-genui/v2 <Edit>...</Edit> patch document. No prose, no markdown, no JSON.
-PROOFREAD ONLY, AT MOST 4 ops. Priority one — labels must tell the truth about their bindings: a stat, badge, title, or caption claiming "total", "all accounts", "this month", or a specific figure must match what its bound data actually is. When it doesn't, RELABEL to describe the real data (never invent numbers, never rebind). Then: deduplicate repeated titles/stats, retitle so the app answers the ask, drop a redundant node. Never restructure, never add features, never touch queries or islands.
+PROOFREAD ONLY, AT MOST 4 ops. Priority one — labels must tell the truth about their bindings: a stat, badge, title, or caption claiming "total", "all accounts", "this month", or a specific figure must match what its bound data actually is. When it doesn't, RELABEL to describe the real data (never invent numbers, never rebind) — e.g. a card bound to one checking account labeled "Total balance" becomes <Set id="..." label="Checking balance"/>. Prefer emitting a fix when a label overstates its binding; an unfixed lying label is worse than an extra op. Then: deduplicate repeated titles/stats, retitle so the app answers the ask, drop a redundant node. Never restructure, never add features, never touch queries or islands.
 Ops (patch the CURRENT_APP wire against its id="..." anchors):
 - <Set id="node-id" attr=.../> merges attributes into the node's props.
 - <Unset id="node-id" propName/> removes the named props.
