@@ -111,14 +111,17 @@ theme-driven React chrome.
 risk labels, and whether to open the [MCP door](https://docs.vendo.run/capabilities/mcp)
 (a host decision, never a default), extracts your theme automatically, and
 writes the reviewable `.vendo/` directory with its PGlite data directory
-gitignored; run `vendo sync` after API changes to refresh extracted tools
-and remix baselines.
+gitignored. Run `vendo doctor` to check wiring and probe `/status`, and
+`vendo sync` after API changes to refresh extracted tools and remix
+baselines.
 
 Agents get the same journey machine-readable: the playbook at
 [vendo.run/agents.md](https://vendo.run/agents.md), an index of
-every docs page at [llms.txt](https://docs.vendo.run/llms.txt),
-`vendo init --agent` for a read-only JSON plan, and a `vendo-setup` skill
-shipped inside the npm tarball.
+every docs page at [llms.txt](https://docs.vendo.run/llms.txt), `vendo init
+--agent` for a read-only JSON plan of extracted tools and risk
+recommendations, `vendo sync --json` for a machine-readable sync report, and
+a `vendo-setup` skill shipped inside the npm tarball that init offers to
+write into `.claude/skills/`.
 
 <img src="assets/kicker-04-packages.svg" alt="04 · Packages">
 
