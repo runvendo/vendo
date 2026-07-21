@@ -888,11 +888,12 @@ export const structuredRepair = async (
 };
 
 // ---------------------------------------------------------------------------
-// End pass — one no-think read-through emitting 0–2 validated polish patches.
+// End pass — one no-think read-through emitting 0–4 validated proofread
+// patches; priority one is label-vs-binding truth (v4: the M6/M14/F5 class).
 // ---------------------------------------------------------------------------
 
 const END_PASS_CONTRACT = `You are the Vendo end-pass editor: one quick read-through of a finished app against the user's ask. Return ONLY one vendo-genui/v2 <Edit>...</Edit> patch document. No prose, no markdown, no JSON.
-POLISH ONLY, AT MOST 2 ops: deduplicate repeated titles/stats, retitle so the app answers the ask, drop a redundant node. Never restructure, never add features, never touch queries or islands.
+PROOFREAD ONLY, AT MOST 4 ops. Priority one — labels must tell the truth about their bindings: a stat, badge, title, or caption claiming "total", "all accounts", "this month", or a specific figure must match what its bound data actually is. When it doesn't, RELABEL to describe the real data (never invent numbers, never rebind). Then: deduplicate repeated titles/stats, retitle so the app answers the ask, drop a redundant node. Never restructure, never add features, never touch queries or islands.
 Ops (patch the CURRENT_APP wire against its id="..." anchors):
 - <Set id="node-id" attr=.../> merges attributes into the node's props.
 - <Unset id="node-id" propName/> removes the named props.
@@ -910,10 +911,11 @@ export const extractEdit = (text: string): string => {
   return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
 };
 
-/** v3 pipeline step 6 — the end pass. Runs only under the `endPass` flag; a
- *  patch survives only if it compiles clean, applies at most 2 ops, and the
- *  patched app re-validates — otherwise the original document ships
- *  untouched. Structurally cannot break the app. */
+/** v3 pipeline step 6, sharpened in v4 — the end pass. Runs only under the
+ *  `endPass` flag (default flips when the v4 A/B earns it); a patch survives
+ *  only if it compiles clean, applies at most 4 ops, and the patched app
+ *  re-validates — otherwise the original document ships untouched.
+ *  Structurally cannot break the app. */
 export const endPass = async (
   document: GeneratedAppDocument,
   userRequest: string,
@@ -950,7 +952,7 @@ export const endPass = async (
       ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
     });
     if (!patched.complete || patched.issues.length > 0 || patched.bindingErrors.length > 0) return finish(document);
-    if (patched.appliedOps === 0 || patched.appliedOps > 2 || patched.extensionOps.length > 0) return finish(document);
+    if (patched.appliedOps === 0 || patched.appliedOps > 4 || patched.extensionOps.length > 0) return finish(document);
     const validated = await context.validate(recompile({
       tree: patched.tree,
       components: patched.components,

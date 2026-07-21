@@ -499,10 +499,30 @@ describe("end pass (flagged, polish-only, structurally cannot break)", () => {
     expect(document.name).toBe("Draft board");
   });
 
-  it("drops a patch that exceeds the 2-op polish budget", async () => {
+  it("applies up to 4 ops and its contract leads with label truth (v4)", async () => {
+    let endPassPrompt = "";
+    const model = scriptedLanguageModel((call) => {
+      if (isEndPassCall(call)) {
+        endPassPrompt = promptText(call);
+        return '<Edit><SetName name="Revenue at a glance"/><Set id="metriccard-1" label="Monthly revenue"/><Set id="metriccard-1" value="$43k"/></Edit>';
+      }
+      return valid;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      deps(model, { pipeline: { endPass: true } }),
+    );
+
+    expect(document.name).toBe("Revenue at a glance");
+    expect(endPassPrompt).toContain("tell the truth about their bindings");
+    expect(endPassPrompt).toContain("AT MOST 4 ops");
+  });
+
+  it("drops a patch that exceeds the 4-op budget", async () => {
     const model = scriptedLanguageModel((call) =>
       isEndPassCall(call)
-        ? '<Edit><SetName name="A"/><SetName name="B"/><SetName name="C"/></Edit>'
+        ? '<Edit><SetName name="A"/><SetName name="B"/><SetName name="C"/><SetName name="D"/><SetName name="E"/></Edit>'
         : valid);
 
     const document = await modelEngine.create(
