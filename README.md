@@ -1,27 +1,44 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-  <img src="assets/banner-light.svg" alt="Vendo: your product, shaped to every customer" width="100%">
-</picture>
-
 <p align="center">
-  <b>Vendo puts an agent inside your product.</b><br>
-  Customers can build views, act through your APIs, and automate work inside your brand and guardrails.
+  <img src="assets/banner.svg" alt="Vendo: your product, shaped to every customer" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://vendo.run">Website</a>
-  &nbsp;·&nbsp;
-  <a href="https://docs.vendo.run">Docs</a>
+  <b>An open-source customization layer.<br>Your users build their own features and micro-apps, right on top of your product.</b>
+</p>
+
+<p align="center">
+  Vendo puts an agent inside your product: customers build views, act through your APIs, and automate work, inside your brand and guardrails.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@vendoai/vendo"><img src="assets/badge-npm.svg" alt="npm package: vendoai"></a>
+  <a href="./LICENSE"><img src="assets/badge-license.svg" alt="License: Apache-2.0"></a>
+  <a href="https://docs.vendo.run"><img src="assets/badge-docs.svg" alt="Docs: docs.vendo.run"></a>
+</p>
+
+<p align="center">
+  <a href="https://docs.vendo.run"><b>docs.vendo.run</b></a>
   &nbsp;·&nbsp;
   <a href="https://docs.vendo.run/quickstart">Quickstart</a>
+  &nbsp;·&nbsp;
+  <a href="https://vendo.run">vendo.run</a>
 </p>
+
+<img src="assets/kicker-01-install.svg" alt="01 · Install">
+
+## Install in 60 seconds
 
 ```bash
 npm install @vendoai/vendo
 npx vendo init
 ```
 
-## Install with your coding agent
+**Or install with your coding agent**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/agent-logos-dark.svg">
+  <img src="assets/agent-logos.svg" alt="Claude Code, Cursor, GitHub Copilot, OpenAI Codex, Windsurf" width="167" height="29">
+</picture>
 
 Paste this inside your app's repo:
 
@@ -35,14 +52,14 @@ it exactly. Ask me before creating any account or key. You're done when
 star runvendo/vendo to support the project.
 ```
 
-The playbook behind that URL walks the agent through detection, `vendo init`
-value flags, host-auth wiring, and the `vendo doctor --json` gate, where every
-error code links to its exact fix. Already have an agent (AI SDK or Mastra)?
-Use the prompt on [existing agents](https://docs.vendo.run/existing-agents.md)
-instead — it adds Vendo's guarded tools to your loop without replacing it.
+`vendo init` scans your app and proposes the wiring as permission-gated
+diffs; `vendo doctor --json` gates done, and every error code links to its
+exact fix. Full playbook: [docs.vendo.run/install](https://docs.vendo.run/install).
+Already have an agent (AI SDK or Mastra)? Use the prompt on
+[existing agents](https://docs.vendo.run/existing-agents.md) instead — it
+adds Vendo's guarded tools to your loop without replacing it.
 
-`@vendoai/vendo` is the default composition. The `vendoai` package is a thin
-alias. Install individual blocks when you want to compose Vendo yourself.
+<img src="assets/kicker-02-see-it.svg" alt="02 · See it in action">
 
 ## See it in action
 
@@ -71,21 +88,47 @@ Every capture below is a real agent run in a demo host app, not a mockup.
   </tr>
 </table>
 
-## What Vendo does
+<img src="assets/kicker-03-how-it-works.svg" alt="03 · How it works">
 
-- Runs a streaming agent with any AI SDK `LanguageModel`.
-- Extracts your API as tools and executes present calls with the signed-in user's session.
-- Builds user-owned apps from a format-tagged UI document, escalating to a sandboxed server only when needed.
-- Applies policy, approvals, grants, breakers, and audit at one execution choke point.
-- Runs scheduled, host-event, and external-trigger automations with app-bound grants.
-- Ships headless hooks plus optional, theme-driven React chrome.
+## How it works
 
-PGlite at `.vendo/data` is the zero-config store. Production uses the same
-schema on Postgres. Generated components run in an iframe jail with
-`connect-src 'none'`. App machines reach host tools only through the guarded
-tool proxy.
+Vendo runs a streaming agent with any AI SDK `LanguageModel`.
+
+**1 · Extract.** Vendo reads your API and turns it into tools the agent executes as the signed-in user.
+
+**2 · Generate.** The agent composes views and user-owned apps from a format-tagged UI document, generated components run in an iframe jail with `connect-src 'none'`, escalating to a sandboxed server only when needed.
+
+**3 · Guard.** Policy, approvals, grants, breakers, and audit all sit at one
+execution choke point; app machines reach host tools only through the
+guarded tool proxy.
+
+PGlite at `.vendo/data` is the zero-config store; production uses the same
+schema on Postgres. Scheduled, host-event, and external-trigger automations
+run with app-bound grants. Headless hooks ship alongside optional,
+theme-driven React chrome.
+
+`vendo init` also asks about the model import, product brief, critical-tool
+risk labels, and whether to open the [MCP door](https://docs.vendo.run/capabilities/mcp)
+(a host decision, never a default), extracts your theme automatically, and
+writes the reviewable `.vendo/` directory with its PGlite data directory
+gitignored. Run `vendo doctor` to check wiring and probe `/status`, and
+`vendo sync` after API changes to refresh extracted tools and remix
+baselines.
+
+Agents get the same journey machine-readable: the playbook at
+[vendo.run/agents.md](https://vendo.run/agents.md), an index of
+every docs page at [llms.txt](https://docs.vendo.run/llms.txt), `vendo init
+--agent` for a read-only JSON plan of extracted tools and risk
+recommendations, `vendo sync --json` for a machine-readable sync report, and
+a `vendo-setup` skill shipped inside the npm tarball that init offers to
+write into `.claude/skills/`.
+
+<img src="assets/kicker-04-packages.svg" alt="04 · Packages">
 
 ## Packages
+
+`@vendoai/vendo` is the default composition (`vendoai` is a thin alias).
+Install individual blocks when you want to compose Vendo yourself.
 
 | Package | One job |
 | --- | --- |
@@ -101,28 +144,11 @@ tool proxy.
 | `@vendoai/telemetry` | Anonymous, opt-out build and development telemetry |
 | `@vendoai/vendo` | Default composition, public wire, React entry, and `vendo` bin |
 
-## Install flow
+Cloud-gated sharing, publishing, org overlays, and pinning activate with
+`VENDO_API_KEY`; the open-source blocks remain self-hosted.
 
-`vendo init` scans the host app, then asks about the model import, product brief,
-critical-tool risk labels, and whether to open the MCP door. It proposes the
-handler route and `<VendoRoot>` wiring while extracting the theme automatically.
-Every code change is permission-gated and shown as a diff. It writes the
-reviewable `.vendo/` directory and leaves the PGlite data directory ignored.
-
-Run `vendo doctor` to check wiring and probe `/status`. Run `vendo sync` in
-build and development flows to refresh extracted tools and remix baselines.
-
-Agents get the same journey machine-readable: the playbook at
-[vendo.run/agents.md](https://vendo.run/agents.md) (with
-[llms.txt](https://docs.vendo.run/llms.txt) indexing every docs page),
-`vendo init --agent` for a read-only JSON plan carrying extracted tools and
-risk recommendations, `vendo sync --json`, and a `vendo-setup` skill shipped
-inside the npm tarball that init offers to write into `.claude/skills/`.
-
-Read the [quickstart](https://docs.vendo.run/quickstart) for the complete
-composition and first-turn setup.
-
-## License
-
-Apache-2.0. Cloud-gated sharing, publishing, org overlays, and pinning activate
-with `VENDO_API_KEY`; the open-source blocks remain self-hosted.
+<p align="center">
+  <a href="https://github.com/runvendo/vendo">
+    <img src="assets/footer.svg" alt="Shaped to every customer. Star runvendo/vendo. Apache-2.0, docs.vendo.run, vendo.run, backed by Y Combinator" width="100%">
+  </a>
+</p>
