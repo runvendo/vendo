@@ -23,6 +23,9 @@ export const appRoutes: RouteEntry[] = [
   // minimal app, copies the captured baseline, and records the pin — no model
   // call. An optional instruction then rides the ordinary edit path, already
   // scoped to the forked component. The model never decides to fork.
+  // ORDER IS LOAD-BEARING: this entry (and /apps/import below) must stay
+  // ahead of the "/apps/:appId/*" catch-all, whose rest pattern would
+  // otherwise capture appId="fork-pin".
   route("POST", "/apps/fork-pin", async ({ request, deps, context }) => {
     const ctx = await context("app");
     const body = await requestJson(request);

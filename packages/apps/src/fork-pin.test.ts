@@ -160,6 +160,28 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     expect(stored?.components?.[COMPONENT]).toBe(SOURCE);
   });
 
+  it("returns the persisted fork with a loud edit failure when the scoped edit THROWS", async () => {
+    const store = memoryStore();
+    const app = seedDoc();
+    await seedAppRow(store, app, ctx.principal.subject);
+    // No model configured: the deterministic fork works, but the riding
+    // instruction's edit throws ("generation requires a model"). The fork
+    // already persisted, so the gesture must NOT surface as a thrown error —
+    // the caller gets the faithful fork plus a failure-shaped edit.
+    const runtime = runtimeWith(store);
+
+    const forked = await runtime.pins.fork(
+      { appId: app.id, slot: SLOT, instruction: "make the number blue" },
+      ctx,
+    );
+    expect(forked.edit?.failure).toBeDefined();
+    expect(forked.edit?.issues?.join(" ")).toContain("generation requires a model");
+    expect(forked.app.pins).toEqual([{ slot: SLOT, base: "sha256:maple-base" }]);
+    expect(forked.app.components?.[COMPONENT]).toBe(SOURCE);
+    const stored = await runtime.get(app.id, ctx);
+    expect(stored?.pins).toEqual([{ slot: SLOT, base: "sha256:maple-base" }]);
+  });
+
   it("refuses an uncaptured slot and a duplicate fork loudly", async () => {
     const store = memoryStore();
     const app = seedDoc();

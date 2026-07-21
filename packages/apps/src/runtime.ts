@@ -1929,7 +1929,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         }
         const forkOnto = (base: AppDocument): AppDocument => {
           const forked = structuredClone(base);
-          const issues = applyPinFork(forked, { slot: input.slot }, config.pinBaselines);
+          // applyPinFork prefixes issues with "<ForkPin> failed:" for the
+          // stored-app op compiler; a user gesture never saw that op, so the
+          // prefix is stripped from the surfaced error.
+          const issues = applyPinFork(forked, { slot: input.slot }, config.pinBaselines)
+            .map((issue) => issue.replace(/^<ForkPin> failed: /, ""));
           if (issues.length > 0) throw new VendoError("conflict", issues.join("; "));
           const validation = validateAppDocument(forked);
           if (!validation.ok) throw new VendoError("validation", validation.error.message);
@@ -1989,13 +1993,23 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // The instruction reaches the model ALREADY SCOPED: the fork exists,
         // so this is an ordinary island edit on the pinned component. A failed
         // edit never rolls the fork back — the user keeps the faithful copy
-        // and the failure is loud on the result.
-        const edit = await runtime.edit(
-          persisted.id,
-          `The remixable host slot "${input.slot}" is already forked into the generated component "${componentName}" (its island source is in CURRENT_APP). Apply this change to that component: ${instruction}`,
-          ctx,
-        );
-        return { ...result, app: edit.app, edit };
+        // and the failure is loud on the result. That holds for THROWN edits
+        // too (no model configured, a gated escalation, a provider error):
+        // the fork is already persisted, so the gesture returns it with a
+        // failure-shaped edit instead of surfacing as an error.
+        try {
+          const edit = await runtime.edit(
+            persisted.id,
+            `The remixable host slot "${input.slot}" is already forked into the generated component "${componentName}" (its island source is in CURRENT_APP). Apply this change to that component: ${instruction}`,
+            ctx,
+          );
+          return { ...result, app: edit.app, edit };
+        } catch (error) {
+          return {
+            ...result,
+            edit: failedEdit(persisted, instruction, [error instanceof Error ? error.message : String(error)]),
+          };
+        }
       },
 
       async rebase(input, ctx) {

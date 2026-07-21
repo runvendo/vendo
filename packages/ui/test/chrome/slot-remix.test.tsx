@@ -68,6 +68,31 @@ describe("VendoSlot remix flag + overlay registry", () => {
     expect(wire.requests.filter(r => r.method === "POST" && r.path === "/threads").length).toBe(0);
   });
 
+  it("never mints a second fork before the first surfaces (discover={false} hosts)", async () => {
+    // With discover={false} the parent manages appId on its own poll cadence,
+    // so after the fast wire fork resolves the slot still LOOKS empty. The
+    // affordance must latch until the fork surfaces — the wire fork is not
+    // idempotent, and a second tap would mint a duplicate app.
+    render(
+      <VendoProvider client={client} components={{ hero: HostHero }}>
+        <VendoSlot id="hero" remix discover={false}><HostHero /></VendoSlot>
+      </VendoProvider>,
+    );
+    const button = screen.getByRole("button", { name: /remix/i }) as HTMLButtonElement;
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(wire.requests.filter(r => r.method === "POST" && r.path === "/apps/fork-pin").length).toBe(1);
+    });
+    // Let the fork promise resolve; the button must STAY latched (the slot
+    // still has no appId), and further taps must not reach the wire.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(wire.requests.filter(r => r.method === "POST" && r.path === "/apps/fork-pin").length).toBe(1);
+  });
+
   it("opens the composer PREFILLED (never sent) when the slot already holds an app", async () => {
     render(
       <VendoProvider client={client} components={{ hero: HostHero }}>

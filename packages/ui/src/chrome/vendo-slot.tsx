@@ -134,6 +134,15 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   const discovery = useSlotApp(id, { enabled: discover && appIdProp === undefined && pin === undefined });
   const appId = appIdProp ?? (pin === undefined ? discovery.appId : undefined);
   const [remixBusy, setRemixBusy] = useState(false);
+  // Latch: a fork that RESOLVED but has not surfaced as `appId` yet. With
+  // discover={false} the parent manages appId on its own poll cadence, so the
+  // slot still looks empty after the fast wire fork returns — and the wire
+  // fork is not idempotent, so a second tap would mint a duplicate app.
+  const [forkPending, setForkPending] = useState(false);
+  useEffect(() => {
+    if (appId !== undefined) setForkPending(false);
+  }, [appId]);
+  const remixLatched = remixBusy || (forkPending && appId === undefined);
 
   // Dev rail: the remix gesture forks the component captured under this slot's
   // registered name — an unregistered name means there is nothing to fork.
@@ -182,10 +191,13 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
       }
       return;
     }
-    if (remixBusy) return;
+    if (remixLatched) return;
     setRemixBusy(true);
     client.apps.forkPin({ slot: id })
-      .then(() => discovery.refresh())
+      .then(() => {
+        setForkPending(true);
+        return discovery.refresh();
+      })
       .catch((error: unknown) => {
         if (developmentMode()) {
           console.warn(`[vendo] VendoSlot "${id}": the remix fork failed — ${error instanceof Error ? error.message : String(error)}`);
@@ -195,11 +207,11 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   };
 
   const remixButton = remix ? (
-    <button type="button" className="fl-slot-remix" aria-label={`Remix ${id} with Vendo`} aria-busy={remixBusy || undefined} disabled={remixBusy} onClick={startRemix}>
+    <button type="button" className="fl-slot-remix" aria-label={`Remix ${id} with Vendo`} aria-busy={remixLatched || undefined} disabled={remixLatched} onClick={startRemix}>
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z" />
       </svg>
-      {remixBusy ? "Remixing…" : "Remix"}
+      {remixLatched ? "Remixing…" : "Remix"}
     </button>
   ) : null;
 
