@@ -32,11 +32,11 @@
     "groups": [
       {
         "group": "Getting started",
-        "pages": ["index", "install", "quickstart", "quickstart-node"]
+        "pages": ["index", "install", "quickstart"]
       },
       {
         "group": "Use with your existing agent",
-        "pages": ["existing-agents/index", "existing-agents/ai-sdk", "existing-agents/mastra"]
+        "pages": ["existing-agents/index", "existing-agents/ai-sdk", "existing-agents/mastra", "existing-agents/embeds"]
       },
       {
         "group": "For coding agents",
@@ -44,11 +44,11 @@
       },
       {
         "group": "Concepts",
-        "pages": ["concepts/architecture", "concepts/generated-ui", "concepts/in-client-venue", "concepts/tools-and-safety", "concepts/prompts"]
+        "pages": ["concepts/architecture", "concepts/generated-ui", "concepts/in-client-venue", "concepts/tools-and-safety"]
       },
       {
         "group": "Connect your app",
-        "pages": ["connect/vendo-init", "connect/dev-mode", "connect/api-tools", "connect/act-as-presets", "connect/host-components", "connect/theming", "connect/tool-labels", "connect/instructions"]
+        "pages": ["connect/vendo-init", "connect/dev-mode", "connect/api-tools", "connect/act-as-presets", "connect/host-components", "connect/theming", "connect/instructions"]
       },
       {
         "group": "UI",
@@ -56,7 +56,7 @@
       },
       {
         "group": "Capabilities",
-        "pages": ["capabilities/integrations", "capabilities/connected-accounts", "capabilities/compound-tools", "capabilities/mcp", "capabilities/mcp-registry", "capabilities/voice"]
+        "pages": ["capabilities/connected-accounts", "capabilities/compound-tools", "capabilities/mcp", "capabilities/mcp-registry"]
       },
       {
         "group": "Deploy and operate",
