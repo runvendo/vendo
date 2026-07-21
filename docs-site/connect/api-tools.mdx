@@ -4,47 +4,55 @@ description: "How Vendo sync extracts OpenAPI, tRPC, GraphQL, Next.js server act
 ---
 
 Vendo sync extracts OpenAPI operations, tRPC procedures, GraphQL operations,
-Next.js server actions, and host routes into `.vendo/tools.json`. Extraction
-runs during build and development so the tool surface does not drift.
+Next.js server actions, and host routes into `.vendo/tools.json`, turning your
+API into a set of guarded tools. Extraction runs during build and development
+so the tool surface never drifts from your API.
 
-Extractors run in a fixed order: OpenAPI first, then tRPC, then GraphQL, then
-server actions, then the route scan. Each extractor decides whether it applies to your app; the ones
-that do not detect anything are skipped. When the tRPC or GraphQL extractor
-emits tools for a mount, any catch-all route under that mount (for example
-`/api/trpc/[trpc]` or `/api/graphql/[...slug]`) is dropped from the route scan
-so you do not see duplicate coverage of the same surface.
-
-```json
-{
-  "format": "vendo/tools@1",
-  "tools": [
-    {
-      "name": "host_invoices_list",
-      "description": "List invoices",
-      "inputSchema": {},
-      "risk": "read",
-      "binding": {
-        "kind": "route",
-        "method": "GET",
-        "path": "/api/invoices",
-        "argsIn": "query"
-      }
-    }
-  ]
-}
-```
+## How extraction works
 
 Tool names use letters, numbers, `_`, and `-`, with a maximum of 64
 characters. Use `_` for namespaces. Each descriptor includes JSON Schema input
 and a `read`, `write`, or `destructive` risk label.
 
-Route scans fail closed. The extractor emits any route it cannot classify as
-disabled, with a note.
+### OpenAPI operations
 
-## tRPC procedures
+Vendo sync extracts OpenAPI operations from your spec into `.vendo/tools.json`,
+using the shared naming and risk-label rules above. See [Extraction
+reference](#extractor-order) for where OpenAPI sits in the extraction order.
+
+```json
+{
+  "name": "host_deleteTask",
+  "description": "Permanently delete a Relay task",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "id": { "type": "string", "description": "Relay task id" } },
+    "required": ["id"]
+  },
+  "risk": "destructive",
+  "binding": {
+    "kind": "openapi",
+    "operationId": "deleteTask",
+    "method": "DELETE",
+    "path": "/api/tasks/{id}"
+  }
+}
+```
+
+Each tool name is `host_` plus the operation's `operationId` (or, when a spec
+omits one, the method-and-path fallback shared with route tools). The input
+schema comes from the operation's path/query parameters plus its
+`application/json` request body under a `body` property. The binding records
+the `operationId`, `method`, and `path` so the runtime can execute without
+re-reading the spec, plus `baseUrl` when the spec declares an absolute
+`servers[0].url`; omitted, the call goes same-origin. Risk labels follow the
+same rules as route tools: `DELETE` is always `destructive`, and the
+destructive word list can lift any other method.
+
+### tRPC procedures
 
 If your app mounts a tRPC router, sync extracts each procedure as its own tool.
-The extractor statically parses your router — no server runs — and follows
+The extractor statically parses your router (no server runs) and follows
 `router({...})`, `createTRPCRouter`, and `mergeRouters` across nested and
 cross-file routers. Both app router and pages router mounts are supported, and
 each mount is detected independently.
@@ -84,7 +92,7 @@ the host's `actAs` seam plus an app-bound grant.
 Risk labels follow the procedure type. Queries are `read` only when the
 procedure name reads like a fetch; anything else falls back to the conservative
 default. Mutations default to `write`, and the destructive word list can lift
-them to `destructive` — the same rules that apply to route tools. Subscriptions
+them to `destructive`, the same rules that apply to route tools. Subscriptions
 and any procedure the extractor cannot classify are emitted as `disabled` with
 a note so you can promote them explicitly through overrides.
 
@@ -95,12 +103,12 @@ so the tool still surfaces without blocking your build.
 
 The extractor loads the TypeScript compiler from your app's own
 `node_modules`. If TypeScript is not available, tRPC extraction is skipped with
-a warning and no tRPC tools are emitted — extraction never fails your build.
+a warning and no tRPC tools are emitted; extraction never fails your build.
 
-## GraphQL operations
+### GraphQL operations
 
 If your app serves a GraphQL API, sync extracts each query and mutation as its
-own tool. The extractor reads two static sources — no server runs — and picks
+own tool. The extractor reads two static sources (no server runs) and picks
 up whichever your app uses:
 
 - **SDL files** (`.graphql`, `.gql`, `.graphqls`), including split schemas,
@@ -150,35 +158,26 @@ literals. It falls back to `/graphql` when no literal is found.
 Risk labels follow the operation type. Queries are `read` only when the
 operation name reads like a fetch; anything else falls back to the conservative
 default. Mutations default to `write`, and the destructive word list can lift
-them to `destructive` — the same rules that apply to route and tRPC tools.
+them to `destructive`, the same rules that apply to route and tRPC tools.
 
 Tool identity keys on the endpoint, the operation kind, and the operation
 name. GraphQL lets a query and a mutation share one field name across the two
-root types, so those stay two distinct tools — address them independently in
+root types, so those stay two distinct tools; address them independently in
 [overrides](#durable-overrides).
 
-Some surfaces are always emitted as `disabled` with a note so you can promote
-them explicitly through overrides:
-
-- Subscriptions (Vendo does not open long-lived transports for you).
-- Operations whose argument or return types are declared outside the app root
-  — for example, types imported from a sibling workspace package.
-- Every operation on hosts that serve multiple GraphQL schemas from separate
-  endpoints (for example, an app with `/graphql`, `/metadata`, and
-  `/admin-panel` mounted independently). Static analysis cannot attribute each
-  operation to a single endpoint, so the extractor fails closed rather than
-  guess.
+Some surfaces are always emitted as `disabled`. See [Disabled
+cases](#disabled-cases) for the full list.
 
 The GraphQL extractor loads both the `graphql` and TypeScript packages from
 your app's own `node_modules`. If either is missing, GraphQL extraction is
-skipped with a warning and no GraphQL tools are emitted — extraction never
+skipped with a warning and no GraphQL tools are emitted; extraction never
 fails your build.
 
-## Next.js server actions
+### Next.js server actions
 
 If your Next.js app declares server actions, sync extracts each exported
 action as its own tool. The extractor statically scans modules that begin with
-`"use server"` and any inline `"use server"` directives — no host code runs.
+`"use server"` and any inline `"use server"` directives (no host code runs).
 Every named export of a module-scoped `"use server"` file becomes a candidate
 tool.
 
@@ -206,14 +205,14 @@ ordered parameter names. `module#exportName` is the tool identity. At runtime
 Vendo maps the arguments object onto positional parameters and returns the
 action's return value on the JSON wire.
 
-### Input schemas
+#### Input schemas
 
 Vendo interprets input schemas where they can be resolved statically:
 
 - Zod validators declared with `z.infer<typeof Schema>`, `z.input<typeof
-  Schema>`, or `z.output<typeof Schema>` type annotations — including imported
+  Schema>`, or `z.output<typeof Schema>` type annotations, including imported
   schemas resolved across files.
-- `createSafeAction(schema, handler)` from `next-safe-action` — unwrapped to a
+- `createSafeAction(schema, handler)` from `next-safe-action`, unwrapped to a
   single `data` parameter shaped by the schema.
 - Plain TypeScript primitives, object literals, and unions on parameter
   annotations.
@@ -221,7 +220,7 @@ Vendo interprets input schemas where they can be resolved statically:
 Anything the extractor cannot recognize fails closed to a permissive parameter
 with a note, so the tool still surfaces without blocking your build.
 
-### Wrappers
+#### Wrappers
 
 The extractor unwraps two recognized patterns when the export remains an
 importable callable:
@@ -229,47 +228,48 @@ importable callable:
 - `cache(fn)` from React.
 - `createSafeAction(schema, handler)` from `next-safe-action`.
 
-### Risk labels
+#### Risk labels
 
 Server actions default to `write`. A read-shaped name never earns `read`,
 because a server action is a mutation seam. The destructive word list
 (`delete`, `remove`, `cancel`, `send`, `invite`, and similar verbs) can lift
-an action to `destructive` — the same rules that apply to route and tRPC
+an action to `destructive`, the same rules that apply to route and tRPC
 tools.
 
-### Disabled cases
-
-The extractor fails closed and emits `disabled: true` with a note in two
-cases:
-
-- **Inline server actions.** A `"use server"` directive inside a
-  component-scoped function is real surface, but the function is not
-  importable by module path. Hoist the action into a module-level `"use
-  server"` file to promote it into a working tool.
-- **Unclassifiable exports.** When the export is not a callable Vendo can
-  bind (for example, a re-exported object or a value with no stable
-  signature), it is emitted disabled with `risk: "destructive"` so you can
-  promote it explicitly through overrides.
-
-### Execution
-
-`vendo init` generates an actions registration map beside your handler route
-and wires it into `createVendo({ serverActions })`. The map imports every
-detected action module keyed by `"<module>#<exportName>"`, so Vendo can
-dispatch calls through the map at runtime. The map regenerates deterministically
-when the detected surface changes; re-running `vendo init` on an unchanged
-surface leaves an empty diff. If the last action disappears, the map is
-emptied — never deleted — so your route keeps compiling.
-
-When the map lacks an entry for an action, or the registered value is not a
-function, execution fails closed with a clear `not-implemented` error and no
-work is performed. Server actions are present-only: away calls and MCP venues
-fail closed because there is no HTTP seam to attach `actAs` credentials to.
+Some exports are always emitted as `disabled`. See [Disabled
+cases](#disabled-cases) for the full list.
 
 The extractor loads the TypeScript compiler from your app's own
 `node_modules`. If TypeScript is not available, server-action extraction is
-skipped with a warning and no server-action tools are emitted — extraction
-never fails your build.
+skipped with a warning and no server-action tools are emitted; extraction
+never fails your build. See [Server-action registration
+map](#server-action-registration-map) for how init wires the detected actions
+into `createVendo`.
+
+### Routes
+
+```json
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "host_invoices_list",
+      "description": "List invoices",
+      "inputSchema": {},
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/invoices",
+        "argsIn": "query"
+      }
+    }
+  ]
+}
+```
+
+Route scans fail closed. The extractor emits any route it cannot classify as
+disabled, with a note.
 
 ## Durable overrides
 
@@ -291,9 +291,62 @@ safety](/concepts/tools-and-safety) for the surfaced notice and event shape.
 
 Overrides also apply to compound tools declared in
 [`.vendo/capabilities.json`](/capabilities/compound-tools). A compound entry
-inside `tools.json` is rejected — compounds live in the capabilities file.
+inside `tools.json` is rejected; compounds live in the capabilities file.
 
 Present route calls forward the inbound request's cookie and authorization
 headers on a same-origin fetch. Away calls require both an app-bound grant and
 the host's `actAs` seam. See [actAs presets](/connect/act-as-presets) for
 provider-specific wiring.
+
+## Extraction reference
+
+### Extractor order
+
+Extractors run in a fixed order: OpenAPI first, then tRPC, then GraphQL, then
+server actions, then the route scan. Each extractor decides whether it
+applies to your app; the ones that do not detect anything are skipped. When
+the tRPC or GraphQL extractor emits tools for a mount, any catch-all route
+under that mount (for example `/api/trpc/[trpc]` or `/api/graphql/[...slug]`)
+is dropped from the route scan so you do not see duplicate coverage of the
+same surface.
+
+### Disabled cases
+
+**GraphQL.** Some surfaces are always emitted as `disabled` with a note so you
+can promote them explicitly through overrides:
+
+- Subscriptions (Vendo does not open long-lived transports for you).
+- Operations whose argument or return types are declared outside the app root
+  (for example, types imported from a sibling workspace package).
+- Every operation on hosts that serve multiple GraphQL schemas from separate
+  endpoints (for example, an app with `/graphql`, `/metadata`, and
+  `/admin-panel` mounted independently). Static analysis cannot attribute each
+  operation to a single endpoint, so the extractor fails closed rather than
+  guess.
+
+**Next.js server actions.** The extractor fails closed and emits
+`disabled: true` with a note in two cases:
+
+- **Inline server actions.** A `"use server"` directive inside a
+  component-scoped function is real surface, but the function is not
+  importable by module path. Hoist the action into a module-level `"use
+  server"` file to promote it into a working tool.
+- **Unclassifiable exports.** When the export is not a callable Vendo can
+  bind (for example, a re-exported object or a value with no stable
+  signature), it is emitted disabled with `risk: "destructive"` so you can
+  promote it explicitly through overrides.
+
+### Server-action registration map
+
+`vendo init` generates an actions registration map beside your handler route
+and wires it into `createVendo({ serverActions })`. The map imports every
+detected action module keyed by `"<module>#<exportName>"`, so Vendo can
+dispatch calls through the map at runtime. The map regenerates deterministically
+when the detected surface changes; re-running `vendo init` on an unchanged
+surface leaves an empty diff. If the last action disappears, the map is
+emptied, never deleted, so your route keeps compiling.
+
+When the map lacks an entry for an action, or the registered value is not a
+function, execution fails closed with a clear `not-implemented` error and no
+work is performed. Server actions are present-only: away calls and MCP venues
+fail closed because there is no HTTP seam to attach `actAs` credentials to.

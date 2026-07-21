@@ -4,6 +4,7 @@ import { createPortal, flushSync } from "react-dom";
 import { jsx, jsxs, Fragment } from "react/jsx-runtime";
 import { transform } from "sucrase";
 import { ISLAND_AMBIENT_NAMES, type IslandResolvableModule } from "@vendoai/core";
+import { normalizeViewportBlockCss } from "./viewport-css.js";
 import {
   Accordion, Badge, BarChart, Button, Callout, CardList, Checkbox, DataTable,
   DatePicker, DateTime, Disclaimer, Divider, DonutChart, EnumBadge, Form, Grid,
@@ -452,14 +453,21 @@ function contentHeight(): number {
 
   // A generated root commonly uses min-height:100vh. Inside an auto-sized
   // iframe, that makes its "content" depend on the previous host height. An
-  // auto-height surface has no independent block viewport, so normalize only
-  // inline viewport-relative block constraints to their content-sized forms.
+  // auto-height surface has no independent block viewport, so normalize
+  // viewport-relative block constraints to their content-sized forms —
+  // inline styles here, and the same constraint arriving in a <style> tag
+  // (generated islands ship those too) via the stylesheet-text arm below.
   for (const element of elements) {
     for (const property of VIEWPORT_BLOCK_PROPERTIES) {
       const value = element.style.getPropertyValue(property);
       if (!VIEWPORT_BLOCK_UNIT.test(value)) continue;
       element.style.setProperty(property, property.startsWith("min-") ? "0" : "auto", "important");
     }
+  }
+  for (const sheet of document.querySelectorAll("style")) {
+    const css = sheet.textContent ?? "";
+    const normalized = normalizeViewportBlockCss(css);
+    if (normalized !== css) sheet.textContent = normalized;
   }
 
   const height = Math.ceil(Math.max(mount.getBoundingClientRect().height, mount.scrollHeight));

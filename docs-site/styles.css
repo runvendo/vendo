@@ -1,13 +1,157 @@
 /* Vendo brand, whisper intensity (Brand.md: docs and dense UI drop to Whisper).
    Applied by Mintlify on plans with custom CSS; harmless when ignored. */
 
+@import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap");
+
 h1,
 h2 {
   letter-spacing: -0.035em;
 }
 
 :root {
-  --vendo-ink: #17171a;
-  --vendo-porcelain: #fafaf8;
-  --vendo-ultramarine: #4338ca;
+  /* Tokens from IDENTITY_VENDO.md via vendo-web PR #84. Intensity: whisper. */
+  --vendo-brand: #6c3bff;
+  --vendo-brand-lilac: #a78bfa;
+  --vendo-ink: #0d0c11;
+}
+
+code,
+pre,
+kbd {
+  font-family: "Geist Mono", ui-monospace, monospace;
+}
+
+.card {
+  box-shadow:
+    0 1px 2px rgba(20, 15, 40, 0.04),
+    0 14px 34px -18px rgba(60, 40, 120, 0.18);
+}
+
+/* The install-with-your-agent prompt card (snippets/agent-prompt.jsx). */
+.vendo-agent-prompt {
+  margin: 1.5rem 0;
+  border: 1px solid rgba(13, 12, 17, 0.1);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(108, 59, 255, 0.045), rgba(167, 139, 250, 0.03)),
+    #fff;
+  box-shadow:
+    0 1px 2px rgba(20, 15, 40, 0.04),
+    0 14px 34px -18px rgba(60, 40, 120, 0.18);
+}
+
+.dark .vendo-agent-prompt {
+  border-color: rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(135deg, rgba(108, 59, 255, 0.12), rgba(167, 139, 250, 0.05)),
+    #16151b;
+}
+
+.vendo-agent-prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1.1rem;
+}
+
+.vendo-agent-prompt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.vendo-agent-prompt-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--vendo-ink);
+}
+
+.dark .vendo-agent-prompt-title {
+  color: #f3f2f7;
+}
+
+.vendo-agent-prompt-lead {
+  font-size: 0.8rem;
+  color: rgba(13, 12, 17, 0.62);
+}
+
+.dark .vendo-agent-prompt-lead {
+  color: rgba(243, 242, 247, 0.6);
+}
+
+.vendo-agent-prompt-logos {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-shrink: 0;
+  color: rgba(13, 12, 17, 0.55);
+}
+
+.dark .vendo-agent-prompt-logos {
+  color: rgba(243, 242, 247, 0.65);
+}
+
+.vendo-agent-prompt-logo {
+  display: inline-flex;
+}
+
+.vendo-agent-prompt-body {
+  position: relative;
+  border-top: 1px solid rgba(13, 12, 17, 0.08);
+  background: rgba(13, 12, 17, 0.025);
+}
+
+.dark .vendo-agent-prompt-body {
+  border-top-color: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.vendo-agent-prompt-pre {
+  margin: 0;
+  padding: 0.9rem 8.5rem 1rem 1.1rem;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: rgba(13, 12, 17, 0.82);
+}
+
+.dark .vendo-agent-prompt-pre {
+  color: rgba(243, 242, 247, 0.82);
+}
+
+.vendo-agent-prompt-copy {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid rgba(108, 59, 255, 0.35);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--vendo-brand);
+  background: #fff;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.vendo-agent-prompt-copy:hover {
+  background: var(--vendo-brand);
+  color: #fff;
+}
+
+.dark .vendo-agent-prompt-copy {
+  background: #16151b;
+  color: var(--vendo-brand-lilac);
+  border-color: rgba(167, 139, 250, 0.4);
+}
+
+.dark .vendo-agent-prompt-copy:hover {
+  background: var(--vendo-brand);
+  color: #fff;
 }

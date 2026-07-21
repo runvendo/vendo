@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -186,7 +187,22 @@ export function agentSdkDir(reposDir: string): string {
 
 function resolveAgentSdk(sdkDir: string): string | null {
   try {
-    return createRequire(path.join(sdkDir, "package.json")).resolve(AGENT_SDK_PACKAGE);
+    const resolved = createRequire(path.join(sdkDir, "package.json")).resolve(AGENT_SDK_PACKAGE);
+    // Node's resolver also walks NODE_PATH / GLOBAL_FOLDERS (Vitest injects
+    // pnpm's flat virtual-store `node_modules` there), which would make any
+    // copy of the SDK hoisted anywhere in the workspace resolve here too —
+    // exactly the ambient-resolution hazard called out above. Only accept a
+    // resolution that actually lives under the cache dir this function
+    // provisions; anything else is not "resolvable from the cache", so
+    // report it as absent and let ensureAgentSdk provision its own copy.
+    // Compare real paths — `resolved` is symlink-resolved by Node, so a
+    // sdkDir that is itself reached through a symlink (e.g. macOS's
+    // /var -> /private/var) must be realpath'd too before the containment
+    // check, or a genuine in-cache resolution looks like it escaped sdkDir.
+    const realSdkDir = realpathSync(sdkDir);
+    const relativeToSdkDir = path.relative(realSdkDir, resolved);
+    if (relativeToSdkDir.startsWith("..") || path.isAbsolute(relativeToSdkDir)) return null;
+    return resolved;
   } catch {
     return null;
   }

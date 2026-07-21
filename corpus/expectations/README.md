@@ -10,6 +10,36 @@ corpus/expectations/<repo>/baseline.json
 Labels come from the pinned repo source only. Do not copy values from `.vendo/`
 output, because that would bake current extractor behavior into the truth set.
 
+## Scope
+
+A 2026-07-20 Noir cross-check audit (independent HTTP-endpoint enumeration
+against six repos' pinned clones) found two classes of truth-set error;
+these rules exist to stop them from recurring.
+
+- **Tools are labeled only for the detector's intended surface**: app-router
+  route handlers under `/api` (or an `(api)` route group) and Pages Router
+  handlers under `pages/api`, matching `appRoutePath`/`pagesRoutePath` in
+  `packages/actions/src/sync/route-scan.ts`. Route handlers that live
+  elsewhere are out of scope by design and must not be labeled — for example
+  umami's tracking-pixel and redirect collect endpoints at
+  `src/app/(collect)/p/[slug]/route.ts` and `src/app/(collect)/q/[slug]/route.ts`
+  are real `GET` handlers but sit outside `/api`, so they are intentionally
+  absent from `expected.json`, not a labeling miss.
+- **Method evidence must come from the handler's actual method exports or
+  `req.method` branches, never from `Allow` response headers on 405
+  responses.** papermark's pages/api handlers set an `Allow` header on their
+  405 branch that does not always match the method the handler actually
+  implements (e.g. a POST-only handler 405ing with `Allow: GET, POST`); a
+  labeling pass that trusted those headers produced four phantom tools —
+  methods the source always rejects with 405. Read the `if (req.method ===
+  ...)` branch (or the exported `GET`/`POST`/etc. functions) directly.
+- **When sweeping a repo for labels, walk every `app/**/route.ts*` (and
+  `pages/api/**`) file first, then apply the scope rule above.** Filtering to
+  `**/api/**` before looking means out-of-scope route handlers are never
+  seen at all, rather than seen and consciously excluded — that blind spot is
+  exactly how umami's two collect endpoints were missed during the same
+  audit.
+
 ## expected.json
 
 ```json

@@ -81,6 +81,7 @@ describe("the box door scrubs responses (integration)", () => {
       tools,
       catalog: [],
       secrets,
+      experimentalMachines: true,
       machine: { sandbox: fakeSandboxV2(), buildEnv: () => ({ PORT: "8080" }) },
     });
     await runtime.machine.provision(doc.id, ada);

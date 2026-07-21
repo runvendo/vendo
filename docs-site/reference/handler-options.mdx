@@ -1,5 +1,6 @@
 ---
 title: "Handler options: createVendo config and fetch settings"
+sidebarTitle: "Handler options"
 description: "Every createVendo configuration option and fetch-handler setting, including base path, principal resolution, CSRF policy, and wire error behavior."
 ---
 
@@ -32,7 +33,14 @@ sessions, and default persistence.
 | `agent` | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSteps` (see [Agent context](#agent-context)) |
 | `sessions` | ephemeral (anonymous) session lifecycle: `ttlMs` idle timeout before a session is swept (default 30 minutes; `0` disables eviction) and `sweepIntervalMs` sweep cadence (default 60 seconds) |
 | `approvals` | approval lifecycle knobs: `parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry). Past it, the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired". Vendo-thread approvals are untouched |
-| `apps` | apps-block options: `experimentalServedApps` opts the project into layer-3 served apps (off by default) — see [Generated UI](/concepts/generated-ui) |
+| `apps` | apps-block options: `experimentalMachines` opts the project into layer-2 box machines, `experimentalServedApps` into layer-3 served apps (both off by default; served apps require machines) — see [Generated UI](/concepts/generated-ui) |
+
+Named presets: `"cautious"` lets reads run and asks before writes or
+destructive calls, `"readonly"` lets reads run and blocks everything else,
+`"autopilot"` runs everything. Omitting the `policy` key entirely surfaces an
+unconfigured-policy notice in the shipped chrome; a missing
+`.vendo/policy.json` file with `policy: {}` still set does not; keep the
+file in version control.
 
 The umbrella also ships two subpath exports for hosts that keep their own
 agent loop: `@vendoai/vendo/ai-sdk` (`vendoTools`) and `@vendoai/vendo/mastra`
@@ -63,7 +71,7 @@ createVendo({
 - `toolOutputCap` caps a single tool result before it reaches the model, so a
   runaway host response can't blow the context window. Defaults to `32000`
   characters. Pass `0` to disable the cap. Persistence and the streamed
-  thread are unaffected — only the copy sent to the model is truncated.
+  thread are unaffected; only the copy sent to the model is truncated.
 - `maxOutputTokens` bounds tokens the model may emit per turn. Omit to defer
   to the model default.
 - `historyWindow` bounds how many past messages are re-sent to the model
@@ -80,10 +88,10 @@ createVendo({
   cap.
 - `loadout` is an explicit list of host tool names to load at turn start.
   Names that don't exist are dropped; duplicates are ignored. Use this when
-  you want to curate the starting surface for a specific product — for
-  example, a support console that only needs a handful of ticket tools.
+  you want to curate the starting surface for a specific product, for
+  example a support console that only needs a handful of ticket tools.
   Anything omitted from the list is still discoverable via
-  `vendo_tools_search`. Every tool — initial or searched-in — still
+  `vendo_tools_search`. Every tool, initial or searched-in, still
   executes through the same guard binding.
 - `maxSteps` caps how many agent steps (model call + tool round-trip) run in
   a single turn. Defaults to `20`. When the cap is hit, Vendo stops the loop
@@ -107,7 +115,7 @@ UI is not proxied through this base.
 
 ## Identity
 
-Every wire request resolves a principal — through an `auth` preset's request
+Every wire request resolves a principal: through an `auth` preset's request
 resolver, or a hand-wired `principal(req)`. With neither key, every session
 is anonymous. The returned `Principal.subject` scopes threads, apps,
 approvals, grants, activity, and runs. Ephemeral principals never write to
@@ -115,7 +123,7 @@ disk.
 
 `principal(req)` must return `kind: "user"` (or `null`). Returning
 `kind: "org"` or a subject that starts with `vendo:` is rejected at the
-wire — those identities are Vendo-owned. See
+wire; those identities are Vendo-owned. See
 [Principals and organizations](/deploy/principals-and-orgs).
 
 When `principal(req)` returns `null`, Vendo issues an anonymous session
@@ -137,6 +145,6 @@ Every non-2xx response has this shape:
 { "error": { "code": "validation", "message": "Readable message" } }
 ```
 
-The fixed map is `validation` 400, `not-found` 404, `blocked` 403, `conflict`
-409, `cloud-required` 402, and `sandbox-unavailable` or `not-implemented` 501.
-MCP door paths are the exception; they speak MCP and OAuth response shapes.
+See [Troubleshooting](/deploy/troubleshooting#error-codes) for the fixed
+code-to-status map. MCP door paths are the exception; they speak MCP and
+OAuth response shapes.

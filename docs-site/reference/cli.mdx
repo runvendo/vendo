@@ -1,5 +1,6 @@
 ---
 title: "CLI reference: vendo init, doctor, sync, eject, extract, refine, playground, mcp, cloud"
+sidebarTitle: "CLI"
 description: "Reference for the vendo bin commands: init, doctor for wiring checks, sync for build-time extraction, eject, extract, refine, playground, mcp, and cloud."
 ---
 
@@ -15,16 +16,14 @@ is detected from `package.json`; init never edits code you authored. See
 [vendo init](/connect/vendo-init) for the full walkthrough and
 [the agent playbook](/agents) for the agent-driven flow.
 
-Init detects the host framework from `package.json` and scaffolds only what
-applies. A `next` dependency gets `app/api/vendo/[...vendo]/route.ts` (under
-`src/app` when that directory exists). An `express` dependency gets a
-`vendo/server.ts` (`vendo/server.mjs` without a `tsconfig.json`) holding the
-`createVendo()` composition and a Node HTTP-to-fetch adapter, plus a starter
-registry. Mount the adapter with `app.use("/api/vendo", mountVendo())` and wrap
-the client entry in `<VendoRoot>` to finish. Init detects only `next` and
-`express`, checking `next` first, so an app with both gets the Next scaffold; a
-host with neither is treated as Next interactively (a non-interactive run errors
-and asks for `--framework`).
+Init detects the host framework from `package.json`: a `next` dependency
+scaffolds `app/api/vendo/[...vendo]/route.ts` (under `src/app` when that
+directory exists); an `express` dependency scaffolds `vendo/server.ts`
+(`vendo/server.mjs` without a `tsconfig.json`) holding the `createVendo()`
+composition and a Node HTTP-to-fetch adapter, plus a starter registry. Mount
+the adapter with `app.use("/api/vendo", mountVendo())` and wrap the client
+entry in `<VendoRoot>` to finish. See [vendo init](/connect/vendo-init) for
+detection precedence and the non-interactive `--framework` fallback.
 
 `dir` is the app to initialize and defaults to the current directory.
 
@@ -40,7 +39,7 @@ Options:
   against a throwaway directory, so the plan carries the extracted tools),
   `riskRecommendations` (per-tool advice: destructive tools should be marked
   critical, disabled tools reviewed before enabling), and an `aiPolish`
-  delegation contract. It is a read-only plan, not a scaffolding step — scaffold
+  delegation contract. It is a read-only plan, not a scaffolding step; scaffold
   with `--yes`.
 - `--yes` skips the interactive prompts (auth confirm, theme review, Cloud
   offer) and scaffolds non-interactively, ending with an `Agent tail:` block
@@ -51,8 +50,9 @@ Options:
   when detection fails.
 - `--cloud-key <key>` writes an existing Vendo Cloud key to `.env.local`;
   `--byo` declines the Cloud offer (bring your own model key).
-- `--ai-polish` consents to the AI extraction pass non-interactively.
-- `--theme <slot=value>` answers an uncertain theme slot (repeatable).
+- `--ai-polish` consents to the AI pass non-interactively: tool judgment
+  (descriptions, risk, brief) and theme-slot filling, one consent for both.
+- `--theme <slot=value>` overrides a theme slot value directly (repeatable).
 - `--force` regenerates Vendo-owned files under `.vendo/`. It does not replace
   existing host source files.
 
@@ -114,7 +114,7 @@ production.
 The live turn resolves its model through the same
 [dev-mode credential ladder](/connect/dev-mode) the runtime uses, so doctor
 and runtime agree on what is wired. Exit 0 means a real user would have
-gotten an answer — the turn must produce a non-empty reply. When nothing is
+gotten an answer; the turn must produce a non-empty reply. When nothing is
 listening on the dev port, an interactive run offers to start `npm run dev`
 for the probe (`--yes` starts it non-interactively) and stops it afterward.
 
@@ -123,9 +123,9 @@ and prints the "what Cloud unlocks" hint either way.
 
 Options:
 
-- `--url <url>` — override `VENDO_URL` for the probe target.
-- `--yes` — start the dev server for the probe without asking.
-- `--json` — print exactly one machine-readable object on stdout with
+- `--url <url>`: override `VENDO_URL` for the probe target.
+- `--yes`: start the dev server for the probe without asking.
+- `--json`: print exactly one machine-readable object on stdout with
   `{ vendo, version, wired, exit, checks, liveTurn, cloud, summary }`
   and suppress every other line. `wired` is true when no static or HTTP
   check failed; `exit` reflects the process exit code, which additionally
@@ -146,6 +146,9 @@ Exit codes:
 - `0`: green (wiring, HTTP checks, and the live model turn all passed)
 - `1`: broken wiring, a failed HTTP probe, or an unanswered live turn
 
+See [Doctor error codes](/agents/verify) for the symptom, cause, and fix
+behind every check.
+
 ## `vendo sync [dir]`
 
 Runs the build-step extraction manually. It updates tool extraction, remix
@@ -154,7 +157,7 @@ current directory. The default is fail-soft and warns on breaking changes.
 When tools changed or broke, sync asks the running dev server which saved
 apps, automations, and grants they impact and prints one `impact:` line per
 tool (or `impact unknown` when no server is reachable). Drifted pins get an
-advisory `drifted:` line — drift never auto-rebases; each fork's owner
+advisory `drifted:` line. Drift never auto-rebases; each fork's owner
 decides. Unresolved remixable slots are listed and fail the run with exit 2
 regardless of `--strict` (silent remix skips are eliminated).
 
@@ -173,17 +176,17 @@ being silently overwritten.
 
 Options:
 
-- `--strict` — CI gate: exit 2 on breaking tool changes, exit 3 when a
+- `--strict`: CI gate: exit 2 on breaking tool changes, exit 3 when a
   breaking tool impacts saved references.
-- `--json` — print exactly one machine-readable object on stdout:
+- `--json`: print exactly one machine-readable object on stdout:
   `{ ok, exitCode, report, impact, notes }`, where `report` carries
   `tools`/`breaking`/`pins`/`unresolvedPins`/`catalog`/`warnings`, `impact`
   is the per-tool blast radius (`[]` when nothing changed, `null` when unknown),
   and `notes` collects CLI-level events. An `error` field appears when
   extraction itself failed soft.
-- `--url <url>` — override `VENDO_URL` for the blast-radius impact query
+- `--url <url>`: override `VENDO_URL` for the blast-radius impact query
   against a running dev server (`POST /sync/impact`).
-- `--report` — push the report to Vendo Cloud (requires `VENDO_API_KEY` or
+- `--report`: push the report to Vendo Cloud (requires `VENDO_API_KEY` or
   `--key`; `--api-url` overrides `VENDO_CLOUD_URL`).
 
 ```console
@@ -195,7 +198,7 @@ impact: host_listAccounts breaks 1 automation, 1 grant
 ```
 
 The report names any remixable slots whose captured baseline changed and
-points to rebase — user forks of those pins are now drifted and keep
+points to rebase; user forks of those pins are now drifted and keep
 rendering their previous content until an explicit rebase replays the
 recorded edit trail onto the new baseline. See
 [Host components](/connect/host-components#drift-and-rebase).
@@ -212,7 +215,7 @@ Exit codes:
 
 Copies a shipped chrome surface's presentation source out of the installed
 `@vendoai/ui` into your repo as code you own, shadcn-style. Pixels are
-copied; data and wire logic stay a package dependency — the templates'
+copied; data and wire logic stay a package dependency. The templates'
 package-internal imports are rewritten to the public `@vendoai/ui` subpaths,
 so protocol updates keep flowing to ejected code. A `.vendo-eject.json`
 manifest in the ejected directory records the surface and package version,
@@ -220,9 +223,9 @@ which doctor uses for its drift check.
 
 Options:
 
-- `--list` — print the ejectable surfaces (with `--list`, the first
+- `--list`: print the ejectable surfaces (with `--list`, the first
   positional is the target dir).
-- `--force` — overwrite an existing ejected directory.
+- `--force`: overwrite an existing ejected directory.
 
 ## `vendo extract [dir]`
 
@@ -236,12 +239,12 @@ unusable draft.
 
 Options:
 
-- `--apply <draft.json>` — required. The draft file the agent produced.
-- `--force` — regenerate Vendo-owned files.
+- `--apply <draft.json>`: required. The draft file the agent produced.
+- `--force`: regenerate Vendo-owned files.
 
 ## `vendo refine [dir]`
 
-Proposes agent-layer improvements as reviewable diffs — nothing is ever
+Proposes agent-layer improvements as reviewable diffs; nothing is ever
 applied silently, and deterministic `tools.json` is never touched. One
 model pass over the extracted tools, your app's source, the capability-miss
 feed (`.vendo/data/misses.jsonl`), and a short interview proposes:
@@ -263,17 +266,17 @@ npx vendo refine --url http://localhost:3000/api/vendo
 
 The model resolves like the rest of Vendo: `--model-import` loads the module
 that exports your AI SDK `model`, and without it the shared dev-credential
-ladder composes — a provider env key (`ANTHROPIC_API_KEY` /
+ladder composes: a provider env key (`ANTHROPIC_API_KEY` /
 `OPENAI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`, with the matching
 `@ai-sdk/*` provider installed), then `VENDO_API_KEY` via the Vendo Cloud
 model gateway.
 
 Options:
 
-- `--url <url>` — mounted wire base of the running dev app; enables the probe.
-- `--model-import <specifier>` — module exporting your AI SDK `model`.
-- `--ask <text>` — interview answer for non-interactive runs (repeatable).
-- `--yes` — approve every displayed diff without prompting.
+- `--url <url>`: mounted wire base of the running dev app; enables the probe.
+- `--model-import <specifier>`: module exporting your AI SDK `model`.
+- `--ask <text>`: interview answer for non-interactive runs (repeatable).
+- `--yes`: approve every displayed diff without prompting.
 
 Each run writes a transcript under `.vendo/data/refine/`. `vendo init` offers
 to run refine once at the end of a successful interactive setup.
@@ -281,18 +284,20 @@ to run refine once at the end of a successful interactive setup.
 ## `vendo playground`
 
 Serves every Vendo surface and state (streaming, approvals, slots, the
-workspace page) against scripted data in the browser — no model key, no
+workspace page) against scripted data in the browser; no model key, no
 wiring. Runs from anywhere; it does not read the target app.
 
 Options:
 
-- `--port <port>` — listen on a fixed port (default: any free port).
-- `--no-open` — print the URL without opening the browser.
+- `--port <port>`: listen on a fixed port (default: any free port).
+- `--no-open`: print the URL without opening the browser.
 
 ## `vendo mcp`
 
 Tooling for publishing your door to the official MCP registry. Both
 subcommands operate on the current directory unless you pass a target `dir`.
+See [Publish to the MCP registry](/capabilities/mcp-registry) for the full
+walkthrough; flags below.
 
 ### `vendo mcp server-json`
 
@@ -307,9 +312,9 @@ npx vendo mcp server-json --domain example.com --url https://app.example.com/api
 
 Options:
 
-- `--domain <domain>` — registry namespace to publish under. Prompted if omitted.
-- `--url <public-mcp-url>` — public URL of the live door. Prompted if omitted.
-- `--force` — overwrite an existing `server.json`.
+- `--domain <domain>`: registry namespace to publish under. Prompted if omitted.
+- `--url <public-mcp-url>`: public URL of the live door. Prompted if omitted.
+- `--force`: overwrite an existing `server.json`.
 
 On success, doctor's registry checks compare the file against the running
 door on every run.
@@ -329,10 +334,10 @@ npx vendo mcp verify-domain \
 
 Options:
 
-- `--domain <domain>` — required. Registry domain you are proving.
-- `--key-out <path>` — required. Path for the private key seed. Written with
+- `--domain <domain>`: required. Registry domain you are proving.
+- `--key-out <path>`: required. Path for the private key seed. Written with
   mode `0600` and refuses to overwrite an existing file.
-- `--write-well-known <dir>` — optional. Also writes the challenge to
+- `--write-well-known <dir>`: optional. Also writes the challenge to
   `<dir>/.well-known/mcp-registry-auth` so your host can serve the HTTP
   proof.
 

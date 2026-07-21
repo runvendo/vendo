@@ -82,6 +82,12 @@ JOIN vendo_records r
 
 `subject` is the only partition axis. Ephemeral (anonymous) principals write ordinary rows under their subject; a TTL sweep erases sessions idle past `sessions.ttlMs`.
 
+On the Cloud hosted store the session doors are currently unavailable (the
+console removed `/api/v1/store/sessions/*`); the composition detects this,
+warns once, and disables anonymous-session registration, the
+anonymous→signed-in merge, and the hosted TTL sweep for the process.
+Anonymous traffic keeps serving. Local stores are unaffected.
+
 ## Long-lived hosts
 
 Call `automations.start()` to run the convenience timer around `tick()`. The

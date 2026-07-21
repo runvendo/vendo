@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/automations",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Apps that run on triggers while the user is away: trigger ingestion, scheduling, the two run models, and run observability.",
   "keywords": [
     "ai",

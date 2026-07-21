@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { applyDraft, composeInstructions, runAiExtraction } from "./extraction.js";
-import { parseDraft, type ExtractionHarness } from "./harness.js";
+import { parseDraft, type ExtractionHarness, type ExtractionRunInput } from "./harness.js";
 import type { Output } from "../shared.js";
 
 const cleanup: string[] = [];
@@ -200,6 +200,32 @@ function fakeHarness(text: string | Error, credential: string | null = "your Cla
   };
 }
 
+/** Identify which stage an instruction string belongs to (mirrors stages.test.ts). */
+function stageOf(instructions: string): "survey" | "draft" | "cross-check" | "brief" | "theme" {
+  if (instructions.includes("extraction surveyor")) return "survey";
+  if (instructions.includes("cross-checker")) return "cross-check";
+  if (instructions.includes("drafting the product brief")) return "brief";
+  if (instructions.includes("filling the theme's brand slots")) return "theme";
+  return "draft";
+}
+
+/** A scripted harness: responds per stage — for tests that need the theme
+    stage to answer independently of the tool-polish stages. */
+function scriptedHarness(
+  respond: (stage: string, input: ExtractionRunInput) => object | Error,
+  credential = "your Claude Code login",
+): ExtractionHarness {
+  return {
+    id: "scripted",
+    availability: async () => credential,
+    run: async (input) => {
+      const response = respond(stageOf(input.instructions), input);
+      if (response instanceof Error) throw response;
+      return "```json\n" + JSON.stringify(response) + "\n```";
+    },
+  };
+}
+
 describe("runAiExtraction", () => {
   it("skips silently-with-one-line when non-interactive", async () => {
     const root = await fixture();
@@ -209,15 +235,107 @@ describe("runAiExtraction", () => {
     expect(sink.logs.join("\n")).toContain("skipped");
   });
 
-  it("states when no credential exists and stands on extractor defaults", async () => {
+  it("states when no credential exists and names every rung's remedy", async () => {
     const root = await fixture();
     const sink = output();
     const result = await runAiExtraction({
       root, output: sink.output, env: {}, yes: false, interactive: true,
-      harnesses: [fakeHarness("x", null)],
+      harnesses: [fakeHarness("x", null), fakeHarness("x", null), fakeHarness("x", null), fakeHarness("x", null)],
     });
     expect(result.ran).toBe(false);
-    expect(sink.logs.join("\n")).toContain("AI polish: unavailable");
+    const message = sink.logs.join("\n");
+    expect(message).toContain("AI polish: unavailable");
+    // Every rung's remedy is named — visible-never-silent (Task 2/4).
+    expect(message).toContain("Claude Code installed");
+    expect(message).toContain("ANTHROPIC_API_KEY");
+    expect(message).toContain("codex");
+    expect(message).toContain("codex login");
+    expect(message).toContain("OPENAI_API_KEY");
+    expect(message).toContain("VENDO_API_KEY");
+    expect(message).toContain("vendo cloud login");
+  });
+
+  it("picks the first rung when every rung is available (order matters)", async () => {
+    const root = await fixture();
+    const sink = output();
+    const draft = { brief: "b", tools: [] };
+    const scripted = "```json\n" + JSON.stringify(draft) + "\n```";
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        fakeHarness(scripted, "Agent SDK credential"),
+        fakeHarness(scripted, "claude CLI credential"),
+        fakeHarness(scripted, "codex CLI credential"),
+        fakeHarness(scripted, "npx engine credential"),
+      ],
+      confirm: async () => true,
+    });
+    expect(result.ran).toBe(true);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Reading your product (Agent SDK credential)");
+    expect(logs).not.toContain("claude CLI credential");
+    expect(logs).not.toContain("codex CLI credential");
+    expect(logs).not.toContain("npx engine credential");
+  });
+
+  it("falls through to the claude CLI rung when the Agent SDK rung is unavailable", async () => {
+    const root = await fixture();
+    const sink = output();
+    const draft = { brief: "b", tools: [] };
+    const scripted = "```json\n" + JSON.stringify(draft) + "\n```";
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        fakeHarness("x", null),
+        fakeHarness(scripted, "claude CLI credential"),
+        fakeHarness(scripted, "codex CLI credential"),
+      ],
+      confirm: async () => true,
+    });
+    expect(result.ran).toBe(true);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Reading your product (claude CLI credential)");
+    expect(logs).not.toContain("codex CLI credential");
+  });
+
+  it("falls through past two unavailable rungs to the codex CLI rung", async () => {
+    const root = await fixture();
+    const sink = output();
+    const draft = { brief: "b", tools: [] };
+    const scripted = "```json\n" + JSON.stringify(draft) + "\n```";
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        fakeHarness("x", null),
+        fakeHarness("x", null),
+        fakeHarness(scripted, "codex CLI credential"),
+        fakeHarness(scripted, "npx engine credential"),
+      ],
+      confirm: async () => true,
+    });
+    expect(result.ran).toBe(true);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Reading your product (codex CLI credential)");
+    expect(logs).not.toContain("npx engine credential");
+  });
+
+  it("falls through past three unavailable rungs to the npx engine rung (fourth and last)", async () => {
+    const root = await fixture();
+    const sink = output();
+    const draft = { brief: "b", tools: [] };
+    const scripted = "```json\n" + JSON.stringify(draft) + "\n```";
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        fakeHarness("x", null),
+        fakeHarness("x", null),
+        fakeHarness("x", null),
+        fakeHarness(scripted, "npx engine credential"),
+      ],
+      confirm: async () => true,
+    });
+    expect(result.ran).toBe(true);
+    expect(sink.logs.join("\n")).toContain("Reading your product (npx engine credential)");
   });
 
   it("respects a declined consent", async () => {
@@ -281,5 +399,75 @@ describe("runAiExtraction", () => {
     expect(result.ran).toBe(false);
     expect(sink.errors.join("\n")).toContain("model unreachable");
     expect(await readFile(join(root, ".vendo", "overrides.json"), "utf8")).toBe(before);
+  });
+
+  it("the consent prompt mentions theme alongside tools, risk, and the brief", async () => {
+    const root = await fixture();
+    const sink = output();
+    let question = "";
+    await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [fakeHarness("```json\n" + JSON.stringify({ brief: "b", tools: [] }) + "\n```")],
+      confirm: async (asked) => { question = asked; return true; },
+    });
+    expect(question).toContain("theme");
+  });
+
+  it("threads a theme input into the staged call and surfaces the parsed draft on the result", async () => {
+    const root = await fixture();
+    const themeDraft = { slots: { accent: "#112233" }, uncertain: [{ slot: "accent", note: "two plausible brand colors" }] };
+    const harness = scriptedHarness((stage) => {
+      if (stage === "survey") return { surfaces: [{ name: "all", tools: TOOLS.map((tool) => tool.name) }] };
+      if (stage === "draft") return { tools: TOOLS.map((tool) => ({ name: tool.name, description: tool.description ?? "" })) };
+      if (stage === "cross-check") return { tools: [] };
+      if (stage === "brief") return { brief: "b" };
+      return themeDraft;
+    });
+    const sink = output();
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [harness],
+      confirm: async () => true,
+      theme: { needed: ["accent"], alreadyExact: {}, evidencePaths: ["app/globals.css"] },
+    });
+    expect(result.ran).toBe(true);
+    expect(result.theme).toEqual(themeDraft);
+  });
+
+  it("runs the theme stage even when tools.json is missing or unparseable, without writing tool overrides", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-extract-notheme-tools-"));
+    cleanup.push(root);
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    // No tools.json at all — tool polish has nothing to work from.
+    const themeDraft = { slots: { accent: "#445566" } };
+    const harness = scriptedHarness((stage) => {
+      if (stage === "survey") return { surfaces: [{ name: "app", tools: [] }] };
+      if (stage === "brief") return { brief: "b" };
+      if (stage === "theme") return themeDraft;
+      return { tools: [] };
+    });
+    const sink = output();
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [harness],
+      confirm: async () => true,
+      theme: { needed: ["accent"], alreadyExact: {}, evidencePaths: [] },
+    });
+    expect(result.ran).toBe(true);
+    expect(result.theme).toEqual(themeDraft);
+    await expect(readFile(join(root, ".vendo", "overrides.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("still skips entirely when tools.json is missing and no theme input is given", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-extract-nothing-"));
+    cleanup.push(root);
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    const sink = output();
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [fakeHarness("```json\n" + JSON.stringify({ brief: "b", tools: [] }) + "\n```")],
+      confirm: async () => { throw new Error("should never be asked"); },
+    });
+    expect(result.ran).toBe(false);
   });
 });

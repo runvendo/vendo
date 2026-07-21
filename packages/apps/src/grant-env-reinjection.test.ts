@@ -53,6 +53,7 @@ const setup = async () => {
     guard,
     tools,
     catalog: [],
+    experimentalMachines: true,
     machine: {
       sandbox,
       // The host assembler injects real values for granted secrets only —

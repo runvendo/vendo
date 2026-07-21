@@ -1,0 +1,803 @@
+import path from "node:path";
+import type TS from "typescript";
+import type { HttpMethod } from "../formats.js";
+import {
+  MAX_RESOLVE_DEPTH,
+  PERMISSIVE_INPUT,
+  loadTypescript,
+  parseModule,
+  zodFromExpression,
+  type FileModule,
+  type StaticExtraction,
+} from "./static-ts.js";
+
+/**
+ * Route-scan input-schema inference (PR 2, 04 §1): a collector seam asked
+ * once per (route, method) at route-scan's single emission point. Collector
+ * order (spec-locked): zod-in-handler first (Task 2, reuses the
+ * oracle-hardened `zodFromExpression` from `static-ts.ts`), then the
+ * TypeScript-checker collector (Task 3, one lazily built `ts.Program` per
+ * scan), with the query collector (Task 4) merging additively into whichever
+ * of those two results comes back — the query collector runs unconditionally
+ * for every (route, method), regardless of which (if any) body collector
+ * answered. Every collector fails closed: no recognizable evidence means
+ * `null`, and route-scan emits exactly what it emits today (path params
+ * only, blank body/query).
+ *
+ * Review carry-over on the query collector (Task 4): this module reports
+ * query evidence whenever it finds it, on ANY method — it does NOT know or
+ * care whether the tool that evidence would attach to is query-bound or
+ * body-bound. That gate lives one layer up, in route-scan.ts's
+ * `mergeRouteInput`, because only route-scan.ts knows a tool's `argsIn`. The
+ * reason the gate has to exist at all: `runtime/registry.ts`'s route
+ * execution (~560-564) sends every non-path argument as `searchParams` for a
+ * query-bound tool (`argsIn: "query"`, GET/DELETE) but as a single JSON body
+ * for a body-bound tool (`argsIn: "body"`, POST/PUT/PATCH) — never split
+ * across both. A query-derived property advertised on a body-bound tool
+ * would be delivered in the JSON body and never reach `searchParams`, so the
+ * handler would never see it: a lie to the calling agent. `mergeRouteInput`
+ * therefore keeps query properties for query-bound tools and drops them
+ * (silently — this is a scope decision, not a recognition failure, so it
+ * carries no `note`) for body-bound ones.
+ */
+
+/** The minimal route facts a collector needs. A structural subset of
+ * route-scan's internal `RouteSource` — this module never imports from
+ * route-scan.ts, so collectors stay one-directional (asked, never asking
+ * back). */
+export interface RouteContext {
+  file: string;
+  source: string;
+  urlPath: string;
+  kind: "app" | "pages";
+}
+
+/**
+ * State shared across every `inferRouteInput` call within one `scanRoutes`
+ * pass — created once per scan by `createRouteScanState`, then threaded
+ * through unchanged call to call. `zodExtraction` is the zod collector's
+ * `StaticExtraction` (module parse cache), built lazily on first need and
+ * reused for every subsequent (route, method) so each route file is parsed at
+ * most once per scan even though it is asked about once per HTTP method;
+ * `undefined` means "not attempted yet", `null` means "the host's TypeScript
+ * compiler could not be resolved" (cached so we do not retry every call).
+ *
+ * `routeFiles` is every route file discovered by this scan (route-scan.ts
+ * hands the full list to `createRouteScanState` up front, before the
+ * per-route loop) — the checker collector's `ts.Program` needs every route
+ * file present as a root from the moment it is built, since the program is
+ * constructed exactly once and never rebuilt mid-scan (04 §1 Task 3). `checkerProgram`/
+ * `checkerTs` follow the same lazy-build-then-cache shape as `zodExtraction`;
+ * `checkerProgramBuilds` counts how many times the program-construction path
+ * actually ran (0 or 1 per scan — an injectable/inspectable counter the tests
+ * use to assert the program is built at most once, and never when the zod
+ * collector already answered). `warnings` collects scan-level messages (e.g.
+ * "no tsconfig.json found") the checker collector can't attach to a single
+ * tool; route-scan.ts drains this into its own returned `warnings` array.
+ */
+export interface RouteScanState {
+  root: string;
+  routeFiles: readonly string[];
+  zodExtraction?: StaticExtraction | null;
+  checkerProgram?: TS.Program | null;
+  checkerTs?: typeof TS | null;
+  checkerProgramBuilds: number;
+  warnings: string[];
+}
+
+export function createRouteScanState(root: string, routeFiles: readonly string[] = []): RouteScanState {
+  return { root, routeFiles, checkerProgramBuilds: 0, warnings: [] };
+}
+
+/** The zod collector's `StaticExtraction`, built once per scan (cached on
+ * `state`) and shared across every route+method call so cross-file validator
+ * resolution (`resolveIdentifier`) reuses the same module cache. Returns
+ * `null`, cached, when the host's TypeScript compiler cannot be resolved. */
+function zodExtractionFor(state: RouteScanState): StaticExtraction | null {
+  if (state.zodExtraction !== undefined) return state.zodExtraction;
+  const ts = loadTypescript(state.root);
+  state.zodExtraction = ts ? { ts, root: state.root, modules: new Map() } : null;
+  return state.zodExtraction;
+}
+
+/**
+ * One collector's verdict for a route+method's input, additive by design:
+ * `bodySchema` / `queryProperties` are undefined when that collector found
+ * nothing for that half of the tool's args, and `note` carries a fail-closed
+ * reason onto the emitted tool exactly like the tRPC/server-actions
+ * extractors do for partially- or un-recognized shapes (04 §1).
+ */
+export interface RouteInputResult {
+  bodySchema?: Record<string, unknown>;
+  queryProperties?: Record<string, unknown>;
+  note?: string;
+}
+
+/**
+ * Ask every collector (spec-locked order) for `route`'s `method` input.
+ * Returns `null` when nothing is recognized, so route-scan falls back to
+ * today's exact path-params-only emission (fail-closed, byte-identical).
+ * The zod collector runs first (a validator is stronger evidence than a
+ * bare type) and short-circuits: the checker collector below is never even
+ * asked when zod already answered, so its `ts.Program` is never built for a
+ * handler zod already covers. The query collector (Task 4) then runs
+ * unconditionally — win or lose for the body half — and merges additively
+ * into whatever the body collectors returned (or answers on its own when
+ * they found nothing): `queryProperties` from the query collector always
+ * wins over any (empty, in practice) `queryProperties` a body collector
+ * might have set, since only the query collector ever populates that field.
+ */
+export async function inferRouteInput(
+  route: RouteContext,
+  method: HttpMethod,
+  state: RouteScanState,
+): Promise<RouteInputResult | null> {
+  const zodResult = await zodCollector(route, method, state);
+  const bodyResult = zodResult ?? await checkerCollector(route, method, state);
+  const queryResult = await queryCollector(route, method, state);
+  if (!queryResult) return bodyResult;
+  if (!bodyResult) return queryResult;
+  return {
+    ...bodyResult,
+    queryProperties: { ...bodyResult.queryProperties, ...queryResult.queryProperties },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Task 2: zod-in-handler collector
+// ---------------------------------------------------------------------------
+
+/** True when `statement` carries an `export` modifier. */
+function hasExportKeyword(ts: typeof TS, statement: TS.Statement): boolean {
+  return ts.canHaveModifiers(statement) === true
+    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+}
+
+/** A discovered handler: its body plus the identifier name of its first
+ * parameter, when that parameter is a plain identifier (`req`, `request`,
+ * ...) — `null` when the handler has no parameter at all or destructures it
+ * (`{ headers }: Request`), since neither shape gives the json-read gate
+ * (below) an identifier to check evidence against. `paramName` is what
+ * distinguishes "the request itself" from any other in-scope value a handler
+ * happens to call `.json()` on (an upstream `fetch` response, most notably —
+ * Part 0 review carry-over: demo-bank's `/api/voice` calls
+ * `upstream.json()`, and without this gate that read looked identical to a
+ * real body read). */
+interface HandlerMatch {
+  body: TS.Node;
+  paramName: string | null;
+}
+
+/** The handler function body for `method`, when the route module exports it
+ * directly as a named function declaration or a const arrow/function
+ * expression. Route files may re-export handlers from other modules or
+ * delegate through pages-router default handlers — those shapes are
+ * route-scan.ts's job (verb discovery), not this collector's; a same-file
+ * named export is the only shape the zod collector looks inside, and it fails
+ * closed (returns `null`, no handler body to search) for everything else. */
+function methodHandlerBody(module: FileModule, ts: typeof TS, method: HttpMethod): HandlerMatch | null {
+  const paramNameOf = (parameters: readonly TS.ParameterDeclaration[]): string | null => {
+    const first = parameters[0];
+    return first && ts.isIdentifier(first.name) ? first.name.text : null;
+  };
+
+  for (const statement of module.sf.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === method
+      && hasExportKeyword(ts, statement) && statement.body) {
+      return { body: statement.body, paramName: paramNameOf(statement.parameters) };
+    }
+    if (ts.isVariableStatement(statement) && hasExportKeyword(ts, statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name) || declaration.name.text !== method || !declaration.initializer) continue;
+        const init = declaration.initializer;
+        if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) {
+          return { body: init.body, paramName: paramNameOf(init.parameters) };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Peel wrapper layers off a `.parse`/`.safeParse` argument that do not change
+ * *what* is being read, only how it's typed or guarded: `await`, redundant
+ * parens, `as`/`satisfies` casts, non-null assertions, and a trailing
+ * `.catch(...)` fallback (demo-bank's own handlers read
+ * `(await req.json().catch(() => ({}))) as T` — apps/demo-bank's orders
+ * route). Peeling `.catch`'s receiver, not its whole call, is what lets the
+ * loop reach the underlying `.json()` call under any combination of the above. */
+function unwrapJsonCandidate(ts: typeof TS, node: TS.Node): TS.Node {
+  let current: TS.Node = node;
+  for (;;) {
+    if (ts.isAwaitExpression(current)) {
+      current = current.expression;
+    } else if (ts.isParenthesizedExpression(current)) {
+      current = current.expression;
+    } else if (ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
+      current = current.expression;
+    } else if (ts.isNonNullExpression(current)) {
+      current = current.expression;
+    } else if (ts.isCallExpression(current) && ts.isPropertyAccessExpression(current.expression) && current.expression.name.text === "catch") {
+      current = current.expression.expression;
+    } else {
+      return current;
+    }
+  }
+}
+
+/** True for an (unwrapped) `<x>.json()` call whose receiver `<x>` is
+ * literally the handler's own request parameter — the request-body read the
+ * zod collector looks for as a `.parse`/`.safeParse` argument, per the plan's
+ * "argument CONTAINING await x.json()" (04 §1 Task 2). `paramName` is `null`
+ * when the handler's parameter couldn't be identified (destructured or
+ * absent — see `methodHandlerBody`'s `HandlerMatch`), which fails every
+ * receiver closed rather than matching anything.
+ *
+ * Part 0 (Task 5 review, blocking): this receiver check is what keeps an
+ * UPSTREAM response's `.json()` (`await upstream.json()`, demo-bank's
+ * `/api/voice`) from reading as body evidence just because it's syntactically
+ * a `<x>.json()` call — `<x>` has to be the request, not any in-scope value
+ * that happens to expose the same method name. */
+function isJsonReadExpression(ts: typeof TS, node: TS.Node, paramName: string | null): boolean {
+  const inner = unwrapJsonCandidate(ts, node);
+  if (!ts.isCallExpression(inner) || !ts.isPropertyAccessExpression(inner.expression) || inner.expression.name.text !== "json") {
+    return false;
+  }
+  const receiver = inner.expression.expression;
+  return paramName !== null && ts.isIdentifier(receiver) && receiver.text === paramName;
+}
+
+/** One-hop local resolution (review-decided, no data-flow analysis): when the
+ * `.parse`/`.safeParse` argument is a plain identifier — the two-statement
+ * form `const body = await req.json(); schema.parse(body)` — look for a
+ * `const`/`let` declaration of that name at the top level of the SAME
+ * function body and test its initializer instead. Anything else (a different
+ * scope, no matching declaration, an initializer that isn't a json read)
+ * fails closed: not a match. */
+function localDeclarationInitializer(ts: typeof TS, functionBody: TS.Node, name: string): TS.Expression | null {
+  if (!ts.isBlock(functionBody)) return null;
+  for (const statement of functionBody.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.name.text === name && declaration.initializer) {
+        return declaration.initializer;
+      }
+    }
+  }
+  return null;
+}
+
+function isJsonBodyArgument(ts: typeof TS, argument: TS.Expression, functionBody: TS.Node, paramName: string | null): boolean {
+  if (isJsonReadExpression(ts, argument, paramName)) return true;
+  if (!ts.isIdentifier(argument)) return false;
+  const initializer = localDeclarationInitializer(ts, functionBody, argument.text);
+  return initializer !== null && isJsonReadExpression(ts, initializer, paramName);
+}
+
+/** The first `.parse`/`.safeParse` call in `body` whose argument reads the
+ * request body — first match wins (spec-locked: a handler validating more
+ * than once picks the first read in source order). Returns the callee's
+ * receiver expression (the schema construction/reference), not the call
+ * itself. */
+function findZodParseReceiver(ts: typeof TS, body: TS.Node, paramName: string | null): TS.Expression | null {
+  let found: TS.Expression | null = null;
+  const visit = (node: TS.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+      && (node.expression.name.text === "parse" || node.expression.name.text === "safeParse")) {
+      const argument = node.arguments[0];
+      if (argument && isJsonBodyArgument(ts, argument, body, paramName)) {
+        found = node.expression.expression;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(body);
+  return found;
+}
+
+/** The `{name}` path-param segments in a route's `urlPath`. */
+function pathParamNames(urlPath: string): Set<string> {
+  return new Set([...urlPath.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]!).filter((name): name is string => Boolean(name)));
+}
+
+/** Review carry-over: a body property sharing a name with a path param would
+ * clobber the param's schema when route-scan.ts merges body properties over
+ * path params (route-scan.ts's `mergeRouteInput`) — excluded here so the
+ * collector never hands back a colliding property in the first place. */
+function excludePathParams(schema: Record<string, unknown>, urlPath: string): Record<string, unknown> {
+  const params = pathParamNames(urlPath);
+  const properties = schema.properties;
+  if (params.size === 0 || !properties || typeof properties !== "object") return schema;
+  const filteredProperties = Object.fromEntries(
+    Object.entries(properties as Record<string, unknown>).filter(([key]) => !params.has(key)),
+  );
+  const result: Record<string, unknown> = { ...schema, properties: filteredProperties };
+  if (Array.isArray(schema.required)) {
+    const filteredRequired = (schema.required as string[]).filter((key) => !params.has(key));
+    if (filteredRequired.length > 0) result.required = filteredRequired;
+    else delete result.required;
+  }
+  return result;
+}
+
+/** Shared by both collectors: fold one collector's `{schema, recognized,
+ * reason}` verdict (the `ZodSchemaResult`/`CheckerTypeResult` shapes are
+ * structurally identical) into a `RouteInputResult` — permissive schema plus
+ * a fail-closed note when nothing (or only part) was recognized, path-params
+ * excluded either way. `fallbackReason` fills in when a fully-unrecognized
+ * verdict carries no specific reason string of its own. */
+function interpretedToResult(
+  urlPath: string,
+  interpreted: { schema: Record<string, unknown>; recognized: boolean; reason?: string },
+  fallbackReason: string,
+): RouteInputResult {
+  const bodySchema = interpreted.recognized ? interpreted.schema : { ...PERMISSIVE_INPUT };
+  const note = interpreted.recognized
+    ? interpreted.reason
+      ? `input schema partially interpreted; permissive where unknown (${interpreted.reason})`
+      : undefined
+    : `input schema not statically interpreted (${interpreted.reason ?? fallbackReason}); permissive schema emitted`;
+
+  return { bodySchema: excludePathParams(bodySchema, urlPath), ...(note ? { note } : {}) };
+}
+
+async function zodCollector(
+  route: RouteContext,
+  method: HttpMethod,
+  state: RouteScanState,
+): Promise<RouteInputResult | null> {
+  const extraction = zodExtractionFor(state);
+  if (!extraction) return null;
+  const module = parseModule(extraction, route.file, route.source);
+  const handler = methodHandlerBody(module, extraction.ts, method);
+  if (!handler) return null;
+  const receiver = findZodParseReceiver(extraction.ts, handler.body, handler.paramName);
+  if (!receiver) return null;
+
+  const interpreted = await zodFromExpression(extraction, module, receiver, 0);
+  return interpretedToResult(route.urlPath, interpreted, "unrecognized validator");
+}
+
+// ---------------------------------------------------------------------------
+// Task 3: TypeScript-checker collector
+// ---------------------------------------------------------------------------
+
+/**
+ * Build (or return the cached) `ts.Program` for the checker collector. Built
+ * exactly once per scan, on first need (the first route+method with a
+ * cast/annotation candidate the zod collector didn't already resolve — see
+ * `checkerCollector`'s cheap syntactic pre-check, which is what keeps this
+ * from ever running for a route with no such evidence), and reused unchanged
+ * for every remaining call — `state.checkerProgramBuilds` counts how many
+ * times this function's build path actually ran, so tests can assert "at
+ * most once per scan" and "never, when zod already answered" without timing.
+ *
+ * Host resolution mirrors `catalog-scan.ts`'s `programFor` (the existing
+ * compiler-API precedent in this package): the host's `tsconfig.json` is
+ * required (`ts.findConfigFile`/`readConfigFile`) — a route-heavy JS-only
+ * repo with no tsconfig has no static types to read, so this fails closed to
+ * `null` with one scan-level warning rather than guessing at compiler
+ * options. `rootNames` is the tsconfig's resolved `fileNames` UNIONED with
+ * every route file this scan discovered (not "when available, else"): a
+ * tsconfig whose `include` happens to miss a route directory would otherwise
+ * leave that route's file out of the program entirely, and the union costs
+ * nothing when the tsconfig already covers everything. Any failure — missing
+ * compiler, missing/unparseable tsconfig, zero resolvable files, or
+ * `ts.createProgram` throwing — degrades to `null` plus one warning, cached
+ * so it is never retried within the scan.
+ */
+function checkerProgramFor(state: RouteScanState): { ts: typeof TS; program: TS.Program } | null {
+  if (state.checkerProgram !== undefined) {
+    return state.checkerProgram && state.checkerTs ? { ts: state.checkerTs, program: state.checkerProgram } : null;
+  }
+  state.checkerProgramBuilds += 1;
+
+  const fail = (warning: string): null => {
+    state.checkerProgram = null;
+    state.warnings.push(warning);
+    return null;
+  };
+
+  const ts = loadTypescript(state.root);
+  if (!ts) return fail("route-scan checker collector skipped: the TypeScript compiler could not be resolved from the host package");
+  state.checkerTs = ts;
+
+  const configPath = ts.findConfigFile(state.root, ts.sys.fileExists, "tsconfig.json");
+  if (!configPath) return fail(`route-scan checker collector skipped: no tsconfig.json found under ${state.root}`);
+
+  const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (configFile.error) {
+    return fail(`route-scan checker collector skipped: ${ts.flattenDiagnosticMessageText(configFile.error.messageText, " ")}`);
+  }
+
+  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(configPath), undefined, configPath);
+  const rootNames = [...new Set([...parsed.fileNames, ...state.routeFiles])];
+  if (rootNames.length === 0) return fail("route-scan checker collector skipped: no TypeScript source files found for the checker program");
+
+  try {
+    const options: TS.CompilerOptions = { ...parsed.options, types: [] };
+    const host = ts.createCompilerHost(options);
+    state.checkerProgram = ts.createProgram({ rootNames, options, host });
+  } catch (error) {
+    return fail(`route-scan checker collector skipped: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return { ts, program: state.checkerProgram };
+}
+
+/** The as-cast or annotated-declaration type node feeding from a json read —
+ * the checker collector's body-expression search. Reuses `isJsonReadExpression`
+ * (parens/await/.catch peeling) so the same shapes the zod collector accepts
+ * as a validator argument are accepted here as a cast/annotation target: `(await
+ * req.json()) as TransferBody` and `const body: TransferBody = await
+ * req.json()`. First match wins in source order; no candidate (an
+ * unannotated, uncast `await req.json()` with no reads — 04 §1 Task 3's
+ * "voice-proxy case") means `null`, and the checker is never consulted for
+ * this route+method. */
+function findCheckerCandidateType(ts: typeof TS, body: TS.Node, paramName: string | null): TS.TypeNode | null {
+  let found: TS.TypeNode | null = null;
+  const visit = (node: TS.Node): void => {
+    if (found) return;
+    if (ts.isAsExpression(node) && isJsonReadExpression(ts, node.expression, paramName)) {
+      found = node.type;
+      return;
+    }
+    if (ts.isVariableDeclaration(node) && node.type && node.initializer && isJsonReadExpression(ts, node.initializer, paramName)) {
+      found = node.type;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(body);
+  return found;
+}
+
+/** One TypeScript type's conversion verdict — same shape and fail-closed
+ * discipline as `static-ts.ts`'s `ZodSchemaResult`/`zodBase`'s object case:
+ * `recognized: false` means the WHOLE type is outside the supported subset
+ * (bubbles up to a permissive schema + note at the caller); a recognized
+ * object with an unsupported property keeps the object (`{}` for that one
+ * property) and carries the property's reason instead of failing the whole
+ * type closed. */
+interface CheckerTypeResult {
+  schema: Record<string, unknown>;
+  recognized: boolean;
+  reason?: string;
+}
+
+function checkerUnrecognized(reason: string): CheckerTypeResult {
+  return { schema: {}, recognized: false, reason };
+}
+
+function checkerLiteralValue(ts: typeof TS, type: TS.Type): string | number | boolean | undefined {
+  if (type.isStringLiteral()) return type.value;
+  if (type.isNumberLiteral()) return type.value;
+  if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) {
+    return (type as TS.Type & { intrinsicName?: string }).intrinsicName === "true";
+  }
+  return undefined;
+}
+
+/** The union's members with `undefined`/`void` stripped — how optionality
+ * from a `T | undefined` union (as opposed to a `?` modifier) is detected,
+ * same rule `catalog-scan.ts`'s `withoutUndefined` uses. A non-union type
+ * degrades to a one-element array of itself so callers can treat both shapes
+ * uniformly. */
+function withoutUndefinedMembers(ts: typeof TS, type: TS.Type): TS.Type[] {
+  if (!type.isUnion()) return [type];
+  return type.types.filter((member) => (member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void)) === 0);
+}
+
+/** True for a type declared in a default-lib `.d.ts` (`Date`, `Map`,
+ * `ReadableStream`, ...) or a class-instance type (`new Account()`'s type):
+ * both structurally "look like" a plain object to `getPropertiesOfType`
+ * (enumerable own properties, accessor/method members and all), but neither
+ * is representable as a JSON body — a schema built from `Date`'s ~48 own
+ * methods, or a class's private fields, is one nothing could ever satisfy.
+ * Review-caught (Stage 2, empirically probed): without this guard `dueDate:
+ * Date` silently became a required-methods object instead of failing
+ * closed. */
+function isLibOrClassInstanceType(ts: typeof TS, program: TS.Program, type: TS.Type): boolean {
+  const symbol = type.getSymbol();
+  if (!symbol) return false;
+  if ((symbol.flags & ts.SymbolFlags.Class) !== 0) return true;
+  const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
+  if (!declaration) return false;
+  return program.isSourceFileDefaultLibrary(declaration.getSourceFile());
+}
+
+/** Bounded TS type → JSON Schema conversion (04 §1 Task 3's supported
+ * subset): primitives, string/number literal unions → `enum`, arrays,
+ * nested object literals, optionality from `?` or a `| undefined` union.
+ * Depth-capped at `MAX_RESOLVE_DEPTH` (the same static-interpretation-depth
+ * precedent `static-ts.ts`'s `zodFromExpression` uses). Mapped types,
+ * generic type parameters, tuples, callable types, lib/class-instance types,
+ * and index signatures are outside the supported subset and fail closed
+ * (`recognized: false`) rather than risk a wrong schema. */
+function schemaForCheckerType(
+  ts: typeof TS,
+  checker: TS.TypeChecker,
+  program: TS.Program,
+  type: TS.Type,
+  depth: number,
+): CheckerTypeResult {
+  if (depth > MAX_RESOLVE_DEPTH) {
+    return checkerUnrecognized(`type nesting exceeded the static interpretation depth (${checker.typeToString(type)})`);
+  }
+
+  const members = withoutUndefinedMembers(ts, type);
+  if (members.length === 0) return { schema: {}, recognized: true };
+  if (type.isUnion() && members.length === 1) return schemaForCheckerType(ts, checker, program, members[0]!, depth);
+
+  if (type.isUnion()) {
+    if (members.every((member) => (member.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
+      return { schema: { type: "boolean" }, recognized: true };
+    }
+    const values = members.map((member) => checkerLiteralValue(ts, member));
+    if (values.every((value): value is string => typeof value === "string")) {
+      return { schema: { type: "string", enum: values }, recognized: true };
+    }
+    if (values.every((value): value is number => typeof value === "number")) {
+      return { schema: { type: "number", enum: values }, recognized: true };
+    }
+    return checkerUnrecognized(`union type is not statically interpreted (${checker.typeToString(type)})`);
+  }
+
+  const literal = checkerLiteralValue(ts, type);
+  if (literal !== undefined) return { schema: { const: literal }, recognized: true };
+  if ((type.flags & ts.TypeFlags.StringLike) !== 0) return { schema: { type: "string" }, recognized: true };
+  if ((type.flags & (ts.TypeFlags.NumberLike | ts.TypeFlags.BigIntLike)) !== 0) return { schema: { type: "number" }, recognized: true };
+  if ((type.flags & ts.TypeFlags.BooleanLike) !== 0) return { schema: { type: "boolean" }, recognized: true };
+  if ((type.flags & ts.TypeFlags.Null) !== 0) return { schema: { type: "null" }, recognized: true };
+
+  if (checker.isArrayType(type)) {
+    const itemType = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
+    if (!itemType) return checkerUnrecognized(`array item type could not be resolved (${checker.typeToString(type)})`);
+    const item = schemaForCheckerType(ts, checker, program, itemType, depth + 1);
+    return item.recognized
+      ? { schema: { type: "array", items: item.schema }, recognized: true, ...(item.reason ? { reason: item.reason } : {}) }
+      : { schema: { type: "array" }, recognized: true, reason: item.reason };
+  }
+
+  if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) {
+    return checkerUnrecognized(`callable type is not statically interpreted (${checker.typeToString(type)})`);
+  }
+  if (checker.isTupleType(type)) return checkerUnrecognized(`tuple type is not statically interpreted (${checker.typeToString(type)})`);
+  if ((type.flags & ts.TypeFlags.Object) === 0) return checkerUnrecognized(`unsupported type (${checker.typeToString(type)})`);
+
+  const objectFlags = (type as TS.Type & { objectFlags?: number }).objectFlags ?? 0;
+  if ((objectFlags & ts.ObjectFlags.Mapped) !== 0) return checkerUnrecognized(`mapped type is not statically interpreted (${checker.typeToString(type)})`);
+  if (type.isTypeParameter()) return checkerUnrecognized(`generic type parameter is not statically interpreted (${checker.typeToString(type)})`);
+  if (isLibOrClassInstanceType(ts, program, type)) {
+    return checkerUnrecognized(`lib-declared or class-instance type is not statically interpreted (${checker.typeToString(type)})`);
+  }
+  if (checker.getIndexInfosOfType(type).length > 0) {
+    return checkerUnrecognized(`index signature is not statically interpreted (${checker.typeToString(type)})`);
+  }
+
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  const reasons: string[] = [];
+  for (const property of checker.getPropertiesOfType(type)) {
+    const declaration = property.valueDeclaration ?? property.declarations?.[0];
+    if (!declaration) {
+      properties[property.name] = {};
+      reasons.push(`${property.name}: property declaration unavailable`);
+      continue;
+    }
+    const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration);
+    const converted = schemaForCheckerType(ts, checker, program, propertyType, depth + 1);
+    properties[property.name] = converted.recognized ? converted.schema : {};
+    if (converted.reason) reasons.push(`${property.name}: ${converted.reason}`);
+    const isOptionalFlag = (property.flags & ts.SymbolFlags.Optional) !== 0;
+    const strippedLength = withoutUndefinedMembers(ts, propertyType).length;
+    const fullLength = propertyType.isUnion() ? propertyType.types.length : 1;
+    // Same rule as `zodBase`'s object case (static-ts.ts): only a RECOGNIZED
+    // property can join `required` — an unrecognized shape (Date, a class
+    // instance, an index signature...) degrades to permissive `{}`, and
+    // pairing that with a hard presence requirement overclaims confidence
+    // the collector doesn't have (an `as`-cast is an unchecked assertion in
+    // the first place; nothing here should read as stronger evidence than
+    // zod gets for the identical situation).
+    if (!isOptionalFlag && strippedLength === fullLength && converted.recognized) required.push(property.name);
+  }
+
+  const schema: Record<string, unknown> = {
+    type: "object",
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    additionalProperties: false,
+  };
+  return { schema, recognized: true, ...(reasons.length > 0 ? { reason: reasons.join("; ") } : {}) };
+}
+
+async function checkerCollector(
+  route: RouteContext,
+  method: HttpMethod,
+  state: RouteScanState,
+): Promise<RouteInputResult | null> {
+  // Cheap syntactic pre-check, reusing the SAME parse the zod collector
+  // already cached (zodExtractionFor/parseModule run unconditionally before
+  // this collector is ever asked) — a handler with no cast/annotation
+  // candidate at all (the vast majority of handlers, including every
+  // existing route-scan fixture) returns null right here, without ever
+  // building the `ts.Program`. This is what keeps a JS/untyped repo's fail-
+  // closed output byte-identical: the "no tsconfig.json" warning below is
+  // only ever reachable when a route ACTUALLY has evidence worth chasing.
+  const extraction = zodExtractionFor(state);
+  if (!extraction) return null;
+  const syntacticModule = parseModule(extraction, route.file, route.source);
+  const syntacticHandler = methodHandlerBody(syntacticModule, extraction.ts, method);
+  if (!syntacticHandler || !findCheckerCandidateType(extraction.ts, syntacticHandler.body, syntacticHandler.paramName)) return null;
+
+  const resolved = checkerProgramFor(state);
+  if (!resolved) return null;
+  const { ts, program } = resolved;
+
+  const sourceFile = program.getSourceFile(route.file);
+  if (!sourceFile) return null;
+  const handler = methodHandlerBody({ file: route.file, source: route.source, sf: sourceFile }, ts, method);
+  if (!handler) return null;
+  const typeNode = findCheckerCandidateType(ts, handler.body, handler.paramName);
+  if (!typeNode) return null;
+
+  // The checker never throws for the shapes this collector already excludes,
+  // but it is a large, host-resolved dependency operating over host-authored
+  // types the collector cannot fully enumerate in advance (04 §1 Task 3's
+  // never-throw rule) — any unexpected exception degrades to `null` (today's
+  // fail-closed path-params-only emission) rather than crashing the scan.
+  try {
+    const checker = program.getTypeChecker();
+    const type = checker.getTypeFromTypeNode(typeNode);
+    const interpreted = schemaForCheckerType(ts, checker, program, type, 0);
+    return interpretedToResult(route.urlPath, interpreted, "unsupported type");
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Task 4: query collector
+// ---------------------------------------------------------------------------
+
+/** True for the base object a `.searchParams` accessor is expected to hang
+ * off (04 §1 Task 4's two receiver shapes): `<x>.nextUrl` (the Next.js
+ * `NextRequest` accessor — any `<x>`, typically `req`) or `new URL(<y>)` (the
+ * standard-`Request` escape hatch — any `<y>`, typically `req.url`). Shared
+ * by the direct-chain check below and the destructuring form
+ * (`const { searchParams } = req.nextUrl`), which pulls `searchParams` off
+ * exactly the same kind of base without a `.searchParams` property access at
+ * all. */
+function isUrlLikeAccessorBase(ts: typeof TS, node: TS.Node): boolean {
+  if (ts.isPropertyAccessExpression(node) && node.name.text === "nextUrl") return true;
+  return ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "URL";
+}
+
+/** True for a `searchParams` accessor expression in one of the two receiver
+ * shapes the plan calls out (04 §1 Task 4): `<x>.nextUrl.searchParams` and
+ * `new URL(<y>).searchParams`. Anything else (a hand-rolled
+ * `URLSearchParams`, a differently named accessor, a `.searchParams` off
+ * some other object entirely) fails closed: not recognized. */
+function isSearchParamsAccessor(ts: typeof TS, node: TS.Node): boolean {
+  return ts.isPropertyAccessExpression(node) && node.name.text === "searchParams" && isUrlLikeAccessorBase(ts, node.expression);
+}
+
+/** The initializer `searchParams` was destructured FROM, when `name` is
+ * bound at the top level of `functionBody` by an object-binding-pattern
+ * declaration whose destructured property is literally `searchParams`
+ * (`const { searchParams } = req.nextUrl;` — the shorthand form — or
+ * `const { searchParams: sp } = req.nextUrl;`, renamed). Returns `null` for
+ * anything else (a different scope, no matching declaration, a property
+ * name other than `searchParams`), matching the collector's one-hop,
+ * no-data-flow-analysis discipline. */
+function destructuredSearchParamsInitializer(ts: typeof TS, functionBody: TS.Node, name: string): TS.Expression | null {
+  if (!ts.isBlock(functionBody)) return null;
+  for (const statement of functionBody.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isObjectBindingPattern(declaration.name) || !declaration.initializer) continue;
+      for (const element of declaration.name.elements) {
+        if (ts.isOmittedExpression(element) || !ts.isIdentifier(element.name) || element.name.text !== name) continue;
+        const propertyName = element.propertyName
+          ? (ts.isIdentifier(element.propertyName) ? element.propertyName.text : null)
+          : name;
+        if (propertyName === "searchParams") return declaration.initializer;
+      }
+    }
+  }
+  return null;
+}
+
+/** True when `receiver` — the thing `.get`/`.getAll` is called on — is a
+ * `searchParams` accessor, directly (`req.nextUrl.searchParams.get(...)`,
+ * `new URL(req.url).searchParams.get(...)`), through the SAME one-hop local
+ * resolution the zod collector uses for its two-statement json-read form
+ * (`localDeclarationInitializer`: `const searchParams = req.nextUrl.searchParams;
+ * ...; searchParams.get(...)`), or through the destructuring form
+ * (`const { searchParams } = req.nextUrl; ...; searchParams.get(...)`). A
+ * local that instead stores the `URL` object one hop further back
+ * (`const url = new URL(req.url); url.searchParams.get(...)`) is NOT
+ * resolved — that receiver (`url.searchParams`) isn't a bare identifier, so
+ * it never reaches either one-hop check. Documented fail-closed scope,
+ * matching the collector's existing "no data-flow analysis, one hop only"
+ * precedent rather than adding a second one.
+ *
+ * Coverage note: `isUrlLikeAccessorBase` accepts `new URL(<y>)` for ANY `<y>`,
+ * not just `req.url` — a handler that builds a `URL` from something other
+ * than the incoming request (a third-party link, a redirect target) would
+ * have its `.get`/`.getAll` reads picked up here just the same, producing a
+ * phantom query property that doesn't correspond to anything the caller can
+ * actually send. Accepted scope (matching the zod collector's equally
+ * receiver-shape-only checks): this module has no data-flow analysis to tell
+ * "the request's URL" from "some other URL" apart. */
+function resolvesToSearchParams(ts: typeof TS, functionBody: TS.Node, receiver: TS.Expression): boolean {
+  if (isSearchParamsAccessor(ts, receiver)) return true;
+  if (!ts.isIdentifier(receiver)) return false;
+  const initializer = localDeclarationInitializer(ts, functionBody, receiver.text);
+  if (initializer && isSearchParamsAccessor(ts, initializer)) return true;
+  const destructured = destructuredSearchParamsInitializer(ts, functionBody, receiver.text);
+  return destructured !== null && isUrlLikeAccessorBase(ts, destructured);
+}
+
+/** Additive: every literal-keyed `searchParams.get("x")` becomes an optional
+ * string property; every `searchParams.getAll("x")` becomes an optional
+ * array-of-string property (query-derived properties are ALWAYS optional —
+ * 04 §1 Task 4's fail-closed rule; nothing here ever joins a `required`
+ * set). A computed key (`searchParams.get(key)`) carries no static evidence
+ * of the property's NAME, so it is silently skipped — absence of evidence,
+ * not a recognized-but-uninterpretable shape, so it carries no `note`
+ * either (04 §1 Task 4's "(c) ignored, no note" case). */
+function collectQueryProperties(ts: typeof TS, body: TS.Node): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+  const visit = (node: TS.Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const methodName = node.expression.name.text;
+      if (methodName === "get" || methodName === "getAll") {
+        const argument = node.arguments[0];
+        const isLiteralKey = argument !== undefined
+          && (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument));
+        if (isLiteralKey && resolvesToSearchParams(ts, body, node.expression.expression)) {
+          properties[(argument as TS.StringLiteral | TS.NoSubstitutionTemplateLiteral).text] = methodName === "getAll"
+            ? { type: "array", items: { type: "string" } }
+            : { type: "string" };
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(body);
+  return properties;
+}
+
+/**
+ * Task 4: the query collector. Additive and unconditional — `inferRouteInput`
+ * asks it for EVERY (route, method), regardless of whether the zod or
+ * checker collector already answered for the body half (this is what "runs
+ * regardless of which body collector answered" means). Recognizes
+ * literal-keyed `searchParams.get`/`.getAll` reads via both receiver shapes
+ * (`req.nextUrl.searchParams`, `new URL(req.url).searchParams`), including
+ * one hop through a local variable holding the `searchParams` object itself.
+ *
+ * This collector reports evidence; it does NOT decide whether that evidence
+ * is safe to advertise on the emitted tool — see this module's top comment
+ * and route-scan.ts's `mergeRouteInput` for the argsIn-gated honesty rule
+ * that actually withholds query findings from body-bound tools.
+ */
+async function queryCollector(
+  route: RouteContext,
+  method: HttpMethod,
+  state: RouteScanState,
+): Promise<RouteInputResult | null> {
+  const extraction = zodExtractionFor(state);
+  if (!extraction) return null;
+  const module = parseModule(extraction, route.file, route.source);
+  const handler = methodHandlerBody(module, extraction.ts, method);
+  if (!handler) return null;
+
+  const properties = collectQueryProperties(extraction.ts, handler.body);
+  for (const key of pathParamNames(route.urlPath)) delete properties[key];
+  if (Object.keys(properties).length === 0) return null;
+
+  return { queryProperties: properties };
+}

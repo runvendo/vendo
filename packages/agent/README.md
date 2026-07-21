@@ -22,5 +22,5 @@ marks undecided asks abandoned in the thread and denies them through
 validated — a new message must be user-role, and an existing assistant message
 may change only by answering a pending approval.
 
-Read [Prompts](https://docs.vendo.run/concepts/prompts) and the
+Read [Prompts](https://docs.vendo.run/connect/instructions) and the
 [architecture overview](https://docs.vendo.run/concepts/architecture).

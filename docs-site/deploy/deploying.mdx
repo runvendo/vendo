@@ -1,26 +1,38 @@
 ---
-title: "Deploying Vendo to production: a wiring checklist"
-description: "Checklist for taking Vendo to production: model, principal resolution, Postgres store, mounted handler, policy or judge, tick schedule, webhooks, sandbox."
+title: "Production checklist"
+sidebarTitle: "Checklist"
+description: "The eight things that must be true before Vendo runs in production, each linked to the page that covers it in depth."
 ---
 
-Before production:
+Ship Vendo to production once these eight things are true. Work through them
+in order; each one links to the page that covers it in depth.
 
-1. Pass an AI SDK `LanguageModel` to `createVendo`.
-2. Resolve every host request to a stable `Principal.subject`.
-3. Point `createStore({ url })` at Postgres and run `ensureSchema()`.
+1. Pass an AI SDK `LanguageModel` to `createVendo`. See
+   [Server API](/reference/server-api).
+2. Resolve every host request to a stable `Principal.subject`. See
+   [Principals and orgs](/deploy/principals-and-orgs).
+3. Point `createStore({ url })` at Postgres and run `ensureSchema()`. See
+   [Persistence](/deploy/persistence).
 4. Mount the fetch handler under one base path and preserve SSE streaming.
-5. Configure policy or a judge if the default auto-run posture is not intended.
-6. Schedule `/tick` or start the long-lived timer.
-7. Register and verify every webhook source.
-8. Add a sandbox adapter only if server-backed apps are needed.
+   See [Handler options](/reference/handler-options).
+5. Configure policy or a judge if the default auto-run posture is not
+   intended. See [Tools and safety](/concepts/tools-and-safety).
+6. Schedule `/tick` or start the long-lived timer. See
+   [Automations and webhooks](/deploy/scheduler-and-webhooks).
+7. Register and verify every webhook source. See
+   [Automations and webhooks](/deploy/scheduler-and-webhooks#external-deliveries).
+8. Add a sandbox adapter only if server-backed apps are needed. See
+   [Vendo Cloud](/deploy/vendo-cloud#hosted-sandboxes).
 
 Present tool execution forwards the signed-in request's auth material on a
-same-origin fetch. Away host API execution requires `actAs`; without it, those
-calls fail cleanly with `not-implemented`.
+same-origin fetch. Away host API execution requires `actAs`, and without it
+those calls fail cleanly with `not-implemented`. See
+[actAs presets](/connect/act-as-presets) for provider wiring.
 
 Generated components run in a no-egress iframe. App machine egress is
 deny-by-default: each domain an app declares needs a one-time owner approval,
 and only declared, owner-granted secrets are injected into the box.
 
 Use `/status` for a live composition probe. Use the public Postgres tables for
-backup and retention.
+backup and retention. If something is broken, start with
+[Troubleshooting](/deploy/troubleshooting).

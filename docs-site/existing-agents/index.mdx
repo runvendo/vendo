@@ -1,11 +1,24 @@
 ---
-title: "Use Vendo with your existing agent"
+title: "Overview and tool pack"
+sidebarTitle: "Overview"
 description: "Keep your AI SDK or Mastra agent and add Vendo's guarded tools, generated UI, and approvals to its loop through one in-process tool pack."
 ---
 
-You already have an agent. It has its own loop, its own model, its own chat
-UI. Vendo does not replace any of that. One tool pack, spread into your
-agent's tools, adds three things to the loop you already run:
+You already have an agent: its own loop, its own model, its own chat UI.
+Vendo does not replace any of it. One tool pack, spread into your agent's
+tools, adds guarded host actions, generated UI, and approvals to the loop
+you already run. Start with your framework's quickstart:
+
+<CardGroup cols={2}>
+  <Card title="Quickstart: AI SDK" href="/existing-agents/ai-sdk">
+    `vendo init`, one spread into `streamText`, one embed component.
+  </Card>
+  <Card title="Quickstart: Mastra" href="/existing-agents/mastra">
+    The same three steps in Mastra's `Agent({ tools })` shape.
+  </Card>
+</CardGroup>
+
+The pack adds three things:
 
 1. **Guarded tools.** Your host actions and connected-account tools, with
    every call routed through policy, approval, and audit. The pack wraps the
@@ -17,15 +30,6 @@ agent's tools, adds three things to the loop you already run:
 3. **Vendo as a delegate.** A `vendo_delegate` tool hands Vendo's agent a
    whole task and returns the run report.
 
-<CardGroup cols={2}>
-  <Card title="AI SDK walkthrough" href="/existing-agents/ai-sdk">
-    The unmodified Next.js quickstart chatbot plus a four-touch diff.
-  </Card>
-  <Card title="Mastra walkthrough" href="/existing-agents/mastra">
-    The create-mastra weather starter plus the same four touches.
-  </Card>
-</CardGroup>
-
 ## The composition
 
 You run `createVendo` and mount the wire route exactly as the
@@ -36,10 +40,11 @@ the embeds: Vendo minus the conversation.
 ```ts
 // lib/vendo.ts: the same composition as any Vendo host
 import { createVendo } from "@vendoai/vendo/server";
+import { serverActions } from "./vendo-actions";
 
 export const vendo = createVendo({
   policy: "cautious",
-  serverActions: { /* your registered host actions */ },
+  serverActions, // the map vendo init generates from your host actions
 });
 ```
 
@@ -72,23 +77,6 @@ built-ins are already prefixed:
 exact match. `include` unset means the whole pack; `exclude` wins over
 `include`.
 
-## The envelope contract
-
-A `vendo_*` tool returns either plain data or a small versioned JSON
-envelope discriminated by `kind`:
-
-| Output | Meaning | Render with |
-| --- | --- | --- |
-| plain data | the guarded call executed cleanly; your model consumes it like any tool output | nothing |
-| `vendo/app-ref@1` `{ appId, title }` | an app is building; the build streams over the wire | `<VendoAppEmbed>` |
-| `vendo/approval-ref@1` `{ approvalId, summary }` | the call parked for approval | `<VendoApprovalEmbed>` |
-
-You rarely dispatch on `kind` yourself: `<VendoToolResult output={...}>`
-takes any `vendo_*` tool output and renders the right embed, or nothing for
-plain data. If you need the dispatcher server-side,
-`parseVendoToolEnvelope(output)` from `@vendoai/core` returns the envelope
-or `null`.
-
 ## Approvals in your loop
 
 A guarded call that needs approval does not throw and does not block your
@@ -106,40 +94,17 @@ Your agent learns the outcome on a later turn if it matters. This is the
 same eventual consistency Vendo's own thread uses for abandoned approvals,
 in a new venue.
 
-## The embeds
-
-Three components from `@vendoai/ui`, rendered inside your own chat:
-
-- `<VendoAppEmbed refValue>` renders the inline generated app: a build beat
-  while the build streams, then the live app. In-app interactions go over
-  the wire, not through your agent loop.
-- `<VendoApprovalEmbed refValue>` renders the approve/deny card and resolves
-  in place to the outcome: the executed result, "declined", or "expired".
-- `<VendoToolResult output>` dispatches any `vendo_*` tool output to the
-  right embed.
-
-Setup is the one-time step the headless hooks already require: wrap your
-chat in `VendoProvider` pointed at the wire. Auth rides your host session
-cookie; theme rides the `--vendo-*` tokens, so the embeds render on-brand.
-Failure states use the existing failed/expired vocabulary, never a silent
-blank.
-
-```tsx
-import { VendoProvider, VendoToolResult } from "@vendoai/ui";
-
-<VendoProvider>
-  {/* your chat; for each finished tool part: */}
-  <VendoToolResult output={part.output} />
-</VendoProvider>
-```
+See [Embeds and envelopes](/existing-agents/embeds) for the envelope
+contract and the three `@vendoai/ui` embed components that render it inside
+your own chat.
 
 ## Two models, deliberately
 
 Your agent keeps its own model. Vendo's `model` seam still powers app
-generation and the delegate, and resolves independently: an explicit
-`createVendo({ model })`, an env key (`ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`), or Vendo Cloud managed inference via `VENDO_API_KEY`.
-In the common case that means zero extra model config.
+generation and the delegate: an explicit `createVendo({ model })` wins, and
+when you omit it Vendo resolves one through the
+[dev-mode credential ladder](/connect/dev-mode). In the common case that
+means zero extra model config.
 
 ## In-process vs. the MCP door
 

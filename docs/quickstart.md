@@ -24,8 +24,9 @@ Every init question has a value-flag answer, so a coding agent never hangs
 on a prompt: `--auth <preset>` (authJs, clerk, supabase, auth0, jwt, none)
 answers the auth confirm and picker, `--framework <next|express>` overrides
 detection, `--cloud-key <key>` or `--byo` answers the Cloud offer,
-`--ai-polish` grants the extraction consent, and `--theme slot=value`
-(repeatable) answers uncertain theme slots. When a decision has no flag and
+`--ai-polish` grants consent for the AI pass (tool judgment and theme-slot
+filling, one consent for both), and `--theme slot=value` (repeatable)
+overrides a theme slot value directly. When a decision has no flag and
 no detected default — an undetectable framework — a non-interactive run
 errors with the exact flag to pass instead of guessing or prompting.
 
@@ -43,9 +44,10 @@ this order:
    stdin (the browser flow is the separate `vendo cloud device-login`
    command), then mints a metered dev-mode starter key and writes it to
    `.env.local` for you. You never paste a key.
-   Model calls go through the Vendo Cloud model gateway (Anthropic models,
-   served via the installed `@ai-sdk/anthropic`) and meter your dev-mode
-   runs allowance.
+   Model calls go through the Vendo Cloud model gateway (curated aliases:
+   `vendo-default`, `vendo-fast`, `vendo-strong` — pick with
+   `VENDO_CLOUD_MODEL`, served via the installed `@ai-sdk/anthropic`) and
+   meter your dev-mode runs allowance.
 3. Nothing available: chat fails honestly, with exact instructions in the
    server log.
 
@@ -60,21 +62,55 @@ To see every Vendo surface and state (streaming, approvals, slots, the
 workspace page) against scripted data first — no model key, no wiring — run
 `npx vendo playground`.
 
-## AI polish (extraction judgment)
+## AI polish (tool judgment and theme)
 
-Static extraction gets the facts; a coding agent adds the judgment. During an
-interactive `vendo init`, when `@anthropic-ai/claude-agent-sdk` is resolvable
-and a Claude Code login or `ANTHROPIC_API_KEY` exists, init asks once for
+Static extraction gets the facts; a coding agent adds the judgment. The
+deterministic exact pass always reads conventional CSS tokens into
+`theme.json` first; whatever slots it can't read ride this same
+consent-gated pass. During an interactive `vendo init`, init asks once for
 consent and lets the agent read your codebase (read-only: Read/Glob/Grep;
 source goes to your model provider under your own account). It drafts
 task-oriented tool descriptions, reviews risk grades, wakes statically
-unclassifiable tools with reasoning, and writes the product brief.
+unclassifiable tools with reasoning, fills theme slots the exact pass
+couldn't resolve, and writes the product brief. Nothing needs installing in
+your app for any of this: no `@ai-sdk/anthropic`, no bundled SDK.
+
+### Which engine runs it
+
+Init resolves an engine for the pass through an ordered ladder — first
+available rung wins, a rung that's missing or unauthenticated is skipped and
+the next one is tried:
+
+1. The Claude Agent SDK, when resolvable in your app (a Claude Code login or
+   `ANTHROPIC_API_KEY` pays).
+2. The `claude` CLI on PATH, driven headless and read-only — same
+   credentials, plus corporate-gateway setups (`ANTHROPIC_AUTH_TOKEN`,
+   `CLAUDE_CODE_OAUTH_TOKEN`, or a custom `ANTHROPIC_BASE_URL`). Your own
+   endpoint is always honored, never overridden by anything below.
+3. The `codex` CLI on PATH, driven headless and read-only. A ChatGPT login
+   or `OPENAI_API_KEY` pays.
+4. `@vendoai/engine`, fetched on the fly with `npm exec` at a pinned
+   version — real Claude Code, no local install required. This is a
+   one-time ~250MB download (npm caches it, so later runs skip it); init
+   prints the download notice before it starts. `ANTHROPIC_API_KEY` pays,
+   or `VENDO_API_KEY` through the Vendo Cloud model gateway.
+
+When none of the four resolves, init still completes — extraction defaults
+stand — and prints every rung's remedy. If a chosen rung fails partway
+(a killed fetch, a 404, a network error), init reports it and leaves
+defaults in place; re-run `vendo init` to retry.
+
+Init-time inference through the Vendo Cloud gateway meters normally on paid
+plans; free-plan orgs get a clear refusal pointing you at your own Claude
+Code login or API key, or an upgrade. Your own credentials always work, on
+every plan.
 
 The pass runs as a staged pipeline, not one shot: a cheap survey maps the
 repo and groups tools into surfaces (`VENDO_EXTRACTION_SURVEY_MODEL` can
 point it at a faster model), one focused pass drafts each surface, a
-cross-check reviews the combined draft for consistency, and the brief is
-drafted last from what the stages learned. Each stage writes its artifact to
+cross-check reviews the combined draft for consistency, the brief is
+drafted from what the stages learned, and an optional theme stage runs
+last, filling whatever the exact CSS read couldn't. Each stage writes its artifact to
 `.vendo/data/extract/<stage>.json` (gitignored) for inspection, and failures
 degrade per stage — a failed surface is skipped with a note instead of
 aborting the run.
@@ -315,10 +351,14 @@ and shipped chrome displays the unconfigured-policy notice.
 - threads, approvals, grants, activity, and app lifecycle routes
 - schedule, host-event, and external-trigger automation machinery
 
-A sandbox adapter unlocks machine-backed apps: see
-[the machine model](./machine-model.md) for the three layers, graduation, and
-the box contract. Machine provisioning also requires `VENDO_BASE_URL`, since
-the box calls back to your deployment's public origin. `auth` (or its `actAs`
+Server-shaped app requests ("email me a digest of unpaid invoices at 8am")
+ride the automations engine by default — a steps or agentic automation on the
+app document, created in seconds with no sandbox anywhere. A sandbox adapter
+plus the experimental `apps: { experimentalMachines: true }` opt-in unlocks
+machine-backed apps (custom server code in a box): see
+[the machine model](./machine-model.md) for the three layers, the escalation
+ladder, graduation, and the box contract. Machine provisioning also requires
+`VENDO_BASE_URL`, since the box calls back to your deployment's public origin. `auth` (or its `actAs`
 half, hand-wired) unlocks host API calls while the user is away. Connectors
 add external tools. `VENDO_API_KEY` activates cloud-gated sharing, publishing,
 org overlays, and pinning — and fills the adapter slots you left unset with

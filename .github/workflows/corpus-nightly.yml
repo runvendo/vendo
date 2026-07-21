@@ -25,7 +25,7 @@ concurrency:
 jobs:
   sweep:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 210  # full sweep + per-repo AI polish pass exceeds 120 (run 29811235687 timed out)
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -81,6 +81,9 @@ jobs:
             fs.mkdirSync("previous-scorecard", { recursive: true });
             fs.writeFileSync("previous-scorecard/artifact.zip", Buffer.from(download.data));
             await exec.exec("unzip", ["-o", "previous-scorecard/artifact.zip", "-d", "previous-scorecard"]);
+
+      - name: Install Claude Code for the init AI pass
+        run: npm install --global @anthropic-ai/claude-code@2.1.209
 
       - name: Run corpus Layer 1/2 development sweep
         env:
@@ -178,4 +181,273 @@ jobs:
           # upload-artifact v4 excludes hidden paths by default, which is why
           # the artifact has been empty since Jul 17 (proven by the diagnostic
           # step on run 29768616216).
+          include-hidden-files: true
+
+  # --- Init engine-ladder legs (install-dx: init-selfcontained-engine, Task 6) ---
+  #
+  # extraction.ts's ladder is Agent SDK -> claude CLI -> codex CLI -> npx
+  # engine, and every rung's availability() only reads env vars and PATH
+  # (packages/vendo/src/cli/extract/{claude,claude-cli,codex-cli,npx-engine}-
+  # harness.ts) — there is no separate "force this rung" knob, and none is
+  # added here. Both legs below steer the ladder purely by controlling which
+  # credentials are in the job env and which CLIs get installed on PATH:
+  #   - Neither leg ever sets ANTHROPIC_API_KEY, so the Agent SDK rung (rung 1,
+  #     which resolves @anthropic-ai/claude-agent-sdk straight out of the
+  #     workspace's own node_modules regardless of any CLI install) stays
+  #     unavailable and falls through in both.
+  #   - Neither leg installs the `claude` CLI, so rung 2 (claude-cli) also
+  #     falls through in both.
+  # Both jobs run a single small repo (umami) at layer 1 only: layer 1 already
+  # runs init's aiPolish pass unconditionally (cli.ts's runRepoThroughLayerOne)
+  # and is far cheaper than the full multi-repo layer-2 sweep — these legs
+  # exist to prove the rung actually runs, not to score extraction quality.
+  #
+  # Liveness, not exit code: `pnpm corpus run` without `--strict` always exits
+  # 0 (scorecard.ts only turns non-zero on `--strict`), and even when a rung
+  # fails outright — e.g. the npx-engine rung 404ing because @vendoai/engine
+  # isn't published yet — extraction.ts's runAiExtraction() catches the error
+  # itself, logs it, and returns { ran: false } without touching init's exit
+  # code (extraction.ts:289-292). So a green corpus-run step here proves
+  # nothing about whether the intended rung actually ran; each leg's "Assert
+  # <rung> actually ran" step below greps the init log it just produced for
+  # two lines extraction.ts is guaranteed to emit: `Reading your product
+  # (<credential label>)…` (logged before the chosen harness's run() is even
+  # called — proves the ladder picked *this* rung and not an earlier one) and
+  # `AI polish applied:` (logged only after that harness's run() returns
+  # successfully — proves it didn't just get picked, it finished). The
+  # assertion step fails loudly when either is missing; job-level
+  # `continue-on-error: true` (see below) keeps that failure informational
+  # instead of reddening the nightly.
+  #
+  # Both legs are gated on their credential secret so an unconfigured repo
+  # shows a clean, loud skip instead of a manufactured failure
+  # (corpus-nightly.yml's own "Check required secrets" step is a hard fail
+  # because ANTHROPIC_API_KEY is required infrastructure for the main sweep —
+  # these two legs are optional coverage, so a soft skip fits better here).
+  # The gate itself has to be a step (not job-level `if:`) — actionlint
+  # confirms the `secrets` context is unavailable in a job-level `if:`
+  # condition, only step-level ones.
+  #
+  # `continue-on-error: true` sits at the JOB level here, not per-step like
+  # nightly.yml. That's a deliberate difference, not a copy of nightly.yml's
+  # pattern: nightly.yml scopes continue-on-error per-step because its steps
+  # share one job with a final aggregator step that decides real pass/fail.
+  # These two legs are standalone jobs with no `needs:` dependents and no
+  # aggregator — without job-level continue-on-error, an ordinary infra flake
+  # (e.g. `pnpm install` hiccup) would fail the *job*, which fails the whole
+  # workflow run's conclusion even though nothing downstream depends on it.
+  # Job-level continue-on-error is what keeps this leg — CLI install, corpus
+  # run, or the liveness assertion, whichever step trips — informational
+  # end to end.
+
+  codex-leg:
+    name: "Init engine ladder: codex CLI (informational)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - name: Check codex credential
+        id: check
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::OPENAI_API_KEY secret is not set — skipping the codex-cli engine-ladder leg (informational, optional coverage)."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.check.outputs.ready == 'true'
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        if: steps.check.outputs.ready == 'true'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.check.outputs.ready == 'true'
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: steps.check.outputs.ready == 'true'
+      - run: pnpm build
+        if: steps.check.outputs.ready == 'true'
+
+      # `npm view @openai/codex` confirms the package (bin: codex); pinned to
+      # match how the claude-code leg above pins its own CLI version.
+      - name: Install codex CLI
+        if: steps.check.outputs.ready == 'true'
+        run: npm install --global @openai/codex@0.144.6
+
+      - name: Run corpus init step against the codex CLI rung
+        if: steps.check.outputs.ready == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          # ANTHROPIC_API_KEY and VENDO_API_KEY are deliberately absent from
+          # this job's env, and no `claude` binary is installed, so rungs 1-2
+          # of the ladder report unavailable and the codex-cli rung
+          # (extraction.ts's third rung) is the first one with a credential.
+          # This step alone does NOT prove the codex rung ran — `pnpm corpus
+          # run` without `--strict` always exits 0 — the next step asserts
+          # that from the log content instead.
+          pnpm corpus run umami --layer 1 --json
+
+      - name: Assert codex rung actually ran (liveness, not just exit code)
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          log="corpus/.repos/.logs/umami/init.first.log"
+          if [ ! -f "$log" ]; then
+            echo "::error::$log not found — the corpus run step produced no init log to inspect."
+            exit 1
+          fi
+          # extraction.ts logs this line right before calling the chosen
+          # harness's run() — its exact credential label is unique to the
+          # codex-cli rung (no other rung's availability() ever returns
+          # "your OPENAI_API_KEY"), so its presence proves the ladder
+          # actually selected codex-cli and not an earlier rung.
+          if ! grep -q "Reading your product (your OPENAI_API_KEY)" "$log"; then
+            echo "::error::codex-cli rung was never selected — no 'Reading your product (your OPENAI_API_KEY)' line in $log. Check that codex is on PATH and OPENAI_API_KEY authenticates it."
+            exit 1
+          fi
+          # extraction.ts only logs this after the chosen harness's run()
+          # returns successfully — its presence proves the rung didn't just
+          # get picked, it finished.
+          if ! grep -q "AI polish applied:" "$log"; then
+            echo "::error::codex-cli rung was selected but did not complete — no 'AI polish applied:' line in $log. See the log for the actual error."
+            exit 1
+          fi
+          echo "codex-cli rung ran and completed — liveness confirmed."
+
+      - name: Publish codex-leg scorecard to job summary
+        if: always() && steps.check.outputs.ready == 'true'
+        run: |
+          if [ -f corpus/.repos/.logs/scorecard.md ]; then
+            cat corpus/.repos/.logs/scorecard.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No scorecard produced (codex leg may have failed before scoring)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload codex-leg logs
+        if: always() && steps.check.outputs.ready == 'true'
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+        with:
+          name: corpus-codex-leg-logs
+          path: |
+            corpus/.repos/.logs/scorecard.json
+            corpus/.repos/.logs/scorecard.md
+            corpus/.repos/.logs/**/*.log
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true
+
+  npx-engine-leg:
+    name: "Init engine ladder: npx @vendoai/engine (informational)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - name: Check Vendo Cloud credential
+        id: check
+        env:
+          VENDO_API_KEY: ${{ secrets.VENDO_API_KEY }}
+        run: |
+          if [ -z "$VENDO_API_KEY" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::VENDO_API_KEY secret is not set — skipping the npx-engine engine-ladder leg (informational, optional coverage)."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.check.outputs.ready == 'true'
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        if: steps.check.outputs.ready == 'true'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.check.outputs.ready == 'true'
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: steps.check.outputs.ready == 'true'
+      - run: pnpm build
+        if: steps.check.outputs.ready == 'true'
+
+      - name: Run corpus init step against the npx engine rung
+        if: steps.check.outputs.ready == 'true'
+        env:
+          # Vendo Cloud key only (no ANTHROPIC_API_KEY): npx-engine-harness.ts's
+          # availability() accepts either an own ANTHROPIC_API_KEY or
+          # VENDO_API_KEY (gateway fuel) — using only the latter here is what
+          # actually forces the ladder down to the fourth rung instead of
+          # stopping at rung 1 (Agent SDK also honors a bare ANTHROPIC_API_KEY).
+          VENDO_API_KEY: ${{ secrets.VENDO_API_KEY }}
+        run: |
+          set -euo pipefail
+          # KNOWN, EXPECTED FAILURE MODE (see install-dx: init-selfcontained-
+          # engine plan, Task 5): @vendoai/engine@0.1.0 is not published yet —
+          # publishing is blocked on NPM_TOKEN alongside the rest of the
+          # @vendoai/* release train, so `npm exec` will 404 until that lands.
+          # That 404 is swallowed by init itself, not by continue-on-error:
+          # npx-engine-harness.ts's run() throws, extraction.ts's
+          # runAiExtraction() catches it, logs "AI polish did not complete
+          # (…)", and returns { ran: false } WITHOUT touching init's exit
+          # code (extraction.ts:289-292) — so this step still exits 0 either
+          # way. The next step's liveness assertion is what actually surfaces
+          # the 404: it greps for the "AI polish applied:" success line, which
+          # will be absent until the package is published, so that assertion
+          # is EXPECTED to fail (informationally — see job-level
+          # continue-on-error above) until then. Once @vendoai/engine is live
+          # on npm, the assertion starts passing for real with no workflow
+          # change required.
+          pnpm corpus run umami --layer 1 --json
+
+      - name: Assert npx-engine rung actually ran (liveness, not just exit code)
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          log="corpus/.repos/.logs/umami/init.first.log"
+          if [ ! -f "$log" ]; then
+            echo "::error::$log not found — the corpus run step produced no init log to inspect."
+            exit 1
+          fi
+          # extraction.ts logs this line right before calling the chosen
+          # harness's run() — "via the Vendo engine" only appears in
+          # npx-engine-harness.ts's two credential labels, so its presence
+          # proves the ladder actually reached the fourth rung (npx-engine)
+          # instead of stopping at an earlier one.
+          if ! grep -q "via the Vendo engine" "$log"; then
+            echo "::error::npx-engine rung was never selected — no 'Reading your product (… via the Vendo engine …)' line in $log. Check that no claude/codex binary is on PATH and VENDO_API_KEY is set."
+            exit 1
+          fi
+          # extraction.ts only logs this after the chosen harness's run()
+          # returns successfully. EXPECTED TO FAIL today: @vendoai/engine
+          # is not published yet (NPM_TOKEN-blocked), so `npm exec` 404s and
+          # this line is never written. Once the package is live, this
+          # assertion starts passing for real.
+          if ! grep -q "AI polish applied:" "$log"; then
+            echo "::error::npx-engine rung was selected but did not complete — no 'AI polish applied:' line in $log. Expected until @vendoai/engine@0.1.0 is published to npm (NPM_TOKEN-blocked); see the log for the actual error."
+            exit 1
+          fi
+          echo "npx-engine rung ran and completed — liveness confirmed."
+
+      - name: Publish npx-engine-leg scorecard to job summary
+        if: always() && steps.check.outputs.ready == 'true'
+        run: |
+          if [ -f corpus/.repos/.logs/scorecard.md ]; then
+            cat corpus/.repos/.logs/scorecard.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No scorecard produced (npm-engine leg may have failed before scoring — expected until @vendoai/engine is published)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload npx-engine-leg logs
+        if: always() && steps.check.outputs.ready == 'true'
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+        with:
+          name: corpus-npx-engine-leg-logs
+          path: |
+            corpus/.repos/.logs/scorecard.json
+            corpus/.repos/.logs/scorecard.md
+            corpus/.repos/.logs/**/*.log
+          retention-days: 14
+          if-no-files-found: warn
           include-hidden-files: true

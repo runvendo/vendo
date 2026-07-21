@@ -1,5 +1,6 @@
 ---
 title: "Environment variables for Vendo host, sandbox, and peers"
+sidebarTitle: "Environment variables"
 description: "Every environment variable Vendo reads across host process, app machines, and peer providers, with the effect each has on the composition and CLI."
 ---
 
@@ -7,7 +8,7 @@ description: "Every environment variable Vendo reads across host process, app ma
 
 | Variable | Effect |
 | --- | --- |
-| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and selects Cloud defaults for adapter slots the host left unset: the hosted sandbox, and the hosted store — with no `store` passed, threads, apps, records, grants, and audit persist in Vendo Cloud instead of local PGlite (pass `store: createStore(...)` to keep data local). An explicitly passed adapter always wins, and key problems surface on the first real call |
+| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and fills any adapter slot (sandbox, store) the host left unset with the Cloud default; see [Vendo Cloud](/deploy/vendo-cloud) for adapter precedence and the data-location warning |
 | `VENDO_CLOUD_URL` | overrides the Vendo Cloud base URL for the runtime and CLI; defaults to `https://console.vendo.run` |
 | `VENDO_TELEMETRY_DISABLED=1` | disables build and development telemetry |
 | `VENDO_TICK_SECRET` | bearer secret required by `POST /tick` |
@@ -27,6 +28,7 @@ description: "Every environment variable Vendo reads across host process, app ma
 | `VERCEL`, `CF_PAGES`, `AWS_LAMBDA_FUNCTION_NAME` | prevent the default PGlite store from opening on an ephemeral serverless filesystem; pass a Postgres URL instead |
 | `VENDO_STORE_ENCRYPTION_KEY` | 32-byte base64 key the default composition uses to encrypt secret values in `vendo_secrets`; read when no store is passed to `createVendo`. An explicitly configured store ignores it |
 | `VENDO_DEV_CREDENTIAL` | pins a [dev-mode credential ladder](/connect/dev-mode) rung: `env-key:anthropic` (or `:openai` / `:google`), `vendo-cloud`, or `none` |
+| `VENDO_CLOUD_MODEL` | model alias for the Vendo Cloud gateway: `vendo-default` (the default), `vendo-fast`, or `vendo-strong`; read by the `VENDO_API_KEY` dev-mode rung; the gateway remaps any other value to `vendo-default` during the grace window and will reject non-aliases after it |
 | `ANTHROPIC_API_KEY` · `OPENAI_API_KEY` · `GOOGLE_GENERATIVE_AI_API_KEY` | first-preferred rung of the dev-mode credential ladder read by `devModel()`; when set, `@vendoai/vendo/server` uses the matching `@ai-sdk/*@^3` provider installed in your app for the full native tool loop |
 
 `VENDO_TICK_SECRET`, `VENDO_BASE_URL`, `VENDO_POSTHOG_KEY`, and the

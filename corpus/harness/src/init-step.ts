@@ -34,6 +34,8 @@ export interface RunVendoInitStepOptions {
   artifactPrefix?: string;
   yes?: boolean;
   diffBase?: "head" | "pre-run";
+  /** Consent to init's AI extraction pass non-interactively (`--ai-polish`). */
+  aiPolish?: boolean;
 }
 
 interface CommandResult {
@@ -66,6 +68,7 @@ function initArgs(repoDir: string, options: RunVendoInitStepOptions): string[] {
   const args = ["init", repoDir];
   if (options.yes !== false) args.push("--yes");
   if (options.force) args.push("--force");
+  if (options.aiPolish) args.push("--ai-polish");
   return args;
 }
 

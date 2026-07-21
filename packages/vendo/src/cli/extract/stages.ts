@@ -9,13 +9,15 @@ import {
   type ExtractionHarness,
 } from "./harness.js";
 import { readOptional, writeText } from "../shared.js";
+import { BRAND_SLOTS, modelThemeSchema, type ThemeSlotValues } from "../theme/extract-theme.js";
 
 /**
  * The staged extraction pipeline (install-dx, PostHog lesson: narrow stages
- * beat one-shot). Four passes over the SAME harness seam — each is one
- * `harness.run(instructions)` with its own narrow instructions and its own
- * zod-validated artifact, written to `.vendo/data/extract/<stage>.json` so a
- * failed run is diagnosable stage by stage:
+ * beat one-shot). Four required passes plus one optional pass, all over the
+ * SAME harness seam — each is one `harness.run(instructions)` with its own
+ * narrow instructions and its own zod-validated artifact, written to
+ * `.vendo/data/extract/<stage>.json` so a failed run is diagnosable stage by
+ * stage:
  *
  * 1. survey — map the repo: frameworks, where the API surfaces live, and a
  *    grouping of the static tool list into surfaces (cheap/fast; respects a
@@ -29,6 +31,11 @@ import { readOptional, writeText } from "../shared.js";
  *    failure degrades to the uncross-checked drafts.
  * 4. brief — drafted from what the survey and drafts learned; a failure
  *    keeps the current brief.
+ * 5. theme — OPTIONAL, only when the caller supplies `theme` input and the
+ *    allowlist left brand slots unfilled: fills those slots the same way the
+ *    old theme model pass did, but over this harness seam (Read/Glob/Grep the
+ *    repo instead of a fixed evidence-file set). A failure degrades to a note
+ *    — the exact reads and neutral defaults still stand.
  *
  * The combined output feeds the EXISTING applyDraft guards in extraction.ts
  * unchanged — deterministic verification stays the single gate. Nothing here
@@ -186,6 +193,65 @@ function composeBriefInstructions(input: {
   ].join("\n");
 }
 
+/**
+ * Instructions for the OPTIONAL theme stage — the SOLE copy of the theme
+ * judgment rules (extract-theme.ts's old model pass and its prompt were
+ * deleted when the deterministic split landed; that file now owns only the
+ * exact pass, validators, and assembly).
+ */
+export function composeThemeInstructions(input: {
+  needed: string[];
+  alreadyExact: Record<string, string>;
+  evidencePaths: string[];
+  appName: string;
+}): string {
+  return [
+    "You are Vendo's extraction agent, filling the theme's brand slots. Read this codebase",
+    "(Read/Glob/Grep — not just the hints below) to fill the brand theme slots a deterministic",
+    "allowlist pass could not read exactly.",
+    "",
+    "Slots: accent (the brand's primary interactive color), accentText (text on accent),",
+    "background (page), surface (cards/panels), text (body), mutedText (secondary text),",
+    "border (default hairline), danger (destructive/error), radius (default control corner",
+    "radius, canonical px), fontFamily (body stack), headingFamily (heading stack, only if",
+    "distinct), baseSize (body font size, px), density (compact|comfortable), motion (full|reduced).",
+    "",
+    `Product/package name: ${input.appName}`,
+    "Needed slots:",
+    JSON.stringify(input.needed, null, 2),
+    "Already exact (context — do not re-derive these):",
+    JSON.stringify(input.alreadyExact, null, 2),
+    "Evidence files found so far (starting hints — read more of the repo if useful):",
+    JSON.stringify(input.evidencePaths, null, 2),
+    "",
+    "Rules:",
+    "- Reply with ONLY one fenced json block matching:",
+    '  { "slots": { <slot>: string, ... }, "uncertain"?: [{ "slot", "note" }] }',
+    "- Fill ONLY the needed slots above, ONLY from evidence in the codebase.",
+    "- Colors must be 6-digit hex. Resolve CSS variables and color functions yourself.",
+    "- next/font: the imported font's export name is the family (underscores become spaces).",
+    "- The geist npm package's GeistSans/GeistMono imports are font sources exactly like next/font.",
+    "- fontFamily is the BODY font: the Tailwind `sans`/default fontFamily key. A `display` face",
+    "  goes to headingFamily, never fontFamily.",
+    "- A design-token sheet outranks scattered utility classes; dominant usage outranks one-offs.",
+    "- When several tokens could fill the same slot (e.g. multiple muted/soft/faint text inks),",
+    "  COUNT their usages across the sheets and pick the dominant one; if you did not count or",
+    "  the counts are close, still fill the slot with your best pick AND list it in uncertain.",
+    "- Status/state colors (success, positive, negative, warning, error, overdue, verified,",
+    "  and colors a comment demotes to data/status-only) are NEVER the brand accent.",
+    "- Monochrome brands exist: when the sheet declares no saturated non-status brand color,",
+    "  the ink/text color itself is the accent (primary buttons are painted with it).",
+    "- radius is the default CONTROL radius (buttons/inputs); a token named for cards or",
+    "  popovers rounds cards, which are typically larger than controls.",
+    "- An accessibility-only prefers-reduced-motion override does NOT make the brand 'reduced'.",
+    "- Omit any slot the codebase does not evidence. Do not invent plausible values.",
+    "- List a slot in `uncertain` ONLY when the codebase genuinely supports multiple different",
+    "  answers (a real fork, e.g. two plausible brand colors). A value settled by the rules",
+    "  above — monochrome accent, contrast-derived accentText, single-font inheritance,",
+    "  browser-default sizing — is NOT uncertain.",
+  ].join("\n");
+}
+
 interface NormalizedSurface {
   name: string;
   slug: string;
@@ -252,6 +318,13 @@ export interface StagedExtractionInput {
   tools: StaticTool[];
   appName: string;
   onProgress?: (line: string) => void;
+  /** Optional theme stage input — omitted entirely when the caller has no
+   *  theme extraction to do (e.g. init running without a theme pass). */
+  theme?: {
+    needed: Array<keyof ThemeSlotValues>;
+    alreadyExact: Record<string, string>;
+    evidencePaths: string[];
+  };
 }
 
 export interface StagedExtractionResult {
@@ -260,6 +333,8 @@ export interface StagedExtractionResult {
   notes: string[];
   /** false = the brief stage failed and draft.brief is the pre-existing one. */
   briefFromStage: boolean;
+  /** Present only when the theme stage ran and succeeded. */
+  theme?: z.infer<typeof modelThemeSchema>;
 }
 
 function message(error: unknown): string {
@@ -391,6 +466,34 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
     brief = current === "" ? BRIEF_TEMPLATE : current;
   }
 
+  // Theme: OPTIONAL, and only when the allowlist left brand slots unfilled —
+  // the non-brand slots (accentText, headingFamily, baseSize, density,
+  // motion) derive or default safely and must never trigger this stage on
+  // their own.
+  let theme: z.infer<typeof modelThemeSchema> | undefined;
+  const themeInput = input.theme;
+  if (themeInput !== undefined) {
+    const brandNeeded = themeInput.needed.filter((slot) => BRAND_SLOTS.includes(slot));
+    if (brandNeeded.length > 0) {
+      onProgress?.("theme: filling brand slots");
+      try {
+        theme = await runStage(
+          "theme",
+          composeThemeInstructions({
+            needed: themeInput.needed,
+            alreadyExact: themeInput.alreadyExact,
+            evidencePaths: themeInput.evidencePaths,
+            appName,
+          }),
+          modelThemeSchema,
+          env,
+        );
+      } catch (error) {
+        notes.push(`theme stage failed (${message(error)}) — exact reads and defaults stand`);
+      }
+    }
+  }
+
   const missed = [...new Set(missedSurfaces)];
   const draft: ExtractionDraft = {
     brief,
@@ -398,5 +501,5 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
     ...(missed.length === 0 ? {} : { missedSurfaces: missed }),
   };
   await writeText(join(artifactDir, "draft.json"), `${JSON.stringify(draft, null, 2)}\n`);
-  return { draft, notes, briefFromStage };
+  return { draft, notes, briefFromStage, ...(theme === undefined ? {} : { theme }) };
 }

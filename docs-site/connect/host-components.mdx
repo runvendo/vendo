@@ -1,56 +1,63 @@
 ---
 title: "Host components: register branded UI and remix baselines"
+sidebarTitle: "Host components"
 description: "Register branded host components with prop schemas and JSON examples so Vendo's generated apps can select and render your own UI natively."
 ---
 
-The shared registry is the current form: one object, keyed by component name,
-that both `createVendo` (as `catalog`) and `<VendoRoot>` (as `components`)
-read — see the [quickstart](/quickstart#the-two-files-you-own). This page
-covers the underlying entry shape and the array form the registry normalizes
-into, which stays available as a back-compat escape hatch.
+Register your branded components in a catalog, and Vendo's agent composes
+generated apps from them alongside its own prewired primitives, rendered
+natively rather than in the sandboxed iframe jail. This page covers
+registering a catalog by hand or with `vendo sync`, then how a remixed
+component drifts and rebases as your host code changes; the exact
+registration shapes and capture rules live in the reference section at the
+end.
 
-```ts
-export interface RegisteredComponent {
-  name: string;
-  description: string;
-  propsSchema?: StandardSchema;   // optional — a schema-less entry is legal
-  examples?: string[];            // JSON prop examples shown to the model
-  remixable?: boolean;
-}
+## Register your components
 
-export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
-```
+The shared registry is the current form: one object, keyed by component
+name, that both `createVendo` (as `catalog`) and `<VendoRoot>` (as
+`components`) read. See the
+[quickstart](/quickstart#install-and-init). This page covers the
+underlying entry shape and the array form the registry normalizes into,
+which stays available as a back-compat escape hatch.
 
-Names are PascalCase and unique. Descriptions and prop schemas are generation
-context. Vendo prefers host components when the catalog covers the requested
-UI. The model-facing JSON Schema is derived internally from `propsSchema` —
-you never hand-write it, and a schema-less entry is legal: it renders as a
-description-only prompt entry the model infers props for.
+Names are PascalCase and unique. Descriptions and prop schemas are
+generation context. Vendo prefers host components when the catalog covers
+the requested UI. The model-facing JSON Schema is derived internally from
+`propsSchema`: you never hand-write it, and a schema-less entry is legal,
+rendering as a description-only prompt entry the model infers props for.
 
-## Register a catalog
+### Register a catalog
 
 Pass the registry (or the array form) to `createVendo` so its entries flow
-into the generation prompt and the engine validates emitted props against the
-schema before render. In the registry form, entry names come from the object
-keys, so there is no second client-side map to keep in sync:
+into the generation prompt and the engine validates emitted props against
+the schema before render. In the registry form, entry names come from the
+object keys, so there is no second client-side map to keep in sync:
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
 import type { ComponentRegistry } from "@vendoai/core";
 import { z } from "zod";
-import { SpendingDonut } from "@/components/charts/spending-donut";
+import {
+  SpendingDonut
+} from "@/components/charts/spending-donut";
 
 const registry = {
   MapleSpendingDonut: {
     component: SpendingDonut,
     description:
-      "Category breakdown of spending. Use when the user asks to see spend by category.",
+      "Category breakdown of spending. " +
+      "Use when the user asks to see spend by category.",
     props: z.object({
-      categories: z.array(z.object({ label: z.string(), amount: z.number() })),
+      categories: z.array(
+        z.object({ label: z.string(), amount: z.number() })
+      ),
       currency: z.string().default("USD"),
     }),
     examples: [
-      '{ "categories": [{ "label": "Groceries", "amount": 412.55 }], "currency": "USD" }',
+      '{ "categories":' +
+        ' [{ "label": "Groceries", "amount": 412.55 }],' +
+        ' "currency": "USD" }',
     ],
   },
 } satisfies ComponentRegistry;
@@ -59,15 +66,15 @@ const vendo = createVendo({ model, catalog: registry });
 ```
 
 - `description` is selection guidance for the model. State when to pick the
-  component and when to skip it — hedged copy leads to worse selection.
+  component and when to skip it; hedged copy leads to worse selection.
 - `props` (registry form) / `propsSchema` (array form) validates props at
-  render time and is the SAME schema the model-facing JSON Schema derives
-  from — one schema, not two. Bindings for `$path`, `$state`, and zero-arg
+  render time and is the same schema the model-facing JSON Schema derives
+  from: one schema, not two. Bindings for `$path`, `$state`, and zero-arg
   actions are exempt from that validation.
 - `examples` are JSON strings the model can copy from. One or two concrete
   shapes usually beat a long prose description.
 
-## Auto-extract with sync
+### Auto-extract with sync
 
 `vendo sync` scans exported JSX components referenced by your `<VendoRoot>`
 `components` map and writes a strict `.vendo/catalog.json` with each entry's
@@ -82,7 +89,7 @@ catalog.json: 2 discovered, 2 registered
 `createVendo` loads `.vendo/catalog.json` at boot alongside `.vendo/theme.json`
 and uses each entry's JSON Schema for prompt guidance. Explicit
 `createVendo({ catalog })` registrations win by `name`, so keep code as the
-source of truth for anything you want strictly validated at render time —
+source of truth for anything you want strictly validated at render time;
 disk entries use a pass-through validator because JSON Schema on disk is
 prompt guidance, not an executable validator.
 
@@ -92,32 +99,18 @@ rather than hand-editing the file. A malformed `.vendo/catalog.json` fails
 sync loudly, and `createVendo` logs one actionable error naming the file and
 telling you to rerun `vendo sync`.
 
-### Catalog copy is hand-edited
-
 No seam authors catalog copy today. Edit a scanned entry's `description` and
-`examples` directly in `.vendo/catalog.json` — a rescan preserves that copy on
+`examples` directly in `.vendo/catalog.json`: a rescan preserves that copy on
 a still-scanned entry, keeping unchanged reruns byte-identical.
 
-The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
-`Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,
-`Stat`, and `Tabs`. Catalog entries and generated components cannot shadow
-them. All prewired primitives read the same [theme tokens](/connect/theming)
-so they pick up your brand's colors, radii, density, and motion without extra
-wiring.
+## Remix, drift, and rebase
 
-`Card`, `Button`, `Badge`, `Stat`, `Table`, and `Tabs` are display and
-action surfaces — interactive controls invoke bound zero-arg action
-callbacks. `Input` and `Select` accept typed input locally, but under the
-current zero-arg binding contract they cannot round-trip a typed value back
-through a bound action. Treat them as display plus local input, not as form
-fields wired to server state.
+Set `remixable` only on components whose real frontend source sync may
+capture. Sync writes a baseline to `.vendo/remixable/<slot>.json`. Shipping a
+pin always requires host review of the net diff. A drifted or erroring pin
+falls back to the original component.
 
-Set `remixable` only on components whose real frontend source sync may capture.
-Sync writes a baseline to `.vendo/remixable/<slot>.json`. Shipping a pin always
-requires host review of the net diff. A drifted or erroring pin falls back to
-the original component.
-
-## Drift and rebase
+### Drift and rebase
 
 When you update a host component and run `vendo sync`, the new baseline
 overwrites `.vendo/remixable/<slot>.json`. Any existing user forks of that pin
@@ -135,7 +128,7 @@ Vendo surfaces drift everywhere the fork is opened or edited:
 - Ship-diff review fail-closes new in-client approvals for drifted pins.
 
 Drifted forks keep rendering their previous content, sandboxed and untouched.
-Nothing auto-rebases and no agent turn is auto-triggered — a rebase rewrites
+Nothing auto-rebases and no agent turn is auto-triggered; a rebase rewrites
 the fork through the model, so it stays behind an explicit user or host ask.
 
 **Rebase** re-forks the pin from the new baseline and replays the recorded
@@ -149,15 +142,14 @@ Rebase is all-or-nothing. Any replay failure persists nothing and the
 pre-rebase version stays live; the result reports `replayed`, `remaining`, and
 which intent failed with its issues. On success, `pins[].base` moves to the
 new baseline hash and the new version invalidates any existing in-client
-approval — a reviewer must re-approve.
+approval: a reviewer must re-approve.
 
 Rebase requires a tree-surfaced app (layer 1 or 2) with a recorded edit
-trail. A pin that
-was forked without any subsequent edits, or an app that has graduated to a
-served HTTP surface, fails closed with `conflict` — there is no reproducible
-trail to replay.
+trail. A pin that was forked without any subsequent edits, or an app that
+has graduated to a served HTTP surface, fails closed with `conflict`: there
+is no reproducible trail to replay.
 
-## When static capture cannot see the source
+### When static capture cannot see the source
 
 `vendo sync` never skips a remixable slot silently. When it cannot follow the
 registration to real source (an inline component, a dynamic import, a path it
@@ -178,7 +170,7 @@ const invoiceCard = remixable({
 ```
 
 In development the helper reports the module to your Vendo endpoint, which
-writes the same `.vendo/remixable/<slot>.json` baseline sync produces — an
+writes the same `.vendo/remixable/<slot>.json` baseline sync produces: an
 existing static baseline is never overwritten, and the capture route is not
 mounted in production. A slot that is intentionally never capturable can be
 acknowledged in `.vendo/overrides.json`:
@@ -191,16 +183,68 @@ acknowledged in `.vendo/overrides.json`:
 }
 ```
 
-A remixable component's source file must expose the component as a **default
-export**. Sync accepts named-export registrations, but the jail refuses to
-render them with `must have a React default export`. Re-export the component
-as the default from its own file if the surrounding code needs the named
-form.
+### Remixing a captured slot
 
-## What sync captures for a remixable component
+`createVendo` loads every valid `.vendo/remixable/*.json` at startup and hands
+the baselines to the apps runtime. A missing directory means no baselines. Files
+that fail schema validation are skipped with a warning and do not break
+composition.
 
-Sync captures enough of the surrounding host to render a fork in the sandboxed
-jail with its real look and feel:
+Once a slot is captured, an edit request against the app (`edit(appId,
+instruction)`, exposed on the wire as `POST /api/vendo/apps/:id/edit`) can fork
+the pin instead of only rewriting generated content. The runtime copies the
+captured source into a deterministic generated component and renders it through
+the same sandboxed jail as any other generated component. Captured sub-imports
+resolve through a per-module import table; only the blessed React kit resolves
+outside that table. It records the pin on the app version as
+`{ slot, base: <baseline hash> }`. A follow-up edit that touches the pinned
+subtree lands as a new version on the same app.
+
+Host components render natively. Generated components remain in the
+sandboxed iframe jail.
+
+## Registration reference
+
+### The RegisteredComponent shape
+
+```ts
+export interface RegisteredComponent {
+  name: string;
+  description: string;
+  propsSchema?: StandardSchema;   // optional: a schema-less entry is legal
+  examples?: string[];            // JSON prop examples shown to the model
+  remixable?: boolean;
+}
+
+export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
+```
+
+### Prewired primitives
+
+The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
+`Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,
+`Stat`, and `Tabs`. Catalog entries and generated components cannot shadow
+them. All prewired primitives read the same [theme tokens](/connect/theming)
+so they pick up your brand's colors, radii, density, and motion without extra
+wiring.
+
+`Card`, `Button`, `Badge`, `Stat`, `Table`, and `Tabs` are display and action
+surfaces: interactive controls invoke bound zero-arg action callbacks.
+`Input` and `Select` accept typed input locally, but under the current
+zero-arg binding contract they cannot round-trip a typed value back through
+a bound action. Treat them as display plus local input, not as form fields
+wired to server state.
+
+### Remixable component requirements
+
+A remixable component's source file must expose the component as a
+**default export**. Sync accepts named-export registrations, but the jail
+refuses to render them with `must have a React default export`. Re-export
+the component as the default from its own file if the surrounding code
+needs the named form.
+
+Sync captures enough of the surrounding host to render a fork in the
+sandboxed jail with its real look and feel:
 
 - **Source imports, two hops deep.** Sync follows local JavaScript and
   TypeScript imports from the captured component for two hops and captures
@@ -237,27 +281,7 @@ export const catalog: ComponentCatalog = [
 Sync rewrites the baseline whenever any captured payload changes, not only
 the primary component source.
 
-## Remixing a captured slot
-
-`createVendo` loads every valid `.vendo/remixable/*.json` at startup and hands
-the baselines to the apps runtime. A missing directory means no baselines. Files
-that fail schema validation are skipped with a warning and do not break
-composition.
-
-Once a slot is captured, an edit request against the app (`edit(appId,
-instruction)`, exposed on the wire as `POST /api/vendo/apps/:id/edit`) can fork
-the pin instead of only rewriting generated content. The runtime copies the
-captured source into a deterministic generated component and renders it through
-the same sandboxed jail as any other generated component. Captured sub-imports
-resolve through a per-module import table; only the blessed React kit resolves
-outside that table. It records the pin on the app version as
-`{ slot, base: <baseline hash> }`. A follow-up edit that touches the pinned
-subtree lands as a new version on the same app.
-
 Baselines carry an `exportable` flag. When a pinned slot's baseline is
 `exportable: false`, exporting that app fails with the `baseline-forbids-export`
 error code. Set `exportable: true` on baselines you are willing to include in
 `.vendoapp` bundles that leave the host.
-
-Host components render natively. Generated components remain in the sandboxed
-iframe jail.
