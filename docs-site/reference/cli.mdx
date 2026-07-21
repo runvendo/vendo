@@ -102,6 +102,13 @@ URL and code stay printed as the fallback. For a non-TTY caller — a coding
 agent driving the CLI — nothing opens: the command prints the approval URL and
 pairing code for the human to act on, exactly as before.
 
+The pending claim is persisted to `~/.vendo/pending-claim.json` (mode 0600),
+so if the polling process dies before the approval lands, a fresh `vendo
+login` resumes the same claim — it prints "Resuming pending approval" with the
+original code, and the approval still mints the key into the `.env.local` the
+original run was aimed at. An expired pending claim is discarded and a fresh
+one opened.
+
 Options:
 
 - `[email]` or `--email <address>` pre-fills the approval page (login hint).
