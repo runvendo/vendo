@@ -120,8 +120,10 @@ enforces the mirror).
 ### 4. Manual PostHog-UI steps (Yousef)
 
 - Enable "Record user sessions" in the project settings.
-- Add `console.vendo.run` and `docs.vendo.run` to "Authorized domains for
-  recordings."
+- (PostHog deprecated the "Authorized domains for recordings" list.) Scope is
+  controlled client-side — marketing disables recording, console/docs enable
+  it. Optionally add URL-trigger recording conditions for
+  `console.vendo.run` and `docs.vendo.run` as defense-in-depth.
 
 ## Non-goals
 

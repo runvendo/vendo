@@ -129,8 +129,7 @@
 
 ### Task D0: Yousef's PostHog-UI prerequisites (blocking, do first)
 
-- [ ] Enable "Record user sessions" in the shared project's settings.
-- [ ] Add `console.vendo.run` (and the staging console domain) plus `docs.vendo.run` to "Authorized domains for recordings."
+- [ ] Enable "Record user sessions" in the shared project's settings. (The "Authorized domains" list is deprecated — nothing to add there. Optionally add URL-trigger recording conditions for `console.vendo.run` and `docs.vendo.run` as defense-in-depth; client-side config already scopes which surfaces record.)
 
 ### Task D1: CLI live verification
 
