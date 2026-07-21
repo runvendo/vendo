@@ -107,7 +107,10 @@ The Release workflow already carries `permissions: id-token: write` and
 deliberately does **not** set `registry-url` on setup-node — setup-node would
 write an `_authToken` placeholder into `.npmrc` that defeats OIDC
 (actions/setup-node#1551). Don't add it back, and never add an `NPM_TOKEN`
-secret; there is none by design.
+secret; there is none by design. The CI publish runs `pnpm pack` + `npm
+publish <tarball>` rather than `pnpm publish`: pnpm 11.10's own OIDC token
+exchange 404s against npmjs while the npm CLI (>= 11.5.1) works — don't
+"simplify" it back to `pnpm publish` without re-testing that.
 
 ## Step 5 — clean-room verification
 
