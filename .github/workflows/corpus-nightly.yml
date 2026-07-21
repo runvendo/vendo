@@ -82,6 +82,9 @@ jobs:
             fs.writeFileSync("previous-scorecard/artifact.zip", Buffer.from(download.data));
             await exec.exec("unzip", ["-o", "previous-scorecard/artifact.zip", "-d", "previous-scorecard"]);
 
+      - name: Install Claude Code for the init AI pass
+        run: npm install --global @anthropic-ai/claude-code@2.1.209
+
       - name: Run corpus Layer 1/2 development sweep
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
