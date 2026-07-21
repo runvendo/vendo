@@ -122,6 +122,25 @@ describe("vendo CLI commands", () => {
     log.mockRestore();
   });
 
+  it("wires top-level login: help leads with it, ENG-335 guards apply", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await main(["--help"])).toBe(0);
+    const help = log.mock.calls.flat().join("\n");
+    expect(help).toContain("login [email]");
+    expect(help).toContain("--email <address>");
+
+    expect(await main(["login", "--emial", "x@y.z"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --emial");
+
+    expect(await main(["login", "--email"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("--email requires a value");
+
+    log.mockRestore();
+    error.mockRestore();
+  });
+
   it("wires the mcp subcommand group", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     expect(await main(["mcp", "--help"])).toBe(0);

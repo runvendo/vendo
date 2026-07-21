@@ -527,6 +527,28 @@ export async function createWireServer(options: WireServerOptions = {}) {
         return empty(response);
       }
 
+      // Gesture-owned forking (2026-07-21): the deterministic fork the Remix
+      // gesture invokes — no model, the fixture mints a pinned app directly.
+      const forkPinAppMatch = url.pathname.match(/^\/apps\/([^/]+)\/fork-pin$/);
+      if (method === "POST" && (url.pathname === "/apps/fork-pin" || forkPinAppMatch)) {
+        const slot = (parsedBody as { slot: string }).slot;
+        const existingId = forkPinAppMatch ? decodeURIComponent(forkPinAppMatch[1] ?? "") : undefined;
+        const target = existingId === undefined
+          ? (() => {
+            const minted = app(`app_pin_${state.apps.length + 1}`, `${slot} remix`);
+            state.apps.push(minted);
+            return minted;
+          })()
+          : state.apps.find(item => item.id === existingId);
+        if (!target) return wireError(response, "not-found", "App not found", 404);
+        target.pins = [...(target.pins ?? []), { slot, base: "sha256:fixture" }];
+        return json(response, {
+          app: target,
+          version: { at: NOW, intent: `Remix the host component "${slot}"`, rung: 1 },
+          slot,
+          componentName: `Pinned${slot}`,
+        });
+      }
       if (url.pathname === "/apps" && method === "GET") return json(response, state.apps);
       if (url.pathname === "/apps" && method === "POST") {
         const created = app(`app_${state.apps.length + 1}`, (parsedBody as { prompt: string }).prompt);

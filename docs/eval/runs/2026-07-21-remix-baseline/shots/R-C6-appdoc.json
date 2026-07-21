@@ -1,0 +1,40 @@
+{
+  "format": "vendo/app@1",
+  "id": "app_77c643ce-bc22-44ea-a723-a660bf660bfc",
+  "name": "Week Ahead",
+  "ui": "tree",
+  "tree": {
+    "formatVersion": "vendo-genui/v2",
+    "root": "root",
+    "nodes": [
+      {
+        "id": "root",
+        "source": "prewired",
+        "children": [
+          "stack-1"
+        ],
+        "component": "Stack"
+      },
+      {
+        "id": "stack-1",
+        "props": {
+          "gap": 4
+        },
+        "source": "prewired",
+        "children": [
+          "text-1"
+        ],
+        "component": "Stack"
+      },
+      {
+        "id": "text-1",
+        "props": {
+          "text": "Week ahead",
+          "variant": "heading"
+        },
+        "source": "prewired",
+        "component": "Text"
+      }
+    ]
+  }
+}

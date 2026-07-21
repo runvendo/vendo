@@ -7,10 +7,11 @@ pre-check: the server checks key validity and meters on every call, and key
 problems surface as per-call errors.
 
 ## Machine principal (VENDO_API_KEY)
-- `vendo cloud share app.json` (valid key) → `ShareSnapshot { id: shr_…, doc, createdAt }`
-- `vendo cloud share app.json` (free) → "This key's org needs a Cloud plan (cloud-required)." (HTTP 402)
-- `vendo cloud publish app.json` ×2 → `PublishRecord` version "1" then "2" (monotonic)
-- `vendo cloud pin-ship --app app_cli --slot hero --base sha256:aa --diff d` → `{ id: pin_…, status: "pending" }`
+
+The CLI's machine command is `deploy` (below). The `share`/`publish`/`pin-ship`
+CLI wrappers were removed; sharing and publishing happen through the server
+runtime (`vendo.apps.share` / `vendo.apps.publish`), whose hosted endpoints are
+unchanged.
 
 ## Hosted runtime deploy
 
@@ -41,8 +42,12 @@ target the app's machine, which hosted sandboxes cannot reach in v1, so they
 will fail/park when fired hosted without blocking the deploy itself.
 
 ## User authentication
-- `vendo cloud login EMAIL` → sends an email OTP (6-10 digits; this Supabase
-  project issues 8-digit codes), prompts for the code,
+- `vendo login [EMAIL]` (alias: `vendo cloud device-login`) → the auth.md
+  user-claimed ceremony: prints the approval URL + pairing code (opens the
+  browser on a TTY), polls the token endpoint, and writes the minted
+  `VENDO_API_KEY` to `.env.local` (never printed)
+- `vendo cloud login EMAIL` → fallback: sends an email OTP (6-10 digits; this
+  Supabase project issues 8-digit codes), prompts for the code,
   and stores the returned session in `~/.vendo/cloud-session.json`
 - `vendo cloud login --token <jwt>` → stores an access-token-only fallback session
 

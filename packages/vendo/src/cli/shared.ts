@@ -84,8 +84,10 @@ export function errorClass(error: unknown): string {
 
 /** The closed `command_run.command` enum (TELEMETRY.md). init keeps its own
     richer events; "theme" is reserved — no `vendo theme` entrypoint exists
-    yet. */
+    yet. "login" is the top-level claim ceremony; init's embedded run of the
+    same ceremony stays "cloud-init". */
 export type CommandName =
+  | "login"
   | "extract"
   | "theme"
   | "eject"

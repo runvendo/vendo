@@ -60,7 +60,7 @@ export interface FixtureRunMetrics {
 /** Account/key-creation signals: cloud login, auth.md device flows, provider
  * signups, or writing a fresh VENDO_API_KEY. Kept as one reviewable list. */
 const ACCOUNT_ACTION_PATTERNS: readonly RegExp[] = [
-  /\bvendo\s+cloud\s+login\b/i,
+  /\bvendo\s+(cloud\s+device-|cloud\s+)?login\b/i,
   /\bVENDO_API_KEY\s*=/,
   /vendo\.run\/auth/i,
   /console\.vendo/i,

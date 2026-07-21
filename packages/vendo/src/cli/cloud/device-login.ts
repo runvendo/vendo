@@ -1,16 +1,19 @@
+import { execFile } from "node:child_process";
 import { option, positionals } from "./args.js";
 import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
 import { upsertEnvLocal } from "../cloud-init.js";
-import { CLI_VERSION, consoleOutput, type Output } from "../shared.js";
+import { browserOpenCommand } from "../playground.js";
+import { CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
 
 /**
- * `vendo cloud device-login` — the auth.md user-claimed flow end to end
- * (https://vendo.run/auth.md): open a claim on the console, show the human
- * the pairing code + approval URL, poll the RFC 8628 token endpoint, and
- * land the minted VENDO_API_KEY in .env.local — exactly where init's
- * --cloud-key flag and the interactive mint put it, so a re-run of
- * `vendo init` picks it up with no key ever pasted or printed.
+ * `vendo login` (alias: `vendo cloud device-login`) — the auth.md
+ * user-claimed flow end to end (https://vendo.run/auth.md): open a claim on
+ * the console, show the human the pairing code + approval URL (a TTY gets
+ * the browser opened too), poll the RFC 8628 token endpoint, and land the
+ * minted VENDO_API_KEY in .env.local — exactly where init's --cloud-key flag
+ * and the interactive ceremony put it, so a re-run of `vendo init` picks it
+ * up with no key ever pasted or printed.
  *
  * The token endpoint speaks RFC 8628 §3.5 (top-level `error` string), which
  * the console-envelope-shaped cloudFetch would flatten to http-400 — so this
@@ -30,6 +33,18 @@ export interface DeviceLoginOptions {
   /** Injectable pacing seam — tests run the ceremony in microseconds. */
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  /** TTY seam — a watching human gets the browser opened for them; a non-TTY
+      (agent) caller keeps the URL + code contract untouched. */
+  isTty?: boolean;
+  openBrowser?: (url: string) => void;
+  /** init runs the ceremony inline and picks the key up in the same run —
+      it suppresses the standalone "re-run `vendo init`" tail. */
+  rerunHint?: boolean;
+}
+
+function defaultOpenBrowser(url: string): void {
+  const { command, args } = browserOpenCommand(process.platform, url);
+  execFile(command, args, () => undefined); // best-effort: the printed URL is the fallback
 }
 
 interface Ceremony {
@@ -80,6 +95,28 @@ async function postJson(
   return { status: response.status, body: parsed };
 }
 
+/**
+ * `vendo login` — the top-level command surface: the identical ceremony
+ * wrapped in one `command_run` row (command "login", TELEMETRY.md). The
+ * ceremony's other two callers stay untracked here: `vendo cloud
+ * device-login` (the alias) calls runDeviceLogin directly, and init's
+ * embedded step already tracks itself as "cloud-init".
+ */
+export async function runLoginCommand(
+  args: string[],
+  options: DeviceLoginOptions & { telemetry?: TelemetryOptions } = {},
+): Promise<number> {
+  return withCommandRun(
+    {
+      command: "login",
+      // Where the key lands is the project the ceremony is for.
+      root: options.root ?? process.cwd(),
+      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    },
+    () => runDeviceLogin(args, options),
+  );
+}
+
 export async function runDeviceLogin(
   args: string[],
   options: DeviceLoginOptions = {},
@@ -112,9 +149,15 @@ export async function runDeviceLogin(
     }
     const ceremony = ceremonyFrom(claim.body);
 
+    const approvalUrl = ceremony.verification_uri_complete ?? ceremony.verification_uri;
     output.log("Vendo Cloud device login — ask your human to approve this request:");
-    output.log(`  1. Open ${ceremony.verification_uri_complete ?? ceremony.verification_uri}`);
+    output.log(`  1. Open ${approvalUrl}`);
     output.log(`  2. Confirm the code: ${ceremony.user_code}`);
+    const tty = options.isTty ?? (process.stdout.isTTY === true);
+    if (tty) {
+      output.log("Opening your browser… (approve there, then come back here)");
+      (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+    }
     output.log(`Waiting for approval (the code expires in ${Math.round(ceremony.expires_in / 60)} minutes)…`);
 
     const deadline = now() + ceremony.expires_in * 1000;
@@ -142,7 +185,9 @@ export async function runDeviceLogin(
         await upsertEnvLocal(root, "VENDO_API_KEY", key);
         // Never print the key itself — .env.local is the hand-off, last4 the receipt.
         output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to .env.local.`);
-        output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
+        if (options.rerunHint !== false) {
+          output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
+        }
         printJson(output, { deviceLogin: true, wroteEnvLocal: true, keyLast4: key.slice(-4) });
         return 0;
       }
@@ -154,7 +199,7 @@ export async function runDeviceLogin(
         continue;
       }
       if (error === "expired_token") {
-        throw new Error("The code expired before it was approved; run `vendo cloud device-login` again.");
+        throw new Error("The code expired before it was approved; run `vendo login` again.");
       }
       if (error === "access_denied") {
         throw new Error("Your human denied the request — no key was minted.");
@@ -166,7 +211,7 @@ export async function runDeviceLogin(
           : `Vendo Cloud token polling failed (${typeof error === "string" ? error : poll.status})`,
       );
     }
-    throw new Error("The code expired before it was approved; run `vendo cloud device-login` again.");
+    throw new Error("The code expired before it was approved; run `vendo login` again.");
   } catch (error) {
     output.error(errorMessage(error));
     return 1;

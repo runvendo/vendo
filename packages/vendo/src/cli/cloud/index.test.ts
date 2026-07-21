@@ -11,10 +11,22 @@ describe("cloud command dispatch", () => {
   it("prints cloud help", async () => {
     const messages = output();
     expect(await runCloud(["--help"], { output: messages.sink })).toBe(0);
-    expect(messages.logs.join("\n")).toContain("pin-ship --app <id>");
     expect(messages.logs.join("\n")).toContain("login EMAIL");
     expect(messages.logs.join("\n")).toContain("deploy [--app <id>] [--secret NAME=VALUE]");
     expect(messages.logs.join("\n")).not.toContain("validate");
+    // The retired machine trio is gone from the surface entirely.
+    for (const removed of ["share", "publish", "pin-ship"]) {
+      expect(messages.logs.join("\n")).not.toContain(removed);
+    }
+  });
+
+  it("help leads with the ceremony and demotes email OTP to a fallback", async () => {
+    const messages = output();
+    expect(await runCloud(["--help"], { output: messages.sink })).toBe(0);
+    const help = messages.logs.join("\n");
+    expect(help.indexOf("device-login")).toBeLessThan(help.indexOf("login EMAIL"));
+    expect(help).toContain("alias of `vendo login`");
+    expect(help).toContain("Fallback");
   });
 
   it("returns one for unknown cloud commands", async () => {
@@ -23,16 +35,12 @@ describe("cloud command dispatch", () => {
     expect(messages.errors.join("\n")).toContain("Unknown cloud command");
   });
 
-  it("dispatches machine-principal commands", async () => {
-    const messages = output();
-    expect(await runCloud(["share", "app.json"], { output: messages.sink, env: {} })).toBe(1);
-    expect(messages.errors).toEqual(["Pass --key or set VENDO_API_KEY"]);
-  });
-
-  it("rejects the removed validate command", async () => {
-    const messages = output();
-    expect(await runCloud(["validate"], { output: messages.sink, env: {} })).toBe(1);
-    expect(messages.errors.join("\n")).toContain("Unknown cloud command");
+  it("rejects the removed commands: validate, share, publish, pin-ship", async () => {
+    for (const removed of ["validate", "share", "publish", "pin-ship"]) {
+      const messages = output();
+      expect(await runCloud([removed], { output: messages.sink, env: {} })).toBe(1);
+      expect(messages.errors.join("\n")).toContain("Unknown cloud command");
+    }
   });
 
   it("dispatches deploy with the machine principal", async () => {

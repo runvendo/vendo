@@ -6,7 +6,19 @@ description: "Keep your AI SDK or Mastra agent and add Vendo's guarded tools, ge
 
 You already have an agent: its own loop, its own model, its own chat UI.
 Vendo does not replace any of it. One tool pack, spread into your agent's
-tools, adds three things to the loop you already run:
+tools, adds guarded host actions, generated UI, and approvals to the loop
+you already run. Start with your framework's quickstart:
+
+<CardGroup cols={2}>
+  <Card title="Quickstart: AI SDK" href="/existing-agents/ai-sdk">
+    `vendo init`, one spread into `streamText`, one embed component.
+  </Card>
+  <Card title="Quickstart: Mastra" href="/existing-agents/mastra">
+    The same three steps in Mastra's `Agent({ tools })` shape.
+  </Card>
+</CardGroup>
+
+The pack adds three things:
 
 1. **Guarded tools.** Your host actions and connected-account tools, with
    every call routed through policy, approval, and audit. The pack wraps the
@@ -18,15 +30,6 @@ tools, adds three things to the loop you already run:
 3. **Vendo as a delegate.** A `vendo_delegate` tool hands Vendo's agent a
    whole task and returns the run report.
 
-<CardGroup cols={2}>
-  <Card title="AI SDK walkthrough" href="/existing-agents/ai-sdk">
-    The unmodified Next.js quickstart chatbot plus a four-touch diff.
-  </Card>
-  <Card title="Mastra walkthrough" href="/existing-agents/mastra">
-    The create-mastra weather starter plus the same four touches.
-  </Card>
-</CardGroup>
-
 ## The composition
 
 You run `createVendo` and mount the wire route exactly as the
@@ -37,10 +40,11 @@ the embeds: Vendo minus the conversation.
 ```ts
 // lib/vendo.ts: the same composition as any Vendo host
 import { createVendo } from "@vendoai/vendo/server";
+import { serverActions } from "./vendo-actions";
 
 export const vendo = createVendo({
   policy: "cautious",
-  serverActions: { /* your registered host actions */ },
+  serverActions, // the map vendo init generates from your host actions
 });
 ```
 

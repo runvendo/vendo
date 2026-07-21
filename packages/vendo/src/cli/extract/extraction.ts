@@ -251,7 +251,7 @@ export async function runAiExtraction(
     }
   }
   if (chosen === null) {
-    output.log("AI polish: unavailable — needs Claude Code installed (`npm install -g @anthropic-ai/claude-code`) or @anthropic-ai/claude-agent-sdk resolvable, plus a Claude Code login or ANTHROPIC_API_KEY; or the `codex` CLI installed, plus a codex login (`codex login`) or OPENAI_API_KEY; or a VENDO_API_KEY (`vendo cloud login`), which fetches Claude Code on the fly via npx. Extractor defaults stand; re-run `vendo init` once set up.");
+    output.log("AI polish: unavailable — needs Claude Code installed (`npm install -g @anthropic-ai/claude-code`) or @anthropic-ai/claude-agent-sdk resolvable, plus a Claude Code login or ANTHROPIC_API_KEY; or the `codex` CLI installed, plus a codex login (`codex login`) or OPENAI_API_KEY; or a VENDO_API_KEY (`vendo login`), which fetches Claude Code on the fly via npx. Extractor defaults stand; re-run `vendo init` once set up.");
     return { ran: false };
   }
 

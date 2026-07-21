@@ -404,10 +404,10 @@ arrived: no usable model credential, a provider error, or a timeout (90s).
 **Fix:** Check the credential the message names. With no key set, add
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY` to
 `.env.local` (with the matching `@ai-sdk/*` provider installed), or use a
-free Vendo Cloud dev key: `vendo cloud login` stores the session, then
-re-run `vendo init` so its cloud step mints the key into `.env.local` (ask
-your human first). Then restart the dev server and check its logs for the
-turn error.
+free Vendo Cloud dev key: run `vendo login` (your human approves a code in
+the browser; non-TTY runs print the URL + code) — the minted key lands in
+`.env.local` (ask your human first). Then restart the dev server and check
+its logs for the turn error.
 
 ### E-TURN-002 {#E-TURN-002}
 
@@ -429,6 +429,6 @@ characters). Doctor never validates keys against a server; a well-formed but
 revoked key surfaces on the first real service call instead.
 
 **Fix:** Re-copy the key from the Vendo Cloud console, or mint a fresh one:
-`vendo cloud login`, then re-run `vendo init` so its cloud step writes the
-minted key to `.env.local` (ask your human first). Unsetting `VENDO_API_KEY`
+run `vendo login` (your human approves a code in the browser) — the minted
+key lands in `.env.local` (ask your human first). Unsetting `VENDO_API_KEY`
 also clears the warning; Cloud is optional.

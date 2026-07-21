@@ -109,9 +109,10 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
     "zodVersion",
   ]),
   // One row per tracked CLI command run — each a standalone `vendo <command>`
-  // except cloud-init, which fires from the cloud step inside `vendo init`.
-  // `command` is a closed enum:
-  // extract | theme | eject | playground | refine | sync | cloud-init | mcp.
+  // except cloud-init, which fires from the cloud step inside `vendo init`
+  // (the standalone run of the same claim ceremony is `login`).
+  // `command` is a closed enum: login | extract | theme | eject | playground
+  // | refine | sync | cloud-init | mcp.
   // failedStep/errorClass are short enums/class names, never message text.
   command_run: new Set([
     ...BASE_PROP_KEYS,

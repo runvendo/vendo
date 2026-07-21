@@ -27,6 +27,8 @@ stream over SSE.
 | `/apps/:id/fork` | POST | → `AppDocument` |
 | `/apps/:id/pin-drift` | GET | `PinDrift[]`, pins whose captured baseline no longer matches |
 | `/apps/:id/rebase-pin` | POST | `{ slot }` → `PinRebaseResult`, re-fork from the new baseline and replay recorded intents, all-or-nothing |
+| `/apps/fork-pin` | POST | `{ slot, instruction? }` → `PinForkResult`, the Remix gesture on an empty slot: deterministic engine fork of the captured slot into a freshly minted app (no model call); an optional instruction then rides the ordinary edit path scoped to the fork |
+| `/apps/:id/fork-pin` | POST | `{ slot, instruction? }` → `PinForkResult`, the same gesture fork landing in an existing app |
 | `/automations` | GET | list |
 | `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing }` · `{}` |
 | `/automations/:id/dry-run` | POST | `RunPlan` |

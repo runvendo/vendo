@@ -48,4 +48,22 @@ describe("playground fake client", () => {
     const initiated = await client.connections.initiate({ toolkit: "slack" });
     expect(initiated.redirectUrl).toContain("#");
   });
+
+  it("forkPin persists the fork so slot discovery (apps.list) can mount it", async () => {
+    const client = createFakeClient(playgroundFixtures());
+
+    // Empty-slot gesture: a new app carrying the pin lands in the list.
+    const minted = await client.apps.forkPin({ slot: "hero" });
+    expect(minted.app.pins).toEqual([{ slot: "hero", base: "sha256:playground" }]);
+    const listed = await client.apps.list();
+    const found = listed.find(({ id }) => id === minted.app.id);
+    expect(found?.pins).toEqual([{ slot: "hero", base: "sha256:playground" }]);
+
+    // Filled gesture: the existing app gains the pin in place.
+    const targetId = listed[0]!.id;
+    const pinned = await client.apps.forkPin({ appId: targetId, slot: "chart" });
+    expect(pinned.app.id).toBe(targetId);
+    const refreshed = await client.apps.list();
+    expect(refreshed.find(({ id }) => id === targetId)?.pins).toContainEqual({ slot: "chart", base: "sha256:playground" });
+  });
 });

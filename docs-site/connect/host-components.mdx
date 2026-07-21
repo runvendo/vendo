@@ -17,7 +17,7 @@ end.
 The shared registry is the current form: one object, keyed by component
 name, that both `createVendo` (as `catalog`) and `<VendoRoot>` (as
 `components`) read. See the
-[quickstart](/quickstart#the-two-files-you-own). This page covers the
+[quickstart](/quickstart#install-and-init). This page covers the
 underlying entry shape and the array form the registry normalizes into,
 which stays available as a back-compat escape hatch.
 
@@ -280,6 +280,26 @@ export const catalog: ComponentCatalog = [
 
 Sync rewrites the baseline whenever any captured payload changes, not only
 the primary component source.
+
+## Remixing a captured slot
+
+`createVendo` loads every valid `.vendo/remixable/*.json` at startup and hands
+the baselines to the apps runtime. A missing directory means no baselines. Files
+that fail schema validation are skipped with a warning and do not break
+composition.
+
+Once a slot is captured, forking it is a USER GESTURE the engine executes
+deterministically — the model never decides to fork. The `<VendoSlot remix>`
+affordance (and the wire routes `POST /api/vendo/apps/fork-pin` and
+`POST /api/vendo/apps/:id/fork-pin`) copy the captured source into a
+deterministic generated component with no model call, record the pin on the
+app version as `{ slot, base: <baseline hash> }`, and render the fork through
+the same sandboxed jail as any other generated component. Captured sub-imports
+resolve through a per-module import table; only the blessed React kit resolves
+outside that table. An instruction riding the gesture reaches the model
+already scoped — an ordinary island edit on the existing fork — and any
+follow-up edit that touches the pinned subtree lands as a new version on the
+same app.
 
 Baselines carry an `exportable` flag. When a pinned slot's baseline is
 `exportable: false`, exporting that app fails with the `baseline-forbids-export`

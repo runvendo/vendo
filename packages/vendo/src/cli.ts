@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { isVendoKey } from "./cli/cloud/client.js";
+import { runLoginCommand } from "./cli/cloud/device-login.js";
 import { runCloud } from "./cli/cloud/index.js";
 import { runDoctor } from "./cli/doctor.js";
 import { runEject } from "./cli/eject.js";
@@ -18,6 +19,7 @@ Usage: vendo <command> [dir] [options]
 
 Commands:
   init [dir]      Set up Vendo: wire the handler, extract tools + theme, resolve a model key
+  login [email]   Claim a Vendo Cloud key: approve in the browser; the key lands in .env.local
   doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
 
 Advanced:
@@ -37,6 +39,7 @@ Options:
   --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
   --framework <name>         Init only: override framework detection (next, express) — required non-interactively when detection fails
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
+  --email <address>          Login only: pre-fill the approval page (login hint)
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
@@ -50,7 +53,7 @@ Options:
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
-  --api-url <url>            Sync/cloud: override VENDO_CLOUD_URL
+  --api-url <url>            Sync/cloud/login: override VENDO_CLOUD_URL
   --version                  Print the version
 `;
 
@@ -83,6 +86,7 @@ const REFINE_FLAGS = new Set(["--yes"]);
 const REFINE_VALUE_OPTIONS = ["--url", "--model-import", "--ask"];
 const SYNC_FLAGS = new Set(["--strict", "--json", "--report"]);
 const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url"];
+const LOGIN_VALUE_OPTIONS = ["--email", "--api-url"];
 
 /** ENG-335: options the CLI does not recognize — or value options missing
     their value — must fail loudly before anything runs. Silently dropping a
@@ -156,6 +160,14 @@ export async function main(argv: string[]): Promise<number> {
     console.log(CLI_VERSION);
     return 0;
   }
+  if (command === "login") {
+    const problems = optionErrors(args, new Set(), LOGIN_VALUE_OPTIONS);
+    if (problems.length > 0) {
+      console.error(`vendo login: ${problems.join("; ")}\n\n${HELP}`);
+      return 1;
+    }
+    return runLoginCommand(args);
+  }
   if (command === "cloud") return runCloud(args);
   if (command === "mcp") return runMcp(args);
   if (command === "init") {
@@ -170,7 +182,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     const cloudKey = option(args, "--cloud-key");
     if (cloudKey !== undefined && !isVendoKey(cloudKey)) {
-      problems.push("--cloud-key must be a Vendo Cloud key (vnd_ + 40 hex; `vendo cloud login` issues one)");
+      problems.push("--cloud-key must be a Vendo Cloud key (vnd_ + 40 hex; `vendo login` issues one)");
     }
     if (cloudKey !== undefined && args.includes("--byo")) {
       problems.push("--cloud-key and --byo answer the same question — pass one or the other");

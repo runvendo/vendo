@@ -25,7 +25,7 @@ concurrency:
 jobs:
   sweep:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 210  # full sweep + per-repo AI polish pass exceeds 120 (run 29811235687 timed out)
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 

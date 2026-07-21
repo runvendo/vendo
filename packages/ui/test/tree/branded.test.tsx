@@ -136,6 +136,27 @@ describe("Stat", () => {
     expect(screen.getByText("$84,200").getAttribute("style")).toContain("--vendo-heading-family");
     expect(screen.getByText("12.4% this month")).toBeTruthy();
   });
+
+  it("applies the value-tier format token (money takes cents)", () => {
+    render(<Stat label="Overdue" value={528000} format="money" />);
+    expect(screen.getByText("$5,280.00")).toBeTruthy();
+  });
+
+  it("renders the placeholder — never the raw value — when a set format cannot render", () => {
+    // applyFormat is total and returns null on unrenderable input exactly so
+    // "$NaN"/raw strings never ship; a set-but-failed format must show the
+    // designed placeholder (the Kit Stat and DataTable contract), not fall
+    // back to the raw value.
+    render(<Stat label="Broken money" value="already $5,280.00" format="money" />);
+    const stat = screen.getByRole("article", { name: "Broken money" });
+    expect(stat.textContent).toContain("—");
+    expect(stat.textContent).not.toContain("already $5,280.00");
+  });
+
+  it("keeps legacy raw rendering byte-identical when no format is set", () => {
+    render(<Stat label="Legacy" value="already $5,280.00" />);
+    expect(screen.getByText("already $5,280.00")).toBeTruthy();
+  });
 });
 
 describe("Tabs", () => {

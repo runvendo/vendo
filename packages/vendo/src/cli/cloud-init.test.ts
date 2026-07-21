@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevCredential } from "../dev-creds/resolve.js";
-import { AUTH_MD_URL, agentKeyPointerLines, mintStarterAllowance, runCloudStep } from "./cloud-init.js";
+import { AUTH_MD_URL, agentKeyPointerLines, runCloudStep, upsertEnvLocal } from "./cloud-init.js";
 import { telemetryCapture } from "./telemetry.test-util.js";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -26,74 +26,6 @@ function output(): { logs: string[]; errors: string[]; sink: { log(m: string): v
 const noKey: DevCredential = { rung: "none" };
 const envKey: DevCredential = { rung: "env-key", provider: "anthropic", envVar: "ANTHROPIC_API_KEY" };
 const goodKey = `vnd_${"a".repeat(40)}`;
-
-describe("mintStarterAllowance", () => {
-  /** A fake logged-in machine: ~/.vendo/cloud-session.json carries the user
-   *  session the contract authenticates with. */
-  async function loggedInHome(): Promise<string> {
-    const home = await tempRoot();
-    const { mkdir } = await import("node:fs/promises");
-    await mkdir(join(home, ".vendo"), { recursive: true });
-    await writeFile(
-      join(home, ".vendo", "cloud-session.json"),
-      JSON.stringify({ access_token: "user-jwt", expires_at: Math.floor(Date.now() / 1000) + 3600 }),
-    );
-    return home;
-  }
-
-  it("mints against the documented console contract with user-session auth", async () => {
-    const requests: Array<{ url: string; method: string; authorization: string | null; body: unknown }> = [];
-    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init);
-      requests.push({
-        url: request.url,
-        method: request.method,
-        authorization: request.headers.get("authorization"),
-        body: await request.json(),
-      });
-      return Response.json({ key: goodKey, meter: { runs: { included: 1000, remaining: 1000 } } });
-    }) as unknown as typeof fetch;
-
-    const key = await mintStarterAllowance({
-      apiUrl: "https://cloud.test",
-      env: {},
-      home: await loggedInHome(),
-      fetchImpl,
-    });
-    expect(key).toBe(goodKey);
-    expect(requests[0]).toEqual({
-      url: "https://cloud.test/api/v1/keys",
-      method: "POST",
-      authorization: "Bearer user-jwt",
-      body: { purpose: "dev-mode" },
-    });
-  });
-
-  it("returns null (graceful degradation) when an older console 404s the endpoint", async () => {
-    const fetchImpl = (async () =>
-      Response.json({ error: { code: "not-found", message: "no such route" } }, { status: 404 })
-    ) as unknown as typeof fetch;
-    const key = await mintStarterAllowance({
-      apiUrl: "https://cloud.test",
-      env: {},
-      home: await loggedInHome(),
-      fetchImpl,
-    });
-    expect(key).toBeNull();
-  });
-
-  it("propagates real errors instead of degrading", async () => {
-    const fetchImpl = (async () =>
-      Response.json({ error: { code: "unavailable", message: "Console is down." } }, { status: 503 })
-    ) as unknown as typeof fetch;
-    await expect(mintStarterAllowance({
-      apiUrl: "https://cloud.test",
-      env: {},
-      home: await loggedInHome(),
-      fetchImpl,
-    })).rejects.toThrow(/console is down/i);
-  });
-});
 
 describe("runCloudStep", () => {
   it("reports a present, well-formed VENDO_API_KEY", async () => {
@@ -125,7 +57,7 @@ describe("runCloudStep", () => {
     const joined = messages.logs.join("\n");
     for (const line of agentKeyPointerLines()) expect(joined).toContain(line);
     expect(joined).toContain(AUTH_MD_URL);
-    expect(joined).toContain("vendo cloud device-login");
+    expect(joined).toContain("vendo login");
     expect(joined).toContain("--cloud-key");
     expect(joined).toContain("--byo");
   });
@@ -144,7 +76,7 @@ describe("runCloudStep", () => {
     expect(result.wroteEnvLocal).toBe(false);
     const joined = messages.logs.join("\n");
     expect(joined).not.toContain(AUTH_MD_URL);
-    expect(joined).toContain("vendo cloud login"); // the calm human pointer stays
+    expect(joined).toContain("vendo login"); // the calm human pointer stays
   });
 
   it("an unshown (non-TTY) decline emits the agent pointer; a real TTY decline stays calm", async () => {
@@ -170,15 +102,17 @@ describe("runCloudStep", () => {
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
       confirm: async () => false,
     });
-    expect(humanRun.logs.join("\n")).toContain("Skipped — run `vendo cloud login`");
+    expect(humanRun.logs.join("\n")).toContain("Skipped — run `vendo login`");
     expect(humanRun.logs.join("\n")).not.toContain(AUTH_MD_URL);
   });
 
-  it("logs in, mints a starter allowance, and writes .env.local", async () => {
+  it("runs the claim ceremony on accept and reports the landed key", async () => {
     const root = await tempRoot();
-    const login = vi.fn(async () => 0);
-    const mint = vi.fn(async () => goodKey);
     const messages = output();
+    const deviceLogin = vi.fn(async () => {
+      await upsertEnvLocal(root, "VENDO_API_KEY", goodKey);
+      return 0;
+    });
     const result = await runCloudStep({
       root,
       output: messages.sink,
@@ -186,51 +120,49 @@ describe("runCloudStep", () => {
       credential: noKey,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
       confirm: async () => true,
-      promptEmail: async () => "dev@example.com",
-      login,
-      mint,
+      deviceLogin,
     });
-    expect(login).toHaveBeenCalledWith("dev@example.com");
-    expect(mint).toHaveBeenCalledOnce();
-    expect(result.wroteEnvLocal).toBe(true);
+    expect(deviceLogin).toHaveBeenCalledOnce();
+    expect(result).toEqual({ keyPresent: true, keyValid: true, wroteEnvLocal: true });
     const envLocal = await readFile(join(root, ".env.local"), "utf8");
     expect(envLocal).toContain(`VENDO_API_KEY=${goodKey}`);
   });
 
-  it("mints through the REAL default mint path against a mocked console and writes .env.local", async () => {
+  it("runs the REAL default ceremony against a scripted console and lands the key", async () => {
     const root = await tempRoot();
-    const home = await tempRoot();
-    const { mkdir } = await import("node:fs/promises");
-    await mkdir(join(home, ".vendo"), { recursive: true });
-    await writeFile(
-      join(home, ".vendo", "cloud-session.json"),
-      JSON.stringify({ access_token: "user-jwt", expires_at: Math.floor(Date.now() / 1000) + 3600 }),
-    );
-    const consoleFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
-      expect(request.url).toBe("https://cloud.test/api/v1/keys");
-      expect(request.headers.get("authorization")).toBe("Bearer user-jwt");
-      expect(await request.json()).toEqual({ purpose: "dev-mode" });
-      return Response.json({ key: goodKey, meter: { runs: { included: 1000, remaining: 1000 } } });
+      if (request.url === "https://cloud.test/api/v1/agent/claim") {
+        return Response.json({
+          claim_token: `vct_${"b".repeat(64)}`,
+          user_code: "BCDF-GHJK",
+          verification_uri: "https://cloud.test/claim",
+          verification_uri_complete: "https://cloud.test/claim?code=BCDF-GHJK",
+          expires_in: 600,
+          interval: 5,
+        });
+      }
+      expect(request.url).toBe("https://cloud.test/api/v1/oauth/token");
+      return Response.json({ access_token: goodKey, token_type: "Bearer", scope: "dev-mode" });
     }) as unknown as typeof fetch;
-
+    const messages = output();
     const result = await runCloudStep({
       root,
-      output: output().sink,
+      output: messages.sink,
       yes: false,
+      isTty: false,
       credential: noKey,
       apiUrl: "https://cloud.test",
-      home,
-      fetchImpl: consoleFetch,
+      fetchImpl,
+      sleep: async () => {},
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
       confirm: async () => true,
-      promptEmail: async () => "dev@example.com",
-      login: async () => 0,
     });
-    expect(consoleFetch).toHaveBeenCalledOnce();
-    expect(result.wroteEnvLocal).toBe(true);
+    expect(result).toEqual({ keyPresent: true, keyValid: true, wroteEnvLocal: true });
     const envLocal = await readFile(join(root, ".env.local"), "utf8");
     expect(envLocal).toContain(`VENDO_API_KEY=${goodKey}`);
+    // init drives the ceremony inline — no standalone re-run hint.
+    expect(messages.logs.join("\n")).not.toContain("Re-run `vendo init`");
   });
 
   it("upserts into an existing .env.local without clobbering other keys", async () => {
@@ -243,9 +175,10 @@ describe("runCloudStep", () => {
       credential: noKey,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
       confirm: async () => true,
-      promptEmail: async () => "dev@example.com",
-      login: async () => 0,
-      mint: async () => goodKey,
+      deviceLogin: async () => {
+        await upsertEnvLocal(root, "VENDO_API_KEY", goodKey);
+        return 0;
+      },
     });
     const envLocal = await readFile(join(root, ".env.local"), "utf8");
     expect(envLocal).toContain("FOO=bar");
@@ -253,25 +186,7 @@ describe("runCloudStep", () => {
     expect(envLocal).not.toContain("VENDO_API_KEY=old");
   });
 
-  it("degrades gracefully when the starter allowance endpoint is absent", async () => {
-    const root = await tempRoot();
-    const messages = output();
-    const result = await runCloudStep({
-      root,
-      output: messages.sink,
-      yes: false,
-      credential: noKey,
-      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
-      confirm: async () => true,
-      promptEmail: async () => "dev@example.com",
-      login: async () => 0,
-      mint: async () => null,
-    });
-    expect(result.wroteEnvLocal).toBe(false);
-    expect(messages.errors.some((l) => l.includes("does not serve the dev-mode starter allowance"))).toBe(true);
-  });
-
-  it("surfaces a mint failure (e.g. the console's starter-key cap) without throwing out of init", async () => {
+  it("reports a ceremony that did not complete without changing init's exit code", async () => {
     const messages = output();
     const result = await runCloudStep({
       root: await tempRoot(),
@@ -280,14 +195,10 @@ describe("runCloudStep", () => {
       credential: noKey,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
       confirm: async () => true,
-      promptEmail: async () => "dev@example.com",
-      login: async () => 0,
-      mint: async () => {
-        throw new Error("This organization already has 10 active dev-mode starter keys.");
-      },
+      deviceLogin: async () => 1,
     });
     expect(result).toEqual({ keyPresent: false, keyValid: false, wroteEnvLocal: false });
-    expect(messages.errors.some((l) => l.includes("10 active dev-mode starter keys"))).toBe(true);
+    expect(messages.errors.join("\n")).toContain("run `vendo login`");
   });
 
   it("does not offer login when the ladder already has a key rung", async () => {

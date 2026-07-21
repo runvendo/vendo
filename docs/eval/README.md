@@ -16,6 +16,7 @@ anywhere else are not quality numbers.
 | Piece | Where | What it is |
 |---|---|---|
 | **Golden set + rules + PASS bar + run ledger** | [`GOLDEN.md`](./GOLDEN.md) | The frozen prompts (30 + F-set), the never-tune rules, every official score |
+| **Remix eval (fork/pin/ship-diff/drift)** | [`REMIX.md`](./REMIX.md) | The frozen 12 remix scenarios + PASS bar + ledger (baseline 2/12, 2026-07-21) |
 | **Bench harness** | `packages/apps/src/bench/` | Rerunnable format/pipeline experiments against the REAL compiler (metrics, LLM-judge rubric, dev prompts, fixtures). `ANTHROPIC_API_KEY` + `pnpm --filter @vendoai/apps exec vitest run src/bench/<exp>.bench.test.ts` |
 | **Measurement verdicts** | `docs/verification/w1-bench/VERDICTS.md` | Decided: inline refs ADOPT; builder-calls, fetch-then-generate, CFG-JSX DEFER (with numbers + revisit conditions) |
 | **CFG grammar + GPU protocol** | `docs/verification/w1-bench/wire-subset.lark` | Ready-to-run owned-serving experiment (~1 GPU-day) |

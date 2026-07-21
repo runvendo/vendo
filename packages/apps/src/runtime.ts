@@ -42,6 +42,7 @@ import type {
   ShareSnapshot,
 } from "./cloud.js";
 import {
+  applyPinFork,
   distinctIssues,
   instructionRequiresServedApp,
   modelEngine,
@@ -327,6 +328,33 @@ export type PinRebaseResult =
     remaining: string[];
   };
 
+/**
+ * 06-apps §8 — gesture-owned forking (2026-07-21): the input of pins.fork().
+ * The fork itself is DETERMINISTIC (engine copies the captured baseline and
+ * records the pin — no model call); the model never decides to fork. With no
+ * `appId` the gesture mints a minimal app around the fork (the empty-slot
+ * Remix affordance). An `instruction` then rides the ORDINARY edit path,
+ * already scoped to the forked component.
+ */
+export interface PinForkInput {
+  appId?: AppId;
+  slot: string;
+  instruction?: string;
+}
+
+/** 06-apps §8 — the outcome of one gesture fork. `version` describes the
+ *  deterministic fork itself; `edit` (present only when the gesture carried an
+ *  instruction) is the scoped follow-up edit — its failure never rolls the
+ *  fork back, so `app` is always at least the faithful fork. */
+export interface PinForkResult {
+  app: AppDocument;
+  version: VersionEntry;
+  slot: string;
+  /** The generated-component name the fork ships under (`pinComponentName`). */
+  componentName: string;
+  edit?: EditResult;
+}
+
 /** 06-apps §1 */
 export interface AppsRuntime {
   create(input: {
@@ -401,6 +429,16 @@ export interface AppsRuntime {
   pins: {
     drift(appId: AppId, ctx: RunContext): Promise<PinDrift[]>;
     rebase(input: { appId: AppId; slot: string }, ctx: RunContext): Promise<PinRebaseResult>;
+    /**
+     * Gesture-owned forking (2026-07-21) — the deterministic fork the user's
+     * Remix gesture invokes: the engine copies the captured baseline into the
+     * pinned generated component and records the pin, with NO model call. The
+     * model lost the fork decision entirely (<ForkPin> is retired from the
+     * edit dialect; the op still compiles for stored apps). An optional
+     * instruction runs afterwards as an ordinary edit, already scoped to the
+     * forked component; its failure leaves the faithful fork in place.
+     */
+    fork(input: PinForkInput, ctx: RunContext): Promise<PinForkResult>;
   };
   /**
    * execution-v2 — additive machine lifecycle surface (same additive precedent
@@ -1002,7 +1040,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   const reportLifecycle = async (
-    operation: "create" | "delete" | "fork" | "in-client-approve" | "pin-rebase" | "machine-provision" | "machine-destroy",
+    operation: "create" | "delete" | "fork" | "in-client-approve" | "pin-fork" | "pin-rebase" | "machine-provision" | "machine-destroy",
     appId: AppId,
     ctx: RunContext,
     extra: Record<string, Json> = {},
@@ -1878,6 +1916,100 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async drift(appId, ctx) {
         const app = await requireOwned(appId, ctx.principal.subject);
         return detectPinDrift(app, config.pinBaselines ?? []);
+      },
+
+      // Gesture-owned forking (2026-07-21) — deterministic: the captured
+      // baseline is copied by the engine and the pin recorded WITHOUT a model
+      // call. The recorded fork version is intents[0] of the pin's replay
+      // trail, so rebase() replays exactly the user's later modifications.
+      async fork(input, ctx) {
+        const baseline = (config.pinBaselines ?? []).find(({ slot }) => slot === input.slot);
+        if (baseline === undefined) {
+          throw new VendoError("not-found", `remixable slot "${input.slot}" has no captured baseline; register the component as remixable and run vendo sync`);
+        }
+        const forkOnto = (base: AppDocument): AppDocument => {
+          const forked = structuredClone(base);
+          // applyPinFork prefixes issues with "<ForkPin> failed:" for the
+          // stored-app op compiler; a user gesture never saw that op, so the
+          // prefix is stripped from the surfaced error.
+          const issues = applyPinFork(forked, { slot: input.slot }, config.pinBaselines)
+            .map((issue) => issue.replace(/^<ForkPin> failed: /, ""));
+          if (issues.length > 0) throw new VendoError("conflict", issues.join("; "));
+          const validation = validateAppDocument(forked);
+          if (!validation.ok) throw new VendoError("validation", validation.error.message);
+          return forked;
+        };
+        let previous: AppDocument;
+        if (input.appId !== undefined) {
+          previous = await requireOwned(input.appId, ctx.principal.subject);
+          if (previous.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) {
+            throw new VendoError("conflict", "a pin fork requires a vendo-genui/v2 tree app");
+          }
+        } else {
+          // The empty-slot Remix gesture: mint the minimal base document the
+          // fork lands in, so the fork itself is an ordinary recorded edit
+          // (undo returns to the empty base; rebase finds a full trail).
+          const minted: AppDocument = {
+            format: "vendo/app@1",
+            id: `app_${globalThis.crypto.randomUUID()}`,
+            name: `${baseline.slot} remix`,
+            ui: "tree",
+            tree: {
+              formatVersion: VENDO_TREE_FORMAT_V2,
+              root: "root",
+              nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+            },
+          };
+          // Dry-run the fork BEFORE persisting the base, so a bad baseline
+          // never strands an empty app.
+          forkOnto(minted);
+          await apps.put(appRecordInput(minted, ctx.principal.subject));
+          await reportLifecycle("create", minted.id, ctx);
+          // Re-read the stored row: persistEdit's concurrency check compares
+          // against the store's own JSON round-trip of the document (a jsonb
+          // store may normalize key order), never the in-memory original.
+          previous = await requireOwned(minted.id, ctx.principal.subject);
+        }
+        const working = forkOnto(previous);
+        const version: VersionEntry = {
+          at: new Date().toISOString(),
+          intent: `Remix the host component "${input.slot}"`,
+          rung: rungFor(working),
+        };
+        const persisted = await persistEdit(previous, working, version, ctx.principal.subject, [input.slot]);
+        await reportLifecycle("pin-fork", persisted.id, ctx, {
+          slot: input.slot,
+          baseHash: baseline.hash,
+        });
+        const componentName = pinComponentName(input.slot);
+        const result: PinForkResult = {
+          app: persisted,
+          version: { ...version },
+          slot: input.slot,
+          componentName,
+        };
+        const instruction = input.instruction?.trim();
+        if (instruction === undefined || instruction.length === 0) return result;
+        // The instruction reaches the model ALREADY SCOPED: the fork exists,
+        // so this is an ordinary island edit on the pinned component. A failed
+        // edit never rolls the fork back — the user keeps the faithful copy
+        // and the failure is loud on the result. That holds for THROWN edits
+        // too (no model configured, a gated escalation, a provider error):
+        // the fork is already persisted, so the gesture returns it with a
+        // failure-shaped edit instead of surfacing as an error.
+        try {
+          const edit = await runtime.edit(
+            persisted.id,
+            `The remixable host slot "${input.slot}" is already forked into the generated component "${componentName}" (its island source is in CURRENT_APP). Apply this change to that component: ${instruction}`,
+            ctx,
+          );
+          return { ...result, app: edit.app, edit };
+        } catch (error) {
+          return {
+            ...result,
+            edit: failedEdit(persisted, instruction, [error instanceof Error ? error.message : String(error)]),
+          };
+        }
       },
 
       async rebase(input, ctx) {

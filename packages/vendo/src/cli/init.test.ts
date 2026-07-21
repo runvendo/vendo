@@ -519,7 +519,7 @@ describe("vendo init (zero-question)", () => {
 
   // Agent-install-dx Layer 2 (key-mint integration): a keyless run's tail
   // carries the complete in-band key story — the auth.md discovery URL, the
-  // device-login ceremony, and both flag fallbacks — so the agent never
+  // `vendo login` ceremony, and both flag fallbacks — so the agent never
   // detours to a browser signup it can't drive.
   it("a keyless run's tail points at the auth.md key flow; a run with a key stays silent about it", async () => {
     const keyless = await fixture();
@@ -528,7 +528,7 @@ describe("vendo init (zero-question)", () => {
     const keylessTail = keylessSink.logs.join("\n").split("Agent tail:")[1]!;
     expect(keylessTail).toContain("cloud key: none");
     expect(keylessTail).toContain("https://vendo.run/auth.md");
-    expect(keylessTail).toContain("vendo cloud device-login");
+    expect(keylessTail).toContain("vendo login");
     expect(keylessTail).toContain("--cloud-key");
     expect(keylessTail).toContain("--byo");
 
@@ -670,16 +670,16 @@ describe("vendo init (zero-question)", () => {
           offered += 1;
           return true;
         },
-        mint: async () => {
+        deviceLogin: async () => {
           minted += 1;
-          return `vnd_${"e".repeat(40)}`;
+          return 0;
         },
       },
     })).toBe(0);
     expect(offered).toBe(0);
     expect(minted).toBe(0);
     await expect(readFile(join(root, ".env.local"))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(sink.logs.join("\n")).toContain("vendo cloud login");
+    expect(sink.logs.join("\n")).toContain("vendo login");
   });
 
   it("--ai-polish is the consent: non-interactive runs reach the harness instead of skipping", async () => {
@@ -802,13 +802,13 @@ describe("vendo init (zero-question)", () => {
     expect(logs.indexOf("Model: explicit")).toBeLessThan(logs.indexOf("Wired ("));
   });
 
-  it("points a keyless host at .env.local and `vendo cloud login`", async () => {
+  it("points a keyless host at .env.local and `vendo login`", async () => {
     const root = await fixture();
     const sink = output();
     expect(await run(root, sink)).toBe(0);
     const logs = sink.logs.join("\n");
     expect(logs).toContain("No model key yet");
-    expect(logs).toContain("vendo cloud login");
+    expect(logs).toContain("vendo login");
     // The Cloud offer runs FIRST (before theme capture and the wired summary);
     // the end of the run keeps only the short one-line reminder.
     expect(logs.indexOf("Vendo Cloud")).toBeLessThan(logs.indexOf("Theme:"));
@@ -829,15 +829,15 @@ describe("vendo init (zero-question)", () => {
       cloud: {
         cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] as readonly string[] }),
         confirm: async () => true,
-        promptEmail: async () => "dev@example.com",
-        login: async () => 0,
-        mint: async () => key,
+        deviceLogin: async () => {
+          await writeFile(join(root, ".env.local"), `VENDO_API_KEY=${key}\n`);
+          return 0;
+        },
       },
     })).toBe(0);
 
     expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${key}`);
     const logs = sink.logs.join("\n");
-    expect(logs).toContain("Wrote VENDO_API_KEY to .env.local");
     // A key now exists — the end-of-run reminder is suppressed.
     expect(logs).not.toContain("No model key yet");
   });

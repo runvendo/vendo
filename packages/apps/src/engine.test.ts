@@ -19,7 +19,7 @@ import {
   scriptedLanguageModel,
   type ScriptedModelCall,
 } from "./testing/index.js";
-import { instructionRequiresServedApp, instructionRequiresServer, modelEngine } from "./engine.js";
+import { instructionRequiresServedApp, instructionRequiresServer, modelEngine, V4_EXEMPLARS, V4_EXEMPLAR_TOOLS } from "./engine.js";
 import { fakeBoxSandbox } from "./testing/fake-box.js";
 
 const ctx: RunContext = {
@@ -161,6 +161,82 @@ describe("generation engine through createApps", () => {
     expect(capturedPrompt).toContain('you MUST use a source:"host" node with its exact name and props schema');
   });
 
+  it("includes the current date in create and edit prompts (M9: the model hardcodes a guessed year without a clock)", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const prompts: string[] = [];
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(
+        (call) => {
+          prompts.push(promptText(call));
+          return validCreate();
+        },
+        (call) => {
+          prompts.push(promptText(call));
+          return '<Edit><Set id="metriccard-1" value="$84k"/></Edit>';
+        },
+      ),
+    });
+
+    const original = await runtime.create({ prompt: "my largest transactions this year" }, ctx);
+    await runtime.edit(original.id, "only show this month", ctx);
+
+    expect(prompts[0]).toContain(`CURRENT DATE: ${today}`);
+    expect(prompts.at(-1)).toContain(`CURRENT DATE: ${today}`);
+  });
+
+  describe("v4 create contract (pipeline.promptRewrite)", () => {
+    it("selects the rewritten contract only under the flag", async () => {
+      const prompts: string[] = [];
+      const make = (promptRewrite: boolean) => createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools,
+        catalog,
+        model: scriptedLanguageModel((call) => {
+          prompts.push(promptText(call));
+          return validCreate();
+        }),
+        pipeline: { promptRewrite },
+      });
+
+      await make(true).create({ prompt: "Dashboard" }, ctx);
+      await make(false).create({ prompt: "Dashboard" }, ctx);
+
+      expect(prompts[0]).toContain("<building_great_apps>");
+      expect(prompts[0]).toContain("<examples>");
+      expect(prompts[0]).toContain("Claims tell the truth");
+      expect(prompts[0]).toContain(`CURRENT DATE: ${new Date().toISOString().slice(0, 10)}`);
+      expect(prompts[1]).not.toContain("<building_great_apps>");
+      expect(prompts[1]).toContain("WIRE DIALECT");
+    });
+
+    // A broken example teaches broken apps: every exemplar must survive the
+    // REAL create path (compile + full validation) against its fictional host.
+    it.each(V4_EXEMPLARS.map((exemplar) => [exemplar.title, exemplar] as const))(
+      "exemplar %s compiles and validates",
+      async (_title, exemplar) => {
+        const withTools = createApps({
+          store: memoryStore(),
+          guard: guardFixture(),
+          tools: {
+            async descriptors() { return V4_EXEMPLAR_TOOLS.map((tool) => ({ ...tool })); },
+            async execute() { return { status: "error", error: { code: "not-found", message: "fictional" } }; },
+          },
+          catalog: [],
+          model: scriptedLanguageModel(() => exemplar.wire),
+          pipeline: { structuredRepair: false },
+        });
+        await expect(withTools.create({ prompt: exemplar.request }, ctx)).resolves.toMatchObject({
+          name: expect.any(String),
+        });
+      },
+    );
+  });
+
 
   it("reports wrong-typed host props as catalog issues", async () => {
     const wrongProps = '<App name="Broken metric"><MetricCard label="Revenue" value={42}/></App>';
@@ -283,9 +359,13 @@ describe("generation engine through createApps", () => {
           : message.content.map((part) => part.text ?? "").join("")).join("\n");
         expect(prompt).toContain("REMIXABLE HOST SLOTS");
         expect(prompt).toContain(slot);
-        expect(prompt).toContain("MapleNetWorthCard");
-        expect(prompt).toContain("$1.2M");
         expect(prompt).toContain(componentName);
+        // Gesture-owned forking (2026-07-21): the dialect no longer teaches
+        // <ForkPin> and the captured source no longer rides the prompt (a
+        // fork's source is in CURRENT_APP once it exists) — but a stored-app
+        // model response that emits the op anyway still compiles below.
+        expect(prompt).not.toContain("<ForkPin");
+        expect(prompt).not.toContain("$1.2M");
         return `<Edit><ForkPin slot="${slot}" into="root"/></Edit>`;
       },
       `<Edit><Island name="${componentName}">${source.replace("$1.2M", "$1.4M")}</Island></Edit>`,

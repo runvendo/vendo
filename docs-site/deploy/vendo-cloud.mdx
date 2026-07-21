@@ -38,12 +38,27 @@ export VENDO_API_KEY=vnd_live_...
 
 ## Sign in from the CLI
 
+`vendo login` is the headline flow: it opens your browser at the approval
+page (a non-TTY caller gets the URL and pairing code printed instead), you
+approve the code while signed in to the console, and the minted
+`VENDO_API_KEY` is written to `.env.local` — never printed.
+
+```bash
+vendo login
+#   1. Open https://console.vendo.run/claim?code=BCDF-GHJK
+#   2. Confirm the code: BCDF-GHJK
+# Approved — wrote VENDO_API_KEY (…a1b2) to .env.local.
+```
+
+`vendo cloud device-login` is the same command, kept as an alias.
+
+### Email-OTP fallback
+
 `vendo cloud login <email>` sends a 6-10 digit code to your inbox, prompts for
 it on stdin, and stores the returned session at `~/.vendo/cloud-session.json`
 (file mode 0600). The exact code length depends on your Vendo Cloud project's
-OTP configuration. The user commands reuse that session; the machine commands
-(`deploy`, `share`, `publish`, `pin-ship`) authenticate with `--key` or
-`VENDO_API_KEY` instead.
+OTP configuration. The user commands reuse that session; the machine command
+(`deploy`) authenticates with `--key` or `VENDO_API_KEY` instead.
 
 ```bash
 vendo cloud login you@example.com
@@ -111,14 +126,6 @@ const record = await vendo.apps.publish(appId, ctx);
 `version`, `createdAt`). Both responses are validated against the frozen wire
 schemas (`shareSnapshotSchema`, `publishRecordSchema`) before they resolve.
 
-To share or publish from CI without loading the composition, upload the app
-document directly. The file needs a string `id`, or pass `--app <id>`:
-
-```bash
-vendo cloud share ./app.json
-vendo cloud publish ./app.json
-```
-
 ## Deploy local automations to hosted
 
 `vendo cloud deploy` pushes the automations you built locally (in `.vendo/data`)
@@ -180,16 +187,15 @@ Cloud calls surface the shared error taxonomy (see
 - `validation`, `not-found`, `conflict`, `blocked`: propagated from the hosted
   API with the same codes the wire uses.
 
-Handle `cloud-required` by setting `VENDO_API_KEY`, or for interactive tools by
-running `vendo cloud login` and creating a key with `vendo cloud keys create`.
+Handle `cloud-required` by setting `VENDO_API_KEY` — `vendo login` claims one
+into `.env.local` — or create a named key with `vendo cloud keys create`.
 
 ## Cloud reference
 
 ### Key format
 
 API keys use the format `vnd_` followed by 40 hex characters. The machine
-commands (`deploy`, `share`, `publish`, `pin-ship`) reject malformed keys
-before making any network call.
+command (`deploy`) rejects malformed keys before making any network call.
 
 ### Deploy's `fn:` limitation
 
