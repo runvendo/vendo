@@ -1,6 +1,6 @@
 {
   "name": "@vendoai-fixtures/integration-browser",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Real-browser leg of the cross-block integration suite: Playwright Chromium drives @vendoai/vendo/react (VendoRoot + hooks/chrome) in a page against the REAL composed umbrella wire and the fixture host app.",
   "type": "module",

@@ -1,0 +1,94 @@
+# @vendoai/vendo
+
+## 0.4.0
+
+### Minor Changes
+
+- 5d89564: Extract registered host-component catalogs deterministically during sync, persist strict catalog artifacts and stale-safe review-only copy proposals, and load generated catalogs into the umbrella runtime with actionable malformed-file warnings. TypeScript is loaded only on the sync scan path and is no longer a production dependency of `@vendoai/actions`.
+- 4b8ac66: Per-user connected accounts via the Composio broker (ENG-262). Connectors gain a subject-scoped `connections` capability (list/initiate/status/disconnect); the umbrella serves per-principal `/connections` endpoints with a Vendo Cloud broker seam behind `VENDO_API_KEY`; a Composio call missing a connection returns the new typed `connect-required` tool outcome, rendered by `VendoThread` as an inline connect card that retries after connecting; `ConnectedAccountsPanel` (list + disconnect) joins the chrome as the accounts tab. Composio tools carry curated risk (metadata hints + slug patterns) instead of a blanket `write`; the MCP connector accepts an async per-principal `headers` resolver with per-subject sessions; every connector execution is audited with its account identity.
+- 2f67c65: Server-actions extractor behind the extractor seam (ENG-248): statically scan `"use server"` modules and inline functions with the TypeScript compiler API, interpret zod-validated and annotated inputs into JSON Schema (fail-closed to permissive + note otherwise), and emit the additive `server-action` binding kind (`module` + `exportName` + ordered `params`) within `vendo/tools@1`. Execution is direct in-process registration: `vendo init` now generates a `vendo-actions.ts` registration map wired into `createVendo({ serverActions })`; a server-action tool whose registration is missing fails closed with a clear error and no work performed. Risk labels fail closed — actions default `write`, the destructive word list applies, and unclassifiable or inline (non-importable) actions are emitted `disabled: true` with a note.
+- ebc72e4: Runtime tool search and loadout (ENG-252). Add a deterministic `ActionsRegistry.search` query API (plus the pure `searchToolDescriptors`) that ranks the merged, enabled tool surface by intent, excluding disabled tools. The agent gains a `vendo_tools_search` meta-tool: it starts from a bounded initial loadout — the whole enabled surface when it fits the cap, an explicit curated list when provided, otherwise a read-first bounded default (`DEFAULT_MAX_INITIAL_TOOLS`) — and discovers and loads the rest mid-run. Loaded tools persist across turns within a thread and execute through the same guard-bound registry as any initially-enabled tool, so there is no unguarded path. The umbrella wires the search seam to the guard-bound registry.
+- b29f65d: Init AI unification: theme extraction's model fallback now rides the same consent-gated AI pass as tool judgment (one consent covers both), running through the dev's `claude` CLI on PATH or a resolvable Agent SDK — nothing installed in the host app. The exact CSS pass still always writes `theme.json` first; `--theme slot=value` overrides any slot directly. Font-family names are canonicalized without optional CSS quotes.
+- ff6b5d5: Principals + orgs (ENG-263). Anonymous→signed-in auto-merge: the first authenticated request carrying a valid anon cookie adopts the session's threads/apps/state into the real subject and retires the cookie — idempotently, without ever overwriting an existing row; grants, approvals, and connected accounts deliberately do not migrate (consent doesn't transfer identities). Away re-verification rides actAs: the host declining to mint fails the run closed, and every actAs-authenticated call audits its disposition (`detail.actAs`). Runtime-minted subjects move into the reserved `vendo:` namespace (`vendo:webhook:<source>`); host principal resolvers producing reserved subjects (or org-kind principals) are rejected loudly. `kind:"org"` and the `vendo:org:<id>` subject shape remain reserved but inert — no org storage, management surface, or activation ships in this release.
+
+### Patch Changes
+
+- b6def0f: Capture capability misses from embedded agent runs in a local JSONL sink and,
+  when a Cloud API key and telemetry consent are present, upload them in bounded
+  best-effort batches with the canonical enabled-tool surface.
+- fbe4a49: Vendo Cloud gateway calls now send curated model aliases instead of raw provider ids. The `VENDO_API_KEY` dev-mode rung requests `vendo-default` (Sonnet) by default; `VENDO_CLOUD_MODEL` picks `vendo-fast` (Haiku) or `vendo-strong` (Opus). The box's Cloud inference rung pins `vendo-default` the same way (`VENDO_INFERENCE_MODEL` still overrides). The gateway remaps any non-alias to `vendo-default` (with an `x-vendo-model-remapped` warning header) during a grace window and will reject non-aliases after it. BYO provider keys are unaffected and keep real model ids.
+- 023b3c0: Security hardening (ENG-251).
+
+  - **Run-token anti-replay** (`@vendoai/apps`): run tokens now carry a random `jti`
+    nonce. A run's jti is burned when its machine is torn down, so a captured token
+    replayed afterwards is rejected at the proxy even though its HMAC and TTL still
+    verify — shrinking the replay window from the full 15-minute TTL to the live run.
+    A token remains valid for every callback of its own live run (tools, state,
+    egress), so legitimate repeated proxy calls are unaffected. A token minted with
+    no `jti` fails closed.
+  - **Timing-safe `/tick` compare** (`@vendoai/vendo`): the `VENDO_TICK_SECRET`
+    bearer check used plain string equality (a timing oracle). It now uses a
+    WebCrypto HMAC-digest constant-time compare — edge-safe, no `node:crypto`.
+  - **Bounded ephemeral-subject set** (`@vendoai/store`): the anonymous-visitor
+    ephemeral-subject set is now a bounded LRU (10k) instead of growing until
+    process restart. The subject registered for the current request is never the
+    one evicted.
+
+- 51f3fc9: Fix (ENG-353): heartbeat-armed idle-abort fallback for client disconnects the runtime never surfaces. Under `next dev` a real browser's graceful tab-close/navigate-away fires neither `request.signal` nor a stream cancel, so an abandoned turn ran to completion and burned provider tokens. The panel now beats `POST /threads/:id/heartbeat` while a turn streams; the first beat arms a server-side idle watchdog that aborts the turn through the same controller as the fast path after ~15s of silence. The fetch-abort fast path is unchanged, and consumers that never beat (curl/scripted clients) keep exact run-to-completion semantics.
+- dab84c2: Performance: bound the automations tick and the agent's per-turn context.
+
+  - **automations**: the tick fetches only schedule-triggered apps through an indexed
+    `trigger_kind` ref (was a full scan of every app for every subject) and batches every
+    schedule cursor into one query (was an N+1 get per app). Fired automations now execute
+    with bounded parallelism (`tickConcurrency`, default 4) and an optional per-run timeout
+    (`runTimeoutMs`), so one hung run cannot block other tenants or overrun the tick
+    interval. `emit` likewise fetches only the subject's host-event apps. `/tick` still
+    returns the same runIds.
+  - **agent**: Anthropic prompt-caching breakpoints on the static system prompt and the
+    stable history prefix (ignored by other providers); a default tool-output cap so one
+    huge host-tool response cannot blow the context (`config.agent.toolOutputCap`); a new
+    `historyWindow` knob bounding what is re-sent per turn (default: the full thread, as
+    before); and thread listing that derives titles from a stored `title` instead of loading
+    every thread's full message array.
+  - **store**: btree indexes backing the `(created_at, id)` keyset pagination on
+    `vendo_records` and the paged MCP tables, a generated `trigger_kind` column on
+    `vendo_apps`, and a `title` column on `vendo_threads`. All applied as additive DDL — no
+    schema-version bump and no data migration.
+
+- Updated dependencies [49e9ccc]
+- Updated dependencies [5d89564]
+- Updated dependencies [0032a67]
+- Updated dependencies [b6def0f]
+- Updated dependencies [4b8ac66]
+- Updated dependencies [a7d57b7]
+- Updated dependencies [e9c538c]
+- Updated dependencies [da4d3e8]
+- Updated dependencies [a2ca8e2]
+- Updated dependencies [b819ab2]
+- Updated dependencies [75cb256]
+- Updated dependencies [5093682]
+- Updated dependencies [083a3b9]
+- Updated dependencies [c42d41a]
+- Updated dependencies [2f67c65]
+- Updated dependencies [023b3c0]
+- Updated dependencies [ebc72e4]
+- Updated dependencies [fa0ad98]
+- Updated dependencies [0e94fa6]
+- Updated dependencies [0f17f39]
+- Updated dependencies [7826a6e]
+- Updated dependencies [7546de1]
+- Updated dependencies [51f3fc9]
+- Updated dependencies [0d2810b]
+- Updated dependencies [dab84c2]
+- Updated dependencies [ff6b5d5]
+- Updated dependencies [8d5423d]
+- Updated dependencies [0c10661]
+  - @vendoai/core@0.4.0
+  - @vendoai/store@0.4.0
+  - @vendoai/mcp@0.4.0
+  - @vendoai/actions@0.4.0
+  - @vendoai/agent@0.4.0
+  - @vendoai/automations@0.4.0
+  - @vendoai/guard@0.4.0
+  - @vendoai/ui@0.4.0
+  - @vendoai/apps@0.4.0
