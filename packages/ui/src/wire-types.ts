@@ -27,6 +27,14 @@ export type OpenSurface =
   | { kind: "http"; url: string }
   | { kind: "resuming"; cover?: string };
 
+/** Existing-agents polish — the flag-gated build-window answer: what
+ *  `GET /apps/:id/open?pending=1` returns while the app is not yet servable
+ *  (the record lands at build completion). Only flagged polls ever see it;
+ *  unflagged callers keep the contracted not-found. */
+export interface PendingSurface {
+  kind: "pending";
+}
+
 /**
  * 06-apps §9 — the additive in-client venue verdict riding a tree payload
  * (`payload.inClient`). SERVER-AUTHORITATIVE: only the runtime's hash-pin

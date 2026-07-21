@@ -40,6 +40,53 @@ function app(id: string, name: string, automation = false): AppDocument {
   };
 }
 
+/** Existing-agents polish — a model-realistic generated dashboard island: the
+ *  page sizes itself with viewport-height CSS in a `<style>` TAG (not inline
+ *  styles), the shape the live examples' builds produce. Inside an auto-sized
+ *  jail iframe that couples the island's "content height" to the previous
+ *  host height — the embed-whitespace reproduction. */
+const dashboardIslandSource = String.raw`
+export default function WeatherBoard() {
+  const cities = [
+    { name: "Lisbon", temp: "76°F", cond: "Cloudy", from: "#8aa2c8", to: "#a9bcd8" },
+    { name: "Tokyo", temp: "65°F", cond: "Sunny", from: "#f4b13d", to: "#f79d2c" },
+    { name: "Toronto", temp: "83°F", cond: "Sunny", from: "#f2803d", to: "#e8622d" },
+  ];
+  return <div>
+    <style>{".wx-page { min-height: 100vh; background: #f6f7f9; padding: 24px; border-radius: 12px; } .wx-card { border-radius: 16px; color: #fff; padding: 20px; margin-top: 16px; }"}</style>
+    <div className="wx-page">
+      <h1 style={{ textAlign: "center", margin: 0 }}>City Weather Comparison</h1>
+      {cities.map((city) => (
+        <div key={city.name} className="wx-card" style={{ background: "linear-gradient(160deg, " + city.from + ", " + city.to + ")" }}>
+          <h2 style={{ margin: 0 }}>{city.name}</h2>
+          <strong style={{ fontSize: 34 }}>{city.temp}</strong>
+          <div>{city.cond}</div>
+        </div>
+      ))}
+    </div>
+    <footer style={{ padding: 12, color: "#8a8b92", textAlign: "center" }}>Data refreshed hourly</footer>
+  </div>;
+}
+`;
+
+function islandApp(): AppDocument {
+  return {
+    format: "vendo/app@1",
+    id: "app_island",
+    name: "Weather dashboard",
+    ui: "tree",
+    tree: {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", children: ["board"] },
+        { id: "board", component: "WeatherBoard", source: "generated" },
+      ],
+      components: { WeatherBoard: dashboardIslandSource },
+    },
+  };
+}
+
 function approval(): ApprovalRequest {
   return {
     id: "apr_1",
@@ -133,7 +180,14 @@ async function sendFetchResponse(source: Response, target: ServerResponse): Prom
   target.end();
 }
 
-export async function createWireServer() {
+export interface WireServerOptions {
+  /** Seed the generated-island dashboard app (`app_island`) — the browser
+   *  harness's embed-sizing scenario. Off by default so the fixture's app
+   *  list stays exactly what every existing suite asserts against. */
+  islandApp?: boolean;
+}
+
+export async function createWireServer(options: WireServerOptions = {}) {
   const baseApp = app("app_1", "Invoices");
   const automationApp = app("app_auto", "Invoice watcher", true);
   const existingMessage: UIMessage = {
@@ -142,7 +196,7 @@ export async function createWireServer() {
     parts: [{ type: "text", text: "Existing thread" }],
   };
   const state = {
-    apps: [baseApp, automationApp],
+    apps: [baseApp, automationApp, ...(options.islandApp === true ? [islandApp()] : [])],
     approvals: [approval()],
     // Existing-agents — decided approvals move here so GET /approvals/:id can
     // answer the embed's poll; tests may also seed terminal states directly.
@@ -166,6 +220,9 @@ export async function createWireServer() {
     ]),
     history: [{ at: NOW, intent: "create", rung: 1 }] satisfies VersionEntry[],
     importBytes: new Uint8Array(),
+    // Existing-agents polish — how many open polls `app_building_lands`
+    // misses before its build "lands" (the browser harness's build window).
+    buildingOpensRemaining: 2,
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
@@ -500,8 +557,23 @@ export async function createWireServer() {
       if (appActionMatch) {
         const id = decodeURIComponent(appActionMatch[1] ?? "");
         const action = appActionMatch[2];
+        // Existing-agents polish — the browser harness's build window: this
+        // app becomes servable after a couple of open polls, like a real
+        // build landing mid-poll.
+        if (id === "app_building_lands" && action === "open" && method === "GET"
+          && !state.apps.some(item => item.id === id)
+          && --state.buildingOpensRemaining <= 0) {
+          state.apps.push(app(id, "Trip planner"));
+        }
         const index = state.apps.findIndex(item => item.id === id);
-        if (index < 0) return wireError(response, "not-found", "App not found", 404);
+        if (index < 0) {
+          // The real wire's flag-gated build-window answer: a flagged open
+          // poll gets a quiet 200 pending envelope instead of the 404.
+          if (action === "open" && method === "GET" && url.searchParams.get("pending") === "1") {
+            return json(response, { kind: "pending" });
+          }
+          return wireError(response, "not-found", "App not found", 404);
+        }
         if (action === "open" && method === "GET") {
           return json(response, { kind: "tree", payload: state.apps[index]?.tree });
         }

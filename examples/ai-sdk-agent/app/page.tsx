@@ -45,6 +45,11 @@ export default function Chat() {
           </div>
         ))}
 
+        {/* --- vendo: inline app embeds are tall — without this spacer the
+            quickstart's fixed, translucent input sits on top of the last
+            card's content at the bottom of the scroll. */}
+        <div aria-hidden className="h-24" />
+        {/* --- /vendo */}
         <form
           onSubmit={(e) => {
             e.preventDefault();

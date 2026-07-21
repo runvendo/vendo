@@ -118,7 +118,7 @@ import { cloudTools } from "./cloud-tools.js";
 // rides the server surface the same way: pass it explicitly via
 // createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
 export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
-import { hostedStore, type HostedStore } from "./hosted-store.js";
+import { HostedSessionDoorsMissingError, hostedStore, type HostedStore } from "./hosted-store.js";
 // The hosted-store adapter rides the server surface like the other Cloud
 // adapters: a host can pass it explicitly via createVendo({ store }) with its
 // own options instead of relying on the VENDO_API_KEY default.
@@ -506,8 +506,27 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
   // registered on the console; entries retire with the session (adopt/sweep),
   // so the map tracks at most the live anonymous sessions of this process.
   const wireTouched = new Map<string, number>();
+  // vendo-web@7cd0a02 (2026-07-19) removed the console's session doors per a
+  // newer spec (anonymous visitor = end_user row; adoption = PUT
+  // /users/{externalId}); against that console every door op meets a bare
+  // 404. The doors then go quiet for the process — one warn, no per-request
+  // failures, no per-interval sweep retries — because anonymous traffic must
+  // keep serving and there is nothing to retry INTO. The full contract catch-
+  // up (merge + TTL lifecycle on the new surface) is the vendo-web follow-up
+  // tracked in docs/verification/existing-agents/polish/hosted-sessions-404.md.
+  let doorsMissing = false;
+  const disableDoors = (): void => {
+    if (doorsMissing) return;
+    doorsMissing = true;
+    console.warn(
+      "[vendo] Vendo Cloud console does not serve the hosted session doors (/api/v1/store/sessions/* was removed in vendo-web@7cd0a02): "
+      + "anonymous-session registration, the anonymous→signed-in merge, and the hosted TTL sweep are disabled for this process. "
+      + "Hosted anonymous sessions will not be swept until the console grows a replacement surface.",
+    );
+  };
   return {
     async register(subject, now) {
+      if (doorsMissing) return;
       // In-process debounce: skip the wire touch when this subject's LAST
       // successful touch is younger than sweepIntervalMs/2. TTLs are hours
       // while the debounce window is seconds, and the claim leg re-checks
@@ -520,6 +539,12 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
         await store.sessions.register(subject, now);
         wireTouched.set(subject, now);
       } catch (error) {
+        // The registry itself is gone: failing closed would 500 every
+        // anonymous request while protecting a sweep that cannot run.
+        if (error instanceof HostedSessionDoorsMissingError) {
+          disableDoors();
+          return;
+        }
         // INVARIANT: registered ⇒ sweepable. The FIRST registration must fail
         // closed — if it doesn't land, rows written under this subject would
         // be unreachable by the TTL sweep forever. A subsequent touch only
@@ -531,21 +556,37 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
       }
     },
     async adopt(from, to) {
-      const report = await store.sessions.adopt(from, to);
-      wireTouched.delete(from);
-      return report;
+      // No doors, no merge report: the caller still retires the anon cookie
+      // (the linkage is unrecoverable either way) and skips the merge audit.
+      if (doorsMissing) return null;
+      try {
+        const report = await store.sessions.adopt(from, to);
+        wireTouched.delete(from);
+        return report;
+      } catch (error) {
+        if (!(error instanceof HostedSessionDoorsMissingError)) throw error;
+        disableDoors();
+        wireTouched.delete(from);
+        return null;
+      }
     },
     // The HOST-driven sweep (hosted-store one-pager): list stale candidates,
     // claim each (the wire claim repeats the idleness predicate — a re-touch
     // defeats it, same serialization as sweepEphemeralSubjects), and finish
     // every claimed subject through the erase cascade.
     async sweep(idleMs, now) {
+      if (doorsMissing) return [];
       const evicted: string[] = [];
-      for (const subject of await store.sessions.stale(idleMs, now)) {
-        if (!(await store.sessions.claim(subject, idleMs, now))) continue;
-        await store.erase.bySubject(subject);
-        wireTouched.delete(subject);
-        evicted.push(subject);
+      try {
+        for (const subject of await store.sessions.stale(idleMs, now)) {
+          if (!(await store.sessions.claim(subject, idleMs, now))) continue;
+          await store.erase.bySubject(subject);
+          wireTouched.delete(subject);
+          evicted.push(subject);
+        }
+      } catch (error) {
+        if (!(error instanceof HostedSessionDoorsMissingError)) throw error;
+        disableDoors();
       }
       return evicted;
     },
