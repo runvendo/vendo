@@ -144,10 +144,29 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
       shipDiff: async (id) => ({ appId: id, versionHash: "sha256:playground", pins: [], generated: [] }),
       pinDrift: async () => [],
       forkPin: async ({ appId, slot }) => {
-        const target = appId === undefined ? state.apps[0] : app(appId);
-        if (target === undefined) throw new VendoError("not-found", "no playground app to fork into");
+        // Persist like the real runtime: the fork must land in the store so
+        // slot discovery (apps.list) can mount it. An empty-slot gesture
+        // mints a new app around the pin; a filled gesture pins in place.
+        const pin = { slot, base: "sha256:playground" };
+        let forked: AppDocument;
+        if (appId === undefined) {
+          forked = {
+            format: "vendo/app@1",
+            id: `app_remix_${state.apps.length + 1}`,
+            name: `${slot} remix`,
+            description: `Playground remix of the "${slot}" slot.`,
+            ui: "tree",
+            tree: state.apps[0]?.tree,
+            pins: [pin],
+          };
+          state.apps.push(forked);
+        } else {
+          const target = app(appId);
+          forked = { ...target, pins: [...(target.pins ?? []), pin] };
+          state.apps = state.apps.map((candidate) => (candidate.id === appId ? forked : candidate));
+        }
         return {
-          app: { ...target, pins: [...(target.pins ?? []), { slot, base: "sha256:playground" }] },
+          app: forked,
           version: { at: new Date().toISOString(), intent: `Remix the host component "${slot}"`, rung: 2 },
           slot,
           componentName: `Pinned${slot}`,
