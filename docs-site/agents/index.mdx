@@ -91,7 +91,27 @@ commands, and rules below don't survive paraphrase.
    ([host auth](/agents/host-auth)). Follow the tail, not memory; it is
    derived from what init actually wrote in this repo.
 
-6. **Gate on doctor.** Start the dev server yourself (in `--json` mode doctor
+6. **Do the AI polish yourself.** Non-interactive init skips its AI
+   extraction pass — YOU are the AI in the room, with better context than
+   any subprocess: you just read this codebase and wired it. Run
+
+   ```bash
+   npx vendo init --agent
+   ```
+
+   and execute its `aiPolish` contract: follow `aiPolish.instructions`
+   exactly, write one JSON draft matching `aiPolish.draftSchema`, and apply
+   it with the printed command (`npx vendo extract --apply <draft.json>`).
+   Work in narrow passes, the way init's own staged engine does — first read
+   each extracted tool's real handler and rewrite its description, then
+   review risk labels (you may raise, never lower), then grade any
+   statically-unclassifiable tools with reasoning, then write the brief from
+   the code — rather than drafting everything in one glance. Deterministic
+   guards validate the draft; a non-zero exit prints the rejection reason —
+   fix and re-apply. This satisfies the tail's brief.md item, and it is part
+   of a complete install, not an optional extra.
+
+7. **Gate on doctor.** Start the dev server yourself (in `--json` mode doctor
    never starts it for you), then loop:
 
    ```bash
@@ -101,7 +121,7 @@ commands, and rules below don't survive paraphrase.
    Every failing or warning check carries an `error_code` and a `fix_ref` URL
    into the [verify page](/agents/verify). Fix, re-run, repeat until exit 0.
 
-7. **Show it running.** Doctor green is the gate, but your human should SEE
+8. **Show it running.** Doctor green is the gate, but your human should SEE
    the install, not take your word for it. Leave the dev server running,
    hand them the exact URL, and give them one concrete first ask to type
    into the product's chat surface — e.g. "ask it to build a small dashboard
