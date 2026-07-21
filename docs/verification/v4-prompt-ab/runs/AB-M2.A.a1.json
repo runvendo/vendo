@@ -1,0 +1,397 @@
+{
+  "promptId": "AB-M2",
+  "host": "demo-bank",
+  "arm": "A",
+  "attempt": 1,
+  "prompt": "List my upcoming scheduled payments with amounts and due dates, and let me pay the next one right now from my checking account.",
+  "ok": true,
+  "wallMs": 30779,
+  "fullAttempts": 2,
+  "repairRounds": 0,
+  "firstAttemptValid": false,
+  "inputTokens": 14793,
+  "outputTokens": 2128,
+  "nodes": 29,
+  "queries": 2,
+  "wire": "<App name=\"UpcomingScheduledPayments\">\n  <Query id=\"scheduled\" tool=\"host_listScheduledPayments\" input={{}}/>\n  <Query id=\"accounts\" tool=\"host_listAccounts\" input={{}}/>\n  <Stack gap={4}>\n    <Text variant=\"heading\" text=\"Upcoming Scheduled Payments\"/>\n    <Surface>\n      <DataTable rows={scheduled.data} columns={[{ key: \"payee\", label: \"Payee\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }, { key: \"dueDate\", label: \"Due Date\", format: \"date\" }, { key: \"status\", label: \"Status\" }]} sortBy=\"dueDate asc\" emptyState=\"No upcoming scheduled payments.\" searchable/>\n    </Surface>\n    <Text variant=\"heading\" text=\"Pay Next Scheduled Payment\"/>\n    <Surface>\n      <Stack gap={3}>\n        <Grid columns={2}>\n          <Stack gap={1}>\n            <Text variant=\"caption\" text=\"Payee\"/>\n            <Text text={{ \"$path\": \"/scheduled/data/0/payee\" }}/>\n          </Stack>\n          <Stack gap={1}>\n            <Text variant=\"caption\" text=\"Amount\"/>\n            <Money cents={{ \"$path\": \"/scheduled/data/0/amountCents\" }}/>\n          </Stack>\n          <Stack gap={1}>\n            <Text variant=\"caption\" text=\"Due Date\"/>\n            <DateTime value={{ \"$path\": \"/scheduled/data/0/dueDate\" }} mode=\"date\"/>\n          </Stack>\n          <Stack gap={1}>\n            <Text variant=\"caption\" text=\"Status\"/>\n            <EnumBadge value={{ \"$path\": \"/scheduled/data/0/status\" }}/>\n          </Stack>\n        </Grid>\n        <Divider/>\n        <Stack gap={1}>\n          <Text variant=\"caption\" text=\"From Account\"/>\n          <Row gap={2}>\n            <Text text={{ \"$path\": \"/accounts/data/0/name\" }}/>\n            <Text variant=\"caption\" text=\"Balance:\"/>\n            <Money cents={{ \"$path\": \"/accounts/data/0/balanceCents\" }}/>\n          </Row>\n        </Stack>\n        <Button label=\"Pay Now\" variant=\"primary\" onClick={{ action: \"host_transferMoney\", payload: { amount: { \"$path\": \"/scheduled/data/0/amountCents\" }, recipient_name: { \"$path\": \"/scheduled/data/0/payee\" }, memo: { \"$path\": \"/scheduled/data/0/dueDate\" } } }}/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "UpcomingScheduledPayments",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-1",
+            "surface-1",
+            "text-2",
+            "surface-2"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Upcoming Scheduled Payments"
+          }
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/scheduled/data"
+            },
+            "columns": [
+              {
+                "key": "payee",
+                "label": "Payee"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "dueDate",
+                "label": "Due Date",
+                "format": "date"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              }
+            ],
+            "sortBy": "dueDate asc",
+            "emptyState": "No upcoming scheduled payments.",
+            "searchable": true
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Pay Next Scheduled Payment"
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "grid-1",
+            "divider-1",
+            "stack-7",
+            "button-1"
+          ]
+        },
+        {
+          "id": "grid-1",
+          "component": "Grid",
+          "source": "prewired",
+          "props": {
+            "columns": 2
+          },
+          "children": [
+            "stack-3",
+            "stack-4",
+            "stack-5",
+            "stack-6"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            "text-3",
+            "text-4"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Payee"
+          }
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": {
+              "$path": "/scheduled/data/0/payee"
+            }
+          }
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            "text-5",
+            "money-1"
+          ]
+        },
+        {
+          "id": "text-5",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Amount"
+          }
+        },
+        {
+          "id": "money-1",
+          "component": "Money",
+          "source": "prewired",
+          "props": {
+            "cents": {
+              "$path": "/scheduled/data/0/amountCents"
+            }
+          }
+        },
+        {
+          "id": "stack-5",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            "text-6",
+            "datetime-1"
+          ]
+        },
+        {
+          "id": "text-6",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Due Date"
+          }
+        },
+        {
+          "id": "datetime-1",
+          "component": "DateTime",
+          "source": "prewired",
+          "props": {
+            "value": {
+              "$path": "/scheduled/data/0/dueDate"
+            },
+            "mode": "date"
+          }
+        },
+        {
+          "id": "stack-6",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            "text-7",
+            "enumbadge-1"
+          ]
+        },
+        {
+          "id": "text-7",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Status"
+          }
+        },
+        {
+          "id": "enumbadge-1",
+          "component": "EnumBadge",
+          "source": "prewired",
+          "props": {
+            "value": {
+              "$path": "/scheduled/data/0/status"
+            }
+          }
+        },
+        {
+          "id": "divider-1",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "stack-7",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            "text-8",
+            "row-1"
+          ]
+        },
+        {
+          "id": "text-8",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "From Account"
+          }
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-9",
+            "text-10",
+            "money-2"
+          ]
+        },
+        {
+          "id": "text-9",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": {
+              "$path": "/accounts/data/0/name"
+            }
+          }
+        },
+        {
+          "id": "text-10",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Balance:"
+          }
+        },
+        {
+          "id": "money-2",
+          "component": "Money",
+          "source": "prewired",
+          "props": {
+            "cents": {
+              "$path": "/accounts/data/0/balanceCents"
+            }
+          }
+        },
+        {
+          "id": "button-1",
+          "component": "Button",
+          "source": "prewired",
+          "props": {
+            "label": "Pay Now",
+            "variant": "primary",
+            "onClick": {
+              "action": "host_transferMoney",
+              "payload": {
+                "amount": {
+                  "$path": "/scheduled/data/0/amountCents"
+                },
+                "recipient_name": {
+                  "$path": "/scheduled/data/0/payee"
+                },
+                "memo": {
+                  "$path": "/scheduled/data/0/dueDate"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "scheduled",
+          "tool": "host_listScheduledPayments",
+          "input": {}
+        },
+        {
+          "name": "accounts",
+          "tool": "host_listAccounts",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 21435,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7301,
+        "outputTokens": 1517
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 30778,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7492,
+        "outputTokens": 611
+      }
+    }
+  ],
+  "pipeline": []
+}

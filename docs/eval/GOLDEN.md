@@ -99,6 +99,23 @@ never as a quality number.
 
 Any golden prompt discussed in a fix PR joins this list (rule 4).
 
+These twelve were authored blind for the v4 create-prompt rewrite offline A/B
+(2026-07-20, `docs/verification/v4-prompt-ab/`) and are burned by that run —
+dev-only forever:
+
+- AB-M1. demo-bank: "A money overview dashboard: my account balances, my spending by category this month, and how my stock portfolio has performed this quarter." [partially feasible — no investments]
+- AB-M2. demo-bank: "List my upcoming scheduled payments with amounts and due dates, and let me pay the next one right now from my checking account."
+- AB-M3. demo-bank: "A detail view for my checking account: the current balance, account number, and its recent transactions with each one's status."
+- AB-M4. demo-bank: "A send-money flow: pick one of my saved payees, enter an amount and a note, review the details, then send it from checking."
+- AB-M5. demo-bank: "A timeline of money leaving my account soon: upcoming scheduled payments and subscription renewals, ordered by date with the total going out."
+- AB-M6. demo-bank: "An annual tax summary report: my capital gains, deductible expenses, and how much tax I'll owe this year." [impossible — no tax tools]
+- AB-C1. demo-accounting: "A Monday-morning practice overview: how many clients are missing documents, documents outstanding versus received, the nearest filing deadlines, and the revenue we billed this month." [partially feasible — no billing]
+- AB-C2. demo-accounting: "A chase list: clients with outstanding documents ranked worst-first, and let me send one of them a reminder message without leaving the page."
+- AB-C3. demo-accounting: "A single client's page: their document checklist with per-document status, who on our staff is assigned, and the latest messages between us and them."
+- AB-C4. demo-accounting: "A document review flow: pick a client, look through their uploaded documents, and verify or reject each one with a note to the client."
+- AB-C5. demo-accounting: "A deadlines board grouping clients by urgency — filing deadline this week, this month, and later — with each client's document progress on their card."
+- AB-C6. demo-accounting: "A billing report for the quarter: hours logged per client and the invoices we should be sending out." [impossible — no billing/time tools]
+
 ## Tranche 2 — the F-set (frozen 2026-07-20 after its single fresh run)
 
 Authored blind pre-gate (`docs/superpowers/plans/2026-07-20-final-gate-fresh10.md` on the

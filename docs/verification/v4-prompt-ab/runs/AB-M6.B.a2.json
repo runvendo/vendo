@@ -1,0 +1,331 @@
+{
+  "promptId": "AB-M6",
+  "host": "demo-bank",
+  "arm": "B",
+  "attempt": 2,
+  "prompt": "An annual tax summary report: my capital gains, deductible expenses, and how much tax I'll owe this year.",
+  "ok": true,
+  "wallMs": 22496,
+  "fullAttempts": 1,
+  "repairRounds": 1,
+  "repairRepaired": true,
+  "endPassApplied": false,
+  "firstAttemptValid": false,
+  "inputTokens": 8677,
+  "outputTokens": 762,
+  "nodes": 19,
+  "queries": 4,
+  "wire": "<App name=\"Annual tax summary\">\n  <Query id=\"hostGetCashflowInsights\" tool=\"host_getCashflowInsights\" input={{}}/>\n  <Query id=\"hostGetSpendingInsights\" tool=\"host_getSpendingInsights\" input={{}}/>\n  <Query id=\"hostGetBudgets\" tool=\"host_getBudgets\" input={{}}/>\n  <Query id=\"hostGetRecurringInsights\" tool=\"host_getRecurringInsights\" input={{}}/>\n  <Stack gap={5}>\n    <Disclaimer title=\"Tax data isn't available on this account\" reason=\"This host has no tools for capital gains, deductible expenses, or tax liability calculations. Tax figures require a dedicated tax service or integration (such as TurboTax or a CPA platform) — they cannot be derived from your transaction history without risk of error. The spending and cashflow summaries below show what this account can see.\"/>\n    <Row gap={4}>\n      <Stat label=\"Total inflow (2026)\" value={hostGetCashflowInsights.totalInflowCents} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Total outflow (2026)\" value={hostGetCashflowInsights.totalOutflowCents} format=\"money\"/>\n      <Stat label=\"Net cashflow\" value={hostGetCashflowInsights.netCents} format=\"money\"/>\n    </Row>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Spending by category (current period)\"/>\n        This part of the request isn't available on this host.\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Category budgets vs. spend\"/>\n        <DataTable rows={hostGetBudgets.budgets} columns={[{ key: \"category\", label: \"Category\" }, { key: \"spentCents\", label: \"Spent\", format: \"money\", align: \"end\" }, { key: \"limitCents\", label: \"Budget\", format: \"money\", align: \"end\" }, { key: \"status\", label: \"Status\" }]} emptyState=\"No budget data available.\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Recurring charges detected\"/>\n        <DataTable rows={hostGetRecurringInsights.charges} columns={[{ key: \"merchant\", label: \"Merchant\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }, { key: \"frequency\", label: \"Frequency\" }, { key: \"category\", label: \"Category\" }]} emptyState=\"No recurring charges detected.\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Annual tax summary",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 5
+          },
+          "children": [
+            "disclaimer-1",
+            "row-1",
+            "surface-1",
+            "surface-2",
+            "surface-3"
+          ]
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Tax data isn't available on this account",
+            "reason": "This host has no tools for capital gains, deductible expenses, or tax liability calculations. Tax figures require a dedicated tax service or integration (such as TurboTax or a CPA platform) — they cannot be derived from your transaction history without risk of error. The spending and cashflow summaries below show what this account can see."
+          }
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total inflow (2026)",
+            "value": {
+              "$path": "/hostGetCashflowInsights/totalInflowCents"
+            },
+            "format": "money",
+            "tone": "accent"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total outflow (2026)",
+            "value": {
+              "$path": "/hostGetCashflowInsights/totalOutflowCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Net cashflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/netCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-1",
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Spending by category (current period)"
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "This part of the request isn't available on this host."
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-3",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Category budgets vs. spend"
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetBudgets/budgets"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "spentCents",
+                "label": "Spent",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "limitCents",
+                "label": "Budget",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              }
+            ],
+            "emptyState": "No budget data available."
+          }
+        },
+        {
+          "id": "surface-3",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ]
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-4",
+            "datatable-2"
+          ]
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Recurring charges detected"
+          }
+        },
+        {
+          "id": "datatable-2",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetRecurringInsights/charges"
+            },
+            "columns": [
+              {
+                "key": "merchant",
+                "label": "Merchant"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "frequency",
+                "label": "Frequency"
+              },
+              {
+                "key": "category",
+                "label": "Category"
+              }
+            ],
+            "emptyState": "No recurring charges detected."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetCashflowInsights",
+          "tool": "host_getCashflowInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetSpendingInsights",
+          "tool": "host_getSpendingInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetBudgets",
+          "tool": "host_getBudgets",
+          "input": {}
+        },
+        {
+          "name": "hostGetRecurringInsights",
+          "tool": "host_getRecurringInsights",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 11937,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8677,
+        "outputTokens": 762
+      }
+    },
+    {
+      "lane": "repair",
+      "phase": "complete",
+      "atMs": 19677,
+      "thinking": false
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 22496,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "repair",
+      "rounds": 1,
+      "repaired": true,
+      "noValidFix": 1,
+      "ms": 7740
+    },
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 2818
+    }
+  ]
+}

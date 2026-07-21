@@ -1,0 +1,304 @@
+{
+  "promptId": "AB-C1",
+  "host": "demo-accounting",
+  "arm": "B",
+  "attempt": 1,
+  "prompt": "A Monday-morning practice overview: how many clients are missing documents, documents outstanding versus received, the nearest filing deadlines, and the revenue we billed this month.",
+  "ok": true,
+  "wallMs": 24027,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": true,
+  "firstAttemptValid": true,
+  "inputTokens": 8190,
+  "outputTokens": 1609,
+  "nodes": 17,
+  "queries": 4,
+  "wire": "<App name=\"Monday morning overview\">\n  <Query id=\"hostGetDashboard\" tool=\"host_getDashboard\" input={{}}/>\n  <Query id=\"hostListClients\" tool=\"host_listClients\" input={{}}/>\n  <Query id=\"hostListDeadlines\" tool=\"host_listDeadlines\" input={{}}/>\n  <Query id=\"hostListActivity\" tool=\"host_listActivity\" input={{ limit: 10 }}/>\n  <Stack gap={6}>\n    <Row gap={4}>\n      <CadenceMissingDocsHero missingCount={hostGetDashboard.clientsMissingDocuments} clientCount={hostListClients.data.length} badgeLabel=\"Chase now\"/>\n      <Stack gap={3}>\n        <Stat label=\"Documents outstanding\" value={hostGetDashboard.documentsOutstanding}/>\n        <Stat label=\"Documents received\" value={hostGetDashboard.documentsReceived} tone=\"accent\"/>\n      </Stack>\n    </Row>\n    <CollectionProgress/>\n    <Divider/>\n    <Text variant=\"heading\" text=\"Nearest filing deadlines\"/>\n    <DataTable rows={hostListDeadlines.data} sortBy=\"deadline asc\" limit={8} columns={[{ key: \"name\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\" }, { key: \"deadline\", label: \"Filing deadline\", format: \"date\" }, { key: \"status\", label: \"Status\" }, { key: \"documentsReceived\", label: \"Received\", align: \"end\" }, { key: \"documentsTotal\", label: \"Total docs\", align: \"end\" }]} emptyState=\"No upcoming deadlines found.\"/>\n    <NearestDeadlineCallout/>\n    <Divider/>\n    <Text variant=\"heading\" text=\"Recent activity\"/>\n    <DataTable rows={hostListActivity.data} columns={[{ key: \"type\", label: \"Event\" }, { key: \"clientName\", label: \"Client\" }, { key: \"description\", label: \"Detail\" }, { key: \"at\", label: \"When\", format: \"datetime\" }]} emptyState=\"No recent activity.\"/>\n    <Divider/>\n    <Disclaimer title=\"Revenue billed this month\" reason=\"This practice management tool tracks document collection and filing deadlines. Billing and revenue data are not available — check your billing system for monthly revenue figures.\"/>\n  </Stack>\n  <Island name=\"CollectionProgress\">export default function CollectionProgress() {\n  const [dash, setDash] = React.useState(null);\n  React.useEffect(() => { tools.host_getDashboard({}).then(setDash); }, []);\n  if (!dash) return null;\n  const total = (dash.documentsReceived ?? 0) + (dash.documentsOutstanding ?? 0);\n  const ratio = total > 0 ? (dash.documentsReceived ?? 0) / total : 0;\n  return (\n    <div style={{ display: \"grid\", gap: 8, fontFamily: \"var(--vendo-font-family)\" }}>\n      <div style={{ display: \"flex\", justifyContent: \"space-between\", fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n        <span>{dash.documentsReceived ?? 0} of {total} collected</span>\n        <span>{total > 0 ? Math.round(ratio * 100) : 0}%</span>\n      </div>\n      <div style={{ height: 10, borderRadius: \"var(--vendo-radius-small)\", background: \"var(--vendo-color-border)\", overflow: \"hidden\" }}>\n        <div style={{ height: \"100%\", width: `${Math.round(ratio * 100)}%`, background: \"var(--vendo-color-accent)\", borderRadius: \"var(--vendo-radius-small)\", transition: \"width 0.4s ease\" }}/>\n      </div>\n    </div>\n  );\n}</Island>\n  <Island name=\"NearestDeadlineCallout\">export default function NearestDeadlineCallout() {\n  const [deadlines, setDeadlines] = React.useState(null);\n  React.useEffect(() => { tools.host_listDeadlines({}).then(d => setDeadlines(d.data)); }, []);\n  if (!deadlines || deadlines.length === 0) return null;\n  const nearest = deadlines[0];\n  if (!nearest || !nearest.deadline) return null;\n  const now = new Date(\"2026-07-21\");\n  const due = new Date(nearest.deadline);\n  const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));\n  const dayLabel = diffDays === 0 ? \"today\" : diffDays === 1 ? \"tomorrow\" : diffDays < 0 ? `${Math.abs(diffDays)} days ago` : `${diffDays} days away`;\n  const tone = diffDays <= 3 ? \"danger\" : diffDays <= 7 ? \"warning\" : \"default\";\n  return (\n    <div style={{\n      padding: \"12px 16px\",\n      borderRadius: \"var(--vendo-radius-medium)\",\n      background: tone === \"danger\" ? \"#fef2f2\" : tone === \"warning\" ? \"#fffbeb\" : \"var(--vendo-color-surface)\",\n      border: `1px solid ${tone === \"danger\" ? \"var(--vendo-color-danger)\" : tone === \"warning\" ? \"#f59e0b\" : \"var(--vendo-color-border)\"}`,\n      fontFamily: \"var(--vendo-font-family)\",\n      display: \"flex\",\n      alignItems: \"center\",\n      gap: 12\n    }}>\n      <div style={{ flex: 1 }}>\n        <div style={{ fontWeight: 600, fontSize: 14, color: \"var(--vendo-color-text)\" }}>\n          Nearest deadline: {nearest.name}\n        </div>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", marginTop: 2 }}>\n          Filing due {fmt.dateTime(nearest.deadline)} — {dayLabel}\n        </div>\n      </div>\n    </div>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Monday morning overview",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "row-1",
+            "collectionprogress-1",
+            "divider-1",
+            "text-1",
+            "datatable-1",
+            "nearestdeadlinecallout-1",
+            "divider-2",
+            "text-2",
+            "datatable-2",
+            "divider-3",
+            "disclaimer-1"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "cadencemissingdocshero-1",
+            "stack-2"
+          ]
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "component": "CadenceMissingDocsHero",
+          "source": "host",
+          "props": {
+            "missingCount": {
+              "$path": "/hostGetDashboard/clientsMissingDocuments"
+            },
+            "clientCount": {
+              "$path": "/hostListClients/data/length"
+            },
+            "badgeLabel": "Chase now"
+          }
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "stat-1",
+            "stat-2"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Documents outstanding",
+            "value": {
+              "$path": "/hostGetDashboard/documentsOutstanding"
+            }
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Documents received",
+            "value": {
+              "$path": "/hostGetDashboard/documentsReceived"
+            },
+            "tone": "accent"
+          }
+        },
+        {
+          "id": "collectionprogress-1",
+          "component": "CollectionProgress",
+          "source": "generated"
+        },
+        {
+          "id": "divider-1",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Nearest filing deadlines"
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListDeadlines/data"
+            },
+            "sortBy": "deadline asc",
+            "limit": 8,
+            "columns": [
+              {
+                "key": "name",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "deadline",
+                "label": "Filing deadline",
+                "format": "date"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              },
+              {
+                "key": "documentsReceived",
+                "label": "Received",
+                "align": "end"
+              },
+              {
+                "key": "documentsTotal",
+                "label": "Total docs",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No upcoming deadlines found."
+          }
+        },
+        {
+          "id": "nearestdeadlinecallout-1",
+          "component": "NearestDeadlineCallout",
+          "source": "generated"
+        },
+        {
+          "id": "divider-2",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Recent activity"
+          }
+        },
+        {
+          "id": "datatable-2",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListActivity/data"
+            },
+            "columns": [
+              {
+                "key": "type",
+                "label": "Event"
+              },
+              {
+                "key": "clientName",
+                "label": "Client"
+              },
+              {
+                "key": "description",
+                "label": "Detail"
+              },
+              {
+                "key": "at",
+                "label": "When",
+                "format": "datetime"
+              }
+            ],
+            "emptyState": "No recent activity."
+          }
+        },
+        {
+          "id": "divider-3",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Revenue billed this month",
+            "reason": "This practice management tool tracks document collection and filing deadlines. Billing and revenue data are not available — check your billing system for monthly revenue figures."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetDashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        },
+        {
+          "name": "hostListClients",
+          "tool": "host_listClients",
+          "input": {}
+        },
+        {
+          "name": "hostListDeadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "hostListActivity",
+          "tool": "host_listActivity",
+          "input": {
+            "limit": 10
+          }
+        }
+      ]
+    },
+    "components": {
+      "CollectionProgress": "export default function CollectionProgress() {\n  const [dash, setDash] = React.useState(null);\n  React.useEffect(() => { tools.host_getDashboard({}).then(setDash); }, []);\n  if (!dash) return null;\n  const total = (dash.documentsReceived ?? 0) + (dash.documentsOutstanding ?? 0);\n  const ratio = total > 0 ? (dash.documentsReceived ?? 0) / total : 0;\n  return (\n    <div style={{ display: \"grid\", gap: 8, fontFamily: \"var(--vendo-font-family)\" }}>\n      <div style={{ display: \"flex\", justifyContent: \"space-between\", fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n        <span>{dash.documentsReceived ?? 0} of {total} collected</span>\n        <span>{total > 0 ? Math.round(ratio * 100) : 0}%</span>\n      </div>\n      <div style={{ height: 10, borderRadius: \"var(--vendo-radius-small)\", background: \"var(--vendo-color-border)\", overflow: \"hidden\" }}>\n        <div style={{ height: \"100%\", width: `${Math.round(ratio * 100)}%`, background: \"var(--vendo-color-accent)\", borderRadius: \"var(--vendo-radius-small)\", transition: \"width 0.4s ease\" }}/>\n      </div>\n    </div>\n  );\n}",
+      "NearestDeadlineCallout": "export default function NearestDeadlineCallout() {\n  const [deadlines, setDeadlines] = React.useState(null);\n  React.useEffect(() => { tools.host_listDeadlines({}).then(d => setDeadlines(d.data)); }, []);\n  if (!deadlines || deadlines.length === 0) return null;\n  const nearest = deadlines[0];\n  if (!nearest || !nearest.deadline) return null;\n  const now = new Date(\"2026-07-21\");\n  const due = new Date(nearest.deadline);\n  const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));\n  const dayLabel = diffDays === 0 ? \"today\" : diffDays === 1 ? \"tomorrow\" : diffDays < 0 ? `${Math.abs(diffDays)} days ago` : `${diffDays} days away`;\n  const tone = diffDays <= 3 ? \"danger\" : diffDays <= 7 ? \"warning\" : \"default\";\n  return (\n    <div style={{\n      padding: \"12px 16px\",\n      borderRadius: \"var(--vendo-radius-medium)\",\n      background: tone === \"danger\" ? \"#fef2f2\" : tone === \"warning\" ? \"#fffbeb\" : \"var(--vendo-color-surface)\",\n      border: `1px solid ${tone === \"danger\" ? \"var(--vendo-color-danger)\" : tone === \"warning\" ? \"#f59e0b\" : \"var(--vendo-color-border)\"}`,\n      fontFamily: \"var(--vendo-font-family)\",\n      display: \"flex\",\n      alignItems: \"center\",\n      gap: 12\n    }}>\n      <div style={{ flex: 1 }}>\n        <div style={{ fontWeight: 600, fontSize: 14, color: \"var(--vendo-color-text)\" }}>\n          Nearest deadline: {nearest.name}\n        </div>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", marginTop: 2 }}>\n          Filing due {fmt.dateTime(nearest.deadline)} — {dayLabel}\n        </div>\n      </div>\n    </div>\n  );\n}"
+    },
+    "componentTools": {
+      "CollectionProgress": [
+        "host_getDashboard"
+      ],
+      "NearestDeadlineCallout": [
+        "host_listDeadlines"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 21620,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8190,
+        "outputTokens": 1609
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 24023,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": true,
+      "ms": 2401
+    }
+  ]
+}

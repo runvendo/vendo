@@ -1,0 +1,48 @@
+{
+  "promptId": "AB-C2",
+  "host": "demo-accounting",
+  "arm": "A",
+  "attempt": 2,
+  "prompt": "A chase list: clients with outstanding documents ranked worst-first, and let me send one of them a reminder message without leaving the page.",
+  "ok": false,
+  "error": "model could not produce a valid app :: [] :: ",
+  "wallMs": 113471,
+  "fullAttempts": 3,
+  "repairRounds": 0,
+  "firstAttemptValid": false,
+  "inputTokens": 20558,
+  "outputTokens": 9328,
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 24536,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6809,
+        "outputTokens": 1793
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 72720,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6864,
+        "outputTokens": 4149
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 113468,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6885,
+        "outputTokens": 3386
+      }
+    }
+  ],
+  "pipeline": []
+}

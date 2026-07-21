@@ -1,0 +1,505 @@
+{
+  "promptId": "AB-C6",
+  "host": "demo-accounting",
+  "arm": "A",
+  "attempt": 1,
+  "prompt": "A billing report for the quarter: hours logged per client and the invoices we should be sending out.",
+  "ok": true,
+  "wallMs": 17829,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 6802,
+  "outputTokens": 1129,
+  "nodes": 32,
+  "queries": 4,
+  "wire": "<App name=\"Quarterly Billing Report\">\n  <Query id=\"hostListClients\" tool=\"host_listClients\" input={{}}/>\n  <Query id=\"hostListClients2\" tool=\"host_listClients\" input={{ filter: \"complete\" }}/>\n  <Query id=\"hostListClients3\" tool=\"host_listClients\" input={{ filter: \"missing\" }}/>\n  <Query id=\"hostListDeadlines\" tool=\"host_listDeadlines\" input={{}}/>\n  <Stack gap={4}>\n    <Row gap={2}>\n      <Text variant=\"heading\" text=\"Quarterly Billing Report\"/>\n      <Badge label=\"Q3 2026\" tone=\"neutral\"/>\n    </Row>\n    <Callout tone=\"warning\" title=\"Billing data not available on this host\">\n      This practice tool does not expose hours logged, time tracking, or invoice data. The report below shows document collection progress per client — the closest available proxy for billable work this quarter.\n    </Callout>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Document Collection Progress — All Clients\"/>\n        <Text variant=\"caption\" text=\"Sorted by filing deadline. Use this to identify clients ready to bill (all documents received) versus those still outstanding.\"/>\n        <DataTable rows={hostListClients.data} searchable paginate={20} sortBy=\"filingDeadline asc\" filterableBy={[\"status\", \"assignedStaff.name\"]} columns={[{ key: \"name\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\" }, { key: \"assignedStaff.name\", label: \"Assigned Staff\" }, { key: \"filingDeadline\", label: \"Filing Deadline\", format: \"date\" }, { key: \"status\", label: \"Status\", format: \"enum\" }, { key: \"documentsReceived\", label: \"Docs Received\", align: \"end\" }, { key: \"documentsTotal\", label: \"Docs Total\", align: \"end\" }]} emptyState=\"No clients found.\"/>\n      </Stack>\n    </Surface>\n    <Grid columns={2}>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Clients Ready to Bill\"/>\n          <Text variant=\"caption\" text=\"All documents collected — these engagements can be invoiced.\"/>\n          <DataTable rows={hostListClients2.data} columns={[{ key: \"name\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\" }, { key: \"assignedStaff.name\", label: \"Staff\" }, { key: \"filingDeadline\", label: \"Deadline\", format: \"date\" }]} emptyState=\"No clients have completed document collection yet.\"/>\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Clients Still Outstanding\"/>\n          <Text variant=\"caption\" text=\"Documents missing — hold billing until collection is complete.\"/>\n          <DataTable rows={hostListClients3.data} columns={[{ key: \"name\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\" }, { key: \"assignedStaff.name\", label: \"Staff\" }, { key: \"filingDeadline\", label: \"Deadline\", format: \"date\" }]} emptyState=\"No clients have outstanding documents — nothing to chase.\"/>\n        </Stack>\n      </Surface>\n    </Grid>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Upcoming Deadlines at Risk\"/>\n        <Text variant=\"caption\" text=\"Clients ordered by soonest filing deadline with documents still missing.\"/>\n        <DataTable rows={hostListDeadlines.data} searchable paginate={15} columns={[{ key: \"name\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\" }, { key: \"filingDeadline\", label: \"Filing Deadline\", format: \"date\" }, { key: \"assignedStaff.name\", label: \"Staff\" }, { key: \"documentsReceived\", label: \"Received\", align: \"end\" }, { key: \"documentsTotal\", label: \"Total\", align: \"end\" }, { key: \"missingDocumentKinds\", label: \"Missing Documents\" }]} emptyState=\"No clients at deadline risk.\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={2}>\n        <Text variant=\"heading\" text=\"Hours Logged &amp; Invoice Amounts\"/>\n        <Disclaimer title=\"Time tracking and invoicing not available\" reason=\"This host does not provide tools for hours logged per client or invoice generation. To produce a true billing report with hours and invoice amounts, connect a time-tracking or billing integration (e.g. QuickBooks, FreshBooks, or your practice management billing module).\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Quarterly Billing Report",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "row-1",
+            "callout-1",
+            "surface-1",
+            "grid-1",
+            "surface-4",
+            "surface-5"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-1",
+            "badge-1"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Quarterly Billing Report"
+          }
+        },
+        {
+          "id": "badge-1",
+          "component": "Badge",
+          "source": "prewired",
+          "props": {
+            "label": "Q3 2026",
+            "tone": "neutral"
+          }
+        },
+        {
+          "id": "callout-1",
+          "component": "Callout",
+          "source": "prewired",
+          "props": {
+            "tone": "warning",
+            "title": "Billing data not available on this host"
+          },
+          "children": [
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "This practice tool does not expose hours logged, time tracking, or invoice data. The report below shows document collection progress per client — the closest available proxy for billable work this quarter."
+          }
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-3",
+            "text-4",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Document Collection Progress — All Clients"
+          }
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Sorted by filing deadline. Use this to identify clients ready to bill (all documents received) versus those still outstanding."
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListClients/data"
+            },
+            "searchable": true,
+            "paginate": 20,
+            "sortBy": "filingDeadline asc",
+            "filterableBy": [
+              "status",
+              "assignedStaff.name"
+            ],
+            "columns": [
+              {
+                "key": "name",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "assignedStaff.name",
+                "label": "Assigned Staff"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Filing Deadline",
+                "format": "date"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "format": "enum"
+              },
+              {
+                "key": "documentsReceived",
+                "label": "Docs Received",
+                "align": "end"
+              },
+              {
+                "key": "documentsTotal",
+                "label": "Docs Total",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No clients found."
+          }
+        },
+        {
+          "id": "grid-1",
+          "component": "Grid",
+          "source": "prewired",
+          "props": {
+            "columns": 2
+          },
+          "children": [
+            "surface-2",
+            "surface-3"
+          ]
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-5",
+            "text-6",
+            "datatable-2"
+          ]
+        },
+        {
+          "id": "text-5",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Clients Ready to Bill"
+          }
+        },
+        {
+          "id": "text-6",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "All documents collected — these engagements can be invoiced."
+          }
+        },
+        {
+          "id": "datatable-2",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListClients2/data"
+            },
+            "columns": [
+              {
+                "key": "name",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "assignedStaff.name",
+                "label": "Staff"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Deadline",
+                "format": "date"
+              }
+            ],
+            "emptyState": "No clients have completed document collection yet."
+          }
+        },
+        {
+          "id": "surface-3",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ]
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-7",
+            "text-8",
+            "datatable-3"
+          ]
+        },
+        {
+          "id": "text-7",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Clients Still Outstanding"
+          }
+        },
+        {
+          "id": "text-8",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Documents missing — hold billing until collection is complete."
+          }
+        },
+        {
+          "id": "datatable-3",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListClients3/data"
+            },
+            "columns": [
+              {
+                "key": "name",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "assignedStaff.name",
+                "label": "Staff"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Deadline",
+                "format": "date"
+              }
+            ],
+            "emptyState": "No clients have outstanding documents — nothing to chase."
+          }
+        },
+        {
+          "id": "surface-4",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-5"
+          ]
+        },
+        {
+          "id": "stack-5",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-9",
+            "text-10",
+            "datatable-4"
+          ]
+        },
+        {
+          "id": "text-9",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Upcoming Deadlines at Risk"
+          }
+        },
+        {
+          "id": "text-10",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Clients ordered by soonest filing deadline with documents still missing."
+          }
+        },
+        {
+          "id": "datatable-4",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListDeadlines/data"
+            },
+            "searchable": true,
+            "paginate": 15,
+            "columns": [
+              {
+                "key": "name",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Filing Deadline",
+                "format": "date"
+              },
+              {
+                "key": "assignedStaff.name",
+                "label": "Staff"
+              },
+              {
+                "key": "documentsReceived",
+                "label": "Received",
+                "align": "end"
+              },
+              {
+                "key": "documentsTotal",
+                "label": "Total",
+                "align": "end"
+              },
+              {
+                "key": "missingDocumentKinds",
+                "label": "Missing Documents"
+              }
+            ],
+            "emptyState": "No clients at deadline risk."
+          }
+        },
+        {
+          "id": "surface-5",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-6"
+          ]
+        },
+        {
+          "id": "stack-6",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-11",
+            "disclaimer-1"
+          ]
+        },
+        {
+          "id": "text-11",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Hours Logged &amp; Invoice Amounts"
+          }
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Time tracking and invoicing not available",
+            "reason": "This host does not provide tools for hours logged per client or invoice generation. To produce a true billing report with hours and invoice amounts, connect a time-tracking or billing integration (e.g. QuickBooks, FreshBooks, or your practice management billing module)."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostListClients",
+          "tool": "host_listClients",
+          "input": {}
+        },
+        {
+          "name": "hostListClients2",
+          "tool": "host_listClients",
+          "input": {
+            "filter": "complete"
+          }
+        },
+        {
+          "name": "hostListClients3",
+          "tool": "host_listClients",
+          "input": {
+            "filter": "missing"
+          }
+        },
+        {
+          "name": "hostListDeadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 17810,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6802,
+        "outputTokens": 1129
+      }
+    }
+  ],
+  "pipeline": []
+}

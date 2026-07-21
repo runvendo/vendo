@@ -1,0 +1,86 @@
+{
+  "promptId": "AB-M3",
+  "host": "demo-bank",
+  "arm": "B",
+  "attempt": 2,
+  "prompt": "A detail view for my checking account: the current balance, account number, and its recent transactions with each one's status.",
+  "ok": true,
+  "wallMs": 29317,
+  "fullAttempts": 2,
+  "repairRounds": 0,
+  "endPassApplied": false,
+  "firstAttemptValid": false,
+  "inputTokens": 17386,
+  "outputTokens": 2233,
+  "nodes": 2,
+  "queries": 0,
+  "wire": "<App name=\"Checking account\">\n  <CheckingDetail/>\n  <Island name=\"CheckingDetail\">export default function CheckingDetail() {\n  const [account, setAccount] = useState(null);\n  const [transactions, setTransactions] = useState([]);\n  const [loading, setLoading] = useState(true);\n\n  useEffect(() => {\n    tools.host_listAccounts({}).then((res) => {\n      const accounts = res.data ?? res ?? [];\n      const checking = accounts.find((a) =>\n        (a.type ?? a.accountType ?? a.name ?? \"\").toLowerCase().includes(\"check\")\n      ) ?? accounts[0];\n      if (!checking) { setLoading(false); return; }\n      setAccount(checking);\n      return tools.host_listAccountTransactions({ id: checking.id });\n    }).then((res) => {\n      if (res) {\n        const txns = res.data ?? res ?? [];\n        setTransactions(txns);\n      }\n      setLoading(false);\n    }).catch(() => setLoading(false));\n  }, []);\n\n  if (loading) {\n    return (\n      <div style={{ padding: 24, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\" }}>\n        Loading…\n      </div>\n    );\n  }\n\n  if (!account) {\n    return (\n      <div style={{ padding: 24, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\" }}>\n        No checking account found.\n      </div>\n    );\n  }\n\n  const balanceCents = account.balanceCents ?? account.balance ?? 0;\n  const accountNumber = account.accountNumber ?? account.number ?? account.mask\n    ? `••••${account.mask ?? \"\"}`\n    : account.id;\n\n  const statusTone = (s) => {\n    if (!s) return \"neutral\";\n    const v = s.toLowerCase();\n    if (v === \"completed\" || v === \"settled\" || v === \"posted\") return \"success\";\n    if (v === \"pending\") return \"neutral\";\n    if (v === \"failed\" || v === \"declined\") return \"danger\";\n    return \"neutral\";\n  };\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", display: \"grid\", gap: 20 }}>\n      {/* Hero balance */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        padding: \"28px 24px\",\n        display: \"grid\",\n        gap: 6\n      }}>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", letterSpacing: \"0.02em\" }}>\n          {account.name ?? \"Checking account\"}\n        </div>\n        <div style={{ fontSize: 40, fontWeight: 700, color: \"var(--vendo-color-text)\", letterSpacing: \"-0.02em\" }}>\n          {fmt.money(balanceCents)}\n        </div>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", marginTop: 4 }}>\n          Account {accountNumber}\n        </div>\n      </div>\n\n      {/* Transactions */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        overflow: \"hidden\"\n      }}>\n        <div style={{ padding: \"16px 20px 12px\", borderBottom: \"1px solid var(--vendo-color-border)\" }}>\n          <span style={{ fontSize: 14, fontWeight: 600, color: \"var(--vendo-color-text)\" }}>\n            Recent transactions\n          </span>\n        </div>\n        {transactions.length === 0 ? (\n          <div style={{ padding: \"24px 20px\", color: \"var(--vendo-color-muted)\", fontSize: 14 }}>\n            No transactions yet.\n          </div>\n        ) : (\n          <div>\n            {transactions.map((txn, i) => {\n              const amountCents = txn.amountCents ?? txn.amount ?? 0;\n              const isDebit = amountCents < 0;\n              const status = txn.status ?? txn.state ?? \"\";\n              const tone = statusTone(status);\n              const toneColor = tone === \"success\"\n                ? \"#067647\"\n                : tone === \"danger\"\n                ? \"var(--vendo-color-danger)\"\n                : \"var(--vendo-color-muted)\";\n\n              return (\n                <div key={txn.id ?? i} style={{\n                  display: \"flex\",\n                  alignItems: \"center\",\n                  justifyContent: \"space-between\",\n                  padding: \"13px 20px\",\n                  borderBottom: i < transactions.length - 1 ? \"1px solid var(--vendo-color-border)\" : \"none\",\n                  gap: 12\n                }}>\n                  <div style={{ display: \"grid\", gap: 2, flex: 1, minWidth: 0 }}>\n                    <div style={{\n                      fontSize: 14,\n                      fontWeight: 500,\n                      color: \"var(--vendo-color-text)\",\n                      whiteSpace: \"nowrap\",\n                      overflow: \"hidden\",\n                      textOverflow: \"ellipsis\"\n                    }}>\n                      {txn.description ?? txn.merchant ?? txn.name ?? \"Transaction\"}\n                    </div>\n                    <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n                      {txn.date ? fmt.dateTime(txn.date) : txn.createdAt ? fmt.dateTime(txn.createdAt) : \"\"}\n                    </div>\n                  </div>\n                  <div style={{ display: \"flex\", alignItems: \"center\", gap: 10, flexShrink: 0 }}>\n                    {status ? (\n                      <span style={{\n                        fontSize: 11,\n                        fontWeight: 500,\n                        color: toneColor,\n                        background: tone === \"success\" ? \"#ECFDF3\" : tone === \"danger\" ? \"#FEF3F2\" : \"#F5F5F4\",\n                        borderRadius: \"var(--vendo-radius-small)\",\n                        padding: \"2px 8px\",\n                        textTransform: \"capitalize\"\n                      }}>\n                        {status}\n                      </span>\n                    ) : null}\n                    <div style={{\n                      fontSize: 14,\n                      fontWeight: 600,\n                      color: \"var(--vendo-color-text)\",\n                      textAlign: \"right\",\n                      minWidth: 72\n                    }}>\n                      {isDebit ? \"−\" : \"+\"}{fmt.money(Math.abs(amountCents))}\n                    </div>\n                  </div>\n                </div>\n              );\n            })}\n          </div>\n        )}\n      </div>\n    </div>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Checking account",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "checkingdetail-1"
+          ]
+        },
+        {
+          "id": "checkingdetail-1",
+          "component": "CheckingDetail",
+          "source": "generated"
+        }
+      ]
+    },
+    "components": {
+      "CheckingDetail": "export default function CheckingDetail() {\n  const [account, setAccount] = useState(null);\n  const [transactions, setTransactions] = useState([]);\n  const [loading, setLoading] = useState(true);\n\n  useEffect(() => {\n    tools.host_listAccounts({}).then((res) => {\n      const accounts = res.data ?? res ?? [];\n      const checking = accounts.find((a) =>\n        (a.type ?? a.accountType ?? a.name ?? \"\").toLowerCase().includes(\"check\")\n      ) ?? accounts[0];\n      if (!checking) { setLoading(false); return; }\n      setAccount(checking);\n      return tools.host_listAccountTransactions({ id: checking.id });\n    }).then((res) => {\n      if (res) {\n        const txns = res.data ?? res ?? [];\n        setTransactions(txns);\n      }\n      setLoading(false);\n    }).catch(() => setLoading(false));\n  }, []);\n\n  if (loading) {\n    return (\n      <div style={{ padding: 24, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\" }}>\n        Loading…\n      </div>\n    );\n  }\n\n  if (!account) {\n    return (\n      <div style={{ padding: 24, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\" }}>\n        No checking account found.\n      </div>\n    );\n  }\n\n  const balanceCents = account.balanceCents ?? account.balance ?? 0;\n  const accountNumber = account.accountNumber ?? account.number ?? account.mask\n    ? `••••${account.mask ?? \"\"}`\n    : account.id;\n\n  const statusTone = (s) => {\n    if (!s) return \"neutral\";\n    const v = s.toLowerCase();\n    if (v === \"completed\" || v === \"settled\" || v === \"posted\") return \"success\";\n    if (v === \"pending\") return \"neutral\";\n    if (v === \"failed\" || v === \"declined\") return \"danger\";\n    return \"neutral\";\n  };\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", display: \"grid\", gap: 20 }}>\n      {/* Hero balance */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        padding: \"28px 24px\",\n        display: \"grid\",\n        gap: 6\n      }}>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", letterSpacing: \"0.02em\" }}>\n          {account.name ?? \"Checking account\"}\n        </div>\n        <div style={{ fontSize: 40, fontWeight: 700, color: \"var(--vendo-color-text)\", letterSpacing: \"-0.02em\" }}>\n          {fmt.money(balanceCents)}\n        </div>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", marginTop: 4 }}>\n          Account {accountNumber}\n        </div>\n      </div>\n\n      {/* Transactions */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        overflow: \"hidden\"\n      }}>\n        <div style={{ padding: \"16px 20px 12px\", borderBottom: \"1px solid var(--vendo-color-border)\" }}>\n          <span style={{ fontSize: 14, fontWeight: 600, color: \"var(--vendo-color-text)\" }}>\n            Recent transactions\n          </span>\n        </div>\n        {transactions.length === 0 ? (\n          <div style={{ padding: \"24px 20px\", color: \"var(--vendo-color-muted)\", fontSize: 14 }}>\n            No transactions yet.\n          </div>\n        ) : (\n          <div>\n            {transactions.map((txn, i) => {\n              const amountCents = txn.amountCents ?? txn.amount ?? 0;\n              const isDebit = amountCents < 0;\n              const status = txn.status ?? txn.state ?? \"\";\n              const tone = statusTone(status);\n              const toneColor = tone === \"success\"\n                ? \"#067647\"\n                : tone === \"danger\"\n                ? \"var(--vendo-color-danger)\"\n                : \"var(--vendo-color-muted)\";\n\n              return (\n                <div key={txn.id ?? i} style={{\n                  display: \"flex\",\n                  alignItems: \"center\",\n                  justifyContent: \"space-between\",\n                  padding: \"13px 20px\",\n                  borderBottom: i < transactions.length - 1 ? \"1px solid var(--vendo-color-border)\" : \"none\",\n                  gap: 12\n                }}>\n                  <div style={{ display: \"grid\", gap: 2, flex: 1, minWidth: 0 }}>\n                    <div style={{\n                      fontSize: 14,\n                      fontWeight: 500,\n                      color: \"var(--vendo-color-text)\",\n                      whiteSpace: \"nowrap\",\n                      overflow: \"hidden\",\n                      textOverflow: \"ellipsis\"\n                    }}>\n                      {txn.description ?? txn.merchant ?? txn.name ?? \"Transaction\"}\n                    </div>\n                    <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n                      {txn.date ? fmt.dateTime(txn.date) : txn.createdAt ? fmt.dateTime(txn.createdAt) : \"\"}\n                    </div>\n                  </div>\n                  <div style={{ display: \"flex\", alignItems: \"center\", gap: 10, flexShrink: 0 }}>\n                    {status ? (\n                      <span style={{\n                        fontSize: 11,\n                        fontWeight: 500,\n                        color: toneColor,\n                        background: tone === \"success\" ? \"#ECFDF3\" : tone === \"danger\" ? \"#FEF3F2\" : \"#F5F5F4\",\n                        borderRadius: \"var(--vendo-radius-small)\",\n                        padding: \"2px 8px\",\n                        textTransform: \"capitalize\"\n                      }}>\n                        {status}\n                      </span>\n                    ) : null}\n                    <div style={{\n                      fontSize: 14,\n                      fontWeight: 600,\n                      color: \"var(--vendo-color-text)\",\n                      textAlign: \"right\",\n                      minWidth: 72\n                    }}>\n                      {isDebit ? \"−\" : \"+\"}{fmt.money(Math.abs(amountCents))}\n                    </div>\n                  </div>\n                </div>\n              );\n            })}\n          </div>\n        )}\n      </div>\n    </div>\n  );\n}"
+    },
+    "componentTools": {
+      "CheckingDetail": [
+        "host_listAccountTransactions",
+        "host_listAccounts"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 5064,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8676,
+        "outputTokens": 373
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 28171,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8710,
+        "outputTokens": 1860
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 29317,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 1141
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+{
+  "promptId": "AB-C5",
+  "host": "demo-accounting",
+  "arm": "B",
+  "attempt": 2,
+  "prompt": "A deadlines board grouping clients by urgency — filing deadline this week, this month, and later — with each client's document progress on their card.",
+  "ok": true,
+  "wallMs": 36998,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": false,
+  "firstAttemptValid": true,
+  "inputTokens": 8188,
+  "outputTokens": 3019,
+  "nodes": 8,
+  "queries": 2,
+  "wire": "<App name=\"Deadlines board\">\n  <Query id=\"hostListDeadlines\" tool=\"host_listDeadlines\" input={{}}/>\n  <Query id=\"hostGetDashboard\" tool=\"host_getDashboard\" input={{}}/>\n  <Stack gap={6}>\n    <Row gap={4}>\n      <Stat label=\"Clients at risk this week\" value={hostListDeadlines.data.length}/>\n      <Stat label=\"Documents outstanding\" value={hostGetDashboard.documentsOutstanding}/>\n      <Stat label=\"Documents received\" value={hostGetDashboard.documentsReceived}/>\n      <Stat label=\"Nearest deadline\" value={hostGetDashboard.nearestDeadline.date} format=\"date\"/>\n    </Row>\n    <DeadlinesBoard/>\n  </Stack>\n  <Island name=\"DeadlinesBoard\">export default function DeadlinesBoard() {\n  const [clients, setClients] = React.useState([]);\n  const [loading, setLoading] = React.useState(true);\n\n  React.useEffect(() => {\n    tools.host_listDeadlines({}).then((r) => {\n      setClients(r.data || []);\n      setLoading(false);\n    });\n  }, []);\n\n  const NOW = new Date(\"2026-07-21\");\n  const endOfWeek = new Date(NOW);\n  endOfWeek.setDate(NOW.getDate() + (7 - NOW.getDay()));\n  const endOfMonth = new Date(NOW.getFullYear(), NOW.getMonth() + 1, 0);\n\n  function bucket(client) {\n    const d = new Date(client.filingDeadline || client.deadline || \"\");\n    if (isNaN(d)) return \"later\";\n    if (d <= endOfWeek) return \"week\";\n    if (d <= endOfMonth) return \"month\";\n    return \"later\";\n  }\n\n  function daysAway(dateStr) {\n    const d = new Date(dateStr);\n    if (isNaN(d)) return null;\n    return Math.round((d - NOW) / 86400000);\n  }\n\n  function deadlineLabel(dateStr) {\n    const days = daysAway(dateStr);\n    if (days === null) return \"—\";\n    if (days < 0) return `${Math.abs(days)}d overdue`;\n    if (days === 0) return \"Today\";\n    if (days === 1) return \"Tomorrow\";\n    return `${days} days away`;\n  }\n\n  function deadlineTone(dateStr) {\n    const days = daysAway(dateStr);\n    if (days === null) return \"neutral\";\n    if (days <= 0) return \"overdue\";\n    if (days <= 7) return \"missing\";\n    if (days <= 31) return \"review\";\n    return \"neutral\";\n  }\n\n  const week = clients.filter(c => bucket(c) === \"week\");\n  const month = clients.filter(c => bucket(c) === \"month\");\n  const later = clients.filter(c => bucket(c) === \"later\");\n\n  const cardStyle = {\n    background: \"var(--vendo-color-surface)\",\n    border: \"1px solid var(--vendo-color-border)\",\n    borderRadius: \"var(--vendo-radius-medium)\",\n    padding: \"14px 16px\",\n    display: \"flex\",\n    flexDirection: \"column\",\n    gap: 10,\n    fontFamily: \"var(--vendo-font-family)\",\n  };\n\n  const sectionHeaderStyle = (tone) => ({\n    fontFamily: \"var(--vendo-font-family)\",\n    fontSize: 13,\n    fontWeight: 600,\n    letterSpacing: \"0.04em\",\n    textTransform: \"uppercase\",\n    color: tone === \"danger\" ? \"var(--vendo-color-danger)\" : tone === \"warning\" ? \"#b45309\" : \"var(--vendo-color-muted)\",\n    marginBottom: 4,\n  });\n\n  const emptyStyle = {\n    fontFamily: \"var(--vendo-font-family)\",\n    fontSize: 14,\n    color: \"var(--vendo-color-muted)\",\n    padding: \"12px 0\",\n  };\n\n  function progressPct(client) {\n    const received = client.documentsReceived ?? client.docsReceived ?? 0;\n    const total = client.documentsTotal ?? client.docsTotal ?? 0;\n    if (!total) return null;\n    return { received, total, pct: Math.round((received / total) * 100) };\n  }\n\n  function missingKinds(client) {\n    const kinds = client.missingDocumentKinds || client.missingKinds || [];\n    return kinds.slice(0, 3).join(\", \") + (kinds.length > 3 ? ` +${kinds.length - 3} more` : \"\");\n  }\n\n  function ClientCard({ client }) {\n    const prog = progressPct(client);\n    const dl = client.filingDeadline || client.deadline || \"\";\n    const days = daysAway(dl);\n    const tone = deadlineTone(dl);\n    const badgeColors = {\n      overdue: { bg: \"#fef2f2\", color: \"var(--vendo-color-danger)\", border: \"#fecaca\" },\n      missing: { bg: \"#fff7ed\", color: \"#b45309\", border: \"#fed7aa\" },\n      review:  { bg: \"#fffbeb\", color: \"#92400e\", border: \"#fde68a\" },\n      neutral: { bg: \"var(--vendo-color-background)\", color: \"var(--vendo-color-muted)\", border: \"var(--vendo-color-border)\" },\n    };\n    const bc = badgeColors[tone] || badgeColors.neutral;\n\n    return (\n      <div style={cardStyle}>\n        <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\", gap: 8 }}>\n          <div>\n            <div style={{ fontFamily: \"var(--vendo-font-family)\", fontWeight: 600, fontSize: 15, color: \"var(--vendo-color-text)\" }}>\n              {client.name || client.clientName || \"—\"}\n            </div>\n            {client.entityType && (\n              <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 12, color: \"var(--vendo-color-muted)\", marginTop: 2 }}>\n                {client.entityType}\n              </div>\n            )}\n          </div>\n          <span style={{\n            fontSize: 12, fontWeight: 600, padding: \"3px 9px\", borderRadius: 99,\n            background: bc.bg, color: bc.color, border: `1px solid ${bc.border}`,\n            whiteSpace: \"nowrap\", fontFamily: \"var(--vendo-font-family)\",\n          }}>\n            {deadlineLabel(dl)}\n          </span>\n        </div>\n\n        {dl && (\n          <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n            Filing deadline: <span style={{ color: \"var(--vendo-color-text)\", fontWeight: 500 }}>\n              {new Date(dl).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\", year: \"numeric\" })}\n            </span>\n          </div>\n        )}\n\n        {prog !== null && (\n          <div style={{ display: \"flex\", flexDirection: \"column\", gap: 5 }}>\n            <div style={{ display: \"flex\", justifyContent: \"space-between\", fontFamily: \"var(--vendo-font-family)\", fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n              <span>Documents collected</span>\n              <span style={{ fontWeight: 600, color: \"var(--vendo-color-text)\" }}>{prog.received} of {prog.total}</span>\n            </div>\n            <div style={{ background: \"var(--vendo-color-border)\", borderRadius: 99, height: 6, overflow: \"hidden\" }}>\n              <div style={{\n                height: \"100%\",\n                width: `${prog.pct}%`,\n                background: prog.pct === 100 ? \"#16a34a\" : days !== null && days <= 7 ? \"var(--vendo-color-danger)\" : \"var(--vendo-color-accent)\",\n                borderRadius: 99,\n                transition: \"width 0.4s ease\",\n              }}/>\n            </div>\n          </div>\n        )}\n\n        {client.assignedStaff && (\n          <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n            Assigned: <span style={{ color: \"var(--vendo-color-text)\" }}>{client.assignedStaff}</span>\n          </div>\n        )}\n\n        {missingKinds(client) && (\n          <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n            Missing: <span style={{ color: \"var(--vendo-color-danger)\", fontWeight: 500 }}>{missingKinds(client)}</span>\n          </div>\n        )}\n      </div>\n    );\n  }\n\n  function Section({ title, clients, tone, emptyMsg }) {\n    return (\n      <div style={{ display: \"flex\", flexDirection: \"column\", gap: 10 }}>\n        <div style={{ display: \"flex\", alignItems: \"center\", gap: 10 }}>\n          <span style={sectionHeaderStyle(tone)}>{title}</span>\n          <span style={{\n            fontSize: 12, fontWeight: 600, padding: \"2px 8px\", borderRadius: 99,\n            background: tone === \"danger\" ? \"#fef2f2\" : tone === \"warning\" ? \"#fff7ed\" : \"var(--vendo-color-background)\",\n            color: tone === \"danger\" ? \"var(--vendo-color-danger)\" : tone === \"warning\" ? \"#b45309\" : \"var(--vendo-color-muted)\",\n            border: `1px solid ${tone === \"danger\" ? \"#fecaca\" : tone === \"warning\" ? \"#fed7aa\" : \"var(--vendo-color-border)\"}`,\n            fontFamily: \"var(--vendo-font-family)\",\n          }}>{clients.length}</span>\n        </div>\n        {clients.length === 0\n          ? <div style={emptyStyle}>{emptyMsg}</div>\n          : <div style={{ display: \"grid\", gridTemplateColumns: \"repeat(auto-fill, minmax(300px, 1fr))\", gap: 12 }}>\n              {clients.map((c, i) => <ClientCard key={c.id || i} client={c}/>)}\n            </div>\n        }\n      </div>\n    );\n  }\n\n  if (loading) {\n    return (\n      <div style={{ fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\", padding: 24 }}>\n        Loading deadlines…\n      </div>\n    );\n  }\n\n  return (\n    <div style={{ display: \"flex\", flexDirection: \"column\", gap: 28, padding: \"4px 0\" }}>\n      <Section title=\"Due this week\" clients={week} tone=\"danger\" emptyMsg=\"No filing deadlines this week — nothing urgent.\"/>\n      <div style={{ borderTop: \"1px solid var(--vendo-color-border)\" }}/>\n      <Section title=\"Due this month\" clients={month} tone=\"warning\" emptyMsg=\"No filing deadlines remaining this month.\"/>\n      <div style={{ borderTop: \"1px solid var(--vendo-color-border)\" }}/>\n      <Section title=\"Later\" clients={later} tone=\"neutral\" emptyMsg=\"No upcoming deadlines beyond this month.\"/>\n    </div>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Deadlines board",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "row-1",
+            "deadlinesboard-1"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3",
+            "stat-4"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Clients at risk this week",
+            "value": {
+              "$path": "/hostListDeadlines/data/length"
+            }
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Documents outstanding",
+            "value": {
+              "$path": "/hostGetDashboard/documentsOutstanding"
+            }
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Documents received",
+            "value": {
+              "$path": "/hostGetDashboard/documentsReceived"
+            }
+          }
+        },
+        {
+          "id": "stat-4",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Nearest deadline",
+            "value": {
+              "$path": "/hostGetDashboard/nearestDeadline/date"
+            },
+            "format": "date"
+          }
+        },
+        {
+          "id": "deadlinesboard-1",
+          "component": "DeadlinesBoard",
+          "source": "generated"
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostListDeadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "hostGetDashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        }
+      ]
+    },
+    "components": {
+      "DeadlinesBoard": "export default function DeadlinesBoard() {\n  const [clients, setClients] = React.useState([]);\n  const [loading, setLoading] = React.useState(true);\n\n  React.useEffect(() => {\n    tools.host_listDeadlines({}).then((r) => {\n      setClients(r.data || []);\n      setLoading(false);\n    });\n  }, []);\n\n  const NOW = new Date(\"2026-07-21\");\n  const endOfWeek = new Date(NOW);\n  endOfWeek.setDate(NOW.getDate() + (7 - NOW.getDay()));\n  const endOfMonth = new Date(NOW.getFullYear(), NOW.getMonth() + 1, 0);\n\n  function bucket(client) {\n    const d = new Date(client.filingDeadline || client.deadline || \"\");\n    if (isNaN(d)) return \"later\";\n    if (d <= endOfWeek) return \"week\";\n    if (d <= endOfMonth) return \"month\";\n    return \"later\";\n  }\n\n  function daysAway(dateStr) {\n    const d = new Date(dateStr);\n    if (isNaN(d)) return null;\n    return Math.round((d - NOW) / 86400000);\n  }\n\n  function deadlineLabel(dateStr) {\n    const days = daysAway(dateStr);\n    if (days === null) return \"—\";\n    if (days < 0) return `${Math.abs(days)}d overdue`;\n    if (days === 0) return \"Today\";\n    if (days === 1) return \"Tomorrow\";\n    return `${days} days away`;\n  }\n\n  function deadlineTone(dateStr) {\n    const days = daysAway(dateStr);\n    if (days === null) return \"neutral\";\n    if (days <= 0) return \"overdue\";\n    if (days <= 7) return \"missing\";\n    if (days <= 31) return \"review\";\n    return \"neutral\";\n  }\n\n  const week = clients.filter(c => bucket(c) === \"week\");\n  const month = clients.filter(c => bucket(c) === \"month\");\n  const later = clients.filter(c => bucket(c) === \"later\");\n\n  const cardStyle = {\n    background: \"var(--vendo-color-surface)\",\n    border: \"1px solid var(--vendo-color-border)\",\n    borderRadius: \"var(--vendo-radius-medium)\",\n    padding: \"14px 16px\",\n    display: \"flex\",\n    flexDirection: \"column\",\n    gap: 10,\n    fontFamily: \"var(--vendo-font-family)\",\n  };\n\n  const sectionHeaderStyle = (tone) => ({\n    fontFamily: \"var(--vendo-font-family)\",\n    fontSize: 13,\n    fontWeight: 600,\n    letterSpacing: \"0.04em\",\n    textTransform: \"uppercase\",\n    color: tone === \"danger\" ? \"var(--vendo-color-danger)\" : tone === \"warning\" ? \"#b45309\" : \"var(--vendo-color-muted)\",\n    marginBottom: 4,\n  });\n\n  const emptyStyle = {\n    fontFamily: \"var(--vendo-font-family)\",\n    fontSize: 14,\n    color: \"var(--vendo-color-muted)\",\n    padding: \"12px 0\",\n  };\n\n  function progressPct(client) {\n    const received = client.documentsReceived ?? client.docsReceived ?? 0;\n    const total = client.documentsTotal ?? client.docsTotal ?? 0;\n    if (!total) return null;\n    return { received, total, pct: Math.round((received / total) * 100) };\n  }\n\n  function missingKinds(client) {\n    const kinds = client.missingDocumentKinds || client.missingKinds || [];\n    return kinds.slice(0, 3).join(\", \") + (kinds.length > 3 ? ` +${kinds.length - 3} more` : \"\");\n  }\n\n  function ClientCard({ client }) {\n    const prog = progressPct(client);\n    const dl = client.filingDeadline || client.deadline || \"\";\n    const days = daysAway(dl);\n    const tone = deadlineTone(dl);\n    const badgeColors = {\n      overdue: { bg: \"#fef2f2\", color: \"var(--vendo-color-danger)\", border: \"#fecaca\" },\n      missing: { bg: \"#fff7ed\", color: \"#b45309\", border: \"#fed7aa\" },\n      review:  { bg: \"#fffbeb\", color: \"#92400e\", border: \"#fde68a\" },\n      neutral: { bg: \"var(--vendo-color-background)\", color: \"var(--vendo-color-muted)\", border: \"var(--vendo-color-border)\" },\n    };\n    const bc = badgeColors[tone] || badgeColors.neutral;\n\n    return (\n      <div style={cardStyle}>\n        <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\", gap: 8 }}>\n          <div>\n            <div style={{ fontFamily: \"var(--vendo-font-family)\", fontWeight: 600, fontSize: 15, color: \"var(--vendo-color-text)\" }}>\n              {client.name || client.clientName || \"—\"}\n            </div>\n            {client.entityType && (\n              <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 12, color: \"var(--vendo-color-muted)\", marginTop: 2 }}>\n                {client.entityType}\n              </div>\n            )}\n          </div>\n          <span style={{\n            fontSize: 12, fontWeight: 600, padding: \"3px 9px\", borderRadius: 99,\n            background: bc.bg, color: bc.color, border: `1px solid ${bc.border}`,\n            whiteSpace: \"nowrap\", fontFamily: \"var(--vendo-font-family)\",\n          }}>\n            {deadlineLabel(dl)}\n          </span>\n        </div>\n\n        {dl && (\n          <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n            Filing deadline: <span style={{ color: \"var(--vendo-color-text)\", fontWeight: 500 }}>\n              {new Date(dl).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\", year: \"numeric\" })}\n            </span>\n          </div>\n        )}\n\n        {prog !== null && (\n          <div style={{ display: \"flex\", flexDirection: \"column\", gap: 5 }}>\n            <div style={{ display: \"flex\", justifyContent: \"space-between\", fontFamily: \"var(--vendo-font-family)\", fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n              <span>Documents collected</span>\n              <span style={{ fontWeight: 600, color: \"var(--vendo-color-text)\" }}>{prog.received} of {prog.total}</span>\n            </div>\n            <div style={{ background: \"var(--vendo-color-border)\", borderRadius: 99, height: 6, overflow: \"hidden\" }}>\n              <div style={{\n                height: \"100%\",\n                width: `${prog.pct}%`,\n                background: prog.pct === 100 ? \"#16a34a\" : days !== null && days <= 7 ? \"var(--vendo-color-danger)\" : \"var(--vendo-color-accent)\",\n                borderRadius: 99,\n                transition: \"width 0.4s ease\",\n              }}/>\n            </div>\n          </div>\n        )}\n\n        {client.assignedStaff && (\n          <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n            Assigned: <span style={{ color: \"var(--vendo-color-text)\" }}>{client.assignedStaff}</span>\n          </div>\n        )}\n\n        {missingKinds(client) && (\n          <div style={{ fontFamily: \"var(--vendo-font-family)\", fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n            Missing: <span style={{ color: \"var(--vendo-color-danger)\", fontWeight: 500 }}>{missingKinds(client)}</span>\n          </div>\n        )}\n      </div>\n    );\n  }\n\n  function Section({ title, clients, tone, emptyMsg }) {\n    return (\n      <div style={{ display: \"flex\", flexDirection: \"column\", gap: 10 }}>\n        <div style={{ display: \"flex\", alignItems: \"center\", gap: 10 }}>\n          <span style={sectionHeaderStyle(tone)}>{title}</span>\n          <span style={{\n            fontSize: 12, fontWeight: 600, padding: \"2px 8px\", borderRadius: 99,\n            background: tone === \"danger\" ? \"#fef2f2\" : tone === \"warning\" ? \"#fff7ed\" : \"var(--vendo-color-background)\",\n            color: tone === \"danger\" ? \"var(--vendo-color-danger)\" : tone === \"warning\" ? \"#b45309\" : \"var(--vendo-color-muted)\",\n            border: `1px solid ${tone === \"danger\" ? \"#fecaca\" : tone === \"warning\" ? \"#fed7aa\" : \"var(--vendo-color-border)\"}`,\n            fontFamily: \"var(--vendo-font-family)\",\n          }}>{clients.length}</span>\n        </div>\n        {clients.length === 0\n          ? <div style={emptyStyle}>{emptyMsg}</div>\n          : <div style={{ display: \"grid\", gridTemplateColumns: \"repeat(auto-fill, minmax(300px, 1fr))\", gap: 12 }}>\n              {clients.map((c, i) => <ClientCard key={c.id || i} client={c}/>)}\n            </div>\n        }\n      </div>\n    );\n  }\n\n  if (loading) {\n    return (\n      <div style={{ fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\", padding: 24 }}>\n        Loading deadlines…\n      </div>\n    );\n  }\n\n  return (\n    <div style={{ display: \"flex\", flexDirection: \"column\", gap: 28, padding: \"4px 0\" }}>\n      <Section title=\"Due this week\" clients={week} tone=\"danger\" emptyMsg=\"No filing deadlines this week — nothing urgent.\"/>\n      <div style={{ borderTop: \"1px solid var(--vendo-color-border)\" }}/>\n      <Section title=\"Due this month\" clients={month} tone=\"warning\" emptyMsg=\"No filing deadlines remaining this month.\"/>\n      <div style={{ borderTop: \"1px solid var(--vendo-color-border)\" }}/>\n      <Section title=\"Later\" clients={later} tone=\"neutral\" emptyMsg=\"No upcoming deadlines beyond this month.\"/>\n    </div>\n  );\n}"
+    },
+    "componentTools": {
+      "DeadlinesBoard": [
+        "host_listDeadlines"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 35373,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8188,
+        "outputTokens": 3019
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 36996,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 1619
+    }
+  ]
+}

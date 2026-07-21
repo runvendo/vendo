@@ -1,0 +1,247 @@
+{
+  "promptId": "AB-M1",
+  "host": "demo-bank",
+  "arm": "A",
+  "attempt": 1,
+  "prompt": "A money overview dashboard: my account balances, my spending by category this month, and how my stock portfolio has performed this quarter.",
+  "ok": true,
+  "wallMs": 7462,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 7303,
+  "outputTokens": 433,
+  "nodes": 16,
+  "queries": 2,
+  "wire": "<App name=\"Money Overview\">\n  <Query id=\"hostListAccounts\" tool=\"host_listAccounts\" input={{}}/>\n  <Query id=\"hostGetSpendingInsights\" tool=\"host_getSpendingInsights\" input={{}}/>\n  <Stack gap={6}>\n    <Text variant=\"heading\" text=\"Money Overview\"/>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Account Balances\"/>\n        <CardList items={hostListAccounts.data} titleField=\"name\" badgeField=\"type\" fields={[{ key: \"balanceCents\", label: \"Balance\", format: \"money\" }, { key: \"accountNumber\", label: \"Account\" }]} columns={2} emptyState=\"No accounts found\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Spending by Category — This Month\"/>\n        <MapleSpendingDonut slices={hostGetSpendingInsights.categories} size={220}/>\n        <DataTable rows={hostGetSpendingInsights.categories} columns={[{ key: \"category\", label: \"Category\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }, { key: \"percentOfTotal\", label: \"Share\", format: \"percent\", align: \"end\" }]} sortBy=\"amountCents desc\" emptyState=\"No spending data for this period\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={2}>\n        <Text variant=\"heading\" text=\"Stock Portfolio — This Quarter\"/>\n        <Disclaimer reason=\"No tool on this host provides investment, brokerage, or stock portfolio data. Portfolio performance cannot be shown.\" title=\"Portfolio data unavailable\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Money Overview",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "text-1",
+            "surface-1",
+            "surface-2",
+            "surface-3"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Money Overview"
+          }
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-2",
+            "cardlist-1"
+          ]
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Account Balances"
+          }
+        },
+        {
+          "id": "cardlist-1",
+          "component": "CardList",
+          "source": "prewired",
+          "props": {
+            "items": {
+              "$path": "/hostListAccounts/data"
+            },
+            "titleField": "name",
+            "badgeField": "type",
+            "fields": [
+              {
+                "key": "balanceCents",
+                "label": "Balance",
+                "format": "money"
+              },
+              {
+                "key": "accountNumber",
+                "label": "Account"
+              }
+            ],
+            "columns": 2,
+            "emptyState": "No accounts found"
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-3",
+            "maplespendingdonut-1",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Spending by Category — This Month"
+          }
+        },
+        {
+          "id": "maplespendingdonut-1",
+          "component": "MapleSpendingDonut",
+          "source": "host",
+          "props": {
+            "slices": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "size": 220
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "percentOfTotal",
+                "label": "Share",
+                "format": "percent",
+                "align": "end"
+              }
+            ],
+            "sortBy": "amountCents desc",
+            "emptyState": "No spending data for this period"
+          }
+        },
+        {
+          "id": "surface-3",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ]
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-4",
+            "disclaimer-1"
+          ]
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Stock Portfolio — This Quarter"
+          }
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "reason": "No tool on this host provides investment, brokerage, or stock portfolio data. Portfolio performance cannot be shown.",
+            "title": "Portfolio data unavailable"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostListAccounts",
+          "tool": "host_listAccounts",
+          "input": {}
+        },
+        {
+          "name": "hostGetSpendingInsights",
+          "tool": "host_getSpendingInsights",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 7461,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7303,
+        "outputTokens": 433
+      }
+    }
+  ],
+  "pipeline": []
+}

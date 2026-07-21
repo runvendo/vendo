@@ -1,0 +1,389 @@
+{
+  "promptId": "AB-C3",
+  "host": "demo-accounting",
+  "arm": "A",
+  "attempt": 2,
+  "prompt": "A single client's page: their document checklist with per-document status, who on our staff is assigned, and the latest messages between us and them.",
+  "ok": true,
+  "wallMs": 34077,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 6813,
+  "outputTokens": 2700,
+  "nodes": 26,
+  "queries": 3,
+  "wire": "<App name=\"Client Detail\">\n  <Query id=\"client\" tool=\"host_getClient\" input={{ id: \"1\" }}/>\n  <Query id=\"docs\" tool=\"host_listClientDocuments\" input={{ id: \"1\" }}/>\n  <Query id=\"messages\" tool=\"host_listClientMessages\" input={{ id: \"1\" }}/>\n  <Stack gap={6}>\n    <Surface>\n      <Row gap={4}>\n        <Stack gap={2}>\n          <Text variant=\"heading\" text={client.data.name}/>\n          <Row gap={2}>\n            <EnumBadge value={client.data.status} tones={{ complete: \"success\", missing: \"danger\", review: \"warning\", on_track: \"accent\" }}/>\n            <Text variant=\"caption\" text={client.data.entityType}/>\n          </Row>\n        </Stack>\n        <Stack gap={1}>\n          <Text variant=\"caption\" text=\"Assigned staff\"/>\n          <Text text={client.data.assignedStaff}/>\n        </Stack>\n        <Stack gap={1}>\n          <Text variant=\"caption\" text=\"Filing deadline\"/>\n          <DateTime value={client.data.filingDeadline} mode=\"date\"/>\n        </Stack>\n        <Stack gap={1}>\n          <Text variant=\"caption\" text=\"Document progress\"/>\n          <CadenceDocProgress value={client.data.documentsReceived} max={client.data.documentsTotal}/>\n        </Stack>\n      </Row>\n    </Surface>\n    <Grid columns={2}>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Document checklist\"/>\n        <DataTable rows={docs.data} searchable filterableBy={[\"status\"]} sortBy=\"status asc\" emptyState=\"No documents on this client's checklist.\" columns={[{ key: \"name\", label: \"Document\" }, { key: \"status\", label: \"Status\", format: \"enum\" }, { key: \"fileName\", label: \"File\" }, { key: \"rejectionNote\", label: \"Rejection note\" }]}/>\n        <DocActions clientId=\"1\" docs={docs.data}/>\n      </Stack>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Messages\"/>\n        <MessageThread messages={messages.data} clientId=\"1\"/>\n      </Stack>\n    </Grid>\n  </Stack>\n  <Island name=\"DocActions\">export default function DocActions({ clientId, docs }: { clientId: string, docs: any[] }) {\n            const [selected, setSelected] = React.useState<string>(\"\");\n            const [action, setAction] = React.useState<string>(\"verify\");\n            const [reason, setReason] = React.useState<string>(\"\");\n            const [fileName, setFileName] = React.useState<string>(\"\");\n            const [status, setStatus] = React.useState<\"idle\"|\"pending\"|\"done\"|\"error\">(\"idle\");\n            const [msg, setMsg] = React.useState<string>(\"\");\n\n            const actionableDocs = (docs || []).filter((d: any) =>\n              d.status === \"received\" || d.status === \"needs_review\" || d.status === \"missing\"\n            );\n\n            const handleSubmit = async () => {\n              if (!selected) { setMsg(\"Select a document.\"); return; }\n              if (action === \"reject\" && !reason) { setMsg(\"A reason is required for rejection.\"); return; }\n              if (action === \"receive\" && !fileName) { setMsg(\"A file name is required to mark as received.\"); return; }\n              setStatus(\"pending\");\n              setMsg(\"\");\n              try {\n                const body: any = { action };\n                if (action === \"receive\") body.fileName = fileName;\n                if (action === \"reject\") body.reason = reason;\n                const result = await tools.host_setDocumentStatus({ id: clientId, docId: selected, body });\n                if (result?.status === \"pending-approval\") {\n                  setStatus(\"pending\");\n                  setMsg(\"Awaiting approval before the document status is updated.\");\n                } else {\n                  setStatus(\"done\");\n                  setMsg(\"Document status updated.\");\n                }\n              } catch (e: any) {\n                setStatus(\"error\");\n                setMsg(e?.message || \"Something went wrong.\");\n              }\n            };\n\n            if (!actionableDocs.length) return (\n              <Surface>\n                <Text variant=\"caption\" text=\"No documents available to action right now.\"/>\n              </Surface>\n            );\n\n            return (\n              <Surface>\n                <Stack gap={3}>\n                  <Text variant=\"heading\" text=\"Update document status\"/>\n                  <Select\n                    label=\"Document\"\n                    options={actionableDocs}\n                    labelField=\"name\"\n                    valueField=\"id\"\n                    value={selected}\n                    placeholder=\"Choose a document…\"\n                    onChange={(v: string) => setSelected(v)}\n                  />\n                  <Select\n                    label=\"Action\"\n                    options={[\n                      { label: \"Verify (mark correct)\", value: \"verify\" },\n                      { label: \"Reject (return to missing)\", value: \"reject\" },\n                      { label: \"Receive (mark uploaded)\", value: \"receive\" }\n                    ]}\n                    labelField=\"label\"\n                    valueField=\"value\"\n                    value={action}\n                    onChange={(v: string) => setAction(v)}\n                  />\n                  {action === \"receive\" && (\n                    <Input\n                      label=\"File name\"\n                      value={fileName}\n                      placeholder=\"e.g. W2_2025.pdf\"\n                      onChange={(v: string) => setFileName(v)}\n                    />\n                  )}\n                  {action === \"reject\" && (\n                    <Textarea\n                      label=\"Rejection reason (visible to client)\"\n                      value={reason}\n                      placeholder=\"Explain what needs to be corrected…\"\n                      rows={3}\n                      onChange={(v: string) => setReason(v)}\n                    />\n                  )}\n                  {msg && (\n                    <Callout tone={status === \"error\" ? \"danger\" : status === \"done\" ? \"success\" : \"info\"} title={msg}/>\n                  )}\n                  <Button\n                    label={status === \"pending\" ? \"Awaiting approval…\" : \"Apply\"}\n                    variant=\"primary\"\n                    disabled={status === \"pending\"}\n                    onClick={handleSubmit}\n                  />\n                </Stack>\n              </Surface>\n            );\n          }</Island>\n  <Island name=\"MessageThread\">export default function MessageThread({ messages, clientId }: { messages: any[], clientId: string }) {\n            const [body, setBody] = React.useState<string>(\"\");\n            const [status, setStatus] = React.useState<\"idle\"|\"pending\"|\"done\"|\"error\">(\"idle\");\n            const [msg, setMsg] = React.useState<string>(\"\");\n            const bottomRef = React.useRef<HTMLDivElement>(null);\n\n            React.useEffect(() => {\n              bottomRef.current?.scrollIntoView({ behavior: \"smooth\" });\n            }, [messages]);\n\n            const handleSend = async () => {\n              if (!body.trim()) return;\n              setStatus(\"pending\");\n              setMsg(\"\");\n              try {\n                const result = await tools.host_sendClientMessage({\n                  id: clientId,\n                  body: { body: body.trim(), author: \"firm\" }\n                });\n                if (result?.status === \"pending-approval\") {\n                  setStatus(\"pending\");\n                  setMsg(\"Message is awaiting approval before delivery.\");\n                } else {\n                  setStatus(\"done\");\n                  setBody(\"\");\n                  setMsg(\"Message sent.\");\n                }\n              } catch (e: any) {\n                setStatus(\"error\");\n                setMsg(e?.message || \"Failed to send message.\");\n              }\n            };\n\n            const sorted = [...(messages || [])];\n\n            return (\n              <Stack gap={3}>\n                <Surface>\n                  <Stack gap={2} style={{ maxHeight: 420, overflowY: \"auto\" }}>\n                    {sorted.length === 0 && (\n                      <Text variant=\"caption\" text=\"No messages yet. Send one below to start the conversation.\"/>\n                    )}\n                    {sorted.map((m: any, i: number) => {\n                      const isFirm = m.author === \"firm\" || m.direction === \"outbound\";\n                      return (\n                        <div\n                          key={m.id || i}\n                          style={{\n                            display: \"flex\",\n                            flexDirection: \"column\",\n                            alignItems: isFirm ? \"flex-end\" : \"flex-start\"\n                          }}\n                        >\n                          <div style={{\n                            background: isFirm ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-surface)\",\n                            color: isFirm ? \"var(--vendo-color-accent-text)\" : \"var(--vendo-color-text)\",\n                            border: isFirm ? \"none\" : \"1px solid var(--vendo-color-border)\",\n                            borderRadius: \"var(--vendo-radius-medium)\",\n                            padding: \"10px 14px\",\n                            maxWidth: \"80%\",\n                            fontSize: \"var(--vendo-font-size)\",\n                            fontFamily: \"var(--vendo-font-family)\"\n                          }}>\n                            {m.body}\n                          </div>\n                          <span style={{\n                            fontSize: \"12px\",\n                            color: \"var(--vendo-color-muted)\",\n                            marginTop: 2,\n                            fontFamily: \"var(--vendo-font-family)\"\n                          }}>\n                            {isFirm ? \"Firm\" : \"Client\"} · {m.sentAt ? fmt.dateTime(m.sentAt) : \"\"}\n                          </span>\n                        </div>\n                      );\n                    })}\n                    <div ref={bottomRef}/>\n                  </Stack>\n                </Surface>\n                <Stack gap={2}>\n                  <Textarea\n                    label=\"New message\"\n                    value={body}\n                    placeholder=\"Write a message to the client…\"\n                    rows={3}\n                    onChange={(v: string) => setBody(v)}\n                  />\n                  {msg && (\n                    <Callout tone={status === \"error\" ? \"danger\" : status === \"done\" ? \"success\" : \"info\"} title={msg}/>\n                  )}\n                  <Button\n                    label={status === \"pending\" ? \"Awaiting approval…\" : \"Send message\"}\n                    variant=\"primary\"\n                    disabled={status === \"pending\" || !body.trim()}\n                    onClick={handleSend}\n                  />\n                </Stack>\n              </Stack>\n            );\n          }</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Client Detail",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "surface-1",
+            "grid-1"
+          ]
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "row-1"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stack-2",
+            "stack-3",
+            "stack-4",
+            "stack-5"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-1",
+            "row-2"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": {
+              "$path": "/client/data/name"
+            }
+          }
+        },
+        {
+          "id": "row-2",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "enumbadge-1",
+            "text-2"
+          ]
+        },
+        {
+          "id": "enumbadge-1",
+          "component": "EnumBadge",
+          "source": "prewired",
+          "props": {
+            "value": {
+              "$path": "/client/data/status"
+            },
+            "tones": {
+              "complete": "success",
+              "missing": "danger",
+              "review": "warning",
+              "on_track": "accent"
+            }
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": {
+              "$path": "/client/data/entityType"
+            }
+          }
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            "text-3",
+            "text-4"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Assigned staff"
+          }
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": {
+              "$path": "/client/data/assignedStaff"
+            }
+          }
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            "text-5",
+            "datetime-1"
+          ]
+        },
+        {
+          "id": "text-5",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Filing deadline"
+          }
+        },
+        {
+          "id": "datetime-1",
+          "component": "DateTime",
+          "source": "prewired",
+          "props": {
+            "value": {
+              "$path": "/client/data/filingDeadline"
+            },
+            "mode": "date"
+          }
+        },
+        {
+          "id": "stack-5",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            "text-6",
+            "cadencedocprogress-1"
+          ]
+        },
+        {
+          "id": "text-6",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Document progress"
+          }
+        },
+        {
+          "id": "cadencedocprogress-1",
+          "component": "CadenceDocProgress",
+          "source": "host",
+          "props": {
+            "value": {
+              "$path": "/client/data/documentsReceived"
+            },
+            "max": {
+              "$path": "/client/data/documentsTotal"
+            }
+          }
+        },
+        {
+          "id": "grid-1",
+          "component": "Grid",
+          "source": "prewired",
+          "props": {
+            "columns": 2
+          },
+          "children": [
+            "stack-6",
+            "stack-7"
+          ]
+        },
+        {
+          "id": "stack-6",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-7",
+            "datatable-1",
+            "docactions-1"
+          ]
+        },
+        {
+          "id": "text-7",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Document checklist"
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/docs/data"
+            },
+            "searchable": true,
+            "filterableBy": [
+              "status"
+            ],
+            "sortBy": "status asc",
+            "emptyState": "No documents on this client's checklist.",
+            "columns": [
+              {
+                "key": "name",
+                "label": "Document"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "format": "enum"
+              },
+              {
+                "key": "fileName",
+                "label": "File"
+              },
+              {
+                "key": "rejectionNote",
+                "label": "Rejection note"
+              }
+            ]
+          }
+        },
+        {
+          "id": "docactions-1",
+          "component": "DocActions",
+          "source": "generated",
+          "props": {
+            "clientId": "1",
+            "docs": {
+              "$path": "/docs/data"
+            }
+          }
+        },
+        {
+          "id": "stack-7",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-8",
+            "messagethread-1"
+          ]
+        },
+        {
+          "id": "text-8",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Messages"
+          }
+        },
+        {
+          "id": "messagethread-1",
+          "component": "MessageThread",
+          "source": "generated",
+          "props": {
+            "messages": {
+              "$path": "/messages/data"
+            },
+            "clientId": "1"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "client",
+          "tool": "host_getClient",
+          "input": {
+            "id": "1"
+          }
+        },
+        {
+          "name": "docs",
+          "tool": "host_listClientDocuments",
+          "input": {
+            "id": "1"
+          }
+        },
+        {
+          "name": "messages",
+          "tool": "host_listClientMessages",
+          "input": {
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "components": {
+      "DocActions": "export default function DocActions({ clientId, docs }: { clientId: string, docs: any[] }) {\n            const [selected, setSelected] = React.useState<string>(\"\");\n            const [action, setAction] = React.useState<string>(\"verify\");\n            const [reason, setReason] = React.useState<string>(\"\");\n            const [fileName, setFileName] = React.useState<string>(\"\");\n            const [status, setStatus] = React.useState<\"idle\"|\"pending\"|\"done\"|\"error\">(\"idle\");\n            const [msg, setMsg] = React.useState<string>(\"\");\n\n            const actionableDocs = (docs || []).filter((d: any) =>\n              d.status === \"received\" || d.status === \"needs_review\" || d.status === \"missing\"\n            );\n\n            const handleSubmit = async () => {\n              if (!selected) { setMsg(\"Select a document.\"); return; }\n              if (action === \"reject\" && !reason) { setMsg(\"A reason is required for rejection.\"); return; }\n              if (action === \"receive\" && !fileName) { setMsg(\"A file name is required to mark as received.\"); return; }\n              setStatus(\"pending\");\n              setMsg(\"\");\n              try {\n                const body: any = { action };\n                if (action === \"receive\") body.fileName = fileName;\n                if (action === \"reject\") body.reason = reason;\n                const result = await tools.host_setDocumentStatus({ id: clientId, docId: selected, body });\n                if (result?.status === \"pending-approval\") {\n                  setStatus(\"pending\");\n                  setMsg(\"Awaiting approval before the document status is updated.\");\n                } else {\n                  setStatus(\"done\");\n                  setMsg(\"Document status updated.\");\n                }\n              } catch (e: any) {\n                setStatus(\"error\");\n                setMsg(e?.message || \"Something went wrong.\");\n              }\n            };\n\n            if (!actionableDocs.length) return (\n              <Surface>\n                <Text variant=\"caption\" text=\"No documents available to action right now.\"/>\n              </Surface>\n            );\n\n            return (\n              <Surface>\n                <Stack gap={3}>\n                  <Text variant=\"heading\" text=\"Update document status\"/>\n                  <Select\n                    label=\"Document\"\n                    options={actionableDocs}\n                    labelField=\"name\"\n                    valueField=\"id\"\n                    value={selected}\n                    placeholder=\"Choose a document…\"\n                    onChange={(v: string) => setSelected(v)}\n                  />\n                  <Select\n                    label=\"Action\"\n                    options={[\n                      { label: \"Verify (mark correct)\", value: \"verify\" },\n                      { label: \"Reject (return to missing)\", value: \"reject\" },\n                      { label: \"Receive (mark uploaded)\", value: \"receive\" }\n                    ]}\n                    labelField=\"label\"\n                    valueField=\"value\"\n                    value={action}\n                    onChange={(v: string) => setAction(v)}\n                  />\n                  {action === \"receive\" && (\n                    <Input\n                      label=\"File name\"\n                      value={fileName}\n                      placeholder=\"e.g. W2_2025.pdf\"\n                      onChange={(v: string) => setFileName(v)}\n                    />\n                  )}\n                  {action === \"reject\" && (\n                    <Textarea\n                      label=\"Rejection reason (visible to client)\"\n                      value={reason}\n                      placeholder=\"Explain what needs to be corrected…\"\n                      rows={3}\n                      onChange={(v: string) => setReason(v)}\n                    />\n                  )}\n                  {msg && (\n                    <Callout tone={status === \"error\" ? \"danger\" : status === \"done\" ? \"success\" : \"info\"} title={msg}/>\n                  )}\n                  <Button\n                    label={status === \"pending\" ? \"Awaiting approval…\" : \"Apply\"}\n                    variant=\"primary\"\n                    disabled={status === \"pending\"}\n                    onClick={handleSubmit}\n                  />\n                </Stack>\n              </Surface>\n            );\n          }",
+      "MessageThread": "export default function MessageThread({ messages, clientId }: { messages: any[], clientId: string }) {\n            const [body, setBody] = React.useState<string>(\"\");\n            const [status, setStatus] = React.useState<\"idle\"|\"pending\"|\"done\"|\"error\">(\"idle\");\n            const [msg, setMsg] = React.useState<string>(\"\");\n            const bottomRef = React.useRef<HTMLDivElement>(null);\n\n            React.useEffect(() => {\n              bottomRef.current?.scrollIntoView({ behavior: \"smooth\" });\n            }, [messages]);\n\n            const handleSend = async () => {\n              if (!body.trim()) return;\n              setStatus(\"pending\");\n              setMsg(\"\");\n              try {\n                const result = await tools.host_sendClientMessage({\n                  id: clientId,\n                  body: { body: body.trim(), author: \"firm\" }\n                });\n                if (result?.status === \"pending-approval\") {\n                  setStatus(\"pending\");\n                  setMsg(\"Message is awaiting approval before delivery.\");\n                } else {\n                  setStatus(\"done\");\n                  setBody(\"\");\n                  setMsg(\"Message sent.\");\n                }\n              } catch (e: any) {\n                setStatus(\"error\");\n                setMsg(e?.message || \"Failed to send message.\");\n              }\n            };\n\n            const sorted = [...(messages || [])];\n\n            return (\n              <Stack gap={3}>\n                <Surface>\n                  <Stack gap={2} style={{ maxHeight: 420, overflowY: \"auto\" }}>\n                    {sorted.length === 0 && (\n                      <Text variant=\"caption\" text=\"No messages yet. Send one below to start the conversation.\"/>\n                    )}\n                    {sorted.map((m: any, i: number) => {\n                      const isFirm = m.author === \"firm\" || m.direction === \"outbound\";\n                      return (\n                        <div\n                          key={m.id || i}\n                          style={{\n                            display: \"flex\",\n                            flexDirection: \"column\",\n                            alignItems: isFirm ? \"flex-end\" : \"flex-start\"\n                          }}\n                        >\n                          <div style={{\n                            background: isFirm ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-surface)\",\n                            color: isFirm ? \"var(--vendo-color-accent-text)\" : \"var(--vendo-color-text)\",\n                            border: isFirm ? \"none\" : \"1px solid var(--vendo-color-border)\",\n                            borderRadius: \"var(--vendo-radius-medium)\",\n                            padding: \"10px 14px\",\n                            maxWidth: \"80%\",\n                            fontSize: \"var(--vendo-font-size)\",\n                            fontFamily: \"var(--vendo-font-family)\"\n                          }}>\n                            {m.body}\n                          </div>\n                          <span style={{\n                            fontSize: \"12px\",\n                            color: \"var(--vendo-color-muted)\",\n                            marginTop: 2,\n                            fontFamily: \"var(--vendo-font-family)\"\n                          }}>\n                            {isFirm ? \"Firm\" : \"Client\"} · {m.sentAt ? fmt.dateTime(m.sentAt) : \"\"}\n                          </span>\n                        </div>\n                      );\n                    })}\n                    <div ref={bottomRef}/>\n                  </Stack>\n                </Surface>\n                <Stack gap={2}>\n                  <Textarea\n                    label=\"New message\"\n                    value={body}\n                    placeholder=\"Write a message to the client…\"\n                    rows={3}\n                    onChange={(v: string) => setBody(v)}\n                  />\n                  {msg && (\n                    <Callout tone={status === \"error\" ? \"danger\" : status === \"done\" ? \"success\" : \"info\"} title={msg}/>\n                  )}\n                  <Button\n                    label={status === \"pending\" ? \"Awaiting approval…\" : \"Send message\"}\n                    variant=\"primary\"\n                    disabled={status === \"pending\" || !body.trim()}\n                    onClick={handleSend}\n                  />\n                </Stack>\n              </Stack>\n            );\n          }"
+    },
+    "componentTools": {
+      "DocActions": [
+        "host_setDocumentStatus"
+      ],
+      "MessageThread": [
+        "host_sendClientMessage"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 34073,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6813,
+        "outputTokens": 2700
+      }
+    }
+  ],
+  "pipeline": []
+}

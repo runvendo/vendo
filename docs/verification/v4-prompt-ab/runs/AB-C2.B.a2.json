@@ -1,0 +1,116 @@
+{
+  "promptId": "AB-C2",
+  "host": "demo-accounting",
+  "arm": "B",
+  "attempt": 2,
+  "prompt": "A chase list: clients with outstanding documents ranked worst-first, and let me send one of them a reminder message without leaving the page.",
+  "ok": true,
+  "wallMs": 32957,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": false,
+  "firstAttemptValid": true,
+  "inputTokens": 8184,
+  "outputTokens": 2384,
+  "nodes": 4,
+  "queries": 2,
+  "wire": "<App name=\"Chase list\">\n  <Query id=\"hostListClients\" tool=\"host_listClients\" input={{ filter: \"missing\" }}/>\n  <Query id=\"hostListClients2\" tool=\"host_listClients\" input={{}}/>\n  <Stack gap={5}>\n    <CadenceMissingDocsHero missingCount={hostListClients.data.length} clientCount={hostListClients2.data.length} badgeLabel=\"Needs chasing\"/>\n    <ChaseListPanel/>\n  </Stack>\n  <Island name=\"ChaseListPanel\">export default function ChaseListPanel() {\n  const [clients, setClients] = useState([]);\n  const [selected, setSelected] = useState(null);\n  const [message, setMessage] = useState(\"\");\n  const [phase, setPhase] = useState(\"idle\");\n  const [sentFor, setSentFor] = useState(null);\n\n  useEffect(() => {\n    tools.host_listClients({ filter: \"missing\" }).then((r) => {\n      const sorted = (r.data || []).slice().sort((a, b) => {\n        const aMissing = (a.documentsTotal ?? 0) - (a.documentsReceived ?? 0);\n        const bMissing = (b.documentsTotal ?? 0) - (b.documentsReceived ?? 0);\n        return bMissing - aMissing;\n      });\n      setClients(sorted);\n    });\n  }, []);\n\n  const open = (client) => {\n    setSelected(client);\n    setMessage(\"\");\n    setPhase(\"idle\");\n  };\n\n  const send = async () => {\n    if (!selected || !message.trim()) return;\n    setPhase(\"sending\");\n    const result = await tools.host_sendClientMessage({\n      id: selected.id,\n      body: { body: message.trim(), author: \"Firm\" },\n    });\n    setPhase(result && result.status === \"pending-approval\" ? \"awaiting\" : \"sent\");\n    setSentFor(selected.id);\n  };\n\n  const dismiss = () => {\n    setSelected(null);\n    setPhase(\"idle\");\n    setMessage(\"\");\n  };\n\n  const token = (name) => `var(--vendo-color-${name})`;\n  const radius = (name) => `var(--vendo-radius-${name})`;\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", color: token(\"text\"), display: \"grid\", gap: 0 }}>\n      {clients.length === 0 && (\n        <div style={{ padding: \"32px 0\", textAlign: \"center\", color: token(\"muted\"), fontSize: 14 }}>\n          No clients with outstanding documents — nothing to chase this week.\n        </div>\n      )}\n      {clients.map((c, i) => {\n        const missing = (c.documentsTotal ?? 0) - (c.documentsReceived ?? 0);\n        const ratio = c.documentsTotal > 0 ? (c.documentsReceived ?? 0) / c.documentsTotal : 0;\n        const pct = Math.round(ratio * 100);\n        const isSelected = selected && selected.id === c.id;\n        const wasSent = sentFor === c.id && phase === \"sent\";\n        const isAwaiting = sentFor === c.id && phase === \"awaiting\";\n\n        const urgencyColor = missing >= 5 ? token(\"danger\") : missing >= 2 ? \"#b45309\" : token(\"muted\");\n\n        return (\n          <div key={c.id} style={{\n            borderBottom: `1px solid ${token(\"border\")}`,\n            background: isSelected ? \"#f7f6f3\" : token(\"surface\"),\n            transition: \"background 0.15s\",\n          }}>\n            <div style={{\n              display: \"grid\",\n              gridTemplateColumns: \"1fr auto auto\",\n              alignItems: \"center\",\n              gap: 16,\n              padding: \"14px 20px\",\n              cursor: \"pointer\",\n            }} onClick={() => isSelected ? dismiss() : open(c)}>\n              <div style={{ display: \"grid\", gap: 4 }}>\n                <div style={{ display: \"flex\", alignItems: \"center\", gap: 10 }}>\n                  <span style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</span>\n                  {c.entityType && (\n                    <span style={{ fontSize: 12, color: token(\"muted\"), background: token(\"border\"), borderRadius: 4, padding: \"1px 7px\" }}>\n                      {c.entityType}\n                    </span>\n                  )}\n                  {c.assignedStaff && (\n                    <span style={{ fontSize: 12, color: token(\"muted\") }}>{c.assignedStaff}</span>\n                  )}\n                </div>\n                <div style={{ display: \"flex\", alignItems: \"center\", gap: 10 }}>\n                  <div style={{ width: 120, height: 5, background: token(\"border\"), borderRadius: 99, overflow: \"hidden\" }}>\n                    <div style={{ width: `${pct}%`, height: \"100%\", background: pct === 100 ? \"#16a34a\" : token(\"accent\"), borderRadius: 99 }}/>\n                  </div>\n                  <span style={{ fontSize: 12, color: token(\"muted\") }}>\n                    {c.documentsReceived ?? 0} of {c.documentsTotal ?? 0} collected\n                  </span>\n                </div>\n              </div>\n              <div style={{ textAlign: \"right\" }}>\n                <span style={{ fontWeight: 700, fontSize: 18, color: urgencyColor }}>{missing}</span>\n                <span style={{ fontSize: 12, color: token(\"muted\"), display: \"block\" }}>missing</span>\n              </div>\n              <div style={{ display: \"flex\", flexDirection: \"column\", alignItems: \"flex-end\", gap: 4 }}>\n                {c.filingDeadline && (\n                  <span style={{ fontSize: 12, color: token(\"muted\") }}>\n                    Due <strong>{new Date(c.filingDeadline).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\" })}</strong>\n                  </span>\n                )}\n                {wasSent && (\n                  <span style={{ fontSize: 12, color: \"#16a34a\", fontWeight: 600 }}>✓ Reminder sent</span>\n                )}\n                {isAwaiting && (\n                  <span style={{ fontSize: 12, color: \"#b45309\", fontWeight: 600 }}>Awaiting approval…</span>\n                )}\n              </div>\n            </div>\n\n            {isSelected && (\n              <div style={{\n                padding: \"0 20px 18px 20px\",\n                display: \"grid\",\n                gap: 10,\n              }}>\n                <div style={{ fontSize: 13, color: token(\"muted\"), fontWeight: 500 }}>\n                  Send a reminder to {c.name}\n                </div>\n                <textarea\n                  rows={3}\n                  value={message}\n                  placeholder={`Hi ${c.name}, we're still waiting on ${missing} document${missing !== 1 ? \"s\" : \"\"} to complete your filing. Please upload them at your earliest convenience.`}\n                  onChange={(e) => setMessage(e.target.value)}\n                  disabled={phase === \"sending\" || phase === \"awaiting\" || phase === \"sent\"}\n                  style={{\n                    width: \"100%\",\n                    boxSizing: \"border-box\",\n                    padding: \"10px 12px\",\n                    fontSize: 14,\n                    fontFamily: \"var(--vendo-font-family)\",\n                    border: `1px solid ${token(\"border\")}`,\n                    borderRadius: radius(\"small\"),\n                    background: token(\"surface\"),\n                    color: token(\"text\"),\n                    resize: \"vertical\",\n                    outline: \"none\",\n                  }}\n                />\n                <div style={{ display: \"flex\", gap: 8 }}>\n                  <button\n                    onClick={send}\n                    disabled={!message.trim() || phase !== \"idle\"}\n                    style={{\n                      padding: \"8px 18px\",\n                      fontSize: 14,\n                      fontWeight: 600,\n                      background: (!message.trim() || phase !== \"idle\") ? token(\"border\") : token(\"accent\"),\n                      color: (!message.trim() || phase !== \"idle\") ? token(\"muted\") : token(\"accentText\"),\n                      border: \"none\",\n                      borderRadius: radius(\"small\"),\n                      cursor: (!message.trim() || phase !== \"idle\") ? \"not-allowed\" : \"pointer\",\n                      transition: \"background 0.15s\",\n                    }}\n                  >\n                    {phase === \"sending\" ? \"Sending…\" : phase === \"awaiting\" ? \"Awaiting approval…\" : phase === \"sent\" ? \"Sent\" : \"Send reminder\"}\n                  </button>\n                  <button\n                    onClick={dismiss}\n                    style={{\n                      padding: \"8px 14px\",\n                      fontSize: 14,\n                      background: \"transparent\",\n                      color: token(\"muted\"),\n                      border: `1px solid ${token(\"border\")}`,\n                      borderRadius: radius(\"small\"),\n                      cursor: \"pointer\",\n                    }}\n                  >\n                    Cancel\n                  </button>\n                </div>\n              </div>\n            )}\n          </div>\n        );\n      })}\n    </div>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Chase list",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 5
+          },
+          "children": [
+            "cadencemissingdocshero-1",
+            "chaselistpanel-1"
+          ]
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "component": "CadenceMissingDocsHero",
+          "source": "host",
+          "props": {
+            "missingCount": {
+              "$path": "/hostListClients/data/length"
+            },
+            "clientCount": {
+              "$path": "/hostListClients2/data/length"
+            },
+            "badgeLabel": "Needs chasing"
+          }
+        },
+        {
+          "id": "chaselistpanel-1",
+          "component": "ChaseListPanel",
+          "source": "generated"
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostListClients",
+          "tool": "host_listClients",
+          "input": {
+            "filter": "missing"
+          }
+        },
+        {
+          "name": "hostListClients2",
+          "tool": "host_listClients",
+          "input": {}
+        }
+      ]
+    },
+    "components": {
+      "ChaseListPanel": "export default function ChaseListPanel() {\n  const [clients, setClients] = useState([]);\n  const [selected, setSelected] = useState(null);\n  const [message, setMessage] = useState(\"\");\n  const [phase, setPhase] = useState(\"idle\");\n  const [sentFor, setSentFor] = useState(null);\n\n  useEffect(() => {\n    tools.host_listClients({ filter: \"missing\" }).then((r) => {\n      const sorted = (r.data || []).slice().sort((a, b) => {\n        const aMissing = (a.documentsTotal ?? 0) - (a.documentsReceived ?? 0);\n        const bMissing = (b.documentsTotal ?? 0) - (b.documentsReceived ?? 0);\n        return bMissing - aMissing;\n      });\n      setClients(sorted);\n    });\n  }, []);\n\n  const open = (client) => {\n    setSelected(client);\n    setMessage(\"\");\n    setPhase(\"idle\");\n  };\n\n  const send = async () => {\n    if (!selected || !message.trim()) return;\n    setPhase(\"sending\");\n    const result = await tools.host_sendClientMessage({\n      id: selected.id,\n      body: { body: message.trim(), author: \"Firm\" },\n    });\n    setPhase(result && result.status === \"pending-approval\" ? \"awaiting\" : \"sent\");\n    setSentFor(selected.id);\n  };\n\n  const dismiss = () => {\n    setSelected(null);\n    setPhase(\"idle\");\n    setMessage(\"\");\n  };\n\n  const token = (name) => `var(--vendo-color-${name})`;\n  const radius = (name) => `var(--vendo-radius-${name})`;\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", color: token(\"text\"), display: \"grid\", gap: 0 }}>\n      {clients.length === 0 && (\n        <div style={{ padding: \"32px 0\", textAlign: \"center\", color: token(\"muted\"), fontSize: 14 }}>\n          No clients with outstanding documents — nothing to chase this week.\n        </div>\n      )}\n      {clients.map((c, i) => {\n        const missing = (c.documentsTotal ?? 0) - (c.documentsReceived ?? 0);\n        const ratio = c.documentsTotal > 0 ? (c.documentsReceived ?? 0) / c.documentsTotal : 0;\n        const pct = Math.round(ratio * 100);\n        const isSelected = selected && selected.id === c.id;\n        const wasSent = sentFor === c.id && phase === \"sent\";\n        const isAwaiting = sentFor === c.id && phase === \"awaiting\";\n\n        const urgencyColor = missing >= 5 ? token(\"danger\") : missing >= 2 ? \"#b45309\" : token(\"muted\");\n\n        return (\n          <div key={c.id} style={{\n            borderBottom: `1px solid ${token(\"border\")}`,\n            background: isSelected ? \"#f7f6f3\" : token(\"surface\"),\n            transition: \"background 0.15s\",\n          }}>\n            <div style={{\n              display: \"grid\",\n              gridTemplateColumns: \"1fr auto auto\",\n              alignItems: \"center\",\n              gap: 16,\n              padding: \"14px 20px\",\n              cursor: \"pointer\",\n            }} onClick={() => isSelected ? dismiss() : open(c)}>\n              <div style={{ display: \"grid\", gap: 4 }}>\n                <div style={{ display: \"flex\", alignItems: \"center\", gap: 10 }}>\n                  <span style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</span>\n                  {c.entityType && (\n                    <span style={{ fontSize: 12, color: token(\"muted\"), background: token(\"border\"), borderRadius: 4, padding: \"1px 7px\" }}>\n                      {c.entityType}\n                    </span>\n                  )}\n                  {c.assignedStaff && (\n                    <span style={{ fontSize: 12, color: token(\"muted\") }}>{c.assignedStaff}</span>\n                  )}\n                </div>\n                <div style={{ display: \"flex\", alignItems: \"center\", gap: 10 }}>\n                  <div style={{ width: 120, height: 5, background: token(\"border\"), borderRadius: 99, overflow: \"hidden\" }}>\n                    <div style={{ width: `${pct}%`, height: \"100%\", background: pct === 100 ? \"#16a34a\" : token(\"accent\"), borderRadius: 99 }}/>\n                  </div>\n                  <span style={{ fontSize: 12, color: token(\"muted\") }}>\n                    {c.documentsReceived ?? 0} of {c.documentsTotal ?? 0} collected\n                  </span>\n                </div>\n              </div>\n              <div style={{ textAlign: \"right\" }}>\n                <span style={{ fontWeight: 700, fontSize: 18, color: urgencyColor }}>{missing}</span>\n                <span style={{ fontSize: 12, color: token(\"muted\"), display: \"block\" }}>missing</span>\n              </div>\n              <div style={{ display: \"flex\", flexDirection: \"column\", alignItems: \"flex-end\", gap: 4 }}>\n                {c.filingDeadline && (\n                  <span style={{ fontSize: 12, color: token(\"muted\") }}>\n                    Due <strong>{new Date(c.filingDeadline).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\" })}</strong>\n                  </span>\n                )}\n                {wasSent && (\n                  <span style={{ fontSize: 12, color: \"#16a34a\", fontWeight: 600 }}>✓ Reminder sent</span>\n                )}\n                {isAwaiting && (\n                  <span style={{ fontSize: 12, color: \"#b45309\", fontWeight: 600 }}>Awaiting approval…</span>\n                )}\n              </div>\n            </div>\n\n            {isSelected && (\n              <div style={{\n                padding: \"0 20px 18px 20px\",\n                display: \"grid\",\n                gap: 10,\n              }}>\n                <div style={{ fontSize: 13, color: token(\"muted\"), fontWeight: 500 }}>\n                  Send a reminder to {c.name}\n                </div>\n                <textarea\n                  rows={3}\n                  value={message}\n                  placeholder={`Hi ${c.name}, we're still waiting on ${missing} document${missing !== 1 ? \"s\" : \"\"} to complete your filing. Please upload them at your earliest convenience.`}\n                  onChange={(e) => setMessage(e.target.value)}\n                  disabled={phase === \"sending\" || phase === \"awaiting\" || phase === \"sent\"}\n                  style={{\n                    width: \"100%\",\n                    boxSizing: \"border-box\",\n                    padding: \"10px 12px\",\n                    fontSize: 14,\n                    fontFamily: \"var(--vendo-font-family)\",\n                    border: `1px solid ${token(\"border\")}`,\n                    borderRadius: radius(\"small\"),\n                    background: token(\"surface\"),\n                    color: token(\"text\"),\n                    resize: \"vertical\",\n                    outline: \"none\",\n                  }}\n                />\n                <div style={{ display: \"flex\", gap: 8 }}>\n                  <button\n                    onClick={send}\n                    disabled={!message.trim() || phase !== \"idle\"}\n                    style={{\n                      padding: \"8px 18px\",\n                      fontSize: 14,\n                      fontWeight: 600,\n                      background: (!message.trim() || phase !== \"idle\") ? token(\"border\") : token(\"accent\"),\n                      color: (!message.trim() || phase !== \"idle\") ? token(\"muted\") : token(\"accentText\"),\n                      border: \"none\",\n                      borderRadius: radius(\"small\"),\n                      cursor: (!message.trim() || phase !== \"idle\") ? \"not-allowed\" : \"pointer\",\n                      transition: \"background 0.15s\",\n                    }}\n                  >\n                    {phase === \"sending\" ? \"Sending…\" : phase === \"awaiting\" ? \"Awaiting approval…\" : phase === \"sent\" ? \"Sent\" : \"Send reminder\"}\n                  </button>\n                  <button\n                    onClick={dismiss}\n                    style={{\n                      padding: \"8px 14px\",\n                      fontSize: 14,\n                      background: \"transparent\",\n                      color: token(\"muted\"),\n                      border: `1px solid ${token(\"border\")}`,\n                      borderRadius: radius(\"small\"),\n                      cursor: \"pointer\",\n                    }}\n                  >\n                    Cancel\n                  </button>\n                </div>\n              </div>\n            )}\n          </div>\n        );\n      })}\n    </div>\n  );\n}"
+    },
+    "componentTools": {
+      "ChaseListPanel": [
+        "host_listClients",
+        "host_sendClientMessage"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 30984,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8184,
+        "outputTokens": 2384
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 32957,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 1970
+    }
+  ]
+}

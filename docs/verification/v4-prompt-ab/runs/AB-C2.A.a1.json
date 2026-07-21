@@ -1,0 +1,384 @@
+{
+  "promptId": "AB-C2",
+  "host": "demo-accounting",
+  "arm": "A",
+  "attempt": 1,
+  "prompt": "A chase list: clients with outstanding documents ranked worst-first, and let me send one of them a reminder message without leaving the page.",
+  "ok": true,
+  "wallMs": 25991,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 6809,
+  "outputTokens": 1894,
+  "nodes": 27,
+  "queries": 2,
+  "wire": "<App name=\"Chase List\">\n  <Query id=\"deadlines\" tool=\"host_listDeadlines\" input={{}}/>\n  <Query id=\"dashboard\" tool=\"host_getDashboard\" input={{}}/>\n  <Stack gap={4}>\n    <Row gap={3}>\n      <CadenceMissingDocsHero missingCount={dashboard.clientsMissingDocuments} clientCount={dashboard.totalClients} badgeLabel=\"Outstanding documents\"/>\n      <Surface>\n        <Stack gap={2}>\n          <Text variant=\"caption\">\n            Documents received\n          </Text>\n          <Stat label=\"Received\" value={dashboard.documentsReceived} format=\"number\"/>\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={2}>\n          <Text variant=\"caption\">\n            Documents outstanding\n          </Text>\n          <Stat label=\"Outstanding\" value={dashboard.documentsOutstanding} format=\"number\" tone=\"danger\"/>\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={2}>\n          <Text variant=\"caption\">\n            Nearest deadline\n          </Text>\n          <Stat label=\"Client\" value={dashboard.nearestDeadline.clientName}/>\n        </Stack>\n      </Surface>\n    </Row>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\">\n          Chase list — clients with outstanding documents\n        </Text>\n        <Text variant=\"caption\">\n          Ranked by documents missing, worst first. Send a reminder directly from this page.\n        </Text>\n        <DataTable rows={deadlines.data} sortBy=\"missingCount desc\" searchable paginate={20} emptyState=\"No documents outstanding — nothing to chase this week.\" columns={[{ key: \"clientName\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\" }, { key: \"assignedStaff\", label: \"Staff\" }, { key: \"filingDeadline\", label: \"Deadline\", format: \"date\" }, { key: \"missingCount\", label: \"Missing\", align: \"end\" }, { key: \"receivedCount\", label: \"Received\", align: \"end\" }, { key: \"totalCount\", label: \"Total\", align: \"end\" }, { key: \"status\", label: \"Status\" }]}/>\n      </Stack>\n    </Surface>\n    <ChaseMessagePanel clients={deadlines.data}/>\n  </Stack>\n  <Island name=\"ChaseMessagePanel\">interface Client {\n      id: string;\n      clientName: string;\n      entityType?: string;\n      missingCount?: number;\n      missingDocumentKinds?: string[];\n      status?: string;\n    }\n\n    interface Props {\n      clients: Client[];\n    }\n\n    export default function ChaseMessagePanel({ clients = [] }: Props) {\n      const [selectedId, setSelectedId] = useState<string>(\"\");\n      const [message, setMessage] = useState<string>(\"\");\n      const [status, setStatus] = useState<\"idle\"|\"sending\"|\"pending\"|\"sent\"|\"error\">(\"idle\");\n      const [errorMsg, setErrorMsg] = useState<string>(\"\");\n\n      const chaseClients = (clients || []).filter(c => (c.missingCount ?? 0) > 0);\n\n      const selected = chaseClients.find(c => c.id === selectedId) ?? null;\n\n      function buildDefaultMessage(client: Client): string {\n        const kinds = client.missingDocumentKinds && client.missingDocumentKinds.length > 0\n          ? client.missingDocumentKinds.join(\", \")\n          : \"several documents\";\n        return `Hi ${client.clientName},\\n\\nWe're still waiting on ${kinds} to complete your filing. Could you please upload these at your earliest convenience?\\n\\nThank you,\\nThe Firm`;\n      }\n\n      function handleClientChange(val: string) {\n        setSelectedId(val);\n        setStatus(\"idle\");\n        setErrorMsg(\"\");\n        const c = chaseClients.find(cl => cl.id === val);\n        if (c) setMessage(buildDefaultMessage(c));\n        else setMessage(\"\");\n      }\n\n      async function handleSend() {\n        if (!selectedId || !message.trim()) return;\n        setStatus(\"sending\");\n        setErrorMsg(\"\");\n        try {\n          const result = await tools.host_sendClientMessage({\n            id: selectedId,\n            body: { body: message.trim(), author: \"firm\" }\n          });\n          if (result && result.status === \"pending-approval\") {\n            setStatus(\"pending\");\n          } else {\n            setStatus(\"sent\");\n            setMessage(\"\");\n          }\n        } catch (e: any) {\n          setStatus(\"error\");\n          setErrorMsg(e?.message ?? \"Something went wrong. Please try again.\");\n        }\n      }\n\n      const canSend = selectedId && message.trim().length > 0 && status !== \"sending\" && status !== \"pending\";\n\n      return (\n        <Surface>\n          <Stack gap={3}>\n            <Text variant=\"heading\">Send a reminder</Text>\n            <Text variant=\"caption\">Select a client from the chase list, review the message, and send.</Text>\n\n            {chaseClients.length === 0 ? (\n              <Callout tone=\"success\" title=\"Nothing to chase\">No clients have outstanding documents right now.</Callout>\n            ) : (\n              <>\n                <Select\n                  label=\"Client\"\n                  placeholder=\"Choose a client…\"\n                  options={chaseClients}\n                  labelField=\"clientName\"\n                  valueField=\"id\"\n                  value={selectedId}\n                  onChange={(val: string) => handleClientChange(val)}\n                />\n\n                {selected && (\n                  <Row gap={3}>\n                    <Badge label={`${selected.missingCount ?? 0} missing`} tone=\"danger\"/>\n                    {selected.entityType && <Badge label={selected.entityType} tone=\"neutral\"/>}\n                    {selected.missingDocumentKinds && selected.missingDocumentKinds.length > 0 && (\n                      <Text variant=\"caption\">Missing: {selected.missingDocumentKinds.join(\", \")}</Text>\n                    )}\n                  </Row>\n                )}\n\n                <Textarea\n                  label=\"Message\"\n                  value={message}\n                  placeholder=\"Write a reminder message…\"\n                  rows={6}\n                  onChange={(val: string) => { setMessage(val); setStatus(\"idle\"); }}\n                />\n\n                {status === \"sent\" && (\n                  <Callout tone=\"success\" title=\"Reminder sent\">Your message has been sent to the client portal.</Callout>\n                )}\n                {status === \"pending\" && (\n                  <Callout tone=\"warning\" title=\"Awaiting approval\">The message is pending approval before it reaches the client.</Callout>\n                )}\n                {status === \"error\" && (\n                  <Callout tone=\"danger\" title=\"Send failed\">{errorMsg}</Callout>\n                )}\n\n                <Row gap={2}>\n                  <Button\n                    label={status === \"sending\" ? \"Sending…\" : status === \"pending\" ? \"Awaiting approval…\" : \"Send reminder\"}\n                    variant=\"primary\"\n                    disabled={!canSend}\n                    onClick={() => handleSend()}\n                  />\n                  {selectedId && status !== \"sending\" && (\n                    <Button\n                      label=\"Reset\"\n                      variant=\"secondary\"\n                      onClick={() => { setSelectedId(\"\"); setMessage(\"\"); setStatus(\"idle\"); setErrorMsg(\"\"); }}\n                    />\n                  )}\n                </Row>\n              </>\n            )}\n          </Stack>\n        </Surface>\n      );\n    }</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Chase List",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "row-1",
+            "surface-4",
+            "chasemessagepanel-1"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "cadencemissingdocshero-1",
+            "surface-1",
+            "surface-2",
+            "surface-3"
+          ]
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "component": "CadenceMissingDocsHero",
+          "source": "host",
+          "props": {
+            "missingCount": {
+              "$path": "/dashboard/clientsMissingDocuments"
+            },
+            "clientCount": {
+              "$path": "/dashboard/totalClients"
+            },
+            "badgeLabel": "Outstanding documents"
+          }
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-1",
+            "stat-1"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption"
+          },
+          "children": [
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "Documents received"
+          }
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Received",
+            "value": {
+              "$path": "/dashboard/documentsReceived"
+            },
+            "format": "number"
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-3",
+            "stat-2"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption"
+          },
+          "children": [
+            "text-4"
+          ]
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "Documents outstanding"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Outstanding",
+            "value": {
+              "$path": "/dashboard/documentsOutstanding"
+            },
+            "format": "number",
+            "tone": "danger"
+          }
+        },
+        {
+          "id": "surface-3",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ]
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-5",
+            "stat-3"
+          ]
+        },
+        {
+          "id": "text-5",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption"
+          },
+          "children": [
+            "text-6"
+          ]
+        },
+        {
+          "id": "text-6",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "Nearest deadline"
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Client",
+            "value": {
+              "$path": "/dashboard/nearestDeadline/clientName"
+            }
+          }
+        },
+        {
+          "id": "surface-4",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-5"
+          ]
+        },
+        {
+          "id": "stack-5",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-7",
+            "text-9",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-7",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading"
+          },
+          "children": [
+            "text-8"
+          ]
+        },
+        {
+          "id": "text-8",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "Chase list — clients with outstanding documents"
+          }
+        },
+        {
+          "id": "text-9",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption"
+          },
+          "children": [
+            "text-10"
+          ]
+        },
+        {
+          "id": "text-10",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "Ranked by documents missing, worst first. Send a reminder directly from this page."
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/deadlines/data"
+            },
+            "sortBy": "missingCount desc",
+            "searchable": true,
+            "paginate": 20,
+            "emptyState": "No documents outstanding — nothing to chase this week.",
+            "columns": [
+              {
+                "key": "clientName",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "assignedStaff",
+                "label": "Staff"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Deadline",
+                "format": "date"
+              },
+              {
+                "key": "missingCount",
+                "label": "Missing",
+                "align": "end"
+              },
+              {
+                "key": "receivedCount",
+                "label": "Received",
+                "align": "end"
+              },
+              {
+                "key": "totalCount",
+                "label": "Total",
+                "align": "end"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              }
+            ]
+          }
+        },
+        {
+          "id": "chasemessagepanel-1",
+          "component": "ChaseMessagePanel",
+          "source": "generated",
+          "props": {
+            "clients": {
+              "$path": "/deadlines/data"
+            }
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "deadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "dashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        }
+      ]
+    },
+    "components": {
+      "ChaseMessagePanel": "interface Client {\n      id: string;\n      clientName: string;\n      entityType?: string;\n      missingCount?: number;\n      missingDocumentKinds?: string[];\n      status?: string;\n    }\n\n    interface Props {\n      clients: Client[];\n    }\n\n    export default function ChaseMessagePanel({ clients = [] }: Props) {\n      const [selectedId, setSelectedId] = useState<string>(\"\");\n      const [message, setMessage] = useState<string>(\"\");\n      const [status, setStatus] = useState<\"idle\"|\"sending\"|\"pending\"|\"sent\"|\"error\">(\"idle\");\n      const [errorMsg, setErrorMsg] = useState<string>(\"\");\n\n      const chaseClients = (clients || []).filter(c => (c.missingCount ?? 0) > 0);\n\n      const selected = chaseClients.find(c => c.id === selectedId) ?? null;\n\n      function buildDefaultMessage(client: Client): string {\n        const kinds = client.missingDocumentKinds && client.missingDocumentKinds.length > 0\n          ? client.missingDocumentKinds.join(\", \")\n          : \"several documents\";\n        return `Hi ${client.clientName},\\n\\nWe're still waiting on ${kinds} to complete your filing. Could you please upload these at your earliest convenience?\\n\\nThank you,\\nThe Firm`;\n      }\n\n      function handleClientChange(val: string) {\n        setSelectedId(val);\n        setStatus(\"idle\");\n        setErrorMsg(\"\");\n        const c = chaseClients.find(cl => cl.id === val);\n        if (c) setMessage(buildDefaultMessage(c));\n        else setMessage(\"\");\n      }\n\n      async function handleSend() {\n        if (!selectedId || !message.trim()) return;\n        setStatus(\"sending\");\n        setErrorMsg(\"\");\n        try {\n          const result = await tools.host_sendClientMessage({\n            id: selectedId,\n            body: { body: message.trim(), author: \"firm\" }\n          });\n          if (result && result.status === \"pending-approval\") {\n            setStatus(\"pending\");\n          } else {\n            setStatus(\"sent\");\n            setMessage(\"\");\n          }\n        } catch (e: any) {\n          setStatus(\"error\");\n          setErrorMsg(e?.message ?? \"Something went wrong. Please try again.\");\n        }\n      }\n\n      const canSend = selectedId && message.trim().length > 0 && status !== \"sending\" && status !== \"pending\";\n\n      return (\n        <Surface>\n          <Stack gap={3}>\n            <Text variant=\"heading\">Send a reminder</Text>\n            <Text variant=\"caption\">Select a client from the chase list, review the message, and send.</Text>\n\n            {chaseClients.length === 0 ? (\n              <Callout tone=\"success\" title=\"Nothing to chase\">No clients have outstanding documents right now.</Callout>\n            ) : (\n              <>\n                <Select\n                  label=\"Client\"\n                  placeholder=\"Choose a client…\"\n                  options={chaseClients}\n                  labelField=\"clientName\"\n                  valueField=\"id\"\n                  value={selectedId}\n                  onChange={(val: string) => handleClientChange(val)}\n                />\n\n                {selected && (\n                  <Row gap={3}>\n                    <Badge label={`${selected.missingCount ?? 0} missing`} tone=\"danger\"/>\n                    {selected.entityType && <Badge label={selected.entityType} tone=\"neutral\"/>}\n                    {selected.missingDocumentKinds && selected.missingDocumentKinds.length > 0 && (\n                      <Text variant=\"caption\">Missing: {selected.missingDocumentKinds.join(\", \")}</Text>\n                    )}\n                  </Row>\n                )}\n\n                <Textarea\n                  label=\"Message\"\n                  value={message}\n                  placeholder=\"Write a reminder message…\"\n                  rows={6}\n                  onChange={(val: string) => { setMessage(val); setStatus(\"idle\"); }}\n                />\n\n                {status === \"sent\" && (\n                  <Callout tone=\"success\" title=\"Reminder sent\">Your message has been sent to the client portal.</Callout>\n                )}\n                {status === \"pending\" && (\n                  <Callout tone=\"warning\" title=\"Awaiting approval\">The message is pending approval before it reaches the client.</Callout>\n                )}\n                {status === \"error\" && (\n                  <Callout tone=\"danger\" title=\"Send failed\">{errorMsg}</Callout>\n                )}\n\n                <Row gap={2}>\n                  <Button\n                    label={status === \"sending\" ? \"Sending…\" : status === \"pending\" ? \"Awaiting approval…\" : \"Send reminder\"}\n                    variant=\"primary\"\n                    disabled={!canSend}\n                    onClick={() => handleSend()}\n                  />\n                  {selectedId && status !== \"sending\" && (\n                    <Button\n                      label=\"Reset\"\n                      variant=\"secondary\"\n                      onClick={() => { setSelectedId(\"\"); setMessage(\"\"); setStatus(\"idle\"); setErrorMsg(\"\"); }}\n                    />\n                  )}\n                </Row>\n              </>\n            )}\n          </Stack>\n        </Surface>\n      );\n    }"
+    },
+    "componentTools": {
+      "ChaseMessagePanel": [
+        "host_sendClientMessage"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 25988,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6809,
+        "outputTokens": 1894
+      }
+    }
+  ],
+  "pipeline": []
+}

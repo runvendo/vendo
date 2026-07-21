@@ -1,0 +1,236 @@
+{
+  "promptId": "AB-M3",
+  "host": "demo-bank",
+  "arm": "A",
+  "attempt": 1,
+  "prompt": "A detail view for my checking account: the current balance, account number, and its recent transactions with each one's status.",
+  "ok": true,
+  "wallMs": 7166,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 7301,
+  "outputTokens": 446,
+  "nodes": 14,
+  "queries": 2,
+  "wire": "<App name=\"Checking Account Detail\">\n  <Query id=\"accounts\" tool=\"host_listAccounts\" input={{}}/>\n  <Query id=\"txns\" tool=\"host_listAccountTransactions\" input={{ id: \"checking\" }}/>\n  <Stack gap={4}>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Checking Account\"/>\n        <Row gap={4}>\n          <Stat label=\"Current Balance\" value={{ \"$path\": \"/accounts/data/0/balanceCents\" }} format=\"money\"/>\n          <Stat label=\"Account Number\" value={{ \"$path\": \"/accounts/data/0/mask\" }}/>\n          <Stat label=\"Account Type\" value={{ \"$path\": \"/accounts/data/0/type\" }}/>\n        </Row>\n      </Stack>\n    </Surface>\n    <MapleNetWorthCard valueCents={{ \"$path\": \"/accounts/data/0/balanceCents\" }} series={{ \"$path\": \"/accounts/data/0/sparkline\" }} changeLabel=\"Balance trend\" initialRange=\"1M\" chartHeight={120}/>\n    <Surface>\n      <Stack gap={2}>\n        <Text variant=\"heading\" text=\"Recent Transactions\"/>\n        <DataTable rows={txns.data} searchable paginate={15} sortBy=\"date desc\" columns={[{ key: \"description\", label: \"Description\" }, { key: \"category\", label: \"Category\" }, { key: \"date\", label: \"Date\", format: \"date\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }, { key: \"status\", label: \"Status\" }]} emptyState=\"No recent transactions for this account.\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Checking Account Detail",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "surface-1",
+            "maplenetworthcard-1",
+            "surface-2"
+          ]
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-1",
+            "row-1"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Checking Account"
+          }
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Current Balance",
+            "value": {
+              "$path": "/accounts/data/0/balanceCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Account Number",
+            "value": {
+              "$path": "/accounts/data/0/mask"
+            }
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Account Type",
+            "value": {
+              "$path": "/accounts/data/0/type"
+            }
+          }
+        },
+        {
+          "id": "maplenetworthcard-1",
+          "component": "MapleNetWorthCard",
+          "source": "host",
+          "props": {
+            "valueCents": {
+              "$path": "/accounts/data/0/balanceCents"
+            },
+            "series": {
+              "$path": "/accounts/data/0/sparkline"
+            },
+            "changeLabel": "Balance trend",
+            "initialRange": "1M",
+            "chartHeight": 120
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-2",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Recent Transactions"
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/txns/data"
+            },
+            "searchable": true,
+            "paginate": 15,
+            "sortBy": "date desc",
+            "columns": [
+              {
+                "key": "description",
+                "label": "Description"
+              },
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "date",
+                "label": "Date",
+                "format": "date"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              }
+            ],
+            "emptyState": "No recent transactions for this account."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "accounts",
+          "tool": "host_listAccounts",
+          "input": {}
+        },
+        {
+          "name": "txns",
+          "tool": "host_listAccountTransactions",
+          "input": {
+            "id": "checking"
+          }
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 7160,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7301,
+        "outputTokens": 446
+      }
+    }
+  ],
+  "pipeline": []
+}

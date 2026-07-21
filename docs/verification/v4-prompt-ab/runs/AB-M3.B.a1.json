@@ -1,0 +1,103 @@
+{
+  "promptId": "AB-M3",
+  "host": "demo-bank",
+  "arm": "B",
+  "attempt": 1,
+  "prompt": "A detail view for my checking account: the current balance, account number, and its recent transactions with each one's status.",
+  "ok": true,
+  "wallMs": 45702,
+  "fullAttempts": 3,
+  "repairRounds": 0,
+  "endPassApplied": false,
+  "firstAttemptValid": false,
+  "inputTokens": 26190,
+  "outputTokens": 3226,
+  "nodes": 2,
+  "queries": 1,
+  "wire": "<App name=\"Checking account\">\n  <Query id=\"accounts\" tool=\"host_listAccounts\" input={{}}/>\n  <CheckingDetail/>\n  <Island name=\"CheckingDetail\">export default function CheckingDetail() {\n  const [account, setAccount] = React.useState(null);\n  const [txns, setTxns] = React.useState([]);\n  const [loading, setLoading] = React.useState(true);\n\n  React.useEffect(() => {\n    async function load() {\n      const accts = await tools.host_listAccounts({});\n      const checking = (accts || []).find(a =>\n        a.type === \"checking\" || (a.name && a.name.toLowerCase().includes(\"checking\"))\n      ) || (accts && accts[0]);\n      setAccount(checking);\n      if (checking) {\n        const t = await tools.host_listAccountTransactions({ id: checking.id });\n        setTxns(Array.isArray(t) ? t : (t && t.data) ? t.data : []);\n      }\n      setLoading(false);\n    }\n    load();\n  }, []);\n\n  if (loading) {\n    return (\n      <div style={{ padding: 24, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\" }}>\n        Loading…\n      </div>\n    );\n  }\n\n  if (!account) {\n    return (\n      <div style={{ padding: 24, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\" }}>\n        No checking account found.\n      </div>\n    );\n  }\n\n  const balanceDollars = typeof account.balanceCents === \"number\"\n    ? fmt.money(account.balanceCents)\n    : (account.balance != null ? fmt.money(Math.round(account.balance * 100)) : \"—\");\n\n  const acctNumber = account.accountNumber || account.number || account.mask\n    ? `••••${account.accountNumber || account.number || account.mask}`\n    : \"—\";\n\n  const statusTone = (status) => {\n    if (!status) return \"var(--vendo-color-muted)\";\n    const s = status.toLowerCase();\n    if (s === \"completed\" || s === \"posted\" || s === \"settled\") return \"#1a7f4b\";\n    if (s === \"pending\") return \"#b45309\";\n    if (s === \"failed\" || s === \"declined\") return \"var(--vendo-color-danger)\";\n    return \"var(--vendo-color-muted)\";\n  };\n\n  const statusLabel = (status) => {\n    if (!status) return \"—\";\n    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase().replace(/_/g, \" \");\n  };\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", display: \"grid\", gap: 24 }}>\n      {/* Hero balance */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        padding: \"28px 28px 24px\"\n      }}>\n        <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 13, marginBottom: 6 }}>\n          {account.name || \"Checking account\"}\n        </div>\n        <div style={{ fontSize: 40, fontWeight: 700, letterSpacing: \"-1px\", color: \"var(--vendo-color-text)\", lineHeight: 1.1 }}>\n          {balanceDollars}\n        </div>\n        <div style={{ marginTop: 16, display: \"flex\", gap: 32, flexWrap: \"wrap\" }}>\n          <div>\n            <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 12, marginBottom: 2 }}>Account number</div>\n            <div style={{ fontSize: 15, color: \"var(--vendo-color-text)\", fontVariantNumeric: \"tabular-nums\" }}>{acctNumber}</div>\n          </div>\n          {account.routingNumber && (\n            <div>\n              <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 12, marginBottom: 2 }}>Routing number</div>\n              <div style={{ fontSize: 15, color: \"var(--vendo-color-text)\", fontVariantNumeric: \"tabular-nums\" }}>{account.routingNumber}</div>\n            </div>\n          )}\n          {account.institution && (\n            <div>\n              <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 12, marginBottom: 2 }}>Institution</div>\n              <div style={{ fontSize: 15, color: \"var(--vendo-color-text)\" }}>{account.institution}</div>\n            </div>\n          )}\n        </div>\n      </div>\n\n      {/* Recent transactions */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        overflow: \"hidden\"\n      }}>\n        <div style={{ padding: \"16px 20px 12px\", borderBottom: \"1px solid var(--vendo-color-border)\" }}>\n          <span style={{ fontWeight: 600, fontSize: 15, color: \"var(--vendo-color-text)\" }}>Recent transactions</span>\n        </div>\n        {txns.length === 0 ? (\n          <div style={{ padding: 24, color: \"var(--vendo-color-muted)\", fontSize: 14 }}>\n            No recent transactions on this account.\n          </div>\n        ) : (\n          <table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 14 }}>\n            <thead>\n              <tr style={{ background: \"var(--vendo-color-background)\" }}>\n                <th style={{ textAlign: \"left\", padding: \"10px 20px\", color: \"var(--vendo-color-muted)\", fontWeight: 500, fontSize: 12 }}>Description</th>\n                <th style={{ textAlign: \"left\", padding: \"10px 12px\", color: \"var(--vendo-color-muted)\", fontWeight: 500, fontSize: 12 }}>Date</th>\n                <th style={{ textAlign: \"left\", padding: \"10px 12px\", color: \"var(--vendo-color-muted)\", fontWeight: 500, fontSize: 12 }}>Status</th>\n                <th style={{ textAlign: \"right\", padding: \"10px 20px\", color: \"var(--vendo-color-muted)\", fontWeight: 500, fontSize: 12 }}>Amount</th>\n              </tr>\n            </thead>\n            <tbody>\n              {txns.map((tx, i) => {\n                const cents = typeof tx.amountCents === \"number\" ? tx.amountCents\n                  : typeof tx.amount === \"number\" ? Math.round(tx.amount * 100) : null;\n                const isNeg = cents != null && cents < 0;\n                const dateStr = tx.date || tx.createdAt || tx.postedAt || tx.timestamp;\n                return (\n                  <tr key={tx.id || i} style={{ borderTop: i === 0 ? \"none\" : \"1px solid var(--vendo-color-border)\" }}>\n                    <td style={{ padding: \"13px 20px\", color: \"var(--vendo-color-text)\", maxWidth: 220 }}>\n                      <div style={{ fontWeight: 500, whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\" }}>\n                        {tx.description || tx.merchant || tx.name || \"—\"}\n                      </div>\n                      {tx.category && (\n                        <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 12, marginTop: 2 }}>{tx.category}</div>\n                      )}\n                    </td>\n                    <td style={{ padding: \"13px 12px\", color: \"var(--vendo-color-muted)\", whiteSpace: \"nowrap\" }}>\n                      {dateStr ? new Date(dateStr).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\" }) : \"—\"}\n                    </td>\n                    <td style={{ padding: \"13px 12px\" }}>\n                      <span style={{\n                        display: \"inline-block\",\n                        padding: \"2px 8px\",\n                        borderRadius: 99,\n                        fontSize: 12,\n                        fontWeight: 500,\n                        background: \"var(--vendo-color-background)\",\n                        color: statusTone(tx.status),\n                        border: \"1px solid var(--vendo-color-border)\"\n                      }}>\n                        {statusLabel(tx.status)}\n                      </span>\n                    </td>\n                    <td style={{ padding: \"13px 20px\", textAlign: \"right\", fontVariantNumeric: \"tabular-nums\", fontWeight: 600, color: \"var(--vendo-color-text)\" }}>\n                      {cents != null ? fmt.money(Math.abs(cents)) : \"—\"}\n                    </td>\n                  </tr>\n                );\n              })}\n            </tbody>\n          </table>\n        )}\n      </div>\n    </div>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Checking account",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "checkingdetail-1"
+          ]
+        },
+        {
+          "id": "checkingdetail-1",
+          "component": "CheckingDetail",
+          "source": "generated"
+        }
+      ],
+      "queries": [
+        {
+          "name": "accounts",
+          "tool": "host_listAccounts",
+          "input": {}
+        }
+      ]
+    },
+    "components": {
+      "CheckingDetail": "export default function CheckingDetail() {\n  const [account, setAccount] = React.useState(null);\n  const [txns, setTxns] = React.useState([]);\n  const [loading, setLoading] = React.useState(true);\n\n  React.useEffect(() => {\n    async function load() {\n      const accts = await tools.host_listAccounts({});\n      const checking = (accts || []).find(a =>\n        a.type === \"checking\" || (a.name && a.name.toLowerCase().includes(\"checking\"))\n      ) || (accts && accts[0]);\n      setAccount(checking);\n      if (checking) {\n        const t = await tools.host_listAccountTransactions({ id: checking.id });\n        setTxns(Array.isArray(t) ? t : (t && t.data) ? t.data : []);\n      }\n      setLoading(false);\n    }\n    load();\n  }, []);\n\n  if (loading) {\n    return (\n      <div style={{ padding: 24, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\" }}>\n        Loading…\n      </div>\n    );\n  }\n\n  if (!account) {\n    return (\n      <div style={{ padding: 24, fontFamily: \"var(--vendo-font-family)\", color: \"var(--vendo-color-muted)\" }}>\n        No checking account found.\n      </div>\n    );\n  }\n\n  const balanceDollars = typeof account.balanceCents === \"number\"\n    ? fmt.money(account.balanceCents)\n    : (account.balance != null ? fmt.money(Math.round(account.balance * 100)) : \"—\");\n\n  const acctNumber = account.accountNumber || account.number || account.mask\n    ? `••••${account.accountNumber || account.number || account.mask}`\n    : \"—\";\n\n  const statusTone = (status) => {\n    if (!status) return \"var(--vendo-color-muted)\";\n    const s = status.toLowerCase();\n    if (s === \"completed\" || s === \"posted\" || s === \"settled\") return \"#1a7f4b\";\n    if (s === \"pending\") return \"#b45309\";\n    if (s === \"failed\" || s === \"declined\") return \"var(--vendo-color-danger)\";\n    return \"var(--vendo-color-muted)\";\n  };\n\n  const statusLabel = (status) => {\n    if (!status) return \"—\";\n    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase().replace(/_/g, \" \");\n  };\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", display: \"grid\", gap: 24 }}>\n      {/* Hero balance */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        padding: \"28px 28px 24px\"\n      }}>\n        <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 13, marginBottom: 6 }}>\n          {account.name || \"Checking account\"}\n        </div>\n        <div style={{ fontSize: 40, fontWeight: 700, letterSpacing: \"-1px\", color: \"var(--vendo-color-text)\", lineHeight: 1.1 }}>\n          {balanceDollars}\n        </div>\n        <div style={{ marginTop: 16, display: \"flex\", gap: 32, flexWrap: \"wrap\" }}>\n          <div>\n            <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 12, marginBottom: 2 }}>Account number</div>\n            <div style={{ fontSize: 15, color: \"var(--vendo-color-text)\", fontVariantNumeric: \"tabular-nums\" }}>{acctNumber}</div>\n          </div>\n          {account.routingNumber && (\n            <div>\n              <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 12, marginBottom: 2 }}>Routing number</div>\n              <div style={{ fontSize: 15, color: \"var(--vendo-color-text)\", fontVariantNumeric: \"tabular-nums\" }}>{account.routingNumber}</div>\n            </div>\n          )}\n          {account.institution && (\n            <div>\n              <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 12, marginBottom: 2 }}>Institution</div>\n              <div style={{ fontSize: 15, color: \"var(--vendo-color-text)\" }}>{account.institution}</div>\n            </div>\n          )}\n        </div>\n      </div>\n\n      {/* Recent transactions */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        overflow: \"hidden\"\n      }}>\n        <div style={{ padding: \"16px 20px 12px\", borderBottom: \"1px solid var(--vendo-color-border)\" }}>\n          <span style={{ fontWeight: 600, fontSize: 15, color: \"var(--vendo-color-text)\" }}>Recent transactions</span>\n        </div>\n        {txns.length === 0 ? (\n          <div style={{ padding: 24, color: \"var(--vendo-color-muted)\", fontSize: 14 }}>\n            No recent transactions on this account.\n          </div>\n        ) : (\n          <table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 14 }}>\n            <thead>\n              <tr style={{ background: \"var(--vendo-color-background)\" }}>\n                <th style={{ textAlign: \"left\", padding: \"10px 20px\", color: \"var(--vendo-color-muted)\", fontWeight: 500, fontSize: 12 }}>Description</th>\n                <th style={{ textAlign: \"left\", padding: \"10px 12px\", color: \"var(--vendo-color-muted)\", fontWeight: 500, fontSize: 12 }}>Date</th>\n                <th style={{ textAlign: \"left\", padding: \"10px 12px\", color: \"var(--vendo-color-muted)\", fontWeight: 500, fontSize: 12 }}>Status</th>\n                <th style={{ textAlign: \"right\", padding: \"10px 20px\", color: \"var(--vendo-color-muted)\", fontWeight: 500, fontSize: 12 }}>Amount</th>\n              </tr>\n            </thead>\n            <tbody>\n              {txns.map((tx, i) => {\n                const cents = typeof tx.amountCents === \"number\" ? tx.amountCents\n                  : typeof tx.amount === \"number\" ? Math.round(tx.amount * 100) : null;\n                const isNeg = cents != null && cents < 0;\n                const dateStr = tx.date || tx.createdAt || tx.postedAt || tx.timestamp;\n                return (\n                  <tr key={tx.id || i} style={{ borderTop: i === 0 ? \"none\" : \"1px solid var(--vendo-color-border)\" }}>\n                    <td style={{ padding: \"13px 20px\", color: \"var(--vendo-color-text)\", maxWidth: 220 }}>\n                      <div style={{ fontWeight: 500, whiteSpace: \"nowrap\", overflow: \"hidden\", textOverflow: \"ellipsis\" }}>\n                        {tx.description || tx.merchant || tx.name || \"—\"}\n                      </div>\n                      {tx.category && (\n                        <div style={{ color: \"var(--vendo-color-muted)\", fontSize: 12, marginTop: 2 }}>{tx.category}</div>\n                      )}\n                    </td>\n                    <td style={{ padding: \"13px 12px\", color: \"var(--vendo-color-muted)\", whiteSpace: \"nowrap\" }}>\n                      {dateStr ? new Date(dateStr).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\" }) : \"—\"}\n                    </td>\n                    <td style={{ padding: \"13px 12px\" }}>\n                      <span style={{\n                        display: \"inline-block\",\n                        padding: \"2px 8px\",\n                        borderRadius: 99,\n                        fontSize: 12,\n                        fontWeight: 500,\n                        background: \"var(--vendo-color-background)\",\n                        color: statusTone(tx.status),\n                        border: \"1px solid var(--vendo-color-border)\"\n                      }}>\n                        {statusLabel(tx.status)}\n                      </span>\n                    </td>\n                    <td style={{ padding: \"13px 20px\", textAlign: \"right\", fontVariantNumeric: \"tabular-nums\", fontWeight: 600, color: \"var(--vendo-color-text)\" }}>\n                      {cents != null ? fmt.money(Math.abs(cents)) : \"—\"}\n                    </td>\n                  </tr>\n                );\n              })}\n            </tbody>\n          </table>\n        )}\n      </div>\n    </div>\n  );\n}"
+    },
+    "componentTools": {
+      "CheckingDetail": [
+        "host_listAccountTransactions",
+        "host_listAccounts"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 8285,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8676,
+        "outputTokens": 406
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 16015,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8710,
+        "outputTokens": 376
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 44521,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8804,
+        "outputTokens": 2444
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 45702,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 1178
+    }
+  ]
+}

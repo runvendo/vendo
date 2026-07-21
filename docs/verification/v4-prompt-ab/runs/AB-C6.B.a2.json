@@ -1,0 +1,213 @@
+{
+  "promptId": "AB-C6",
+  "host": "demo-accounting",
+  "arm": "B",
+  "attempt": 2,
+  "prompt": "A billing report for the quarter: hours logged per client and the invoices we should be sending out.",
+  "ok": true,
+  "wallMs": 12488,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": true,
+  "firstAttemptValid": true,
+  "inputTokens": 8177,
+  "outputTokens": 438,
+  "nodes": 10,
+  "queries": 2,
+  "wire": "<App name=\"Client & document status (billing data unavailable)\">\n  <Query id=\"hostGetDashboard\" tool=\"host_getDashboard\" input={{}}/>\n  <Query id=\"hostListClients\" tool=\"host_listClients\" input={{}}/>\n  <Stack gap={5}>\n    <Disclaimer title=\"Hours and invoice data aren't available\" reason=\"This practice tool tracks tax document collection, client status, and filing deadlines — it has no time-tracking, hours-logged, or invoicing data. A billing report can't be built from the data available here.\"/>\n    <Text variant=\"heading\" text=\"What is available: client & document status\"/>\n    <Text variant=\"body\" text=\"Below is a full client list with document progress and filing deadlines — useful context for prioritising billing conversations.\"/>\n    <Row gap={4}>\n      <Stat label=\"Clients missing documents\" value={hostGetDashboard.missingDocumentsCount}/>\n      <Stat label=\"Documents outstanding\" value={hostGetDashboard.documentsOutstanding}/>\n      <Stat label=\"Documents received\" value={hostGetDashboard.documentsReceived}/>\n    </Row>\n    <DataTable rows={hostListClients.data} sortBy=\"filingDeadline asc\" searchable filterableBy={[\"status\", \"assignedStaff\"]} columns={[{ key: \"name\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\" }, { key: \"assignedStaff\", label: \"Assigned to\" }, { key: \"status\", label: \"Status\" }, { key: \"documentsReceived\", label: \"Docs received\", align: \"end\" }, { key: \"documentsTotal\", label: \"Docs total\", align: \"end\" }, { key: \"filingDeadline\", label: \"Filing deadline\", format: \"date\" }]} emptyState=\"No clients found.\" caption=\"All clients — sorted by nearest filing deadline\"/>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Client & document status (billing data unavailable)",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 5
+          },
+          "children": [
+            "disclaimer-1",
+            "text-1",
+            "text-2",
+            "row-1",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Hours and invoice data aren't available",
+            "reason": "This practice tool tracks tax document collection, client status, and filing deadlines — it has no time-tracking, hours-logged, or invoicing data. A billing report can't be built from the data available here."
+          }
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "What is available: client & document status"
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "body",
+            "text": "Below is a full client list with document progress and filing deadlines — useful context for prioritising billing conversations."
+          }
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Clients missing documents",
+            "value": {
+              "$path": "/hostGetDashboard/missingDocumentsCount"
+            }
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Documents outstanding",
+            "value": {
+              "$path": "/hostGetDashboard/documentsOutstanding"
+            }
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Documents received",
+            "value": {
+              "$path": "/hostGetDashboard/documentsReceived"
+            }
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListClients/data"
+            },
+            "sortBy": "filingDeadline asc",
+            "searchable": true,
+            "filterableBy": [
+              "status",
+              "assignedStaff"
+            ],
+            "columns": [
+              {
+                "key": "name",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "assignedStaff",
+                "label": "Assigned to"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              },
+              {
+                "key": "documentsReceived",
+                "label": "Docs received",
+                "align": "end"
+              },
+              {
+                "key": "documentsTotal",
+                "label": "Docs total",
+                "align": "end"
+              },
+              {
+                "key": "filingDeadline",
+                "label": "Filing deadline",
+                "format": "date"
+              }
+            ],
+            "emptyState": "No clients found.",
+            "caption": "All clients — sorted by nearest filing deadline"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetDashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        },
+        {
+          "name": "hostListClients",
+          "tool": "host_listClients",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 10463,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8177,
+        "outputTokens": 438
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 12487,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": true,
+      "ms": 2024
+    }
+  ]
+}

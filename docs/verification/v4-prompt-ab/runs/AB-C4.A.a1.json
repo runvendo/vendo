@@ -1,0 +1,48 @@
+{
+  "promptId": "AB-C4",
+  "host": "demo-accounting",
+  "arm": "A",
+  "attempt": 1,
+  "prompt": "A document review flow: pick a client, look through their uploaded documents, and verify or reject each one with a note to the client.",
+  "ok": false,
+  "error": "model could not produce a valid app :: [] :: ",
+  "wallMs": 148039,
+  "fullAttempts": 3,
+  "repairRounds": 0,
+  "firstAttemptValid": false,
+  "inputTokens": 20670,
+  "outputTokens": 12576,
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 61614,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6809,
+        "outputTokens": 5367
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 97603,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6854,
+        "outputTokens": 2955
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 147958,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7007,
+        "outputTokens": 4254
+      }
+    }
+  ],
+  "pipeline": []
+}

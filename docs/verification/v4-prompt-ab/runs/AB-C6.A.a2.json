@@ -1,0 +1,301 @@
+{
+  "promptId": "AB-C6",
+  "host": "demo-accounting",
+  "arm": "A",
+  "attempt": 2,
+  "prompt": "A billing report for the quarter: hours logged per client and the invoices we should be sending out.",
+  "ok": true,
+  "wallMs": 11610,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 6802,
+  "outputTokens": 607,
+  "nodes": 20,
+  "queries": 2,
+  "wire": "<App name=\"Quarterly Billing Report\">\n  <Query id=\"hostGetDashboard\" tool=\"host_getDashboard\" input={{}}/>\n  <Query id=\"hostListDeadlines\" tool=\"host_listDeadlines\" input={{}}/>\n  <Stack gap={4}>\n    <Row gap={2}>\n      <Text variant=\"heading\" text=\"Quarterly Billing Report\"/>\n      <Badge label=\"Q3 2026\" tone=\"neutral\"/>\n    </Row>\n    <Callout tone=\"warning\" title=\"Billing data not available on this host\">\n      This practice tool does not expose hours logged, invoice amounts, or billing records. The report below shows document collection progress per client — the closest available proxy for work completed this quarter.\n    </Callout>\n    <Grid columns={3}>\n      <Stat label=\"Total clients\" value={hostGetDashboard.totalClients}/>\n      <Stat label=\"Documents outstanding\" value={hostGetDashboard.documentsOutstanding}/>\n      <Stat label=\"Documents received\" value={hostGetDashboard.documentsReceived}/>\n    </Grid>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"Client document progress — Q3 2026\"/>\n        <Text variant=\"caption\" text=\"Sorted by deadline. Use this as a proxy for billing readiness: clients with all documents verified are ready to invoice.\"/>\n        <DataTable rows={hostListDeadlines.data} searchable paginate={20} sortBy=\"deadline asc\" filterableBy={[\"status\", \"assignedStaff\"]} columns={[{ key: \"name\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\" }, { key: \"assignedStaff\", label: \"Staff\" }, { key: \"deadline\", label: \"Filing Deadline\", format: \"date\" }, { key: \"documentsReceived\", label: \"Docs Received\", align: \"end\" }, { key: \"documentsTotal\", label: \"Docs Total\", align: \"end\" }, { key: \"status\", label: \"Status\", format: \"enum\" }]} emptyState=\"No clients found.\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={2}>\n        <Text variant=\"heading\" text=\"Hours logged and invoices\"/>\n        <Disclaimer title=\"No billing tools available\" reason=\"This host does not provide tools for hours logged, time tracking, or invoice generation. To produce a true billing report, connect a time-tracking or billing integration (e.g. QuickBooks, FreshBooks, or your practice management billing module).\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Quarterly Billing Report",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "row-1",
+            "callout-1",
+            "grid-1",
+            "surface-1",
+            "surface-2"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-1",
+            "badge-1"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Quarterly Billing Report"
+          }
+        },
+        {
+          "id": "badge-1",
+          "component": "Badge",
+          "source": "prewired",
+          "props": {
+            "label": "Q3 2026",
+            "tone": "neutral"
+          }
+        },
+        {
+          "id": "callout-1",
+          "component": "Callout",
+          "source": "prewired",
+          "props": {
+            "tone": "warning",
+            "title": "Billing data not available on this host"
+          },
+          "children": [
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "This practice tool does not expose hours logged, invoice amounts, or billing records. The report below shows document collection progress per client — the closest available proxy for work completed this quarter."
+          }
+        },
+        {
+          "id": "grid-1",
+          "component": "Grid",
+          "source": "prewired",
+          "props": {
+            "columns": 3
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total clients",
+            "value": {
+              "$path": "/hostGetDashboard/totalClients"
+            }
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Documents outstanding",
+            "value": {
+              "$path": "/hostGetDashboard/documentsOutstanding"
+            }
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Documents received",
+            "value": {
+              "$path": "/hostGetDashboard/documentsReceived"
+            }
+          }
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-3",
+            "text-4",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Client document progress — Q3 2026"
+          }
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Sorted by deadline. Use this as a proxy for billing readiness: clients with all documents verified are ready to invoice."
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListDeadlines/data"
+            },
+            "searchable": true,
+            "paginate": 20,
+            "sortBy": "deadline asc",
+            "filterableBy": [
+              "status",
+              "assignedStaff"
+            ],
+            "columns": [
+              {
+                "key": "name",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "assignedStaff",
+                "label": "Staff"
+              },
+              {
+                "key": "deadline",
+                "label": "Filing Deadline",
+                "format": "date"
+              },
+              {
+                "key": "documentsReceived",
+                "label": "Docs Received",
+                "align": "end"
+              },
+              {
+                "key": "documentsTotal",
+                "label": "Docs Total",
+                "align": "end"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "format": "enum"
+              }
+            ],
+            "emptyState": "No clients found."
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-5",
+            "disclaimer-1"
+          ]
+        },
+        {
+          "id": "text-5",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Hours logged and invoices"
+          }
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "No billing tools available",
+            "reason": "This host does not provide tools for hours logged, time tracking, or invoice generation. To produce a true billing report, connect a time-tracking or billing integration (e.g. QuickBooks, FreshBooks, or your practice management billing module)."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetDashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        },
+        {
+          "name": "hostListDeadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 11609,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6802,
+        "outputTokens": 607
+      }
+    }
+  ],
+  "pipeline": []
+}

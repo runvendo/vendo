@@ -1,0 +1,218 @@
+[
+  {
+    "promptId": "AB-C1",
+    "verdict": "tie",
+    "orderings": [
+      {
+        "promptId": "AB-C1",
+        "ordering": "AB",
+        "winnerArm": "A",
+        "reason": "Both cover the possible asks well and honestly disclaim revenue, but App 2 hardcodes a 'now' date (2026-07-21) in its NearestDeadlineCallout for relative-day math, risking incorrect day counts, whereas App 1 uses declarative relative DateTime and richer, correctly-formatted tables without that fabrication risk."
+      },
+      {
+        "promptId": "AB-C1",
+        "ordering": "BA",
+        "winnerArm": "B",
+        "reason": "Both honestly disclaim the unavailable revenue ask and cover documents/deadlines well, but App 2 has a stray raw text node ('This part of the request isn't available on this host.') dumped next to the heading and relies on several unverified dashboard fields (totalClients, documentsTotalRequested, nearestDeadlineClientName/Date), whereas App 1 composes cleanly with verified bindings and a well-for"
+      }
+    ]
+  },
+  {
+    "promptId": "AB-C2",
+    "verdict": "A",
+    "orderings": [
+      {
+        "promptId": "AB-C2",
+        "ordering": "AB",
+        "winnerArm": "A",
+        "reason": "App 1 ranks by missing count worst-first as asked, formats deadlines via column date formatting, and wires a real host_sendClientMessage from a client selected on the same page. App 2's sort is by an odd urgency heuristic (not clearly worst-first by outstanding docs) and relies on fields like documentsOutstanding/documents that the listClients tool may not provide, risking fabricated/undefined cou"
+      },
+      {
+        "promptId": "AB-C2",
+        "ordering": "BA",
+        "winnerArm": "A",
+        "reason": "App 2 ranks worst-first by missingCount using host_listDeadlines fields and wires a real send with per-client default messages, formatted dates and honest status/empty states. App 1's Island fetches with tools inside useEffect (data not from Query bindings) and its sort key uses a hardcoded 'today' date and a fragile urgency formula that doesn't cleanly rank worst-first, making it less faithful to"
+      }
+    ]
+  },
+  {
+    "promptId": "AB-C3",
+    "verdict": "A",
+    "orderings": [
+      {
+        "promptId": "AB-C3",
+        "ordering": "AB",
+        "winnerArm": "A",
+        "reason": "Both cover the ask well, but App 2 binds header fields as hostGetClient.name/.status rather than the correct .data path (App 1 uses client.data.name), and uses Stat value={filingDeadline} with a format prop whose date formatting is less certain than App 1's DateTime component. App 1's bindings are correct and its data-passing to islands via props avoids App 2's redundant refetches."
+      },
+      {
+        "promptId": "AB-C3",
+        "ordering": "BA",
+        "winnerArm": "A",
+        "reason": "Both cover the ask well, but App 1 binds the top-level Query fields (hostGetClient.name, hostListClientDocuments.data) inconsistently with the tool's data envelope, whereas App 2 consistently uses .data accessors and a cleaner two-column layout; App 2's DocActions Button also lacks an onClick but sits inside a form with onSubmit, so wiring holds."
+      }
+    ]
+  },
+  {
+    "promptId": "AB-C4",
+    "verdict": "tie",
+    "orderings": [
+      {
+        "promptId": "AB-C4",
+        "ordering": "AB",
+        "winnerArm": "B",
+        "reason": "Both cover the flow well and wire real host_setDocumentStatus calls with reasons, but App 2 filters to genuinely reviewable documents, requires and validates the rejection note before enabling submission, adds a distinct verify-confirmation step, and correctly formats the filing deadline; App 1's Verify button has no confirmation and is otherwise comparable but slightly less polished in its reject"
+      },
+      {
+        "promptId": "AB-C4",
+        "ordering": "BA",
+        "winnerArm": "A",
+        "reason": "Both apps correctly implement the pick-client → review → verify/reject-with-note flow with real host_setDocumentStatus wiring, but App 2 has a cleaner two-pane composition, uses host prewired components (EnumBadge, Callout, DataTable, formatted badges) consistently, and shows richer context (verified/missing sections) while maintaining honesty; App 1 is largely a raw styled div dump with hardcoded"
+      }
+    ]
+  },
+  {
+    "promptId": "AB-C5",
+    "verdict": "A",
+    "orderings": [
+      {
+        "promptId": "AB-C5",
+        "ordering": "AB",
+        "winnerArm": "A",
+        "reason": "App 2 has a broken header Stat binding showing a client name for 'Clients at risk this week' and another Stat rendering a raw ISO filingDeadline as a value (format=date on a Stat is questionable, and the first Stat is semantically wrong), whereas App 1's grouping, progress bars, and formatting via DateTime/Progress are correct and honest. Both cover the grouped board well, but App 1 avoids the mis"
+      },
+      {
+        "promptId": "AB-C5",
+        "ordering": "BA",
+        "winnerArm": "A",
+        "reason": "App 2 correctly binds the dashboard hero to a real field (clientsMissingDocuments) and passes query data as island props, while App 1 misuses host_getDashboard.missingDocumentsCount/totalClients (likely wrong field names) and, worse, binds a Stat 'Clients at risk this week' to a client name and a 'Nearest deadline' to a raw ISO date field on the first row rather than a count. Both group by urgency"
+      }
+    ]
+  },
+  {
+    "promptId": "AB-C6",
+    "verdict": "A",
+    "orderings": [
+      {
+        "promptId": "AB-C6",
+        "ordering": "AB",
+        "winnerArm": "A",
+        "reason": "Both honestly disclaim the missing hours/invoice tools, but App 1 frames its available data explicitly around the billing ask (ready-to-bill vs outstanding clients as a billable-work proxy) and repeats the disclaimer at the exact place the missing hours/invoice section would go, giving tighter coverage of the request than App 2's more generic dashboard/activity dump."
+      },
+      {
+        "promptId": "AB-C6",
+        "ordering": "BA",
+        "winnerArm": "A",
+        "reason": "Both honestly disclaim the missing hours/invoice data, but App 2 more directly reframes the ask into a billing proxy with 'Ready to Bill' vs 'Outstanding' splits and a dedicated disclaimer for the impossible hours/invoice section, giving better coverage and clearer hierarchy than App 1's generic dashboard/activity dump."
+      }
+    ]
+  },
+  {
+    "promptId": "AB-M1",
+    "verdict": "tie",
+    "orderings": [
+      {
+        "promptId": "AB-M1",
+        "ordering": "AB",
+        "winnerArm": "A",
+        "reason": "Both cover balances and spending well and honestly disclaim the missing portfolio data, but App 2 fabricates fields (topCategory, per-account balanceHistory, hardcoded Checking/Savings slot assumptions) not confirmed by the tools, whereas App 1 sticks to reliable bindings with cleaner structure."
+      },
+      {
+        "promptId": "AB-M1",
+        "ordering": "BA",
+        "winnerArm": "B",
+        "reason": "Both honestly disclaim the unavailable portfolio and cover balances plus spending, but App 1 binds the spending donut/table to the correct field key while App 2 uses 'categories' whereas App 1 uses 'byCategory' — this is ambiguous; more decisively App 1 adds a balance-history card and total-spent stat giving richer overview, though both are close in quality."
+      }
+    ]
+  },
+  {
+    "promptId": "AB-M2",
+    "verdict": "tie",
+    "orderings": [
+      {
+        "promptId": "AB-M2",
+        "ordering": "AB",
+        "winnerArm": "B",
+        "reason": "Both list payments and wire a real transfer, but App 2 correctly selects the actual checking account and uses the plausible payeeName field, while App 1 misuses the due date as the transfer memo and guesses the field name 'payee' plus account index 0 as checking; App 2's island also handles the mutation lifecycle honestly."
+      },
+      {
+        "promptId": "AB-M2",
+        "ordering": "BA",
+        "winnerArm": "A",
+        "reason": "Both cover the list and pay-next action with real transfer bindings, but App 1 uses inconsistent field names (payeeName vs App 2's payee) and picks account[0] as 'checking' without verifying, while App 2 has clean declarative bindings, correct formatting, and shows the source account with balance; App 1's memo=dueDate mapping in App 2 is a minor nit but overall App 2 is cleaner and lower-risk."
+      }
+    ]
+  },
+  {
+    "promptId": "AB-M3",
+    "verdict": "B",
+    "orderings": [
+      {
+        "promptId": "AB-M3",
+        "ordering": "AB",
+        "winnerArm": "B",
+        "reason": "App 2 covers all three asks (balance, account number, status per transaction) with correct formatting and finds the checking account rather than assuming index 0. App 1 hardcodes id 'checking' and account index 0, and includes a fabricated net-worth/sparkline card that isn't part of the ask and likely lacks a real data source."
+      },
+      {
+        "promptId": "AB-M3",
+        "ordering": "BA",
+        "winnerArm": "B",
+        "reason": "App 1 correctly finds the checking account and lists its transactions with formatted amounts, dates, and status badges. App 2 uses a bogus hardcoded 'checking' id, invents a sparkline/net-worth card with unverified fields, and displays the raw account type via a Stat, making it less honest and less accurate."
+      }
+    ]
+  },
+  {
+    "promptId": "AB-M4",
+    "verdict": "tie",
+    "orderings": [
+      {
+        "promptId": "AB-M4",
+        "ordering": "AB",
+        "winnerArm": "tie",
+        "reason": "Both apps implement the full flow — select a saved payee, enter amount/note, review, and send from checking via host_transferMoney with a real payload — with correct money formatting and honest empty/error states; App 1 uses richer payee cards and a step indicator while App 2 uses a cleaner select and clearer irreversibility disclaimer, so they are roughly equivalent in quality."
+      },
+      {
+        "promptId": "AB-M4",
+        "ordering": "BA",
+        "winnerArm": "tie",
+        "reason": "Both apps implement the full flow (pick saved payee, enter amount and note, review, send from checking) with a real host_transferMoney binding, correct money formatting, and honest use of listPayees/listAccounts; App 2 adds an empty-state and step indicator while App 1 has cleaner validation, but they are functionally equivalent in quality."
+      }
+    ]
+  },
+  {
+    "promptId": "AB-M5",
+    "verdict": "B",
+    "orderings": [
+      {
+        "promptId": "AB-M5",
+        "ordering": "AB",
+        "winnerArm": "B",
+        "reason": "Both cover the ask well with merged timeline, correct formatting, and totals, but App 2 adds a clearer breakdown (scheduled vs subscription subtotals), a polished timeline layout with date columns and urgency cues, and a proper empty state—giving better hierarchy without introducing fabricated data."
+      },
+      {
+        "promptId": "AB-M5",
+        "ordering": "BA",
+        "winnerArm": "B",
+        "reason": "Both address the ask well, but App 2's island reads props (scheduled, recurring) that are never wired from its Query bindings into the Island, so it renders empty; App 1 fetches the data itself inside the island and formats totals, dates, and money correctly with a clear timeline."
+      }
+    ]
+  },
+  {
+    "promptId": "AB-M6",
+    "verdict": "A",
+    "orderings": [
+      {
+        "promptId": "AB-M6",
+        "ordering": "AB",
+        "winnerArm": "A",
+        "reason": "Both honestly disclaim the unavailable tax/capital-gains data and pivot to real spending/cashflow, but App 1 has more granular per-item disclaimers, includes a monthly cashflow chart and account balances, and uses correct field bindings (amountCents), whereas App 2 binds the spending amount column to 'amount' which likely doesn't match the tool's amountCents field."
+      },
+      {
+        "promptId": "AB-M6",
+        "ordering": "BA",
+        "winnerArm": "A",
+        "reason": "Both honestly disclaim the unavailable tax/capital-gains data while showing real spending and cashflow; App 2 addresses each requested part (capital gains, deductions, tax owed) with targeted disclaimers and better composition, whereas App 1's cashflow field bindings (totalInflowCents/netCents) are less certain to match the tool schema — though both risk similar field-name defects."
+      }
+    ]
+  }
+]

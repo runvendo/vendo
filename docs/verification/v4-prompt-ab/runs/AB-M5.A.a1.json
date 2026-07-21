@@ -1,0 +1,107 @@
+{
+  "promptId": "AB-M5",
+  "host": "demo-bank",
+  "arm": "A",
+  "attempt": 1,
+  "prompt": "A timeline of money leaving my account soon: upcoming scheduled payments and subscription renewals, ordered by date with the total going out.",
+  "ok": true,
+  "wallMs": 42809,
+  "fullAttempts": 2,
+  "repairRounds": 0,
+  "firstAttemptValid": false,
+  "inputTokens": 14650,
+  "outputTokens": 3347,
+  "nodes": 4,
+  "queries": 2,
+  "wire": "<App name=\"Upcoming Outflows\">\n  <Query id=\"scheduled\" tool=\"host_listScheduledPayments\" input={{}}/>\n  <Query id=\"recurring\" tool=\"host_getRecurringInsights\" input={{}}/>\n  <Stack gap={4}>\n    <Text variant=\"heading\" text=\"Money leaving soon\"/>\n    <Text variant=\"caption\" text=\"Upcoming scheduled payments and subscription renewals, ordered by date\"/>\n  </Stack>\n  <Island name=\"OutflowTimeline\">export default function OutflowTimeline({ scheduled, recurring, scheduledTotal }) {\n  const toItems = () => {\n    const items = [];\n\n    if (Array.isArray(scheduled)) {\n      scheduled.forEach(p => {\n        items.push({\n          id: \"s-\" + (p.id || p.payee || p.date),\n          label: p.payee || p.description || p.name || \"Payment\",\n          amountCents: p.amountCents || p.amount || 0,\n          date: p.date || p.scheduledDate || p.nextDate,\n          type: \"scheduled\",\n        });\n      });\n    }\n\n    if (Array.isArray(recurring)) {\n      recurring.forEach(r => {\n        items.push({\n          id: \"r-\" + (r.id || r.merchant || r.name),\n          label: r.merchant || r.name || r.description || \"Subscription\",\n          amountCents: r.amountCents || r.amount || 0,\n          date: r.nextDate || r.nextBillingDate || r.date,\n          type: \"subscription\",\n        });\n      });\n    }\n\n    items.sort((a, b) => {\n      if (!a.date) return 1;\n      if (!b.date) return -1;\n      return new Date(a.date).getTime() - new Date(b.date).getTime();\n    });\n\n    return items;\n  };\n\n  const items = toItems();\n\n  const totalCents = items.reduce((sum, i) => sum + (i.amountCents || 0), 0);\n\n  const formatMoney = (cents) => {\n    if (!cents && cents !== 0) return \"—\";\n    return \"$\" + (cents / 100).toLocaleString(\"en-US\", { minimumFractionDigits: 2, maximumFractionDigits: 2 });\n  };\n\n  const formatDate = (iso) => {\n    if (!iso) return \"—\";\n    const d = new Date(iso);\n    if (isNaN(d.getTime())) return \"—\";\n    return d.toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\", year: \"numeric\" });\n  };\n\n  const daysUntil = (iso) => {\n    if (!iso) return null;\n    const now = new Date(\"2026-07-21\");\n    const d = new Date(iso);\n    if (isNaN(d.getTime())) return null;\n    const diff = Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));\n    return diff;\n  };\n\n  const urgencyLabel = (days) => {\n    if (days === null) return null;\n    if (days < 0) return \"Overdue\";\n    if (days === 0) return \"Today\";\n    if (days === 1) return \"Tomorrow\";\n    if (days <= 7) return `In ${days}d`;\n    return null;\n  };\n\n  if (items.length === 0) {\n    return (\n      <Surface>\n        <Stack gap={2}>\n          <Text text=\"No upcoming payments found.\" variant=\"body\"/>\n        </Stack>\n      </Surface>\n    );\n  }\n\n  return (\n    <Stack gap={3}>\n      <Surface>\n        <Row gap={4}>\n          <Stack gap={1}>\n            <Text text=\"Total going out\" variant=\"caption\"/>\n            <Text text={formatMoney(totalCents)} variant=\"heading\"/>\n          </Stack>\n          <Stack gap={1}>\n            <Text text=\"Payments scheduled\" variant=\"caption\"/>\n            <Text text={String(items.length)} variant=\"heading\"/>\n          </Stack>\n        </Row>\n      </Surface>\n\n      <Stack gap={2}>\n        {items.map((item) => {\n          const days = daysUntil(item.date);\n          const urgency = urgencyLabel(days);\n          const isUrgent = days !== null && days <= 3;\n\n          return (\n            <Surface key={item.id}>\n              <Row gap={3}>\n                <Stack gap={1} style={{ flex: 1 }}>\n                  <Row gap={2}>\n                    <Text text={item.label} variant=\"body\"/>\n                    {urgency && (\n                      <Badge\n                        label={urgency}\n                        tone={isUrgent ? \"accent\" : \"neutral\"}\n                      />\n                    )}\n                    <Badge\n                      label={item.type === \"subscription\" ? \"Subscription\" : \"Scheduled\"}\n                      tone=\"neutral\"\n                    />\n                  </Row>\n                  <Text text={formatDate(item.date)} variant=\"caption\"/>\n                </Stack>\n                <Text text={formatMoney(item.amountCents)} variant=\"body\"/>\n              </Row>\n            </Surface>\n          );\n        })}\n      </Stack>\n    </Stack>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Upcoming Outflows",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-1",
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Money leaving soon"
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Upcoming scheduled payments and subscription renewals, ordered by date"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "scheduled",
+          "tool": "host_listScheduledPayments",
+          "input": {}
+        },
+        {
+          "name": "recurring",
+          "tool": "host_getRecurringInsights",
+          "input": {}
+        }
+      ]
+    },
+    "components": {
+      "OutflowTimeline": "export default function OutflowTimeline({ scheduled, recurring, scheduledTotal }) {\n  const toItems = () => {\n    const items = [];\n\n    if (Array.isArray(scheduled)) {\n      scheduled.forEach(p => {\n        items.push({\n          id: \"s-\" + (p.id || p.payee || p.date),\n          label: p.payee || p.description || p.name || \"Payment\",\n          amountCents: p.amountCents || p.amount || 0,\n          date: p.date || p.scheduledDate || p.nextDate,\n          type: \"scheduled\",\n        });\n      });\n    }\n\n    if (Array.isArray(recurring)) {\n      recurring.forEach(r => {\n        items.push({\n          id: \"r-\" + (r.id || r.merchant || r.name),\n          label: r.merchant || r.name || r.description || \"Subscription\",\n          amountCents: r.amountCents || r.amount || 0,\n          date: r.nextDate || r.nextBillingDate || r.date,\n          type: \"subscription\",\n        });\n      });\n    }\n\n    items.sort((a, b) => {\n      if (!a.date) return 1;\n      if (!b.date) return -1;\n      return new Date(a.date).getTime() - new Date(b.date).getTime();\n    });\n\n    return items;\n  };\n\n  const items = toItems();\n\n  const totalCents = items.reduce((sum, i) => sum + (i.amountCents || 0), 0);\n\n  const formatMoney = (cents) => {\n    if (!cents && cents !== 0) return \"—\";\n    return \"$\" + (cents / 100).toLocaleString(\"en-US\", { minimumFractionDigits: 2, maximumFractionDigits: 2 });\n  };\n\n  const formatDate = (iso) => {\n    if (!iso) return \"—\";\n    const d = new Date(iso);\n    if (isNaN(d.getTime())) return \"—\";\n    return d.toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\", year: \"numeric\" });\n  };\n\n  const daysUntil = (iso) => {\n    if (!iso) return null;\n    const now = new Date(\"2026-07-21\");\n    const d = new Date(iso);\n    if (isNaN(d.getTime())) return null;\n    const diff = Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));\n    return diff;\n  };\n\n  const urgencyLabel = (days) => {\n    if (days === null) return null;\n    if (days < 0) return \"Overdue\";\n    if (days === 0) return \"Today\";\n    if (days === 1) return \"Tomorrow\";\n    if (days <= 7) return `In ${days}d`;\n    return null;\n  };\n\n  if (items.length === 0) {\n    return (\n      <Surface>\n        <Stack gap={2}>\n          <Text text=\"No upcoming payments found.\" variant=\"body\"/>\n        </Stack>\n      </Surface>\n    );\n  }\n\n  return (\n    <Stack gap={3}>\n      <Surface>\n        <Row gap={4}>\n          <Stack gap={1}>\n            <Text text=\"Total going out\" variant=\"caption\"/>\n            <Text text={formatMoney(totalCents)} variant=\"heading\"/>\n          </Stack>\n          <Stack gap={1}>\n            <Text text=\"Payments scheduled\" variant=\"caption\"/>\n            <Text text={String(items.length)} variant=\"heading\"/>\n          </Stack>\n        </Row>\n      </Surface>\n\n      <Stack gap={2}>\n        {items.map((item) => {\n          const days = daysUntil(item.date);\n          const urgency = urgencyLabel(days);\n          const isUrgent = days !== null && days <= 3;\n\n          return (\n            <Surface key={item.id}>\n              <Row gap={3}>\n                <Stack gap={1} style={{ flex: 1 }}>\n                  <Row gap={2}>\n                    <Text text={item.label} variant=\"body\"/>\n                    {urgency && (\n                      <Badge\n                        label={urgency}\n                        tone={isUrgent ? \"accent\" : \"neutral\"}\n                      />\n                    )}\n                    <Badge\n                      label={item.type === \"subscription\" ? \"Subscription\" : \"Scheduled\"}\n                      tone=\"neutral\"\n                    />\n                  </Row>\n                  <Text text={formatDate(item.date)} variant=\"caption\"/>\n                </Stack>\n                <Text text={formatMoney(item.amountCents)} variant=\"body\"/>\n              </Row>\n            </Surface>\n          );\n        })}\n      </Stack>\n    </Stack>\n  );\n}"
+    },
+    "componentTools": {
+      "OutflowTimeline": []
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 23679,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7302,
+        "outputTokens": 1965
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 42808,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7348,
+        "outputTokens": 1382
+      }
+    }
+  ],
+  "pipeline": []
+}

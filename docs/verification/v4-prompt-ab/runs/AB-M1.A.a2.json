@@ -1,0 +1,267 @@
+{
+  "promptId": "AB-M1",
+  "host": "demo-bank",
+  "arm": "A",
+  "attempt": 2,
+  "prompt": "A money overview dashboard: my account balances, my spending by category this month, and how my stock portfolio has performed this quarter.",
+  "ok": true,
+  "wallMs": 7304,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 7303,
+  "outputTokens": 447,
+  "nodes": 18,
+  "queries": 2,
+  "wire": "<App name=\"Money Overview\">\n  <Query id=\"hostListAccounts\" tool=\"host_listAccounts\" input={{}}/>\n  <Query id=\"hostGetSpendingInsights\" tool=\"host_getSpendingInsights\" input={{}}/>\n  <Stack gap={6}>\n    <Text variant=\"heading\" text=\"Money Overview\"/>\n    <MapleNetWorthCard valueCents={hostListAccounts.totalBalanceCents} series={hostListAccounts.balanceHistory}/>\n    <Grid columns={2}>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Account Balances\"/>\n          <DataTable rows={hostListAccounts.data} columns={[{ key: \"name\", label: \"Account\" }, { key: \"type\", label: \"Type\" }, { key: \"balanceCents\", label: \"Balance\", format: \"money\", align: \"end\" }]} emptyState=\"No accounts found\"/>\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"heading\" text=\"Spending by Category\"/>\n          <MapleSpendingDonut slices={hostGetSpendingInsights.categories} size={220}/>\n          <DataTable rows={hostGetSpendingInsights.categories} columns={[{ key: \"category\", label: \"Category\" }, { key: \"amountCents\", label: \"Spent\", format: \"money\", align: \"end\" }]} emptyState=\"No spending data\"/>\n        </Stack>\n      </Surface>\n    </Grid>\n    <Surface>\n      <Stack gap={2}>\n        <Text variant=\"heading\" text=\"Stock Portfolio Performance\"/>\n        <Disclaimer reason=\"No tool on this host exposes investment, brokerage, or stock portfolio data — portfolio performance cannot be shown.\" title=\"Portfolio data unavailable\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Money Overview",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "text-1",
+            "maplenetworthcard-1",
+            "grid-1",
+            "surface-3"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Money Overview"
+          }
+        },
+        {
+          "id": "maplenetworthcard-1",
+          "component": "MapleNetWorthCard",
+          "source": "host",
+          "props": {
+            "valueCents": {
+              "$path": "/hostListAccounts/totalBalanceCents"
+            },
+            "series": {
+              "$path": "/hostListAccounts/balanceHistory"
+            }
+          }
+        },
+        {
+          "id": "grid-1",
+          "component": "Grid",
+          "source": "prewired",
+          "props": {
+            "columns": 2
+          },
+          "children": [
+            "surface-1",
+            "surface-2"
+          ]
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-2",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Account Balances"
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListAccounts/data"
+            },
+            "columns": [
+              {
+                "key": "name",
+                "label": "Account"
+              },
+              {
+                "key": "type",
+                "label": "Type"
+              },
+              {
+                "key": "balanceCents",
+                "label": "Balance",
+                "format": "money",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No accounts found"
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-3",
+            "maplespendingdonut-1",
+            "datatable-2"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Spending by Category"
+          }
+        },
+        {
+          "id": "maplespendingdonut-1",
+          "component": "MapleSpendingDonut",
+          "source": "host",
+          "props": {
+            "slices": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "size": 220
+          }
+        },
+        {
+          "id": "datatable-2",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amountCents",
+                "label": "Spent",
+                "format": "money",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No spending data"
+          }
+        },
+        {
+          "id": "surface-3",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ]
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-4",
+            "disclaimer-1"
+          ]
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Stock Portfolio Performance"
+          }
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "reason": "No tool on this host exposes investment, brokerage, or stock portfolio data — portfolio performance cannot be shown.",
+            "title": "Portfolio data unavailable"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostListAccounts",
+          "tool": "host_listAccounts",
+          "input": {}
+        },
+        {
+          "name": "hostGetSpendingInsights",
+          "tool": "host_getSpendingInsights",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 7298,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7303,
+        "outputTokens": 447
+      }
+    }
+  ],
+  "pipeline": []
+}

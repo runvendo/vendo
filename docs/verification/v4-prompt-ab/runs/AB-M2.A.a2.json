@@ -1,0 +1,289 @@
+{
+  "promptId": "AB-M2",
+  "host": "demo-bank",
+  "arm": "A",
+  "attempt": 2,
+  "prompt": "List my upcoming scheduled payments with amounts and due dates, and let me pay the next one right now from my checking account.",
+  "ok": true,
+  "wallMs": 11274,
+  "fullAttempts": 1,
+  "repairRounds": 1,
+  "repairRepaired": true,
+  "firstAttemptValid": false,
+  "inputTokens": 7301,
+  "outputTokens": 579,
+  "nodes": 22,
+  "queries": 0,
+  "wire": "<App name=\"Scheduled Payments\">\n  <Stack gap={6}>\n    <Stack gap={1}>\n      <Text variant=\"heading\" text=\"Scheduled Payments\"/>\n      <Text variant=\"caption\" text=\"Upcoming payments from your account\"/>\n    </Stack>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Next Payment Due\"/>\n        <Row gap={4}>\n          <Stat label=\"Payee\"/>\n          <Stat label=\"Amount\" format=\"money\"/>\n          <Stat label=\"Due Date\" format=\"date\"/>\n          <Stat label=\"Status\"/>\n        </Row>\n        <Divider/>\n        <Stack gap={2}>\n          <Text variant=\"caption\" text=\"Paying from\"/>\n          <Text/>\n        </Stack>\n        This part of the request isn't available on this host.\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={3}>\n        <Text variant=\"heading\" text=\"All Upcoming Payments\"/>\n        <DataTable columns={[{ key: \"payeeName\", label: \"Payee\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }, { key: \"scheduledDate\", label: \"Due Date\", format: \"date\" }, { key: \"frequency\", label: \"Frequency\" }, { key: \"status\", label: \"Status\" }]} sortBy=\"scheduledDate asc\" emptyState=\"No upcoming scheduled payments\"/>\n      </Stack>\n    </Surface>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Scheduled Payments",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "stack-2",
+            "surface-1",
+            "surface-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 1
+          },
+          "children": [
+            "text-1",
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Scheduled Payments"
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Upcoming payments from your account"
+          }
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-3",
+            "row-1",
+            "divider-1",
+            "stack-4",
+            "text-6"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Next Payment Due"
+          }
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3",
+            "stat-4"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Payee"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Amount",
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Due Date",
+            "format": "date"
+          }
+        },
+        {
+          "id": "stat-4",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Status"
+          }
+        },
+        {
+          "id": "divider-1",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-4",
+            "text-5"
+          ]
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Paying from"
+          }
+        },
+        {
+          "id": "text-5",
+          "component": "Text",
+          "source": "prewired"
+        },
+        {
+          "id": "text-6",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "This part of the request isn't available on this host."
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-5"
+          ]
+        },
+        {
+          "id": "stack-5",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-7",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-7",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "All Upcoming Payments"
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "columns": [
+              {
+                "key": "payeeName",
+                "label": "Payee"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "scheduledDate",
+                "label": "Due Date",
+                "format": "date"
+              },
+              {
+                "key": "frequency",
+                "label": "Frequency"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              }
+            ],
+            "sortBy": "scheduledDate asc",
+            "emptyState": "No upcoming scheduled payments"
+          }
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 9213,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7301,
+        "outputTokens": 579
+      }
+    },
+    {
+      "lane": "repair",
+      "phase": "complete",
+      "atMs": 11273,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "repair",
+      "rounds": 1,
+      "repaired": true,
+      "noValidFix": 1,
+      "ms": 2061
+    }
+  ]
+}

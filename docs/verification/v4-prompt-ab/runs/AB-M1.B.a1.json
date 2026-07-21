@@ -1,0 +1,289 @@
+{
+  "promptId": "AB-M1",
+  "host": "demo-bank",
+  "arm": "B",
+  "attempt": 1,
+  "prompt": "A money overview dashboard: my account balances, my spending by category this month, and how my stock portfolio has performed this quarter.",
+  "ok": true,
+  "wallMs": 11276,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": false,
+  "firstAttemptValid": true,
+  "inputTokens": 8678,
+  "outputTokens": 596,
+  "nodes": 17,
+  "queries": 2,
+  "wire": "<App name=\"Money overview\">\n  <Query id=\"hostListAccounts\" tool=\"host_listAccounts\" input={{}}/>\n  <Query id=\"hostGetSpendingInsights\" tool=\"host_getSpendingInsights\" input={{}}/>\n  <Stack gap={6}>\n    <MapleNetWorthCard valueCents={{ \"$path\": \"/hostListAccounts/data/0/balanceCents\" }} series={{ \"$path\": \"/hostListAccounts/data/0/balanceHistory\" }} changeLabel=\"Total across all accounts\" initialRange=\"3M\"/>\n    <Row gap={4}>\n      <Stat label=\"Checking\" value={{ \"$path\": \"/hostListAccounts/data/0/balanceCents\" }} format=\"money\"/>\n      <Stat label=\"Savings\" value={{ \"$path\": \"/hostListAccounts/data/1/balanceCents\" }} format=\"money\"/>\n      <Stat label=\"Accounts\" value={hostListAccounts.data.length}/>\n    </Row>\n    <DataTable rows={hostListAccounts.data} columns={[{ key: \"name\", label: \"Account\" }, { key: \"type\", label: \"Type\" }, { key: \"balanceCents\", label: \"Balance\", format: \"money\", align: \"end\" }]} emptyState=\"No accounts found.\" caption=\"All accounts\"/>\n    <Divider/>\n    <Text variant=\"heading\" text=\"Spending by category this month\"/>\n    <Row gap={4}>\n      <Stat label=\"Total spent\" value={hostGetSpendingInsights.totalCents} format=\"money\"/>\n      <Stat label=\"Top category\" value={hostGetSpendingInsights.topCategory}/>\n    </Row>\n    <MapleSpendingDonut slices={hostGetSpendingInsights.byCategory} size={220}/>\n    <DataTable rows={hostGetSpendingInsights.byCategory} columns={[{ key: \"category\", label: \"Category\" }, { key: \"amountCents\", label: \"Spent this month\", format: \"money\", align: \"end\" }, { key: \"percentOfTotal\", label: \"Share\", format: \"percent\", align: \"end\" }]} sortBy=\"amountCents desc\" emptyState=\"No spending data for this month.\"/>\n    <Divider/>\n    <Disclaimer title=\"Stock portfolio not available\" reason=\"This app has no connection to brokerage or investment data, so your stock portfolio performance can't be shown here. Your bank accounts and spending are displayed above.\"/>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Money overview",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "maplenetworthcard-1",
+            "row-1",
+            "datatable-1",
+            "divider-1",
+            "text-1",
+            "row-2",
+            "maplespendingdonut-1",
+            "datatable-2",
+            "divider-2",
+            "disclaimer-1"
+          ]
+        },
+        {
+          "id": "maplenetworthcard-1",
+          "component": "MapleNetWorthCard",
+          "source": "host",
+          "props": {
+            "valueCents": {
+              "$path": "/hostListAccounts/data/0/balanceCents"
+            },
+            "series": {
+              "$path": "/hostListAccounts/data/0/balanceHistory"
+            },
+            "changeLabel": "Total across all accounts",
+            "initialRange": "3M"
+          }
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Checking",
+            "value": {
+              "$path": "/hostListAccounts/data/0/balanceCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Savings",
+            "value": {
+              "$path": "/hostListAccounts/data/1/balanceCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Accounts",
+            "value": {
+              "$path": "/hostListAccounts/data/length"
+            }
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListAccounts/data"
+            },
+            "columns": [
+              {
+                "key": "name",
+                "label": "Account"
+              },
+              {
+                "key": "type",
+                "label": "Type"
+              },
+              {
+                "key": "balanceCents",
+                "label": "Balance",
+                "format": "money",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No accounts found.",
+            "caption": "All accounts"
+          }
+        },
+        {
+          "id": "divider-1",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Spending by category this month"
+          }
+        },
+        {
+          "id": "row-2",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-4",
+            "stat-5"
+          ]
+        },
+        {
+          "id": "stat-4",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total spent",
+            "value": {
+              "$path": "/hostGetSpendingInsights/totalCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-5",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Top category",
+            "value": {
+              "$path": "/hostGetSpendingInsights/topCategory"
+            }
+          }
+        },
+        {
+          "id": "maplespendingdonut-1",
+          "component": "MapleSpendingDonut",
+          "source": "host",
+          "props": {
+            "slices": {
+              "$path": "/hostGetSpendingInsights/byCategory"
+            },
+            "size": 220
+          }
+        },
+        {
+          "id": "datatable-2",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetSpendingInsights/byCategory"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amountCents",
+                "label": "Spent this month",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "percentOfTotal",
+                "label": "Share",
+                "format": "percent",
+                "align": "end"
+              }
+            ],
+            "sortBy": "amountCents desc",
+            "emptyState": "No spending data for this month."
+          }
+        },
+        {
+          "id": "divider-2",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Stock portfolio not available",
+            "reason": "This app has no connection to brokerage or investment data, so your stock portfolio performance can't be shown here. Your bank accounts and spending are displayed above."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostListAccounts",
+          "tool": "host_listAccounts",
+          "input": {}
+        },
+        {
+          "name": "hostGetSpendingInsights",
+          "tool": "host_getSpendingInsights",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 9047,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8678,
+        "outputTokens": 596
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 11274,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 2227
+    }
+  ]
+}

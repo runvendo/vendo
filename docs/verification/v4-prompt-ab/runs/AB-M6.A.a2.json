@@ -1,0 +1,467 @@
+{
+  "promptId": "AB-M6",
+  "host": "demo-bank",
+  "arm": "A",
+  "attempt": 2,
+  "prompt": "An annual tax summary report: my capital gains, deductible expenses, and how much tax I'll owe this year.",
+  "ok": true,
+  "wallMs": 21937,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 7302,
+  "outputTokens": 1057,
+  "nodes": 33,
+  "queries": 4,
+  "wire": "<App name=\"Annual Tax Summary\">\n  <Query id=\"hostGetSpendingInsights\" tool=\"host_getSpendingInsights\" input={{}}/>\n  <Query id=\"hostGetRecurringInsights\" tool=\"host_getRecurringInsights\" input={{}}/>\n  <Query id=\"hostGetCashflowInsights\" tool=\"host_getCashflowInsights\" input={{}}/>\n  <Query id=\"hostGetBudgets\" tool=\"host_getBudgets\" input={{}}/>\n  <Stack gap={6}>\n    <Surface>\n      <Stack gap={2}>\n        <Text variant=\"heading\" text=\"2026 Tax Summary\"/>\n        <Text variant=\"caption\" text=\"An overview of your financial activity for the current tax year. Capital gains, investments, and tax calculations are not available from your connected accounts.\"/>\n      </Stack>\n    </Surface>\n    <Disclaimer title=\"Capital Gains\" reason=\"No tool on this host exposes investment accounts, brokerage data, or capital gains. Capital gains cannot be calculated or estimated from your connected data.\"/>\n    <Disclaimer title=\"Tax Owed Estimate\" reason=\"Tax liability calculations require income, capital gains, deductions, and filing status — none of which are available from this host's tools. No tax estimate can be shown.\"/>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Deductible Spending by Category\"/>\n        <Text variant=\"caption\" text=\"The categories below reflect your actual spending this period. Consult a tax professional to determine which expenses are deductible for your situation.\"/>\n        <MapleSpendingDonut slices={hostGetSpendingInsights.categories} size={220}/>\n        <DataTable rows={hostGetSpendingInsights.categories} columns={[{ key: \"category\", label: \"Category\" }, { key: \"amountCents\", label: \"Amount Spent\", format: \"money\", align: \"end\" }]} emptyState=\"No spending data available for this period.\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Recurring Charges &amp; Subscriptions\"/>\n        <Text variant=\"caption\" text=\"Detected recurring charges that may be deductible as business or professional expenses.\"/>\n        <DataTable rows={hostGetRecurringInsights.charges} columns={[{ key: \"merchant\", label: \"Merchant\" }, { key: \"category\", label: \"Category\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }, { key: \"frequency\", label: \"Frequency\" }]} emptyState=\"No recurring charges detected.\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Cash Inflow &amp; Outflow (YTD)\"/>\n        <Grid columns={2}>\n          <Stat label=\"Total Inflow\" value={hostGetCashflowInsights.inflowCents} format=\"money\"/>\n          <Stat label=\"Total Outflow\" value={hostGetCashflowInsights.outflowCents} format=\"money\"/>\n        </Grid>\n        <LineChart data={hostGetCashflowInsights.monthly} xKey=\"month\" series={[\"inflowCents\", \"outflowCents\"]} format=\"money\" height={200} emptyState=\"No cashflow history available.\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Budget vs. Actual Spending\"/>\n        <Text variant=\"caption\" text=\"Compare your budgeted amounts to actual spend — useful for identifying over-budget categories that may warrant review.\"/>\n        <DataTable rows={hostGetBudgets.budgets} columns={[{ key: \"category\", label: \"Category\" }, { key: \"budgetCents\", label: \"Budget\", format: \"money\", align: \"end\" }, { key: \"spentCents\", label: \"Spent\", format: \"money\", align: \"end\" }, { key: \"remainingCents\", label: \"Remaining\", format: \"money\", align: \"end\" }]} emptyState=\"No budget data available.\"/>\n      </Stack>\n    </Surface>\n    <Callout tone=\"warning\" title=\"This is not tax advice\">\n      This summary is based on your connected account data only. It does not constitute tax advice. Please consult a qualified tax professional for your actual tax obligations.\n    </Callout>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Annual Tax Summary",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "surface-1",
+            "disclaimer-1",
+            "disclaimer-2",
+            "surface-2",
+            "surface-3",
+            "surface-4",
+            "surface-5",
+            "callout-1"
+          ]
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-1",
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "2026 Tax Summary"
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "An overview of your financial activity for the current tax year. Capital gains, investments, and tax calculations are not available from your connected accounts."
+          }
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Capital Gains",
+            "reason": "No tool on this host exposes investment accounts, brokerage data, or capital gains. Capital gains cannot be calculated or estimated from your connected data."
+          }
+        },
+        {
+          "id": "disclaimer-2",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Tax Owed Estimate",
+            "reason": "Tax liability calculations require income, capital gains, deductions, and filing status — none of which are available from this host's tools. No tax estimate can be shown."
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-3",
+            "text-4",
+            "maplespendingdonut-1",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Deductible Spending by Category"
+          }
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "The categories below reflect your actual spending this period. Consult a tax professional to determine which expenses are deductible for your situation."
+          }
+        },
+        {
+          "id": "maplespendingdonut-1",
+          "component": "MapleSpendingDonut",
+          "source": "host",
+          "props": {
+            "slices": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "size": 220
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount Spent",
+                "format": "money",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No spending data available for this period."
+          }
+        },
+        {
+          "id": "surface-3",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ]
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-5",
+            "text-6",
+            "datatable-2"
+          ]
+        },
+        {
+          "id": "text-5",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Recurring Charges &amp; Subscriptions"
+          }
+        },
+        {
+          "id": "text-6",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Detected recurring charges that may be deductible as business or professional expenses."
+          }
+        },
+        {
+          "id": "datatable-2",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetRecurringInsights/charges"
+            },
+            "columns": [
+              {
+                "key": "merchant",
+                "label": "Merchant"
+              },
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "frequency",
+                "label": "Frequency"
+              }
+            ],
+            "emptyState": "No recurring charges detected."
+          }
+        },
+        {
+          "id": "surface-4",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-5"
+          ]
+        },
+        {
+          "id": "stack-5",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-7",
+            "grid-1",
+            "linechart-1"
+          ]
+        },
+        {
+          "id": "text-7",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Cash Inflow &amp; Outflow (YTD)"
+          }
+        },
+        {
+          "id": "grid-1",
+          "component": "Grid",
+          "source": "prewired",
+          "props": {
+            "columns": 2
+          },
+          "children": [
+            "stat-1",
+            "stat-2"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total Inflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/inflowCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total Outflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/outflowCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "linechart-1",
+          "component": "LineChart",
+          "source": "prewired",
+          "props": {
+            "data": {
+              "$path": "/hostGetCashflowInsights/monthly"
+            },
+            "xKey": "month",
+            "series": [
+              "inflowCents",
+              "outflowCents"
+            ],
+            "format": "money",
+            "height": 200,
+            "emptyState": "No cashflow history available."
+          }
+        },
+        {
+          "id": "surface-5",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-6"
+          ]
+        },
+        {
+          "id": "stack-6",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-8",
+            "text-9",
+            "datatable-3"
+          ]
+        },
+        {
+          "id": "text-8",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Budget vs. Actual Spending"
+          }
+        },
+        {
+          "id": "text-9",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Compare your budgeted amounts to actual spend — useful for identifying over-budget categories that may warrant review."
+          }
+        },
+        {
+          "id": "datatable-3",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetBudgets/budgets"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "budgetCents",
+                "label": "Budget",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "spentCents",
+                "label": "Spent",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "remainingCents",
+                "label": "Remaining",
+                "format": "money",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No budget data available."
+          }
+        },
+        {
+          "id": "callout-1",
+          "component": "Callout",
+          "source": "prewired",
+          "props": {
+            "tone": "warning",
+            "title": "This is not tax advice"
+          },
+          "children": [
+            "text-10"
+          ]
+        },
+        {
+          "id": "text-10",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "This summary is based on your connected account data only. It does not constitute tax advice. Please consult a qualified tax professional for your actual tax obligations."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetSpendingInsights",
+          "tool": "host_getSpendingInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetRecurringInsights",
+          "tool": "host_getRecurringInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetCashflowInsights",
+          "tool": "host_getCashflowInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetBudgets",
+          "tool": "host_getBudgets",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 21935,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7302,
+        "outputTokens": 1057
+      }
+    }
+  ],
+  "pipeline": []
+}

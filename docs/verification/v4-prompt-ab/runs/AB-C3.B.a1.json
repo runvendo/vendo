@@ -1,0 +1,284 @@
+{
+  "promptId": "AB-C3",
+  "host": "demo-accounting",
+  "arm": "B",
+  "attempt": 1,
+  "prompt": "A single client's page: their document checklist with per-document status, who on our staff is assigned, and the latest messages between us and them.",
+  "ok": true,
+  "wallMs": 45420,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": false,
+  "firstAttemptValid": true,
+  "inputTokens": 8188,
+  "outputTokens": 3614,
+  "nodes": 17,
+  "queries": 2,
+  "wire": "<App name=\"Client overview\">\n  <Query id=\"hostGetClient\" tool=\"host_getClient\" input={{ id: \"1\" }}/>\n  <Query id=\"hostListClientDocuments\" tool=\"host_listClientDocuments\" input={{ id: \"1\" }}/>\n  <Stack gap={6}>\n    <Row gap={3}>\n      <Text variant=\"heading\" text={hostGetClient.name}/>\n      <EnumBadge value={hostGetClient.status} tones={{ complete: \"success\", missing: \"danger\", overdue: \"danger\", review: \"warning\", on_track: \"accent\" }}/>\n    </Row>\n    <Row gap={4}>\n      <Stat label=\"Assigned staff\" value={hostGetClient.assignedStaff}/>\n      <Stat label=\"Filing deadline\" value={hostGetClient.filingDeadline} format=\"date\"/>\n      <Stat label=\"Entity type\" value={hostGetClient.entityType}/>\n      <CadenceDocProgress value={hostGetClient.documentsReceived} max={hostGetClient.documentsTotal}/>\n    </Row>\n    <Divider/>\n    <Text variant=\"heading\" text=\"Document checklist\"/>\n    <DataTable rows={hostListClientDocuments.data} sortBy=\"status asc\" searchable filterableBy={[\"status\"]} columns={[{ key: \"name\", label: \"Document\" }, { key: \"status\", label: \"Status\" }, { key: \"fileName\", label: \"File\" }, { key: \"rejectionNote\", label: \"Note\" }]} emptyState=\"No documents on this client's checklist yet.\"/>\n    <DocumentActions/>\n    <Divider/>\n    <Text variant=\"heading\" text=\"Messages\"/>\n    <MessageThread/>\n  </Stack>\n  <Island name=\"DocumentActions\">export default function DocumentActions() {\n  const [docs, setDocs] = useState([]);\n  const [selected, setSelected] = useState(\"\");\n  const [action, setAction] = useState(\"verify\");\n  const [reason, setReason] = useState(\"\");\n  const [fileName, setFileName] = useState(\"\");\n  const [phase, setPhase] = useState(\"idle\");\n  const [message, setMessage] = useState(\"\");\n\n  useEffect(() => {\n    tools.host_listClientDocuments({ id: \"1\" }).then((r) => setDocs(r.data || []));\n  }, []);\n\n  const actionable = docs.filter((d) => d.status === \"received\" || d.status === \"needs_review\");\n\n  const submit = async () => {\n    if (!selected) return;\n    setPhase(\"sending\");\n    const body = { action };\n    if (action === \"receive\") body.fileName = fileName;\n    if (action === \"reject\") body.reason = reason;\n    const result = await tools.host_setDocumentStatus({ id: \"1\", docId: selected, body });\n    if (result && result.status === \"pending-approval\") {\n      setPhase(\"awaiting\");\n      setMessage(\"Action submitted — awaiting approval.\");\n    } else {\n      setPhase(\"done\");\n      setMessage(\"Document status updated.\");\n    }\n  };\n\n  const labelFor = (a) => ({ verify: \"Verify\", reject: \"Reject\", receive: \"Mark received\" }[a] || a);\n\n  return (\n    <div style={{\n      background: \"var(--vendo-color-surface)\",\n      border: \"1px solid var(--vendo-color-border)\",\n      borderRadius: \"var(--vendo-radius-medium)\",\n      padding: 20,\n      display: \"grid\",\n      gap: 14,\n      fontFamily: \"var(--vendo-font-family)\",\n      fontSize: 14,\n      color: \"var(--vendo-color-text)\"\n    }}>\n      <div style={{ fontWeight: 600, fontSize: 15 }}>Update a document</div>\n\n      {actionable.length === 0 && (\n        <div style={{ color: \"var(--vendo-color-muted)\" }}>No documents currently awaiting verification or rejection.</div>\n      )}\n\n      {actionable.length > 0 && (\n        <>\n          <div style={{ display: \"grid\", gap: 6 }}>\n            <label style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>Document</label>\n            <select\n              value={selected}\n              onChange={(e) => setSelected(e.target.value)}\n              style={{\n                padding: \"8px 10px\",\n                borderRadius: \"var(--vendo-radius-small)\",\n                border: \"1px solid var(--vendo-color-border)\",\n                background: \"var(--vendo-color-background)\",\n                color: \"var(--vendo-color-text)\",\n                fontFamily: \"var(--vendo-font-family)\",\n                fontSize: 14\n              }}\n            >\n              <option value=\"\">Choose a document…</option>\n              {actionable.map((d) => (\n                <option key={d.id} value={d.id}>{d.name} — {d.status}</option>\n              ))}\n            </select>\n          </div>\n\n          <div style={{ display: \"grid\", gap: 6 }}>\n            <label style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>Action</label>\n            <select\n              value={action}\n              onChange={(e) => setAction(e.target.value)}\n              style={{\n                padding: \"8px 10px\",\n                borderRadius: \"var(--vendo-radius-small)\",\n                border: \"1px solid var(--vendo-color-border)\",\n                background: \"var(--vendo-color-background)\",\n                color: \"var(--vendo-color-text)\",\n                fontFamily: \"var(--vendo-font-family)\",\n                fontSize: 14\n              }}\n            >\n              <option value=\"verify\">Verify — mark as confirmed correct</option>\n              <option value=\"reject\">Reject — return to client with a note</option>\n              <option value=\"receive\">Mark received — attach a file name</option>\n            </select>\n          </div>\n\n          {action === \"reject\" && (\n            <div style={{ display: \"grid\", gap: 6 }}>\n              <label style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>Reason shown to client</label>\n              <textarea\n                value={reason}\n                onChange={(e) => setReason(e.target.value)}\n                rows={3}\n                placeholder=\"Explain what needs to be corrected…\"\n                style={{\n                  padding: \"8px 10px\",\n                  borderRadius: \"var(--vendo-radius-small)\",\n                  border: \"1px solid var(--vendo-color-border)\",\n                  background: \"var(--vendo-color-background)\",\n                  color: \"var(--vendo-color-text)\",\n                  fontFamily: \"var(--vendo-font-family)\",\n                  fontSize: 14,\n                  resize: \"vertical\"\n                }}\n              />\n            </div>\n          )}\n\n          {action === \"receive\" && (\n            <div style={{ display: \"grid\", gap: 6 }}>\n              <label style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>File name</label>\n              <input\n                value={fileName}\n                onChange={(e) => setFileName(e.target.value)}\n                placeholder=\"e.g. W2_2025.pdf\"\n                style={{\n                  padding: \"8px 10px\",\n                  borderRadius: \"var(--vendo-radius-small)\",\n                  border: \"1px solid var(--vendo-color-border)\",\n                  background: \"var(--vendo-color-background)\",\n                  color: \"var(--vendo-color-text)\",\n                  fontFamily: \"var(--vendo-font-family)\",\n                  fontSize: 14\n                }}\n              />\n            </div>\n          )}\n\n          {message && (\n            <div style={{\n              padding: \"10px 14px\",\n              borderRadius: \"var(--vendo-radius-small)\",\n              background: phase === \"awaiting\" ? \"#fef9ec\" : \"#f0faf4\",\n              color: phase === \"awaiting\" ? \"#92600a\" : \"#1a6b3c\",\n              fontSize: 13\n            }}>\n              {message}\n            </div>\n          )}\n\n          <button\n            onClick={submit}\n            disabled={!selected || phase === \"sending\" || phase === \"awaiting\" || phase === \"done\"}\n            style={{\n              padding: \"9px 18px\",\n              borderRadius: \"var(--vendo-radius-small)\",\n              background: \"var(--vendo-color-accent)\",\n              color: \"var(--vendo-color-accent-text)\",\n              border: \"none\",\n              fontFamily: \"var(--vendo-font-family)\",\n              fontSize: 14,\n              fontWeight: 600,\n              cursor: \"pointer\",\n              opacity: (!selected || phase !== \"idle\") ? 0.5 : 1,\n              justifySelf: \"start\"\n            }}\n          >\n            {phase === \"sending\" ? \"Submitting…\" : phase === \"awaiting\" ? \"Awaiting approval…\" : phase === \"done\" ? \"Done\" : labelFor(action)}\n          </button>\n        </>\n      )}\n    </div>\n  );\n}</Island>\n  <Island name=\"MessageThread\">export default function MessageThread() {\n  const [messages, setMessages] = useState([]);\n  const [body, setBody] = useState(\"\");\n  const [phase, setPhase] = useState(\"idle\");\n  const [sent, setSent] = useState(false);\n\n  useEffect(() => {\n    tools.host_listClientMessages({ id: \"1\" }).then((r) => setMessages(r.data || []));\n  }, []);\n\n  const send = async () => {\n    if (!body.trim()) return;\n    setPhase(\"sending\");\n    const result = await tools.host_sendClientMessage({ id: \"1\", body: { body: body.trim(), author: \"firm\" } });\n    if (result && result.status === \"pending-approval\") {\n      setPhase(\"awaiting\");\n    } else {\n      setPhase(\"idle\");\n      setSent(true);\n      setBody(\"\");\n      tools.host_listClientMessages({ id: \"1\" }).then((r) => setMessages(r.data || []));\n    }\n  };\n\n  return (\n    <div style={{\n      display: \"grid\",\n      gap: 16,\n      fontFamily: \"var(--vendo-font-family)\",\n      fontSize: 14,\n      color: \"var(--vendo-color-text)\"\n    }}>\n      <div style={{\n        display: \"grid\",\n        gap: 10,\n        maxHeight: 360,\n        overflowY: \"auto\",\n        padding: \"4px 0\"\n      }}>\n        {messages.length === 0 && (\n          <div style={{ color: \"var(--vendo-color-muted)\", padding: \"12px 0\" }}>No messages yet — send one below to start the conversation.</div>\n        )}\n        {messages.map((m, i) => {\n          const isFirm = m.author === \"firm\";\n          return (\n            <div key={m.id || i} style={{\n              display: \"grid\",\n              gap: 3,\n              justifyItems: isFirm ? \"end\" : \"start\"\n            }}>\n              <div style={{\n                maxWidth: \"72%\",\n                padding: \"10px 14px\",\n                borderRadius: \"var(--vendo-radius-medium)\",\n                background: isFirm ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-surface)\",\n                color: isFirm ? \"var(--vendo-color-accent-text)\" : \"var(--vendo-color-text)\",\n                border: isFirm ? \"none\" : \"1px solid var(--vendo-color-border)\",\n                lineHeight: 1.5\n              }}>\n                {m.body}\n              </div>\n              <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n                {isFirm ? \"Firm\" : \"Client\"}{m.sentAt ? ` · ${fmt.dateTime(m.sentAt)}` : \"\"}\n              </div>\n            </div>\n          );\n        })}\n      </div>\n\n      {sent && (\n        <div style={{ fontSize: 13, color: \"#1a6b3c\" }}>Message sent.</div>\n      )}\n      {phase === \"awaiting\" && (\n        <div style={{ fontSize: 13, color: \"#92600a\" }}>Message submitted — awaiting approval before delivery.</div>\n      )}\n\n      <div style={{ display: \"grid\", gap: 8 }}>\n        <textarea\n          value={body}\n          onChange={(e) => setBody(e.target.value)}\n          rows={3}\n          placeholder=\"Write a message to the client…\"\n          disabled={phase === \"awaiting\"}\n          style={{\n            padding: \"10px 12px\",\n            borderRadius: \"var(--vendo-radius-small)\",\n            border: \"1px solid var(--vendo-color-border)\",\n            background: \"var(--vendo-color-background)\",\n            color: \"var(--vendo-color-text)\",\n            fontFamily: \"var(--vendo-font-family)\",\n            fontSize: 14,\n            resize: \"vertical\"\n          }}\n        />\n        <button\n          onClick={send}\n          disabled={!body.trim() || phase !== \"idle\"}\n          style={{\n            padding: \"9px 18px\",\n            borderRadius: \"var(--vendo-radius-small)\",\n            background: \"var(--vendo-color-accent)\",\n            color: \"var(--vendo-color-accent-text)\",\n            border: \"none\",\n            fontFamily: \"var(--vendo-font-family)\",\n            fontSize: 14,\n            fontWeight: 600,\n            cursor: \"pointer\",\n            opacity: (!body.trim() || phase !== \"idle\") ? 0.5 : 1,\n            justifySelf: \"start\"\n          }}\n        >\n          {phase === \"sending\" ? \"Sending…\" : phase === \"awaiting\" ? \"Awaiting approval…\" : \"Send message\"}\n        </button>\n      </div>\n    </div>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Client overview",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "row-1",
+            "row-2",
+            "divider-1",
+            "text-2",
+            "datatable-1",
+            "documentactions-1",
+            "divider-2",
+            "text-3",
+            "messagethread-1"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-1",
+            "enumbadge-1"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": {
+              "$path": "/hostGetClient/name"
+            }
+          }
+        },
+        {
+          "id": "enumbadge-1",
+          "component": "EnumBadge",
+          "source": "prewired",
+          "props": {
+            "value": {
+              "$path": "/hostGetClient/status"
+            },
+            "tones": {
+              "complete": "success",
+              "missing": "danger",
+              "overdue": "danger",
+              "review": "warning",
+              "on_track": "accent"
+            }
+          }
+        },
+        {
+          "id": "row-2",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3",
+            "cadencedocprogress-1"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Assigned staff",
+            "value": {
+              "$path": "/hostGetClient/assignedStaff"
+            }
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Filing deadline",
+            "value": {
+              "$path": "/hostGetClient/filingDeadline"
+            },
+            "format": "date"
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Entity type",
+            "value": {
+              "$path": "/hostGetClient/entityType"
+            }
+          }
+        },
+        {
+          "id": "cadencedocprogress-1",
+          "component": "CadenceDocProgress",
+          "source": "host",
+          "props": {
+            "value": {
+              "$path": "/hostGetClient/documentsReceived"
+            },
+            "max": {
+              "$path": "/hostGetClient/documentsTotal"
+            }
+          }
+        },
+        {
+          "id": "divider-1",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Document checklist"
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListClientDocuments/data"
+            },
+            "sortBy": "status asc",
+            "searchable": true,
+            "filterableBy": [
+              "status"
+            ],
+            "columns": [
+              {
+                "key": "name",
+                "label": "Document"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              },
+              {
+                "key": "fileName",
+                "label": "File"
+              },
+              {
+                "key": "rejectionNote",
+                "label": "Note"
+              }
+            ],
+            "emptyState": "No documents on this client's checklist yet."
+          }
+        },
+        {
+          "id": "documentactions-1",
+          "component": "DocumentActions",
+          "source": "generated"
+        },
+        {
+          "id": "divider-2",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Messages"
+          }
+        },
+        {
+          "id": "messagethread-1",
+          "component": "MessageThread",
+          "source": "generated"
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetClient",
+          "tool": "host_getClient",
+          "input": {
+            "id": "1"
+          }
+        },
+        {
+          "name": "hostListClientDocuments",
+          "tool": "host_listClientDocuments",
+          "input": {
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "components": {
+      "DocumentActions": "export default function DocumentActions() {\n  const [docs, setDocs] = useState([]);\n  const [selected, setSelected] = useState(\"\");\n  const [action, setAction] = useState(\"verify\");\n  const [reason, setReason] = useState(\"\");\n  const [fileName, setFileName] = useState(\"\");\n  const [phase, setPhase] = useState(\"idle\");\n  const [message, setMessage] = useState(\"\");\n\n  useEffect(() => {\n    tools.host_listClientDocuments({ id: \"1\" }).then((r) => setDocs(r.data || []));\n  }, []);\n\n  const actionable = docs.filter((d) => d.status === \"received\" || d.status === \"needs_review\");\n\n  const submit = async () => {\n    if (!selected) return;\n    setPhase(\"sending\");\n    const body = { action };\n    if (action === \"receive\") body.fileName = fileName;\n    if (action === \"reject\") body.reason = reason;\n    const result = await tools.host_setDocumentStatus({ id: \"1\", docId: selected, body });\n    if (result && result.status === \"pending-approval\") {\n      setPhase(\"awaiting\");\n      setMessage(\"Action submitted — awaiting approval.\");\n    } else {\n      setPhase(\"done\");\n      setMessage(\"Document status updated.\");\n    }\n  };\n\n  const labelFor = (a) => ({ verify: \"Verify\", reject: \"Reject\", receive: \"Mark received\" }[a] || a);\n\n  return (\n    <div style={{\n      background: \"var(--vendo-color-surface)\",\n      border: \"1px solid var(--vendo-color-border)\",\n      borderRadius: \"var(--vendo-radius-medium)\",\n      padding: 20,\n      display: \"grid\",\n      gap: 14,\n      fontFamily: \"var(--vendo-font-family)\",\n      fontSize: 14,\n      color: \"var(--vendo-color-text)\"\n    }}>\n      <div style={{ fontWeight: 600, fontSize: 15 }}>Update a document</div>\n\n      {actionable.length === 0 && (\n        <div style={{ color: \"var(--vendo-color-muted)\" }}>No documents currently awaiting verification or rejection.</div>\n      )}\n\n      {actionable.length > 0 && (\n        <>\n          <div style={{ display: \"grid\", gap: 6 }}>\n            <label style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>Document</label>\n            <select\n              value={selected}\n              onChange={(e) => setSelected(e.target.value)}\n              style={{\n                padding: \"8px 10px\",\n                borderRadius: \"var(--vendo-radius-small)\",\n                border: \"1px solid var(--vendo-color-border)\",\n                background: \"var(--vendo-color-background)\",\n                color: \"var(--vendo-color-text)\",\n                fontFamily: \"var(--vendo-font-family)\",\n                fontSize: 14\n              }}\n            >\n              <option value=\"\">Choose a document…</option>\n              {actionable.map((d) => (\n                <option key={d.id} value={d.id}>{d.name} — {d.status}</option>\n              ))}\n            </select>\n          </div>\n\n          <div style={{ display: \"grid\", gap: 6 }}>\n            <label style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>Action</label>\n            <select\n              value={action}\n              onChange={(e) => setAction(e.target.value)}\n              style={{\n                padding: \"8px 10px\",\n                borderRadius: \"var(--vendo-radius-small)\",\n                border: \"1px solid var(--vendo-color-border)\",\n                background: \"var(--vendo-color-background)\",\n                color: \"var(--vendo-color-text)\",\n                fontFamily: \"var(--vendo-font-family)\",\n                fontSize: 14\n              }}\n            >\n              <option value=\"verify\">Verify — mark as confirmed correct</option>\n              <option value=\"reject\">Reject — return to client with a note</option>\n              <option value=\"receive\">Mark received — attach a file name</option>\n            </select>\n          </div>\n\n          {action === \"reject\" && (\n            <div style={{ display: \"grid\", gap: 6 }}>\n              <label style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>Reason shown to client</label>\n              <textarea\n                value={reason}\n                onChange={(e) => setReason(e.target.value)}\n                rows={3}\n                placeholder=\"Explain what needs to be corrected…\"\n                style={{\n                  padding: \"8px 10px\",\n                  borderRadius: \"var(--vendo-radius-small)\",\n                  border: \"1px solid var(--vendo-color-border)\",\n                  background: \"var(--vendo-color-background)\",\n                  color: \"var(--vendo-color-text)\",\n                  fontFamily: \"var(--vendo-font-family)\",\n                  fontSize: 14,\n                  resize: \"vertical\"\n                }}\n              />\n            </div>\n          )}\n\n          {action === \"receive\" && (\n            <div style={{ display: \"grid\", gap: 6 }}>\n              <label style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>File name</label>\n              <input\n                value={fileName}\n                onChange={(e) => setFileName(e.target.value)}\n                placeholder=\"e.g. W2_2025.pdf\"\n                style={{\n                  padding: \"8px 10px\",\n                  borderRadius: \"var(--vendo-radius-small)\",\n                  border: \"1px solid var(--vendo-color-border)\",\n                  background: \"var(--vendo-color-background)\",\n                  color: \"var(--vendo-color-text)\",\n                  fontFamily: \"var(--vendo-font-family)\",\n                  fontSize: 14\n                }}\n              />\n            </div>\n          )}\n\n          {message && (\n            <div style={{\n              padding: \"10px 14px\",\n              borderRadius: \"var(--vendo-radius-small)\",\n              background: phase === \"awaiting\" ? \"#fef9ec\" : \"#f0faf4\",\n              color: phase === \"awaiting\" ? \"#92600a\" : \"#1a6b3c\",\n              fontSize: 13\n            }}>\n              {message}\n            </div>\n          )}\n\n          <button\n            onClick={submit}\n            disabled={!selected || phase === \"sending\" || phase === \"awaiting\" || phase === \"done\"}\n            style={{\n              padding: \"9px 18px\",\n              borderRadius: \"var(--vendo-radius-small)\",\n              background: \"var(--vendo-color-accent)\",\n              color: \"var(--vendo-color-accent-text)\",\n              border: \"none\",\n              fontFamily: \"var(--vendo-font-family)\",\n              fontSize: 14,\n              fontWeight: 600,\n              cursor: \"pointer\",\n              opacity: (!selected || phase !== \"idle\") ? 0.5 : 1,\n              justifySelf: \"start\"\n            }}\n          >\n            {phase === \"sending\" ? \"Submitting…\" : phase === \"awaiting\" ? \"Awaiting approval…\" : phase === \"done\" ? \"Done\" : labelFor(action)}\n          </button>\n        </>\n      )}\n    </div>\n  );\n}",
+      "MessageThread": "export default function MessageThread() {\n  const [messages, setMessages] = useState([]);\n  const [body, setBody] = useState(\"\");\n  const [phase, setPhase] = useState(\"idle\");\n  const [sent, setSent] = useState(false);\n\n  useEffect(() => {\n    tools.host_listClientMessages({ id: \"1\" }).then((r) => setMessages(r.data || []));\n  }, []);\n\n  const send = async () => {\n    if (!body.trim()) return;\n    setPhase(\"sending\");\n    const result = await tools.host_sendClientMessage({ id: \"1\", body: { body: body.trim(), author: \"firm\" } });\n    if (result && result.status === \"pending-approval\") {\n      setPhase(\"awaiting\");\n    } else {\n      setPhase(\"idle\");\n      setSent(true);\n      setBody(\"\");\n      tools.host_listClientMessages({ id: \"1\" }).then((r) => setMessages(r.data || []));\n    }\n  };\n\n  return (\n    <div style={{\n      display: \"grid\",\n      gap: 16,\n      fontFamily: \"var(--vendo-font-family)\",\n      fontSize: 14,\n      color: \"var(--vendo-color-text)\"\n    }}>\n      <div style={{\n        display: \"grid\",\n        gap: 10,\n        maxHeight: 360,\n        overflowY: \"auto\",\n        padding: \"4px 0\"\n      }}>\n        {messages.length === 0 && (\n          <div style={{ color: \"var(--vendo-color-muted)\", padding: \"12px 0\" }}>No messages yet — send one below to start the conversation.</div>\n        )}\n        {messages.map((m, i) => {\n          const isFirm = m.author === \"firm\";\n          return (\n            <div key={m.id || i} style={{\n              display: \"grid\",\n              gap: 3,\n              justifyItems: isFirm ? \"end\" : \"start\"\n            }}>\n              <div style={{\n                maxWidth: \"72%\",\n                padding: \"10px 14px\",\n                borderRadius: \"var(--vendo-radius-medium)\",\n                background: isFirm ? \"var(--vendo-color-accent)\" : \"var(--vendo-color-surface)\",\n                color: isFirm ? \"var(--vendo-color-accent-text)\" : \"var(--vendo-color-text)\",\n                border: isFirm ? \"none\" : \"1px solid var(--vendo-color-border)\",\n                lineHeight: 1.5\n              }}>\n                {m.body}\n              </div>\n              <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n                {isFirm ? \"Firm\" : \"Client\"}{m.sentAt ? ` · ${fmt.dateTime(m.sentAt)}` : \"\"}\n              </div>\n            </div>\n          );\n        })}\n      </div>\n\n      {sent && (\n        <div style={{ fontSize: 13, color: \"#1a6b3c\" }}>Message sent.</div>\n      )}\n      {phase === \"awaiting\" && (\n        <div style={{ fontSize: 13, color: \"#92600a\" }}>Message submitted — awaiting approval before delivery.</div>\n      )}\n\n      <div style={{ display: \"grid\", gap: 8 }}>\n        <textarea\n          value={body}\n          onChange={(e) => setBody(e.target.value)}\n          rows={3}\n          placeholder=\"Write a message to the client…\"\n          disabled={phase === \"awaiting\"}\n          style={{\n            padding: \"10px 12px\",\n            borderRadius: \"var(--vendo-radius-small)\",\n            border: \"1px solid var(--vendo-color-border)\",\n            background: \"var(--vendo-color-background)\",\n            color: \"var(--vendo-color-text)\",\n            fontFamily: \"var(--vendo-font-family)\",\n            fontSize: 14,\n            resize: \"vertical\"\n          }}\n        />\n        <button\n          onClick={send}\n          disabled={!body.trim() || phase !== \"idle\"}\n          style={{\n            padding: \"9px 18px\",\n            borderRadius: \"var(--vendo-radius-small)\",\n            background: \"var(--vendo-color-accent)\",\n            color: \"var(--vendo-color-accent-text)\",\n            border: \"none\",\n            fontFamily: \"var(--vendo-font-family)\",\n            fontSize: 14,\n            fontWeight: 600,\n            cursor: \"pointer\",\n            opacity: (!body.trim() || phase !== \"idle\") ? 0.5 : 1,\n            justifySelf: \"start\"\n          }}\n        >\n          {phase === \"sending\" ? \"Sending…\" : phase === \"awaiting\" ? \"Awaiting approval…\" : \"Send message\"}\n        </button>\n      </div>\n    </div>\n  );\n}"
+    },
+    "componentTools": {
+      "DocumentActions": [
+        "host_listClientDocuments",
+        "host_setDocumentStatus"
+      ],
+      "MessageThread": [
+        "host_listClientMessages",
+        "host_sendClientMessage"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 41912,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8188,
+        "outputTokens": 3614
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 45419,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 3504
+    }
+  ]
+}

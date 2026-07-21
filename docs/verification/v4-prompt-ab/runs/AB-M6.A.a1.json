@@ -1,0 +1,469 @@
+{
+  "promptId": "AB-M6",
+  "host": "demo-bank",
+  "arm": "A",
+  "attempt": 1,
+  "prompt": "An annual tax summary report: my capital gains, deductible expenses, and how much tax I'll owe this year.",
+  "ok": true,
+  "wallMs": 16465,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 7302,
+  "outputTokens": 1017,
+  "nodes": 34,
+  "queries": 4,
+  "wire": "<App name=\"Annual Tax Summary\">\n  <Query id=\"hostGetSpendingInsights\" tool=\"host_getSpendingInsights\" input={{}}/>\n  <Query id=\"hostGetCashflowInsights\" tool=\"host_getCashflowInsights\" input={{}}/>\n  <Query id=\"hostGetRecurringInsights\" tool=\"host_getRecurringInsights\" input={{}}/>\n  <Query id=\"hostListAccounts\" tool=\"host_listAccounts\" input={{}}/>\n  <Stack gap={6}>\n    <Surface>\n      <Stack gap={2}>\n        <Text variant=\"heading\" text=\"2026 Tax Summary\"/>\n        <Text variant=\"caption\" text=\"An overview of your financial activity for the current tax year. Capital gains, investments, and tax calculations are not available from your connected accounts.\"/>\n      </Stack>\n    </Surface>\n    <Disclaimer title=\"Capital Gains\" reason=\"No tool on this host exposes investment accounts, brokerage data, or capital gains. Capital gains cannot be calculated or estimated from your connected data.\"/>\n    <Disclaimer title=\"Tax Owed Estimate\" reason=\"Tax liability calculations require income, capital gains, deductions, and filing status — none of which are available from this host's tools. No tax estimate can be shown.\"/>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Spending by Category\"/>\n        <Text variant=\"caption\" text=\"Some categories (dining, subscriptions, transport) may include deductible business expenses depending on your situation. Review with a tax professional.\"/>\n        <MapleSpendingDonut slices={hostGetSpendingInsights.categories} size={220}/>\n        <DataTable rows={hostGetSpendingInsights.categories} columns={[{ key: \"category\", label: \"Category\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }]} emptyState=\"No spending data available\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Cash Flow — 2026\"/>\n        <Text variant=\"caption\" text=\"Total inflows and outflows across your accounts this year.\"/>\n        <Grid columns={2}>\n          <Stat label=\"Total Inflow\" value={hostGetCashflowInsights.inflowCents} format=\"money\"/>\n          <Stat label=\"Total Outflow\" value={hostGetCashflowInsights.outflowCents} format=\"money\"/>\n        </Grid>\n        <LineChart data={hostGetCashflowInsights.monthly} xKey=\"month\" series={[\"inflowCents\", \"outflowCents\"]} format=\"money\" height={200} emptyState=\"No monthly cashflow data available\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Recurring Charges\"/>\n        <Text variant=\"caption\" text=\"Detected subscriptions and recurring expenses — some may be deductible.\"/>\n        <DataTable rows={hostGetRecurringInsights.charges} columns={[{ key: \"merchant\", label: \"Merchant\" }, { key: \"category\", label: \"Category\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }, { key: \"frequency\", label: \"Frequency\" }]} emptyState=\"No recurring charges detected\"/>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Account Balances\"/>\n        <Text variant=\"caption\" text=\"Current balances across your connected accounts.\"/>\n        <DataTable rows={hostListAccounts.accounts} columns={[{ key: \"name\", label: \"Account\" }, { key: \"type\", label: \"Type\" }, { key: \"balanceCents\", label: \"Balance\", format: \"money\", align: \"end\" }]} emptyState=\"No accounts found\"/>\n      </Stack>\n    </Surface>\n    <Callout tone=\"warning\" title=\"This is not tax advice\">\n      This summary is based on your connected bank data only. Consult a qualified tax professional for an accurate return. Capital gains, deductions, and tax owed cannot be calculated from this data alone.\n    </Callout>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Annual Tax Summary",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "surface-1",
+            "disclaimer-1",
+            "disclaimer-2",
+            "surface-2",
+            "surface-3",
+            "surface-4",
+            "surface-5",
+            "callout-1"
+          ]
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-1",
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "2026 Tax Summary"
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "An overview of your financial activity for the current tax year. Capital gains, investments, and tax calculations are not available from your connected accounts."
+          }
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Capital Gains",
+            "reason": "No tool on this host exposes investment accounts, brokerage data, or capital gains. Capital gains cannot be calculated or estimated from your connected data."
+          }
+        },
+        {
+          "id": "disclaimer-2",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Tax Owed Estimate",
+            "reason": "Tax liability calculations require income, capital gains, deductions, and filing status — none of which are available from this host's tools. No tax estimate can be shown."
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-3",
+            "text-4",
+            "maplespendingdonut-1",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Spending by Category"
+          }
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Some categories (dining, subscriptions, transport) may include deductible business expenses depending on your situation. Review with a tax professional."
+          }
+        },
+        {
+          "id": "maplespendingdonut-1",
+          "component": "MapleSpendingDonut",
+          "source": "host",
+          "props": {
+            "slices": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "size": 220
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No spending data available"
+          }
+        },
+        {
+          "id": "surface-3",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ]
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-5",
+            "text-6",
+            "grid-1",
+            "linechart-1"
+          ]
+        },
+        {
+          "id": "text-5",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Cash Flow — 2026"
+          }
+        },
+        {
+          "id": "text-6",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Total inflows and outflows across your accounts this year."
+          }
+        },
+        {
+          "id": "grid-1",
+          "component": "Grid",
+          "source": "prewired",
+          "props": {
+            "columns": 2
+          },
+          "children": [
+            "stat-1",
+            "stat-2"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total Inflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/inflowCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total Outflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/outflowCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "linechart-1",
+          "component": "LineChart",
+          "source": "prewired",
+          "props": {
+            "data": {
+              "$path": "/hostGetCashflowInsights/monthly"
+            },
+            "xKey": "month",
+            "series": [
+              "inflowCents",
+              "outflowCents"
+            ],
+            "format": "money",
+            "height": 200,
+            "emptyState": "No monthly cashflow data available"
+          }
+        },
+        {
+          "id": "surface-4",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-5"
+          ]
+        },
+        {
+          "id": "stack-5",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-7",
+            "text-8",
+            "datatable-2"
+          ]
+        },
+        {
+          "id": "text-7",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Recurring Charges"
+          }
+        },
+        {
+          "id": "text-8",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Detected subscriptions and recurring expenses — some may be deductible."
+          }
+        },
+        {
+          "id": "datatable-2",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetRecurringInsights/charges"
+            },
+            "columns": [
+              {
+                "key": "merchant",
+                "label": "Merchant"
+              },
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "frequency",
+                "label": "Frequency"
+              }
+            ],
+            "emptyState": "No recurring charges detected"
+          }
+        },
+        {
+          "id": "surface-5",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-6"
+          ]
+        },
+        {
+          "id": "stack-6",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-9",
+            "text-10",
+            "datatable-3"
+          ]
+        },
+        {
+          "id": "text-9",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Account Balances"
+          }
+        },
+        {
+          "id": "text-10",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Current balances across your connected accounts."
+          }
+        },
+        {
+          "id": "datatable-3",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListAccounts/accounts"
+            },
+            "columns": [
+              {
+                "key": "name",
+                "label": "Account"
+              },
+              {
+                "key": "type",
+                "label": "Type"
+              },
+              {
+                "key": "balanceCents",
+                "label": "Balance",
+                "format": "money",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No accounts found"
+          }
+        },
+        {
+          "id": "callout-1",
+          "component": "Callout",
+          "source": "prewired",
+          "props": {
+            "tone": "warning",
+            "title": "This is not tax advice"
+          },
+          "children": [
+            "text-11"
+          ]
+        },
+        {
+          "id": "text-11",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "This summary is based on your connected bank data only. Consult a qualified tax professional for an accurate return. Capital gains, deductions, and tax owed cannot be calculated from this data alone."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetSpendingInsights",
+          "tool": "host_getSpendingInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetCashflowInsights",
+          "tool": "host_getCashflowInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetRecurringInsights",
+          "tool": "host_getRecurringInsights",
+          "input": {}
+        },
+        {
+          "name": "hostListAccounts",
+          "tool": "host_listAccounts",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 16464,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7302,
+        "outputTokens": 1017
+      }
+    }
+  ],
+  "pipeline": []
+}

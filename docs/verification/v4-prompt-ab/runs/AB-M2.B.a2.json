@@ -1,0 +1,183 @@
+{
+  "promptId": "AB-M2",
+  "host": "demo-bank",
+  "arm": "B",
+  "attempt": 2,
+  "prompt": "List my upcoming scheduled payments with amounts and due dates, and let me pay the next one right now from my checking account.",
+  "ok": true,
+  "wallMs": 21625,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": false,
+  "firstAttemptValid": true,
+  "inputTokens": 8676,
+  "outputTokens": 1552,
+  "nodes": 8,
+  "queries": 1,
+  "wire": "<App name=\"Upcoming scheduled payments\">\n  <Query id=\"hostListScheduledPayments\" tool=\"host_listScheduledPayments\" input={{}}/>\n  <Stack gap={5}>\n    <Row gap={4}>\n      <Stat label=\"Next payment due\" value={{ \"$path\": \"/hostListScheduledPayments/data/0/dueDate\" }} format=\"date\"/>\n      <Stat label=\"Next payment amount\" value={{ \"$path\": \"/hostListScheduledPayments/data/0/amountCents\" }} format=\"money\" tone=\"accent\"/>\n      <Stat label=\"Payee\" value={{ \"$path\": \"/hostListScheduledPayments/data/0/payeeName\" }}/>\n    </Row>\n    <PayNextPanel/>\n    <DataTable rows={hostListScheduledPayments.data} columns={[{ key: \"payeeName\", label: \"Payee\" }, { key: \"description\", label: \"Description\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }, { key: \"dueDate\", label: \"Due date\", format: \"date\" }, { key: \"status\", label: \"Status\" }]} sortBy=\"dueDate asc\" emptyState=\"No upcoming scheduled payments.\"/>\n  </Stack>\n  <Island name=\"PayNextPanel\">export default function PayNextPanel() {\n  const [phase, setPhase] = useState(\"idle\");\n  const [payments, setPayments] = useState([]);\n  const [accounts, setAccounts] = useState([]);\n  const [error, setError] = useState(null);\n\n  useEffect(() => {\n    tools.host_listScheduledPayments({}).then((r) => setPayments(r.data || []));\n    tools.host_listAccounts({}).then((r) => setAccounts(r.data || []));\n  }, []);\n\n  const next = payments[0];\n  const checking = accounts.find((a) => a.type === \"checking\" || (a.name && a.name.toLowerCase().includes(\"checking\")));\n\n  const pay = async () => {\n    if (!next) return;\n    setPhase(\"sending\");\n    setError(null);\n    try {\n      const result = await tools.host_transferMoney({\n        amount: next.amountCents,\n        recipient_name: next.payeeName,\n        memo: next.description || next.payeeName,\n      });\n      setPhase(result && result.status === \"pending-approval\" ? \"awaiting\" : \"done\");\n    } catch (e) {\n      setError(\"Something went wrong. Please try again.\");\n      setPhase(\"idle\");\n    }\n  };\n\n  if (!next) return (\n    <div style={{ padding: 20, background: \"var(--vendo-color-surface)\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-medium)\", color: \"var(--vendo-color-muted)\", fontFamily: \"var(--vendo-font-family)\" }}>\n      No upcoming scheduled payments found.\n    </div>\n  );\n\n  return (\n    <div style={{ padding: 20, background: \"var(--vendo-color-surface)\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-medium)\", fontFamily: \"var(--vendo-font-family)\", display: \"grid\", gap: 16 }}>\n      <div style={{ display: \"flex\", flexDirection: \"column\", gap: 4 }}>\n        <span style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>Paying next</span>\n        <span style={{ fontSize: 20, fontWeight: 600, color: \"var(--vendo-color-text)\" }}>{next.payeeName}</span>\n        <span style={{ fontSize: 15, color: \"var(--vendo-color-text)\" }}>{fmt.money(next.amountCents)} &mdash; due {fmt.dateTime(next.dueDate)}</span>\n      </div>\n      {checking && (\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n          From: <strong style={{ color: \"var(--vendo-color-text)\" }}>{checking.name}</strong> &nbsp;·&nbsp; Balance: {fmt.money(checking.balanceCents)}\n        </div>\n      )}\n      {error && (\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-danger)\" }}>{error}</div>\n      )}\n      {phase === \"awaiting\" && (\n        <div style={{ padding: \"10px 14px\", background: \"#FBFBFA\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-small)\", fontSize: 14, color: \"var(--vendo-color-muted)\" }}>\n          ⏳ Awaiting your approval to complete this payment…\n        </div>\n      )}\n      {phase === \"done\" && (\n        <div style={{ padding: \"10px 14px\", background: \"#FBFBFA\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-small)\", fontSize: 14, color: \"var(--vendo-color-text)\" }}>\n          ✓ Payment sent successfully.\n        </div>\n      )}\n      {(phase === \"idle\" || phase === \"sending\") && (\n        <button\n          onClick={pay}\n          disabled={phase === \"sending\"}\n          style={{\n            padding: \"10px 18px\",\n            background: \"var(--vendo-color-accent)\",\n            color: \"var(--vendo-color-accent-text)\",\n            border: \"none\",\n            borderRadius: \"var(--vendo-radius-small)\",\n            fontFamily: \"var(--vendo-font-family)\",\n            fontSize: 15,\n            fontWeight: 600,\n            cursor: phase === \"sending\" ? \"not-allowed\" : \"pointer\",\n            opacity: phase === \"sending\" ? 0.6 : 1,\n          }}\n        >\n          {phase === \"sending\" ? \"Sending…\" : `Pay ${fmt.money(next.amountCents)} now`}\n        </button>\n      )}\n    </div>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Upcoming scheduled payments",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 5
+          },
+          "children": [
+            "row-1",
+            "paynextpanel-1",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Next payment due",
+            "value": {
+              "$path": "/hostListScheduledPayments/data/0/dueDate"
+            },
+            "format": "date"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Next payment amount",
+            "value": {
+              "$path": "/hostListScheduledPayments/data/0/amountCents"
+            },
+            "format": "money",
+            "tone": "accent"
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Payee",
+            "value": {
+              "$path": "/hostListScheduledPayments/data/0/payeeName"
+            }
+          }
+        },
+        {
+          "id": "paynextpanel-1",
+          "component": "PayNextPanel",
+          "source": "generated"
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostListScheduledPayments/data"
+            },
+            "columns": [
+              {
+                "key": "payeeName",
+                "label": "Payee"
+              },
+              {
+                "key": "description",
+                "label": "Description"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "dueDate",
+                "label": "Due date",
+                "format": "date"
+              },
+              {
+                "key": "status",
+                "label": "Status"
+              }
+            ],
+            "sortBy": "dueDate asc",
+            "emptyState": "No upcoming scheduled payments."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostListScheduledPayments",
+          "tool": "host_listScheduledPayments",
+          "input": {}
+        }
+      ]
+    },
+    "components": {
+      "PayNextPanel": "export default function PayNextPanel() {\n  const [phase, setPhase] = useState(\"idle\");\n  const [payments, setPayments] = useState([]);\n  const [accounts, setAccounts] = useState([]);\n  const [error, setError] = useState(null);\n\n  useEffect(() => {\n    tools.host_listScheduledPayments({}).then((r) => setPayments(r.data || []));\n    tools.host_listAccounts({}).then((r) => setAccounts(r.data || []));\n  }, []);\n\n  const next = payments[0];\n  const checking = accounts.find((a) => a.type === \"checking\" || (a.name && a.name.toLowerCase().includes(\"checking\")));\n\n  const pay = async () => {\n    if (!next) return;\n    setPhase(\"sending\");\n    setError(null);\n    try {\n      const result = await tools.host_transferMoney({\n        amount: next.amountCents,\n        recipient_name: next.payeeName,\n        memo: next.description || next.payeeName,\n      });\n      setPhase(result && result.status === \"pending-approval\" ? \"awaiting\" : \"done\");\n    } catch (e) {\n      setError(\"Something went wrong. Please try again.\");\n      setPhase(\"idle\");\n    }\n  };\n\n  if (!next) return (\n    <div style={{ padding: 20, background: \"var(--vendo-color-surface)\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-medium)\", color: \"var(--vendo-color-muted)\", fontFamily: \"var(--vendo-font-family)\" }}>\n      No upcoming scheduled payments found.\n    </div>\n  );\n\n  return (\n    <div style={{ padding: 20, background: \"var(--vendo-color-surface)\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-medium)\", fontFamily: \"var(--vendo-font-family)\", display: \"grid\", gap: 16 }}>\n      <div style={{ display: \"flex\", flexDirection: \"column\", gap: 4 }}>\n        <span style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>Paying next</span>\n        <span style={{ fontSize: 20, fontWeight: 600, color: \"var(--vendo-color-text)\" }}>{next.payeeName}</span>\n        <span style={{ fontSize: 15, color: \"var(--vendo-color-text)\" }}>{fmt.money(next.amountCents)} &mdash; due {fmt.dateTime(next.dueDate)}</span>\n      </div>\n      {checking && (\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n          From: <strong style={{ color: \"var(--vendo-color-text)\" }}>{checking.name}</strong> &nbsp;·&nbsp; Balance: {fmt.money(checking.balanceCents)}\n        </div>\n      )}\n      {error && (\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-danger)\" }}>{error}</div>\n      )}\n      {phase === \"awaiting\" && (\n        <div style={{ padding: \"10px 14px\", background: \"#FBFBFA\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-small)\", fontSize: 14, color: \"var(--vendo-color-muted)\" }}>\n          ⏳ Awaiting your approval to complete this payment…\n        </div>\n      )}\n      {phase === \"done\" && (\n        <div style={{ padding: \"10px 14px\", background: \"#FBFBFA\", border: \"1px solid var(--vendo-color-border)\", borderRadius: \"var(--vendo-radius-small)\", fontSize: 14, color: \"var(--vendo-color-text)\" }}>\n          ✓ Payment sent successfully.\n        </div>\n      )}\n      {(phase === \"idle\" || phase === \"sending\") && (\n        <button\n          onClick={pay}\n          disabled={phase === \"sending\"}\n          style={{\n            padding: \"10px 18px\",\n            background: \"var(--vendo-color-accent)\",\n            color: \"var(--vendo-color-accent-text)\",\n            border: \"none\",\n            borderRadius: \"var(--vendo-radius-small)\",\n            fontFamily: \"var(--vendo-font-family)\",\n            fontSize: 15,\n            fontWeight: 600,\n            cursor: phase === \"sending\" ? \"not-allowed\" : \"pointer\",\n            opacity: phase === \"sending\" ? 0.6 : 1,\n          }}\n        >\n          {phase === \"sending\" ? \"Sending…\" : `Pay ${fmt.money(next.amountCents)} now`}\n        </button>\n      )}\n    </div>\n  );\n}"
+    },
+    "componentTools": {
+      "PayNextPanel": [
+        "host_listAccounts",
+        "host_listScheduledPayments",
+        "host_transferMoney"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 20204,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8676,
+        "outputTokens": 1552
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 21625,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 1417
+    }
+  ]
+}

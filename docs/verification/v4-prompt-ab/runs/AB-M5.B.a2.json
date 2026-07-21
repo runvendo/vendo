@@ -1,0 +1,87 @@
+{
+  "promptId": "AB-M5",
+  "host": "demo-bank",
+  "arm": "B",
+  "attempt": 2,
+  "prompt": "A timeline of money leaving my account soon: upcoming scheduled payments and subscription renewals, ordered by date with the total going out.",
+  "ok": true,
+  "wallMs": 26211,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": false,
+  "firstAttemptValid": true,
+  "inputTokens": 8677,
+  "outputTokens": 2051,
+  "nodes": 3,
+  "queries": 0,
+  "wire": "<App name=\"Money going out soon\">\n  <Stack gap={5}>\n    <OutflowTimeline/>\n  </Stack>\n  <Island name=\"OutflowTimeline\">export default function OutflowTimeline() {\n  const [scheduled, setScheduled] = useState([]);\n  const [recurring, setRecurring] = useState([]);\n  const [loading, setLoading] = useState(true);\n\n  useEffect(() => {\n    Promise.all([\n      tools.host_listScheduledPayments({}),\n      tools.host_getRecurringInsights({})\n    ]).then(([sched, rec]) => {\n      setScheduled(sched.data || sched.payments || sched || []);\n      setRecurring(rec.subscriptions || rec.recurring || rec.data || []);\n      setLoading(false);\n    });\n  }, []);\n\n  if (loading) {\n    return (\n      <div style={{ padding: 24, color: \"var(--vendo-color-muted)\", fontFamily: \"var(--vendo-font-family)\" }}>\n        Loading upcoming payments…\n      </div>\n    );\n  }\n\n  const today = new Date(\"2026-07-21\");\n\n  const schedItems = (Array.isArray(scheduled) ? scheduled : []).map((p) => ({\n    id: \"sched-\" + (p.id || p.payeeId || Math.random()),\n    label: p.payeeName || p.name || p.descriptor || \"Scheduled payment\",\n    amountCents: p.amountCents || p.amount || 0,\n    date: p.scheduledDate || p.date || p.nextDate || null,\n    type: \"scheduled\",\n  }));\n\n  const recItems = (Array.isArray(recurring) ? recurring : []).map((r) => ({\n    id: \"rec-\" + (r.id || r.merchant || Math.random()),\n    label: r.merchant || r.name || r.descriptor || \"Subscription\",\n    amountCents: r.amountCents || r.amount || 0,\n    date: r.nextDate || r.nextBillingDate || r.date || null,\n    type: \"subscription\",\n  }));\n\n  const allItems = [...schedItems, ...recItems]\n    .filter((item) => item.date)\n    .sort((a, b) => new Date(a.date) - new Date(b.date));\n\n  const totalCents = allItems.reduce((sum, item) => sum + (item.amountCents || 0), 0);\n\n  const formatMoney = (cents) => {\n    if (!cents && cents !== 0) return \"—\";\n    return fmt.money(cents);\n  };\n\n  const formatDate = (iso) => {\n    if (!iso) return \"—\";\n    const d = new Date(iso);\n    if (isNaN(d)) return \"—\";\n    const diff = Math.round((d - today) / (1000 * 60 * 60 * 24));\n    const label = d.toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\" });\n    if (diff === 0) return `Today · ${label}`;\n    if (diff === 1) return `Tomorrow · ${label}`;\n    if (diff < 0) return label;\n    return `In ${diff}d · ${label}`;\n  };\n\n  const typeColor = (type) =>\n    type === \"subscription\"\n      ? \"var(--vendo-color-muted)\"\n      : \"var(--vendo-color-text)\";\n\n  const typeLabel = (type) =>\n    type === \"subscription\" ? \"Subscription\" : \"Scheduled\";\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", display: \"grid\", gap: 0 }}>\n      {/* Hero total */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        padding: \"28px 28px 24px\",\n        marginBottom: 20,\n        display: \"flex\",\n        flexDirection: \"column\",\n        gap: 4,\n      }}>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", letterSpacing: \"0.01em\" }}>\n          Total going out\n        </div>\n        <div style={{ fontSize: 38, fontWeight: 700, color: \"var(--vendo-color-text)\", letterSpacing: \"-0.02em\" }}>\n          {formatMoney(totalCents)}\n        </div>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", marginTop: 2 }}>\n          {allItems.length} upcoming payment{allItems.length !== 1 ? \"s\" : \"\"}\n          {schedItems.length > 0 && recItems.length > 0\n            ? ` · ${schedItems.length} scheduled, ${recItems.length} subscription${recItems.length !== 1 ? \"s\" : \"\"}`\n            : \"\"}\n        </div>\n      </div>\n\n      {/* Timeline */}\n      {allItems.length === 0 ? (\n        <div style={{\n          background: \"var(--vendo-color-surface)\",\n          border: \"1px solid var(--vendo-color-border)\",\n          borderRadius: \"var(--vendo-radius-large)\",\n          padding: \"32px 28px\",\n          color: \"var(--vendo-color-muted)\",\n          fontSize: 14,\n          textAlign: \"center\",\n        }}>\n          No upcoming payments found — you're all clear.\n        </div>\n      ) : (\n        <div style={{\n          background: \"var(--vendo-color-surface)\",\n          border: \"1px solid var(--vendo-color-border)\",\n          borderRadius: \"var(--vendo-radius-large)\",\n          overflow: \"hidden\",\n        }}>\n          {allItems.map((item, idx) => {\n            const isLast = idx === allItems.length - 1;\n            return (\n              <div key={item.id} style={{\n                display: \"grid\",\n                gridTemplateColumns: \"1fr auto\",\n                alignItems: \"center\",\n                padding: \"16px 24px\",\n                borderBottom: isLast ? \"none\" : \"1px solid var(--vendo-color-border)\",\n                gap: 16,\n              }}>\n                <div style={{ display: \"flex\", flexDirection: \"column\", gap: 3 }}>\n                  <div style={{ display: \"flex\", alignItems: \"center\", gap: 8 }}>\n                    <span style={{\n                      fontSize: 15,\n                      fontWeight: 500,\n                      color: \"var(--vendo-color-text)\",\n                    }}>{item.label}</span>\n                    <span style={{\n                      fontSize: 11,\n                      fontWeight: 500,\n                      color: typeColor(item.type),\n                      background: item.type === \"subscription\"\n                        ? \"rgba(144,140,133,0.10)\"\n                        : \"rgba(17,17,17,0.07)\",\n                      borderRadius: \"var(--vendo-radius-small)\",\n                      padding: \"2px 7px\",\n                      letterSpacing: \"0.02em\",\n                      textTransform: \"uppercase\",\n                    }}>{typeLabel(item.type)}</span>\n                  </div>\n                  <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n                    {formatDate(item.date)}\n                  </div>\n                </div>\n                <div style={{\n                  fontSize: 16,\n                  fontWeight: 600,\n                  color: \"var(--vendo-color-text)\",\n                  textAlign: \"right\",\n                  whiteSpace: \"nowrap\",\n                }}>\n                  {formatMoney(item.amountCents)}\n                </div>\n              </div>\n            );\n          })}\n        </div>\n      )}\n    </div>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Money going out soon",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 5
+          },
+          "children": [
+            "outflowtimeline-1"
+          ]
+        },
+        {
+          "id": "outflowtimeline-1",
+          "component": "OutflowTimeline",
+          "source": "generated"
+        }
+      ]
+    },
+    "components": {
+      "OutflowTimeline": "export default function OutflowTimeline() {\n  const [scheduled, setScheduled] = useState([]);\n  const [recurring, setRecurring] = useState([]);\n  const [loading, setLoading] = useState(true);\n\n  useEffect(() => {\n    Promise.all([\n      tools.host_listScheduledPayments({}),\n      tools.host_getRecurringInsights({})\n    ]).then(([sched, rec]) => {\n      setScheduled(sched.data || sched.payments || sched || []);\n      setRecurring(rec.subscriptions || rec.recurring || rec.data || []);\n      setLoading(false);\n    });\n  }, []);\n\n  if (loading) {\n    return (\n      <div style={{ padding: 24, color: \"var(--vendo-color-muted)\", fontFamily: \"var(--vendo-font-family)\" }}>\n        Loading upcoming payments…\n      </div>\n    );\n  }\n\n  const today = new Date(\"2026-07-21\");\n\n  const schedItems = (Array.isArray(scheduled) ? scheduled : []).map((p) => ({\n    id: \"sched-\" + (p.id || p.payeeId || Math.random()),\n    label: p.payeeName || p.name || p.descriptor || \"Scheduled payment\",\n    amountCents: p.amountCents || p.amount || 0,\n    date: p.scheduledDate || p.date || p.nextDate || null,\n    type: \"scheduled\",\n  }));\n\n  const recItems = (Array.isArray(recurring) ? recurring : []).map((r) => ({\n    id: \"rec-\" + (r.id || r.merchant || Math.random()),\n    label: r.merchant || r.name || r.descriptor || \"Subscription\",\n    amountCents: r.amountCents || r.amount || 0,\n    date: r.nextDate || r.nextBillingDate || r.date || null,\n    type: \"subscription\",\n  }));\n\n  const allItems = [...schedItems, ...recItems]\n    .filter((item) => item.date)\n    .sort((a, b) => new Date(a.date) - new Date(b.date));\n\n  const totalCents = allItems.reduce((sum, item) => sum + (item.amountCents || 0), 0);\n\n  const formatMoney = (cents) => {\n    if (!cents && cents !== 0) return \"—\";\n    return fmt.money(cents);\n  };\n\n  const formatDate = (iso) => {\n    if (!iso) return \"—\";\n    const d = new Date(iso);\n    if (isNaN(d)) return \"—\";\n    const diff = Math.round((d - today) / (1000 * 60 * 60 * 24));\n    const label = d.toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\" });\n    if (diff === 0) return `Today · ${label}`;\n    if (diff === 1) return `Tomorrow · ${label}`;\n    if (diff < 0) return label;\n    return `In ${diff}d · ${label}`;\n  };\n\n  const typeColor = (type) =>\n    type === \"subscription\"\n      ? \"var(--vendo-color-muted)\"\n      : \"var(--vendo-color-text)\";\n\n  const typeLabel = (type) =>\n    type === \"subscription\" ? \"Subscription\" : \"Scheduled\";\n\n  return (\n    <div style={{ fontFamily: \"var(--vendo-font-family)\", display: \"grid\", gap: 0 }}>\n      {/* Hero total */}\n      <div style={{\n        background: \"var(--vendo-color-surface)\",\n        border: \"1px solid var(--vendo-color-border)\",\n        borderRadius: \"var(--vendo-radius-large)\",\n        padding: \"28px 28px 24px\",\n        marginBottom: 20,\n        display: \"flex\",\n        flexDirection: \"column\",\n        gap: 4,\n      }}>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", letterSpacing: \"0.01em\" }}>\n          Total going out\n        </div>\n        <div style={{ fontSize: 38, fontWeight: 700, color: \"var(--vendo-color-text)\", letterSpacing: \"-0.02em\" }}>\n          {formatMoney(totalCents)}\n        </div>\n        <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\", marginTop: 2 }}>\n          {allItems.length} upcoming payment{allItems.length !== 1 ? \"s\" : \"\"}\n          {schedItems.length > 0 && recItems.length > 0\n            ? ` · ${schedItems.length} scheduled, ${recItems.length} subscription${recItems.length !== 1 ? \"s\" : \"\"}`\n            : \"\"}\n        </div>\n      </div>\n\n      {/* Timeline */}\n      {allItems.length === 0 ? (\n        <div style={{\n          background: \"var(--vendo-color-surface)\",\n          border: \"1px solid var(--vendo-color-border)\",\n          borderRadius: \"var(--vendo-radius-large)\",\n          padding: \"32px 28px\",\n          color: \"var(--vendo-color-muted)\",\n          fontSize: 14,\n          textAlign: \"center\",\n        }}>\n          No upcoming payments found — you're all clear.\n        </div>\n      ) : (\n        <div style={{\n          background: \"var(--vendo-color-surface)\",\n          border: \"1px solid var(--vendo-color-border)\",\n          borderRadius: \"var(--vendo-radius-large)\",\n          overflow: \"hidden\",\n        }}>\n          {allItems.map((item, idx) => {\n            const isLast = idx === allItems.length - 1;\n            return (\n              <div key={item.id} style={{\n                display: \"grid\",\n                gridTemplateColumns: \"1fr auto\",\n                alignItems: \"center\",\n                padding: \"16px 24px\",\n                borderBottom: isLast ? \"none\" : \"1px solid var(--vendo-color-border)\",\n                gap: 16,\n              }}>\n                <div style={{ display: \"flex\", flexDirection: \"column\", gap: 3 }}>\n                  <div style={{ display: \"flex\", alignItems: \"center\", gap: 8 }}>\n                    <span style={{\n                      fontSize: 15,\n                      fontWeight: 500,\n                      color: \"var(--vendo-color-text)\",\n                    }}>{item.label}</span>\n                    <span style={{\n                      fontSize: 11,\n                      fontWeight: 500,\n                      color: typeColor(item.type),\n                      background: item.type === \"subscription\"\n                        ? \"rgba(144,140,133,0.10)\"\n                        : \"rgba(17,17,17,0.07)\",\n                      borderRadius: \"var(--vendo-radius-small)\",\n                      padding: \"2px 7px\",\n                      letterSpacing: \"0.02em\",\n                      textTransform: \"uppercase\",\n                    }}>{typeLabel(item.type)}</span>\n                  </div>\n                  <div style={{ fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n                    {formatDate(item.date)}\n                  </div>\n                </div>\n                <div style={{\n                  fontSize: 16,\n                  fontWeight: 600,\n                  color: \"var(--vendo-color-text)\",\n                  textAlign: \"right\",\n                  whiteSpace: \"nowrap\",\n                }}>\n                  {formatMoney(item.amountCents)}\n                </div>\n              </div>\n            );\n          })}\n        </div>\n      )}\n    </div>\n  );\n}"
+    },
+    "componentTools": {
+      "OutflowTimeline": [
+        "host_getRecurringInsights",
+        "host_listScheduledPayments"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 24843,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8677,
+        "outputTokens": 2051
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 26211,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 1366
+    }
+  ]
+}

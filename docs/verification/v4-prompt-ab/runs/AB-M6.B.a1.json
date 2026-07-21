@@ -1,0 +1,336 @@
+{
+  "promptId": "AB-M6",
+  "host": "demo-bank",
+  "arm": "B",
+  "attempt": 1,
+  "prompt": "An annual tax summary report: my capital gains, deductible expenses, and how much tax I'll owe this year.",
+  "ok": true,
+  "wallMs": 12002,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": true,
+  "firstAttemptValid": true,
+  "inputTokens": 8677,
+  "outputTokens": 658,
+  "nodes": 22,
+  "queries": 3,
+  "wire": "<App name=\"Annual spending summary (tax prep aid)\">\n  <Query id=\"hostGetCashflowInsights\" tool=\"host_getCashflowInsights\" input={{}}/>\n  <Query id=\"hostGetSpendingInsights\" tool=\"host_getSpendingInsights\" input={{}}/>\n  <Query id=\"hostGetRecurringInsights\" tool=\"host_getRecurringInsights\" input={{}}/>\n  <Stack gap={5}>\n    <Disclaimer title=\"Tax data isn't available on this account\" reason=\"This host has no tools for capital gains, deductible expenses, or tax liability calculations. Tax data requires integration with a tax service (e.g. TurboTax, H&R Block) or your brokerage — none of which are connected here. What is shown below is your real spending and cashflow for 2026, which may help you or your accountant prepare a return.\"/>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"2026 cashflow overview\"/>\n        <Row gap={4}>\n          <Stat label=\"Total inflow\" value={hostGetCashflowInsights.totalInflowCents} format=\"money\"/>\n          <Stat label=\"Total outflow\" value={hostGetCashflowInsights.totalOutflowCents} format=\"money\"/>\n          <Stat label=\"Net cashflow\" value={hostGetCashflowInsights.netCents} format=\"money\"/>\n        </Row>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Spending by category\"/>\n        <Row gap={4}>\n          <MapleSpendingDonut slices={hostGetSpendingInsights.categories} size={200}/>\n          <DataTable rows={hostGetSpendingInsights.categories} columns={[{ key: \"category\", label: \"Category\" }, { key: \"amount\", label: \"Amount\", format: \"money\", align: \"end\" }]} emptyState=\"No spending data for this period.\"/>\n        </Row>\n      </Stack>\n    </Surface>\n    <Surface>\n      <Stack gap={4}>\n        <Text variant=\"heading\" text=\"Recurring charges\"/>\n        <DataTable rows={hostGetRecurringInsights.charges} columns={[{ key: \"merchant\", label: \"Merchant\" }, { key: \"category\", label: \"Category\" }, { key: \"amountCents\", label: \"Amount\", format: \"money\", align: \"end\" }, { key: \"frequency\", label: \"Frequency\" }]} emptyState=\"No recurring charges detected.\"/>\n      </Stack>\n    </Surface>\n    <Callout tone=\"warning\" title=\"Consult a tax professional\">\n      Capital gains, deductible expenses, and tax owed cannot be calculated from banking data alone. Share this spending summary with your accountant or import your transactions into a tax tool for an accurate return.\n    </Callout>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Annual spending summary (tax prep aid)",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 5
+          },
+          "children": [
+            "disclaimer-1",
+            "surface-1",
+            "surface-2",
+            "surface-3",
+            "callout-1"
+          ]
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Tax data isn't available on this account",
+            "reason": "This host has no tools for capital gains, deductible expenses, or tax liability calculations. Tax data requires integration with a tax service (e.g. TurboTax, H&R Block) or your brokerage — none of which are connected here. What is shown below is your real spending and cashflow for 2026, which may help you or your accountant prepare a return."
+          }
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-1",
+            "row-1"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "2026 cashflow overview"
+          }
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total inflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/totalInflowCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total outflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/totalOutflowCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Net cashflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/netCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-2",
+            "row-2"
+          ]
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Spending by category"
+          }
+        },
+        {
+          "id": "row-2",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "maplespendingdonut-1",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "maplespendingdonut-1",
+          "component": "MapleSpendingDonut",
+          "source": "host",
+          "props": {
+            "slices": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "size": 200
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amount",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              }
+            ],
+            "emptyState": "No spending data for this period."
+          }
+        },
+        {
+          "id": "surface-3",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-4"
+          ]
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-3",
+            "datatable-2"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Recurring charges"
+          }
+        },
+        {
+          "id": "datatable-2",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetRecurringInsights/charges"
+            },
+            "columns": [
+              {
+                "key": "merchant",
+                "label": "Merchant"
+              },
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amountCents",
+                "label": "Amount",
+                "format": "money",
+                "align": "end"
+              },
+              {
+                "key": "frequency",
+                "label": "Frequency"
+              }
+            ],
+            "emptyState": "No recurring charges detected."
+          }
+        },
+        {
+          "id": "callout-1",
+          "component": "Callout",
+          "source": "prewired",
+          "props": {
+            "tone": "warning",
+            "title": "Consult a tax professional"
+          },
+          "children": [
+            "text-4"
+          ]
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "Capital gains, deductible expenses, and tax owed cannot be calculated from banking data alone. Share this spending summary with your accountant or import your transactions into a tax tool for an accurate return."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostGetCashflowInsights",
+          "tool": "host_getCashflowInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetSpendingInsights",
+          "tool": "host_getSpendingInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetRecurringInsights",
+          "tool": "host_getRecurringInsights",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 10597,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8677,
+        "outputTokens": 658
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 12001,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": true,
+      "ms": 1404
+    }
+  ]
+}

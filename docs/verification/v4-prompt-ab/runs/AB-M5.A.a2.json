@@ -1,0 +1,107 @@
+{
+  "promptId": "AB-M5",
+  "host": "demo-bank",
+  "arm": "A",
+  "attempt": 2,
+  "prompt": "A timeline of money leaving my account soon: upcoming scheduled payments and subscription renewals, ordered by date with the total going out.",
+  "ok": true,
+  "wallMs": 51364,
+  "fullAttempts": 2,
+  "repairRounds": 0,
+  "firstAttemptValid": false,
+  "inputTokens": 14650,
+  "outputTokens": 4182,
+  "nodes": 4,
+  "queries": 2,
+  "wire": "<App name=\"Upcoming Outflows\">\n  <Query id=\"scheduled\" tool=\"host_listScheduledPayments\" input={{}}/>\n  <Query id=\"recurring\" tool=\"host_getRecurringInsights\" input={{}}/>\n  <Stack gap={4}>\n    <Text variant=\"heading\" text=\"Money leaving soon\"/>\n    <Text variant=\"caption\" text=\"Upcoming scheduled payments and subscription renewals, ordered by date\"/>\n  </Stack>\n  <Island name=\"OutflowTimeline\">export default function OutflowTimeline({ scheduled, recurring, scheduledRaw, recurringRaw }) {\n  const payments = Array.isArray(scheduled) ? scheduled : (scheduledRaw?.data ?? []);\n  const subs = Array.isArray(recurring) ? recurring : (recurringRaw?.subscriptions ?? []);\n\n  const items = [];\n\n  (payments || []).forEach(p => {\n    const dateStr = p.nextDate || p.date || p.scheduledDate || p.dueDate || p.paymentDate;\n    const amountCents = p.amountCents ?? p.amount ?? 0;\n    items.push({\n      id: p.id || p.paymentId || Math.random(),\n      label: p.payee || p.name || p.description || p.merchant || 'Payment',\n      dateStr,\n      amountCents,\n      type: 'scheduled',\n    });\n  });\n\n  (subs || []).forEach(s => {\n    const dateStr = s.nextDate || s.nextBillingDate || s.renewalDate || s.date;\n    const amountCents = s.amountCents ?? s.amount ?? 0;\n    items.push({\n      id: s.id || s.subscriptionId || Math.random(),\n      label: s.merchant || s.name || s.description || 'Subscription',\n      dateStr,\n      amountCents,\n      type: 'subscription',\n    });\n  });\n\n  items.sort((a, b) => {\n    if (!a.dateStr && !b.dateStr) return 0;\n    if (!a.dateStr) return 1;\n    if (!b.dateStr) return -1;\n    return new Date(a.dateStr).getTime() - new Date(b.dateStr).getTime();\n  });\n\n  const totalCents = items.reduce((sum, i) => sum + (i.amountCents || 0), 0);\n\n  if (items.length === 0) {\n    return (\n      <Surface>\n        <Stack gap={2}>\n          <Text variant=\"caption\" text=\"No upcoming payments or renewals found.\" />\n        </Stack>\n      </Surface>\n    );\n  }\n\n  function formatDate(dateStr) {\n    if (!dateStr) return '—';\n    const d = new Date(dateStr);\n    if (isNaN(d.getTime())) return dateStr;\n    const now = new Date('2026-07-21');\n    const diffDays = Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));\n    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });\n    if (diffDays === 0) return `Today · ${label}`;\n    if (diffDays === 1) return `Tomorrow · ${label}`;\n    if (diffDays > 0 && diffDays <= 6) return `In ${diffDays} days · ${label}`;\n    return label;\n  }\n\n  return (\n    <Stack gap={3}>\n      <Surface>\n        <Row gap={4} style={{ justifyContent: 'space-between', alignItems: 'center' }}>\n          <Stack gap={1}>\n            <Text variant=\"caption\" text=\"Total going out\" />\n            <span style={{ fontSize: '2rem', fontWeight: 700, fontFamily: 'var(--vendo-heading-family)', color: 'var(--vendo-color-text)', letterSpacing: '-0.02em' }}>\n              {fmt.money(totalCents)}\n            </span>\n          </Stack>\n          <Stack gap={1} style={{ textAlign: 'right' }}>\n            <Text variant=\"caption\" text=\"Upcoming items\" />\n            <span style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--vendo-color-text)' }}>{items.length}</span>\n          </Stack>\n        </Row>\n      </Surface>\n\n      <Surface>\n        <Stack gap={0}>\n          {items.map((item, idx) => (\n            <div key={item.id} style={{\n              display: 'flex',\n              alignItems: 'center',\n              justifyContent: 'space-between',\n              padding: '14px 0',\n              borderBottom: idx < items.length - 1 ? '1px solid var(--vendo-color-border)' : 'none',\n            }}>\n              <Row gap={3} style={{ alignItems: 'center' }}>\n                <div style={{\n                  width: 36,\n                  height: 36,\n                  borderRadius: 'var(--vendo-radius-medium)',\n                  background: 'var(--vendo-color-background)',\n                  border: '1px solid var(--vendo-color-border)',\n                  display: 'flex',\n                  alignItems: 'center',\n                  justifyContent: 'center',\n                  fontSize: '1rem',\n                  flexShrink: 0,\n                }}>\n                  {item.type === 'subscription' ? '🔄' : '📅'}\n                </div>\n                <Stack gap={0}>\n                  <span style={{ fontWeight: 500, color: 'var(--vendo-color-text)', fontSize: 'var(--vendo-font-size)' }}>{item.label}</span>\n                  <span style={{ fontSize: '0.8rem', color: 'var(--vendo-color-muted)' }}>{formatDate(item.dateStr)}</span>\n                </Stack>\n              </Row>\n              <Stack gap={0} style={{ textAlign: 'right', flexShrink: 0 }}>\n                <span style={{ fontWeight: 600, color: 'var(--vendo-color-text)', fontSize: 'var(--vendo-font-size)' }}>\n                  {item.amountCents ? `−${fmt.money(item.amountCents)}` : '—'}\n                </span>\n                <span style={{ fontSize: '0.75rem', color: 'var(--vendo-color-muted)', textTransform: 'capitalize' }}>{item.type}</span>\n              </Stack>\n            </div>\n          ))}\n        </Stack>\n      </Surface>\n    </Stack>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Upcoming Outflows",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-1",
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Money leaving soon"
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Upcoming scheduled payments and subscription renewals, ordered by date"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "scheduled",
+          "tool": "host_listScheduledPayments",
+          "input": {}
+        },
+        {
+          "name": "recurring",
+          "tool": "host_getRecurringInsights",
+          "input": {}
+        }
+      ]
+    },
+    "components": {
+      "OutflowTimeline": "export default function OutflowTimeline({ scheduled, recurring, scheduledRaw, recurringRaw }) {\n  const payments = Array.isArray(scheduled) ? scheduled : (scheduledRaw?.data ?? []);\n  const subs = Array.isArray(recurring) ? recurring : (recurringRaw?.subscriptions ?? []);\n\n  const items = [];\n\n  (payments || []).forEach(p => {\n    const dateStr = p.nextDate || p.date || p.scheduledDate || p.dueDate || p.paymentDate;\n    const amountCents = p.amountCents ?? p.amount ?? 0;\n    items.push({\n      id: p.id || p.paymentId || Math.random(),\n      label: p.payee || p.name || p.description || p.merchant || 'Payment',\n      dateStr,\n      amountCents,\n      type: 'scheduled',\n    });\n  });\n\n  (subs || []).forEach(s => {\n    const dateStr = s.nextDate || s.nextBillingDate || s.renewalDate || s.date;\n    const amountCents = s.amountCents ?? s.amount ?? 0;\n    items.push({\n      id: s.id || s.subscriptionId || Math.random(),\n      label: s.merchant || s.name || s.description || 'Subscription',\n      dateStr,\n      amountCents,\n      type: 'subscription',\n    });\n  });\n\n  items.sort((a, b) => {\n    if (!a.dateStr && !b.dateStr) return 0;\n    if (!a.dateStr) return 1;\n    if (!b.dateStr) return -1;\n    return new Date(a.dateStr).getTime() - new Date(b.dateStr).getTime();\n  });\n\n  const totalCents = items.reduce((sum, i) => sum + (i.amountCents || 0), 0);\n\n  if (items.length === 0) {\n    return (\n      <Surface>\n        <Stack gap={2}>\n          <Text variant=\"caption\" text=\"No upcoming payments or renewals found.\" />\n        </Stack>\n      </Surface>\n    );\n  }\n\n  function formatDate(dateStr) {\n    if (!dateStr) return '—';\n    const d = new Date(dateStr);\n    if (isNaN(d.getTime())) return dateStr;\n    const now = new Date('2026-07-21');\n    const diffDays = Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));\n    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });\n    if (diffDays === 0) return `Today · ${label}`;\n    if (diffDays === 1) return `Tomorrow · ${label}`;\n    if (diffDays > 0 && diffDays <= 6) return `In ${diffDays} days · ${label}`;\n    return label;\n  }\n\n  return (\n    <Stack gap={3}>\n      <Surface>\n        <Row gap={4} style={{ justifyContent: 'space-between', alignItems: 'center' }}>\n          <Stack gap={1}>\n            <Text variant=\"caption\" text=\"Total going out\" />\n            <span style={{ fontSize: '2rem', fontWeight: 700, fontFamily: 'var(--vendo-heading-family)', color: 'var(--vendo-color-text)', letterSpacing: '-0.02em' }}>\n              {fmt.money(totalCents)}\n            </span>\n          </Stack>\n          <Stack gap={1} style={{ textAlign: 'right' }}>\n            <Text variant=\"caption\" text=\"Upcoming items\" />\n            <span style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--vendo-color-text)' }}>{items.length}</span>\n          </Stack>\n        </Row>\n      </Surface>\n\n      <Surface>\n        <Stack gap={0}>\n          {items.map((item, idx) => (\n            <div key={item.id} style={{\n              display: 'flex',\n              alignItems: 'center',\n              justifyContent: 'space-between',\n              padding: '14px 0',\n              borderBottom: idx < items.length - 1 ? '1px solid var(--vendo-color-border)' : 'none',\n            }}>\n              <Row gap={3} style={{ alignItems: 'center' }}>\n                <div style={{\n                  width: 36,\n                  height: 36,\n                  borderRadius: 'var(--vendo-radius-medium)',\n                  background: 'var(--vendo-color-background)',\n                  border: '1px solid var(--vendo-color-border)',\n                  display: 'flex',\n                  alignItems: 'center',\n                  justifyContent: 'center',\n                  fontSize: '1rem',\n                  flexShrink: 0,\n                }}>\n                  {item.type === 'subscription' ? '🔄' : '📅'}\n                </div>\n                <Stack gap={0}>\n                  <span style={{ fontWeight: 500, color: 'var(--vendo-color-text)', fontSize: 'var(--vendo-font-size)' }}>{item.label}</span>\n                  <span style={{ fontSize: '0.8rem', color: 'var(--vendo-color-muted)' }}>{formatDate(item.dateStr)}</span>\n                </Stack>\n              </Row>\n              <Stack gap={0} style={{ textAlign: 'right', flexShrink: 0 }}>\n                <span style={{ fontWeight: 600, color: 'var(--vendo-color-text)', fontSize: 'var(--vendo-font-size)' }}>\n                  {item.amountCents ? `−${fmt.money(item.amountCents)}` : '—'}\n                </span>\n                <span style={{ fontSize: '0.75rem', color: 'var(--vendo-color-muted)', textTransform: 'capitalize' }}>{item.type}</span>\n              </Stack>\n            </div>\n          ))}\n        </Stack>\n      </Surface>\n    </Stack>\n  );\n}"
+    },
+    "componentTools": {
+      "OutflowTimeline": []
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 29468,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7302,
+        "outputTokens": 2441
+      }
+    },
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 51361,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 7348,
+        "outputTokens": 1741
+      }
+    }
+  ],
+  "pipeline": []
+}

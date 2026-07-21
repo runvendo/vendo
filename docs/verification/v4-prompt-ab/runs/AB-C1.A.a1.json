@@ -1,0 +1,533 @@
+{
+  "promptId": "AB-C1",
+  "host": "demo-accounting",
+  "arm": "A",
+  "attempt": 1,
+  "prompt": "A Monday-morning practice overview: how many clients are missing documents, documents outstanding versus received, the nearest filing deadlines, and the revenue we billed this month.",
+  "ok": true,
+  "wallMs": 18438,
+  "fullAttempts": 1,
+  "repairRounds": 1,
+  "repairRepaired": true,
+  "firstAttemptValid": false,
+  "inputTokens": 6815,
+  "outputTokens": 1138,
+  "nodes": 34,
+  "queries": 4,
+  "wire": "<App name=\"Monday Morning Practice Overview\">\n  <Query id=\"dashboard\" tool=\"host_getDashboard\" input={{}}/>\n  <Query id=\"deadlines\" tool=\"host_listDeadlines\" input={{}}/>\n  <Query id=\"activity\" tool=\"host_listActivity\" input={{ limit: 20 }}/>\n  <Query id=\"missingClients\" tool=\"host_listClients\" input={{ filter: \"missing\" }}/>\n  <Stack gap={6}>\n    <Row gap={2}>\n      <Text variant=\"heading\" text=\"Monday Morning Overview\"/>\n      This part of the request isn't available on this host.\n    </Row>\n    <Grid columns={3}>\n      <CadenceMissingDocsHero missingCount={dashboard.clientsMissingDocuments} clientCount={dashboard.totalClients} badgeLabel=\"Chase now\"/>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"caption\" text=\"Documents outstanding\"/>\n          <Stat label=\"Outstanding\" value={dashboard.documentsOutstanding} format=\"number\" tone=\"danger\"/>\n          <Divider/>\n          <Stat label=\"Received\" value={dashboard.documentsReceived} format=\"number\" tone=\"default\"/>\n          <CadenceDocProgress value={dashboard.documentsReceived} max={dashboard.documentsTotalRequested}/>\n        </Stack>\n      </Surface>\n      <Surface>\n        <Stack gap={3}>\n          <Text variant=\"caption\" text=\"Nearest filing deadline\"/>\n          <Text variant=\"heading\" text={dashboard.nearestDeadlineClientName}/>\n          <DateTime value={dashboard.nearestDeadlineDate} mode=\"date\"/>\n          <DateTime value={dashboard.nearestDeadlineDate} mode=\"relative\"/>\n          <CadenceStatusBadge text=\"Deadline approaching\" variant=\"overdue\" dot/>\n        </Stack>\n      </Surface>\n    </Grid>\n    <Disclaimer title=\"Revenue billed this month\" reason=\"No billing or invoicing tool is available on this host. Revenue figures cannot be shown.\"/>\n    <Divider/>\n    <Stack gap={2}>\n      <Text variant=\"heading\" text=\"Upcoming filing deadlines\"/>\n      <DataTable rows={deadlines.data} sortBy=\"deadline asc\" searchable paginate={10} emptyState=\"No upcoming deadlines — all clients are clear.\" columns={[{ key: \"name\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\", format: \"string\" }, { key: \"assignedStaff\", label: \"Staff\" }, { key: \"deadline\", label: \"Filing deadline\", format: \"date\" }, { key: \"documentsReceived\", label: \"Received\" }, { key: \"documentsTotal\", label: \"Total\" }, { key: \"status\", label: \"Status\", format: \"enum\" }]}/>\n    </Stack>\n    <Divider/>\n    <Stack gap={2}>\n      <Text variant=\"heading\" text=\"Clients missing documents\"/>\n      <DataTable rows={missingClients.data} sortBy=\"deadline asc\" searchable paginate={10} filterableBy={[\"assignedStaff\", \"status\"]} emptyState=\"No documents outstanding — nothing to chase this week.\" columns={[{ key: \"name\", label: \"Client\" }, { key: \"entityType\", label: \"Entity\" }, { key: \"assignedStaff\", label: \"Staff\" }, { key: \"deadline\", label: \"Deadline\", format: \"date\" }, { key: \"documentsReceived\", label: \"Docs received\" }, { key: \"documentsTotal\", label: \"Docs total\" }, { key: \"status\", label: \"Status\", format: \"enum\" }]}/>\n    </Stack>\n    <Divider/>\n    <Stack gap={2}>\n      <Text variant=\"heading\" text=\"Recent activity\"/>\n      <DataTable rows={activity.data} sortBy=\"at desc\" limit={15} emptyState=\"No recent activity.\" columns={[{ key: \"at\", label: \"When\", format: \"datetime\" }, { key: \"clientName\", label: \"Client\" }, { key: \"type\", label: \"Event\", format: \"enum\" }, { key: \"description\", label: \"Detail\" }]}/>\n    </Stack>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Monday Morning Practice Overview",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "row-1",
+            "grid-1",
+            "disclaimer-1",
+            "divider-2",
+            "stack-4",
+            "divider-3",
+            "stack-5",
+            "divider-4",
+            "stack-6"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-1",
+            "text-2"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Monday Morning Overview"
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "This part of the request isn't available on this host."
+          }
+        },
+        {
+          "id": "grid-1",
+          "component": "Grid",
+          "source": "prewired",
+          "props": {
+            "columns": 3
+          },
+          "children": [
+            "cadencemissingdocshero-1",
+            "surface-1",
+            "surface-2"
+          ]
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "component": "CadenceMissingDocsHero",
+          "source": "host",
+          "props": {
+            "missingCount": {
+              "$path": "/dashboard/clientsMissingDocuments"
+            },
+            "clientCount": {
+              "$path": "/dashboard/totalClients"
+            },
+            "badgeLabel": "Chase now"
+          }
+        },
+        {
+          "id": "surface-1",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ]
+        },
+        {
+          "id": "stack-2",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-3",
+            "stat-1",
+            "divider-1",
+            "stat-2",
+            "cadencedocprogress-1"
+          ]
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Documents outstanding"
+          }
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Outstanding",
+            "value": {
+              "$path": "/dashboard/documentsOutstanding"
+            },
+            "format": "number",
+            "tone": "danger"
+          }
+        },
+        {
+          "id": "divider-1",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Received",
+            "value": {
+              "$path": "/dashboard/documentsReceived"
+            },
+            "format": "number",
+            "tone": "default"
+          }
+        },
+        {
+          "id": "cadencedocprogress-1",
+          "component": "CadenceDocProgress",
+          "source": "host",
+          "props": {
+            "value": {
+              "$path": "/dashboard/documentsReceived"
+            },
+            "max": {
+              "$path": "/dashboard/documentsTotalRequested"
+            }
+          }
+        },
+        {
+          "id": "surface-2",
+          "component": "Surface",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ]
+        },
+        {
+          "id": "stack-3",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 3
+          },
+          "children": [
+            "text-4",
+            "text-5",
+            "datetime-1",
+            "datetime-2",
+            "cadencestatusbadge-1"
+          ]
+        },
+        {
+          "id": "text-4",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "caption",
+            "text": "Nearest filing deadline"
+          }
+        },
+        {
+          "id": "text-5",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": {
+              "$path": "/dashboard/nearestDeadlineClientName"
+            }
+          }
+        },
+        {
+          "id": "datetime-1",
+          "component": "DateTime",
+          "source": "prewired",
+          "props": {
+            "value": {
+              "$path": "/dashboard/nearestDeadlineDate"
+            },
+            "mode": "date"
+          }
+        },
+        {
+          "id": "datetime-2",
+          "component": "DateTime",
+          "source": "prewired",
+          "props": {
+            "value": {
+              "$path": "/dashboard/nearestDeadlineDate"
+            },
+            "mode": "relative"
+          }
+        },
+        {
+          "id": "cadencestatusbadge-1",
+          "component": "CadenceStatusBadge",
+          "source": "host",
+          "props": {
+            "text": "Deadline approaching",
+            "variant": "overdue",
+            "dot": true
+          }
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Revenue billed this month",
+            "reason": "No billing or invoicing tool is available on this host. Revenue figures cannot be shown."
+          }
+        },
+        {
+          "id": "divider-2",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "stack-4",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-6",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "text-6",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Upcoming filing deadlines"
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/deadlines/data"
+            },
+            "sortBy": "deadline asc",
+            "searchable": true,
+            "paginate": 10,
+            "emptyState": "No upcoming deadlines — all clients are clear.",
+            "columns": [
+              {
+                "key": "name",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity",
+                "format": "string"
+              },
+              {
+                "key": "assignedStaff",
+                "label": "Staff"
+              },
+              {
+                "key": "deadline",
+                "label": "Filing deadline",
+                "format": "date"
+              },
+              {
+                "key": "documentsReceived",
+                "label": "Received"
+              },
+              {
+                "key": "documentsTotal",
+                "label": "Total"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "format": "enum"
+              }
+            ]
+          }
+        },
+        {
+          "id": "divider-3",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "stack-5",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-7",
+            "datatable-2"
+          ]
+        },
+        {
+          "id": "text-7",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Clients missing documents"
+          }
+        },
+        {
+          "id": "datatable-2",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/missingClients/data"
+            },
+            "sortBy": "deadline asc",
+            "searchable": true,
+            "paginate": 10,
+            "filterableBy": [
+              "assignedStaff",
+              "status"
+            ],
+            "emptyState": "No documents outstanding — nothing to chase this week.",
+            "columns": [
+              {
+                "key": "name",
+                "label": "Client"
+              },
+              {
+                "key": "entityType",
+                "label": "Entity"
+              },
+              {
+                "key": "assignedStaff",
+                "label": "Staff"
+              },
+              {
+                "key": "deadline",
+                "label": "Deadline",
+                "format": "date"
+              },
+              {
+                "key": "documentsReceived",
+                "label": "Docs received"
+              },
+              {
+                "key": "documentsTotal",
+                "label": "Docs total"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "format": "enum"
+              }
+            ]
+          }
+        },
+        {
+          "id": "divider-4",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "stack-6",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 2
+          },
+          "children": [
+            "text-8",
+            "datatable-3"
+          ]
+        },
+        {
+          "id": "text-8",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Recent activity"
+          }
+        },
+        {
+          "id": "datatable-3",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/activity/data"
+            },
+            "sortBy": "at desc",
+            "limit": 15,
+            "emptyState": "No recent activity.",
+            "columns": [
+              {
+                "key": "at",
+                "label": "When",
+                "format": "datetime"
+              },
+              {
+                "key": "clientName",
+                "label": "Client"
+              },
+              {
+                "key": "type",
+                "label": "Event",
+                "format": "enum"
+              },
+              {
+                "key": "description",
+                "label": "Detail"
+              }
+            ]
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "dashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        },
+        {
+          "name": "deadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "activity",
+          "tool": "host_listActivity",
+          "input": {
+            "limit": 20
+          }
+        },
+        {
+          "name": "missingClients",
+          "tool": "host_listClients",
+          "input": {
+            "filter": "missing"
+          }
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 15923,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6815,
+        "outputTokens": 1138
+      }
+    },
+    {
+      "lane": "repair",
+      "phase": "complete",
+      "atMs": 18437,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "repair",
+      "rounds": 1,
+      "repaired": true,
+      "noValidFix": 1,
+      "ms": 2515
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "promptId": "AB-C5",
+  "host": "demo-accounting",
+  "arm": "B",
+  "attempt": 1,
+  "prompt": "A deadlines board grouping clients by urgency — filing deadline this week, this month, and later — with each client's document progress on their card.",
+  "ok": true,
+  "wallMs": 47156,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "endPassApplied": false,
+  "firstAttemptValid": true,
+  "inputTokens": 8188,
+  "outputTokens": 3351,
+  "nodes": 7,
+  "queries": 2,
+  "wire": "<App name=\"Deadlines board\">\n  <Query id=\"hostListDeadlines\" tool=\"host_listDeadlines\" input={{}}/>\n  <Query id=\"hostGetDashboard\" tool=\"host_getDashboard\" input={{}}/>\n  <Stack gap={6}>\n    <Row gap={4}>\n      <Stat label=\"Clients at risk this week\" value={{ \"$path\": \"/hostListDeadlines/data/0/name\" }}/>\n      <CadenceMissingDocsHero missingCount={hostGetDashboard.missingDocumentsCount} clientCount={hostGetDashboard.totalClients} badgeLabel=\"Missing docs\"/>\n      <Stat label=\"Nearest deadline\" value={{ \"$path\": \"/hostListDeadlines/data/0/filingDeadline\" }} format=\"date\"/>\n    </Row>\n    <DeadlinesBoard/>\n  </Stack>\n  <Island name=\"DeadlinesBoard\">export default function DeadlinesBoard() {\n  const [clients, setClients] = useState([]);\n  const [loading, setLoading] = useState(true);\n\n  useEffect(() => {\n    tools.host_listDeadlines({}).then((r) => {\n      setClients(r.data || []);\n      setLoading(false);\n    });\n  }, []);\n\n  const now = new Date(\"2026-07-21\");\n  const endOfWeek = new Date(now);\n  endOfWeek.setDate(now.getDate() + (7 - now.getDay()));\n  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);\n\n  const groups = [\n    {\n      key: \"week\",\n      label: \"This week\",\n      tone: \"danger\",\n      clients: clients.filter((c) => {\n        const d = new Date(c.filingDeadline);\n        return d >= now && d <= endOfWeek;\n      }),\n    },\n    {\n      key: \"month\",\n      label: \"This month\",\n      tone: \"warning\",\n      clients: clients.filter((c) => {\n        const d = new Date(c.filingDeadline);\n        return d > endOfWeek && d <= endOfMonth;\n      }),\n    },\n    {\n      key: \"later\",\n      label: \"Later\",\n      tone: \"neutral\",\n      clients: clients.filter((c) => {\n        const d = new Date(c.filingDeadline);\n        return d > endOfMonth;\n      }),\n    },\n  ];\n\n  const daysUntil = (iso) => {\n    const diff = new Date(iso) - now;\n    return Math.ceil(diff / (1000 * 60 * 60 * 24));\n  };\n\n  const toneColors = {\n    danger: { bg: \"#fef2f2\", border: \"#fca5a5\", badge: \"#B0473A\", badgeText: \"#fff\" },\n    warning: { bg: \"#fffbeb\", border: \"#fcd34d\", badge: \"#92400e\", badgeText: \"#fff\" },\n    neutral: { bg: \"#f9f9f8\", border: \"#ECEBE8\", badge: \"#46443f\", badgeText: \"#fff\" },\n  };\n\n  const statusVariant = (s) => {\n    if (!s) return \"neutral\";\n    if (s === \"missing\" || s === \"overdue\") return \"danger\";\n    if (s === \"needs_review\" || s === \"review\") return \"warning\";\n    if (s === \"complete\" || s === \"verified\") return \"success\";\n    return \"neutral\";\n  };\n\n  const humanStatus = (s) => {\n    if (!s) return \"Unknown\";\n    return s.replace(/_/g, \" \").replace(/\\b\\w/g, (c) => c.toUpperCase());\n  };\n\n  if (loading) {\n    return (\n      <div style={{ padding: 32, textAlign: \"center\", color: \"var(--vendo-color-muted)\", fontFamily: \"var(--vendo-font-family)\" }}>\n        Loading deadlines…\n      </div>\n    );\n  }\n\n  return (\n    <div style={{ display: \"flex\", flexDirection: \"column\", gap: 32, fontFamily: \"var(--vendo-font-family)\" }}>\n      {groups.map((group) => {\n        const colors = toneColors[group.tone];\n        return (\n          <div key={group.key}>\n            <div style={{ display: \"flex\", alignItems: \"center\", gap: 10, marginBottom: 14 }}>\n              <span style={{\n                fontWeight: 600,\n                fontSize: 15,\n                color: \"var(--vendo-color-text)\",\n              }}>{group.label}</span>\n              <span style={{\n                background: colors.badge,\n                color: colors.badgeText,\n                borderRadius: 99,\n                fontSize: 12,\n                fontWeight: 600,\n                padding: \"2px 10px\",\n              }}>{group.clients.length} client{group.clients.length !== 1 ? \"s\" : \"\"}</span>\n            </div>\n\n            {group.clients.length === 0 ? (\n              <div style={{\n                padding: \"18px 20px\",\n                background: \"var(--vendo-color-surface)\",\n                border: \"1px solid var(--vendo-color-border)\",\n                borderRadius: \"var(--vendo-radius-medium)\",\n                color: \"var(--vendo-color-muted)\",\n                fontSize: 14,\n              }}>\n                {group.key === \"week\"\n                  ? \"No filing deadlines this week — nothing urgent.\"\n                  : group.key === \"month\"\n                  ? \"No deadlines remaining this month.\"\n                  : \"No clients with later deadlines.\"}\n              </div>\n            ) : (\n              <div style={{\n                display: \"grid\",\n                gridTemplateColumns: \"repeat(auto-fill, minmax(280px, 1fr))\",\n                gap: 14,\n              }}>\n                {group.clients.map((client) => {\n                  const days = daysUntil(client.filingDeadline);\n                  const received = client.documentsReceived ?? 0;\n                  const total = client.documentsTotal ?? 0;\n                  const ratio = total > 0 ? received / total : 0;\n                  const pct = Math.round(ratio * 100);\n                  const missing = client.missingDocumentTypes || [];\n\n                  return (\n                    <div key={client.id} style={{\n                      background: \"var(--vendo-color-surface)\",\n                      border: `1px solid ${group.tone === \"danger\" && days <= 3 ? colors.border : \"var(--vendo-color-border)\"}`,\n                      borderRadius: \"var(--vendo-radius-medium)\",\n                      padding: \"16px 18px\",\n                      display: \"flex\",\n                      flexDirection: \"column\",\n                      gap: 12,\n                    }}>\n                      {/* Header */}\n                      <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\", gap: 8 }}>\n                        <div>\n                          <div style={{ fontWeight: 600, fontSize: 15, color: \"var(--vendo-color-text)\", lineHeight: 1.3 }}>\n                            {client.name}\n                          </div>\n                          {client.entityType && (\n                            <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\", marginTop: 2 }}>\n                              {client.entityType.replace(/_/g, \" \").replace(/\\b\\w/g, (c) => c.toUpperCase())}\n                            </div>\n                          )}\n                        </div>\n                        <div style={{\n                          background: group.tone === \"danger\" ? colors.badge : group.tone === \"warning\" ? \"#fef3c7\" : \"#f3f4f6\",\n                          color: group.tone === \"danger\" ? colors.badgeText : group.tone === \"warning\" ? \"#92400e\" : \"#46443f\",\n                          borderRadius: 6,\n                          fontSize: 12,\n                          fontWeight: 600,\n                          padding: \"3px 8px\",\n                          whiteSpace: \"nowrap\",\n                        }}>\n                          {days === 0 ? \"Due today\" : days === 1 ? \"1 day\" : `${days} days`}\n                        </div>\n                      </div>\n\n                      {/* Deadline */}\n                      <div style={{ display: \"flex\", justifyContent: \"space-between\", fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n                        <span>Filing deadline</span>\n                        <span style={{ color: \"var(--vendo-color-text)\", fontWeight: 500 }}>\n                          {new Date(client.filingDeadline).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\", year: \"numeric\" })}\n                        </span>\n                      </div>\n\n                      {/* Document progress */}\n                      <div style={{ display: \"flex\", flexDirection: \"column\", gap: 6 }}>\n                        <div style={{ display: \"flex\", justifyContent: \"space-between\", fontSize: 13 }}>\n                          <span style={{ color: \"var(--vendo-color-muted)\" }}>Documents</span>\n                          <span style={{ fontWeight: 600, color: pct === 100 ? \"#166534\" : group.tone === \"danger\" ? colors.badge : \"var(--vendo-color-text)\" }}>\n                            {received} of {total} collected ({pct}%)\n                          </span>\n                        </div>\n                        <div style={{\n                          height: 6,\n                          background: \"#ECEBE8\",\n                          borderRadius: 99,\n                          overflow: \"hidden\",\n                        }}>\n                          <div style={{\n                            height: \"100%\",\n                            width: `${pct}%`,\n                            background: pct === 100 ? \"#166534\" : group.tone === \"danger\" ? colors.badge : \"#111111\",\n                            borderRadius: 99,\n                            transition: \"width 0.4s ease\",\n                          }}/>\n                        </div>\n                      </div>\n\n                      {/* Status */}\n                      {client.status && (\n                        <div style={{ display: \"flex\", alignItems: \"center\", gap: 6 }}>\n                          <span style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>Status</span>\n                          <span style={{\n                            fontSize: 12,\n                            fontWeight: 600,\n                            padding: \"2px 8px\",\n                            borderRadius: 99,\n                            background:\n                              client.status === \"complete\" ? \"#dcfce7\" :\n                              client.status === \"missing\" || client.status === \"overdue\" ? \"#fee2e2\" :\n                              client.status === \"needs_review\" ? \"#fef3c7\" : \"#f3f4f6\",\n                            color:\n                              client.status === \"complete\" ? \"#166534\" :\n                              client.status === \"missing\" || client.status === \"overdue\" ? \"#B0473A\" :\n                              client.status === \"needs_review\" ? \"#92400e\" : \"#46443f\",\n                          }}>\n                            {humanStatus(client.status)}\n                          </span>\n                        </div>\n                      )}\n\n                      {/* Missing doc types */}\n                      {missing.length > 0 && (\n                        <div style={{ borderTop: \"1px solid var(--vendo-color-border)\", paddingTop: 10 }}>\n                          <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\", marginBottom: 5 }}>Still missing</div>\n                          <div style={{ display: \"flex\", flexWrap: \"wrap\", gap: 5 }}>\n                            {missing.slice(0, 4).map((doc, i) => (\n                              <span key={i} style={{\n                                fontSize: 11,\n                                background: \"#fef2f2\",\n                                color: \"#B0473A\",\n                                border: \"1px solid #fca5a5\",\n                                borderRadius: 4,\n                                padding: \"2px 7px\",\n                                fontWeight: 500,\n                              }}>{doc}</span>\n                            ))}\n                            {missing.length > 4 && (\n                              <span style={{ fontSize: 11, color: \"var(--vendo-color-muted)\", padding: \"2px 4px\" }}>\n                                +{missing.length - 4} more\n                              </span>\n                            )}\n                          </div>\n                        </div>\n                      )}\n\n                      {/* Assigned staff */}\n                      {client.assignedStaff && (\n                        <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n                          Assigned to <span style={{ color: \"var(--vendo-color-text)\", fontWeight: 500 }}>{client.assignedStaff}</span>\n                        </div>\n                      )}\n                    </div>\n                  );\n                })}\n              </div>\n            )}\n          </div>\n        );\n      })}\n    </div>\n  );\n}</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Deadlines board",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "row-1",
+            "deadlinesboard-1"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "cadencemissingdocshero-1",
+            "stat-2"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Clients at risk this week",
+            "value": {
+              "$path": "/hostListDeadlines/data/0/name"
+            }
+          }
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "component": "CadenceMissingDocsHero",
+          "source": "host",
+          "props": {
+            "missingCount": {
+              "$path": "/hostGetDashboard/missingDocumentsCount"
+            },
+            "clientCount": {
+              "$path": "/hostGetDashboard/totalClients"
+            },
+            "badgeLabel": "Missing docs"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Nearest deadline",
+            "value": {
+              "$path": "/hostListDeadlines/data/0/filingDeadline"
+            },
+            "format": "date"
+          }
+        },
+        {
+          "id": "deadlinesboard-1",
+          "component": "DeadlinesBoard",
+          "source": "generated"
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostListDeadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "hostGetDashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        }
+      ]
+    },
+    "components": {
+      "DeadlinesBoard": "export default function DeadlinesBoard() {\n  const [clients, setClients] = useState([]);\n  const [loading, setLoading] = useState(true);\n\n  useEffect(() => {\n    tools.host_listDeadlines({}).then((r) => {\n      setClients(r.data || []);\n      setLoading(false);\n    });\n  }, []);\n\n  const now = new Date(\"2026-07-21\");\n  const endOfWeek = new Date(now);\n  endOfWeek.setDate(now.getDate() + (7 - now.getDay()));\n  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);\n\n  const groups = [\n    {\n      key: \"week\",\n      label: \"This week\",\n      tone: \"danger\",\n      clients: clients.filter((c) => {\n        const d = new Date(c.filingDeadline);\n        return d >= now && d <= endOfWeek;\n      }),\n    },\n    {\n      key: \"month\",\n      label: \"This month\",\n      tone: \"warning\",\n      clients: clients.filter((c) => {\n        const d = new Date(c.filingDeadline);\n        return d > endOfWeek && d <= endOfMonth;\n      }),\n    },\n    {\n      key: \"later\",\n      label: \"Later\",\n      tone: \"neutral\",\n      clients: clients.filter((c) => {\n        const d = new Date(c.filingDeadline);\n        return d > endOfMonth;\n      }),\n    },\n  ];\n\n  const daysUntil = (iso) => {\n    const diff = new Date(iso) - now;\n    return Math.ceil(diff / (1000 * 60 * 60 * 24));\n  };\n\n  const toneColors = {\n    danger: { bg: \"#fef2f2\", border: \"#fca5a5\", badge: \"#B0473A\", badgeText: \"#fff\" },\n    warning: { bg: \"#fffbeb\", border: \"#fcd34d\", badge: \"#92400e\", badgeText: \"#fff\" },\n    neutral: { bg: \"#f9f9f8\", border: \"#ECEBE8\", badge: \"#46443f\", badgeText: \"#fff\" },\n  };\n\n  const statusVariant = (s) => {\n    if (!s) return \"neutral\";\n    if (s === \"missing\" || s === \"overdue\") return \"danger\";\n    if (s === \"needs_review\" || s === \"review\") return \"warning\";\n    if (s === \"complete\" || s === \"verified\") return \"success\";\n    return \"neutral\";\n  };\n\n  const humanStatus = (s) => {\n    if (!s) return \"Unknown\";\n    return s.replace(/_/g, \" \").replace(/\\b\\w/g, (c) => c.toUpperCase());\n  };\n\n  if (loading) {\n    return (\n      <div style={{ padding: 32, textAlign: \"center\", color: \"var(--vendo-color-muted)\", fontFamily: \"var(--vendo-font-family)\" }}>\n        Loading deadlines…\n      </div>\n    );\n  }\n\n  return (\n    <div style={{ display: \"flex\", flexDirection: \"column\", gap: 32, fontFamily: \"var(--vendo-font-family)\" }}>\n      {groups.map((group) => {\n        const colors = toneColors[group.tone];\n        return (\n          <div key={group.key}>\n            <div style={{ display: \"flex\", alignItems: \"center\", gap: 10, marginBottom: 14 }}>\n              <span style={{\n                fontWeight: 600,\n                fontSize: 15,\n                color: \"var(--vendo-color-text)\",\n              }}>{group.label}</span>\n              <span style={{\n                background: colors.badge,\n                color: colors.badgeText,\n                borderRadius: 99,\n                fontSize: 12,\n                fontWeight: 600,\n                padding: \"2px 10px\",\n              }}>{group.clients.length} client{group.clients.length !== 1 ? \"s\" : \"\"}</span>\n            </div>\n\n            {group.clients.length === 0 ? (\n              <div style={{\n                padding: \"18px 20px\",\n                background: \"var(--vendo-color-surface)\",\n                border: \"1px solid var(--vendo-color-border)\",\n                borderRadius: \"var(--vendo-radius-medium)\",\n                color: \"var(--vendo-color-muted)\",\n                fontSize: 14,\n              }}>\n                {group.key === \"week\"\n                  ? \"No filing deadlines this week — nothing urgent.\"\n                  : group.key === \"month\"\n                  ? \"No deadlines remaining this month.\"\n                  : \"No clients with later deadlines.\"}\n              </div>\n            ) : (\n              <div style={{\n                display: \"grid\",\n                gridTemplateColumns: \"repeat(auto-fill, minmax(280px, 1fr))\",\n                gap: 14,\n              }}>\n                {group.clients.map((client) => {\n                  const days = daysUntil(client.filingDeadline);\n                  const received = client.documentsReceived ?? 0;\n                  const total = client.documentsTotal ?? 0;\n                  const ratio = total > 0 ? received / total : 0;\n                  const pct = Math.round(ratio * 100);\n                  const missing = client.missingDocumentTypes || [];\n\n                  return (\n                    <div key={client.id} style={{\n                      background: \"var(--vendo-color-surface)\",\n                      border: `1px solid ${group.tone === \"danger\" && days <= 3 ? colors.border : \"var(--vendo-color-border)\"}`,\n                      borderRadius: \"var(--vendo-radius-medium)\",\n                      padding: \"16px 18px\",\n                      display: \"flex\",\n                      flexDirection: \"column\",\n                      gap: 12,\n                    }}>\n                      {/* Header */}\n                      <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\", gap: 8 }}>\n                        <div>\n                          <div style={{ fontWeight: 600, fontSize: 15, color: \"var(--vendo-color-text)\", lineHeight: 1.3 }}>\n                            {client.name}\n                          </div>\n                          {client.entityType && (\n                            <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\", marginTop: 2 }}>\n                              {client.entityType.replace(/_/g, \" \").replace(/\\b\\w/g, (c) => c.toUpperCase())}\n                            </div>\n                          )}\n                        </div>\n                        <div style={{\n                          background: group.tone === \"danger\" ? colors.badge : group.tone === \"warning\" ? \"#fef3c7\" : \"#f3f4f6\",\n                          color: group.tone === \"danger\" ? colors.badgeText : group.tone === \"warning\" ? \"#92400e\" : \"#46443f\",\n                          borderRadius: 6,\n                          fontSize: 12,\n                          fontWeight: 600,\n                          padding: \"3px 8px\",\n                          whiteSpace: \"nowrap\",\n                        }}>\n                          {days === 0 ? \"Due today\" : days === 1 ? \"1 day\" : `${days} days`}\n                        </div>\n                      </div>\n\n                      {/* Deadline */}\n                      <div style={{ display: \"flex\", justifyContent: \"space-between\", fontSize: 13, color: \"var(--vendo-color-muted)\" }}>\n                        <span>Filing deadline</span>\n                        <span style={{ color: \"var(--vendo-color-text)\", fontWeight: 500 }}>\n                          {new Date(client.filingDeadline).toLocaleDateString(\"en-US\", { month: \"short\", day: \"numeric\", year: \"numeric\" })}\n                        </span>\n                      </div>\n\n                      {/* Document progress */}\n                      <div style={{ display: \"flex\", flexDirection: \"column\", gap: 6 }}>\n                        <div style={{ display: \"flex\", justifyContent: \"space-between\", fontSize: 13 }}>\n                          <span style={{ color: \"var(--vendo-color-muted)\" }}>Documents</span>\n                          <span style={{ fontWeight: 600, color: pct === 100 ? \"#166534\" : group.tone === \"danger\" ? colors.badge : \"var(--vendo-color-text)\" }}>\n                            {received} of {total} collected ({pct}%)\n                          </span>\n                        </div>\n                        <div style={{\n                          height: 6,\n                          background: \"#ECEBE8\",\n                          borderRadius: 99,\n                          overflow: \"hidden\",\n                        }}>\n                          <div style={{\n                            height: \"100%\",\n                            width: `${pct}%`,\n                            background: pct === 100 ? \"#166534\" : group.tone === \"danger\" ? colors.badge : \"#111111\",\n                            borderRadius: 99,\n                            transition: \"width 0.4s ease\",\n                          }}/>\n                        </div>\n                      </div>\n\n                      {/* Status */}\n                      {client.status && (\n                        <div style={{ display: \"flex\", alignItems: \"center\", gap: 6 }}>\n                          <span style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>Status</span>\n                          <span style={{\n                            fontSize: 12,\n                            fontWeight: 600,\n                            padding: \"2px 8px\",\n                            borderRadius: 99,\n                            background:\n                              client.status === \"complete\" ? \"#dcfce7\" :\n                              client.status === \"missing\" || client.status === \"overdue\" ? \"#fee2e2\" :\n                              client.status === \"needs_review\" ? \"#fef3c7\" : \"#f3f4f6\",\n                            color:\n                              client.status === \"complete\" ? \"#166534\" :\n                              client.status === \"missing\" || client.status === \"overdue\" ? \"#B0473A\" :\n                              client.status === \"needs_review\" ? \"#92400e\" : \"#46443f\",\n                          }}>\n                            {humanStatus(client.status)}\n                          </span>\n                        </div>\n                      )}\n\n                      {/* Missing doc types */}\n                      {missing.length > 0 && (\n                        <div style={{ borderTop: \"1px solid var(--vendo-color-border)\", paddingTop: 10 }}>\n                          <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\", marginBottom: 5 }}>Still missing</div>\n                          <div style={{ display: \"flex\", flexWrap: \"wrap\", gap: 5 }}>\n                            {missing.slice(0, 4).map((doc, i) => (\n                              <span key={i} style={{\n                                fontSize: 11,\n                                background: \"#fef2f2\",\n                                color: \"#B0473A\",\n                                border: \"1px solid #fca5a5\",\n                                borderRadius: 4,\n                                padding: \"2px 7px\",\n                                fontWeight: 500,\n                              }}>{doc}</span>\n                            ))}\n                            {missing.length > 4 && (\n                              <span style={{ fontSize: 11, color: \"var(--vendo-color-muted)\", padding: \"2px 4px\" }}>\n                                +{missing.length - 4} more\n                              </span>\n                            )}\n                          </div>\n                        </div>\n                      )}\n\n                      {/* Assigned staff */}\n                      {client.assignedStaff && (\n                        <div style={{ fontSize: 12, color: \"var(--vendo-color-muted)\" }}>\n                          Assigned to <span style={{ color: \"var(--vendo-color-text)\", fontWeight: 500 }}>{client.assignedStaff}</span>\n                        </div>\n                      )}\n                    </div>\n                  );\n                })}\n              </div>\n            )}\n          </div>\n        );\n      })}\n    </div>\n  );\n}"
+    },
+    "componentTools": {
+      "DeadlinesBoard": [
+        "host_listDeadlines"
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 43118,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8188,
+        "outputTokens": 3351
+      }
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 47151,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 4024
+    }
+  ]
+}

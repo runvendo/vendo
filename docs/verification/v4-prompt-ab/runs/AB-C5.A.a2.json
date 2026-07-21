@@ -1,0 +1,113 @@
+{
+  "promptId": "AB-C5",
+  "host": "demo-accounting",
+  "arm": "A",
+  "attempt": 2,
+  "prompt": "A deadlines board grouping clients by urgency — filing deadline this week, this month, and later — with each client's document progress on their card.",
+  "ok": true,
+  "wallMs": 20824,
+  "fullAttempts": 1,
+  "repairRounds": 0,
+  "firstAttemptValid": true,
+  "inputTokens": 6813,
+  "outputTokens": 1647,
+  "nodes": 5,
+  "queries": 2,
+  "wire": "<App name=\"Deadlines Board\">\n  <Query id=\"deadlines\" tool=\"host_listDeadlines\" input={{}}/>\n  <Query id=\"dashboard\" tool=\"host_getDashboard\" input={{}}/>\n  <Stack gap={6}>\n    <Row gap={4}>\n      <Text variant=\"heading\" text=\"Deadlines Board\"/>\n      <CadenceMissingDocsHero missingCount={dashboard.clientsMissingDocuments} clientCount={dashboard.totalClients} badgeLabel=\"Missing docs\"/>\n    </Row>\n  </Stack>\n  <Island name=\"DeadlinesBoard\">const TODAY = new Date(\"2026-07-21\");\n\n      function getWeekEnd() {\n        const d = new Date(TODAY);\n        const day = d.getDay();\n        const diff = 7 - day;\n        d.setDate(d.getDate() + diff);\n        d.setHours(23, 59, 59, 999);\n        return d;\n      }\n\n      function getMonthEnd() {\n        return new Date(2026, 6, 31, 23, 59, 59, 999);\n      }\n\n      function daysUntil(isoDate) {\n        const d = new Date(isoDate);\n        const diff = d - TODAY;\n        return Math.ceil(diff / (1000 * 60 * 60 * 24));\n      }\n\n      function urgencyLabel(days) {\n        if (days < 0) return \"Overdue\";\n        if (days === 0) return \"Today\";\n        if (days === 1) return \"Tomorrow\";\n        return `${days} days away`;\n      }\n\n      function urgencyVariant(days) {\n        if (days < 0) return \"overdue\";\n        if (days <= 7) return \"missing\";\n        if (days <= 31) return \"review\";\n        return \"neutral\";\n      }\n\n      function ClientCard({ client }) {\n        const days = daysUntil(client.filingDeadline);\n        const variant = urgencyVariant(days);\n        const label = urgencyLabel(days);\n        const received = client.documentsReceived ?? 0;\n        const total = client.documentsTotal ?? 0;\n        const pct = total > 0 ? received / total : 0;\n\n        return (\n          <Surface>\n            <Stack gap={3}>\n              <Row gap={2} style={{ justifyContent: \"space-between\", alignItems: \"flex-start\" }}>\n                <Stack gap={1}>\n                  <Text variant=\"heading\" text={client.name}/>\n                  <Text variant=\"caption\" text={client.entityType ?? \"\"}/>\n                </Stack>\n                <EnumBadge value={client.status}/>\n              </Row>\n\n              <Row gap={2} style={{ alignItems: \"center\" }}>\n                <Text variant=\"caption\" text=\"Deadline:\"/>\n                <DateTime value={client.filingDeadline} mode=\"date\"/>\n                <Badge label={label} tone={variant === \"overdue\" ? \"danger\" : variant === \"missing\" ? \"danger\" : variant === \"review\" ? \"accent\" : \"neutral\"}/>\n              </Row>\n\n              <Stack gap={1}>\n                <Row gap={2} style={{ justifyContent: \"space-between\" }}>\n                  <Text variant=\"caption\" text=\"Documents\"/>\n                  <Text variant=\"caption\" text={`${received} of ${total}`}/>\n                </Row>\n                <Progress value={pct} showValue tone={pct === 1 ? \"success\" : days <= 7 ? \"danger\" : \"default\"}/>\n              </Stack>\n\n              {client.missingDocumentKinds && client.missingDocumentKinds.length > 0 && (\n                <Stack gap={1}>\n                  <Text variant=\"caption\" text=\"Still missing:\"/>\n                  <Row gap={1} style={{ flexWrap: \"wrap\" }}>\n                    {client.missingDocumentKinds.slice(0, 4).map((kind, i) => (\n                      <Badge key={i} label={kind} tone=\"neutral\"/>\n                    ))}\n                    {client.missingDocumentKinds.length > 4 && (\n                      <Badge label={`+${client.missingDocumentKinds.length - 4} more`} tone=\"neutral\"/>\n                    )}\n                  </Row>\n                </Stack>\n              )}\n\n              {client.assignedStaff && (\n                <Text variant=\"caption\" text={`Assigned: ${client.assignedStaff}`}/>\n              )}\n            </Stack>\n          </Surface>\n        );\n      }\n\n      function Section({ title, clients, tone }) {\n        if (!clients || clients.length === 0) return (\n          <Stack gap={2}>\n            <Text variant=\"heading\" text={title}/>\n            <Surface>\n              <Text variant=\"caption\" text=\"No clients in this group — nothing to chase here.\"/>\n            </Surface>\n          </Stack>\n        );\n\n        return (\n          <Stack gap={3}>\n            <Row gap={2} style={{ alignItems: \"center\" }}>\n              <Text variant=\"heading\" text={title}/>\n              <Badge label={`${clients.length}`} tone={tone}/>\n            </Row>\n            <Grid columns={3}>\n              {clients.map((c, i) => <ClientCard key={c.id ?? i} client={c}/>)}\n            </Grid>\n          </Stack>\n        );\n      }\n\n      export default function DeadlinesBoard({ deadlines, dashboard }) {\n        const rows = deadlines ?? [];\n        const weekEnd = getWeekEnd();\n        const monthEnd = getMonthEnd();\n\n        const thisWeek = rows.filter(c => {\n          const d = new Date(c.filingDeadline);\n          return d <= weekEnd;\n        });\n\n        const thisMonth = rows.filter(c => {\n          const d = new Date(c.filingDeadline);\n          return d > weekEnd && d <= monthEnd;\n        });\n\n        const later = rows.filter(c => {\n          const d = new Date(c.filingDeadline);\n          return d > monthEnd;\n        });\n\n        return (\n          <Stack gap={8}>\n            <Section title=\"This week\" clients={thisWeek} tone=\"danger\"/>\n            <Divider/>\n            <Section title=\"This month\" clients={thisMonth} tone=\"accent\"/>\n            <Divider/>\n            <Section title=\"Later\" clients={later} tone=\"neutral\"/>\n          </Stack>\n        );\n      }</Island>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Deadlines Board",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "row-1"
+          ]
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "text-1",
+            "cadencemissingdocshero-1"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Deadlines Board"
+          }
+        },
+        {
+          "id": "cadencemissingdocshero-1",
+          "component": "CadenceMissingDocsHero",
+          "source": "host",
+          "props": {
+            "missingCount": {
+              "$path": "/dashboard/clientsMissingDocuments"
+            },
+            "clientCount": {
+              "$path": "/dashboard/totalClients"
+            },
+            "badgeLabel": "Missing docs"
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "deadlines",
+          "tool": "host_listDeadlines",
+          "input": {}
+        },
+        {
+          "name": "dashboard",
+          "tool": "host_getDashboard",
+          "input": {}
+        }
+      ]
+    },
+    "components": {
+      "DeadlinesBoard": "const TODAY = new Date(\"2026-07-21\");\n\n      function getWeekEnd() {\n        const d = new Date(TODAY);\n        const day = d.getDay();\n        const diff = 7 - day;\n        d.setDate(d.getDate() + diff);\n        d.setHours(23, 59, 59, 999);\n        return d;\n      }\n\n      function getMonthEnd() {\n        return new Date(2026, 6, 31, 23, 59, 59, 999);\n      }\n\n      function daysUntil(isoDate) {\n        const d = new Date(isoDate);\n        const diff = d - TODAY;\n        return Math.ceil(diff / (1000 * 60 * 60 * 24));\n      }\n\n      function urgencyLabel(days) {\n        if (days < 0) return \"Overdue\";\n        if (days === 0) return \"Today\";\n        if (days === 1) return \"Tomorrow\";\n        return `${days} days away`;\n      }\n\n      function urgencyVariant(days) {\n        if (days < 0) return \"overdue\";\n        if (days <= 7) return \"missing\";\n        if (days <= 31) return \"review\";\n        return \"neutral\";\n      }\n\n      function ClientCard({ client }) {\n        const days = daysUntil(client.filingDeadline);\n        const variant = urgencyVariant(days);\n        const label = urgencyLabel(days);\n        const received = client.documentsReceived ?? 0;\n        const total = client.documentsTotal ?? 0;\n        const pct = total > 0 ? received / total : 0;\n\n        return (\n          <Surface>\n            <Stack gap={3}>\n              <Row gap={2} style={{ justifyContent: \"space-between\", alignItems: \"flex-start\" }}>\n                <Stack gap={1}>\n                  <Text variant=\"heading\" text={client.name}/>\n                  <Text variant=\"caption\" text={client.entityType ?? \"\"}/>\n                </Stack>\n                <EnumBadge value={client.status}/>\n              </Row>\n\n              <Row gap={2} style={{ alignItems: \"center\" }}>\n                <Text variant=\"caption\" text=\"Deadline:\"/>\n                <DateTime value={client.filingDeadline} mode=\"date\"/>\n                <Badge label={label} tone={variant === \"overdue\" ? \"danger\" : variant === \"missing\" ? \"danger\" : variant === \"review\" ? \"accent\" : \"neutral\"}/>\n              </Row>\n\n              <Stack gap={1}>\n                <Row gap={2} style={{ justifyContent: \"space-between\" }}>\n                  <Text variant=\"caption\" text=\"Documents\"/>\n                  <Text variant=\"caption\" text={`${received} of ${total}`}/>\n                </Row>\n                <Progress value={pct} showValue tone={pct === 1 ? \"success\" : days <= 7 ? \"danger\" : \"default\"}/>\n              </Stack>\n\n              {client.missingDocumentKinds && client.missingDocumentKinds.length > 0 && (\n                <Stack gap={1}>\n                  <Text variant=\"caption\" text=\"Still missing:\"/>\n                  <Row gap={1} style={{ flexWrap: \"wrap\" }}>\n                    {client.missingDocumentKinds.slice(0, 4).map((kind, i) => (\n                      <Badge key={i} label={kind} tone=\"neutral\"/>\n                    ))}\n                    {client.missingDocumentKinds.length > 4 && (\n                      <Badge label={`+${client.missingDocumentKinds.length - 4} more`} tone=\"neutral\"/>\n                    )}\n                  </Row>\n                </Stack>\n              )}\n\n              {client.assignedStaff && (\n                <Text variant=\"caption\" text={`Assigned: ${client.assignedStaff}`}/>\n              )}\n            </Stack>\n          </Surface>\n        );\n      }\n\n      function Section({ title, clients, tone }) {\n        if (!clients || clients.length === 0) return (\n          <Stack gap={2}>\n            <Text variant=\"heading\" text={title}/>\n            <Surface>\n              <Text variant=\"caption\" text=\"No clients in this group — nothing to chase here.\"/>\n            </Surface>\n          </Stack>\n        );\n\n        return (\n          <Stack gap={3}>\n            <Row gap={2} style={{ alignItems: \"center\" }}>\n              <Text variant=\"heading\" text={title}/>\n              <Badge label={`${clients.length}`} tone={tone}/>\n            </Row>\n            <Grid columns={3}>\n              {clients.map((c, i) => <ClientCard key={c.id ?? i} client={c}/>)}\n            </Grid>\n          </Stack>\n        );\n      }\n\n      export default function DeadlinesBoard({ deadlines, dashboard }) {\n        const rows = deadlines ?? [];\n        const weekEnd = getWeekEnd();\n        const monthEnd = getMonthEnd();\n\n        const thisWeek = rows.filter(c => {\n          const d = new Date(c.filingDeadline);\n          return d <= weekEnd;\n        });\n\n        const thisMonth = rows.filter(c => {\n          const d = new Date(c.filingDeadline);\n          return d > weekEnd && d <= monthEnd;\n        });\n\n        const later = rows.filter(c => {\n          const d = new Date(c.filingDeadline);\n          return d > monthEnd;\n        });\n\n        return (\n          <Stack gap={8}>\n            <Section title=\"This week\" clients={thisWeek} tone=\"danger\"/>\n            <Divider/>\n            <Section title=\"This month\" clients={thisMonth} tone=\"accent\"/>\n            <Divider/>\n            <Section title=\"Later\" clients={later} tone=\"neutral\"/>\n          </Stack>\n        );\n      }"
+    },
+    "componentTools": {
+      "DeadlinesBoard": []
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 20819,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 6813,
+        "outputTokens": 1647
+      }
+    }
+  ],
+  "pipeline": []
+}

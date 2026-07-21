@@ -1,0 +1,265 @@
+{
+  "promptId": "AB-M1",
+  "host": "demo-bank",
+  "arm": "B",
+  "attempt": 2,
+  "prompt": "A money overview dashboard: my account balances, my spending by category this month, and how my stock portfolio has performed this quarter.",
+  "ok": true,
+  "wallMs": 12023,
+  "fullAttempts": 1,
+  "repairRounds": 1,
+  "repairRepaired": true,
+  "endPassApplied": false,
+  "firstAttemptValid": false,
+  "inputTokens": 8678,
+  "outputTokens": 478,
+  "nodes": 16,
+  "queries": 3,
+  "wire": "<App name=\"Money overview\">\n  <Query id=\"hostListAccounts\" tool=\"host_listAccounts\" input={{}}/>\n  <Query id=\"hostGetCashflowInsights\" tool=\"host_getCashflowInsights\" input={{}}/>\n  <Query id=\"hostGetSpendingInsights\" tool=\"host_getSpendingInsights\" input={{}}/>\n  <Stack gap={6}>\n    <Text variant=\"heading\" text=\"Money overview\"/>\n    This part of the request isn't available on this host.\n    <Row gap={4}>\n      <Stat label=\"Checking\" value={{ \"$path\": \"/hostListAccounts/data/0/balanceCents\" }} format=\"money\"/>\n      <Stat label=\"Savings\" value={{ \"$path\": \"/hostListAccounts/data/1/balanceCents\" }} format=\"money\"/>\n      <Stat label=\"Total inflow\" value={hostGetCashflowInsights.inflowCents} format=\"money\"/>\n      <Stat label=\"Total outflow\" value={hostGetCashflowInsights.outflowCents} format=\"money\"/>\n    </Row>\n    <Divider/>\n    <Text variant=\"heading\" text=\"Spending by category this month\"/>\n    <Row gap={6}>\n      <MapleSpendingDonut slices={hostGetSpendingInsights.categories} size={220}/>\n      <DataTable rows={hostGetSpendingInsights.categories} columns={[{ key: \"category\", label: \"Category\" }, { key: \"amount\", label: \"Spent\", format: \"money\", align: \"end\" }]} sortBy=\"amount desc\" emptyState=\"No spending recorded this month.\"/>\n    </Row>\n    <Divider/>\n    <Disclaimer title=\"Stock portfolio not available\" reason=\"This app has no connection to brokerage or investment data, so your stock portfolio performance this quarter can't be shown here. Account balances and spending insights above are live from your linked accounts.\"/>\n  </Stack>\n</App>",
+  "document": {
+    "format": "vendo/app@1",
+    "name": "Money overview",
+    "ui": "tree",
+    "tree": {
+      "formatVersion": "vendo-genui/v2",
+      "root": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "component": "Stack",
+          "source": "prewired",
+          "children": [
+            "stack-1"
+          ]
+        },
+        {
+          "id": "stack-1",
+          "component": "Stack",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "text-1",
+            "text-2",
+            "row-1",
+            "divider-1",
+            "text-3",
+            "row-2",
+            "divider-2",
+            "disclaimer-1"
+          ]
+        },
+        {
+          "id": "text-1",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Money overview"
+          }
+        },
+        {
+          "id": "text-2",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "text": "This part of the request isn't available on this host."
+          }
+        },
+        {
+          "id": "row-1",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 4
+          },
+          "children": [
+            "stat-1",
+            "stat-2",
+            "stat-3",
+            "stat-4"
+          ]
+        },
+        {
+          "id": "stat-1",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Checking",
+            "value": {
+              "$path": "/hostListAccounts/data/0/balanceCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-2",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Savings",
+            "value": {
+              "$path": "/hostListAccounts/data/1/balanceCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-3",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total inflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/inflowCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "stat-4",
+          "component": "Stat",
+          "source": "prewired",
+          "props": {
+            "label": "Total outflow",
+            "value": {
+              "$path": "/hostGetCashflowInsights/outflowCents"
+            },
+            "format": "money"
+          }
+        },
+        {
+          "id": "divider-1",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "text-3",
+          "component": "Text",
+          "source": "prewired",
+          "props": {
+            "variant": "heading",
+            "text": "Spending by category this month"
+          }
+        },
+        {
+          "id": "row-2",
+          "component": "Row",
+          "source": "prewired",
+          "props": {
+            "gap": 6
+          },
+          "children": [
+            "maplespendingdonut-1",
+            "datatable-1"
+          ]
+        },
+        {
+          "id": "maplespendingdonut-1",
+          "component": "MapleSpendingDonut",
+          "source": "host",
+          "props": {
+            "slices": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "size": 220
+          }
+        },
+        {
+          "id": "datatable-1",
+          "component": "DataTable",
+          "source": "prewired",
+          "props": {
+            "rows": {
+              "$path": "/hostGetSpendingInsights/categories"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amount",
+                "label": "Spent",
+                "format": "money",
+                "align": "end"
+              }
+            ],
+            "sortBy": "amount desc",
+            "emptyState": "No spending recorded this month."
+          }
+        },
+        {
+          "id": "divider-2",
+          "component": "Divider",
+          "source": "prewired"
+        },
+        {
+          "id": "disclaimer-1",
+          "component": "Disclaimer",
+          "source": "prewired",
+          "props": {
+            "title": "Stock portfolio not available",
+            "reason": "This app has no connection to brokerage or investment data, so your stock portfolio performance this quarter can't be shown here. Account balances and spending insights above are live from your linked accounts."
+          }
+        }
+      ],
+      "queries": [
+        {
+          "name": "hostListAccounts",
+          "tool": "host_listAccounts",
+          "input": {}
+        },
+        {
+          "name": "hostGetCashflowInsights",
+          "tool": "host_getCashflowInsights",
+          "input": {}
+        },
+        {
+          "name": "hostGetSpendingInsights",
+          "tool": "host_getSpendingInsights",
+          "input": {}
+        }
+      ]
+    }
+  },
+  "timing": [
+    {
+      "lane": "full",
+      "phase": "complete",
+      "atMs": 8154,
+      "thinking": false,
+      "usage": {
+        "inputTokens": 8678,
+        "outputTokens": 478
+      }
+    },
+    {
+      "lane": "repair",
+      "phase": "complete",
+      "atMs": 10023,
+      "thinking": false
+    },
+    {
+      "lane": "end-pass",
+      "phase": "complete",
+      "atMs": 12022,
+      "thinking": false
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": "repair",
+      "rounds": 1,
+      "repaired": true,
+      "noValidFix": 1,
+      "ms": 1869
+    },
+    {
+      "stage": "end-pass",
+      "applied": false,
+      "ms": 1999
+    }
+  ]
+}
