@@ -50,13 +50,23 @@ Example payload:
 
 ## What Is Never Collected
 
-Vendo telemetry never collects source code, file paths, prompts, generated UI, tool inputs or outputs, API keys, host app names, environment values, request bodies, error messages, or stack traces. The `packageManager` name is classified into a closed enum from the npm user-agent env var; no raw env values are sent.
+Vendo telemetry never collects source code, file paths, prompts, generated UI, tool inputs or outputs, API keys, host app names, environment values, request bodies, raw error messages, or stack traces. (Cloud-configured installs send a scrubbed `errorDetail` — see When Vendo Cloud Is Configured.) The `packageManager` name is classified into a closed enum from the npm user-agent env var; no raw env values are sent.
 
 ## Anonymous Identity
 
 Vendo creates a random UUID and stores it in `~/.vendo/telemetry.json` with two preferences: `optedOut` and `noticeShown`. The id is not derived from a machine, account, project, host app, or environment value. Deleting the file rotates the id.
 
 `projectIdHash` identifies a project opaquely so events from the same repo can be grouped. It is a one-way SHA-256 of the git origin URL (normalized so ssh and https spellings match), or of the `package.json` name when there is no remote, and omitted when neither exists. A fixed public salt (`vendo-telemetry-project-v1`) is prepended before hashing; the raw URL or name is never sent and cannot be recovered from the hash. Changing the remote rotates the hash.
+
+## When Vendo Cloud Is Configured
+
+Setting a well-formed `VENDO_API_KEY` (`vnd_` plus 40 hex characters) switches telemetry into the cloud lane. Nothing else activates it, and every opt-out below still applies — an opted-out user with a cloud key sends nothing.
+
+In the cloud lane every event additionally carries `cloud: true` and `cloudKeyHash`, the SHA-256 of the API key. The Vendo console stores key hashes, so cloud events can be joined to the owning account; PostHog never receives the key itself.
+
+Cloud-lane events may also carry these extra properties (the `CLOUD_PROP_KEYS` set in `packages/vendo-telemetry/src/events.ts`), allowed on every event: `projectName`, `repoHost`, `errorDetail`, `connectionsConfigured`, `toolkitsEnabled`, `servedApps`, `experimentalFlags`, and the per-stage init timings `detectMs`, `engineMs`, `themeMs`, `wiringMs`, `componentsMs`. Without a valid key these keys are stripped before sending, even if the tooling passes them.
+
+`errorDetail` is the only free-text property Vendo ever sends. It is scrubbed first: file paths, email addresses, and secret-shaped strings (API keys, bearer tokens, long hex or base64 runs) are replaced with fixed tokens like `[path]` and `[secret]`, then the result is capped at 200 characters. The telemetry client re-scrubs every `errorDetail` as defense-in-depth even when the caller already did.
 
 ## Opt Out
 

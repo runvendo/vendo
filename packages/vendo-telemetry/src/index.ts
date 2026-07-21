@@ -5,7 +5,7 @@ import { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.j
 
 export { envOptOut, resolveConsent } from "./consent.js";
 export { loadConfig, saveConfig, configPath, type TelemetryConfig } from "./config.js";
-export { EVENT_ALLOWLIST, type EventName } from "./events.js";
+export { CLOUD_PROP_KEYS, EVENT_ALLOWLIST, type EventName } from "./events.js";
 export { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.js";
 export { maybeShowNotice } from "./notice.js";
 export { scrubErrorDetail } from "./scrub.js";

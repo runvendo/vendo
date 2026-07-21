@@ -15,6 +15,35 @@ export const BASE_PROP_KEYS = [
   "packageManager",
 ] as const;
 
+/**
+ * Cloud-lane property keys, the second half of the lane split: the anonymous
+ * lane (no or invalid VENDO_API_KEY) is EVENT_ALLOWLIST only, and these keys
+ * are stripped even if callers pass them; when a valid Vendo Cloud key is
+ * present the client accepts allowlisted keys ∪ CLOUD_PROP_KEYS on EVERY
+ * event. A closed set like the allowlist — nothing outside it is ever sent —
+ * and TELEMETRY.md ("When Vendo Cloud is configured") documents it. The lane
+ * markers themselves (`cloud`, `cloudKeyHash`) are producer-set in client.ts
+ * and deliberately NOT listed here, so callers can never spoof them.
+ */
+export const CLOUD_PROP_KEYS: ReadonlySet<string> = new Set([
+  // Project identity a paying customer expects the console to show.
+  "projectName",
+  "repoHost",
+  // Scrubbed, truncated error text (see scrub.ts); never raw messages.
+  "errorDetail",
+  // Setup shape: counts and short enums only.
+  "connectionsConfigured",
+  "toolkitsEnabled",
+  "servedApps",
+  "experimentalFlags",
+  // Per-stage init timings (milliseconds).
+  "detectMs",
+  "engineMs",
+  "themeMs",
+  "wiringMs",
+  "componentsMs",
+]);
+
 export type EventName =
   | "init_started"
   | "init_completed"
