@@ -1,27 +1,29 @@
 ---
-title: "UI components"
-description: "The shipped Vendo chrome — overlay, palette, thread, approvals, activities, slot, page, and voice surfaces — playable inline, plus a full playground with a live theme editor."
+title: "UI surfaces"
+sidebarTitle: "UI surfaces"
+description: "Every chrome surface Vendo's agent renders, playable inline: overlay, palette, thread, generated views, approvals, activities, slot, page, and voice."
 ---
 
 import { VendoEmbed, VendoLauncher } from "/snippets/vendo-embed.jsx"
 
-Vendo ships a complete set of brand-native chrome components. Every surface
-derives its colors, typography, radius, density, and motion from your
-[VendoTheme tokens](/connect/theming), so the same components render on-brand
-in any host product. **The components below are live** — the real chrome
-mounted against scripted data, the same components your hosts mount. Type,
-click, approve.
+This page shows every chrome surface Vendo's agent renders, each playable
+inline. The demos below are the real components your hosts mount, running
+against scripted data: type, click, approve. Every surface derives its colors,
+typography, radius, density, and motion from your
+[VendoTheme tokens](/connect/theming).
+
+<Note>
+  Vendo's built-in agent is in beta. Most teams should
+  [bring their own agent](/existing-agents) and use Vendo's tools and surfaces
+  from their existing loop; the [embeds](/existing-agents/embeds) render Vendo
+  inside that chat instead of the chrome below.
+</Note>
 
 ## Overlay
 
 The default drop-in: a themed launcher pill that opens a floating conversation
-overlay over your product. On phones it becomes an Intercom-style full-bleed
-takeover with safe-area and keyboard handling. One component, zero layout
-changes to your app.
-
-You don't need a demo for this one — **it's running on this page**. The Vendo
-pill in the corner is the shipped component; click it and the overlay opens
-over these docs, compact first, growing on your first message.
+overlay over your product, becoming an Intercom-style full-bleed takeover on
+phones. It's running on this page: click the Vendo pill in the corner.
 
 <VendoLauncher />
 
@@ -29,20 +31,23 @@ over these docs, compact first, growing on your first message.
   <img src="/images/ui/hero-launcher.png" alt="Vendo overlay launcher pill in the corner of a host page" />
 </Frame>
 
+Wire it in the [quickstart](/quickstart#add-the-overlay); control it
+programmatically with
+[useVendoOverlay](/reference/hooks#overlay-control-usevendooverlay).
+
 ## Command palette
 
-The same surface is one keystroke away: **⌘K** opens the conversation overlay
-in its compact palette form, with host-registered commands on the chip strip.
-If your product already owns ⌘K in a focused input, Vendo stays out of the
-way.
+The same surface one keystroke away: **⌘K** opens the conversation overlay in
+its compact palette form, with host-registered commands on the chip strip. If
+your product already owns ⌘K in a focused input, Vendo stays out of the way.
 
 <Frame caption="⌘K opens the compact overlay: greeting, suggestions, commands, and the composer.">
-  <img src="/images/ui/hero-palette.png" alt="Vendo command palette — the compact conversation overlay" />
+  <img src="/images/ui/hero-palette.png" alt="Vendo command palette: the compact conversation overlay" />
 </Frame>
 
 ## Thread
 
-The bare conversation surface — composer, streaming replies, tool beats,
+The bare conversation surface: composer, streaming replies, tool beats,
 approval cards, connect cards, and generated views arriving inline. Use it
 when you want the conversation embedded in your own layout instead of an
 overlay.
@@ -55,10 +60,13 @@ overlay.
   caption="A reply streams into the thread: tool beat, live text, stop affordance"
 />
 
+Building a custom thread instead? The same wire is available headless; see
+[Headless hooks](/reference/hooks#threads).
+
 ## Generated views
 
-When the agent builds UI, the view streams into the transcript as it forms —
-skeleton first, then live pieces — and lands as an interactive component, not
+When the agent builds UI, the view streams into the transcript as it forms
+(skeleton first, then live pieces) and lands as an interactive component, not
 a screenshot.
 
 <video autoPlay muted loop playsInline type="video/mp4" src="/images/ui/loop-view-arrival.mp4" />
@@ -68,13 +76,16 @@ a screenshot.
   poster="/images/ui/hero-generated-view.png"
   alt="A generated view rendered inline in the Vendo thread"
   height={620}
-  caption="Ask for a view and watch it form — the finished Renewals radar is interactive"
+  caption="Ask for a view and watch it form: the finished Renewals radar is interactive"
 />
+
+See [Generated UI and apps](/concepts/generated-ui) for what a view can do
+and who owns it.
 
 ## Approvals
 
 A write action parks the turn on an in-thread approval card showing the exact
-request. Approve it and the same turn resumes — the card morphs into a toast,
+request. Approve it and the same turn resumes: the card morphs into a toast,
 the tool runs, and the agent confirms.
 
 <VendoEmbed
@@ -87,11 +98,14 @@ the tool runs, and the agent confirms.
 
 <video autoPlay muted loop playsInline type="video/mp4" src="/images/ui/loop-approval-toast.mp4" />
 
+The decision itself (policy, grants, risk) is server-side; see
+[Tools and safety](/concepts/tools-and-safety).
+
 ## Tool labels
 
 Shipped chrome renders a tool chip every time the agent calls a tool, and an
 approval card whenever a call needs the user's sign-off. The wire only carries
-the raw tool id, the risk, and the arguments — no friendly name, description,
+the raw tool id, the risk, and the arguments; no friendly name, description,
 or arg formatting reaches the client. Chrome humanizes at the render site so
 end users never read a raw slug, a lifecycle string, or raw JSON.
 
@@ -101,16 +115,17 @@ Without any configuration, chrome prettifies the raw id and args:
 
 - `host_email_send` renders as "Email send".
 - `gmail_GMAIL_CREATE_EMAIL_DRAFT` renders as "Gmail create email draft".
-- Object arguments render as a `Key: value` preview in the approval card and a
-  compact `Key value · Key value` summary on the chip. Non-object args fall
-  back to the server-formatted input preview.
+- Object arguments render as a `Key: value` preview in the approval card.
+  Non-object args fall back to the server-formatted input preview. The tool
+  chip itself shows only the humanized label, never an argument summary.
 - Consecutive identical chips (same tool, same args) collapse into one entry
   with an `×N` count.
-- The chip's spinner, check, or error icon carries lifecycle state — no
+- The chip's spinner, check, or error icon carries lifecycle state; no
   `output-available` or `Tool:` text ever renders.
-- The in-thread approval card no longer prints a fabricated context byline.
-  Standalone and queue approval cards keep their real server-provided
-  principal, venue, and presence context.
+- The in-thread approval card no longer prints a fabricated context byline
+  (the live conversation is already the context). Standalone and queue
+  approval cards render their real server-provided venue and app context;
+  neither surface displays principal or presence as separate fields.
 
 The fallback is enough for demos and internal tools. Pass friendly metadata
 when you want your own copy for user-facing surfaces.
@@ -154,7 +169,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 | `summarize(args)` | Custom one-line summary shown on the tool chip. Return `undefined` to fall back to the default `Key value` summary. |
 
 `tools` is additive and UI-side. It does not change the wire, the tool
-descriptor, or guard behavior — a call still routes through the same policy,
+descriptor, or guard behavior: a call still routes through the same policy,
 grant, and approval decision described in
 [Tools and safety](/concepts/tools-and-safety).
 
@@ -190,12 +205,15 @@ below. Drop it into your own settings or admin pages.
   caption="VendoActivities: the waiting-on-you queue above the humanized activity feed"
 />
 
+The same data is available headless via `useApprovals()` and `useActivity()`;
+see [Headless hooks](/reference/hooks#available-hooks).
+
 ## Slot
 
 A placeholder in your product that users can fill with their own generated
 view. Empty, it shows a quiet ghost with a "Design a view" call to action;
 filled, it renders the pinned view; broken, it falls back to your original
-markup — never a blank hole.
+markup, never a blank hole.
 
 <VendoEmbed
   surface="slot-filled"
@@ -222,7 +240,7 @@ surface. Mount it on a dedicated route like `/assistant`.
 ## Voice
 
 The voice stage: a live orb, streaming captions, views arriving mid-session,
-and voice-native approvals — say "approve" or tap.
+and voice-native approvals. Say "approve" or tap.
 
 <Frame caption="The voice stage mid-session: captions, a ready view, and a spoken approval.">
   <img src="/images/ui/hero-voice-stage.png" alt="Vendo voice stage with captions and a voice approval" />
@@ -238,9 +256,10 @@ Voice is a UI entry point:
 | `useVoice()` | state, start, stop, and transcript |
 | `<VendoStage />` | shipped voice surface |
 
-`useVoice` drives a WebRTC voice stage session. The shipped surface uses the
-same resolved theme tokens and accessibility requirements as the rest of the
-chrome.
+`useVoice` drives whatever `VoiceDriver` is injected through `VendoProvider`;
+WebRTC is one driver implementation (`realtimeVoiceDriver`), not something
+`useVoice` provides itself. The shipped surface uses the same resolved theme
+tokens and accessibility requirements as the rest of the chrome.
 
 Tool calls initiated from voice still use the composition's normal tool
 registry and guard treatment. Voice does not add a second authority path.
@@ -250,27 +269,16 @@ variables. Configure the voice driver and its model provider in host code.
 
 ## Embeds for your own agent's chat
 
-Three components render Vendo inside a chat surface that is not Vendo's,
-when your product keeps its own agent loop and spreads in the
-[guarded tool pack](/existing-agents). All three live inside `VendoProvider`
-pointed at the wire and take no config props of their own.
-
-- `<VendoToolResult output>` is the dispatcher: give it any `vendo_*` tool
-  output and it renders the right embed, or nothing for plain data.
-- `<VendoAppEmbed refValue>` renders an inline generated app from a
-  `vendo/app-ref@1` envelope: a build beat while the build streams, then the
-  live app. In-app interactions go over the wire, not through your loop.
-- `<VendoApprovalEmbed refValue>` renders the approve/deny card for a
-  `vendo/approval-ref@1` envelope and resolves in place to the executed
-  result, "declined", or "expired".
-
-See [Use with your existing agent](/existing-agents) for the envelope
-contract and the AI SDK and Mastra walkthroughs.
+If your product keeps its own agent loop and spreads in the
+[guarded tool pack](/existing-agents), three `@vendoai/ui` components render
+Vendo inline in that chat instead of the chrome above. See
+[Embeds and envelopes](/existing-agents/embeds) for the envelope contract,
+the three components, and their props.
 
 ## Theming
 
 Every component above re-themes from one token file. Extract it with
-`vendo init`, or hand-edit `.vendo/theme.json` — the playground's theme editor
+`vendo init`, or hand-edit `.vendo/theme.json`; the playground's theme editor
 emits a valid file from whatever look you land on. See
 [Theming](/connect/theming) for the full token reference.
 
@@ -280,14 +288,14 @@ emits a valid file from whatever look you land on. See
 
 ## Try every surface live
 
-The hosted playground renders each surface against scripted data — no model
+The hosted playground renders each surface against scripted data: no model
 key, no database, nothing to install. Use the **Theme** button inside it to
 edit every theme token live, copy a ready `.vendo/theme.json`, and share a
 themed link.
 
 <iframe
   src="https://vendo.run/playground"
-  title="Vendo playground — every surface, scripted data, no model key"
+  title="Vendo playground: every surface, scripted data, no model key"
   width="100%"
   height="720"
   style={{ border: "1px solid #e5e5e5", borderRadius: "12px" }}

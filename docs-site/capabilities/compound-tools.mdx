@@ -1,16 +1,17 @@
 ---
 title: "Compound tools"
+sidebarTitle: "Compound tools"
 description: "Compose multi-step capabilities from your existing tools in .vendo/capabilities.json and run each step through guard with its own approval and audit."
 ---
 
 A compound tool bundles a short sequence of your existing host and connector
 tools into one capability the agent can call by name. Each step still runs
 through `guard.bind`, so approvals, grants, breakers, and audit apply per
-step — not to the compound as a whole.
+step, not to the compound as a whole.
 
 Use compound tools when a task always spans the same few primitive calls
 (fetch, transform, write) and you want the agent to reach for one intent name
-instead of chaining several. Extraction never writes this file — you author it.
+instead of chaining several. Extraction never writes this file; you author it.
 
 ## When to use a compound
 
@@ -59,7 +60,10 @@ Compounds live in `.vendo/capabilities.json`. A compound entry inside
             "args": {
               "to": "{{ load.customerEmail }}",
               "template": "invoice-reminder",
-              "vars": { "invoiceId": "{{ load.id }}", "amount": "{{ load.amount }}" }
+              "vars": {
+                "invoiceId": "{{ load.id }}",
+                "amount": "{{ load.amount }}"
+              }
             }
           }
         ]
@@ -77,10 +81,10 @@ evaluated against the root `args` and prior step results by id.
 
 Every step runs `if → forEach → args → invoke` in that order.
 
-- `if` — skip the step when the expression is falsy.
-- `forEach` — invoke the step once per item, up to 1000 items. The item is
+- `if`: skip the step when the expression is falsy.
+- `forEach`: invoke the step once per item, up to 1000 items. The item is
   available to `args` as the step's context. Non-array values fail loudly.
-- `args` — the JSON object passed to the target tool after evaluation.
+- `args`: the JSON object passed to the target tool after evaluation.
 
 Prior step results are available by step `id`. Root inputs are available as
 `args`.
@@ -124,7 +128,7 @@ has its own step-level grant, and `actAs` only ever receives step grants.
 ## Resume
 
 When a step parks, the compound resumes from that step after the user decides.
-Completed steps do not re-run — Vendo re-issues the parked step call verbatim
+Completed steps do not re-run: Vendo re-issues the parked step call verbatim
 so the approval matches the original request.
 
 Resume state is in-memory, bounded to 1000 entries per registry with a 60
@@ -141,7 +145,7 @@ or dispatch, and boot succeeds. Common causes:
 - A step targets an unknown tool, a disabled tool, or another compound.
 - A step targets a `fn:` or registry-added tool.
 - The declared `risk` is not the maximum of the step risks.
-- Two capability sources declare the same name — this throws `conflict`
+- Two capability sources declare the same name; this throws `conflict`
   instead of quarantining.
 
 Fix the entry and it becomes available on the next load.

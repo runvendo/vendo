@@ -1,43 +1,79 @@
 ---
-title: "Theming Vendo surfaces with the VendoTheme token shape"
+title: "Theme your Vendo surfaces"
+sidebarTitle: "Theming"
 description: "The VendoTheme token shape extracted into .vendo/theme.json and consumed by every shipped chrome surface, including colors, radii, density, and motion."
 ---
 
-Init extracts `.vendo/theme.json`. The theme has this exact shape:
+Set colors, typography, radii, density, and motion once in
+`.vendo/theme.json` (or a runtime `VendoProvider.theme` override), and every
+shipped chrome surface, including the
+[prewired primitives](/connect/host-components), picks them up automatically.
+This page covers how to set the theme and see it flow through; the exact
+token shape and CSS variable tables live in the reference section at the
+end.
+
+## Set the theme
+
+`vendo init` extracts `.vendo/theme.json` and wires it into the scaffolded
+`<VendoRoot theme={...}>` at build time. `vendo sync` regenerates the file on
+each build, so a fresh install renders on brand without passing `theme` by
+hand.
+
+Pass partial runtime overrides through `VendoProvider.theme` when you want to
+adjust tokens without touching the file. Shipped chrome derives its colors,
+typography, radius, density, and motion from these tokens and does not
+hardcode a Vendo brand.
+
+Generation receives the same theme. Optional design rules add
+generation-time guidance without changing runtime tokens: set
+`createVendo({ apps: { designRules } })` in config, or keep a
+`.vendo/design-rules.md` file, re-read per generation (a non-blank config
+value wins over the file).
+
+## See it flow through
+
+`VendoRoot` emits stable CSS custom properties derived from `density` and
+`motion`. Chrome and the prewired primitives read them directly, and you can
+consume the same variables from your own styles. It also derives
+`--vendo-color-scheme` from your background color and stamps a
+`--fl-kb-inset` variable while the mobile takeover is open. All three are
+covered in the reference below.
+
+## Theme reference
+
+### The VendoTheme shape
 
 ```ts
 export interface VendoTheme {
-  colors: { background: string; surface: string; text: string; muted: string; accent: string; accentText: string; danger: string; border: string };
-  typography: { fontFamily: string; headingFamily?: string; baseSize: string };
-  radius: { small: string; medium: string; large: string };
+  colors: {
+    background: string;
+    surface: string;
+    text: string;
+    muted: string;
+    accent: string;
+    accentText: string;
+    danger: string;
+    border: string;
+  };
+  typography: {
+    fontFamily: string;
+    headingFamily?: string;
+    baseSize: string;
+  };
+  radius: {
+    small: string;
+    medium: string;
+    large: string;
+  };
   density: "compact" | "comfortable";
   motion: "full" | "reduced";
 }
 ```
 
-Init wires this file into the scaffolded `<VendoRoot theme={...}>` at build time
-(sync regenerates it on each build), so a fresh install renders on brand without
-passing `theme` by hand.
+### Density variables
 
-Pass partial runtime overrides through `VendoProvider.theme`. Shipped chrome
-derives its colors, typography, radius, density, and motion from these tokens.
-It does not hardcode a Vendo brand.
-
-Generation receives the same theme. Optional `.vendo/design-rules.md` adds
-generation-time design rules without changing runtime tokens; it is re-read
-per generation, and `createVendo({ apps: { designRules } })` sets the same
-rules in config (a non-blank value wins over the file).
-
-## Emitted CSS variables
-
-`VendoRoot` emits stable CSS custom properties derived from `density` and
-`motion`. Chrome and the [prewired primitives](/connect/host-components) read
-them directly, and you can consume the same variables from your own styles.
-The `--vendo-density-*` and `--vendo-motion-*` names below are stable — new
-variables may be added under these prefixes, but the ones listed here will
-not be renamed.
-
-### Density
+`--vendo-density-*` names are stable: new variables may be added under this
+prefix, but the ones below will not be renamed.
 
 `density: "compact"` tightens control sizes, padding, and gaps; `density:
 "comfortable"` relaxes them. Every compact value is less than or equal to
@@ -63,17 +99,17 @@ its comfortable counterpart.
 
 `VendoRoot` derives `color-scheme` from the WCAG relative luminance of
 `colors.background` and exposes it as `--vendo-color-scheme`. Backgrounds
-below the flip point (L < 0.179) resolve to `dark`; everything else, including
-unparseable values, resolves to `light`.
+below the flip point (L < 0.179) resolve to `dark`; everything else,
+including unparseable values, resolves to `light`.
 
 | Variable | Light background | Dark background |
 | --- | --- | --- |
 | `--vendo-color-scheme` | `light` | `dark` |
 
-Chrome uses this variable to activate `light-dark()` branches, so a dark-brand
-host automatically gets the dark chrome treatment without any extra
-configuration. Set `colors.background` in `.vendo/theme.json` (or through a
-`VendoProvider.theme` override) and the scheme follows.
+Chrome uses this variable to activate `light-dark()` branches, so a
+dark-brand host automatically gets the dark chrome treatment without any
+extra configuration. Set `colors.background` in `.vendo/theme.json` (or
+through a `VendoProvider.theme` override) and the scheme follows.
 
 ```json .vendo/theme.json
 {
@@ -110,11 +146,13 @@ with the current theme:
 ```css
 .my-card {
   padding: var(--vendo-density-card-padding);
-  transition: background-color var(--vendo-motion-duration) var(--vendo-motion-easing);
+  transition:
+    background-color var(--vendo-motion-duration)
+    var(--vendo-motion-easing);
 }
 ```
 
-## Mobile takeover
+### Mobile takeover
 
 Shipped overlay, page, and palette chrome switch to a full-viewport takeover
 at viewports 767px wide and narrower. The takeover covers the host layout
@@ -132,7 +170,9 @@ takeover:
 
 ```css
 .my-mobile-footer {
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px));
+  padding-bottom: calc(
+    env(safe-area-inset-bottom, 0px) + var(--fl-kb-inset, 0px)
+  );
 }
 ```
 

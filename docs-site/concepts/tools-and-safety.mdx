@@ -1,23 +1,79 @@
 ---
 title: "Tools and safety: guard.bind, policy, and away-run scopes"
+sidebarTitle: "Tools and safety"
 description: "How Vendo unifies host APIs and connectors under one ToolDescriptor shape, routes every call through guard.bind, and scopes authority for away runs."
 ---
 
-Every host API, connector, and Vendo capability uses one `ToolDescriptor`.
-Names match `/^[a-zA-Z0-9_-]{1,64}$/`; underscore is the namespace separator.
-Risk is `read`, `write`, or `destructive`.
+Every host API, connector, and Vendo capability is one `ToolDescriptor`, and
+`guard.bind(tools)` is the only sanctioned execution path. A tool's risk
+(`read`, `write`, or `destructive`) decides what runs immediately and what
+asks the user first. This page explains how the guard decides; the exact
+rules live in the [Decision reference](#decision-reference) at the end.
 
-`guard.bind(tools)` is the only sanctioned execution path. Its decision order
-is critical flag, grant match, policy rules, policy code, judge, then the
-default posture. Critical tools always ask. Breakers can turn a run decision
-into an ask.
+## How guard.bind decides
 
-## Effective risk resolution
+For each call the guard walks one fixed order: the critical flag first, then
+a matching grant, then policy rules, then policy code, then the judge, then
+the default posture. Critical tools always ask. Breakers can turn a run
+decision into an ask.
 
-A tool's declared risk is a conservative default. For a small set of Vendo
-tools where the safe path depends on the arguments, guard resolves the
-effective risk per call before policy, grants, breakers, and approvals — so
-chat, SSE, and the MCP door reach the same decision.
+Declared risk is a conservative default. For a small set of Vendo tools
+where the safe path depends on the arguments, guard resolves the effective
+risk per call before policy, grants, breakers, and approvals, so chat, SSE,
+and the MCP door reach the same decision. Custom tools you register are
+unaffected; they continue to use their declared `ToolDescriptor.risk`. The
+per-tool rules are under
+[Effective risk resolution](#effective-risk-resolution).
+
+## Approvals, grants, and away runs
+
+Present calls can pause for an interactive approval. Away calls cannot. They
+park as `pending-approval` and resume only after the user returns and
+decides.
+
+Approvals display the real inputs. Grants bind to the principal, tool
+descriptor hash, scope, and duration. Away execution additionally requires a
+standing grant bound to the running app. A chat grant or another app's grant
+never transfers.
+
+When a tool's descriptor hash drifts from the hash a standing grant was
+bound to, guard invalidates the grant loudly and asks again; the exact event
+shape is under [Grant invalidation](#grant-invalidation).
+
+## What the model sees
+
+Hosts that expose hundreds of tools would flood the model's context if every
+tool were sent up front. The agent instead starts each thread from a bounded
+initial loadout and discovers the rest at runtime through the
+`vendo_tools_search` meta-tool.
+
+The guard invariant is unchanged: every tool, initial or searched-in,
+executes through the same guard-bound registry. The loadout gates only what
+the model *sees*, not what can run. A searched-in write tool still requires
+approval before it fires.
+
+## Audit trail
+
+Vendo audits every tool call, approval, policy decision, run, and app
+lifecycle event with principal, venue, presence, and app context.
+
+## Decision reference
+
+Tool names match `/^[a-zA-Z0-9_-]{1,64}$/`; underscore is the namespace
+separator. Risk is `read`, `write`, or `destructive`.
+
+### guard.bind decision order
+
+1. Critical flag (critical tools always ask)
+2. Grant match
+3. Policy rules
+4. Policy code
+5. Judge
+6. Default posture
+
+Breakers can turn a run decision into an ask at any point.
+
+### Effective risk resolution
 
 - `vendo_apps_create` is `read`. Creating an app writes only to Vendo's own
   app store and always produces a jailed layer-1 tree document. It runs
@@ -34,15 +90,7 @@ chat, SSE, and the MCP door reach the same decision.
   version. Rebase is user- or host-invoked only; the agent never
   auto-rebases. See [Host components](/connect/host-components#drift-and-rebase).
 
-Custom tools you register are unaffected; they continue to use their declared
-`ToolDescriptor.risk`.
-
-## Initial loadout and runtime tool search
-
-Hosts that expose hundreds of tools would flood the model's context if every
-tool were sent up front. The agent instead starts each thread from a bounded
-**initial loadout** and discovers the rest at runtime through the
-`vendo_tools_search` meta-tool.
+### Loadout determinism
 
 Loadout selection is deterministic:
 
@@ -61,30 +109,15 @@ the model calls a searched-in tool, it becomes available on the very next
 step; loaded tools persist for the life of the thread and are cleared when
 the thread is deleted.
 
-The guard invariant is unchanged: every tool — initial or searched-in —
-executes through the same guard-bound registry. The loadout gates only what
-the model *sees*, not what can run. A searched-in write tool still requires
-approval before it fires.
-
 See [`agent.maxInitialTools` and `agent.loadout`](/reference/handler-options#agent-context)
 for the configuration surface.
 
-Present calls can pause for an interactive approval. Away calls cannot. They
-park as `pending-approval` and resume only after the user returns and decides.
-
-Approvals display the real inputs. Grants bind to the principal, tool
-descriptor hash, scope, and duration. Away execution additionally requires a
-standing grant bound to the running app. A chat grant or another app's grant
-never transfers.
+### Grant invalidation
 
 When a tool's descriptor hash drifts from the hash a standing grant was bound
-to, guard invalidates the grant loudly. It parks a fresh approval request with
-an `invalidatedGrant` field carrying the prior grant's id and `grantedAt`
-timestamp. It also emits one `policy-decision` audit event with
-`reason: "grant-invalidated"`, the prior `grantIds`, the `staleHash`, and the
-`currentHash`. The approval card renders a "Previous permission invalidated"
-notice so users see why they are being asked again. The Activity panel lists
-the audit event.
-
-Vendo audits every tool call, approval, policy decision, run, and app lifecycle
-event with principal, venue, presence, and app context.
+to, guard parks a fresh approval request with an `invalidatedGrant` field
+carrying the prior grant's id and `grantedAt` timestamp. It also emits one
+`policy-decision` audit event with `reason: "grant-invalidated"`, the prior
+`grantIds`, the `staleHash`, and the `currentHash`. The approval card renders
+a "Previous permission invalidated" notice so users see why they are being
+asked again. The Activity panel lists the audit event.

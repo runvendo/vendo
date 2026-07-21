@@ -1,5 +1,6 @@
 ---
 title: "Server API reference for @vendoai/vendo composition"
+sidebarTitle: "Server API"
 description: "Server-side reference for @vendoai/vendo: the createVendo composition, Vendo interface, fetch handler, Next.js adapter, and host-event seam."
 ---
 
@@ -54,7 +55,7 @@ export interface Vendo {
 
 When `principal(req)` resolves null, each client gets its own ephemeral session
 principal, carried by an opaque httpOnly cookie scoped to the wire base. The
-cookie is just a pointer — the session's `vendo_sessions` row is the authority.
+cookie is just a pointer; the session's `vendo_sessions` row is the authority.
 Sessions are per client, stored on disk like everything else, survive restarts,
 and expire through the idle-TTL sweep.
 

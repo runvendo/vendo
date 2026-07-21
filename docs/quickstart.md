@@ -67,15 +67,43 @@ workspace page) against scripted data first — no model key, no wiring — run
 Static extraction gets the facts; a coding agent adds the judgment. The
 deterministic exact pass always reads conventional CSS tokens into
 `theme.json` first; whatever slots it can't read ride this same
-consent-gated pass. During an interactive `vendo init`, when the `claude` CLI
-is on PATH (or `@anthropic-ai/claude-agent-sdk` is resolvable) and a Claude
-Code login or `ANTHROPIC_API_KEY` exists, init asks once for consent and lets
-the agent read your codebase (read-only: Read/Glob/Grep; source goes to your
-model provider under your own account). Nothing needs installing in your app
-for this pass: no `@ai-sdk/anthropic`, no bundled SDK. It drafts
+consent-gated pass. During an interactive `vendo init`, init asks once for
+consent and lets the agent read your codebase (read-only: Read/Glob/Grep;
+source goes to your model provider under your own account). It drafts
 task-oriented tool descriptions, reviews risk grades, wakes statically
 unclassifiable tools with reasoning, fills theme slots the exact pass
-couldn't resolve, and writes the product brief.
+couldn't resolve, and writes the product brief. Nothing needs installing in
+your app for any of this: no `@ai-sdk/anthropic`, no bundled SDK.
+
+### Which engine runs it
+
+Init resolves an engine for the pass through an ordered ladder — first
+available rung wins, a rung that's missing or unauthenticated is skipped and
+the next one is tried:
+
+1. The Claude Agent SDK, when resolvable in your app (a Claude Code login or
+   `ANTHROPIC_API_KEY` pays).
+2. The `claude` CLI on PATH, driven headless and read-only — same
+   credentials, plus corporate-gateway setups (`ANTHROPIC_AUTH_TOKEN`,
+   `CLAUDE_CODE_OAUTH_TOKEN`, or a custom `ANTHROPIC_BASE_URL`). Your own
+   endpoint is always honored, never overridden by anything below.
+3. The `codex` CLI on PATH, driven headless and read-only. A ChatGPT login
+   or `OPENAI_API_KEY` pays.
+4. `@vendoai/engine`, fetched on the fly with `npm exec` at a pinned
+   version — real Claude Code, no local install required. This is a
+   one-time ~250MB download (npm caches it, so later runs skip it); init
+   prints the download notice before it starts. `ANTHROPIC_API_KEY` pays,
+   or `VENDO_API_KEY` through the Vendo Cloud model gateway.
+
+When none of the four resolves, init still completes — extraction defaults
+stand — and prints every rung's remedy. If a chosen rung fails partway
+(a killed fetch, a 404, a network error), init reports it and leaves
+defaults in place; re-run `vendo init` to retry.
+
+Init-time inference through the Vendo Cloud gateway meters normally on paid
+plans; free-plan orgs get a clear refusal pointing you at your own Claude
+Code login or API key, or an upgrade. Your own credentials always work, on
+every plan.
 
 The pass runs as a staged pipeline, not one shot: a cheap survey maps the
 repo and groups tools into surfaces (`VENDO_EXTRACTION_SURVEY_MODEL` can
