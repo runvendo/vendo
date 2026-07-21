@@ -164,7 +164,7 @@ function wrapHostTool(registry: ToolRegistry, descriptor: ToolDescriptor): Vendo
 function createAppTool(registry: ToolRegistry, descriptor: ToolDescriptor): VendoPackTool {
   return {
     name: VENDO_CREATE_APP_TOOL,
-    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope; the build streams to the host's embed over the Vendo wire, so never wait for or report on build completion.",
+    description: "Create a Vendo app (generated UI) from a natural-language prompt. Returns fast with a vendo/app-ref@1 envelope meaning the build was ACCEPTED and is still streaming — the app is NOT built yet. Do not tell the user the app is created/ready/done; the embed shows live build progress and the final result (including any build failure) itself, so never wait for or report on build completion.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",

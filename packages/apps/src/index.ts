@@ -11,6 +11,7 @@
  * and reachable only through AppsRuntime.
  */
 export {
+  buildFailureReason,
   createApps,
   type AppsConfig,
   type AppsRuntime,

@@ -23,6 +23,20 @@ export const storageDeclSchema = z.object({
   refs: z.record(z.string()).optional(),
 }).passthrough() satisfies z.ZodType<StorageDecl>;
 
+/**
+ * A terminal build failure recorded by the runtime when app generation threw
+ * (model error, quota exhaustion, timeout). SERVER-WRITTEN ONLY: the model
+ * never authors it — the runtime persists it on the create catch path so
+ * open() can surface `{kind:"failed"}` and the embed resolves PROMPTLY with the
+ * reason instead of spinning to the client build deadline. `reason` is a short,
+ * honest, non-leaky line (never a raw provider stack).
+ */
+export interface AppBuildFailure {
+  reason: string;
+  retryable?: boolean;
+  at: IsoDateTime;
+}
+
 /** 01-core §9 */
 export interface Pin {
   slot: string;
@@ -62,6 +76,13 @@ const appMachineSchema = z.object({
 }).passthrough() satisfies z.ZodType<AppMachine>;
 
 /** 01-core §9 */
+const appBuildFailureSchema = z.object({
+  reason: z.string(),
+  retryable: z.boolean().optional(),
+  at: isoDateTimeSchema,
+}).passthrough() satisfies z.ZodType<AppBuildFailure>;
+
+/** 01-core §9 */
 export interface AppDocument {
   format: typeof VENDO_APP_FORMAT;
   id: AppId;
@@ -96,6 +117,13 @@ export interface AppDocument {
   secrets?: string[];
   pins?: Pin[];
   forkedFrom?: AppId;
+  /**
+   * A terminal build failure. Present only on a record the runtime persisted
+   * when generation threw; open() reads it to answer `{kind:"failed"}`.
+   * Server-written — stripped from a successful create/edit like the other
+   * server-authoritative fields.
+   */
+  buildFailed?: AppBuildFailure;
 }
 
 /**
@@ -124,6 +152,7 @@ export const appDocumentSchema = z.object({
   secrets: z.array(z.string()).optional(),
   pins: z.array(pinSchema).optional(),
   forkedFrom: appIdSchema.optional(),
+  buildFailed: appBuildFailureSchema.optional(),
 }).passthrough() satisfies z.ZodType<AppDocument>;
 
 type AppDocumentValidation =

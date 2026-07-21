@@ -238,6 +238,16 @@ export const createAppOpener = (
   inClientVenue?: (app: AppDocument) => Promise<InClientVenueState | undefined>,
   served?: ServedSurface,
 ): ((app: AppDocument, ctx: RunContext) => Promise<OpenSurface>) => async (app, ctx) => {
+  // A terminally failed build never becomes servable: resolve the poll now
+  // with the persisted reason (approvals resolve to denied/expired the same
+  // way) instead of leaving the embed to spin to its client deadline.
+  if (app.buildFailed !== undefined) {
+    return {
+      kind: "failed",
+      reason: app.buildFailed.reason,
+      ...(app.buildFailed.retryable === undefined ? {} : { retryable: app.buildFailed.retryable }),
+    };
+  }
   if (app.ui === "http") {
     // execution-v2 Wave 4 — the layer-3 served surface, host-gated behind the
     // experimental flag: opening a served app while the flag is off refuses

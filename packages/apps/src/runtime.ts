@@ -265,7 +265,59 @@ export interface VersionEntry {
 export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
   | { kind: "http"; url: string }
-  | { kind: "resuming"; cover?: string };
+  | { kind: "resuming"; cover?: string }
+  /**
+   * The build turn terminally FAILED (model error, quota, timeout): the app
+   * will never become servable. Surfaced so the embed resolves promptly with
+   * the reason instead of polling to its client deadline — the same prompt
+   * resolution the approval embed gets from denied/expired.
+   */
+  | { kind: "failed"; reason: string; retryable?: boolean };
+
+/** The non-empty name a failed build record ships under (open() ignores it —
+ *  the embed's title rides the app-ref — but validateAppDocument requires one).
+ *  Collapsed and capped like the pack's fast-return title. */
+const fallbackAppName = (prompt: string): string => {
+  const collapsed = prompt.replace(/\s+/g, " ").trim();
+  if (collapsed.length === 0) return "Vendo app";
+  return collapsed.length > 60 ? collapsed.slice(0, 60) : collapsed;
+};
+
+const QUOTA_SIGNAL = /quota|insufficient|payment|billing|\b402\b/i;
+const TIMEOUT_SIGNAL = /time?d?\s*out|timeout|abort/i;
+
+/**
+ * Map a generation-turn throw to the short, honest, NON-LEAKY reason persisted
+ * on the failed app record. Only the CANNED reason is ever emitted — the raw
+ * provider message is used solely to classify, never surfaced.
+ *
+ * The engine's stream helper catches provider errors and folds their message
+ * into the `issues` of the terminal `VendoError("validation", "model could not
+ * produce a valid app")`, so the raw 402/AbortError rarely propagates intact:
+ * classify from a raw error when it does (quota/timeout/cloud-required), and
+ * otherwise scan the validation issues for the same signals, defaulting to a
+ * generic generation failure the user can retry.
+ */
+export const buildFailureReason = (
+  error: unknown,
+): { reason: string; retryable: boolean } => {
+  if (error instanceof Error && error.name === "AbortError") {
+    return { reason: "timed out", retryable: true };
+  }
+  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
+  if (statusCode === 402 || (error instanceof VendoError && error.code === "cloud-required")) {
+    return { reason: "quota exhausted", retryable: false };
+  }
+  const text = [
+    error instanceof Error ? error.message : String(error),
+    ...(error instanceof VendoError && Array.isArray(error.detail)
+      ? error.detail.filter((item): item is string => typeof item === "string")
+      : []),
+  ].join(" ");
+  if (QUOTA_SIGNAL.test(text)) return { reason: "quota exhausted", retryable: false };
+  if (TIMEOUT_SIGNAL.test(text)) return { reason: "timed out", retryable: true };
+  return { reason: "generation failed", retryable: true };
+};
 
 /** execution-v2 Lane C — one HTTP request across the skin of the box (the
  * shape SandboxMachine.request speaks, named at the runtime surface). */
@@ -1583,16 +1635,34 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           if (latestTree === undefined) return;
           emit({ ...structuredClone(latestTree), data, streaming: true } as TreeV2);
         });
-      const generated = await engine.create(
-        { prompt: input.prompt },
-        generationDependencies(config, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
-          // v2 spec §1 — the payload carries islands at payload level (the
-          // renderer lifts them); a mid-stream payload is marked streaming.
-          latestTree = assembleTree(partial);
-          emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
-          queryResolver?.update(latestTree);
-        }),
-      );
+      let generated: Awaited<ReturnType<GenerationEngine["create"]>>;
+      try {
+        generated = await engine.create(
+          { prompt: input.prompt },
+          generationDependencies(config, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
+            // v2 spec §1 — the payload carries islands at payload level (the
+            // renderer lifts them); a mid-stream payload is marked streaming.
+            latestTree = assembleTree(partial);
+            emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
+            queryResolver?.update(latestTree);
+          }),
+        );
+      } catch (error) {
+        // The build turn threw (model error, quota, timeout). `vendo_create_app`
+        // already returned an app-ref the instant the FIRST partial streamed, so
+        // the embed is mounted polling open() — with no persisted record it would
+        // spin to APP_BUILD_DEADLINE_MS and then show the generic failed beat.
+        // Persist a TERMINAL failed record so open() answers {kind:"failed"} with
+        // the reason on the very next poll — the prompt resolution approvals get.
+        const { reason, retryable } = buildFailureReason(error);
+        await apps.put(appRecordInput({
+          format: "vendo/app@1",
+          id: appId,
+          name: fallbackAppName(input.prompt),
+          buildFailed: { reason, retryable, at: new Date().toISOString() },
+        }, ctx.principal.subject)).catch(() => undefined);
+        throw error;
+      }
       const app: AppDocument = {
         ...generated,
         id: appId,
@@ -1603,6 +1673,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // Lane E — same rule for egress grant state: a freshly generated app
       // has approved nothing, whatever the model emitted.
       delete app.egressApproved;
+      // buildFailed is server-written only (the create catch above): a
+      // successfully generated document never carries it, whatever the model
+      // emitted into the tree markup.
+      delete app.buildFailed;
       let finalTree: TreeV2 | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
         finalTree = assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools });
@@ -1679,7 +1753,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       for (const record of records
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))) {
         try {
-          documents.push(documentFromRecord(record));
+          const document = documentFromRecord(record);
+          // A terminally failed build is a tombstone open() reads to resolve
+          // the embed — not a real app; it never joins the listable surface.
+          if (document.buildFailed !== undefined) continue;
+          documents.push(document);
         } catch {
           // Corrupt rows cannot be surfaced, but must not hide valid owned apps.
         }
