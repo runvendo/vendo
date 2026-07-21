@@ -64,9 +64,9 @@
 
 **Files:** corpus workflow config additions only; do not touch harness bootstrap/injection code (another lane's surface) beyond what its owner agrees to.
 
-- [ ] Add informational codex and npx-engine legs to the nightly matrix, gated on their credentials being present.
-- [ ] File (not do) the follow-up: remove the harness's `@ai-sdk/anthropic` injection once the engine rung is live in a nightly.
-- [ ] Commit.
+- [x] Add informational codex and npx-engine legs to the nightly matrix, gated on their credentials being present.
+- [x] File (not do) the follow-up: remove the harness's `@ai-sdk/anthropic` injection once the engine rung is live in a nightly.
+- [x] Commit.
 
 ## Part C — vendo-web: free-plan policy (PR 3, can land any time before Part A ships)
 
@@ -85,3 +85,13 @@
 - Both repos: full green gates (`pnpm build && pnpm test && pnpm typecheck && pnpm lint`).
 - Live proof for the PR: one recorded init run on a clean machine profile with no claude/codex on PATH and a paid-org `VENDO_API_KEY` (download notice → engine runs → metered), and one with a free-org key (server refusal relayed). CLI transcript evidence in the PR; no UI change, so no screenshots needed.
 - Docs sync after landing: init docs mention the auto-fetched engine, its size, cache location, and the free-plan policy.
+
+## Follow-ups
+
+- Remove the corpus harness's `@ai-sdk/anthropic` injection into cloned repos
+  (see `corpus/harness` bootstrap/injection code) once the npx-engine rung is
+  proven live in a nightly run (`npx-engine-leg` in
+  `.github/workflows/corpus-nightly.yml`, Task 6) — the injection was a
+  stand-in for host-side model access that the engine rung now covers, but
+  pulling it before the rung has nightly evidence would remove coverage with
+  nothing proven to replace it. Filed, not done, by Task 6.
