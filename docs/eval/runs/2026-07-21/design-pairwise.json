@@ -1,0 +1,251 @@
+{
+  "model": "claude-opus-4-8",
+  "rule": "win only when both orderings agree",
+  "tally": {
+    "NEW": 17,
+    "BASELINE": 13,
+    "TIE": 10
+  },
+  "results": [
+    {
+      "id": "M01",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "M02",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "M03",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "M04",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "M05",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "M06",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "M07",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "M08",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "M09",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "M10",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "M11",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "M12",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "M13",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "M14",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "M15",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "C01",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "C02",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "C03",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "C04",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "C05",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "C06",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "C07",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "C08",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "C09",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "C10",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "C11",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "C12",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "C13",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "C14",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "C15",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "F1",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "F2",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "B",
+      "verdict": "TIE"
+    },
+    {
+      "id": "F3",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "F4",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "F5",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "F6",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "F7",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "B",
+      "verdict": "NEW"
+    },
+    {
+      "id": "F8",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "F9",
+      "ordering1_A_new": "B",
+      "ordering2_A_base": "A",
+      "verdict": "BASELINE"
+    },
+    {
+      "id": "F10",
+      "ordering1_A_new": "A",
+      "ordering2_A_base": "A",
+      "verdict": "TIE"
+    }
+  ]
+}

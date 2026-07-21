@@ -117,13 +117,14 @@ wave authors a NEW fresh pool (fresh sets, once run, become frozen tranches).
 - F9. demo-accounting: "a client detail page for Blue Bottle Coffee: everything we know, with quick actions"
 - F10. demo-accounting: "help me plan next week: what's due, who's assigned, what needs chasing"
 
-## Tranche 3 — the G-set (authored blind 2026-07-21, pre-gate; frozen after its single fresh run)
+## Tranche 3 — the G-set (FROZEN 2026-07-21 after its single fresh run)
 
 Authored blind before the 2026-07-21 v4 final gate (first commit of the gate branch, before
 any host was booted and without re-reading any generation output), in the spirit and
 difficulty of Tranche 2: goal-oriented natural asks, mixed archetypes, one `[impossible]`
-and one partially-feasible per host. Run ONCE as the fresh pool for the v4 gate, then
-frozen under the same rules as the 30.
+and one partially-feasible per host. Run ONCE as the fresh pool for the v4 gate
+(`docs/eval/runs/2026-07-21/`). **Baseline: 5/10** (G1, G2, G3, G5, G9 FAIL). Now frozen
+under the same rules as the 30; the next wave authors a NEW fresh pool.
 
 - G1. demo-bank: "where does my money actually go? give me the big picture" [vague][chart][format]
 - G2. demo-bank: "set up an emergency fund worth 3 months of my typical spending, and move the first $500 into savings today" [action][format] (partially feasible — transfer exists, "fund" setup does not)
@@ -143,3 +144,7 @@ frozen under the same rules as the 30.
 | 2026-07-19 | frozen 30 (baseline) | 11/30 | pre-v3 | branches `vendo-heldout-maple`/`-cadence` |
 | 2026-07-20 | frozen 30 | **18/30** | 090b1779 (full v3) | `docs/verification/final-gate/` (PR #436) |
 | 2026-07-20 | F-set (fresh) | **8/10** | 090b1779 | `docs/verification/final-gate/` (PR #436) |
+| 2026-07-21 | frozen 30 (v4 gate: promptRewrite+endPass ON) | **17/30** | e6dbfe40 | `docs/eval/runs/2026-07-21/` |
+| 2026-07-21 | F-set (Tranche 2, frozen) | **7/10** | e6dbfe40 | `docs/eval/runs/2026-07-21/` |
+| 2026-07-21 | G-set (fresh → frozen as Tranche 3) | **5/10** | e6dbfe40 | `docs/eval/runs/2026-07-21/` |
+| 2026-07-21 | design pairwise vs 2026-07-20 (opus-4-8, both orderings) | **17W/13L/10T** | e6dbfe40 | `docs/eval/runs/2026-07-21/design-pairwise.md` |
