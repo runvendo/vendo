@@ -217,6 +217,10 @@ export const createAgentTools = (
             ...(result.issues === undefined ? {} : { issues: result.issues }),
             ...(result.failure === undefined ? {} : { failure: result.failure }),
             ...(result.driftedPins === undefined ? {} : { driftedPins: result.driftedPins }),
+            // Wave 9 — a ladder-authored automation (mode, trigger, pending
+            // standing-grant approvals) so the agent can narrate what was set
+            // up and which approvals are waiting.
+            ...(result.automation === undefined ? {} : { automation: result.automation }),
           } as unknown as Json,
         };
       }

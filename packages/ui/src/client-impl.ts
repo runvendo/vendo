@@ -125,7 +125,9 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       create: input => json("/apps", "POST", input),
       get: id => readJson(`/apps/${idPath(id)}`),
       delete: id => json(`/apps/${idPath(id)}`, "DELETE"),
-      open: id => readJson(`/apps/${idPath(id)}/open`),
+      // The overloads narrow per call site; one implementation serves both.
+      open: ((id: string, options?: { pending?: boolean }) =>
+        readJson(`/apps/${idPath(id)}/open${options?.pending === true ? "?pending=1" : ""}`)) as VendoClient["apps"]["open"],
       call: (id, ref, args) => json(`/apps/${idPath(id)}/call`, "POST", { ref, args }),
       edit: (id, instruction) => json(`/apps/${idPath(id)}/edit`, "POST", { instruction }),
       history: id => readJson(`/apps/${idPath(id)}/history`),

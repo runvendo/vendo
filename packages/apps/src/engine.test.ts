@@ -117,9 +117,15 @@ describe("generation engine through createApps", () => {
       tools,
       catalog,
       model: scriptedLanguageModel("unused"),
+      // Wave 9 — flag on so the box-rung edit reaches graduation (the flag-off
+      // refusal is covered in escalation-ladder.test.ts); the sandbox gap is
+      // what this test pins.
+      experimentalMachines: true,
     });
 
-    const result = await runtime.edit(original.id, "Add a daily email digest of unpaid invoices", ctx);
+    // Wave 9 — a BOX-rung instruction: schedule-y phrasing now rides the
+    // automations ladder and never needs a sandbox.
+    const result = await runtime.edit(original.id, "Build a daily digest with custom scoring logic", ctx);
 
     expect(result.failure).toMatchObject({ code: "edit-rejected", retryable: false });
     expect(result.issues?.[0]).toContain("no sandbox adapter is configured");
@@ -926,6 +932,64 @@ describe("v2 wire create", () => {
     expect(capturedPrompt).toContain('"whenToUse": "Use for a single important metric');
     expect(capturedPrompt).not.toContain('formatVersion is "vendo-genui/v2"');
     expect(capturedPrompt).not.toContain("CREATE DIALECT: emit exactly");
+  });
+
+  it("resolves a designRules provider per generation, so edits apply without recomposing", async () => {
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      const prompt = promptText(call);
+      prompts.push(prompt);
+      return prompt.includes("Emit at least one op")
+        ? '<Edit><Set id="metriccard-1" value="$84k"/></Edit>'
+        : wireCreate();
+    });
+    let rules = "Dense layouts, no emoji.";
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+      designRules: () => rules,
+    });
+
+    const created = await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+    const firstPassPrompts = [...prompts];
+    rules = "Airy layouts, plenty of whitespace.";
+    prompts.length = 0;
+    await runtime.create({ prompt: "Build another dashboard" }, ctx);
+
+    expect(firstPassPrompts.some((prompt) => prompt.includes("HOST DESIGN RULES:\nDense layouts, no emoji."))).toBe(true);
+    expect(firstPassPrompts.every((prompt) => !prompt.includes("Airy layouts"))).toBe(true);
+    expect(prompts.some((prompt) => prompt.includes("HOST DESIGN RULES:\nAiry layouts, plenty of whitespace."))).toBe(true);
+
+    rules = "Editorial tone, sentence-case labels.";
+    prompts.length = 0;
+    await runtime.edit(created.id, "Double the displayed revenue", ctx);
+    expect(prompts.some((prompt) => prompt.includes("HOST DESIGN RULES:\nEditorial tone, sentence-case labels."))).toBe(true);
+  });
+
+  it("snapshots the designRules provider once per generation, even across retry prompts", async () => {
+    let resolves = 0;
+    const model = scriptedLanguageModel(
+      "<App", // truncated wire — fails compile, forcing a second full-lane attempt
+      wireCreate(),
+    );
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+      designRules: () => {
+        resolves += 1;
+        return `Rules as of resolve ${resolves}.`;
+      },
+    });
+
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+
+    expect(resolves).toBe(1);
   });
 
   it("carries islands to document-level components, never on the tree", async () => {

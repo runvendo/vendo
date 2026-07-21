@@ -9,16 +9,59 @@ what shipped.
 
 1. **Tree app**: no server. The v2 tree document, rendered by the
    host-embedded renderer, interactive via `$state`, code islands, and guarded
-   host tools. Most apps stay here.
+   host tools. Most apps stay here. Server-shaped needs that a tree app picks
+   up (schedules, away runs) usually ride an **automation** on the same document
+   — a trigger the automations engine fires — not a machine; see the
+   escalation ladder below.
 2. **Tree app + machine**: the same tree UI, plus a persistent per-app sandbox
-   where execution lives: schedules, third-party egress with secrets, heavy
-   logic, working data. The machine never draws UI.
+   where execution lives: custom server code, third-party egress with secrets,
+   heavy logic, working data. The machine never draws UI. **Experimental and
+   off by default** — enable with
+   `createVendo({ apps: { experimentalMachines: true } })`.
 3. **Machine everything**: the machine also serves a real web app; the host
    embeds its URL as the app surface. The tree is gone. Experimental and off
-   by default; see [Served apps](./served-apps.md).
+   by default (`experimentalServedApps`, which **requires**
+   `experimentalMachines`); see [Served apps](./served-apps.md).
 
-The agent escalates layers when an instruction demands it. Users never pick a
+The runtime escalates when an instruction demands it. Users never pick a
 layer.
+
+## The escalation ladder
+
+Box graduation costs minutes (model round trips inside the box); the
+automations engine covers most server-shaped needs in seconds. So when an
+instruction needs server-shaped work, the judge prefers, in order:
+
+1. **Steps automation** — the work is expressible as deterministic tool calls
+   (host + connected tools + existing `fn:` refs) with jsonata reshaping,
+   `forEach`, and park/resume approval gates. One model call authors the
+   trigger onto the app document; the existing automations engine fires it.
+   Setup completes in seconds and **no machine is provisioned**. The
+   automation's last step writes its displayable result into a declared app
+   records collection, and the tree gains a `vendo_apps_data_list` query over
+   those rows — that is how automation results reach the board.
+2. **Agentic automation** — the work needs per-run judgment (who, which, what
+   tone) but every effect is tool-reachable. Same authoring path, with an
+   agentic run model (an agent loop per firing). Still no machine.
+3. **Box graduation** — only when actual custom code is required: real
+   computation, libraries, complex persistent state, non-tool-shaped egress,
+   latency-sensitive logic. This rung is **experimental**: with
+   `experimentalMachines` off (the default), the create/edit refuses with a
+   typed `VendoError` naming the flag — never a silent degrade to a broken
+   automation.
+
+Arming: in the composed umbrella, a ladder-authored automation is enabled
+through `automations.enable`, so the standard grant-capture flow runs at
+creation and the missing standing-grant approvals ride the edit result
+(`EditResult.automation.pendingGrants`). An away run holds only grants
+captured while present, so approving those cards is what lets scheduled runs
+complete unattended.
+
+Apps that already carry a machine keep their box workflow: a server-shaped
+edit on a machine-bearing app rides the in-box agent as before, and every
+runtime path over an existing machine (wake, sleep, `fn:` calls, schedules,
+box edits, open) works regardless of the flag — **only new graduation and
+provisioning are gated**. Existing apps are never stranded.
 
 ## The machine
 
@@ -52,9 +95,10 @@ the Cloud pool ships its own base image and takes no template.
 
 ## Graduation
 
-**1 to 2** is invisible and additive. When an instruction needs server
-capability (a schedule, egress with secrets, heavy logic, app-owned state),
-the runtime provisions a machine, sends the build to the in-box agent, syncs
+**1 to 2** is invisible and additive — and, since the escalation ladder, the
+LAST resort for server-shaped work: it runs only when the judge concludes the
+instruction needs custom code (and `experimentalMachines` is on), or when the
+app already has a machine. The runtime provisions a machine, sends the build to the in-box agent, syncs
 the box's `vendo.json` (schedules and egress declaration), parks an egress
 approval card when the declaration needs one, and rewires the tree's data
 bindings to the new `fn:` functions. The tree keeps working throughout. A
@@ -198,7 +242,9 @@ headless with its own shell + file tools, working dir `/app`; its auth is the
 same inference door mapped onto plain env (`ANTHROPIC_API_KEY` =
 `VENDO_INFERENCE_KEY`, `ANTHROPIC_BASE_URL` = `VENDO_INFERENCE_URL` — BYO
 Anthropic and the Cloud gateway ride identically), and `VENDO_INFERENCE_MODEL`
-still picks the model (default `claude-sonnet-4-5`).
+still picks the model (default `claude-sonnet-4-5` on BYO; the Cloud rung
+injects the gateway's `vendo-default` alias — the gateway serves only
+`vendo-default` / `vendo-fast` / `vendo-strong`).
 
 "Edit this app" sends one prompt to `POST /agent/task`; the agent writes code,
 installs deps, runs the server, curls its own endpoints, fixes failures, and

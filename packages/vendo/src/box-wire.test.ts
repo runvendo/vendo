@@ -101,6 +101,8 @@ async function setup(handler: BoxHandler = () => ({ status: 200 })): Promise<Ski
     },
     store,
     sandbox: boxSandbox(handler),
+    // Wave 9 — machine provisioning is flag-gated.
+    apps: { experimentalMachines: true },
   });
   // Provision (Lane B's graduation step) so the fn door has a machine to wake;
   // it mints the app's bearer, which the test rotates to hold a known one.
@@ -285,6 +287,8 @@ describe("the Lane E redaction guard on the box seams", () => {
       store,
       sandbox: boxSandbox(handler),
       secrets: { get: async (name) => (name === "STRIPE_KEY" ? STRIPE_VALUE : undefined) },
+      // Wave 9 — machine provisioning is flag-gated.
+      apps: { experimentalMachines: true },
     });
     await vendo.apps.machine.provision("app_skin", {
       principal: ADA,

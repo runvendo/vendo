@@ -21,7 +21,7 @@ import {
  * - VENDO_API_KEY delegates to the Vendo Cloud model gateway: the
  *   host-installed @ai-sdk/anthropic pointed at `<console>/api/v1`, whose
  *   Anthropic-compatible /messages endpoint serves the metered dev-mode
- *   allowance.
+ *   allowance under curated model aliases (vendo-default by default).
  * - nothing available → every call fails with the exact instructions.
  */
 
@@ -68,6 +68,21 @@ const DEFAULT_MODELS: Record<string, { module: string; factory: string; model: s
     modelEnv: "VENDO_DEV_GOOGLE_MODEL",
     install: "npm install ai@^6 @ai-sdk/google@^3",
   },
+};
+
+/** The Cloud gateway serves curated model aliases, never raw provider ids:
+ *  `vendo-default` (Sonnet), `vendo-fast` (Haiku), `vendo-strong` (Opus).
+ *  VENDO_CLOUD_MODEL picks among them; the gateway remaps any other value to
+ *  vendo-default (with an `x-vendo-model-remapped` warning header) during the
+ *  grace window, and will hard-reject non-aliases after it. Same module/
+ *  factory/install as anthropic — the gateway speaks the Anthropic Messages
+ *  wire. */
+const CLOUD_MODEL: (typeof DEFAULT_MODELS)[string] = {
+  module: "@ai-sdk/anthropic",
+  factory: "createAnthropic",
+  model: "vendo-default",
+  modelEnv: "VENDO_CLOUD_MODEL",
+  install: "npm install ai@^6 @ai-sdk/anthropic@^3",
 };
 
 export const NO_CREDENTIAL_MESSAGE =
@@ -180,7 +195,7 @@ export class DevModelController {
       const baseURL = base.endsWith("/api/v1") ? base : `${base}/api/v1`;
       return this.delegate(
         credential,
-        DEFAULT_MODELS["anthropic"]!,
+        CLOUD_MODEL,
         "VENDO_API_KEY",
         { apiKey: this.env["VENDO_API_KEY"]!, baseURL },
         " via the Cloud gateway",

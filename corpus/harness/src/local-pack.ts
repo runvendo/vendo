@@ -254,6 +254,9 @@ async function detectPackageManager(
 // whole tree to the v6 train — otherwise a target that already declares ai@5
 // (top-level or transitively) collides with the umbrella peer and the harness
 // measures a dependency conflict instead of the init it means to.
+// Note: @ai-sdk/anthropic no longer powers init's theme extraction — that now
+// runs through the PATH `claude` CLI (see init-step.ts's --ai-polish wiring).
+// Retained here for pin stability on the `ai` train pending that lane's cleanup.
 const AI_TRAIN_OVERRIDES: Record<string, string> = {
   ai: "6.0.28",
   "@ai-sdk/anthropic": "3.0.12",

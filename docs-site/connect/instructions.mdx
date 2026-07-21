@@ -10,7 +10,8 @@ Use the channel that matches the intent:
 | `.vendo/brief.md` | product brief placed near the start of the agent prompt |
 | `.vendo/policy.json` `directions` | company steering returned by guard |
 | `createAgent({ system: { instructions } })` | final host additions to the agent prompt |
-| `.vendo/design-rules.md` | optional rules for app generation |
+| `.vendo/design-rules.md` | optional rules for app generation, re-read per generation (edits apply without a restart) |
+| `createVendo({ apps: { designRules } })` | the same rules in config; a non-blank value wins over the file |
 
 Directions are policy data. Put them in the policy file or inline
 `PolicyConfig`; there is no merge rule between two directions channels.

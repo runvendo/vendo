@@ -76,6 +76,13 @@ installing latest versions needs neither pin.
 
 One starter deviation: the agent's model is `openai/gpt-4.1-mini` instead of
 the scaffolded `openai/gpt-5-mini` — multi-turn tool use with GPT-5 reasoning
-models currently fails on history replay
+models fails on history replay with OpenAI's "provided without its required
+'reasoning' item" error
 ([mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005));
 gpt-4.1-mini is the workaround those issues document.
+
+Upstream status (2026-07-20): #9005 is closed as completed upstream
+(2025-11-27), but the failure still reproduces live on `@mastra/core` 1.51.0
+(the latest stable) — first turn works, the second turn's history replay
+400s at `api.openai.com/v1/responses`. Entirely a Mastra-side issue, nothing
+Vendo-specific; re-try unpinning on future `@mastra/core` releases.

@@ -2,9 +2,17 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { z } from "zod";
+import { claudeCliHarness } from "./claude-cli-harness.js";
 import { claudeHarness } from "./claude-harness.js";
 import { parseDraft, type ExtractionHarness } from "./harness.js";
-import { BRIEF_TEMPLATE, runStagedExtraction, staticToolSchema, type StaticTool } from "./stages.js";
+import {
+  BRIEF_TEMPLATE,
+  runStagedExtraction,
+  staticToolSchema,
+  type StagedExtractionInput,
+  type StagedExtractionResult,
+  type StaticTool,
+} from "./stages.js";
 import { readOptional, writeText, type Output } from "../shared.js";
 
 export { composeInstructions } from "./stages.js";
@@ -179,27 +187,41 @@ export interface AiExtractionOptions {
   harnesses?: ExtractionHarness[];
   confirm?: (question: string, defaultYes: boolean) => Promise<boolean>;
   interactive?: boolean;
+  /** Optional theme-stage input (init's exact-only summary, projected) — see
+      `StagedExtractionInput.theme`. Omitted when init has no theme pass to
+      run this call (a pre-existing theme.json, e.g.). */
+  theme?: StagedExtractionInput["theme"];
 }
 
 /** init's AI extraction step. Never changes init's exit code. */
-export async function runAiExtraction(options: AiExtractionOptions): Promise<{ ran: boolean }> {
+export async function runAiExtraction(
+  options: AiExtractionOptions,
+): Promise<{ ran: boolean; theme?: StagedExtractionResult["theme"] }> {
   const { root, output, env } = options;
   const toolsRaw = await readOptional(join(root, ".vendo", "tools.json"));
-  if (toolsRaw === null) return { ran: false };
-  let tools: StaticTool[];
-  try {
-    tools = z.object({ tools: z.array(staticToolSchema) }).parse(JSON.parse(toolsRaw)).tools;
-  } catch {
-    return { ran: false };
+  let tools: StaticTool[] = [];
+  // tools.json missing or unparseable degrades tool polish to a no-op — but
+  // must NOT also silently kill a requested theme pass (Task 4): the staged
+  // call below runs with an empty tool list, and only the tool-polish half
+  // (applyDraft/reportApplied) is skipped.
+  let toolsAvailable = false;
+  if (toolsRaw !== null) {
+    try {
+      tools = z.object({ tools: z.array(staticToolSchema) }).parse(JSON.parse(toolsRaw)).tools;
+      toolsAvailable = true;
+    } catch {
+      // Unparseable tools.json — tool polish stays skipped below.
+    }
   }
+  if (!toolsAvailable && options.theme === undefined) return { ran: false };
 
   const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
   if (options.consent !== true && (options.yes || !interactive)) {
-    output.log("AI polish (descriptions, risk review, brief): skipped — needs an interactive run (`vendo init` in a terminal).");
+    output.log("AI polish (descriptions, risk review, brief, theme): skipped — needs an interactive run (`vendo init` in a terminal).");
     return { ran: false };
   }
 
-  const harnesses = options.harnesses ?? [claudeHarness()];
+  const harnesses = options.harnesses ?? [claudeHarness(), claudeCliHarness()];
   let chosen: { harness: ExtractionHarness; credential: string } | null = null;
   for (const harness of harnesses) {
     const credential = await harness.availability({ root, env });
@@ -209,13 +231,13 @@ export async function runAiExtraction(options: AiExtractionOptions): Promise<{ r
     }
   }
   if (chosen === null) {
-    output.log("AI polish: unavailable — needs @anthropic-ai/claude-agent-sdk resolvable (`npm install -D @anthropic-ai/claude-agent-sdk`) plus a Claude Code login or ANTHROPIC_API_KEY. Extractor defaults stand; re-run `vendo init` once set up.");
+    output.log("AI polish: unavailable — needs Claude Code installed (`npm install -g @anthropic-ai/claude-code`) or @anthropic-ai/claude-agent-sdk resolvable, plus a Claude Code login or ANTHROPIC_API_KEY. Extractor defaults stand; re-run `vendo init` once set up.");
     return { ran: false };
   }
 
   const confirm = options.confirm ?? askYesNo;
   const consented = options.consent === true || await confirm(
-    `Let ${chosen.credential} read this codebase to draft tool descriptions, review risk, and write the product brief? Source goes to your model provider under your account.`,
+    `Let ${chosen.credential} read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to your model provider under your account.`,
     true,
   );
   if (!consented) {
@@ -239,16 +261,21 @@ export async function runAiExtraction(options: AiExtractionOptions): Promise<{ r
       tools,
       appName,
       onProgress: (line) => output.log(`  ${line}`),
+      ...(options.theme === undefined ? {} : { theme: options.theme }),
     });
-    const applied = await applyDraft({ root, draft: staged.draft, tools, ...(options.force === undefined ? {} : { force: options.force }) });
-    reportApplied({
-      output,
-      applied,
-      briefDrafted: applied.briefWritten && staged.briefFromStage,
-      artifactsNote: " (stage artifacts: .vendo/data/extract/)",
-      notes: staged.notes,
-    });
-    return { ran: true };
+    if (toolsAvailable) {
+      const applied = await applyDraft({ root, draft: staged.draft, tools, ...(options.force === undefined ? {} : { force: options.force }) });
+      reportApplied({
+        output,
+        applied,
+        briefDrafted: applied.briefWritten && staged.briefFromStage,
+        artifactsNote: " (stage artifacts: .vendo/data/extract/)",
+        notes: staged.notes,
+      });
+    } else {
+      for (const note of staged.notes) output.error(`  ${note}`);
+    }
+    return { ran: true, ...(staged.theme === undefined ? {} : { theme: staged.theme }) };
   } catch (error) {
     output.error(`AI polish did not complete (${error instanceof Error ? error.message : "unknown error"}); extractor defaults stand. Re-run \`vendo init\` to retry — stage artifacts in .vendo/data/extract/ show how far it got.`);
     return { ran: false };

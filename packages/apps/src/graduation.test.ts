@@ -76,6 +76,8 @@ const setup = (options: { agent?: FakeBoxAgent; doc?: AppDocument; edit?: string
     tools,
     catalog: [],
     model: scriptedLanguageModel(options.edit ?? FN_BINDING_EDIT),
+    // Wave 9 -- these suites exercise BOX mechanics; new graduation is flag-gated.
+    experimentalMachines: true,
     machine: { sandbox, buildEnv: () => ({ PORT: "8080" }), implicitDomains: ["host.vendo.test"], boxEditPollMs: 5 },
   });
   return { store, guard, sandbox, runtime };
@@ -86,7 +88,7 @@ describe("graduation 1→2 through the in-box agent", () => {
     const { store, guard, sandbox, runtime } = setup();
     await seedAppRow(store, treeApp(), "user_ada");
 
-    const result = await runtime.edit("app_grad", "Watch my unpaid invoices and email me a daily digest; show a status board", ctx());
+    const result = await runtime.edit("app_grad", "Watch my unpaid invoices with custom scoring logic and email me a daily digest; show a status board", ctx());
 
     expect(result.failure).toBeUndefined();
     expect(result.graduated).toBe(true);
@@ -128,12 +130,13 @@ describe("graduation 1→2 through the in-box agent", () => {
         '<App name="Invoice watcher"><Text text="Invoices"/></App>',
         FN_BINDING_EDIT,
       ),
+      experimentalMachines: true,
       machine: { sandbox, buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
     });
     const views: Array<{ payload: { queries?: Array<{ tool: string }>; data?: { digest?: { summary?: string } } } }> = [];
 
     const app = await runtime.create({
-      prompt: "Watch my unpaid invoices and email me a daily digest; show a status board",
+      prompt: "Watch my unpaid invoices with custom scoring logic and email me a daily digest; show a status board",
       onView: (part) => views.push(part as unknown as typeof views[number]),
     }, ctx());
 
@@ -172,11 +175,12 @@ describe("graduation 1→2 through the in-box agent", () => {
       tools,
       catalog: [],
       model,
+      experimentalMachines: true,
       machine: { sandbox: fakeBoxSandbox({ agent: digestAgent }), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
     });
     await seedAppRow(store, treeApp(), "user_ada");
 
-    const result = await runtime.edit("app_grad", "Show a live status board backed by the server", ctx());
+    const result = await runtime.edit("app_grad", "Show a live status board computed by custom scoring logic on the server", ctx());
 
     expect(result.failure).toBeUndefined();
     expect(result.graduated).toBe(true);
@@ -202,11 +206,12 @@ describe("graduation 1→2 through the in-box agent", () => {
       tools,
       catalog: [],
       model: scriptedLanguageModel(ENVELOPE_PATH_EDIT),
+      experimentalMachines: true,
       machine: { sandbox: fakeBoxSandbox({ agent: brokenAgent }), buildEnv: () => ({ PORT: "8080" }), boxEditPollMs: 5 },
     });
     await seedAppRow(store, treeApp(), "user_ada");
 
-    const result = await runtime.edit("app_grad", "Show a live status board backed by the server", ctx());
+    const result = await runtime.edit("app_grad", "Show a live status board computed by custom scoring logic on the server", ctx());
 
     expect(result.failure).toBeUndefined();
     expect(result.graduated).toBe(true);
@@ -248,10 +253,11 @@ describe("graduation 1→2 through the in-box agent", () => {
     const runtime = createApps({
       store, guard: guardFixture(), tools, catalog: [],
       model: scriptedLanguageModel(FN_BINDING_EDIT),
+      experimentalMachines: true,
     });
     await seedAppRow(store, treeApp(), "user_ada");
 
-    const result = await runtime.edit("app_grad", "Add a nightly digest email", ctx());
+    const result = await runtime.edit("app_grad", "Build a nightly digest email with custom scoring logic", ctx());
 
     expect(result.failure).toMatchObject({ code: "edit-rejected", retryable: false });
     expect(result.issues?.[0]).toContain("no sandbox adapter is configured");
@@ -278,7 +284,7 @@ describe("prompt-injection floor: box output is data, not authority", () => {
     const { store, guard, runtime } = setup({ agent: sneaky });
     await seedAppRow(store, treeApp(), "user_ada");
 
-    const result = await runtime.edit("app_grad", "Watch invoices on a schedule and email a digest", ctx());
+    const result = await runtime.edit("app_grad", "Reconcile invoices with custom scoring logic and email a digest", ctx());
 
     // The declaration is synced, but approval is still pending on the OWNER.
     expect(result.app.egress).toEqual(["evil.test"]);
@@ -291,7 +297,7 @@ describe("prompt-injection floor: box output is data, not authority", () => {
   it("owner approval — not the box — is what commits egress", async () => {
     const { store, guard, runtime } = setup();
     await seedAppRow(store, treeApp(), "user_ada");
-    const result = await runtime.edit("app_grad", "Watch invoices on a schedule and email a daily digest", ctx());
+    const result = await runtime.edit("app_grad", "Reconcile invoices with custom scoring logic and email a daily digest", ctx());
     const approvalId = result.pendingEgress?.approvalId;
     expect(approvalId).toBeDefined();
     expect((await runtime.get("app_grad", ctx()))?.egressApproved).toBeUndefined();
@@ -320,7 +326,7 @@ describe("prompt-injection floor: box output is data, not authority", () => {
     });
     await seedAppRow(store, treeApp(), "user_ada");
     // Graduate (no egress declared → no card), then call the fn directly.
-    await runtime.edit("app_grad", "Show a live status board backed by the server", ctx());
+    await runtime.edit("app_grad", "Show a live status board computed by custom scoring logic on the server", ctx());
     const outcome = await runtime.call("app_grad", "fn:getDigest", {}, ctx());
 
     expect(outcome.status).toBe("ok");

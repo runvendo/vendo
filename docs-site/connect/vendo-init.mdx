@@ -126,8 +126,9 @@ npx vendo init --yes --auth authJs --byo
   when detection fails.
 - `--cloud-key <key>` writes an existing Vendo Cloud key to `.env.local`
   instead of the login offer; `--byo` declines the offer (bring your own key).
-- `--ai-polish` consents to the AI extraction pass non-interactively.
-- `--theme <slot=value>` answers an uncertain theme slot (repeatable).
+- `--ai-polish` consents to the AI pass non-interactively: tool judgment
+  (descriptions, risk, brief) and theme-slot filling, one consent for both.
+- `--theme <slot=value>` overrides a theme slot value directly (repeatable).
 - `--force` regenerates Vendo-owned `.vendo/` files; it never replaces existing
   host source files.
 

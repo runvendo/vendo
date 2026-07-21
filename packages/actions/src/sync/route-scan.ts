@@ -14,6 +14,7 @@ import {
   walk,
   type ParsedModule,
 } from "./common.js";
+import { createRouteScanState, inferRouteInput, type RouteInputResult } from "./route-schema.js";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 const HTTP_METHOD_SET = new Set<string>(HTTP_METHODS);
@@ -383,6 +384,99 @@ function routeInputSchema(urlPath: string): Record<string, unknown> {
   };
 }
 
+/**
+ * Fold a collector's verdict (route-schema.ts) into the path-params-only
+ * schema `routeInputSchema` always produces. `inferred === null` (no
+ * collector recognized anything) reproduces today's exact output — the
+ * fail-closed default. Otherwise: path params are kept, and a body schema
+ * replaces the blank permissive default for body-bound methods.
+ *
+ * Query properties merge in ONLY for query-bound methods (`argsIn:
+ * "query"`, GET/DELETE) — NOT "regardless of argsIn" as an earlier draft of
+ * this comment claimed (review carry-over, PR 2 Task 4). The runtime
+ * (`runtime/registry.ts`'s route execution, ~560-564) sends every non-path
+ * argument as `searchParams` for a query-bound tool but as a single JSON
+ * body for a body-bound tool — never split across both. Advertising a
+ * query-derived property on a body-bound (POST/PUT/PATCH) tool would be a
+ * lie: the runtime would deliver it in the JSON body, and the handler
+ * (which reads it off `searchParams`) would never see it. `route-schema.ts`'s
+ * query collector (Task 4) still runs unconditionally and still reports what
+ * it finds for a body-bound route+method — this function is what drops
+ * those findings before they reach the emitted tool. The drop is silent (no
+ * `note`): it's a scope decision about where evidence is safe to surface,
+ * not a recognition failure. Query-derived properties never join `required`
+ * either way (fail-closed: absence of a query param is never proof it's
+ * missing).
+ *
+ * Notes follow the SAME argsIn gate as the body schema they describe
+ * (review carry-over, PR 2 Task 5). Every note a collector can produce
+ * (`route-schema.ts`'s zod/checker collectors; the query collector never
+ * sets one — Task 4) describes the BODY half of its verdict, so a note only
+ * reaches the emitted tool when `body` above was actually populated — i.e.
+ * `argsIn === "body"` AND the collector found something for the body. A note
+ * attached to a query-bound (GET/DELETE) tool would describe a schema the
+ * runtime never delivers to that handler (query args arrive via
+ * `searchParams`, never a JSON body): surfacing it would misattribute
+ * evidence the agent can't act on, exactly the same honesty problem the
+ * query-properties gate above solves for properties. So it's dropped
+ * silently, right alongside them.
+ *
+ * One case needs a note of its own, generated here rather than by a
+ * collector: a RECOGNIZED but non-object top-level body schema — a route
+ * whose entire body is validated as `z.array(...)` or cast to `string[]`,
+ * not an object with properties — has no `properties`/`required` to fold
+ * into the object-shaped schema every route tool emits. Silently falling
+ * through the merge above (as it does today) reads identically to "no
+ * evidence found," which is false: real evidence was found and is being
+ * dropped only because it can't be represented on this tool shape. That
+ * drop gets its own note, gated by the exact same argsIn rule as everything
+ * else here — a body-bound method sees it (the schema, if representable,
+ * would have described what the runtime actually delivers); a query-bound
+ * method never merges a body schema in the first place, so it never earns
+ * this note either.
+ */
+function mergeRouteInput(
+  urlPath: string,
+  argsIn: "query" | "body",
+  inferred: RouteInputResult | null,
+): { inputSchema: Record<string, unknown>; note?: string } {
+  const base = routeInputSchema(urlPath);
+  if (!inferred) return { inputSchema: base };
+
+  const properties: Record<string, unknown> = { ...(base.properties as Record<string, unknown>) };
+  const required = new Set<string>((base.required as string[] | undefined) ?? []);
+  let additionalProperties = base.additionalProperties;
+  let note: string | undefined;
+
+  const body = argsIn === "body" ? inferred.bodySchema : undefined;
+  if (body) {
+    if (typeof body.type === "string" && body.type !== "object") {
+      note = `recognized non-object body schema (${body.type}) cannot be represented on a route tool; permissive schema emitted`;
+    } else {
+      for (const [key, value] of Object.entries((body.properties as Record<string, unknown> | undefined) ?? {})) {
+        properties[key] = value;
+      }
+      for (const key of (body.required as string[] | undefined) ?? []) required.add(key);
+      if (typeof body.additionalProperties === "boolean") additionalProperties = body.additionalProperties;
+      note = inferred.note;
+    }
+  }
+
+  if (argsIn === "query" && inferred.queryProperties) {
+    for (const [key, value] of Object.entries(inferred.queryProperties)) properties[key] = value;
+  }
+
+  return {
+    inputSchema: {
+      type: "object",
+      properties,
+      ...(required.size > 0 ? { required: [...required] } : {}),
+      additionalProperties,
+    },
+    note,
+  };
+}
+
 async function routeSources(root: string): Promise<RouteSource[]> {
   const files = await walk(root, (relativePath) => {
     const route = routePath(relativePath);
@@ -418,6 +512,7 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
   const warnings: string[] = [];
   const tools: ExtractedTool[] = [];
   const usedNames = new Set<string>();
+  const scanState = createRouteScanState(root, routes.map((route) => route.file));
   for (const route of routes) {
     const methods = await verbsFromSource(route.file, route.source, route, root, new Set(), 0, false);
     if (methods.size === 0) {
@@ -441,19 +536,28 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
       if (!methods.has(method)) continue;
       const preferred = routeToolFullName(method, route.urlPath);
       const name = allocateToolName(preferred, method, usedNames);
+      const argsIn = method === "GET" || method === "DELETE" ? "query" : "body";
+      const inferred = await inferRouteInput(route, method, scanState);
+      const { inputSchema, note } = mergeRouteInput(route.urlPath, argsIn, inferred);
       tools.push({
         name,
         description: `${method} ${route.urlPath}`,
-        inputSchema: routeInputSchema(route.urlPath),
+        inputSchema,
         risk: extractedRisk(method, name, "route"),
+        ...(note ? { note } : {}),
         binding: {
           kind: "route",
           method,
           path: route.urlPath,
-          argsIn: method === "GET" || method === "DELETE" ? "query" : "body",
+          argsIn,
         },
       });
     }
   }
+  // The checker collector (route-schema.ts) can only fail closed at
+  // scan-level granularity (e.g. "no tsconfig.json found") — it has no single
+  // tool to attach that warning to, so it queues it on the shared scan state
+  // instead; drain it here into route-scan's own warnings output.
+  warnings.push(...scanState.warnings);
   return { tools, warnings };
 }
