@@ -89,13 +89,39 @@ async function probeBody(response: Response): Promise<DoctorProbeBody> {
   }
 }
 
+/** Doctor runs standalone, so unlike the dev server it gets no framework
+ *  dotenv loading — without this, `VENDO_API_KEY` sitting in `.env.local`
+ *  is invisible to the cloud/live-turn checks and users must export it by
+ *  hand. Reads `.env` then `.env.local` (local wins); real process env wins
+ *  over both at the merge site. Minimal KEY=VALUE parser: `export ` prefix,
+ *  matching single/double quotes, and `#` comment lines. */
+export async function readDotEnvFallback(root: string): Promise<Record<string, string>> {
+  const env: Record<string, string> = {};
+  for (const file of [".env", ".env.local"]) {
+    const source = await readOptional(join(root, file));
+    if (source === null) continue;
+    for (const rawLine of source.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (line === "" || line.startsWith("#")) continue;
+      const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
+      if (!match) continue;
+      let value = match[2]!.trim();
+      if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+        value = value.slice(1, -1);
+      }
+      env[match[1]!] = value;
+    }
+  }
+  return env;
+}
+
 /** 09-vendo §5 / block-actions A — wiring checks plus live composition,
     present-credential, and actAs mint+verify round-trips. */
 export async function runDoctor(options: DoctorOptions): Promise<number> {
   const root = resolve(options.targetDir);
   const output = options.output ?? consoleOutput;
   const json = options.json === true;
-  const env = options.env ?? process.env;
+  const env = options.env ?? { ...(await readDotEnvFallback(root)), ...process.env };
   const telemetry = telemetryFor(options, output, root);
   let failures = 0;
   let warnings = 0;

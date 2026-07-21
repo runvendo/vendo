@@ -882,3 +882,30 @@ function discoveryFetch(challenge?: string): typeof fetch {
     throw new Error(`Unexpected URL: ${url}`);
   }) as typeof fetch;
 }
+
+describe("readDotEnvFallback", () => {
+  it("reads .env.local over .env, parses quotes/comments, never overrides process env at the merge site", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-doctor-env-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    await writeFile(join(root, ".env"), "SHARED=from-env\nENV_ONLY=plain\n");
+    await writeFile(
+      join(root, ".env.local"),
+      "# comment\nSHARED=from-local\nVENDO_API_KEY=\"vnd_0123\"\nexport EXPORTED=yes\nEMPTY=\nBROKEN LINE\n",
+    );
+    const { readDotEnvFallback } = await import("./doctor.js");
+    const env = await readDotEnvFallback(root);
+    expect(env["SHARED"]).toBe("from-local");
+    expect(env["ENV_ONLY"]).toBe("plain");
+    expect(env["VENDO_API_KEY"]).toBe("vnd_0123");
+    expect(env["EXPORTED"]).toBe("yes");
+    expect(env["EMPTY"]).toBe("");
+    expect(Object.keys(env)).not.toContain("BROKEN LINE");
+  });
+
+  it("returns an empty object when no env files exist", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-doctor-noenv-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    const { readDotEnvFallback } = await import("./doctor.js");
+    expect(await readDotEnvFallback(root)).toEqual({});
+  });
+});
