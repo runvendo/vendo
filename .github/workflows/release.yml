@@ -81,15 +81,22 @@ jobs:
           npm --version
           rm -rf /tmp/vendo-tarballs && mkdir -p /tmp/vendo-tarballs
           pnpm -r --filter './packages/*' exec pnpm pack --out /tmp/vendo-tarballs/%s-%v.tgz
-          failed=0
+          # Map package name -> tarball, then publish in DEPENDENCY order
+          # (pnpm -r exec runs topologically, umbrella last). Alphabetical
+          # order would publish the vendoai umbrella first — a mid-run
+          # failure would then leave an installable version pointing at
+          # unpublished deps.
+          declare -A TARBALL
           while IFS= read -r tarball; do
-            name=$(tar -xzOf "$tarball" package/package.json | jq -r .name)
+            TARBALL[$(tar -xzOf "$tarball" package/package.json | jq -r .name)]=$tarball
+          done < <(find /tmp/vendo-tarballs -name '*.tgz')
+          while IFS= read -r name; do
+            tarball=${TARBALL[$name]:?no tarball packed for $name}
             version=$(tar -xzOf "$tarball" package/package.json | jq -r .version)
             if npm view "$name@$version" version >/dev/null 2>&1; then
               echo "skip $name@$version (already on the registry)"
               continue
             fi
             echo "publish $name@$version"
-            npm publish "$tarball" --access public --provenance || failed=1
-          done < <(find /tmp/vendo-tarballs -name '*.tgz' | sort)
-          exit "$failed"
+            npm publish "$tarball" --access public --provenance
+          done < <(pnpm -r --filter './packages/*' exec node -e "process.stdout.write(require('./package.json').name+'\n')")
