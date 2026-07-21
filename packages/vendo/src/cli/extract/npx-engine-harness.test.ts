@@ -40,6 +40,38 @@ describe("npxEngineHarness", () => {
         .toBe("your Vendo Cloud key (managed inference, via the Vendo engine, ~250MB one-time download)");
     });
 
+    // Spec-review follow-up (b216d0f4 landed hasOwnAnthropicEnvOverride after
+    // this rung shipped): ANTHROPIC_AUTH_TOKEN / CLAUDE_CODE_OAUTH_TOKEN /
+    // ANTHROPIC_BASE_URL are each an own credential too — composeGatewayFuel
+    // refuses to overlay onto any of them, so labeling the rung "your Vendo
+    // Cloud key" for a dev who has one of these would misdescribe what run()
+    // actually does with their env.
+    it("labels ANTHROPIC_AUTH_TOKEN as an own credential, naming the download", async () => {
+      const harness = npxEngineHarness();
+      expect(await harness.availability({ root: "/x", env: { ANTHROPIC_AUTH_TOKEN: "corp-tok" } }))
+        .toBe("your ANTHROPIC_AUTH_TOKEN (via the Vendo engine, ~250MB one-time download)");
+    });
+
+    it("labels CLAUDE_CODE_OAUTH_TOKEN as an own credential, naming the download", async () => {
+      const harness = npxEngineHarness();
+      expect(await harness.availability({ root: "/x", env: { CLAUDE_CODE_OAUTH_TOKEN: "oauth-tok" } }))
+        .toBe("your CLAUDE_CODE_OAUTH_TOKEN (via the Vendo engine, ~250MB one-time download)");
+    });
+
+    it("labels ANTHROPIC_BASE_URL as an own credential, naming the download", async () => {
+      const harness = npxEngineHarness();
+      expect(await harness.availability({ root: "/x", env: { ANTHROPIC_BASE_URL: "https://corp.example/v1" } }))
+        .toBe("your ANTHROPIC_BASE_URL (via the Vendo engine, ~250MB one-time download)");
+    });
+
+    it("prefers the own-credential env-override label over the Vendo Cloud key when both are set", async () => {
+      const harness = npxEngineHarness();
+      expect(await harness.availability({
+        root: "/x",
+        env: { ANTHROPIC_AUTH_TOKEN: "corp-tok", ANTHROPIC_BASE_URL: "https://corp.example/v1", VENDO_API_KEY: "vnd_x" },
+      })).toBe("your ANTHROPIC_AUTH_TOKEN (via the Vendo engine, ~250MB one-time download)");
+    });
+
     it("never invokes the exec seam (no npm/network probe)", async () => {
       let execCalls = 0;
       const harness = npxEngineHarness({ exec: async () => { execCalls += 1; return { stdout: "", stderr: "", code: 0 }; } });
@@ -204,6 +236,30 @@ describe("npxEngineHarness", () => {
         });
         await harness.run({ root: "/x", env: {}, instructions: "go" });
         expect(capturedEnv?.ANTHROPIC_BASE_URL).toBeUndefined();
+      });
+
+      // Spec-review follow-up: the corporate-gateway pair (own auth token +
+      // own base URL) plus a VENDO_API_KEY alongside it must pass through to
+      // the child completely untouched — composeGatewayFuel must not clobber
+      // a dev's already-configured BYO endpoint just because VENDO_API_KEY is
+      // also present, matching the label availability() now gives this case.
+      it("passes ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL through untouched even with VENDO_API_KEY set (no CUSTOM_HEADERS)", async () => {
+        let capturedEnv: NodeJS.ProcessEnv | undefined;
+        const harness = npxEngineHarness({
+          exec: async (_args, options) => { capturedEnv = options.env; return { stdout: "ok", stderr: "", code: 0 }; },
+        });
+        await harness.run({
+          root: "/x",
+          env: {
+            ANTHROPIC_AUTH_TOKEN: "corp-tok",
+            ANTHROPIC_BASE_URL: "https://corp.example/v1",
+            VENDO_API_KEY: "vnd_x",
+          },
+          instructions: "go",
+        });
+        expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBe("corp-tok");
+        expect(capturedEnv?.ANTHROPIC_BASE_URL).toBe("https://corp.example/v1");
+        expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
       });
     });
   });

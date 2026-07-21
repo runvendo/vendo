@@ -1,5 +1,5 @@
 import { execFile, type ExecFileException } from "node:child_process";
-import { composeGatewayFuel } from "./gateway-fuel.js";
+import { composeGatewayFuel, hasOwnAnthropicEnvOverride } from "./gateway-fuel.js";
 import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
 
 /**
@@ -24,10 +24,15 @@ import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
  * prompt. The ~250MB download surprise is disclosed instead via the
  * run-time notice below, right before the first real network access.
  *
- * Gateway fuel: mirrors claude-cli-harness.ts — when only VENDO_API_KEY is
- * set (no ANTHROPIC_API_KEY), the child runs against Vendo Cloud's model
- * gateway instead of degrading to unavailable (see gateway-fuel.ts). Own
- * credential always wins.
+ * Gateway fuel: mirrors claude-cli-harness.ts — when the dev has none of
+ * ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, or
+ * ANTHROPIC_BASE_URL (the corporate-gateway/custom-endpoint path) but
+ * VENDO_API_KEY is set, the child runs against Vendo Cloud's model gateway
+ * instead of degrading to unavailable (see gateway-fuel.ts). Own credential
+ * always wins — availability() must label these honestly (not as "Vendo
+ * Cloud key") since composeGatewayFuel itself refuses to overlay onto any of
+ * them; a wrong label here would make the consent prompt lie about what
+ * run() actually does.
  */
 
 export const ENGINE_PACKAGE_NAME = "@vendoai/engine";
@@ -110,6 +115,15 @@ function execNpmEngine(
   });
 }
 
+function isSet(value: string | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+// Every label this rung can return carries the download disclosure, since
+// (unlike the PATH-binary rungs) a fetch always happens here.
+const DOWNLOAD_NOTE = "via the Vendo engine, ~250MB one-time download";
+const DOWNLOAD_SUFFIX = ` (${DOWNLOAD_NOTE})`;
+
 export interface NpxEngineHarnessOptions {
   /** Test seam. */
   exec?: Exec;
@@ -120,19 +134,29 @@ export function npxEngineHarness(options: NpxEngineHarnessOptions = {}): Extract
   return {
     id: "npx-engine",
     async availability({ env }) {
-      const key = env["ANTHROPIC_API_KEY"];
-      if (typeof key === "string" && key.trim().length > 0) {
-        return "your ANTHROPIC_API_KEY (via the Vendo engine, ~250MB one-time download)";
+      if (isSet(env["ANTHROPIC_API_KEY"])) return `your ANTHROPIC_API_KEY${DOWNLOAD_SUFFIX}`;
+      // The corporate-gateway/custom-endpoint env vars are an own credential
+      // too (see gateway-fuel.ts's INVARIANT) — composeGatewayFuel refuses to
+      // overlay onto them regardless of what run() passes, so labeling this
+      // rung "your Vendo Cloud key" here would be a lie about what actually
+      // runs. Per-var labels (same priority order as claude-cli-harness.ts)
+      // so the consent line names the credential that's really in play.
+      if (hasOwnAnthropicEnvOverride(env)) {
+        if (isSet(env["ANTHROPIC_AUTH_TOKEN"])) return `your ANTHROPIC_AUTH_TOKEN${DOWNLOAD_SUFFIX}`;
+        if (isSet(env["CLAUDE_CODE_OAUTH_TOKEN"])) return `your CLAUDE_CODE_OAUTH_TOKEN${DOWNLOAD_SUFFIX}`;
+        return `your ANTHROPIC_BASE_URL${DOWNLOAD_SUFFIX}`;
       }
-      const cloudKey = env["VENDO_API_KEY"];
-      if (typeof cloudKey === "string" && cloudKey.trim().length > 0) {
-        return "your Vendo Cloud key (managed inference, via the Vendo engine, ~250MB one-time download)";
+      if (isSet(env["VENDO_API_KEY"])) {
+        return `your Vendo Cloud key (managed inference, ${DOWNLOAD_NOTE})`;
       }
       return null;
     },
     async run(input: ExtractionRunInput): Promise<string> {
-      const ownKey = input.env["ANTHROPIC_API_KEY"];
-      const hasOwnKey = typeof ownKey === "string" && ownKey.trim().length > 0;
+      // composeGatewayFuel already refuses to overlay onto any of these env
+      // vars on its own (defense in depth) — computed explicitly here too so
+      // this rung's own-credential verdict matches availability()'s exactly,
+      // the same belt-and-suspenders style as claude-cli-harness.ts.
+      const hasOwnKey = isSet(input.env["ANTHROPIC_API_KEY"]) || hasOwnAnthropicEnvOverride(input.env);
       const overlay = composeGatewayFuel({ env: input.env, ownCredentialAvailable: hasOwnKey });
 
       // Visible-never-silent: the ~250MB fetch is a real surprise on a
