@@ -1,6 +1,6 @@
 import { option } from "./args.js";
 import {
-  resolveOrgId,
+  resolveProjectId,
   runCommand,
   userOptions,
   type CloudCommandOptions,
@@ -10,26 +10,13 @@ export function runOrgs(args: string[], options: CloudCommandOptions = {}): Prom
   return runCommand(options, (context) => context.fetcher("/api/v1/orgs", userOptions(args, context)));
 }
 
-function orgRead(
-  args: string[],
-  options: CloudCommandOptions,
-  resource: string,
-  query = "",
-): Promise<number> {
+export function runUsage(args: string[], options: CloudCommandOptions = {}): Promise<number> {
+  const days = option(args, "--days") ?? "30";
   return runCommand(options, async (context) => {
-    const orgId = await resolveOrgId(args, context);
+    const projectId = await resolveProjectId(args, context);
     return context.fetcher(
-      `/api/v1/orgs/${encodeURIComponent(orgId)}/${resource}${query}`,
+      `/api/v1/projects/${encodeURIComponent(projectId)}/usage?days=${encodeURIComponent(days)}`,
       userOptions(args, context),
     );
   });
-}
-
-export function runUsage(args: string[], options: CloudCommandOptions = {}): Promise<number> {
-  const days = option(args, "--days") ?? "30";
-  return orgRead(args, options, "usage", `?days=${encodeURIComponent(days)}`);
-}
-
-export function runBilling(args: string[], options: CloudCommandOptions = {}): Promise<number> {
-  return orgRead(args, options, "billing");
 }

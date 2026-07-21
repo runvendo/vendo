@@ -78,12 +78,13 @@ Sign out with `vendo cloud logout`. Check that the session works with
 ## Create and rotate keys
 
 ```bash
-vendo cloud keys create --org <orgId> --name "ci-publisher"
-vendo cloud keys list --org <orgId>
-vendo cloud keys revoke --org <orgId> --id <keyId>
+vendo cloud keys create --project <projectId> --name "ci-publisher"
+vendo cloud keys list --project <projectId>
+vendo cloud keys revoke --project <projectId> --id <keyId>
 ```
 
-`--org` is optional only when your account has exactly one organization.
+Keys belong to a project. `--project` is optional only when there is exactly
+one candidate — one organization on your account with one project in it.
 
 There is no validate endpoint and no local entitlements cache. `vendo doctor`
 checks that `VENDO_API_KEY` is present and well formed locally; a bad or

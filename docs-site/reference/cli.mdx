@@ -383,10 +383,11 @@ email-OTP fallback `vendo cloud login <email>` sends a 6-10 digit code,
 prompts for it, and stores the session at `~/.vendo/cloud-session.json`;
 `--token <jwt>` stores an access token instead.
 Other subcommands: `logout`, `whoami`, `orgs`, `keys` (`list`, `create`,
-`revoke`), `members`, `invite`, `usage`, and `billing`. Read
+`revoke`), `members`, `invite`, and `usage`. Read
 results print as JSON. There is no validate subcommand: key problems
 surface on the first real call, and `vendo cloud usage` reads the
-server-side metering from real traffic.
+server-side metering from real traffic. Billing lives in the
+[console](https://console.vendo.run) only.
 
 There is no deploy subcommand. With `VENDO_API_KEY` set, automations you
 build sync to Vendo Cloud automatically and run on Vendo's schedulers — see
@@ -396,8 +397,10 @@ Global options:
 
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default `https://console.vendo.run`).
 
-Org-scoped commands take `--org <id>`; omit it only when your account has one
-organization. Run `vendo cloud help` for the full list. See
+`members` and `invite` take `--org <id>`; `keys` and `usage` take
+`--project <id>`. Either can be omitted when there is exactly one candidate —
+one organization on the account, one project in the organization. Run
+`vendo cloud help` for the full list. See
 [Vendo Cloud](/deploy/vendo-cloud) for setup, keys, and sharing.
 
 ## Telemetry opt-out
