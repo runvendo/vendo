@@ -1,1 +1,3 @@
 These are the editable sources for the README brand assets, with live `<text>` nodes so they are easy to open and tweak in a vector editor or by hand. The shipped copies in `assets/` have all text converted to paths so rendering does not depend on any installed font. After editing a file here, regenerate the shipped versions with `node scripts/readme-assets-build.mjs`.
+
+The build script needs `opentype.js` (a root devDependency — already installed by a plain `pnpm install` at the repo root, nothing extra to add) and network access on first run: it downloads the Onest (500/700/800) and Geist Mono (400/600) TrueType files from Google Fonts and caches them in the OS temp dir, never inside the repo.
