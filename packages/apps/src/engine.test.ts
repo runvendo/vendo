@@ -937,8 +937,11 @@ describe("v2 wire create", () => {
   it("resolves a designRules provider per generation, so edits apply without recomposing", async () => {
     const prompts: string[] = [];
     const model = scriptedLanguageModel((call) => {
-      prompts.push(promptText(call));
-      return wireCreate();
+      const prompt = promptText(call);
+      prompts.push(prompt);
+      return prompt.includes("Emit at least one op")
+        ? '<Edit><Set id="metriccard-1" value="$84k"/></Edit>'
+        : wireCreate();
     });
     let rules = "Dense layouts, no emoji.";
     const runtime = createApps({
@@ -950,7 +953,7 @@ describe("v2 wire create", () => {
       designRules: () => rules,
     });
 
-    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+    const created = await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
     const firstPassPrompts = [...prompts];
     rules = "Airy layouts, plenty of whitespace.";
     prompts.length = 0;
@@ -959,6 +962,11 @@ describe("v2 wire create", () => {
     expect(firstPassPrompts.some((prompt) => prompt.includes("HOST DESIGN RULES:\nDense layouts, no emoji."))).toBe(true);
     expect(firstPassPrompts.every((prompt) => !prompt.includes("Airy layouts"))).toBe(true);
     expect(prompts.some((prompt) => prompt.includes("HOST DESIGN RULES:\nAiry layouts, plenty of whitespace."))).toBe(true);
+
+    rules = "Editorial tone, sentence-case labels.";
+    prompts.length = 0;
+    await runtime.edit(created.id, "Double the displayed revenue", ctx);
+    expect(prompts.some((prompt) => prompt.includes("HOST DESIGN RULES:\nEditorial tone, sentence-case labels."))).toBe(true);
   });
 
   it("carries islands to document-level components, never on the tree", async () => {
