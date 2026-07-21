@@ -1,5 +1,12 @@
 # @vendoai/automations
 
+## 0.4.2
+
+### Patch Changes
+
+- @vendoai/core@0.4.2
+- @vendoai/apps@0.4.2
+
 ## 0.4.1
 
 ### Patch Changes
