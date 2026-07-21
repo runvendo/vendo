@@ -44,6 +44,13 @@ export interface AutomationsConfig {
    *  the background; the tick just stops blocking on it so a hung run (sandbox wake, LLM
    *  stall) cannot overrun the tick interval or starve other tenants. Absent → wait fully. */
   runTimeoutMs?: number;
+  /** Which of {schedule, external} this engine instance fires itself. Absent (default) →
+   *  both fire locally, today's behavior. host-event is never listed here: `emit` is called
+   *  directly by the host process, not scheduled or delivered, so there is nothing to defer.
+   *  A composition sets this to an empty set when some OTHER authority already fires those
+   *  kinds for the same data (Vendo Cloud's scheduler + Composio delivery, under the hosted
+   *  store — see packages/vendo/src/server.ts) so the two never double-run one automation. */
+  localTriggerKinds?: ReadonlySet<"schedule" | "external">;
 }
 
 /** 07 §5 */
