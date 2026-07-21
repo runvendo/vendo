@@ -5,7 +5,6 @@ import { runKeys } from "./keys.js";
 import { runInvite, runMembers } from "./members.js";
 import { consoleOutput } from "../shared.js";
 import { runBilling, runDeployments, runOrgs, runUsage } from "./read.js";
-import { runPinShip, runPublish, runShare } from "./services.js";
 import { runDeploy, type CloudDeployOptions } from "./deploy.js";
 
 const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
@@ -34,9 +33,6 @@ User commands:
 Machine commands:
   deploy [--app <id>] [--secret NAME=VALUE]
                                         Deploy local enabled automations to the hosted instance
-  share <appfile.json>                  Create a ShareSnapshot
-  publish <appfile.json>                Create a PublishRecord
-  pin-ship --app <id> --slot <slot> --base <hash> --diff <file>
 
 Global options:
   --api-url <url>  Override VENDO_CLOUD_URL / https://console.vendo.run
@@ -69,9 +65,6 @@ export async function runCloud(args: string[], options: RunCloudOptions = {}): P
   if (command === "invite") return runInvite(commandArgs, options);
   if (command === "billing") return runBilling(commandArgs, options);
   if (command === "deploy") return runDeploy(commandArgs, options);
-  if (command === "share") return runShare(commandArgs, options);
-  if (command === "publish") return runPublish(commandArgs, options);
-  if (command === "pin-ship") return runPinShip(commandArgs, options);
   output.error(`Unknown cloud command: ${command}\n\n${CLOUD_HELP}`);
   return 1;
 }

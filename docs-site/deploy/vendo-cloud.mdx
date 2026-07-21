@@ -57,9 +57,8 @@ vendo login
 `vendo cloud login <email>` sends a 6-10 digit code to your inbox, prompts for
 it on stdin, and stores the returned session at `~/.vendo/cloud-session.json`
 (file mode 0600). The exact code length depends on your Vendo Cloud project's
-OTP configuration. The user commands reuse that session; the machine commands
-(`deploy`, `share`, `publish`, `pin-ship`) authenticate with `--key` or
-`VENDO_API_KEY` instead.
+OTP configuration. The user commands reuse that session; the machine command
+(`deploy`) authenticates with `--key` or `VENDO_API_KEY` instead.
 
 ```bash
 vendo cloud login you@example.com
@@ -126,14 +125,6 @@ const record = await vendo.apps.publish(appId, ctx);
 `publish` returns a `PublishRecord` with the assigned `version` (`id`, `appId`,
 `version`, `createdAt`). Both responses are validated against the frozen wire
 schemas (`shareSnapshotSchema`, `publishRecordSchema`) before they resolve.
-
-To share or publish from CI without loading the composition, upload the app
-document directly. The file needs a string `id`, or pass `--app <id>`:
-
-```bash
-vendo cloud share ./app.json
-vendo cloud publish ./app.json
-```
 
 ## Deploy local automations to hosted
 
@@ -204,8 +195,7 @@ into `.env.local` — or create a named key with `vendo cloud keys create`.
 ### Key format
 
 API keys use the format `vnd_` followed by 40 hex characters. The machine
-commands (`deploy`, `share`, `publish`, `pin-ship`) reject malformed keys
-before making any network call.
+command (`deploy`) rejects malformed keys before making any network call.
 
 ### Deploy's `fn:` limitation
 

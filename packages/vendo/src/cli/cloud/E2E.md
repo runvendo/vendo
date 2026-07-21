@@ -7,10 +7,11 @@ pre-check: the server checks key validity and meters on every call, and key
 problems surface as per-call errors.
 
 ## Machine principal (VENDO_API_KEY)
-- `vendo cloud share app.json` (valid key) → `ShareSnapshot { id: shr_…, doc, createdAt }`
-- `vendo cloud share app.json` (free) → "This key's org needs a Cloud plan (cloud-required)." (HTTP 402)
-- `vendo cloud publish app.json` ×2 → `PublishRecord` version "1" then "2" (monotonic)
-- `vendo cloud pin-ship --app app_cli --slot hero --base sha256:aa --diff d` → `{ id: pin_…, status: "pending" }`
+
+The CLI's machine command is `deploy` (below). The `share`/`publish`/`pin-ship`
+CLI wrappers were removed; sharing and publishing happen through the server
+runtime (`vendo.apps.share` / `vendo.apps.publish`), whose hosted endpoints are
+unchanged.
 
 ## Hosted runtime deploy
 
