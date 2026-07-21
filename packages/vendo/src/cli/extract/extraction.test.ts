@@ -471,3 +471,162 @@ describe("runAiExtraction", () => {
     expect(result.ran).toBe(false);
   });
 });
+
+// Engine choice (agent-install-dx follow-up): `--engine` pins a rung family;
+// interactively, several available families turn the single consent question
+// into a single pick-with-default. One engine = the unchanged yes/no.
+describe("runAiExtraction engine choice", () => {
+  const scripted = "```json\n" + JSON.stringify({ brief: "b", tools: [] }) + "\n```";
+  function engineHarness(id: string, credential: string | null, onRun?: () => void): ExtractionHarness {
+    return {
+      id,
+      availability: async () => credential,
+      run: async () => {
+        onRun?.();
+        return scripted;
+      },
+    };
+  }
+  const neverConfirm = async (): Promise<boolean> => { throw new Error("confirm must not be asked"); };
+  const neverChoose = async (): Promise<string> => { throw new Error("select must not be asked"); };
+
+  it("engine pins the rung family and consent names its credential", async () => {
+    const root = await fixture();
+    const sink = output();
+    const questions: string[] = [];
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      engine: "codex",
+      harnesses: [
+        engineHarness("claude-agent-sdk", "your Claude Code login"),
+        engineHarness("codex-cli", "your codex login"),
+      ],
+      confirm: async (question) => {
+        questions.push(question);
+        return true;
+      },
+      choose: neverChoose,
+    });
+    expect(result.ran).toBe(true);
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toContain("your codex login");
+    expect(sink.logs.join("\n")).toContain("Reading your product (your codex login)");
+  });
+
+  it("declines loudly when the pinned engine is unavailable, naming what is available", async () => {
+    const root = await fixture();
+    const sink = output();
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      engine: "codex",
+      harnesses: [engineHarness("claude-agent-sdk", "your Claude Code login"), engineHarness("codex-cli", null)],
+      confirm: neverConfirm,
+      choose: neverChoose,
+    });
+    expect(result.ran).toBe(false);
+    const message = sink.logs.join("\n");
+    expect(message).toContain("--engine codex");
+    expect(message).toContain("--engine claude");
+    expect(message).toContain("your Claude Code login");
+  });
+
+  it("asks ONE select when several engines are available and runs the picked one", async () => {
+    const root = await fixture();
+    const sink = output();
+    let asked: { question: string; options: Array<{ value: string; label: string }>; defaultIndex: number } | null = null;
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        engineHarness("claude-agent-sdk", "your Claude Code login"),
+        engineHarness("codex-cli", "your OPENAI_API_KEY"),
+      ],
+      confirm: neverConfirm,
+      choose: async (question, options, defaultIndex) => {
+        asked = { question, options, defaultIndex };
+        return "codex";
+      },
+    });
+    expect(result.ran).toBe(true);
+    expect(asked).not.toBeNull();
+    expect(asked!.options.map((option) => option.value)).toEqual(["claude", "codex", "skip"]);
+    expect(asked!.defaultIndex).toBe(0);
+    expect(asked!.options[0]!.label).toContain("your Claude Code login");
+    expect(asked!.options[1]!.label).toContain("your OPENAI_API_KEY");
+    expect(sink.logs.join("\n")).toContain("Reading your product (your OPENAI_API_KEY)");
+  });
+
+  it("select's skip answer keeps extractor defaults without running anything", async () => {
+    const root = await fixture();
+    const sink = output();
+    let ran = false;
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        engineHarness("claude-agent-sdk", "your Claude Code login", () => { ran = true; }),
+        engineHarness("codex-cli", "your codex login", () => { ran = true; }),
+      ],
+      confirm: neverConfirm,
+      choose: async () => "skip",
+    });
+    expect(result.ran).toBe(false);
+    expect(ran).toBe(false);
+    expect(sink.logs.join("\n")).toContain("Skipped");
+  });
+
+  it("keeps the plain yes/no when only one engine family is available", async () => {
+    const root = await fixture();
+    const sink = output();
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        engineHarness("claude-agent-sdk", "your Claude Code login"),
+        engineHarness("claude-cli", "your Claude Code login"),
+        engineHarness("codex-cli", null),
+      ],
+      confirm: async () => true,
+      choose: neverChoose,
+    });
+    expect(result.ran).toBe(true);
+    expect(sink.logs.join("\n")).toContain("Reading your product (your Claude Code login)");
+  });
+
+  it("dedupes rungs of the same family: the first rung speaks for it in the select", async () => {
+    const root = await fixture();
+    const sink = output();
+    let values: string[] = [];
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        engineHarness("claude-agent-sdk", "your Claude Code login"),
+        engineHarness("claude-cli", "the claude CLI"),
+        engineHarness("codex-cli", "your codex login"),
+        engineHarness("npx-engine", "your VENDO_API_KEY"),
+      ],
+      confirm: neverConfirm,
+      choose: async (_question, options) => {
+        values = options.map((option) => option.value);
+        return "claude";
+      },
+    });
+    expect(result.ran).toBe(true);
+    expect(values).toEqual(["claude", "codex", "npx", "skip"]);
+    expect(sink.logs.join("\n")).toContain("Reading your product (your Claude Code login)");
+  });
+
+  it("consent flag plus engine runs pinned without any prompt", async () => {
+    const root = await fixture();
+    const sink = output();
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: true, interactive: false, consent: true,
+      engine: "codex",
+      harnesses: [
+        engineHarness("claude-agent-sdk", "your Claude Code login"),
+        engineHarness("codex-cli", "your codex login"),
+      ],
+      confirm: neverConfirm,
+      choose: neverChoose,
+    });
+    expect(result.ran).toBe(true);
+    expect(sink.logs.join("\n")).toContain("Reading your product (your codex login)");
+  });
+});
