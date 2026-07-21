@@ -19,7 +19,7 @@ Usage: vendo <command> [dir] [options]
 
 Commands:
   init [dir]      Set up Vendo: wire the handler, extract tools + theme, resolve a model key
-  login [email]   Claim a Vendo Cloud key: approve in the browser; the key lands in .env.local
+  login           Claim a Vendo Cloud key: approve in the browser; the key lands in .env.local
   doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
 
 Advanced:
@@ -39,7 +39,6 @@ Options:
   --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
   --framework <name>         Init only: override framework detection (next, express) — required non-interactively when detection fails
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
-  --email <address>          Login only: pre-fill the approval page (login hint)
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
@@ -89,7 +88,7 @@ const REFINE_FLAGS = new Set(["--yes"]);
 const REFINE_VALUE_OPTIONS = ["--url", "--model-import", "--ask"];
 const SYNC_FLAGS = new Set(["--strict", "--json", "--report"]);
 const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url"];
-const LOGIN_VALUE_OPTIONS = ["--email", "--api-url", "--wait"];
+const LOGIN_VALUE_OPTIONS = ["--api-url", "--wait"];
 
 /** ENG-335: options the CLI does not recognize — or value options missing
     their value — must fail loudly before anything runs. Silently dropping a
