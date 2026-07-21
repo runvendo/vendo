@@ -1,21 +1,16 @@
 ---
 title: "Principals: identity, anonymous sessions, vendo: namespace"
+sidebarTitle: "Principals and orgs"
 description: "How Vendo resolves the Principal for each request, scopes threads and approvals to users, auto-merges anonymous sessions on sign-in, and reserves vendo:."
 ---
 
 Every wire request resolves a `Principal` through the `principal(req)` seam
 you pass to `createVendo`. The returned `subject` scopes threads, apps,
-approvals, grants, activity, and runs. This page covers the identity model
-and the behavior that rides on it: **anonymous auto-merge** on first
-sign-in.
+approvals, grants, activity, and runs across the whole composition.
+Returning `null` starts an anonymous session that Vendo merges into the
+real account on sign-in.
 
-## Principal kinds
-
-`Principal.kind` is `"user"` or `"org"`. Your `principal(req)` resolver may
-only return `kind: "user"` — the wire rejects a resolver-produced `kind:
-"org"` principal loudly, since organization context is a
-[Vendo Cloud](/deploy/vendo-cloud) capability, never something an OSS host
-resolves directly.
+## Resolving a principal
 
 ```ts
 principal: async (request) => {
@@ -24,17 +19,29 @@ principal: async (request) => {
 },
 ```
 
-Returning `null` gives the client an ephemeral session — see
-[Anonymous sessions](#anonymous-sessions) below.
+Returning `null` gives the client an ephemeral session: see
+[Anonymous sessions](#anonymous-sessions) below. Anything else, a signed-in
+user's stable id, scopes that request's data to the returned subject for
+good.
 
-## The reserved `vendo:` namespace
+## Identity reference
+
+### Principal kinds
+
+`Principal.kind` is `"user"` or `"org"`. Your `principal(req)` resolver may
+only return `kind: "user"`: the wire rejects a resolver-produced
+`kind: "org"` principal loudly, since organization context is a
+[Vendo Cloud](/deploy/vendo-cloud) capability, never something an OSS host
+resolves directly.
+
+### The reserved `vendo:` namespace
 
 Subjects that start with `vendo:` are reserved for Vendo-owned identities.
 Two are defined today:
 
-- `vendo:webhook:<source>` — webhook deliveries execute under this subject
+- `vendo:webhook:<source>`: webhook deliveries execute under this subject
   when no principal is otherwise attached to the request.
-- `vendo:org:<orgId>` — reserved for [Vendo Cloud](/deploy/vendo-cloud)
+- `vendo:org:<orgId>`: reserved for [Vendo Cloud](/deploy/vendo-cloud)
   organization workspaces. The OSS wire never mints this subject itself;
   every `/orgs` route (and any org-scoped query on `/approvals` or
   `/grants`) answers `cloud-required` (HTTP 402) unconditionally.
@@ -48,23 +55,23 @@ If you have audit readers or dashboards that filter on webhook subjects,
 update them to match `vendo:webhook:<source>` instead of the bare
 `webhook:<source>` form.
 
-## Anonymous sessions
+### Anonymous sessions
 
 When `principal(req)` returns `null`, Vendo mints an ephemeral session
-principal and carries it in an opaque `httpOnly` cookie — a random session
-id scoped to the wire base path. The cookie is just a pointer; the session
-row in the database is the authority, so a forged id merely names its own
-empty session. Ephemeral principals write ordinary rows under their anonymous
-subject; a TTL sweep erases sessions idle past `sessions.ttlMs` (default
-30 minutes), rows and all.
+principal and carries it in an opaque `httpOnly` cookie: a random session id
+scoped to the wire base path. The cookie is just a pointer; the session row
+in the database is the authority, so a forged id merely names its own empty
+session. Ephemeral principals write ordinary rows under their anonymous
+subject; a TTL sweep erases sessions idle past `sessions.ttlMs` (default 30
+minutes), rows and all.
 
-### Auto-merge on sign-in
+#### Auto-merge on sign-in
 
 The first authenticated request that arrives with a valid anonymous cookie
 **adopts** the session's data into the real user subject and then retires
-the cookie (`Max-Age=0`). Users keep the conversation they started, the
-apps they built, and the state those apps wrote. The merge is idempotent
-and emits a `kind: "principal"` audit event.
+the cookie (`Max-Age=0`). Users keep the conversation they started, the apps
+they built, and the state those apps wrote. The merge is idempotent and
+emits a `kind: "principal"` audit event.
 
 What is adopted:
 
@@ -74,26 +81,26 @@ What is adopted:
 
 What is **not** adopted (consent doesn't transfer identities):
 
-- Grants and approvals — the anonymous session's authority does not carry
+- Grants and approvals: the anonymous session's authority does not carry
   over. The signed-in user re-approves on the next tool call.
-- Connected accounts — external providers key credentials by subject, so
+- Connected accounts: external providers key credentials by subject, so
   users reconnect after signing in.
-- Audit and run history — kept intact under their original subject.
+- Audit and run history: kept intact under their original subject.
 
-Existing durable rows always win a collision. If the signed-in user
-already owns a thread or app with the same id, the anonymous copy is
-dropped rather than overwriting it. There is no configuration to turn
-auto-merge off; it is the default behavior of the wire.
+Existing durable rows always win a collision. If the signed-in user already
+owns a thread or app with the same id, the anonymous copy is dropped rather
+than overwriting it. There is no configuration to turn auto-merge off; it is
+the default behavior of the wire.
 
 Nothing on the host side has to change to opt in: as long as
 `principal(req)` returns `null` before the user signs in and a real
 `Principal` afterward, Vendo does the rest.
 
-## Organizations are a Vendo Cloud capability
+### Organizations are a Vendo Cloud capability
 
-Sharing apps, approvals, and grants under one org subject is not an OSS
-wire feature. The self-hosted wire always answers every `/orgs` route —
-and any `/approvals` or `/grants` request carrying an `org` param — with
+Sharing apps, approvals, and grants under one org subject is not an OSS wire
+feature. The self-hosted wire always answers every `/orgs` route, and any
+`/approvals` or `/grants` request carrying an `org` param, with
 `cloud-required` (HTTP 402), regardless of `VENDO_API_KEY`. `/status`
 reports no `orgs` block.
 

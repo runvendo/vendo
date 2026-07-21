@@ -1,11 +1,12 @@
 ---
 title: "Dev-mode credential ladder: resolving a model without wiring one"
+sidebarTitle: "Dev-mode credentials"
 description: "How devModel() resolves a model in development from env keys or a Vendo Cloud key, with pinning, production behavior, and verification."
 ---
 
 Vendo runs on any AI SDK `LanguageModel`, and in production you set an API key
 for the provider you chose. `createVendo`'s `model` is optional: when you omit
-it, the runtime resolves a model through `devModel()` — a resolver that tries a
+it, the runtime resolves a model through `devModel()`, a resolver that tries a
 short ladder of credential sources so a fresh clone can send a first turn with
 whatever key is already around.
 
@@ -27,8 +28,8 @@ resolves. Explicit keys always beat implicit ones.
   <Step title="Vendo Cloud key">
     `VENDO_API_KEY` delegates to the Vendo Cloud model gateway (Anthropic
     Messages wire, served through the stock `@ai-sdk/anthropic` provider).
-    The gateway serves curated model aliases — `vendo-default` (the default),
-    `vendo-fast`, and `vendo-strong` — pick one with `VENDO_CLOUD_MODEL`;
+    The gateway serves curated model aliases: `vendo-default` (the default),
+    `vendo-fast`, and `vendo-strong`. Pick one with `VENDO_CLOUD_MODEL`;
     anything else is remapped to `vendo-default` server-side. No key on hand?
     `npx vendo cloud login` mints a free metered dev key.
   </Step>
@@ -84,7 +85,7 @@ Exit 0 means a real user would have gotten an answer. See the
 
 ## Related
 
-- [Install](/install) — the staged install playbook.
-- [vendo init](/connect/vendo-init) — the scaffold command.
-- [Environment variables](/reference/environment-variables) — every
+- [Install](/install): the staged install playbook.
+- [vendo init](/connect/vendo-init): the scaffold command.
+- [Environment variables](/reference/environment-variables): every
   `VENDO_*` variable Vendo reads.

@@ -1,24 +1,24 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "maple",
+  "theme": "almond",
   "name": "Vendo",
   "description": "Embed an agent in your product that lets every customer automate their work, build their own views, and connect their tools, inside your brand and your guardrails.",
   "appearance": {
     "default": "light"
   },
   "colors": {
-    "primary": "#4338CA",
-    "light": "#818CF8",
-    "dark": "#4338CA"
+    "primary": "#6c3bff",
+    "light": "#a78bfa",
+    "dark": "#8b6bff"
   },
   "background": {
     "color": {
-      "light": "#FAFAF8",
-      "dark": "#17171A"
+      "light": "#ffffff",
+      "dark": "#0a0a0c"
     }
   },
   "fonts": {
-    "family": "Inter"
+    "family": "Onest"
   },
   "logo": {
     "light": "/logo/light.svg",
@@ -31,36 +31,38 @@
   "navigation": {
     "groups": [
       {
-        "group": "Getting started",
-        "pages": ["index", "install", "quickstart", "quickstart-node"]
+        "group": "Start here",
+        "pages": ["index", "install", "concepts/architecture", "concepts/tools-and-safety"]
       },
       {
-        "group": "Use with your existing agent",
-        "pages": ["existing-agents/index", "existing-agents/ai-sdk", "existing-agents/mastra"]
+        "group": "Bring your own agent",
+        "tag": "Recommended",
+        "pages": ["existing-agents/index", "existing-agents/ai-sdk", "existing-agents/mastra", "existing-agents/embeds"]
+      },
+      {
+        "group": "Use Vendo's agent",
+        "tag": "Beta",
+        "pages": ["quickstart", "ui/components"]
+      },
+      {
+        "group": "Connect your app",
+        "pages": ["connect/vendo-init", "connect/api-tools", "connect/act-as-presets", "connect/dev-mode"]
+      },
+      {
+        "group": "Make it yours",
+        "pages": ["connect/theming", "connect/host-components", "connect/instructions"]
+      },
+      {
+        "group": "Give it reach",
+        "pages": ["capabilities/connected-accounts", "capabilities/mcp", "capabilities/mcp-registry", "capabilities/compound-tools", "concepts/generated-ui", "concepts/in-client-venue"]
+      },
+      {
+        "group": "Ship it",
+        "pages": ["deploy/deploying", "deploy/persistence", "deploy/vendo-cloud", "deploy/principals-and-orgs", "deploy/scheduler-and-webhooks", "deploy/telemetry", "deploy/troubleshooting"]
       },
       {
         "group": "For coding agents",
         "pages": ["agents/index", "agents/host-auth", "agents/tools", "agents/verify"]
-      },
-      {
-        "group": "Concepts",
-        "pages": ["concepts/architecture", "concepts/generated-ui", "concepts/in-client-venue", "concepts/tools-and-safety", "concepts/prompts"]
-      },
-      {
-        "group": "Connect your app",
-        "pages": ["connect/vendo-init", "connect/dev-mode", "connect/api-tools", "connect/act-as-presets", "connect/host-components", "connect/theming", "connect/tool-labels", "connect/instructions"]
-      },
-      {
-        "group": "UI",
-        "pages": ["ui/components"]
-      },
-      {
-        "group": "Capabilities",
-        "pages": ["capabilities/integrations", "capabilities/connected-accounts", "capabilities/compound-tools", "capabilities/mcp", "capabilities/mcp-registry", "capabilities/voice"]
-      },
-      {
-        "group": "Deploy and operate",
-        "pages": ["deploy/persistence", "deploy/deploying", "deploy/vendo-cloud", "deploy/principals-and-orgs", "deploy/scheduler-and-webhooks", "deploy/telemetry", "deploy/troubleshooting"]
       },
       {
         "group": "Reference",
@@ -72,6 +74,33 @@
       }
     ]
   },
+  "redirects": [
+    {
+      "source": "/quickstart-node",
+      "destination": "/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/capabilities/integrations",
+      "destination": "/capabilities/connected-accounts",
+      "permanent": true
+    },
+    {
+      "source": "/capabilities/voice",
+      "destination": "/ui/components",
+      "permanent": true
+    },
+    {
+      "source": "/concepts/prompts",
+      "destination": "/connect/instructions",
+      "permanent": true
+    },
+    {
+      "source": "/connect/tool-labels",
+      "destination": "/ui/components",
+      "permanent": true
+    }
+  ],
   "footer": {
     "socials": {
       "github": "https://github.com/runvendo/vendo"

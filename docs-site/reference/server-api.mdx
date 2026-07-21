@@ -1,5 +1,6 @@
 ---
 title: "Server API reference for @vendoai/vendo composition"
+sidebarTitle: "Server API"
 description: "Server-side reference for @vendoai/vendo: the createVendo composition, Vendo interface, fetch handler, Next.js adapter, and host-event seam."
 ---
 
@@ -54,7 +55,7 @@ export interface Vendo {
 
 When `principal(req)` resolves null, each client gets its own ephemeral session
 principal, carried by an opaque httpOnly cookie scoped to the wire base. The
-cookie is just a pointer — the session's `vendo_sessions` row is the authority.
+cookie is just a pointer; the session's `vendo_sessions` row is the authority.
 Sessions are per client, stored on disk like everything else, survive restarts,
 and expire through the idle-TTL sweep.
 
@@ -112,4 +113,4 @@ export const VENDO_SESSION_KEY = "vendo-session-id";  // optional audit continui
 `include`/`exclude` match final (namespaced) tool names exactly; `exclude`
 wins. `@mastra/core` is an optional peer dependency used only by the
 `./mastra` subpath. Tool outputs are the versioned envelopes documented in
-[Use with your existing agent](/existing-agents#the-envelope-contract).
+[Embeds and envelopes](/existing-agents/embeds#the-envelope-contract).

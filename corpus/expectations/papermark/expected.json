@@ -995,12 +995,6 @@
       "readOrWrite": "write"
     },
     {
-      "name": "postTeamsTeamIdDataroomsIdFoldersName",
-      "method": "POST",
-      "path": "/api/teams/{teamId}/datarooms/{id}/folders/{name}",
-      "readOrWrite": "write"
-    },
-    {
       "name": "postTeamsTeamIdDataroomsIdFoldersBulk",
       "method": "POST",
       "path": "/api/teams/{teamId}/datarooms/{id}/folders/bulk",
@@ -1033,12 +1027,6 @@
     {
       "name": "getTeamsTeamIdDataroomsIdFoldersParentsName",
       "method": "GET",
-      "path": "/api/teams/{teamId}/datarooms/{id}/folders/parents/{name}",
-      "readOrWrite": "write"
-    },
-    {
-      "name": "postTeamsTeamIdDataroomsIdFoldersParentsName",
-      "method": "POST",
       "path": "/api/teams/{teamId}/datarooms/{id}/folders/parents/{name}",
       "readOrWrite": "write"
     },
@@ -1529,12 +1517,6 @@
       "readOrWrite": "write"
     },
     {
-      "name": "getTeamsTeamIdDocumentsIdVersions",
-      "method": "GET",
-      "path": "/api/teams/{teamId}/documents/{id}/versions",
-      "readOrWrite": "write"
-    },
-    {
       "name": "postTeamsTeamIdDocumentsIdVersions",
       "method": "POST",
       "path": "/api/teams/{teamId}/documents/{id}/versions",
@@ -1586,12 +1568,6 @@
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdVideoStats",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/video-stats",
-      "readOrWrite": "write"
-    },
-    {
-      "name": "getTeamsTeamIdDocumentsAgreement",
-      "method": "GET",
-      "path": "/api/teams/{teamId}/documents/agreement",
       "readOrWrite": "write"
     },
     {
@@ -3161,11 +3137,6 @@
       "dangerous": false
     },
     {
-      "name": "postTeamsTeamIdDataroomsIdFoldersName",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
       "name": "postTeamsTeamIdDataroomsIdFoldersBulk",
       "mutating": true,
       "dangerous": false
@@ -3192,11 +3163,6 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFoldersParentsName",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
-      "name": "postTeamsTeamIdDataroomsIdFoldersParentsName",
       "mutating": true,
       "dangerous": false
     },
@@ -3606,11 +3572,6 @@
       "dangerous": false
     },
     {
-      "name": "getTeamsTeamIdDocumentsIdVersions",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
       "name": "postTeamsTeamIdDocumentsIdVersions",
       "mutating": true,
       "dangerous": false
@@ -3652,11 +3613,6 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdVideoStats",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
-      "name": "getTeamsTeamIdDocumentsAgreement",
       "mutating": true,
       "dangerous": false
     },

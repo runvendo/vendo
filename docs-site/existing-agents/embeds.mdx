@@ -1,0 +1,71 @@
+---
+title: "Embeds and envelopes"
+description: "The versioned JSON envelope vendo_* tools return, and the three @vendoai/ui components (VendoToolResult, VendoAppEmbed, VendoApprovalEmbed) that render it inside your own chat."
+---
+
+When your own agent calls a guarded tool, the result has to reach your chat
+without your loop ever needing to know what an "app" or an "approval" is.
+Vendo answers that with one small envelope format: a `vendo_*` tool returns
+either plain data or a versioned ref, and one of three `@vendoai/ui`
+components turns that ref into the right rendered surface. This page is the
+canonical reference for both.
+
+## The envelope contract
+
+A `vendo_*` tool returns either plain data or a small versioned JSON
+envelope discriminated by `kind`:
+
+| Output | Meaning | Render with |
+| --- | --- | --- |
+| plain data | the guarded call executed cleanly; your model consumes it like any tool output | nothing |
+| `vendo/app-ref@1` `{ appId, title }` | an app is building; the build streams over the wire | `<VendoAppEmbed>` |
+| `vendo/approval-ref@1` `{ approvalId, summary }` | the call parked for approval | `<VendoApprovalEmbed>` |
+
+You rarely dispatch on `kind` yourself: `<VendoToolResult output={...}>`
+takes any `vendo_*` tool output and renders the right embed, or nothing for
+plain data. If you need the dispatcher server-side,
+`parseVendoToolEnvelope(output)` from `@vendoai/core` returns the envelope
+or `null`.
+
+## The three embeds
+
+Import all three from `@vendoai/ui`. Each reads the wire through the
+surrounding `VendoProvider` and polls on its own until it reaches a terminal
+state; none takes config props beyond the one shown, since theming and
+behavior come entirely from `VendoProvider`.
+
+| Component | Renders | Props type | Reaches |
+| --- | --- | --- | --- |
+| `<VendoToolResult output>` | dispatches any `vendo_*` tool output to the right embed below, or nothing for plain data | `VendoToolResultProps` | delegates to one of the two below |
+| `<VendoAppEmbed refValue>` | a build beat while the build streams, then the live interactive app; in-app interactions go over the wire, not through your agent loop | `VendoAppEmbedProps` | a mounted app |
+| `<VendoApprovalEmbed refValue>` | the approve/deny card, resolving in place to the outcome | `VendoApprovalEmbedProps` | `VendoApprovalEmbedState`: `"pending" \| "executed" \| "declined" \| "expired"` |
+
+### When to use which
+
+- Default to `<VendoToolResult>` wherever you render a finished tool part in
+  your chat loop. It dispatches on `kind` for you, so you never branch on
+  envelope type by hand.
+- Reach for `<VendoAppEmbed>` or `<VendoApprovalEmbed>` directly only when
+  you already have a ref from somewhere other than a live tool call, for
+  example one you stored and want to re-render later.
+
+## Setup
+
+Setup is the one-time step the [headless hooks](/reference/hooks) already
+require: wrap your chat in `VendoProvider` pointed at the wire. Auth rides
+your host session cookie; theme rides the `--vendo-*` tokens, so the embeds
+render on-brand. Failure states use the existing failed/expired vocabulary,
+never a silent blank.
+
+```tsx
+import { VendoProvider, VendoToolResult } from "@vendoai/ui";
+
+<VendoProvider>
+  {/* your chat; for each finished tool part: */}
+  <VendoToolResult output={part.output} />
+</VendoProvider>
+```
+
+See [the overview](/existing-agents) for the tool pack that produces these
+outputs, and the [AI SDK](/existing-agents/ai-sdk) and
+[Mastra](/existing-agents/mastra) walkthroughs for both wired end to end.

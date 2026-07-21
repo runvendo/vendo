@@ -1,19 +1,63 @@
 ---
 title: "Connected accounts"
+sidebarTitle: "Connected accounts"
 description: "Let each signed-in user connect their own Gmail, Slack, or GitHub through Composio so every tool call runs as that user, isolated per principal."
 ---
+
+Connectors let each signed-in user connect their own Gmail, Slack, or GitHub
+once, then every later tool call runs as that user. Vendo builds no OAuth
+flows of its own and never holds a token: Composio brokers the credentials,
+and isolation is per principal by construction.
+
+## Connectors
+
+The actions block accepts connector implementations:
+
+```ts
+export interface Connector {
+  name: string;
+  descriptors(): Promise<ToolDescriptor[]>;
+  execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
+}
+
+export function composioConnector(config: {
+  apiKey: string;
+  apps?: string[];
+}): Connector;
+// Descriptor listing calls the resolver with no principal (a system
+// context), so every field is optional; a sync return is also allowed.
+export type McpHeadersResolver = (
+  auth: { principal?: Principal; presence?: RunContext["presence"]; grant?: PermissionGrant },
+) => Promise<Record<string, string>> | Record<string, string>;
+
+export function mcpConnector(config: {
+  url: string;
+  headers?: Record<string, string> | McpHeadersResolver;
+  name?: string;
+}): Connector;
+```
+
+Connector names normalize into the provider-safe tool charset, such as
+`gmail_send` and `mcp_server_tool`. Vendo truncates and suffix-hashes names
+longer than 64 characters.
 
 External connector tools (Gmail, Slack, GitHub, and anything else exposed
 through Composio) execute as the signed-in user, not as one shared bot
 account. Each user connects their own account once, and every later tool call
 rides that connection.
 
-Composio is the sole broker. Vendo builds no OAuth flows of its own. A
-connection is a Composio connected account whose `entityId` is the Vendo
-principal subject, so isolation is structural: every list, initiate, and
-disconnect operation is scoped to exactly one subject. No token ever enters
-Vendo — the broker holds the credentials, and initiate hands back only the
-hosted redirect URL.
+Composio is the sole broker. A connection is a Composio connected account
+whose `entityId` is the Vendo principal subject, so isolation is structural:
+every list, initiate, and disconnect operation is scoped to exactly one
+subject. No token ever enters Vendo: the broker holds the credentials, and
+initiate hands back only the hosted redirect URL.
+
+This connector support is distinct from the MCP door, which runs the other
+direction. Connectors pull remote MCP tools *into* your agent; the door serves
+*your* host tools *out* to MCP clients like Claude and ChatGPT. Enable
+the door with `createVendo({ mcp: true, oauth })`. Door tool calls authenticate
+over the same `actAs` seam away automations use, since MCP clients have no host
+browser session. See [the MCP door](/capabilities/mcp) for setup.
 
 ## Setup
 
@@ -57,7 +101,7 @@ following the same pattern as approvals:
 1. The user selects **Connect**. The card opens the broker's hosted OAuth
    page in a popup.
 2. The card polls the connection until it becomes active.
-3. The thread retries the original tool call through the fresh connection —
+3. The thread retries the original tool call through the fresh connection,
    no re-prompting required.
 
 Automations and MCP door calls do not have a browser surface, so they surface
@@ -75,27 +119,9 @@ tab. If you render your own chrome, drop the panel in wherever you already
 handle user settings, or read the same state through the `useConnections`
 hook from `@vendoai/ui`.
 
-## Connection endpoints
-
-Every connection route is per-principal. The wire uses exactly the resolved
-principal's subject — there is no caller-supplied subject and no cross-user
-read.
-
-| Route | Method | Purpose |
-| --- | --- | --- |
-| `/api/vendo/connections` | GET | list the caller's connected accounts |
-| `/api/vendo/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }` |
-| `/api/vendo/connections/:id?connector=` | GET | status; poll while connecting |
-| `/api/vendo/connections/:id?connector=` | DELETE | disconnect |
-
-Anonymous (ephemeral) visitors cannot initiate a connection — an external
-account would outlive the session it was minted for. Synthetic subjects
-(webhook principals, reserved `webhook:` and `vendo:` prefixes) are refused
-for the same reason.
-
 ## Risk labels for Composio tools
 
-Composio tools now carry a curated risk instead of the previous blanket
+Composio tools carry a curated risk instead of the previous blanket
 `write` default. The connector resolves risk in three steps:
 
 1. **Metadata hints.** Composio `destructiveHint` and `readOnlyHint` tags
@@ -130,7 +156,25 @@ With a resolver, each subject gets its own cached MCP session (bounded by an
 LRU of 500 subjects). Descriptor listing still resolves without a principal,
 so tool discovery keeps working.
 
-Every connector execution is audited with its account identity — connector,
-toolkit, `entityId`, and whether the credential was shared or per-principal —
+Every connector execution is audited with its account identity (connector,
+toolkit, `entityId`, and whether the credential was shared or per-principal)
 in the tool-call event's `detail`. The identity is stripped from the outcome
 the model and UI see, so no broker identifier leaks into a message.
+
+## Connection endpoints
+
+Every connection route is per-principal. The wire uses exactly the resolved
+principal's subject: there is no caller-supplied subject and no cross-user
+read.
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/api/vendo/connections` | GET | list the caller's connected accounts |
+| `/api/vendo/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }` |
+| `/api/vendo/connections/:id?connector=` | GET | status; poll while connecting |
+| `/api/vendo/connections/:id?connector=` | DELETE | disconnect |
+
+Anonymous (ephemeral) visitors cannot initiate a connection: an external
+account would outlive the session it was minted for. Synthetic subjects
+(webhook principals, reserved `webhook:` and `vendo:` prefixes) are refused
+for the same reason.
