@@ -1,0 +1,40 @@
+{
+  "format": "vendo/app@1",
+  "id": "app_e4571b8c-3850-431f-93e8-f6be3fb18343",
+  "name": "My Corner",
+  "ui": "tree",
+  "tree": {
+    "formatVersion": "vendo-genui/v2",
+    "root": "root",
+    "nodes": [
+      {
+        "id": "root",
+        "source": "prewired",
+        "children": [
+          "stack-1"
+        ],
+        "component": "Stack"
+      },
+      {
+        "id": "stack-1",
+        "props": {
+          "gap": 4
+        },
+        "source": "prewired",
+        "children": [
+          "text-1"
+        ],
+        "component": "Stack"
+      },
+      {
+        "id": "text-1",
+        "props": {
+          "text": "My corner",
+          "variant": "heading"
+        },
+        "source": "prewired",
+        "component": "Text"
+      }
+    ]
+  }
+}

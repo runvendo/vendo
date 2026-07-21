@@ -1,0 +1,15 @@
+{
+  "appId": "app_4a029b01-73c2-4e1b-aff0-7910e1cf91bc",
+  "versionHash": "sha256:921527fc2b381114685baee7627d6a09ecfdb058c484213e10c19a0bc08ca7f5",
+  "pins": [
+    {
+      "slot": "MapleNetWorthCard",
+      "component": "PinnedMapleNetWorthCardec18f36c",
+      "baseHash": "sha256:e53f59156f77080888375c14b15fda3923ff7f41dcd4a171a1f82bce5f7d37e9",
+      "baselineHash": "sha256:e53f59156f77080888375c14b15fda3923ff7f41dcd4a171a1f82bce5f7d37e9",
+      "drifted": false,
+      "diff": ""
+    }
+  ],
+  "generated": []
+}
