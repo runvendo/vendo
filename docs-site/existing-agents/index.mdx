@@ -1,11 +1,12 @@
 ---
-title: "Use Vendo with your existing agent"
+title: "Overview and tool pack"
+sidebarTitle: "Overview"
 description: "Keep your AI SDK or Mastra agent and add Vendo's guarded tools, generated UI, and approvals to its loop through one in-process tool pack."
 ---
 
-You already have an agent. It has its own loop, its own model, its own chat
-UI. Vendo does not replace any of that. One tool pack, spread into your
-agent's tools, adds three things to the loop you already run:
+You already have an agent: its own loop, its own model, its own chat UI.
+Vendo does not replace any of it. One tool pack, spread into your agent's
+tools, adds three things to the loop you already run:
 
 1. **Guarded tools.** Your host actions and connected-account tools, with
    every call routed through policy, approval, and audit. The pack wraps the
@@ -96,10 +97,9 @@ your own chat.
 ## Two models, deliberately
 
 Your agent keeps its own model. Vendo's `model` seam still powers app
-generation and the delegate, and resolves independently: an explicit
-`createVendo({ model })`, an env key (`ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`), or Vendo Cloud managed inference via `VENDO_API_KEY`.
-In the common case that means zero extra model config.
+generation and the delegate, resolving on its own through the
+[dev-mode credential ladder](/connect/dev-mode); in the common case that
+means zero extra model config.
 
 ## In-process vs. the MCP door
 

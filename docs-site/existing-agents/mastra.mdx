@@ -1,5 +1,5 @@
 ---
-title: "Add Vendo to a Mastra agent"
+title: "Quickstart: Mastra"
 description: "The create-mastra weather starter plus a four-touch diff: guarded host actions, generated UI, and approvals through vendoMastraTools."
 ---
 
@@ -173,10 +173,10 @@ cp .env.example .env   # add OPENAI_API_KEY (the starter agent's model)
 pnpm dev               # http://localhost:3000
 ```
 
-App generation resolves a model key from the environment independently
-(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `VENDO_API_KEY`). Two models,
-deliberately: your agent keeps its model, Vendo's `model` seam powers
-generation and the delegate.
+App generation resolves its own model independently, walking the
+[dev-mode credential ladder](/connect/dev-mode). Two models, deliberately:
+your agent keeps its model; Vendo's `model` seam powers generation and the
+delegate.
 
 ## The demo script
 

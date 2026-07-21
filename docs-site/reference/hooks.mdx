@@ -167,16 +167,11 @@ ownership model.
 
 ## BYO-agent embeds
 
-`@vendoai/ui` also exports three components for hosts that run their own
-agent loop and spread in the [guarded tool pack](/existing-agents):
-`VendoToolResult` (the dispatcher: any `vendo_*` tool output in, the right
-embed out), `VendoAppEmbed` (`vendo/app-ref@1`), and `VendoApprovalEmbed`
-(`vendo/approval-ref@1`). Like the hooks, they read the wire through the
-surrounding `VendoProvider`; each polls on its own until it reaches a
-terminal state. Prop types
-ship alongside them: `VendoToolResultProps`, `VendoAppEmbedProps`,
-`VendoApprovalEmbedProps`, and the `VendoApprovalEmbedState` resolution
-vocabulary (`"pending" | "executed" | "declined" | "expired"`).
+If you run your own agent loop and spread in the
+[guarded tool pack](/existing-agents), a separate set of `@vendoai/ui`
+components (`VendoToolResult`, `VendoAppEmbed`, `VendoApprovalEmbed`) renders
+Vendo inside that chat instead of these hooks. See
+[Embeds and envelopes](/existing-agents/embeds) for the full reference.
 
 ## When to use hooks vs. chrome
 
