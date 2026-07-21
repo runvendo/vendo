@@ -662,6 +662,11 @@ async function runRepoThroughLayerOne(
     const initOptions: RunVendoInitStepOptions = {
       context,
       env: deps.env,
+      // Consent to init's AI extraction pass (theme stage's LLM fallback
+      // lives behind this gate now). The workflow's key/binary availability
+      // decides whether the pass actually runs; init degrades gracefully
+      // without them, so this is safe to leave on unconditionally.
+      aiPolish: true,
     };
     const firstInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.first" });
     logPaths.push(...artifactPaths(firstInit.artifacts));

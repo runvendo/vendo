@@ -117,9 +117,15 @@ describe("generation engine through createApps", () => {
       tools,
       catalog,
       model: scriptedLanguageModel("unused"),
+      // Wave 9 — flag on so the box-rung edit reaches graduation (the flag-off
+      // refusal is covered in escalation-ladder.test.ts); the sandbox gap is
+      // what this test pins.
+      experimentalMachines: true,
     });
 
-    const result = await runtime.edit(original.id, "Add a daily email digest of unpaid invoices", ctx);
+    // Wave 9 — a BOX-rung instruction: schedule-y phrasing now rides the
+    // automations ladder and never needs a sandbox.
+    const result = await runtime.edit(original.id, "Build a daily digest with custom scoring logic", ctx);
 
     expect(result.failure).toMatchObject({ code: "edit-rejected", retryable: false });
     expect(result.issues?.[0]).toContain("no sandbox adapter is configured");

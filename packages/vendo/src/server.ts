@@ -118,7 +118,7 @@ import { cloudTools } from "./cloud-tools.js";
 // rides the server surface the same way: pass it explicitly via
 // createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
 export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
-import { hostedStore, type HostedStore } from "./hosted-store.js";
+import { HostedSessionDoorsMissingError, hostedStore, type HostedStore } from "./hosted-store.js";
 // The hosted-store adapter rides the server surface like the other Cloud
 // adapters: a host can pass it explicitly via createVendo({ store }) with its
 // own options instead of relying on the VENDO_API_KEY default.
@@ -294,13 +294,20 @@ export interface CreateVendoConfig {
   approvals?: {
     parkedCallTtlMs?: number;
   };
-  /** execution-v2 Wave 4 — apps-block options. `experimentalServedApps` is the
-      per-project layer-3 opt-in: a machine may serve the app surface itself
-      (the host embeds its URL in a sandboxed iframe). OFF by default — layer-3
-      generation, the 2→3 surface flip, and open() on a served app all refuse
-      with a typed VendoError naming this flag until the host enables it. */
+  /** execution-v2 Waves 4+9 — apps-block options. `experimentalMachines` is
+      the per-project layer-2 opt-in: NEW box graduation (the escalation
+      ladder's last rung) and machine provisioning refuse with a typed
+      VendoError naming this flag until the host enables it; steps/agentic
+      automations (the ladder's first two rungs) never need it, and apps that
+      already carry a machine keep every runtime path. `experimentalServedApps`
+      is the layer-3 opt-in on top: a machine may serve the app surface itself
+      (the host embeds its URL in a sandboxed iframe) — it REQUIRES
+      `experimentalMachines` (layer 3 is served by a layer-2 machine). OFF by
+      default — layer-3 generation, the 2→3 surface flip, and open() on a
+      served app all refuse with a typed VendoError naming the flag. */
   apps?: {
     experimentalServedApps?: boolean;
+    experimentalMachines?: boolean;
   };
 }
 
@@ -506,8 +513,27 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
   // registered on the console; entries retire with the session (adopt/sweep),
   // so the map tracks at most the live anonymous sessions of this process.
   const wireTouched = new Map<string, number>();
+  // vendo-web@7cd0a02 (2026-07-19) removed the console's session doors per a
+  // newer spec (anonymous visitor = end_user row; adoption = PUT
+  // /users/{externalId}); against that console every door op meets a bare
+  // 404. The doors then go quiet for the process — one warn, no per-request
+  // failures, no per-interval sweep retries — because anonymous traffic must
+  // keep serving and there is nothing to retry INTO. The full contract catch-
+  // up (merge + TTL lifecycle on the new surface) is the vendo-web follow-up
+  // tracked in docs/verification/existing-agents/polish/hosted-sessions-404.md.
+  let doorsMissing = false;
+  const disableDoors = (): void => {
+    if (doorsMissing) return;
+    doorsMissing = true;
+    console.warn(
+      "[vendo] Vendo Cloud console does not serve the hosted session doors (/api/v1/store/sessions/* was removed in vendo-web@7cd0a02): "
+      + "anonymous-session registration, the anonymous→signed-in merge, and the hosted TTL sweep are disabled for this process. "
+      + "Hosted anonymous sessions will not be swept until the console grows a replacement surface.",
+    );
+  };
   return {
     async register(subject, now) {
+      if (doorsMissing) return;
       // In-process debounce: skip the wire touch when this subject's LAST
       // successful touch is younger than sweepIntervalMs/2. TTLs are hours
       // while the debounce window is seconds, and the claim leg re-checks
@@ -520,6 +546,12 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
         await store.sessions.register(subject, now);
         wireTouched.set(subject, now);
       } catch (error) {
+        // The registry itself is gone: failing closed would 500 every
+        // anonymous request while protecting a sweep that cannot run.
+        if (error instanceof HostedSessionDoorsMissingError) {
+          disableDoors();
+          return;
+        }
         // INVARIANT: registered ⇒ sweepable. The FIRST registration must fail
         // closed — if it doesn't land, rows written under this subject would
         // be unreachable by the TTL sweep forever. A subsequent touch only
@@ -531,21 +563,37 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
       }
     },
     async adopt(from, to) {
-      const report = await store.sessions.adopt(from, to);
-      wireTouched.delete(from);
-      return report;
+      // No doors, no merge report: the caller still retires the anon cookie
+      // (the linkage is unrecoverable either way) and skips the merge audit.
+      if (doorsMissing) return null;
+      try {
+        const report = await store.sessions.adopt(from, to);
+        wireTouched.delete(from);
+        return report;
+      } catch (error) {
+        if (!(error instanceof HostedSessionDoorsMissingError)) throw error;
+        disableDoors();
+        wireTouched.delete(from);
+        return null;
+      }
     },
     // The HOST-driven sweep (hosted-store one-pager): list stale candidates,
     // claim each (the wire claim repeats the idleness predicate — a re-touch
     // defeats it, same serialization as sweepEphemeralSubjects), and finish
     // every claimed subject through the erase cascade.
     async sweep(idleMs, now) {
+      if (doorsMissing) return [];
       const evicted: string[] = [];
-      for (const subject of await store.sessions.stale(idleMs, now)) {
-        if (!(await store.sessions.claim(subject, idleMs, now))) continue;
-        await store.erase.bySubject(subject);
-        wireTouched.delete(subject);
-        evicted.push(subject);
+      try {
+        for (const subject of await store.sessions.stale(idleMs, now)) {
+          if (!(await store.sessions.claim(subject, idleMs, now))) continue;
+          await store.erase.bySubject(subject);
+          wireTouched.delete(subject);
+          evicted.push(subject);
+        }
+      } catch (error) {
+        if (!(error instanceof HostedSessionDoorsMissingError)) throw error;
+        disableDoors();
       }
       return evicted;
     },
@@ -1168,6 +1216,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // environment — VENDO_API_KEY fills its CloudAppsClient slot HERE, at the
   // composition seam; unfilled, share/publish refuse with cloud-required.
   const appsCloud = cloudKeyOptions();
+  // Wave 9 — the arming seam for ladder-authored automations: filled with the
+  // automations engine composed BELOW (arming only happens inside requests,
+  // which run after createVendo returns, so the closure reference is safe —
+  // same pattern as the connections loadout seed).
+  let automationsForArming: AutomationsEngine | undefined;
   const apps = createApps({
     store,
     guard,
@@ -1175,10 +1228,20 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     model: inference.model,
     catalog,
     pinBaselines,
-    // execution-v2 Wave 4 — the layer-3 experimental opt-in, host-config only
-    // (never an env var: enabling a surface that runs generated web apps is a
-    // deliberate per-project decision).
+    // execution-v2 Waves 4+9 — the layer-2/3 experimental opt-ins, host-config
+    // only (never an env var: enabling machine-backed execution or a surface
+    // that runs generated web apps is a deliberate per-project decision).
     ...(config.apps?.experimentalServedApps === undefined ? {} : { experimentalServedApps: config.apps.experimentalServedApps }),
+    ...(config.apps?.experimentalMachines === undefined ? {} : { experimentalMachines: config.apps.experimentalMachines }),
+    // Wave 9 — a ladder-authored automation is armed through the automations
+    // engine's own enable(), so the 07 §3 grant-capture flow runs at creation
+    // and the missing standing-grant approvals surface on the edit result.
+    armAutomation: async (appId, armCtx) => {
+      if (automationsForArming === undefined) {
+        throw new VendoError("not-implemented", "the automations engine is not composed yet");
+      }
+      return automationsForArming.enable(appId, armCtx);
+    },
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
@@ -1286,6 +1349,21 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // cadence (deny path, idempotent); disabled by parkedCallTtlMs 0.
     if (parkedCallTtlMs > 0) {
       await byoApprovals.sweepExpired(parkedCallTtlMs, sessionNow());
+      // Spec 2026-07-20 (#5): the same backstop over the general approvals
+      // collection. Chat approvals are abandoned on the next thread turn and
+      // BYO parked calls swept above, but away/automation/app approvals and
+      // approvals stranded by a mid-stream turn failure have no resuming turn —
+      // this TTL sweep denies them (idempotent) so the queue self-heals instead
+      // of piling up. Shares the parked-call TTL; disabled by the same 0.
+      if (guard.sweepExpiredApprovals !== undefined) {
+        try {
+          await guard.sweepExpiredApprovals(parkedCallTtlMs, sessionNow());
+        } catch (error) {
+          console.error("[vendo] approval TTL sweep failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     }
     if (sessionsConfig.ttlMs <= 0) return;
     for (const subject of await sessionOps.sweep(sessionsConfig.ttlMs, sessionNow())) {
@@ -1316,6 +1394,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     runner: agent.asRunner(),
   });
+  automationsForArming = automations;
   // 04-actions §3 — per-principal connected accounts, selected by the adapter
   // rule at this composition seam (selectConnections above).
   const connections = selectConnections(config.connections, resolvedConnectors);

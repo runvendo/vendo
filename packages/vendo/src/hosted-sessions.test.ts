@@ -228,6 +228,42 @@ describe("hosted store: ephemeral sessions over the wire", () => {
     expect(detail).toMatchObject({ event: "anon-merge", from: anonSubject });
   });
 
+  it("stays loud on an ENVELOPED 404 from a session door — only the bare 404 means the surface is gone", async () => {
+    // Precision guard: a console that answers the error envelope is alive and
+    // owns its answer — "not-found" from a session door is a real (if odd)
+    // service response, never the removed-surface signal. First registration
+    // keeps failing closed, and the doors stay armed for the next visitor.
+    let envelope404 = false;
+    const h = harness({ ttlMs: 3_600_000, sweepIntervalMs: 1_000 }, (inner) =>
+      async (input, init) => {
+        const url = new URL(new Request(input, init).url);
+        if (envelope404 && url.pathname.includes("/sessions/")) {
+          return Response.json(
+            { error: { code: "not-found", message: "no such session" } },
+            { status: 404 },
+          );
+        }
+        return inner(input, init);
+      });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    envelope404 = true;
+    h.setNow(0);
+    const denied = await h.vendo.handler(listThreads());
+    // The registration failed CLOSED and the enveloped "not-found" (a
+    // wire-legal VendoError code) rode through to the caller as-is.
+    expect(denied.status).toBe(404);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("session doors"));
+
+    // The doors were NOT disabled: once the console answers again, the next
+    // visitor registers over the wire as normal.
+    envelope404 = false;
+    h.setNow(100);
+    const served = await h.vendo.handler(listThreads());
+    expect(served.status).toBe(200);
+    expect(h.wireCalls("/sessions/register").length).toBeGreaterThan(0);
+  });
+
   it("sweeps a stale subject host-side: stale → claim → erase.bySubject over the wire", async () => {
     const h = harness({ ttlMs: 1_000, sweepIntervalMs: 100 });
     h.setNow(0);
@@ -258,5 +294,122 @@ describe("hosted store: ephemeral sessions over the wire", () => {
     h.setNow(5_500);
     await h.vendo.handler(listThreads());
     expect(h.console_.eraseCalls).toHaveLength(1);
+  });
+});
+
+// vendo-web@7cd0a02 (2026-07-19, deployed) deleted the console's
+// /api/v1/store/sessions/* op family per spec ("an anonymous visitor is an
+// end_user row; adoption is PUT /users/{externalId} — its routes 404"); the
+// removed routes answer Next.js's BARE 404 page, no error envelope. The
+// composition must survive that console: anonymous traffic keeps serving,
+// the doors disable once with a single warn naming the removal, and the
+// periodic sweep stops hammering a route that no longer exists.
+describe("hosted store: console without session doors (vendo-web@7cd0a02)", () => {
+  const bare404 = (): Response =>
+    new Response(
+      "<!DOCTYPE html><html><body><h1>404</h1>This page could not be found.</body></html>",
+      { status: 404, headers: { "content-type": "text/html" } },
+    );
+
+  /** Intercepts session-door ops with the prod console's bare 404; everything
+   * else (records, blobs, erase) rides the fake console untouched. */
+  const withoutDoors = (ops: readonly string[] = ["register", "adopt", "stale", "claim"]) => {
+    const hits: string[] = [];
+    const wrap = (inner: FetchLike): FetchLike => async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      const op = url.pathname.split("/sessions/")[1];
+      if (op !== undefined && ops.includes(op)) {
+        hits.push(op);
+        return bare404();
+      }
+      return inner(input, init);
+    };
+    return { hits, wrap };
+  };
+
+  it("keeps serving anonymous traffic: registration disables once, with ONE warn naming the removal", async () => {
+    const doors = withoutDoors();
+    const h = harness({ ttlMs: 3_600_000, sweepIntervalMs: 1_000 }, doors.wrap);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    // First anonymous visitor: the register attempt hits the bare 404, the
+    // doors disable, and the request still lands (register would otherwise
+    // fail closed and 500 the innocent visitor).
+    h.setNow(0);
+    const first = await h.vendo.handler(listThreads());
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual([]);
+    expect(doors.hits).toEqual(["register"]);
+
+    const doorWarns = warn.mock.calls.filter(([message]) =>
+      typeof message === "string" && message.includes("session doors"));
+    expect(doorWarns).toHaveLength(1);
+    expect(doorWarns[0]![0]).toContain("vendo-web@7cd0a02");
+    // The warn names every capability the process is giving up.
+    expect(doorWarns[0]![0]).toContain("registration");
+    expect(doorWarns[0]![0]).toContain("merge");
+    expect(doorWarns[0]![0]).toContain("sweep");
+
+    // A SECOND visitor (new subject, no debounce cover) makes no wire attempt
+    // and triggers no further warns — the doors are quiet for the process.
+    h.setNow(600);
+    const second = await h.vendo.handler(listThreads());
+    expect(second.status).toBe(200);
+    expect(doors.hits).toEqual(["register"]);
+    expect(warn.mock.calls.filter(([message]) =>
+      typeof message === "string" && message.includes("session doors"))).toHaveLength(1);
+  });
+
+  it("goes quiet on the sweep cadence: one warn, then zero wire calls and zero retry noise", async () => {
+    // Doors vanish on the SWEEP leg first (register still lands): the exact
+    // Lane E symptom — a keyed host whose periodic sweep 404s every interval.
+    const doors = withoutDoors(["stale", "claim"]);
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 100 }, doors.wrap);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    h.setNow(0);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+
+    // Past the TTL the amortized sweep runs, meets the bare 404, and disables.
+    h.setNow(5_000);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    expect(doors.hits).toEqual(["stale"]);
+    expect(warn.mock.calls.filter(([message]) =>
+      typeof message === "string" && message.includes("session doors"))).toHaveLength(1);
+    // The old symptom — "session sweep failed; will retry next interval" —
+    // must NOT fire for the removed surface.
+    expect(warn.mock.calls.filter(([message]) =>
+      typeof message === "string" && message.includes("session sweep failed"))).toHaveLength(0);
+
+    // Later sweep windows never touch the wire again and stay silent.
+    h.setNow(10_000);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    h.setNow(15_000);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    expect(doors.hits).toEqual(["stale"]);
+    expect(warn.mock.calls.filter(([message]) =>
+      typeof message === "string" && message.includes("session doors"))).toHaveLength(1);
+  });
+
+  it("retires the anon cookie on sign-in without a merge report when the doors are gone", async () => {
+    const doors = withoutDoors();
+    const h = harness({ ttlMs: 3_600_000, sweepIntervalMs: 1_000 }, doors.wrap);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    h.setNow(0);
+    const anonResponse = await h.vendo.handler(listThreads());
+    expect(anonResponse.status).toBe(200);
+    const cookie = cookieOf(anonResponse);
+
+    h.signIn();
+    h.setNow(100);
+    const signedResponse = await h.vendo.handler(listThreads(cookie));
+    expect(signedResponse.status).toBe(200);
+    // The cookie retires (the anonymous linkage is unrecoverable either way)…
+    expect(signedResponse.headers.get("set-cookie")).toMatch(/Max-Age=0/i);
+    // …but no adopt ever rode the wire and no anon-merge audit was minted.
+    expect(doors.hits).not.toContain("adopt");
+    expect(h.wireCalls("/records/vendo_audit/put").filter((request) =>
+      JSON.stringify(request.json).includes("anon-merge"))).toHaveLength(0);
   });
 });

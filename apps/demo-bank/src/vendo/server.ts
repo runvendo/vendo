@@ -32,9 +32,15 @@ export const vendo = createVendo({
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
   catalog: mapleRegistry,
-  // execution-v2 Wave 4 — the layer-3 (served apps) experimental opt-in is a
-  // host decision; Maple flips it via its own env so demos can gate on/off.
-  apps: { experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1" },
+  // execution-v2 Waves 4+9 — the layer-2 (machines) and layer-3 (served apps)
+  // experimental opt-ins are host decisions; Maple flips them via its own env
+  // so demos can gate on/off. Served apps require machines, so the served
+  // flag implies the machines flag here.
+  apps: {
+    experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
+    experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
+      || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
+  },
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
   // BYO Composio when Maple brings its own key; otherwise the slot stays

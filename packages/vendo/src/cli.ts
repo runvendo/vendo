@@ -39,7 +39,7 @@ Options:
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
-  --theme <slot=value>       Init only: answer an uncertain theme slot without the review prompt (repeatable)
+  --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
   --model-import <specifier> Refine only: module exporting the host's ai-SDK model
   --ask <text>               Refine only: interview answer (repeatable) for non-interactive runs
