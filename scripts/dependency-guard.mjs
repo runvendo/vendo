@@ -73,6 +73,13 @@ const LAYERS = {
   vendoai: ["@vendoai/vendo"],
   // orthogonal to the campaign (00-overview: "stays as-is"); no vendo deps
   "@vendoai/telemetry": [],
+  // npx-fetched Agent SDK runner for init's last-resort engine rung
+  // (docs/superpowers/specs/2026-07-20-init-builtin-agent-harness-design.md).
+  // Deliberately a leaf: NOT a dependency of @vendoai/vendo or anything
+  // else — the whole point is that its ~245MB Agent SDK dependency never
+  // lands in a host app's install. Fetched via `npm exec` at a pinned
+  // version at run time instead.
+  "@vendoai/engine": [],
 };
 
 /**
