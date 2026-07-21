@@ -14,7 +14,7 @@ import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
-import { askYesNo, CLI_VERSION, consoleOutput, exists, readOptional, toolingTelemetry, type Output } from "./shared.js";
+import { askYesNo, CLI_VERSION, consoleOutput, exists, normalizeDotEnvValue, readOptional, toolingTelemetry, type Output } from "./shared.js";
 
 export interface DoctorOptions {
   targetDir: string;
@@ -105,14 +105,25 @@ export async function readDotEnvFallback(root: string): Promise<Record<string, s
       if (line === "" || line.startsWith("#")) continue;
       const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
       if (!match) continue;
-      let value = match[2]!.trim();
-      if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
-        value = value.slice(1, -1);
-      }
-      env[match[1]!] = value;
+      env[match[1]!] = normalizeDotEnvValue(match[2]!.trim());
     }
   }
   return env;
+}
+
+/** Process env wins over the dotenv fallback — except that a blank process
+ *  value yields to a concrete dotenv one, matching toolingTelemetry's
+ *  VENDO_API_KEY precedence (an exported empty `VENDO_API_KEY=` must not
+ *  mask the real key in `.env.local`). */
+export function mergeEnvOverDotEnv(
+  fallback: Record<string, string>,
+  processEnv: NodeJS.ProcessEnv,
+): Record<string, string | undefined> {
+  const merged: Record<string, string | undefined> = { ...fallback, ...processEnv };
+  for (const [key, value] of Object.entries(processEnv)) {
+    if ((value ?? "").trim() === "" && fallback[key] !== undefined) merged[key] = fallback[key];
+  }
+  return merged;
 }
 
 /** 09-vendo §5 / block-actions A — wiring checks plus live composition,
@@ -121,7 +132,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const root = resolve(options.targetDir);
   const output = options.output ?? consoleOutput;
   const json = options.json === true;
-  const env = options.env ?? { ...(await readDotEnvFallback(root)), ...process.env };
+  const env = options.env ?? mergeEnvOverDotEnv(await readDotEnvFallback(root), process.env);
   const telemetry = telemetryFor(options, output, root);
   let failures = 0;
   let warnings = 0;

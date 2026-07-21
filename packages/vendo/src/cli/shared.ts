@@ -78,12 +78,19 @@ export function envLocalValueSync(root: string, name: string): string | null {
     const match = raw.match(new RegExp(`^\\s*${name}\\s*=\\s*(.+?)\\s*$`, "m"));
     const value = match?.[1];
     if (value === undefined) return null;
-    const quoted = value.match(/^(["'])(.*)\1$/);
-    if (quoted?.[2] !== undefined) return quoted[2];
-    return value.replace(/\s+#.*$/, "").trimEnd();
+    return normalizeDotEnvValue(value);
   } catch {
     return null;
   }
+}
+
+/** One value grammar for every CLI dotenv reader (envLocalValueSync, doctor's
+ * readDotEnvFallback): matching surrounding quotes are stripped; unquoted
+ * values lose their ` #…` inline comment. */
+export function normalizeDotEnvValue(value: string): string {
+  const quoted = value.match(/^(["'])(.*)\1$/);
+  if (quoted?.[2] !== undefined) return quoted[2];
+  return value.replace(/\s+#.*$/, "").trimEnd();
 }
 
 export function toolingTelemetry(options: TelemetryOptions & {
