@@ -1,48 +1,48 @@
 ---
-title: "Vendo: agentic interface SDK for your product"
-description: "Vendo is a full-stack agentic interface for your product: converse, call your APIs as the signed-in user, generate apps, and run pre-approved automations."
+title: "Welcome"
+description: "Vendo embeds an agent in your product that acts through your own API as the signed-in user and renders generated UI inside your brand."
 ---
 
-Vendo puts an agent inside your product. It can converse, call your APIs as the
-signed-in user, build user-owned apps, and run pre-approved automations.
+## Ship the agent your product deserves.
 
-```bash
-npm install @vendoai/vendo
-npx vendo init
-```
+Vendo is an agent that lives inside your product. It calls your API as the
+signed-in user, builds views your users own, and runs pre-approved
+automations — all rendered inside your brand and your guardrails.
 
-`@vendoai/vendo` supplies the default composition. The `vendoai` package is a
-thin alias. Every block is also available à la carte.
+## Pick your path
 
-<CardGroup cols={2}>
-  <Card title="Start with the default composition" href="/quickstart">
-    Mount one fetch handler and wrap the product in VendoRoot.
+<CardGroup cols={3}>
+  <Card title="Bring your own agent" icon="puzzle-piece" href="/existing-agents">
+    **Recommended.** Keep your AI SDK or Mastra loop. Add Vendo's guarded
+    tools, generated UI, and approval surfaces to it.
   </Card>
-  <Card title="Already have an agent?" href="/existing-agents">
-    Keep your AI SDK or Mastra loop; add guarded tools, generated UI, and approvals.
+  <Card title="Use Vendo's agent" icon="sparkles" href="/quickstart">
+    **Beta.** Batteries included — Vendo runs the loop, the chat UI, and
+    approvals for you. Most teams should bring their own agent for now.
   </Card>
-  <Card title="Understand the blocks" href="/concepts/architecture">
-    See how tools, guard, apps, automations, storage, agent, and UI fit together.
-  </Card>
-  <Card title="Connect your API" href="/connect/api-tools">
-    Extract host routes into one provider-safe tool format.
-  </Card>
-  <Card title="Deploy" href="/deploy/deploying">
-    Use the same Postgres schema locally and in production.
+  <Card title="For coding agents" icon="robot" href="/agents">
+    Claude Code, Cursor, or another coding agent installing Vendo? Start
+    here for the URL-first playbook and the doctor verify loop.
   </Card>
 </CardGroup>
 
-## Default behavior
+## The path to production
 
-- PGlite persists at `.vendo/data`.
-- The host supplies one AI SDK `LanguageModel`.
-- Every request resolves a host principal; `null` becomes an ephemeral session.
-- Every tool path passes through guard policy and audit.
-- Tree apps work without a sandbox. A sandbox adapter unlocks server-backed apps.
-- Chrome shows a loud notice when no policy or judge is configured.
-
-Cloud-gated sharing, publishing, org overlays, and pinning activate with
-`VENDO_API_KEY`. The key also fills adapter slots you left unset with Cloud
-defaults — the hosted sandbox, and the hosted store (persistence moves from
-PGlite to Vendo Cloud unless you pass your own `store`). An explicit adapter
-always wins. The rest of the stack is complete in the open-source packages.
+<Steps>
+  <Step title="Connect your app">
+    Run `vendo init` to extract your host API into guarded tools. See
+    [Connect your app](/connect/vendo-init).
+  </Step>
+  <Step title="Make it yours">
+    Theme generated UI to match your brand. See
+    [Make it yours](/connect/theming).
+  </Step>
+  <Step title="Give it reach">
+    Let users connect their own tools and accounts. See
+    [Give it reach](/capabilities/connected-accounts).
+  </Step>
+  <Step title="Ship it">
+    Deploy with the same Postgres schema locally and in production. See
+    [Ship it](/deploy/deploying).
+  </Step>
+</Steps>
