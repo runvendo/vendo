@@ -143,6 +143,8 @@ export interface InitOptions {
   byo?: boolean;
   /** --ai-polish: consent to the AI extraction pass without the prompt. */
   aiPolish?: boolean;
+  /** --engine: pin the AI-polish rung family (claude | codex | npx). */
+  engine?: string;
   /** --theme slot=value answers for the uncertain-slot review. */
   themeAnswers?: Record<string, string>;
   output?: Output;
@@ -964,7 +966,8 @@ export async function runInit(options: InitOptions): Promise<number> {
       // stop skipping.
       ...(options.aiPolish === true ? { consent: true } : {}),
       ...(options.force === true ? { force: true } : {}),
-      ...(pretty === null ? {} : { confirm: pretty.confirm }),
+      ...(options.engine === undefined ? {} : { engine: options.engine }),
+      ...(pretty === null ? {} : { confirm: pretty.confirm, choose: pretty.select }),
       ...(themeCreatedThisRun && themeSummary !== null ? {
         theme: {
           needed: themeSummary.needed,
