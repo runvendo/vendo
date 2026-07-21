@@ -242,7 +242,9 @@ headless with its own shell + file tools, working dir `/app`; its auth is the
 same inference door mapped onto plain env (`ANTHROPIC_API_KEY` =
 `VENDO_INFERENCE_KEY`, `ANTHROPIC_BASE_URL` = `VENDO_INFERENCE_URL` — BYO
 Anthropic and the Cloud gateway ride identically), and `VENDO_INFERENCE_MODEL`
-still picks the model (default `claude-sonnet-4-5`).
+still picks the model (default `claude-sonnet-4-5` on BYO; the Cloud rung
+injects the gateway's `vendo-default` alias — the gateway serves only
+`vendo-default` / `vendo-fast` / `vendo-strong`).
 
 "Edit this app" sends one prompt to `POST /agent/task`; the agent writes code,
 installs deps, runs the server, curls its own endpoints, fixes failures, and

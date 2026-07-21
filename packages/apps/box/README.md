@@ -47,7 +47,9 @@ Reads `VENDO_INFERENCE_URL` / `VENDO_INFERENCE_KEY` (BYO Anthropic key, or the
 Cloud metered gateway behind the same two vars) and maps them onto the SDK's
 env auth: `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`. `VENDO_INFERENCE_MODEL`
 still picks the model (default `claude-sonnet-4-5`; without the pin the SDK
-would default to its `sonnet` alias).
+would default to its `sonnet` alias). On the Cloud rung the host injects
+`vendo-default` — the gateway serves only the curated aliases
+`vendo-default` / `vendo-fast` / `vendo-strong`.
 
 ## Build
 
