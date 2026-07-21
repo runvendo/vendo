@@ -316,7 +316,10 @@ export async function runDeviceLogin(
         throw new Error("The code expired before it was approved; run `vendo login` again.");
       }
       if (now() >= pollDeadline) return pendingExit();
-      await sleep(intervalMs);
+      // Cap the wait to the remaining budget so a small `--wait` (e.g. 1s
+      // against the default 5s interval) exits within its bound instead of
+      // sleeping a whole interval past it.
+      await sleep(Math.min(intervalMs, pollDeadline - now()));
     }
   } catch (error) {
     output.error(errorMessage(error));

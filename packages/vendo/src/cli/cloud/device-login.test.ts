@@ -544,6 +544,39 @@ describe("bounded --wait budget (#479)", () => {
     await expect(readFile(join(root, ".env.local"), "utf8")).rejects.toThrow();
     expect(messages.logs.join("\n")).toContain("Still waiting on approval — code BCDF-GHJK");
   });
+
+  it("(e) caps the pacing sleep to the remaining budget so a sub-interval --wait honors its bound", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    let clock = 0;
+    const sleeps: number[] = [];
+    // Always pending: the loop only ends by the budget, never by approval.
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+    ]);
+    const messages = output();
+    // --wait 1 against the default 5s interval: the sleep must be capped to
+    // the 1s remaining budget, not the full 5s interval.
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "1"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+      now: () => clock,
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // Every pacing sleep stayed within the remaining budget — never a full 5s.
+    expect(Math.max(...sleeps, 0)).toBeLessThanOrEqual(1000);
+    // Total slept wall-clock did not overshoot the 1s budget.
+    expect(sleeps.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(1000);
+    expect(messages.logs.join("\n")).toContain("Still waiting on approval — code BCDF-GHJK");
+  });
 });
 
 describe("login telemetry (runLoginCommand)", () => {
