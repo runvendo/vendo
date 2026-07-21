@@ -29,7 +29,7 @@ name/email session-token claims:
 | `authJs()` | `AUTH_SECRET` | Auth.js session JWE |
 | `clerk()` | `CLERK_SECRET_KEY` (+ optional `CLERK_JWT_KEY`) | `__session` cookie or `Authorization: Bearer` |
 | `supabase()` | `SUPABASE_JWT_SECRET` (HS256, offline) and/or `SUPABASE_URL` (ES256 logins via GoTrue's JWKS) | `sb-*-auth-token` cookie or `Authorization: Bearer` |
-| `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` | `Authorization: Bearer` |
+| `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` (tenant JWKS) | `Authorization: Bearer` |
 | `jwt({ secret })` | none — a host-owned scheme has no vendor env, so `secret` is required | `Authorization: Bearer` |
 
 Both options are shared across every preset: `secret` overrides the
