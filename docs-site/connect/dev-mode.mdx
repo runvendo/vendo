@@ -28,10 +28,14 @@ resolves. Explicit keys always beat implicit ones.
   <Step title="Vendo Cloud key">
     `VENDO_API_KEY` delegates to the Vendo Cloud model gateway (Anthropic
     Messages wire, served through the stock `@ai-sdk/anthropic` provider).
-    The gateway serves curated model aliases: `vendo-default` (the default),
-    `vendo-fast`, and `vendo-strong`. Pick one with `VENDO_CLOUD_MODEL`;
-    anything else is remapped to `vendo-default` server-side. No key on hand?
-    `npx vendo login` mints a free metered dev key.
+    Because the gateway rides that provider locally, `ai@^6` and
+    `@ai-sdk/anthropic@^3` must be installed in your app even when the Cloud
+    key is your only credential — without them this rung fails the same way
+    a missing provider key does. The gateway serves curated model aliases:
+    `vendo-default` (the default), `vendo-fast`, and `vendo-strong`. Pick
+    one with `VENDO_CLOUD_MODEL`; anything else is remapped to
+    `vendo-default` server-side. No key on hand? `npx vendo login` mints a
+    free metered dev key.
   </Step>
   <Step title="None">
     No credential resolves. The wire returns a generic error and the server
