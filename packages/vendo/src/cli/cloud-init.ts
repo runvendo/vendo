@@ -3,7 +3,16 @@ import { join } from "node:path";
 import type { DevCredential } from "../dev-creds/resolve.js";
 import { runDeviceLogin } from "./cloud/device-login.js";
 import { cloudDoctor, type CloudDoctorResult } from "./doctor-live.js";
-import { askYesNo, readOptional, writeText, type Output } from "./shared.js";
+import {
+  askYesNo,
+  cloudProjectProps,
+  errorClass,
+  readOptional,
+  toolingTelemetry,
+  writeText,
+  type Output,
+  type TelemetryOptions,
+} from "./shared.js";
 
 /**
  * ENG-339 (install-dx design §6) — cloud in init. Detect VENDO_API_KEY when
@@ -73,6 +82,8 @@ export interface CloudStepOptions {
   /** The whole ceremony in one seam (default: runDeviceLogin). */
   deviceLogin?: () => Promise<number>;
   sleep?: (ms: number) => Promise<void>;
+  /** Injectable telemetry deps (matches init/doctor). */
+  telemetry?: TelemetryOptions;
 }
 
 export interface CloudStepResult {
@@ -81,8 +92,42 @@ export interface CloudStepResult {
   wroteEnvLocal: boolean;
 }
 
-/** init's cloud step (design §6). Never changes init's exit code. */
+/** init's cloud step (design §6). Never changes init's exit code. Tracked as
+    `command_run` command "cloud-init" (TELEMETRY.md): ok is "the step ended
+    in a non-error outcome" — a valid key, a clean skip/decline, or a minted
+    starter key; failures name their step. Telemetry never changes the step's
+    behavior: the tracker is fully guarded and a thrown error still rethrows. */
 export async function runCloudStep(options: CloudStepOptions): Promise<CloudStepResult> {
+  const started = Date.now();
+  // The step's target root is the client's cwd: projectIdHash and the
+  // .env.local cloud-key read attribute to the project init runs against.
+  const telemetry = toolingTelemetry({ cwd: options.root, ...(options.telemetry ?? {}) });
+  const failure: { failedStep?: string } = {};
+  const track = async (thrown?: { error: unknown }): Promise<void> => {
+    try {
+      await telemetry.track("command_run", {
+        command: "cloud-init",
+        ok: thrown === undefined && failure.failedStep === undefined,
+        durationMs: Date.now() - started,
+        ...(failure.failedStep === undefined ? {} : { failedStep: failure.failedStep }),
+        ...(thrown === undefined ? {} : { errorClass: errorClass(thrown.error) }),
+        ...(await cloudProjectProps(options.root)),
+      });
+    } catch {
+      // Telemetry must never break init. Intentional silent failure.
+    }
+  };
+  try {
+    const result = await cloudStep(options, failure);
+    await track();
+    return result;
+  } catch (error) {
+    await track({ error });
+    throw error;
+  }
+}
+
+async function cloudStep(options: CloudStepOptions, failure: { failedStep?: string }): Promise<CloudStepResult> {
   const { root, output, credential } = options;
   const env = options.env ?? process.env;
   const cloud = await (options.cloudProbe ?? cloudDoctor)({ env });
@@ -92,6 +137,7 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
     return { keyPresent: true, keyValid: true, wroteEnvLocal: false };
   }
   if (cloud.present) {
+    failure.failedStep = "key-invalid";
     output.error(`\nVendo Cloud: VENDO_API_KEY is set but not usable (${cloud.error ?? "malformed"}). Fix or remove it; \`vendo login\` can issue a fresh one.`);
     return { keyPresent: true, keyValid: false, wroteEnvLocal: false };
   }
@@ -143,6 +189,7 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
     },
   ));
   if ((await deviceLogin()) !== 0) {
+    failure.failedStep = "login";
     output.error("Vendo Cloud login did not complete; run `vendo login` and re-run `vendo init`.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }

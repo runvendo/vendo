@@ -12,7 +12,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, posix, relative } from "node:path";
-import { consoleOutput, exists, type Output } from "./shared.js";
+import { consoleOutput, exists, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface EjectOptions {
   targetDir: string;
@@ -20,6 +20,8 @@ export interface EjectOptions {
   list?: boolean;
   force?: boolean;
   output?: Output;
+  /** Injectable telemetry deps (matches init/doctor). */
+  telemetry?: TelemetryOptions;
 }
 
 interface TemplatesManifest {
@@ -109,9 +111,25 @@ async function destinationDir(
 export async function runEject(options: EjectOptions): Promise<number> {
   const output = options.output ?? consoleOutput;
   const root = options.targetDir;
+  return withCommandRun(
+    {
+      command: "eject",
+      root,
+      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    },
+    (failure) => eject(options, output, root, failure),
+  );
+}
 
+async function eject(
+  options: EjectOptions,
+  output: Output,
+  root: string,
+  failure: { failedStep?: string },
+): Promise<number> {
   const templates = templatesRoot(root);
   if (templates === null || !(await exists(join(templates, "templates.json")))) {
+    failure.failedStep = "templates";
     output.error(
       "vendo eject: could not find an installed @vendoai/ui with eject templates — install vendoai (or @vendoai/ui) first.",
     );
@@ -131,11 +149,13 @@ export async function runEject(options: EjectOptions): Promise<number> {
 
   const surface = options.surface;
   if (surface === undefined || surface === "") {
+    failure.failedStep = "surface";
     output.error(`vendo eject: name a surface (${available.join(", ")}) or use --list.`);
     return 1;
   }
   const entry = manifest.surfaces[surface];
   if (entry === undefined) {
+    failure.failedStep = "surface";
     output.error(`vendo eject: unknown surface "${surface}" — available: ${available.join(", ")}.`);
     return 1;
   }
@@ -143,6 +163,7 @@ export async function runEject(options: EjectOptions): Promise<number> {
   const { destination, srcLayout } = await destinationDir(root, surface);
   if (await exists(destination)) {
     if (options.force !== true) {
+      failure.failedStep = "exists";
       output.error(
         `vendo eject: ${relative(root, destination)} already exists — it may hold your edits. Re-run with --force to overwrite.`,
       );

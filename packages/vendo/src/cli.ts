@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { isVendoKey } from "./cli/cloud/client.js";
-import { runDeviceLogin } from "./cli/cloud/device-login.js";
+import { runLoginCommand } from "./cli/cloud/device-login.js";
 import { runCloud } from "./cli/cloud/index.js";
 import { runDoctor } from "./cli/doctor.js";
 import { runEject } from "./cli/eject.js";
@@ -168,7 +168,7 @@ export async function main(argv: string[]): Promise<number> {
       console.error(`vendo login: ${problems.join("; ")}\n\n${HELP}`);
       return 1;
     }
-    return runDeviceLogin(args);
+    return runLoginCommand(args);
   }
   if (command === "cloud") return runCloud(args);
   if (command === "mcp") return runMcp(args);

@@ -11,7 +11,8 @@ import {
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { VendoTheme } from "@vendoai/core";
-import type { Telemetry } from "@vendoai/telemetry";
+import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
+import { detectDepVersions } from "./dep-versions.js";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
@@ -37,7 +38,9 @@ import {
   type ThemeSummary,
 } from "./theme/extract-theme.js";
 import {
+  cloudProjectProps,
   consoleOutput,
+  envLocalValueSync,
   errorClass,
   exists,
   readOptional,
@@ -233,6 +236,16 @@ async function defaultThemeReview(summary: ThemeSummary): Promise<Record<string,
 async function appDirectory(root: string): Promise<string> {
   if (await exists(join(root, "src", "app"))) return join(root, "src", "app");
   return join(root, "app");
+}
+
+/** Telemetry `router` enum (init_completed): app | pages | none, from the
+    same directory evidence appDirectory rides. Express hosts are "none". */
+async function detectRouter(root: string, framework: HostFramework): Promise<"app" | "pages" | "none"> {
+  if (framework === "next") {
+    if (await exists(join(root, "src", "app")) || await exists(join(root, "app"))) return "app";
+    if (await exists(join(root, "src", "pages")) || await exists(join(root, "pages"))) return "pages";
+  }
+  return "none";
 }
 
 /** Relative, posix-style import specifier from the layout's directory to the
@@ -719,16 +732,10 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
 
 /** The value of one NAME=value line in .env.local (the cloud step's upsert
     target) — the same-run pickup reads the freshly minted key back from disk.
-    Matches dotenv semantics for hand-authored entries: surrounding quotes are
-    stripped, and unquoted values lose their ` #…` inline comment. */
+    One parser for the whole CLI: shared.ts's envLocalValueSync (telemetry's
+    cloud-key read uses the same one, so the two can never disagree). */
 async function envLocalValue(root: string, name: string): Promise<string | null> {
-  const raw = await readOptional(join(root, ".env.local"));
-  const match = raw?.match(new RegExp(`^\\s*${name}\\s*=\\s*(.+?)\\s*$`, "m"));
-  const value = match?.[1];
-  if (value === undefined) return null;
-  const quoted = value.match(/^(["'])(.*)\1$/);
-  if (quoted?.[2] !== undefined) return quoted[2];
-  return value.replace(/\s+#.*$/, "").trimEnd();
+  return envLocalValueSync(root, name);
 }
 
 async function ensureVendoEnvExample(root: string): Promise<void> {
@@ -743,8 +750,11 @@ async function ensureVendoEnvExample(root: string): Promise<void> {
   await writeText(path, `${current}${separator}${VENDO_ENV_EXAMPLE}`);
 }
 
-function telemetryFor(options: InitOptions, output: Output): Telemetry {
-  return toolingTelemetry({ ...options.telemetry, log: (message) => output.log(message) });
+/** root rides in as the client's cwd: projectIdHash/packageManager and the
+    .env.local cloud-key read attribute to the TARGET project, not the shell
+    cwd (`vendo init ../app` from elsewhere). Seams in options.telemetry win. */
+function telemetryFor(options: InitOptions, output: Output, root: string): Telemetry {
+  return toolingTelemetry({ cwd: root, ...options.telemetry, log: (message) => output.log(message) });
 }
 
 /** 09-vendo §5 — idempotent, zero-question setup. */
@@ -813,8 +823,10 @@ export async function runInit(options: InitOptions): Promise<number> {
   const selectAuth = options.yes === true || !interactive
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
+  const detectStarted = Date.now();
   const { plan, changes, manualSteps, authAdvice, authWired, compositionPath, registryPath } = await buildPlan(options, confirmAuth, selectAuth);
-  const telemetry = telemetryFor(options, output);
+  const detectMs = Date.now() - detectStarted;
+  let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
 
   try {
@@ -857,6 +869,8 @@ export async function runInit(options: InitOptions): Promise<number> {
       // The RUN's env, not process.env: a programmatic caller's key must be
       // what the probe and the mint see (seams in options.cloud still win).
       env: effectiveEnv,
+      // The step's own command_run row rides init's telemetry seams.
+      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
       ...(pretty === null ? {} : { confirm: pretty.confirm }),
       ...(options.cloud ?? {}),
     });
@@ -869,8 +883,17 @@ export async function runInit(options: InitOptions): Promise<number> {
         credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
       }
     }
+    // A key that landed in .env.local THIS run (--cloud-key upsert or the
+    // login ceremony) must activate the telemetry cloud lane for the rest of
+    // this run's events too — rebuild the client so it re-reads .env.local.
+    // A pre-existing key was already picked up at the first construction.
+    if (options.cloudKey !== undefined || cloud.wroteEnvLocal) {
+      telemetry = telemetryFor(options, output, root);
+    }
 
     // Wire — apply the bounded change set and list it. No gates, no prompts.
+    // (Timed for the cloud lane's wiringMs; the static scan below adds on.)
+    const wiringStarted = Date.now();
     for (const change of changes) {
       await writeText(change.absolute, change.after);
     }
@@ -914,24 +937,34 @@ export async function runInit(options: InitOptions): Promise<number> {
     // down this function — a pre-existing theme.json is never touched.
     const themePath = join(root, ".vendo", "theme.json");
     const themeCreatedThisRun = options.force === true || !(await exists(themePath));
+    let wiringMs = Date.now() - wiringStarted;
+    let themeMs: number | undefined;
     let themeSummary: ThemeSummary | null = null;
     if (themeCreatedThisRun) {
       pretty?.spin("Capturing your theme");
+      const themeStarted = Date.now();
       themeSummary = await extractThemeSlots(root);
+      themeMs = Date.now() - themeStarted;
       pretty?.stopSpin();
       await writeText(themePath, `${JSON.stringify(toVendoTheme(themeSummary.slots), null, 2)}\n`);
     }
     await writeIfMissing(join(root, ".vendo", "data", ".gitignore"), "*\n!.gitignore\n", options.force === true);
 
     pretty?.spin("Learning your API surface");
+    const scanStarted = Date.now();
     const report = await vendoSync({ root, out: join(root, ".vendo") });
+    wiringMs += Date.now() - scanStarted;
     pretty?.stopSpin();
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
 
     let toolCount = 0;
+    let routeCount = 0;
     try {
-      const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8")) as { tools?: unknown[] };
+      const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8")) as {
+        tools?: Array<{ binding?: { kind?: string } }>;
+      };
       toolCount = tools.tools?.length ?? 0;
+      routeCount = tools.tools?.filter((tool) => tool.binding?.kind === "route").length ?? 0;
     } catch {
       // Sync already reported any extraction warning; telemetry gets a count only.
     }
@@ -957,6 +990,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // guards decide what applies. Consent-gated; skipped silently when
     // non-interactive or credential-less. A successful pass re-syncs so
     // tools.json reflects the polish immediately.
+    const engineStarted = Date.now();
     const polish = await runAiExtraction({
       root,
       output,
@@ -981,6 +1015,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       } : {}),
       ...(options.extract ?? {}),
     });
+    const engineMs = Date.now() - engineStarted;
 
     // Theme finalization (Task 4): merge whatever the AI pass filled — if
     // consent was declined or unavailable, `polish.theme` is simply absent
@@ -1040,11 +1075,30 @@ export async function runInit(options: InitOptions): Promise<number> {
       for (const warning of resynced.warnings) output.error(`warning: ${warning}`);
     }
 
+    // Project-shape enrichment (posthog-analytics §3): bools, closed enums,
+    // counts, and bare dependency versions only — never names or content.
     await telemetry.track("init_completed", {
       framework: plan.framework,
       command: "init",
       toolCount,
       durationMs: Date.now() - started,
+      typescript: await exists(join(root, "tsconfig.json")),
+      router: await detectRouter(root, plan.framework),
+      // The engine that actually ran the AI polish; "none" when it didn't run.
+      engine: polish.engine ?? "none",
+      // route-scan today; "zod" is reserved for a future oracle-backed detect
+      // (the zod collector currently enriches route-scan output invisibly).
+      apiDetectMethod: routeCount > 0 ? "route-scan" : "none",
+      routeCount,
+      themeExtracted: themeSummary !== null,
+      ...(await detectDepVersions(root, plan.framework)),
+      // Cloud-lane-only props, passed unconditionally — the client strips
+      // every one of them in the anonymous lane.
+      detectMs,
+      engineMs,
+      ...(themeMs === undefined ? {} : { themeMs }),
+      wiringMs,
+      ...(await cloudProjectProps(root)),
     });
 
     // The one short Cloud reminder in the end-of-run summary — ONLY while no
@@ -1098,7 +1152,14 @@ export async function runInit(options: InitOptions): Promise<number> {
     pretty?.done(Date.now() - started, true);
     return 0;
   } catch (error) {
-    await telemetry.track("init_failed", { framework: plan.framework, failedStep: "wiring" });
+    await telemetry.track("init_failed", {
+      framework: plan.framework,
+      failedStep: "wiring",
+      errorClass: errorClass(error),
+      // Cloud lane only (stripped anonymously); scrubbed at the call site and
+      // re-scrubbed by the client as defense-in-depth.
+      errorDetail: scrubErrorDetail(error instanceof Error ? error.message : String(error)),
+    });
     await telemetry.track("error_class", { errorClass: errorClass(error) });
     output.error(error instanceof Error ? error.message : "vendo init failed");
     pretty?.done(Date.now() - started, false);

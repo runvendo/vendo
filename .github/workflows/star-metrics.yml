@@ -1,0 +1,56 @@
+# GitHub star metrics → PostHog.
+#
+# Two sources, one project (same write-only key the CLI/docs/console use —
+# public by design, it can only capture events):
+#   - `watch` fires on every star: real-time `repo_starred` rows with the
+#     (public) stargazer login and the running count. Un-stars emit no event.
+#   - the daily snapshot captures `github_stars_snapshot` so the series
+#     self-corrects for un-star drift.
+#
+# Together with the marketing site's `cta_click {cta: github}` this closes
+# the funnel: site visit → GitHub CTA click → star.
+
+name: star-metrics
+
+on:
+  watch:
+    types: [started]
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Capture star event
+        if: github.event_name == 'watch'
+        env:
+          # Untrusted-ish inputs stay out of the script body (injection
+          # hygiene); actor is a GitHub login, count is repo metadata.
+          ACTOR: ${{ github.actor }}
+          STARS: ${{ github.event.repository.stargazers_count }}
+        run: |
+          payload=$(jq -n --arg actor "$ACTOR" --argjson stars "${STARS:-0}" '{
+            api_key: "phc_siVHW4wVh8yDeDzMgnjLGrYYqsHMceqfdqYF9fPEGXpS",
+            event: "repo_starred",
+            distinct_id: ("gh:" + $actor),
+            properties: { repo: "runvendo/vendo", starredBy: $actor, stargazers: $stars, surface: "github" }
+          }')
+          curl -sS -m 15 -X POST -H "Content-Type: application/json" \
+            -d "$payload" "https://us.i.posthog.com/capture/"
+      - name: Capture daily snapshot
+        if: github.event_name != 'watch'
+        run: |
+          stars=$(curl -sS -m 15 "https://api.github.com/repos/runvendo/vendo" | jq '.stargazers_count')
+          test "$stars" != "null"
+          payload=$(jq -n --argjson stars "$stars" '{
+            api_key: "phc_siVHW4wVh8yDeDzMgnjLGrYYqsHMceqfdqYF9fPEGXpS",
+            event: "github_stars_snapshot",
+            distinct_id: "gh-repo:runvendo/vendo",
+            properties: { repo: "runvendo/vendo", stargazers: $stars, surface: "github" }
+          }')
+          curl -sS -m 15 -X POST -H "Content-Type: application/json" \
+            -d "$payload" "https://us.i.posthog.com/capture/"

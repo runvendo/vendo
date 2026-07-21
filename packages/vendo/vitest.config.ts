@@ -12,6 +12,8 @@ export default defineConfig({
       thresholds: { lines: 78 },
     },
     environment: "node",
+    // No real telemetry from tests (see vitest.setup.ts).
+    setupFiles: ["./vitest.setup.ts"],
     // Every umbrella test composes the full stack (createVendo → real PGlite
     // store + agent + guard + apps + automations) and, for the wire tests,
     // streams a turn end to end. Turbo runs this suite concurrently with every

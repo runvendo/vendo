@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { resolveConsent } from "./consent.js";
-import { baseProps } from "./base-props.js";
-import { EVENT_ALLOWLIST, type EventName } from "./events.js";
+import { baseProps, projectProps, type ProjectProps } from "./base-props.js";
+import { CLOUD_PROP_KEYS, EVENT_ALLOWLIST, type EventName } from "./events.js";
+import { scrubErrorDetail } from "./scrub.js";
 import type { TelemetryConfig } from "./config.js";
 
 const POSTHOG_ENDPOINT = "https://us.i.posthog.com/capture/";
@@ -18,6 +20,8 @@ export interface TelemetryDeps {
   version: string;
   config: TelemetryConfig;
   env: Record<string, string | undefined>;
+  /** Project directory for projectIdHash lookup; defaults to process.cwd(). */
+  cwd?: string;
   runtime: boolean;
   posthogKey: string | undefined;
   fetchImpl?: typeof fetch;
@@ -40,12 +44,26 @@ function boundValue(v: unknown): string | number | boolean | undefined {
   return undefined;
 }
 
-function filterToAllowlist(event: EventName, props: Record<string, unknown>): Record<string, unknown> {
+/**
+ * Filter caller props to the event's allowlist, widened by CLOUD_PROP_KEYS
+ * when the cloud lane is active. With the lane inactive, cloud-only keys are
+ * stripped even if callers pass them. errorDetail is re-scrubbed here as
+ * defense-in-depth — the CLI already scrubs at the call site, but no raw
+ * error text may leave this function regardless of what callers do.
+ */
+function filterToAllowlist(
+  event: EventName,
+  props: Record<string, unknown>,
+  cloudActive: boolean,
+): Record<string, unknown> {
   const allowed = EVENT_ALLOWLIST[event];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(props)) {
-    if (!allowed.has(k)) continue;
-    const bounded = boundValue(v);
+    if (!allowed.has(k) && !(cloudActive && CLOUD_PROP_KEYS.has(k))) continue;
+    // scrubErrorDetail returns "" for non-strings; `|| undefined` drops the
+    // key instead of sending an empty string.
+    const value = k === "errorDetail" ? scrubErrorDetail(v as string) || undefined : v;
+    const bounded = boundValue(value);
     if (bounded !== undefined) out[k] = bounded;
   }
   return out;
@@ -57,8 +75,31 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
   }
 }
 
+/** Shape of a Vendo Cloud API key. Anything else leaves the lane anonymous. */
+const CLOUD_KEY_RE = /^vnd_[0-9a-f]{40}$/;
+
 export function createTelemetry(deps: TelemetryDeps): Telemetry {
   const doFetch = deps.fetchImpl ?? fetch;
+  // Cloud lane: a well-formed VENDO_API_KEY marks events as coming from a
+  // Cloud-configured install. Producer-set like the base props — callers can
+  // never pass `cloud` or `cloudKeyHash` themselves. cloudKeyHash is the
+  // unsalted sha256 of the key: the console stores key hashes for joining,
+  // and PostHog never receives the key itself. Deriving the lane here sends
+  // nothing — every consent check still runs first inside track().
+  const cloudKey = deps.env.VENDO_API_KEY;
+  const cloudActive = typeof cloudKey === "string" && CLOUD_KEY_RE.test(cloudKey);
+  const cloudMarkers = cloudActive
+    ? { cloud: true, cloudKeyHash: createHash("sha256").update(cloudKey as string).digest("hex") }
+    : {};
+  // Filesystem-backed props are computed once per client, never per event.
+  // Guarded so the never-throw contract holds at the API surface even if
+  // cwd resolution or the filesystem probes fail in an unexpected way.
+  let project: ProjectProps = {};
+  try {
+    project = projectProps(deps.env, deps.cwd);
+  } catch {
+    // Telemetry must never break the caller; send without project props.
+  }
   return {
     async track(event, props) {
       try {
@@ -70,7 +111,14 @@ export function createTelemetry(deps: TelemetryDeps): Telemetry {
         });
         if (!consent.allowed) return;
 
-        const properties = { ...baseProps(deps.version), ...filterToAllowlist(event, props) };
+        // Producer-set cloud markers spread last so a caller-passed `cloud`
+        // or `cloudKeyHash` (already filtered out above) can never win.
+        const properties = {
+          ...baseProps(deps.version),
+          ...project,
+          ...filterToAllowlist(event, props, cloudActive),
+          ...cloudMarkers,
+        };
         const body = JSON.stringify({
           api_key: deps.posthogKey,
           event,

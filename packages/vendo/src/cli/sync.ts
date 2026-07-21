@@ -3,7 +3,7 @@ import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
 import { syncSemantics } from "./semantics.js";
-import { consoleOutput, type Output } from "./shared.js";
+import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
   report: SyncReportWithWarnings;
@@ -23,6 +23,8 @@ export interface SyncOptions {
   apiKey?: string;
   apiUrl?: string;
   json?: boolean;
+  /** Injectable telemetry deps (matches init/doctor). */
+  telemetry?: TelemetryOptions;
 }
 
 /** `sync --json` — the one machine-readable object printed on stdout. */
@@ -75,6 +77,17 @@ function nonzero(entry: ToolImpact): boolean {
 
 /** 04-actions §1 / 09-vendo §5 — fail-soft extraction, strict CI gate. */
 export async function runSync(options: SyncOptions): Promise<number> {
+  return withCommandRun(
+    {
+      command: "sync",
+      root: options.targetDir,
+      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    },
+    () => sync(options),
+  );
+}
+
+async function sync(options: SyncOptions): Promise<number> {
   const output = options.output ?? consoleOutput;
   const json = options.json === true;
   // In --json mode, human lines that duplicate report fields are dropped and

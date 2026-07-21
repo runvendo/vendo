@@ -8,7 +8,7 @@ description: "Every environment variable Vendo reads across host process, app ma
 
 | Variable | Effect |
 | --- | --- |
-| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and fills any adapter slot (sandbox, store) the host left unset with the Cloud default; see [Vendo Cloud](/deploy/vendo-cloud) for adapter precedence and the data-location warning |
+| `VENDO_API_KEY` | authenticates Vendo Cloud calls (sharing, publishing, pinning) and fills any adapter slot (sandbox, store) the host left unset with the Cloud default; see [Vendo Cloud](/deploy/vendo-cloud) for adapter precedence and the data-location warning. A well-formed key also switches build and development telemetry into the cloud lane documented in the repository's [`TELEMETRY.md`](https://github.com/runvendo/vendo/blob/main/TELEMETRY.md); see [Telemetry](/deploy/telemetry#build-and-development-telemetry) |
 | `VENDO_CLOUD_URL` | overrides the Vendo Cloud base URL for the runtime and CLI; defaults to `https://console.vendo.run` |
 | `VENDO_TELEMETRY_DISABLED=1` | disables build and development telemetry |
 | `VENDO_TICK_SECRET` | bearer secret required by `POST /tick` |

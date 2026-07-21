@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { RunContext, ToolDescriptor } from "@vendoai/core";
 import { createGuard } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtractionHarness } from "./extract/harness.js";
 import { runInit, starViaGh } from "./init.js";
 import type { Output } from "./shared.js";
@@ -1470,5 +1470,116 @@ describe("vendo init (zero-question)", () => {
     expect(plan.aiPolish.draftSchema).toMatchObject({ type: "object", required: ["brief", "tools"] });
     expect(plan.aiPolish.apply).toContain("vendo extract --apply");
     expect(await tree(root)).toEqual(before); // --agent wrote nothing
+  });
+});
+
+describe("init telemetry enrichment", () => {
+  /** Injected telemetry seam: a real client pointed at a mock PostHog fetch
+      and a temp home, with a clean consent env (no CI/DNT). */
+  async function telemetrySink(env: Record<string, string | undefined> = {}) {
+    const home = await mkdtemp(join(tmpdir(), "vendo-init-tele-home-"));
+    cleanup.push(home);
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true });
+    const events = (): Array<{ event: string; properties: Record<string, unknown> }> =>
+      fetchImpl.mock.calls.map((call) =>
+        JSON.parse((call[1] as { body: string }).body) as { event: string; properties: Record<string, unknown> });
+    return { events, telemetry: { home, env, posthogKey: "phc_test", fetchImpl } };
+  }
+
+  it("init_completed carries the project-shape enums and versions (anonymous lane)", async () => {
+    const root = await fixture();
+    const sink = output();
+    const tele = await telemetrySink();
+    expect(await run(root, sink, { telemetry: tele.telemetry })).toBe(0);
+    const completed = tele.events().find((entry) => entry.event === "init_completed");
+    expect(completed).toBeDefined();
+    expect(completed!.properties).toMatchObject({
+      framework: "next",
+      command: "init",
+      typescript: false,
+      router: "app",
+      engine: "none", // non-interactive run: the AI polish never ran
+      apiDetectMethod: "none",
+      routeCount: 0,
+      themeExtracted: true,
+      frameworkVersion: "16.0.0",
+    });
+    expect(typeof completed!.properties.durationMs).toBe("number");
+    // Cloud-only props never ride the anonymous lane, even though init
+    // passes them unconditionally.
+    for (const key of ["detectMs", "engineMs", "themeMs", "wiringMs", "projectName", "repoHost"]) {
+      expect(key in completed!.properties, key).toBe(false);
+    }
+  });
+
+  it("init_completed adds timings and projectName in the cloud lane", async () => {
+    const root = await fixture();
+    const sink = output();
+    const tele = await telemetrySink({ VENDO_API_KEY: `vnd_${"a".repeat(40)}` });
+    expect(await run(root, sink, { telemetry: tele.telemetry })).toBe(0);
+    const completed = tele.events().find((entry) => entry.event === "init_completed");
+    expect(completed).toBeDefined();
+    expect(completed!.properties.cloud).toBe(true);
+    expect(completed!.properties.projectName).toBe("host");
+    for (const key of ["detectMs", "engineMs", "themeMs", "wiringMs"]) {
+      expect(typeof completed!.properties[key], key).toBe("number");
+    }
+  });
+
+  it("init_failed carries errorClass (and no errorDetail anonymously)", async () => {
+    const root = await fixture();
+    const sink = output();
+    const tele = await telemetrySink();
+    const exit = await run(root, sink, {
+      telemetry: tele.telemetry,
+      cloud: { cloudProbe: async () => { throw new TypeError("boom at /Users/alice/app/x.ts"); } },
+    });
+    expect(exit).toBe(1);
+    const failed = tele.events().find((entry) => entry.event === "init_failed");
+    expect(failed).toBeDefined();
+    expect(failed!.properties).toMatchObject({ framework: "next", failedStep: "wiring", errorClass: "TypeError" });
+    expect("errorDetail" in failed!.properties).toBe(false);
+  });
+
+  it("init_failed carries a scrubbed errorDetail in the cloud lane", async () => {
+    const root = await fixture();
+    const sink = output();
+    const tele = await telemetrySink({ VENDO_API_KEY: `vnd_${"a".repeat(40)}` });
+    const exit = await run(root, sink, {
+      telemetry: tele.telemetry,
+      cloud: { cloudProbe: async () => { throw new TypeError("boom at /Users/alice/app/x.ts"); } },
+    });
+    expect(exit).toBe(1);
+    const failed = tele.events().find((entry) => entry.event === "init_failed");
+    expect(failed!.properties.errorDetail).toBe("boom at [path]");
+    expect(failed!.properties.errorClass).toBe("TypeError");
+  });
+
+  it("a pre-existing VENDO_API_KEY in the target's .env.local activates the cloud lane (P1 review)", async () => {
+    const root = await fixture();
+    const key = `vnd_${"c".repeat(40)}`;
+    await writeFile(join(root, ".env.local"), `VENDO_API_KEY=${key}\n`);
+    const sink = output();
+    const tele = await telemetrySink(); // NO key in the telemetry env
+    expect(await run(root, sink, { telemetry: tele.telemetry })).toBe(0);
+    const completed = tele.events().find((entry) => entry.event === "init_completed");
+    expect(completed!.properties.cloud).toBe(true);
+    // The whole run rides the lane: the first client already read .env.local.
+    const started = tele.events().find((entry) => entry.event === "init_started");
+    expect(started!.properties.cloud).toBe(true);
+  });
+
+  it("a --cloud-key landed THIS run activates the cloud lane for init_completed (P1 review)", async () => {
+    const root = await fixture();
+    const key = `vnd_${"d".repeat(40)}`;
+    const sink = output();
+    const tele = await telemetrySink(); // NO key anywhere until the flag lands it
+    expect(await run(root, sink, { telemetry: tele.telemetry, cloudKey: key })).toBe(0);
+    // init_started fired before the key existed — anonymous.
+    const started = tele.events().find((entry) => entry.event === "init_started");
+    expect("cloud" in started!.properties).toBe(false);
+    // The rebuilt client picked the freshly written key up from .env.local.
+    const completed = tele.events().find((entry) => entry.event === "init_completed");
+    expect(completed!.properties.cloud).toBe(true);
   });
 });

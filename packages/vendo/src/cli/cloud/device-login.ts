@@ -4,7 +4,7 @@ import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
 import { upsertEnvLocal } from "../cloud-init.js";
 import { browserOpenCommand } from "../playground.js";
-import { CLI_VERSION, consoleOutput, type Output } from "../shared.js";
+import { CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
 
 /**
  * `vendo login` (alias: `vendo cloud device-login`) — the auth.md
@@ -93,6 +93,28 @@ async function postJson(
     parsed = text;
   }
   return { status: response.status, body: parsed };
+}
+
+/**
+ * `vendo login` — the top-level command surface: the identical ceremony
+ * wrapped in one `command_run` row (command "login", TELEMETRY.md). The
+ * ceremony's other two callers stay untracked here: `vendo cloud
+ * device-login` (the alias) calls runDeviceLogin directly, and init's
+ * embedded step already tracks itself as "cloud-init".
+ */
+export async function runLoginCommand(
+  args: string[],
+  options: DeviceLoginOptions & { telemetry?: TelemetryOptions } = {},
+): Promise<number> {
+  return withCommandRun(
+    {
+      command: "login",
+      // Where the key lands is the project the ceremony is for.
+      root: options.root ?? process.cwd(),
+      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    },
+    () => runDeviceLogin(args, options),
+  );
 }
 
 export async function runDeviceLogin(

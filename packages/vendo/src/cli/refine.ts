@@ -6,7 +6,7 @@ import { stdin, stdout } from "node:process";
 import type { LanguageModel } from "ai";
 import { DevModelController, type DevModelOptions } from "../dev-creds/model.js";
 import { runRefine, type RefineChange, type RefineResult, type RefineTranscript } from "../refine.js";
-import { consoleOutput, exists, writeText, type Output } from "./shared.js";
+import { consoleOutput, exists, withCommandRun, writeText, type Output, type TelemetryOptions } from "./shared.js";
 
 /**
  * `vendo refine` — the CLI surface of the refine engine (ENG-250). Extraction
@@ -29,6 +29,8 @@ export interface RefineCommandOptions {
   confirm?: (change: { path: string; diff: string }) => Promise<boolean>;
   interview?: (questions: string[]) => Promise<string[]>;
   env?: Record<string, string | undefined>;
+  /** Injectable telemetry deps (matches init/doctor). */
+  telemetry?: TelemetryOptions;
 }
 
 const INTERVIEW_QUESTIONS = [
@@ -141,9 +143,26 @@ function printRun(result: RefineResult, output: Output): void {
 export async function runRefineCommand(options: RefineCommandOptions): Promise<number> {
   const root = resolve(options.targetDir);
   const output = options.output ?? consoleOutput;
+  return withCommandRun(
+    {
+      command: "refine",
+      root,
+      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    },
+    (failure) => refineCommand(options, output, root, failure),
+  );
+}
+
+async function refineCommand(
+  options: RefineCommandOptions,
+  output: Output,
+  root: string,
+  failure: { failedStep?: string },
+): Promise<number> {
   const env = options.env ?? process.env;
 
   if (!await exists(join(root, ".vendo", "tools.json"))) {
+    failure.failedStep = "tools";
     output.error("refine needs .vendo/tools.json — run `vendo init` (or `vendo sync`) first");
     return 1;
   }
@@ -156,6 +175,7 @@ export async function runRefineCommand(options: RefineCommandOptions): Promise<n
       env,
     });
   } catch (error) {
+    failure.failedStep = "model";
     output.error(error instanceof Error ? error.message : "model resolution failed");
     return 1;
   }
@@ -175,6 +195,7 @@ export async function runRefineCommand(options: RefineCommandOptions): Promise<n
       ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
     });
   } catch (error) {
+    failure.failedStep = "run";
     output.error(error instanceof Error ? error.message : "vendo refine failed");
     return 1;
   }

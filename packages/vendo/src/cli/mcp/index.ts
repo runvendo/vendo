@@ -1,4 +1,4 @@
-import { consoleOutput, type Output } from "../shared.js";
+import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
 import { runServerJson } from "./server-json.js";
 import { runVerifyDomain } from "./verify-domain.js";
 
@@ -6,6 +6,8 @@ const HELP = `vendo mcp — MCP registry discovery tooling\n\nUsage:\n  vendo mc
 
 export interface McpOptions {
   output?: Output;
+  /** Injectable telemetry deps (matches init/doctor). */
+  telemetry?: TelemetryOptions;
 }
 
 const VALUE_OPTIONS = new Set(["--domain", "--url", "--key-out", "--write-well-known"]);
@@ -38,24 +40,33 @@ export async function runMcp(args: string[], options: McpOptions = {}): Promise<
     output.log(HELP);
     return 0;
   }
-  if (command === "server-json") {
-    return runServerJson({
-      targetDir: target(commandArgs),
-      domain: option(commandArgs, "--domain"),
-      url: option(commandArgs, "--url"),
-      force: commandArgs.includes("--force"),
-      output,
-    });
-  }
-  if (command === "verify-domain") {
-    return runVerifyDomain({
-      targetDir: target(commandArgs),
-      domain: option(commandArgs, "--domain"),
-      keyOut: option(commandArgs, "--key-out"),
-      writeWellKnown: option(commandArgs, "--write-well-known"),
-      output,
-    });
-  }
-  output.error(`Unknown mcp command: ${command}\n\n${HELP}`);
-  return 1;
+  return withCommandRun(
+    {
+      command: "mcp",
+      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    },
+    async (failure) => {
+      if (command === "server-json") {
+        return runServerJson({
+          targetDir: target(commandArgs),
+          domain: option(commandArgs, "--domain"),
+          url: option(commandArgs, "--url"),
+          force: commandArgs.includes("--force"),
+          output,
+        });
+      }
+      if (command === "verify-domain") {
+        return runVerifyDomain({
+          targetDir: target(commandArgs),
+          domain: option(commandArgs, "--domain"),
+          keyOut: option(commandArgs, "--key-out"),
+          writeWellKnown: option(commandArgs, "--write-well-known"),
+          output,
+        });
+      }
+      failure.failedStep = "unknown-command";
+      output.error(`Unknown mcp command: ${command}\n\n${HELP}`);
+      return 1;
+    },
+  );
 }
