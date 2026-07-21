@@ -108,7 +108,9 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
     "frameworkVersion",
     "zodVersion",
   ]),
-  // One row per non-init CLI command run. `command` is a closed enum:
+  // One row per tracked CLI command run — each a standalone `vendo <command>`
+  // except cloud-init, which fires from the cloud step inside `vendo init`.
+  // `command` is a closed enum:
   // extract | theme | eject | playground | refine | sync | cloud-init | mcp.
   // failedStep/errorClass are short enums/class names, never message text.
   command_run: new Set([
