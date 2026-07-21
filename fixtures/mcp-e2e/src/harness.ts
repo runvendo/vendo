@@ -226,10 +226,9 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
         return { kind: "http", url: `${origin}/fixture/apps/${HTTP_FIXTURE_APP_ID}` };
       }
       const opened = await apps.open(appId, ctx);
-      if (opened.kind === "resuming") throw new Error("rung-1 fixture cannot resume");
-      return opened.kind === "tree"
-        ? { kind: "tree", payload: opened.payload }
-        : opened;
+      if (opened.kind === "tree") return { kind: "tree", payload: opened.payload };
+      if (opened.kind === "http") return { kind: "http", url: opened.url };
+      throw new Error(`rung-1 fixture cannot serve app surface "${opened.kind}"`);
     },
     call: (appId, ref, args, ctx) => apps.call(appId, ref, args, ctx),
   };
