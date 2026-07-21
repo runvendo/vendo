@@ -51,6 +51,7 @@ import {
   type PipelineEvent,
 } from "./pipeline.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "./pins.js";
+import { smokeRenderIslands } from "./smoke-render.js";
 import { prewiredPropNames, prewiredSchemaPrompt } from "./prewired-schema.js";
 
 /** The slice of a tool descriptor generation needs: prompt context and the
@@ -439,7 +440,7 @@ export default function PayInvoicePanel() {
   const [invoices, setInvoices] = useState([]);
   const [invoiceId, setInvoiceId] = useState("");
   const [phase, setPhase] = useState("idle");
-  useEffect(() => { tools.acme_listInvoices({ status: "open" }).then((r) => setInvoices(r.data)); }, []);
+  useEffect(() => { tools.acme_listInvoices({ status: "open" }).then((r) => setInvoices(r.data ?? [])); }, []);
   const pay = async () => {
     setPhase("sending");
     const result = await tools.acme_payInvoice({ invoiceId });
@@ -1067,6 +1068,20 @@ const validateCompiledCreate = async (
   issues.push(...actionIssues(compiled.tree, deps.tools));
   issues.push(...rootedRenderIssues(compiled.tree));
   if (issues.length > 0) return { issues };
+  // v4 — the smoke-render gate (crash classes the 2026-07-21 gate shipped:
+  // C11's React #310 hooks-in-map, undefined names, unguarded-data throws).
+  // Runs LAST, only on otherwise-clean documents, so cheap failures never pay
+  // for a render; source-keyed caching makes repair/end-pass revalidation of
+  // unchanged islands free.
+  if (components !== undefined && deps.pipeline?.smokeRender !== false) {
+    issues.push(...await smokeRenderIslands({
+      components,
+      componentTools: prepared.componentTools,
+      tools: deps.tools,
+      toolShapes: deps.toolShapes,
+    }));
+    if (issues.length > 0) return { issues };
+  }
   const document: GeneratedAppDocument = {
     format: VENDO_APP_FORMAT,
     name,
