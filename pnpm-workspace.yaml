@@ -37,5 +37,9 @@ minimumReleaseAgeExclude:
 # pnpm 11 no longer reads the `pnpm` field in package.json; overrides live here.
 overrides:
   "@types/react": "^19.2.0"
+  # Security floors (2026-07-21 advisories): fast-uri GHSA-v2hh-gcrm-f6hx,
+  # sharp/libvips GHSA-f88m-g3jw-g9cj — both reach us only via examples/demos.
+  "fast-uri": ">=3.1.4"
+  "sharp": ">=0.35.0"
   "@types/react-dom": "^19.2.0"
   "postcss@<8.5.10": ">=8.5.10"
