@@ -16,7 +16,7 @@
     "test:coverage": "turbo run test:coverage",
     "changeset": "changeset",
     "changeset:status": "changeset status --since=origin/main",
-    "changeset:version": "changeset version",
+    "changeset:version": "changeset version && node scripts/sync-version-constants.mjs",
     "changeset:publish": "changeset publish"
   },
   "devDependencies": {
