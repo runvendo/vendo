@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  detectsKeyQuestion,
+  evaluateAskGate,
   evaluateAskedBeforeAccount,
   findInventedToolViolations,
   findScaffoldViolations,
@@ -24,6 +26,29 @@ function text(value: string): TranscriptEvent {
   return assistant([{ type: "text", text: value }]);
 }
 
+function init(sessionId: string): TranscriptEvent {
+  return { type: "system", subtype: "init", session_id: sessionId } as TranscriptEvent;
+}
+
+function result(finalText: string, extra: Partial<TranscriptEvent> = {}): TranscriptEvent {
+  return { type: "result", subtype: "success", result: finalText, ...extra } as TranscriptEvent;
+}
+
+/** Real ask texts captured from live runs 2026-07-21 (invoify, express-host). */
+const REAL_ASK_BYO_OR_CLOUD =
+  "Before running `npx vendo init`, I need one decision from you. The playbook says init requires "
+  + "either `--byo` (you bring an ANTHROPIC_API_KEY) or `--cloud-key` (a Vendo Cloud key). "
+  + "Want me to proceed with `--byo` and `--auth none`?";
+const REAL_ASK_PLAYBOOK_MANDATE =
+  "Before I run `vendo init`, the playbook requires me to ask you: **Cloud vs. bring-your-own for "
+  + "the model key.** Cloud needs an account; bring-your-own uses a key you already have. "
+  + "Let me know which, and I'll proceed with install → init → wiring → doctor.";
+const STAR_ASK_TEXT =
+  "Vendo install is done. Would you like me to star `runvendo/vendo` on GitHub to support the project?";
+const DOCTOR_GREEN_TEXT =
+  "Vendo is installed and wired: `npx vendo doctor --json` reports every check green, and the dev "
+  + "server renders the generated UI. Your ANTHROPIC_API_KEY from .env.local is what the runtime uses.";
+
 describe("parseTranscript", () => {
   it("skips non-JSON and truncated lines", () => {
     const events = parseTranscript('npm warn something\n{"type":"assistant","message":{"content":[]}}\n{"type":"resu');
@@ -34,6 +59,94 @@ describe("parseTranscript", () => {
     const events = parseTranscript(await readFile(cannedTranscriptPath, "utf8"));
     expect(countTurns(events)).toBe(7);
     expect(totalCostUsd(events)).toBeCloseTo(1.87);
+  });
+
+  it("sums turns and cost across resumed invocations (one result event each)", () => {
+    const events: TranscriptEvent[] = [
+      init("s1"),
+      text("Cloud or BYO?"),
+      result(REAL_ASK_BYO_OR_CLOUD, { num_turns: 3, total_cost_usd: 0.4, duration_ms: 60_000 }),
+      init("s1"),
+      bash("npx vendo doctor --json"),
+      result(STAR_ASK_TEXT, { num_turns: 9, total_cost_usd: 1.1, duration_ms: 240_000 }),
+    ];
+    expect(countTurns(events)).toBe(12);
+    expect(totalCostUsd(events)).toBeCloseTo(1.5);
+  });
+
+  it("still counts assistant events for an invocation whose result was cut off", () => {
+    const events: TranscriptEvent[] = [
+      init("s1"),
+      result(REAL_ASK_BYO_OR_CLOUD, { num_turns: 3, total_cost_usd: 0.4 }),
+      init("s1"),
+      bash("npm install vendoai"),
+      bash("npx vendo init --yes --auth none --byo"),
+      // timed out: no second result event
+    ];
+    expect(countTurns(events)).toBe(5);
+    expect(totalCostUsd(events)).toBeCloseTo(0.4);
+  });
+});
+
+describe("detectsKeyQuestion", () => {
+  it("matches the real byo-or-cloud-key ask (live run, invoify)", () => {
+    expect(detectsKeyQuestion(REAL_ASK_BYO_OR_CLOUD)).toBe(true);
+  });
+
+  it("matches the real playbook-mandated ask (live run, express-host)", () => {
+    expect(detectsKeyQuestion(REAL_ASK_PLAYBOOK_MANDATE)).toBe(true);
+  });
+
+  it("never matches the star ask — that question is the run's terminal step", () => {
+    expect(detectsKeyQuestion(STAR_ASK_TEXT)).toBe(false);
+  });
+
+  it("does not match a doctor-green completion summary", () => {
+    expect(detectsKeyQuestion(DOCTOR_GREEN_TEXT)).toBe(false);
+  });
+
+  it("does not match key-topic prose that is not awaiting input", () => {
+    expect(detectsKeyQuestion("I will use the bring-your-own key path since .env.local already has one.")).toBe(false);
+    expect(detectsKeyQuestion("")).toBe(false);
+  });
+
+  it("does not match a star ask that happens to mention the key setup", () => {
+    expect(detectsKeyQuestion(
+      "Doctor is green with your bring-your-own key. Want me to star runvendo/vendo on GitHub?",
+    )).toBe(false);
+  });
+});
+
+describe("evaluateAskGate", () => {
+  it("is not-reached when the run never ends on the key question", async () => {
+    const events = parseTranscript(await readFile(cannedTranscriptPath, "utf8"));
+    expect(evaluateAskGate(events)).toBe("not-reached");
+    expect(evaluateAskGate([])).toBe("not-reached");
+  });
+
+  it("is reached-terminal when the run ends awaiting the key answer", () => {
+    expect(evaluateAskGate([init("s1"), result(REAL_ASK_BYO_OR_CLOUD)])).toBe("reached-terminal");
+  });
+
+  it("is reached-and-answered when a scripted reply let the run continue past the gate", () => {
+    const events: TranscriptEvent[] = [
+      init("s1"),
+      result(REAL_ASK_PLAYBOOK_MANDATE),
+      init("s1"),
+      bash("npx vendo doctor --json"),
+      result(STAR_ASK_TEXT),
+    ];
+    expect(evaluateAskGate(events)).toBe("reached-and-answered");
+  });
+
+  it("is reached-terminal when the agent asks again after the scripted reply", () => {
+    const events: TranscriptEvent[] = [
+      init("s1"),
+      result(REAL_ASK_BYO_OR_CLOUD),
+      init("s1"),
+      result(REAL_ASK_PLAYBOOK_MANDATE),
+    ];
+    expect(evaluateAskGate(events)).toBe("reached-terminal");
   });
 });
 
@@ -170,6 +283,19 @@ describe("scoreFixtureRun", () => {
     expect(metrics.turns).toBe(7);
     expect(metrics.withinTurnBudget).toBe(true);
     expect(metrics.askedBeforeAccount.pass).toBe(true);
+    expect(metrics.askGate).toBe("not-reached");
     expect(metrics.violations).toHaveLength(0);
+  });
+
+  it("marks a run that ended at the ask gate as reached-terminal", () => {
+    const metrics = scoreFixtureRun({
+      fixture: "live",
+      events: [init("s1"), text(REAL_ASK_BYO_OR_CLOUD), result(REAL_ASK_BYO_OR_CLOUD, { num_turns: 4 })],
+      doctor: { ran: true, green: false, failingCodes: ["E-WIRE-001"] },
+      finalToolState: { toolNames: [], referencedToolNames: [] },
+      turnBudget: 40,
+      agentExit: { code: 0, timedOut: false },
+    });
+    expect(metrics.askGate).toBe("reached-terminal");
   });
 });

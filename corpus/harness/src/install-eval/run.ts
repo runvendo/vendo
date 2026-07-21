@@ -31,9 +31,11 @@ import { parseTranscript } from "./transcript.js";
 /**
  * `pnpm corpus install-eval` — the agent-install eval (plan Phase 4). For
  * each fixture: clean copy, local-registry npm resolution, one REAL headless
- * Claude Code run with only the docs' copy-paste prompt, then machine
- * scoring (doctor run by the harness, transcript heuristics) and a matrix
- * report under corpus/reports/.
+ * Claude Code run with only the docs' copy-paste prompt (plus at most ONE
+ * scripted-human reply when the agent stops on the playbook's mandated
+ * Cloud-vs-BYO question — see agent.ts, #480), then machine scoring (doctor
+ * run by the harness, transcript heuristics) and a matrix report under
+ * corpus/reports/.
  *
  * NEVER in CI or `pnpm test`: every live run spends real model money. The
  * --dry-run mode exercises the entire pipeline against a canned transcript
@@ -120,6 +122,10 @@ async function runOneFixture(
   } else {
     progress(`install-eval: ${fixture.name} — running headless agent (model ${options.model}, `
       + `budget $${options.maxBudgetUsd} / ${Math.round(options.timeBudgetMs / 60_000)}min)…`);
+    // Budgets are per RUN, not per invocation: when the agent stops on the
+    // mandated Cloud-vs-BYO question, the runner's one scripted-human reply
+    // (`--resume`) spends what the first invocation left over, and scoring
+    // sums turns/cost/duration across both invocations' result events.
     const agent = await deps.runAgent({
       prompt,
       cwd: fixtureDir,
@@ -131,7 +137,8 @@ async function runOneFixture(
     });
     agentExit = { code: agent.code, timedOut: agent.timedOut };
     transcriptSource = await readFile(transcriptPath, "utf8");
-    progress(`install-eval: ${fixture.name} — agent exited ${agent.code ?? "by signal"}${agent.timedOut ? " (time budget hit)" : ""}; running doctor…`);
+    const scripted = agent.scriptedReplies > 0 ? ` after ${agent.scriptedReplies} scripted-human reply` : "";
+    progress(`install-eval: ${fixture.name} — agent exited ${agent.code ?? "by signal"}${agent.timedOut ? " (time budget hit)" : ""}${scripted}; running doctor…`);
     doctor = await deps.runDoctor({ fixture, fixtureDir, logsDir, env: deps.env });
   }
 
