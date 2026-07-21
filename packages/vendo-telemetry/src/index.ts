@@ -12,6 +12,8 @@ export { maybeShowNotice } from "./notice.js";
 export interface InitTelemetryOptions {
   version: string;
   env?: Record<string, string | undefined>;
+  /** Project directory for projectIdHash lookup; defaults to process.cwd(). */
+  cwd?: string;
   runtime?: boolean;
   posthogKey?: string;
   home?: string;
@@ -37,6 +39,7 @@ export function initTelemetry(opts: InitTelemetryOptions): Telemetry {
     version: opts.version,
     config: afterNotice,
     env,
+    cwd: opts.cwd,
     runtime: opts.runtime ?? false,
     posthogKey: opts.posthogKey ?? env.VENDO_POSTHOG_KEY ?? DEFAULT_POSTHOG_KEY,
     fetchImpl: opts.fetchImpl,

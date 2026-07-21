@@ -1,5 +1,5 @@
 import { resolveConsent } from "./consent.js";
-import { baseProps } from "./base-props.js";
+import { baseProps, projectProps } from "./base-props.js";
 import { EVENT_ALLOWLIST, type EventName } from "./events.js";
 import type { TelemetryConfig } from "./config.js";
 
@@ -18,6 +18,8 @@ export interface TelemetryDeps {
   version: string;
   config: TelemetryConfig;
   env: Record<string, string | undefined>;
+  /** Project directory for projectIdHash lookup; defaults to process.cwd(). */
+  cwd?: string;
   runtime: boolean;
   posthogKey: string | undefined;
   fetchImpl?: typeof fetch;
@@ -59,6 +61,8 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 
 export function createTelemetry(deps: TelemetryDeps): Telemetry {
   const doFetch = deps.fetchImpl ?? fetch;
+  // Filesystem-backed props are computed once per client, never per event.
+  const project = projectProps(deps.env, deps.cwd);
   return {
     async track(event, props) {
       try {
@@ -70,7 +74,7 @@ export function createTelemetry(deps: TelemetryDeps): Telemetry {
         });
         if (!consent.allowed) return;
 
-        const properties = { ...baseProps(deps.version), ...filterToAllowlist(event, props) };
+        const properties = { ...baseProps(deps.version), ...project, ...filterToAllowlist(event, props) };
         const body = JSON.stringify({
           api_key: deps.posthogKey,
           event,

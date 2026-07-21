@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createTelemetry } from "./client.js";
 
 function makeDeps(overrides: Record<string, unknown> = {}) {
@@ -67,6 +70,39 @@ describe("createTelemetry.track", () => {
     await t.track("init_started", { framework: { nested: "secret" } } as never);
     const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
     expect(body.properties.framework).toBeUndefined();
+  });
+
+  it("includes projectIdHash and packageManager base props on every event", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "vendo-tele-client-"));
+    try {
+      mkdirSync(join(cwd, ".git"));
+      writeFileSync(join(cwd, ".git", "config"), '[remote "origin"]\n\turl = https://github.com/a/b.git\n');
+      const deps = makeDeps({
+        cwd,
+        env: { npm_config_user_agent: "pnpm/9.1.0 npm/? node/v20.11.0 darwin arm64" },
+      });
+      const t = createTelemetry(deps);
+      await t.track("agent_run", {});
+      const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+      expect(body.properties.packageManager).toBe("pnpm");
+      expect(body.properties.projectIdHash).toMatch(/^[0-9a-f]{64}$/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("omits projectIdHash and packageManager when no source exists", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "vendo-tele-client-"));
+    try {
+      const deps = makeDeps({ cwd });
+      const t = createTelemetry(deps);
+      await t.track("agent_run", {});
+      const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+      expect("projectIdHash" in body.properties).toBe(false);
+      expect("packageManager" in body.properties).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("never throws when fetch rejects", async () => {

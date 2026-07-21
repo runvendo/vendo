@@ -3,7 +3,17 @@
  * TELEMETRY.md mirrors this file. Nothing outside these sets is ever sent.
  * Base properties (see base-props.ts) are permitted on every event implicitly.
  */
-export const BASE_PROP_KEYS = ["vendoVersion", "osPlatform", "nodeVersion"] as const;
+export const BASE_PROP_KEYS = [
+  "vendoVersion",
+  "osPlatform",
+  "nodeVersion",
+  // Salted one-way sha256 of the git origin URL (else package.json name);
+  // omitted when neither exists. See projectProps in base-props.ts.
+  "projectIdHash",
+  // Closed enum npm | pnpm | yarn | bun from npm_config_user_agent; omitted
+  // when unknown.
+  "packageManager",
+] as const;
 
 export type EventName =
   | "init_started"

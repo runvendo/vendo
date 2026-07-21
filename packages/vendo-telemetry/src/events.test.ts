@@ -1,7 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { EVENT_ALLOWLIST, type EventName } from "./events.js";
+import { BASE_PROP_KEYS, EVENT_ALLOWLIST, type EventName } from "./events.js";
 
 describe("event allowlist", () => {
+  it("permits every base prop key on every event", () => {
+    expect([...BASE_PROP_KEYS]).toEqual([
+      "vendoVersion",
+      "osPlatform",
+      "nodeVersion",
+      "projectIdHash",
+      "packageManager",
+    ]);
+    for (const name of Object.keys(EVENT_ALLOWLIST) as EventName[]) {
+      for (const key of BASE_PROP_KEYS) {
+        expect(EVENT_ALLOWLIST[name].has(key)).toBe(true);
+      }
+    }
+  });
+
   it("lists every event with an explicit allowed-key set", () => {
     const names: EventName[] = [
       "init_started",

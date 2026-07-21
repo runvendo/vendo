@@ -6,14 +6,16 @@ Vendo collects anonymous, opt-out telemetry from build and development tooling s
 
 Every event uses a random anonymous id plus the event properties listed here. The allowlist below mirrors `packages/vendo-telemetry/src/events.ts`; keys outside these sets are dropped before sending.
 
+Every event carries the base properties `vendoVersion`, `osPlatform`, `nodeVersion`, `projectIdHash`, and `packageManager` (written *base* below). `packageManager` is a closed enum — `npm`, `pnpm`, `yarn`, or `bun` — read from the package manager's own user-agent env var, and omitted when unknown. `projectIdHash` is described under Anonymous Identity.
+
 | Event | Properties |
 | --- | --- |
-| `init_started` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework` |
-| `init_completed` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework`, `provider`, `llmSkipped`, `keyPrompt`, `command`, `componentsOffered`, `componentCount`, `remixOffered`, `remixWrapped`, `remixSkipped`, `toolCount`, `durationMs` |
-| `init_failed` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework`, `failedStep` |
-| `doctor_run` | `vendoVersion`, `osPlatform`, `nodeVersion`, `failures`, `warnings`, `wired` |
-| `agent_run` | `vendoVersion`, `osPlatform`, `nodeVersion` |
-| `error_class` | `vendoVersion`, `osPlatform`, `nodeVersion`, `errorClass` |
+| `init_started` | *base*, `framework` |
+| `init_completed` | *base*, `framework`, `provider`, `llmSkipped`, `keyPrompt`, `command`, `componentsOffered`, `componentCount`, `remixOffered`, `remixWrapped`, `remixSkipped`, `toolCount`, `durationMs` |
+| `init_failed` | *base*, `framework`, `failedStep` |
+| `doctor_run` | *base*, `failures`, `warnings`, `wired` |
+| `agent_run` | *base* |
+| `error_class` | *base*, `errorClass` |
 
 `init_completed` fields are all small integers or short enums: `command` is `init` only; `componentsOffered`/`componentCount` are the catalog picker's offered/accepted counts; `remixOffered`/`remixWrapped`/`remixSkipped` are the remix picker's anchor counts. `doctor_run` carries the health-check's hard-`failures` count, `warnings` count, and a `wired` bool. No event carries component names, ids, labels, file paths, keys, or any other content — counts and enums only.
 
@@ -28,6 +30,8 @@ Example payload:
     "vendoVersion": "0.0.0",
     "osPlatform": "darwin",
     "nodeVersion": "v22.3.0",
+    "projectIdHash": "9b2b...64-hex-chars...c1e0",
+    "packageManager": "pnpm",
     "framework": "next",
     "provider": "configured",
     "llmSkipped": false,
@@ -51,6 +55,8 @@ Vendo telemetry never collects source code, file paths, prompts, generated UI, t
 ## Anonymous Identity
 
 Vendo creates a random UUID and stores it in `~/.vendo/telemetry.json` with two preferences: `optedOut` and `noticeShown`. The id is not derived from a machine, account, project, host app, or environment value. Deleting the file rotates the id.
+
+`projectIdHash` identifies a project opaquely so events from the same repo can be grouped. It is a one-way SHA-256 of the git origin URL (normalized so ssh and https spellings match), or of the `package.json` name when there is no remote, and omitted when neither exists. A fixed public salt (`vendo-telemetry-project-v1`) is prepended before hashing; the raw URL or name is never sent and cannot be recovered from the hash. Changing the remote rotates the hash.
 
 ## Opt Out
 
