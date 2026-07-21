@@ -1,64 +1,44 @@
 ---
 title: "Quickstart: Mastra"
-description: "The create-mastra weather starter plus a four-touch diff: guarded host actions, generated UI, and approvals through vendoMastraTools."
+description: "Give an existing Mastra agent guarded host actions, generated UI, and approvals: vendo init, vendoMastraTools in the agent's tools, one embed component."
 ---
 
-This walkthrough mirrors
-[`examples/mastra-agent`](https://github.com/runvendo/vendo/tree/main/examples/mastra-agent)
-in the repo: the unmodified [`create-mastra`](https://mastra.ai/docs)
-weather-agent starter, fronted with Next.js per Mastra's own guide
-(`@mastra/ai-sdk` → `useChat` + AI SDK UI), plus four touches (~60 lines).
-Every Vendo line in the example sits inside `--- vendo:` / `--- /vendo`
-comment fences.
+import { AgentPrompt } from "/snippets/agent-prompt.jsx"
 
-Read [the overview](/existing-agents) first for the tool pack and envelope
-contract. The frontend here is identical to the
-[AI SDK example](/existing-agents/ai-sdk): the embed contract is
-framework-agnostic.
+Keep your Mastra agent, its model, and your chat UI. Three steps add Vendo
+to it: run `vendo init`, spread `vendoMastraTools` into the agent's tools,
+and render tool outputs with one component.
 
-## Touch 1: the Vendo composition
+## 1. Install and init
 
-One `createVendo` call with the cautious policy and two host actions:
-`get_weather` (risk `read`, so generated apps can query live data) and the
-deliberately risky `send_trip_report` (risk `write`, which exercises
-approvals).
-
-```ts
-// src/lib/vendo.ts
-import type { Principal } from "@vendoai/core";
-import { createVendo, type Vendo } from "@vendoai/vendo/server";
-import { getWeather, sendTripReport } from "./vendo-actions";
-
-/** The demo runs as one fixed user. A real host resolves the principal from
- *  its own session, or passes an auth preset. */
-export const DEMO_PRINCIPAL: Principal = { kind: "user", subject: "demo-user" };
-
-export const vendo = createVendo({
-  principal: async () => DEMO_PRINCIPAL,
-  // "cautious" runs reads and asks before write/destructive calls. That is
-  // what parks vendo_send_trip_report on the approval embed in the demo.
-  policy: "cautious",
-  // The registration map for .vendo/tools.json's server-action bindings.
-  serverActions: {
-    "src/lib/vendo-actions.ts#getWeather": getWeather,
-    "src/lib/vendo-actions.ts#sendTripReport": sendTripReport,
-  },
-  // No model key here: app generation resolves ANTHROPIC_API_KEY /
-  // OPENAI_API_KEY / VENDO_API_KEY from the environment.
-});
+```bash
+npm install @vendoai/vendo
+npx vendo init
 ```
 
-The action implementations live in `src/lib/vendo-actions.ts` (the same
-open-meteo lookup as the starter's `weatherTool`, plus the send action), and
-their descriptors (name, schema, risk) in `.vendo/tools.json`, exactly where
-`vendo init` extracts them in a real app. The shipped example wraps this
-call in a small `composeVendo(overrides)` helper so its fixture e2e can
-inject a scripted model; the config is what you see above.
+<AgentPrompt
+  lead="Paste this prompt instead of following the steps by hand."
+  prompt={"Add Vendo to this repo's existing Mastra agent. Read https://docs.vendo.run/existing-agents/mastra.md and follow it exactly. Use `vendo init` for scaffolding; don't hand-write what it generates. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs."}
+/>
 
-## Touch 2: the wire route
+Init scaffolds the wire route (`app/api/vendo/[...vendo]/route.ts`), extracts
+your host actions into agent tools, and captures your theme
+([what init writes](/connect/vendo-init)). The wire route serves generated
+apps and approvals to the embeds; your Mastra agent stays the loop.
 
-The stock catch-all route, what `vendo init` scaffolds. It serves apps and
-approvals to the embeds.
+Your agent needs the same `vendo` instance the wire route uses, so lift the
+generated composition into a shared module both import:
+
+```ts
+// src/lib/vendo.ts — init's composition, moved so your agent can import it
+import { createVendo } from "@vendoai/vendo/server";
+import { serverActions } from "./vendo-actions";
+
+export const vendo = createVendo({
+  policy: "cautious", // run reads, ask before writes
+  serverActions,      // the map init generated from your actions
+});
+```
 
 ```ts
 // src/app/api/vendo/[...vendo]/route.ts
@@ -71,16 +51,15 @@ export const dynamic = "force-dynamic";
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
-## Touch 3: the tools spread
+## 2. Spread the pack
 
-The starter's agent definition gains the pack next to its own `weatherTool`.
-`vendoMastraTools` returns a Promise (the pack enumerates the live
-registry), which is why the agent uses Mastra's tools-as-function form:
+The agent definition gains the pack next to its own tools.
+`vendoMastraTools` returns a Promise, which is why the agent uses Mastra's
+tools-as-function form:
 
 ```ts
 // src/mastra/agents/weather-agent.ts
 import { Agent } from '@mastra/core/agent';
-import { Memory } from '@mastra/memory';
 import { vendoMastraTools } from '@vendoai/vendo/mastra';
 import { vendo } from '../../lib/vendo';
 import { weatherTool } from '../tools/weather-tool';
@@ -88,53 +67,33 @@ import { weatherTool } from '../tools/weather-tool';
 export const weatherAgent = new Agent({
   id: 'weather-agent',
   name: 'Weather Agent',
-  instructions: `…the starter's instructions, plus a short note telling the
-model about its vendo_* tools…`,
+  instructions: `…your instructions, plus a short note about the vendo_* tools…`,
   model: 'openai/gpt-4.1-mini',
-  // The starter's weatherTool plus the guard-wrapped pack: vendo_get_weather,
-  // vendo_send_trip_report, vendo_create_app, vendo_delegate.
   tools: async () => ({ weatherTool, ...(await vendoMastraTools(vendo)) }),
-  memory: new Memory(),
 });
 ```
 
-A Mastra agent definition is static: one definition serves every user, so
-the shim takes no principal. Each `vendo_*` call resolves the caller's
-principal lazily from Mastra's request context under the key
-`vendo-principal` (exported as `VENDO_PRINCIPAL_KEY`). A call without one
-fails closed. The optional `vendo-session-id` key (`VENDO_SESSION_KEY`)
-carries your host session id into Vendo's audit trail.
-
-<Note>
-  The starter scaffolds `openai/gpt-5-mini`, but multi-turn tool use with
-  GPT-5 reasoning models currently fails on history replay
-  ([mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005)).
-  The example pins `openai/gpt-4.1-mini`, the workaround those issues
-  document.
-</Note>
-
-## Touch 4: the principal and the embeds
-
-The chat route is Mastra's own Next.js guide route with two additions: the
-caller's principal set server-side on the `RequestContext` (never trust the
-client for identity), and a store warm-up so guarded tools can execute
-before any wire request has run.
+A Mastra agent definition is static (one definition serves every user), so
+the shim takes no principal. Instead, set the caller's principal server-side
+on the `RequestContext` in your chat route; a `vendo_*` call without one
+fails closed:
 
 ```ts
-// src/app/api/chat/route.ts
+// src/app/api/chat/route.ts — Mastra's own Next.js guide route, two additions
 import { handleChatStream } from '@mastra/ai-sdk';
 import { RequestContext } from '@mastra/core/request-context';
 import { createUIMessageStreamResponse } from 'ai';
 import { mastra } from '@/mastra';
 import { VENDO_PRINCIPAL_KEY } from '@vendoai/vendo/mastra';
-import { DEMO_PRINCIPAL, vendo } from '@/lib/vendo';
+import { vendo } from '@/lib/vendo';
 
 export async function POST(req: Request) {
   const params = await req.json();
 
-  await vendo.store.ensureSchema();
+  await vendo.store.ensureSchema(); // lets guarded tools run before any wire request
   const requestContext = new RequestContext();
-  requestContext.set(VENDO_PRINCIPAL_KEY, DEMO_PRINCIPAL);
+  // Resolve the caller from your own session — never trust the client.
+  requestContext.set(VENDO_PRINCIPAL_KEY, { kind: 'user', subject: 'demo-user' });
 
   const stream = await handleChatStream({
     version: 'v6',
@@ -146,12 +105,21 @@ export async function POST(req: Request) {
 }
 ```
 
-The page is a plain `useChat` chat wrapped once in `VendoProvider`, handing
-each finished tool part to `<VendoToolResult>`. Mastra streams tool calls as
-`dynamic-tool` or `tool-*` parts, so the example matches both:
+<Note>
+  Multi-turn tool use with GPT-5 reasoning models currently fails on history
+  replay ([mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005));
+  pin `openai/gpt-4.1-mini` as the workaround those issues document.
+</Note>
+
+## 3. Render the embeds
+
+Wrap the chat once in `VendoProvider` and hand finished tool outputs to
+`<VendoToolResult>`: it renders the live app embed for a generated app, the
+approval card for a parked call, and nothing for plain data. Mastra streams
+tool calls as `dynamic-tool` or `tool-*` parts, so match both:
 
 ```tsx
-// src/app/page.tsx (the tool-part branch)
+// src/app/page.tsx — inside your existing message-parts loop
 if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
   const tool = part as ToolLikePart;
   return tool.state === "output-available"
@@ -160,44 +128,27 @@ if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
 }
 ```
 
-`<VendoToolResult>` renders the app embed for `vendo/app-ref@1`, the
-approval card for `vendo/approval-ref@1`, and nothing for plain data, like
-the starter's own `weatherTool` output.
+The frontend is identical to the [AI SDK quickstart](/existing-agents/ai-sdk):
+the embed contract is framework-agnostic.
 
-## Run it
+## Try it
 
-```bash
-cd examples/mastra-agent
-pnpm install
-cp .env.example .env   # add OPENAI_API_KEY (the starter agent's model)
-pnpm dev               # http://localhost:3000
-```
+One thread, three asks:
 
-App generation resolves its own model independently: an explicit
-`createVendo({ model })` wins, otherwise Vendo walks the
-[dev-mode credential ladder](/connect/dev-mode). Two models, deliberately:
-your agent keeps its model; Vendo's `model` seam powers generation and the
-delegate.
+1. **"What's the weather in Paris?"** Your agent's own tool, untouched.
+2. **"Make me a dashboard comparing weather in Paris, Tokyo and NYC."**
+   `vendo_create_app` returns an app ref immediately and the app builds live
+   inline in the chat.
+3. **"Email the report to ops@example.com."** A write parks on the cautious
+   policy and renders as an approval card. Approve executes it in place.
 
-## The demo script
+## The full example
 
-1. **"What's the weather in Paris?"** The starter's own `weatherTool`,
-   untouched.
-2. **"Make me a dashboard comparing weather in Paris, Tokyo and NYC."** The
-   agent calls `vendo_create_app`; the app builds live inline in the chat.
-3. **"Email the report to ops@example.com."** `vendo_send_trip_report` parks
-   on the cautious policy; an approval card renders inline; approving
-   executes the parked call in place.
-
-<Frame caption="Step 2 in the Mastra chat: the generated weather dashboard, live inside VendoAppEmbed, querying the registered host action for real data.">
-  <img src="/images/existing-agents/mastra-app-embed.png" alt="A generated weather comparison dashboard rendered inline in the Mastra starter's chat" />
-</Frame>
-
-## Tests
-
-The example ships a hermetic fixture e2e
-(`examples/mastra-agent/e2e/vendo-seam.e2e.test.ts`): a real Mastra agent
-turn through the pack, the approval park → wire approve → execute round
-trip, the app-ref envelope from a real generation, delegation, and the
-fail-closed principal check. Scripted models and a temp store, so no keys
-are needed. Run it with `pnpm test` in the example.
+[`examples/mastra-agent`](https://github.com/runvendo/vendo/tree/main/examples/mastra-agent)
+is the unmodified [`create-mastra`](https://mastra.ai/docs) weather starter,
+fronted with Next.js per Mastra's own guide, plus exactly this diff (~60
+lines, every Vendo line inside `--- vendo:` comment fences), with a keyless
+fixture e2e (`pnpm test`). The concepts behind the pack (approval parking,
+the envelope contract, the two-model split) live in
+[the overview](/existing-agents) and
+[Embeds and envelopes](/existing-agents/embeds).
