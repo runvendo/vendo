@@ -83,14 +83,13 @@ Bun), follow the Express shape by hand — see
 
 ## The model key
 
-`createVendo`'s `model` is optional. When you omit it, the runtime resolves a
-model through the [dev-mode credential ladder](/connect/dev-mode): a provider
-env key, a logged-in Claude Code or Codex CLI session, then `VENDO_API_KEY`.
-Init does not scaffold a model file. Instead it runs a key step: if a provider
-key is already set it says so; otherwise it offers a metered Vendo Cloud starter
-key inline (email OTP) and appends `VENDO_API_KEY` to `.env.local` without
-touching your other keys. Init never fails on a Cloud error. Production always
-needs a real provider key.
+`createVendo`'s `model` is optional; when you omit it, the runtime resolves
+one through the [dev-mode credential ladder](/connect/dev-mode). Init does
+not scaffold a model file — instead it runs a key step: if a provider key is
+already set it says so; otherwise it offers a metered Vendo Cloud starter key
+inline (email OTP) and appends `VENDO_API_KEY` to `.env.local` without
+touching your other keys. Init never fails on a Cloud error. Production
+always needs a real provider key.
 
 ## Agent mode
 
@@ -117,19 +116,10 @@ question has a value flag, so nothing hangs:
 npx vendo init --yes --auth authJs --byo
 ```
 
-- `--yes` skips the interactive prompts (the auth confirm, theme review, and
-  Cloud offer) and accepts the detected defaults. A non-interactive run ends
-  with an `Agent tail:` block naming the exact files this run left to hand-edit.
-- `--auth <preset>` wires an auth preset without asking: `authJs`, `clerk`,
-  `supabase`, `auth0`, `jwt`, or `none`.
-- `--framework <next|express>` overrides detection; required non-interactively
-  when detection fails.
-- `--cloud-key <key>` writes an existing Vendo Cloud key to `.env.local`
-  instead of the login offer; `--byo` declines the offer (bring your own key).
-- `--ai-polish` consents to the AI extraction pass non-interactively.
-- `--theme <slot=value>` answers an uncertain theme slot (repeatable).
-- `--force` regenerates Vendo-owned `.vendo/` files; it never replaces existing
-  host source files.
+`--yes` skips the interactive prompts (auth confirm, theme review, Cloud
+offer) and accepts the detected defaults, ending with an `Agent tail:` block
+naming the files this run left to hand-edit. See the
+[CLI reference](/reference/cli#vendo-init-dir) for every other flag.
 
 Init rejects options it does not recognize and exits 1 before doing anything, so
 a flag an older CLI does not support can never be silently dropped.

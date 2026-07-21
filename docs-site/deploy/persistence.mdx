@@ -14,12 +14,9 @@ export function createStore(config?: {
 Omit `url` for PGlite. `dataDir` defaults to `.vendo/data`. Set `url` for a
 hosted Postgres database. Both use the same schema and migration path.
 
-The PGlite default applies only while no `VENDO_API_KEY` is set. With the key
-set and no `store` passed to `createVendo`, the store slot fills with the
-Cloud hosted store — threads, apps, records, grants, and audit then persist
-in Vendo Cloud, not locally. Pass `store: createStore(...)` to keep data
-local; an explicitly passed store always wins. See
-[Vendo Cloud](/deploy/vendo-cloud#hosted-store).
+The PGlite default applies only while no `VENDO_API_KEY` is set — see
+[Vendo Cloud](/deploy/vendo-cloud#hosted-store) for what setting the key
+does to where your data lives and how adapter precedence works.
 
 PGlite is single-writer: the store enforces one live instance per data dir with
 a lock file inside it (`<dataDir>/.vendo-writer.lock`). A second process pointed at the same

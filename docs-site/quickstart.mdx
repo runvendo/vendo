@@ -295,15 +295,10 @@ message stream. App views arrive as `data-vendo-view` parts. Approval metadata
 arrives as `data-vendo-approval` parts.
 
 <Note>
-  The scaffolded route passes `policy: {}`, which reads `.vendo/policy.json`:
-  destructive tools ask before running, reads run. Remove the `policy` key and
-  every call auto-runs (audited), with the unconfigured-policy notice in
-  shipped chrome. The file is read fail-soft: deleting it while keeping
-  `policy: {}` also auto-runs, without the notice — keep it in version
-  control. Named presets replace the file — `"cautious"` (writes ask,
-  reads run), `"readonly"` (reads run, everything else blocked), or
-  `"autopilot"` (everything runs) — and inline `{ rules }` covers anything a
-  preset doesn't.
+  The scaffolded route passes `policy: {}`, which reads `.vendo/policy.json`
+  (destructive tools ask, reads run) — see
+  [Handler options](/reference/handler-options#composition-configuration) for
+  every policy shape and what an omitted or missing file does.
 </Note>
 
 ## Set the trusted origin
@@ -333,11 +328,9 @@ every job it does.
 ## Persistence
 
 A bare `createVendo()` boots with an env-resolved model, anonymous ephemeral
-sessions, and PGlite persistence — unless `VENDO_API_KEY` is set and no
-`store` is passed, in which case the Cloud hosted store takes the slot and
-threads, apps, records, grants, and audit persist in Vendo Cloud. Pass
-`store: createStore(...)` to keep data local; an explicit store always wins.
-See [Vendo Cloud](/deploy/vendo-cloud#hosted-store).
+sessions, and PGlite persistence by default — see
+[Vendo Cloud](/deploy/vendo-cloud#hosted-store) for what happens to the
+store slot once `VENDO_API_KEY` is set.
 
 ## Serve your product to MCP clients (the door)
 

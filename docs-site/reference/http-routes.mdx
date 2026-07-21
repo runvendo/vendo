@@ -103,9 +103,9 @@ query parameter (or `body.org`) on `/approvals` or `/grants`, always return
 
 ## Errors and CSRF
 
-Every non-2xx response uses `{ "error": { "code", "message" } }`. Statuses are
-400 validation, 404 not found, 403 blocked, 409 conflict, 402 cloud required,
-and 501 sandbox unavailable or not implemented.
+Every non-2xx response uses `{ "error": { "code", "message" } }` — see
+[Troubleshooting](/deploy/troubleshooting#error-codes) for the code-to-status
+map.
 
 Cookie-authenticated mutations require `Content-Type: application/json`.
 Binary app import, signed webhooks, and bearer-authenticated tick are the only

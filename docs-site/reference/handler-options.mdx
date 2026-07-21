@@ -34,6 +34,13 @@ sessions, and default persistence.
 | `approvals` | approval lifecycle knobs: `parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry). Past it, the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired". Vendo-thread approvals are untouched |
 | `apps` | apps-block options: `experimentalServedApps` opts the project into layer-3 served apps (off by default) — see [Generated UI](/concepts/generated-ui) |
 
+Named presets: `"cautious"` lets reads run and asks before writes or
+destructive calls, `"readonly"` lets reads run and blocks everything else,
+`"autopilot"` runs everything. Omitting the `policy` key entirely surfaces an
+unconfigured-policy notice in the shipped chrome; a missing
+`.vendo/policy.json` file with `policy: {}` still set does not — keep the
+file in version control.
+
 The umbrella also ships two subpath exports for hosts that keep their own
 agent loop: `@vendoai/vendo/ai-sdk` (`vendoTools`) and `@vendoai/vendo/mastra`
 (`vendoMastraTools`) build the guarded tool pack for AI SDK and Mastra
@@ -137,6 +144,6 @@ Every non-2xx response has this shape:
 { "error": { "code": "validation", "message": "Readable message" } }
 ```
 
-The fixed map is `validation` 400, `not-found` 404, `blocked` 403, `conflict`
-409, `cloud-required` 402, and `sandbox-unavailable` or `not-implemented` 501.
-MCP door paths are the exception; they speak MCP and OAuth response shapes.
+See [Troubleshooting](/deploy/troubleshooting#error-codes) for the fixed
+code-to-status map. MCP door paths are the exception; they speak MCP and
+OAuth response shapes.

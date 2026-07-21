@@ -24,13 +24,13 @@ Every preset is zero-argument in the standard case — it reads its own
 provider's env variable and derives the principal's `display` from
 name/email session-token claims:
 
-| Preset | Session secret (env) |
-| --- | --- |
-| `authJs()` | `AUTH_SECRET` |
-| `clerk()` | `CLERK_SECRET_KEY` |
-| `supabase()` | `SUPABASE_JWT_SECRET` (HS256, offline) and/or `SUPABASE_URL` (ES256 logins via GoTrue's JWKS) |
-| `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` |
-| `jwt({ secret })` | none — a host-owned scheme has no vendor env, so `secret` is required |
+| Preset | Session secret (env) | Session source |
+| --- | --- | --- |
+| `authJs()` | `AUTH_SECRET` | Auth.js session JWE |
+| `clerk()` | `CLERK_SECRET_KEY` (+ optional `CLERK_JWT_KEY`) | `__session` cookie or `Authorization: Bearer` |
+| `supabase()` | `SUPABASE_JWT_SECRET` (HS256, offline) and/or `SUPABASE_URL` (ES256 logins via GoTrue's JWKS) | `sb-*-auth-token` cookie or `Authorization: Bearer` |
+| `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` | `Authorization: Bearer` |
+| `jwt({ secret })` | none — a host-owned scheme has no vendor env, so `secret` is required | `Authorization: Bearer` |
 
 Both options are shared across every preset: `secret` overrides the
 provider's env-read secret, and `user(subject, claims)` swaps in custom
