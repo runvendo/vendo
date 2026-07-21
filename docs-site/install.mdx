@@ -104,7 +104,7 @@ skill into `.claude/skills/` when your repo uses skills.
     Next.js apps are fully wired by init. Express apps get `vendo/server.ts`
     plus two manual lines: mount `app.use("/api/vendo", mountVendo())` and
     wrap the client entry in `<VendoRoot>`. See the
-    [Node quickstart](/quickstart-node).
+    [Express & other runtimes quickstart](/quickstart#wire-the-express-adapter).
   </Step>
   <Step title="Verify">
     Start your dev server, then:
@@ -154,9 +154,9 @@ skill into `.claude/skills/` when your repo uses skills.
 | --- | --- | --- |
 | Persistence on Postgres | Same schema as the PGlite default, for production | [Persistence](/deploy/persistence) |
 | Sandbox | User apps that need a server escalate into a jail | [Architecture](/concepts/architecture) |
-| Connectors | External tools executed as the signed-in user | [Integrations](/capabilities/integrations) |
+| Connectors | External tools executed as the signed-in user | [Connected accounts](/capabilities/connected-accounts) |
 | MCP door | Claude, ChatGPT, and Cursor use your product's tools — a host decision, never a default; needs a `HostOAuthAdapter` and `createVendo({ mcp: true, oauth })` | [MCP](/capabilities/mcp) |
-| Voice | Real-time voice surfaces over the same tools and policy | [Voice](/capabilities/voice) |
+| Voice | Real-time voice surfaces over the same tools and policy | [Voice](/ui/components#voice) |
 | Vendo Cloud | Sharing, publishing, org overlays, hosted automations via `VENDO_API_KEY` | [Vendo Cloud](/deploy/vendo-cloud) |
 
 `vendo doctor` ends with a ladder line naming exactly what each remaining
