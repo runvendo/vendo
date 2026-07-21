@@ -3,6 +3,8 @@ title: "Welcome"
 description: "Vendo embeds an agent in your product that acts through your own API as the signed-in user and renders generated UI inside your brand."
 ---
 
+import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+
 ## Ship the agent your product deserves.
 
 Vendo is an agent that lives inside your product. It calls your API as the
@@ -25,6 +27,11 @@ automations, all rendered inside your brand and your guardrails.
     here for the URL-first playbook and the doctor verify loop.
   </Card>
 </CardGroup>
+
+<AgentPrompt
+  lead={<>Or skip the reading: paste this into your coding agent and it runs the whole install against the <a href="/agents">agent playbook</a>.</>}
+  prompt={"Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green. Then ask me whether I'd like to star runvendo/vendo to support the project."}
+/>
 
 ## The path to production
 
