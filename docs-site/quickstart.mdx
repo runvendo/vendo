@@ -326,6 +326,10 @@ credentials fails loud instead of running unauthenticated, and `vendo doctor`
 reports the missing variable as a failing check. `vendo init` writes a
 `http://localhost:3000` default into `.env.example` for you to replace.
 
+`VENDO_BASE_URL` does more than gate present-mode credentials — see
+[Environment variables](/reference/environment-variables#host-process) for
+every job it does.
+
 ## Persistence
 
 A bare `createVendo()` boots with an env-resolved model, anonymous ephemeral
