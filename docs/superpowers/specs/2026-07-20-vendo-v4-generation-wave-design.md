@@ -26,8 +26,13 @@ fixes turned out to be one-liners or existing flags).
   2026-07-20 baseline screenshot, VLM judged in both orderings. (Research: pairwise is
   the reliable VLM judging mode; absolute rubric scoring is not — ArtifactsBench
   2507.04952, MLLM-as-UI-Judge 2510.08783.)
-- **Kit layout primitives only if the prompt plateaus** — judged on dev prompts with the
-  same pairwise judge before building anything.
+- **Substrate levers only if/where the prompt plateaus** — judged on dev prompts with the
+  same pairwise judge before building anything. Two complementary candidates, by layer:
+  island utility CSS (Tailwind-syntax classes precompiled from host tokens, SEMANTIC
+  colors only — no raw palette — injected into the jail; replaces raw inline styles with
+  the model's most-trained idiom) for the island layer, and Kit layout primitives
+  (PageShell/HeroStat/StatRow… — composition opinion in components) for the tree layer.
+  Run the island-utilities experiment first: cheaper, directly measurable.
 
 ## Deferred (revisit only with evidence)
 
