@@ -8,10 +8,16 @@ on:
   # or tagging. Runs the exact gate stack + `pnpm -r publish --dry-run`.
   workflow_dispatch:
 
-# id-token: write powers npm trusted publishing (OIDC) AND provenance: pnpm
-# exchanges the workflow's OIDC token for a short-lived npm credential, so
+# id-token: write powers npm trusted publishing (OIDC) AND provenance: the
+# workflow's OIDC token is exchanged for a short-lived npm credential, so
 # there is no NPM_TOKEN secret anywhere. Each package on npmjs.com lists this
 # repo + this workflow file as its trusted publisher (see PUBLISH.md).
+#
+# The publish itself uses the npm CLI (>= 11.5.1), not `pnpm publish`: pnpm
+# 11.10's own token exchange 404s against npmjs ("Unknown error"), verified
+# 2026-07-21 with a per-package exchange probe that returned 201 for the same
+# claims via the documented endpoint. pnpm still does the packing, because
+# `pnpm pack` rewrites workspace:* deps to real versions.
 permissions:
   contents: read
   id-token: write
@@ -63,9 +69,27 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: pnpm -r --filter './packages/*' publish --dry-run --no-git-checks --access public
 
-      # Real publish (v* tag): pnpm -r skips any version already on the registry
-      # (e.g. hand-versioned @vendoai/telemetry), so re-runs are safe.
-      # Auth is OIDC trusted publishing — no token env by design.
+      # Real publish (v* tag): pack every public workspace with pnpm (rewrites
+      # workspace:*), then publish each tarball with npm's OIDC trusted
+      # publishing + provenance. Versions already on the registry are skipped,
+      # so re-runs are safe. No token env by design.
       - name: Publish to npm
         if: github.event_name == 'push'
-        run: pnpm -r --filter './packages/*' publish --no-git-checks --access public --provenance
+        run: |
+          set -euo pipefail
+          npm install -g npm@11
+          npm --version
+          rm -rf /tmp/vendo-tarballs && mkdir -p /tmp/vendo-tarballs
+          pnpm -r --filter './packages/*' exec pnpm pack --out /tmp/vendo-tarballs/%s-%v.tgz
+          failed=0
+          while IFS= read -r tarball; do
+            name=$(tar -xzOf "$tarball" package/package.json | jq -r .name)
+            version=$(tar -xzOf "$tarball" package/package.json | jq -r .version)
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "skip $name@$version (already on the registry)"
+              continue
+            fi
+            echo "publish $name@$version"
+            npm publish "$tarball" --access public --provenance || failed=1
+          done < <(find /tmp/vendo-tarballs -name '*.tgz' | sort)
+          exit "$failed"
