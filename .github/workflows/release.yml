@@ -8,7 +8,10 @@ on:
   # or tagging. Runs the exact gate stack + `pnpm -r publish --dry-run`.
   workflow_dispatch:
 
-# id-token: write is required for npm provenance (Sigstore OIDC attestation).
+# id-token: write powers npm trusted publishing (OIDC) AND provenance: pnpm
+# exchanges the workflow's OIDC token for a short-lived npm credential, so
+# there is no NPM_TOKEN secret anywhere. Each package on npmjs.com lists this
+# repo + this workflow file as its trusted publisher (see PUBLISH.md).
 permissions:
   contents: read
   id-token: write
@@ -19,11 +22,14 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      # No registry-url here on purpose: setup-node would write an
+      # `_authToken=${NODE_AUTH_TOKEN}` line into .npmrc, and that placeholder
+      # defeats OIDC trusted publishing (actions/setup-node#1551). pnpm
+      # publishes to registry.npmjs.org by default and negotiates OIDC itself.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
@@ -41,9 +47,7 @@ jobs:
 
       # Real publish (v* tag): pnpm -r skips any version already on the registry
       # (e.g. hand-versioned @vendoai/telemetry), so re-runs are safe.
+      # Auth is OIDC trusted publishing — no token env by design.
       - name: Publish to npm
         if: github.event_name == 'push'
         run: pnpm -r --filter './packages/*' publish --no-git-checks --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
