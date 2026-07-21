@@ -8,38 +8,19 @@ problems surface as per-call errors.
 
 ## Machine principal (VENDO_API_KEY)
 
-The CLI's machine command is `deploy` (below). The `share`/`publish`/`pin-ship`
+`vendo cloud` has no machine commands left. The `share`/`publish`/`pin-ship`
 CLI wrappers were removed; sharing and publishing happen through the server
 runtime (`vendo.apps.share` / `vendo.apps.publish`), whose hosted endpoints are
-unchanged.
+unchanged. There is also no `vendo cloud deploy` command and no
+`/api/v1/hosted/deploy` endpoint (deleted server-side; it now 404s) — see
+"Hosted runtime sync" below.
 
-## Hosted runtime deploy
+## Hosted runtime sync (wave 2+)
 
-`vendo cloud deploy` opens the local project's default PGlite store at
-`.vendo/data` and deploys every enabled automation for its sole subject. If the
-store contains more than one subject, pass `--subject <subject>`; the command
-never combines apps or grants from different subjects.
-
-- `vendo cloud deploy --key vnd_…` → concise applied-count and hosted-webhook table
-- `vendo cloud deploy --key vnd_… --json` → raw hosted deploy response
-- `vendo cloud deploy --app app_daily --app app_webhook` → restrict the deploy;
-  an explicitly selected disabled automation is sent with `enabled: false`
-- `vendo cloud deploy --secret STRIPE_KEY=sk_… --secret RESEND_KEY=re_…` → send
-  only values whose names are referenced by the selected app documents
-
-The request is `POST /api/v1/hosted/deploy` with machine-key bearer auth and
-the exact body `{ apps: [{ doc, enabled }], grants, secrets: [{ name, value }] }`.
-Only active grants with `source: "automation"`, the selected subject, and an
-`appId` in the deployed set are included.
-
-Stored secret values are encrypted and the local encryption key is deliberately
-not discoverable through the CLI contract. The v1 deploy vehicle is therefore
-the repeatable `--secret NAME=VALUE` flag; values cross only the authenticated
-TLS request and are never printed. A referenced name without a matching flag
-produces a warning and does not fail the app/grant deploy.
-Automations with `steps[].tool` beginning `fn:` also warn per app: those steps
-target the app's machine, which hosted sandboxes cannot reach in v1, so they
-will fail/park when fired hosted without blocking the deploy itself.
+With `VENDO_API_KEY` set, enabled automations sync to the hosted store
+automatically as you save them and run on Vendo's own schedulers and
+Composio-delivered external triggers. See `docs-site/deploy/vendo-cloud.mdx`
+for the current behavior.
 
 ## User authentication
 - `vendo login [EMAIL]` (alias: `vendo cloud device-login`) → the auth.md
@@ -58,8 +39,7 @@ will fail/park when fired hosted without blocking the deploy itself.
 
 All shapes match the frozen flowlet wave-2 contracts; the 402 `cloud-required`
 envelope is surfaced as a friendly message. The auth/share/publish flows were
-verified live on 2026-07-13; hosted deploy has deterministic local-store and
-mocked-wire coverage pending the console-side production endpoint.
+verified live on 2026-07-13.
 
 ## Request identity (2026-07-17 realignment)
 

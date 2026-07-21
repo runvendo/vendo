@@ -5,7 +5,6 @@ import { runKeys } from "./keys.js";
 import { runInvite, runMembers } from "./members.js";
 import { consoleOutput } from "../shared.js";
 import { runBilling, runDeployments, runOrgs, runUsage } from "./read.js";
-import { runDeploy, type CloudDeployOptions } from "./deploy.js";
 
 const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
 
@@ -30,21 +29,12 @@ User commands:
   invite --org <id> --email <email> --role <admin|member>
   billing --org <id>                   Show billing status
 
-Machine commands:
-  deploy [--app <id>] [--secret NAME=VALUE]
-                                        Deploy local enabled automations to the hosted instance
-
 Global options:
   --api-url <url>  Override VENDO_CLOUD_URL / https://console.vendo.run
-  --key <vnd_...>  Override VENDO_API_KEY for machine commands
-  --app <id>       Deploy only this automation (repeatable; includes disabled selections)
-  --subject <id>   Local subject (required when .vendo/data contains more than one)
-  --secret NAME=VALUE
-                   Deploy a referenced secret value (repeatable)
-  --json           JSON output (deploy defaults to a concise summary table)
+  --json           JSON output
 `;
 
-export type RunCloudOptions = CloudCommandOptions & CloudAuthOptions & CloudDeployOptions & DeviceLoginOptions;
+export type RunCloudOptions = CloudCommandOptions & CloudAuthOptions & DeviceLoginOptions;
 
 export async function runCloud(args: string[], options: RunCloudOptions = {}): Promise<number> {
   const [command, ...commandArgs] = args;
@@ -64,7 +54,6 @@ export async function runCloud(args: string[], options: RunCloudOptions = {}): P
   if (command === "members") return runMembers(commandArgs, options);
   if (command === "invite") return runInvite(commandArgs, options);
   if (command === "billing") return runBilling(commandArgs, options);
-  if (command === "deploy") return runDeploy(commandArgs, options);
   output.error(`Unknown cloud command: ${command}\n\n${CLOUD_HELP}`);
   return 1;
 }

@@ -1416,12 +1416,30 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       await closeStore();
     };
   }
+  // Wave 2 (Cloud auto): a keyed deployment's schedule- and external-triggered
+  // automations already run on Vendo Cloud — its scheduler fires due schedules and
+  // Composio delivers external events straight to Cloud. If this LOCAL engine also
+  // fired them, a keyed deployment would double-run every automation. Under the hosted
+  // store, Cloud is the firing authority for those two kinds; host-event automations
+  // (vendo.emit) are untouched — they're invoked directly by this host process, not
+  // scheduled or delivered, so there's nothing for Cloud to duplicate. One warn per
+  // composition (not per tick), same posture as hostedSessionOps' door warn above.
+  const hostedStoreComposed = isHostedStore(store);
+  if (hostedStoreComposed) {
+    console.warn(
+      "[vendo] Vendo Cloud is the hosted store for this deployment: schedule and external-trigger "
+      + "automations are Cloud's job (its scheduler and Composio delivery already fire them for this "
+      + "deployment) — the local automations engine will not fire them itself, to avoid double-running "
+      + "them. Host-event automations (vendo.emit) are unaffected.",
+    );
+  }
   const automations = createAutomations({
     apps,
     tools: boundTools,
     guard,
     store,
     runner: agent.asRunner(),
+    ...(hostedStoreComposed ? { localTriggerKinds: new Set<"schedule" | "external">() } : {}),
   });
   automationsForArming = automations;
   // 04-actions §3 — per-principal connected accounts, selected by the adapter
