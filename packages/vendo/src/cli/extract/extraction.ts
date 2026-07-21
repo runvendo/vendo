@@ -4,6 +4,7 @@ import { stdin, stdout } from "node:process";
 import { z } from "zod";
 import { claudeCliHarness } from "./claude-cli-harness.js";
 import { claudeHarness } from "./claude-harness.js";
+import { codexCliHarness } from "./codex-cli-harness.js";
 import { parseDraft, type ExtractionHarness } from "./harness.js";
 import {
   BRIEF_TEMPLATE,
@@ -221,7 +222,12 @@ export async function runAiExtraction(
     return { ran: false };
   }
 
-  const harnesses = options.harnesses ?? [claudeHarness(), claudeCliHarness()];
+  // Ordered engine ladder (install-dx: init-selfcontained-engine, Task 2):
+  // Agent SDK -> claude CLI -> codex CLI. A rung whose availability() is
+  // null (binary missing or present-but-unauthenticated) is skipped and the
+  // next rung is tried; the first non-null credential wins. The future
+  // npx-fetched engine rung is a one-line append here.
+  const harnesses = options.harnesses ?? [claudeHarness(), claudeCliHarness(), codexCliHarness()];
   let chosen: { harness: ExtractionHarness; credential: string } | null = null;
   for (const harness of harnesses) {
     const credential = await harness.availability({ root, env });
@@ -231,7 +237,7 @@ export async function runAiExtraction(
     }
   }
   if (chosen === null) {
-    output.log("AI polish: unavailable — needs Claude Code installed (`npm install -g @anthropic-ai/claude-code`) or @anthropic-ai/claude-agent-sdk resolvable, plus a Claude Code login or ANTHROPIC_API_KEY. Extractor defaults stand; re-run `vendo init` once set up.");
+    output.log("AI polish: unavailable — needs Claude Code installed (`npm install -g @anthropic-ai/claude-code`) or @anthropic-ai/claude-agent-sdk resolvable, plus a Claude Code login or ANTHROPIC_API_KEY; or the `codex` CLI installed, plus a codex login (`codex login`) or OPENAI_API_KEY. Extractor defaults stand; re-run `vendo init` once set up.");
     return { ran: false };
   }
 

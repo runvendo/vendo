@@ -235,15 +235,81 @@ describe("runAiExtraction", () => {
     expect(sink.logs.join("\n")).toContain("skipped");
   });
 
-  it("states when no credential exists and stands on extractor defaults", async () => {
+  it("states when no credential exists and names every rung's remedy", async () => {
     const root = await fixture();
     const sink = output();
     const result = await runAiExtraction({
       root, output: sink.output, env: {}, yes: false, interactive: true,
-      harnesses: [fakeHarness("x", null)],
+      harnesses: [fakeHarness("x", null), fakeHarness("x", null), fakeHarness("x", null)],
     });
     expect(result.ran).toBe(false);
-    expect(sink.logs.join("\n")).toContain("AI polish: unavailable");
+    const message = sink.logs.join("\n");
+    expect(message).toContain("AI polish: unavailable");
+    // Every rung's remedy is named — visible-never-silent (Task 2).
+    expect(message).toContain("Claude Code installed");
+    expect(message).toContain("ANTHROPIC_API_KEY");
+    expect(message).toContain("codex");
+    expect(message).toContain("codex login");
+    expect(message).toContain("OPENAI_API_KEY");
+  });
+
+  it("picks the first rung when every rung is available (order matters)", async () => {
+    const root = await fixture();
+    const sink = output();
+    const draft = { brief: "b", tools: [] };
+    const scripted = "```json\n" + JSON.stringify(draft) + "\n```";
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        fakeHarness(scripted, "Agent SDK credential"),
+        fakeHarness(scripted, "claude CLI credential"),
+        fakeHarness(scripted, "codex CLI credential"),
+      ],
+      confirm: async () => true,
+    });
+    expect(result.ran).toBe(true);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Reading your product (Agent SDK credential)");
+    expect(logs).not.toContain("claude CLI credential");
+    expect(logs).not.toContain("codex CLI credential");
+  });
+
+  it("falls through to the claude CLI rung when the Agent SDK rung is unavailable", async () => {
+    const root = await fixture();
+    const sink = output();
+    const draft = { brief: "b", tools: [] };
+    const scripted = "```json\n" + JSON.stringify(draft) + "\n```";
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        fakeHarness("x", null),
+        fakeHarness(scripted, "claude CLI credential"),
+        fakeHarness(scripted, "codex CLI credential"),
+      ],
+      confirm: async () => true,
+    });
+    expect(result.ran).toBe(true);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("Reading your product (claude CLI credential)");
+    expect(logs).not.toContain("codex CLI credential");
+  });
+
+  it("falls through past two unavailable rungs to the codex CLI rung", async () => {
+    const root = await fixture();
+    const sink = output();
+    const draft = { brief: "b", tools: [] };
+    const scripted = "```json\n" + JSON.stringify(draft) + "\n```";
+    const result = await runAiExtraction({
+      root, output: sink.output, env: {}, yes: false, interactive: true,
+      harnesses: [
+        fakeHarness("x", null),
+        fakeHarness("x", null),
+        fakeHarness(scripted, "codex CLI credential"),
+      ],
+      confirm: async () => true,
+    });
+    expect(result.ran).toBe(true);
+    expect(sink.logs.join("\n")).toContain("Reading your product (codex CLI credential)");
   });
 
   it("respects a declined consent", async () => {
