@@ -1543,6 +1543,124 @@ describe("XCUT-3 — umbrella runtime store surface", () => {
   });
 });
 
+describe("app design rules (spec 2026-07-20)", () => {
+  /** Minimal V2-shape scripted model (mirrors @vendoai/apps' internal test
+   *  helper, which is not exported): captures every prompt as flat text and
+   *  answers with fixed wire markup so runtime.create completes. */
+  const appGenModel = (prompts: string[]): LanguageModel => ({
+    specificationVersion: "v2" as const,
+    provider: "vendo-test",
+    modelId: "vendo-test-appgen",
+    supportedUrls: {},
+    async doGenerate(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+      prompts.push(flatPrompt(call.prompt));
+      return {
+        content: [{ type: "text" as const, text: APP_WIRE }],
+        finishReason: "stop" as const,
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      };
+    },
+    async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+      prompts.push(flatPrompt(call.prompt));
+      return {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({ type: "text-start", id: "text_1" });
+            controller.enqueue({ type: "text-delta", id: "text_1", delta: APP_WIRE });
+            controller.enqueue({ type: "text-end", id: "text_1" });
+            controller.enqueue({
+              type: "finish",
+              finishReason: "stop",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            });
+            controller.close();
+          },
+        }),
+      };
+    },
+  }) as unknown as LanguageModel;
+
+  const APP_WIRE = '<App name="Design check"><Text text="ok"/></App>';
+  const flatPrompt = (prompt: Array<{ content: string | Array<{ text?: string }> }>): string =>
+    prompt.map((message) => typeof message.content === "string"
+      ? message.content
+      : message.content.map((part) => part.text ?? "").join("")).join("\n");
+
+  async function composeInTempRoot(options: {
+    fileRules?: string;
+    apps?: CreateVendoConfig["apps"];
+  }): Promise<{ vendo: Vendo; prompts: string[]; root: string }> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-design-rules-"));
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    if (options.fileRules !== undefined) {
+      await writeFile(join(root, ".vendo", "design-rules.md"), options.fileRules);
+    }
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    cleanups.push(async () => {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    });
+    const store = await tempStore("vendo-design-rules-store-");
+    await store.ensureSchema();
+    const prompts: string[] = [];
+    const vendo = createVendo({
+      model: appGenModel(prompts),
+      principal: async () => principal,
+      store,
+      ...(options.apps === undefined ? {} : { apps: options.apps }),
+    });
+    return { vendo, prompts, root };
+  }
+
+  const designRulesSections = (prompts: string[]): string[] => prompts
+    .filter((prompt) => prompt.includes("HOST DESIGN RULES:"))
+    .map((prompt) => prompt.split("HOST DESIGN RULES:\n")[1]?.split("\n\n")[0] ?? "");
+
+  it("apps.designRules config wins over .vendo/design-rules.md", async () => {
+    const { vendo, prompts } = await composeInTempRoot({
+      fileRules: "File rules: airy layouts.\n",
+      apps: { designRules: "Config rules: dense layouts, no emoji." },
+    });
+
+    await vendo.apps.create({ prompt: "Build a dashboard" }, ctx);
+
+    const sections = designRulesSections(prompts);
+    expect(sections.length).toBeGreaterThan(0);
+    expect(sections.every((section) => section.startsWith("Config rules: dense layouts"))).toBe(true);
+    expect(prompts.join("\n")).not.toContain("File rules");
+  });
+
+  it("re-reads .vendo/design-rules.md per generation, so edits apply without a restart", async () => {
+    const { vendo, prompts, root } = await composeInTempRoot({});
+
+    await vendo.apps.create({ prompt: "Build a dashboard" }, ctx);
+    expect(designRulesSections(prompts).every((section) => section.startsWith("(none provided)"))).toBe(true);
+
+    await writeFile(join(root, ".vendo", "design-rules.md"), "Late rules: compact tables.\n");
+    prompts.length = 0;
+    await vendo.apps.create({ prompt: "Build another dashboard" }, ctx);
+
+    const sections = designRulesSections(prompts);
+    expect(sections.length).toBeGreaterThan(0);
+    expect(sections.every((section) => section.startsWith("Late rules: compact tables."))).toBe(true);
+  });
+
+  it("whitespace-only apps.designRules falls through to the file", async () => {
+    const { vendo, prompts } = await composeInTempRoot({
+      fileRules: "File rules: airy layouts.\n",
+      apps: { designRules: "   \n" },
+    });
+
+    await vendo.apps.create({ prompt: "Build a dashboard" }, ctx);
+
+    const sections = designRulesSections(prompts);
+    expect(sections.length).toBeGreaterThan(0);
+    expect(sections.every((section) => section.startsWith("File rules: airy layouts."))).toBe(true);
+  });
+});
+
 describe("03 §3 prompt wiring (AGENT-1/2)", () => {
   it("feeds .vendo/brief.md and the catalog+theme summary into the composed system prompt", async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");

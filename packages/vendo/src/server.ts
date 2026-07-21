@@ -308,6 +308,13 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
+    /** Host design rules for app generation (spec 2026-07-20): the same prose
+        `.vendo/design-rules.md` carries, for hosts that prefer programmatic
+        config. A non-blank string wins over the file and is fixed for the
+        instance lifetime; unset/blank falls through to a PER-GENERATION read
+        of the file, so editing it applies to the next create/edit without a
+        restart. */
+    designRules?: string;
   };
 }
 
@@ -1105,7 +1112,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const byoApprovals = createByoApprovals({ guard, tools: boundTools, store });
   const parkedCallTtlMs = validateParkedCallTtl(config.approvals);
   const theme = dotVendoTheme();
-  const designRules = dotVendoFile("design-rules.md");
+  // App design rules (spec 2026-07-20): explicit config wins; otherwise the
+  // file is re-read per generation so brief tuning never needs a restart.
+  const configDesignRules = config.apps?.designRules?.trim();
+  const designRules = configDesignRules
+    ? configDesignRules
+    : () => dotVendoFile("design-rules.md");
   const pinBaselines = dotVendoPinBaselines();
   // W3 — .vendo/semantics.json (field semantics + domain manifest), written
   // by `vendo sync`, host-edited, treated as generation fact. Malformed →
@@ -1244,7 +1256,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(theme === undefined ? {} : { theme }),
-    ...(designRules === undefined ? {} : { designRules }),
+    designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     ...(semanticsFile === undefined ? {} : { semantics: semanticsFile.tools, domains: semanticsFile.domains }),
     secrets: config.secrets ?? envSecrets(),
