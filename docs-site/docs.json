@@ -25,6 +25,12 @@
     "dark": "/logo/dark.svg"
   },
   "favicon": "/favicon.svg",
+  "integrations": {
+    "posthog": {
+      "apiKey": "phc_siVHW4wVh8yDeDzMgnjLGrYYqsHMceqfdqYF9fPEGXpS",
+      "sessionRecording": true
+    }
+  },
   "contextual": {
     "options": ["copy", "view", "mcp", "chatgpt", "claude", "cursor", "vscode"]
   },
