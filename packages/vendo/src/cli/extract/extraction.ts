@@ -195,10 +195,20 @@ export interface AiExtractionOptions {
   theme?: StagedExtractionInput["theme"];
 }
 
+/** The telemetry `engine` enum value for each ladder rung (both Claude rungs
+    are the same engine reached two ways). Unlisted ids (test seams) map to
+    undefined — the caller's "none" default covers them. */
+const ENGINE_BY_HARNESS_ID: Record<string, "claude" | "codex" | "npx-engine"> = {
+  "claude-agent-sdk": "claude",
+  "claude-cli": "claude",
+  "codex-cli": "codex",
+  "npx-engine": "npx-engine",
+};
+
 /** init's AI extraction step. Never changes init's exit code. */
 export async function runAiExtraction(
   options: AiExtractionOptions,
-): Promise<{ ran: boolean; theme?: StagedExtractionResult["theme"] }> {
+): Promise<{ ran: boolean; engine?: "claude" | "codex" | "npx-engine"; theme?: StagedExtractionResult["theme"] }> {
   const { root, output, env } = options;
   const toolsRaw = await readOptional(join(root, ".vendo", "tools.json"));
   let tools: StaticTool[] = [];
@@ -285,7 +295,12 @@ export async function runAiExtraction(
     } else {
       for (const note of staged.notes) output.error(`  ${note}`);
     }
-    return { ran: true, ...(staged.theme === undefined ? {} : { theme: staged.theme }) };
+    const engine = ENGINE_BY_HARNESS_ID[chosen.harness.id];
+    return {
+      ran: true,
+      ...(engine === undefined ? {} : { engine }),
+      ...(staged.theme === undefined ? {} : { theme: staged.theme }),
+    };
   } catch (error) {
     output.error(`AI polish did not complete (${error instanceof Error ? error.message : "unknown error"}); extractor defaults stand. Re-run \`vendo init\` to retry — stage artifacts in .vendo/data/extract/ show how far it got.`);
     return { ran: false };
