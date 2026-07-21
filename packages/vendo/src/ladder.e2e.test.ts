@@ -228,11 +228,19 @@ describe.sequential("Wave 9 rung (a) e2e — the 8am digest rides the automation
       await guard.approvals.decide(request.id, { approve: true }, principal);
     }
 
-    // 2. The EXISTING trigger machinery fires it. First tick seeds the
-    // schedule cursor; the next tick past 08:00 UTC fires the run.
-    const seededAt = new Date("2026-07-21T00:00:00.000Z");
+    // 2. The EXISTING trigger machinery fires it. Arming seeded the schedule
+    // cursor at the REAL current time (engine enable() writes lastFiredAt:
+    // iso()), so the tick times must be derived from the real clock — fixed
+    // calendar dates made this a date-bomb that went red the moment the wall
+    // clock passed the hardcoded cron hour. A tick at "now" fires nothing
+    // (the next 08:00 UTC is still ahead of the cursor); a tick just past the
+    // next 08:00 UTC fires exactly one run.
+    const seededAt = new Date();
     expect(await automations.tick(seededAt)).toHaveLength(0);
-    const runIds = await automations.tick(new Date("2026-07-21T08:00:05.000Z"));
+    const nextEight = new Date(seededAt);
+    nextEight.setUTCHours(8, 0, 0, 0);
+    if (nextEight.getTime() <= seededAt.getTime()) nextEight.setUTCDate(nextEight.getUTCDate() + 1);
+    const runIds = await automations.tick(new Date(nextEight.getTime() + 5_000));
     expect(runIds).toHaveLength(1);
 
     const run = await automations.runs.get(runIds[0]!, ctx);
