@@ -180,8 +180,10 @@ export interface IslandToolScan {
 }
 
 /** Blank string literals, template literals (keeping `${…}` code), and
- *  comments so the tools scan never fires on prose. Offsets are preserved. */
-const blankNonCode = (source: string): string => {
+ *  comments so the tools scan never fires on prose. Offsets are preserved.
+ *  Exported for the island source scanners that share this code-only view
+ *  (island-derived-values.ts); not part of the public contract surface. */
+export const blankNonCode = (source: string): string => {
   const out = source.split("");
   const blank = (from: number, to: number): void => {
     for (let position = from; position < to; position += 1) {

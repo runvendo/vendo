@@ -18,6 +18,7 @@ import {
   kitSpec,
   ISLAND_AMBIENT_KIT_NAMES,
   ISLAND_STRIPPED_SPECIFIERS,
+  islandDerivedValueViolations,
   islandNetworkViolations,
   resolveIslandToolName,
   scanIslandTools,
@@ -818,6 +819,11 @@ const prepareIslands = async (
     // CSP, so catch it here and repair to the ambient tools API instead.
     for (const api of islandNetworkViolations(source)) {
       issues.push(`island "${name}" calls ${api}(…) — an island has no network (the sandbox blocks fetch/XHR/WebSocket); the ambient tools API is the ONLY way to read or act: \`await tools.<tool_name>(args)\` with a HOST TOOLS name.`);
+    }
+    // v4 (M12) — law 1 teeth for island math: a hand-typed constant feeding
+    // displayed arithmetic over tool-derived values is invented data.
+    for (const violation of islandDerivedValueViolations(source)) {
+      issues.push(`island "${name}" ${violation}`);
     }
     // The ambient tools contract: literal member access only, every chain
     // resolved against the live registry, the result stamped as the island's
