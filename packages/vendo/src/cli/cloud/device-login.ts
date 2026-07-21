@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { option, positionals } from "./args.js";
 import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
 import { upsertEnvLocal } from "../cloud-init.js";
+import { browserOpenCommand } from "../playground.js";
 import { CLI_VERSION, consoleOutput, type Output } from "../shared.js";
 
 /**
@@ -30,6 +32,18 @@ export interface DeviceLoginOptions {
   /** Injectable pacing seam — tests run the ceremony in microseconds. */
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  /** TTY seam — a watching human gets the browser opened for them; a non-TTY
+      (agent) caller keeps the URL + code contract untouched. */
+  isTty?: boolean;
+  openBrowser?: (url: string) => void;
+  /** init runs the ceremony inline and picks the key up in the same run —
+      it suppresses the standalone "re-run `vendo init`" tail. */
+  rerunHint?: boolean;
+}
+
+function defaultOpenBrowser(url: string): void {
+  const { command, args } = browserOpenCommand(process.platform, url);
+  execFile(command, args, () => undefined); // best-effort: the printed URL is the fallback
 }
 
 interface Ceremony {
@@ -112,9 +126,15 @@ export async function runDeviceLogin(
     }
     const ceremony = ceremonyFrom(claim.body);
 
+    const approvalUrl = ceremony.verification_uri_complete ?? ceremony.verification_uri;
     output.log("Vendo Cloud device login — ask your human to approve this request:");
-    output.log(`  1. Open ${ceremony.verification_uri_complete ?? ceremony.verification_uri}`);
+    output.log(`  1. Open ${approvalUrl}`);
     output.log(`  2. Confirm the code: ${ceremony.user_code}`);
+    const tty = options.isTty ?? (process.stdout.isTTY === true);
+    if (tty) {
+      output.log("Opening your browser… (approve there, then come back here)");
+      (options.openBrowser ?? defaultOpenBrowser)(approvalUrl);
+    }
     output.log(`Waiting for approval (the code expires in ${Math.round(ceremony.expires_in / 60)} minutes)…`);
 
     const deadline = now() + ceremony.expires_in * 1000;
@@ -142,7 +162,9 @@ export async function runDeviceLogin(
         await upsertEnvLocal(root, "VENDO_API_KEY", key);
         // Never print the key itself — .env.local is the hand-off, last4 the receipt.
         output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to .env.local.`);
-        output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
+        if (options.rerunHint !== false) {
+          output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
+        }
         printJson(output, { deviceLogin: true, wroteEnvLocal: true, keyLast4: key.slice(-4) });
         return 0;
       }
@@ -154,7 +176,7 @@ export async function runDeviceLogin(
         continue;
       }
       if (error === "expired_token") {
-        throw new Error("The code expired before it was approved; run `vendo cloud device-login` again.");
+        throw new Error("The code expired before it was approved; run `vendo login` again.");
       }
       if (error === "access_denied") {
         throw new Error("Your human denied the request — no key was minted.");
@@ -166,7 +188,7 @@ export async function runDeviceLogin(
           : `Vendo Cloud token polling failed (${typeof error === "string" ? error : poll.status})`,
       );
     }
-    throw new Error("The code expired before it was approved; run `vendo cloud device-login` again.");
+    throw new Error("The code expired before it was approved; run `vendo login` again.");
   } catch (error) {
     output.error(errorMessage(error));
     return 1;
