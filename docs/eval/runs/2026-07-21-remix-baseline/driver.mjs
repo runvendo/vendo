@@ -19,18 +19,27 @@
  *        same wire call the UI client uses, from the page context)
  */
 import { createHmac } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..", "..", "..");
+// Playwright is a transitive dep (not importable bare from docs/), so find it
+// in the pnpm virtual store without pinning a version; fall back to a bare
+// import for hoisted installs.
+const pnpmStore = join(root, "node_modules", ".pnpm");
+const playwrightEntry = existsSync(pnpmStore)
+  ? readdirSync(pnpmStore).find((entry) => /^playwright@/.test(entry))
+  : undefined;
 const { chromium } = await import(
-  join(root, "node_modules/.pnpm/playwright@1.61.1/node_modules/playwright/index.mjs")
+  playwrightEntry
+    ? join(pnpmStore, playwrightEntry, "node_modules/playwright/index.mjs")
+    : "playwright"
 );
 
-const SCRATCH = process.env.REMIX_SCRATCH
-  ?? "/private/tmp/claude-501/-Users-yousefh-orca-workspaces-flowlet-format-improvments/bdf6fdbf-b686-44da-beb2-1c7e54d6c2fc/scratchpad";
+const SCRATCH = process.env.REMIX_SCRATCH ?? join(tmpdir(), "vendo-remix-eval");
 const SHOTS = join(here, "shots");
 mkdirSync(SHOTS, { recursive: true });
 mkdirSync(SCRATCH, { recursive: true });
@@ -95,6 +104,35 @@ async function settleSurface(page, ms = 6000) {
   await page.waitForTimeout(ms);
 }
 
+// Wait for a busy button label (e.g. /Creating…/) to appear, then clear.
+// Waiting only for absence races the first render of the busy state.
+async function waitBusyLabelCleared(page, pattern, timeout = 240_000) {
+  await page.waitForFunction((source) => {
+    const re = new RegExp(source);
+    return [...document.querySelectorAll("button")]
+      .some((button) => re.test(button.textContent ?? ""));
+  }, pattern.source, { timeout: 5_000 }).catch(() => {});
+  await page.waitForFunction((source) => {
+    const re = new RegExp(source);
+    return ![...document.querySelectorAll("button")]
+      .some((button) => re.test(button.textContent ?? ""));
+  }, pattern.source, { timeout });
+}
+
+// Cadence's VendoPage create button never shows a busy state (finding F6),
+// so completion is detected on the wire: the new app id appears in GET /apps
+// only once generation finishes.
+async function waitCreatedApp(page, beforeIds, timeout = 240_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(2_000);
+    const now = await api(page, "GET", "/apps");
+    const created = (now.json ?? []).find((app) => !beforeIds.has(app.id));
+    if (created) return created;
+  }
+  return undefined;
+}
+
 async function mapleSelectApp(page, appId) {
   const doc = await api(page, "GET", `/apps/${appId}`);
   if (doc.status !== 200) throw new Error(`app ${appId} not found: ${doc.status}`);
@@ -115,7 +153,13 @@ async function cadenceOpenApp(page, appId) {
   await page.getByRole("tab", { name: /apps/i }).click().catch(async () => {
     await page.getByRole("button", { name: /^apps$/i }).click();
   });
-  const card = page.locator("article", { hasText: doc.json.name }).first();
+  // Generated names can collide (the Cadence base apps share one prompt), so
+  // disambiguate same-name cards by POSITION: cards render in the same order
+  // GET /apps returns them (mirrors the Maple list-index selection above).
+  const list = await api(page, "GET", "/apps");
+  const sameName = (list.json ?? []).filter((app) => app.name === doc.json.name);
+  const nameIndex = Math.max(sameName.findIndex((app) => app.id === appId), 0);
+  const card = page.locator("article", { hasText: doc.json.name }).nth(nameIndex);
   await card.getByRole("button", { name: "Open" }).click();
   await page.waitForSelector('section[aria-label="Open app"]', { timeout: 60_000 });
   return doc.json;
@@ -185,16 +229,18 @@ if (command === "setup") {
     await input.fill(prompt);
     const started = Date.now();
     await page.getByRole("button", { name: "Create", exact: true }).click();
-    // The create button is disabled/busy until POST /apps resolves.
-    await page.waitForFunction(() => {
-      const buttons = [...document.querySelectorAll("button")];
-      return !buttons.some((button) => /Creating…/.test(button.textContent ?? ""));
-    }, undefined, { timeout: 240_000 });
+    let created;
+    if (host === "maple") {
+      // The Maple create button is busy ("Creating…") until POST /apps resolves.
+      await waitBusyLabelCleared(page, /Creating…/);
+      created = ((await api(page, "GET", "/apps")).json ?? [])
+        .find((app) => !beforeIds.has(app.id));
+    } else {
+      created = await waitCreatedApp(page, beforeIds);
+    }
     const elapsed = ((Date.now() - started) / 1000).toFixed(1);
     await settleSurface(page);
     await page.screenshot({ path: join(SHOTS, `${label}.png`), fullPage: true });
-    const after = await api(page, "GET", "/apps");
-    const created = (after.json ?? []).find((app) => !beforeIds.has(app.id));
     console.log(`appId: ${created?.id ?? "UNKNOWN"}`);
     console.log(`name: ${created?.name ?? "?"}`);
     console.log(`timing: ${elapsed}s`);
@@ -211,10 +257,7 @@ if (command === "setup") {
       await input.fill(instruction);
       const started = Date.now();
       await page.locator('form[aria-label="Edit app"] button[type="submit"]').click();
-      await page.waitForFunction(() => {
-        const buttons = [...document.querySelectorAll("button")];
-        return !buttons.some((button) => /Editing…/.test(button.textContent ?? ""));
-      }, undefined, { timeout: 240_000 });
+      await waitBusyLabelCleared(page, /Editing…/);
       const elapsed = ((Date.now() - started) / 1000).toFixed(1);
       const alert = page.locator('p[role="alert"]');
       const issue = (await alert.count()) > 0 ? await alert.first().textContent() : "";

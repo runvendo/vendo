@@ -26,7 +26,7 @@ one attempt per measured instruction, zero tuning. Main @ 4cb6cdb6 (branch
 | R-M2 | B badge blue edit | PASS | 73.6s | — | Badge renders blue; pin preserved; functional delta = exactly `POS`/`POS_BG` color constants. Blemish: the model re-declared the island with ALL comments stripped → 24 comment-deletion lines of diff noise around the 2-line change (R-M2-B.png, R-M2-B-shipdiff.json). **Scenario PASS.** |
 | R-M3 | A fork+modify (1M/1Y only) | FAIL | 153.5s | one-shot-fork-modify-collision | Identical failure shape to R-M1 (ForkPin+Island collision, then unparseable retry). App unchanged; step B unreachable (R-M3-A.png, R-M3-appdoc.json). |
 | R-M4 | A "add the card exactly as it is" | FAIL | 3.9s | fork-instead-of-host-node | Render is faithful (sample-seeded fork, R-M4-A.png) but the engine FORKED (pin + PinnedMapleNetWorthCardec18f36c) instead of using the host catalog `MapleNetWorthCard` node the bar requires for a covered-verbatim ask (R-M4-appdoc.json). See finding F4 on the catalog/slot duality. |
-| R-M5 | A fork+modify (title text) | FAIL | 160.7s | one-shot-fork-modify-collision | Same class third time. Step B (pin-preservation) unreachable (R-M5-A screenshots/appdoc analogous). |
+| R-M5 | A fork+modify (title text) | FAIL | 160.7s | one-shot-fork-modify-collision | Same class third time. Step B (pin-preservation) unreachable (R-M5-A.png; no appdoc JSON was captured for this step — the failure shape on the wire matched R-M1/R-M3 exactly). |
 | R-M6 | A fork+modify (default 1Y) | FAIL | 4.2s | fork-props-clobber-sample-seed | The model forked WITH `props={{initialRange:"1Y"}}` — a legitimate move (the prop exists) — but node props REPLACE the baseline sampleProps wholesale, so `valueCents`/`series` were undefined and the fork crashed: “PinnedMapleNetWorthCardec18f36c: Cannot read properties of undefined (reading 'length')” (R-M6-A.png). Pin recorded but render is an error blob → drift steps B/C not reachable in-scenario. |
 
 **Maple half: 1/6 PASS** (R-M2).
@@ -149,3 +149,8 @@ fork+modify edits: two model attempts against a long edit context).
   DRIFT-after-rebase-3.png is the rebased R-M2 app. Intermediate
   DRIFT-after-rebase{,-2}.png predate the index-selection fix and show R-M6's
   drifted app — kept for honesty.
+- Post-run harness fixes (from PR review, AFTER the scored run — the evidence
+  above was captured with the pre-fix driver): portable scratch/Playwright
+  resolution, wire-based Cadence create wait (its button has no busy state,
+  finding F6), busy-label appearance guard before the absence wait on Maple,
+  and Cadence open disambiguation by list index for same-name cards.
