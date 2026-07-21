@@ -509,7 +509,10 @@ export function Stat({ label, value, format, trend, prefix, suffix, tone = "defa
           lineHeight: 1.12,
         }}
       >
-        {content(prefix)}{formattedValue ?? content(value, "—")}{content(suffix)}
+        {/* undefined = no format set (legacy raw rendering, byte-identical);
+            null = format set but unrenderable — the placeholder, NEVER the
+            raw value ("$NaN"/pre-formatted strings must not ship). */}
+        {content(prefix)}{formattedValue === undefined ? content(value, "—") : formattedValue ?? "—"}{content(suffix)}
       </strong>
       {trend !== undefined && trend !== null ? (
         <span style={{ color: "var(--vendo-color-muted, #6b6b76)", fontSize: "0.8em", lineHeight: 1.35 }}>
