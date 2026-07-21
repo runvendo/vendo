@@ -121,6 +121,18 @@ describe("projectProps.projectIdHash", () => {
     expect(projectProps({}, linked).projectIdHash).toBe(expectedHash("github.com/runvendo/vendo"));
   });
 
+  it("resolves a submodule-style .git pointer whose gitdir has no commondir file", () => {
+    // `git submodule` layout: the checkout's `.git` FILE points at a gitdir
+    // that holds `config` directly (no `commondir` indirection).
+    const holder = tempDir();
+    const gitDir = join(holder, "modules", "sub");
+    mkdirSync(gitDir, { recursive: true });
+    writeFileSync(join(gitDir, "config"), '[remote "origin"]\n\turl = https://github.com/runvendo/vendo.git\n');
+    const checkout = tempDir();
+    writeFileSync(join(checkout, ".git"), `gitdir: ${gitDir}\n`);
+    expect(projectProps({}, checkout).projectIdHash).toBe(expectedHash("github.com/runvendo/vendo"));
+  });
+
   it("never throws on unreadable or malformed git state", () => {
     const broken = tempDir();
     writeFileSync(join(broken, ".git"), "not a real gitdir pointer");

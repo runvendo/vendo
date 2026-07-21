@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { scrubErrorDetail } from "./scrub.js";
 
 describe("scrubErrorDetail", () => {
@@ -115,5 +115,18 @@ describe("scrubErrorDetail", () => {
 
   it("never throws", () => {
     expect(() => scrubErrorDetail("\0".repeat(10_000))).not.toThrow();
+  });
+
+  it("returns empty rather than unscrubbed text when a redaction pass itself blows up", () => {
+    // Force the internal catch: sending nothing is the contract when any
+    // surprise makes scrubbing impossible.
+    const spy = vi.spyOn(String.prototype, "replace").mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
+    try {
+      expect(scrubErrorDetail("contains vnd_" + "0".repeat(40))).toBe("");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
