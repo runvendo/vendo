@@ -15,8 +15,9 @@ Directions are policy data. Put them in `.vendo/policy.json` or pass them in
 `PolicyConfig`; there is no second directions channel or merge rule.
 
 The apps generation engine has its own specialized prompts for tree emission
-and code edits. It receives the component catalog, theme, optional
-`.vendo/design-rules.md`, and format limits. It can use the same model as the
+and code edits. It receives the component catalog, theme, optional design
+rules (`createVendo({ apps: { designRules } })`, else `.vendo/design-rules.md`
+re-read per generation), and format limits. It can use the same model as the
 agent or a different AI SDK `LanguageModel`.
 
 Memory is deferred and has no reserved v0 seam.
