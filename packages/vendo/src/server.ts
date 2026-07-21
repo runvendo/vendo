@@ -1156,10 +1156,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     if (cloud !== undefined) {
       // The gateway base mirrors devModel's vendo-cloud rung: `<console>/api/v1`.
       const base = (cloud.baseUrl ?? "https://console.vendo.run").replace(/\/+$/, "");
+      // The gateway serves curated aliases only (vendo-default / vendo-fast /
+      // vendo-strong); the box harness's own default is a raw claude-* id the
+      // gateway would grace-remap, so pin the alias unless the operator chose
+      // a model via VENDO_INFERENCE_MODEL.
       return {
         url: base.endsWith("/api/v1") ? base : `${base}/api/v1`,
         key: cloud.apiKey,
-        ...(model === undefined ? {} : { model }),
+        model: model ?? "vendo-default",
       };
     }
     return undefined;
