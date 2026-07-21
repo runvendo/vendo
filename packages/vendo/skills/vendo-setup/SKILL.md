@@ -116,7 +116,7 @@ fetch it when you need more detail than this skill carries.
   ladder line names what each remaining block unlocks; see
   https://docs.vendo.run for each capability.
 - **Vendo Cloud**: sharing, org overlays, and hosted automations activate
-  with `VENDO_API_KEY` (`npx vendo cloud login <email>`).
+  with `VENDO_API_KEY` (`npx vendo login`).
 
 ## Rules
 

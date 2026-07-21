@@ -38,6 +38,22 @@ export VENDO_API_KEY=vnd_live_...
 
 ## Sign in from the CLI
 
+`vendo login` is the headline flow: it opens your browser at the approval
+page (a non-TTY caller gets the URL and pairing code printed instead), you
+approve the code while signed in to the console, and the minted
+`VENDO_API_KEY` is written to `.env.local` — never printed.
+
+```bash
+vendo login
+#   1. Open https://console.vendo.run/claim?code=BCDF-GHJK
+#   2. Confirm the code: BCDF-GHJK
+# Approved — wrote VENDO_API_KEY (…a1b2) to .env.local.
+```
+
+`vendo cloud device-login` is the same command, kept as an alias.
+
+### Email-OTP fallback
+
 `vendo cloud login <email>` sends a 6-10 digit code to your inbox, prompts for
 it on stdin, and stores the returned session at `~/.vendo/cloud-session.json`
 (file mode 0600). The exact code length depends on your Vendo Cloud project's
@@ -180,8 +196,8 @@ Cloud calls surface the shared error taxonomy (see
 - `validation`, `not-found`, `conflict`, `blocked`: propagated from the hosted
   API with the same codes the wire uses.
 
-Handle `cloud-required` by setting `VENDO_API_KEY`, or for interactive tools by
-running `vendo cloud login` and creating a key with `vendo cloud keys create`.
+Handle `cloud-required` by setting `VENDO_API_KEY` — `vendo login` claims one
+into `.env.local` — or create a named key with `vendo cloud keys create`.
 
 ## Cloud reference
 

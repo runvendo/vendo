@@ -41,8 +41,12 @@ target the app's machine, which hosted sandboxes cannot reach in v1, so they
 will fail/park when fired hosted without blocking the deploy itself.
 
 ## User authentication
-- `vendo cloud login EMAIL` → sends an email OTP (6-10 digits; this Supabase
-  project issues 8-digit codes), prompts for the code,
+- `vendo login [EMAIL]` (alias: `vendo cloud device-login`) → the auth.md
+  user-claimed ceremony: prints the approval URL + pairing code (opens the
+  browser on a TTY), polls the token endpoint, and writes the minted
+  `VENDO_API_KEY` to `.env.local` (never printed)
+- `vendo cloud login EMAIL` → fallback: sends an email OTP (6-10 digits; this
+  Supabase project issues 8-digit codes), prompts for the code,
   and stores the returned session in `~/.vendo/cloud-session.json`
 - `vendo cloud login --token <jwt>` → stores an access-token-only fallback session
 
