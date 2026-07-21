@@ -1927,6 +1927,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         if (baseline === undefined) {
           throw new VendoError("not-found", `remixable slot "${input.slot}" has no captured baseline; register the component as remixable and run vendo sync`);
         }
+        const forkOnto = (base: AppDocument): AppDocument => {
+          const forked = structuredClone(base);
+          const issues = applyPinFork(forked, { slot: input.slot }, config.pinBaselines);
+          if (issues.length > 0) throw new VendoError("conflict", issues.join("; "));
+          const validation = validateAppDocument(forked);
+          if (!validation.ok) throw new VendoError("validation", validation.error.message);
+          return forked;
+        };
         let previous: AppDocument;
         if (input.appId !== undefined) {
           previous = await requireOwned(input.appId, ctx.principal.subject);
@@ -1937,7 +1945,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           // The empty-slot Remix gesture: mint the minimal base document the
           // fork lands in, so the fork itself is an ordinary recorded edit
           // (undo returns to the empty base; rebase finds a full trail).
-          previous = {
+          const minted: AppDocument = {
             format: "vendo/app@1",
             id: `app_${globalThis.crypto.randomUUID()}`,
             name: `${baseline.slot} remix`,
@@ -1948,20 +1956,17 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               nodes: [{ id: "root", component: "Stack", source: "prewired" }],
             },
           };
+          // Dry-run the fork BEFORE persisting the base, so a bad baseline
+          // never strands an empty app.
+          forkOnto(minted);
+          await apps.put(appRecordInput(minted, ctx.principal.subject));
+          await reportLifecycle("create", minted.id, ctx);
+          // Re-read the stored row: persistEdit's concurrency check compares
+          // against the store's own JSON round-trip of the document (a jsonb
+          // store may normalize key order), never the in-memory original.
+          previous = await requireOwned(minted.id, ctx.principal.subject);
         }
-        const working = structuredClone(previous);
-        const issues = applyPinFork(working, { slot: input.slot }, config.pinBaselines);
-        if (issues.length > 0) {
-          throw new VendoError("conflict", issues.join("; "));
-        }
-        const validation = validateAppDocument(working);
-        if (!validation.ok) throw new VendoError("validation", validation.error.message);
-        if (input.appId === undefined) {
-          // Persist the minted base only once the fork is known-good, so a
-          // bad baseline never strands an empty app.
-          await apps.put(appRecordInput(previous, ctx.principal.subject));
-          await reportLifecycle("create", previous.id, ctx);
-        }
+        const working = forkOnto(previous);
         const version: VersionEntry = {
           at: new Date().toISOString(),
           intent: `Remix the host component "${input.slot}"`,
