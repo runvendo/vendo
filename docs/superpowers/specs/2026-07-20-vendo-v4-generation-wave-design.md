@@ -33,6 +33,12 @@ fixes turned out to be one-liners or existing flags).
   the model's most-trained idiom) for the island layer, and Kit layout primitives
   (PageShell/HeroStat/StatRow… — composition opinion in components) for the tree layer.
   Run the island-utilities experiment first: cheaper, directly measurable.
+- **Kit variant props (variants, not values)** — bounded, intent-named styling enums on
+  Kit components (`tone`, `emphasis="hero|default|subtle"`, `density`, Grid-child `span`),
+  resolved through host tokens, optional with excellent defaults (the floor never depends
+  on the model using them). Gives the model a sanctioned way to express hierarchy and
+  meaning ("this stat is the hero", "this chart spans 2") without any raw styling surface
+  on the host page. Cheap (schema-generated prompt picks them up); lands with Kit polish.
 
 ## Deferred (revisit only with evidence)
 
