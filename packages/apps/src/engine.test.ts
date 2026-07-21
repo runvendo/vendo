@@ -155,6 +155,33 @@ describe("generation engine through createApps", () => {
     expect(capturedPrompt).toContain('you MUST use a source:"host" node with its exact name and props schema');
   });
 
+  it("includes the current date in create and edit prompts (M9: the model hardcodes a guessed year without a clock)", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const prompts: string[] = [];
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(
+        (call) => {
+          prompts.push(promptText(call));
+          return validCreate();
+        },
+        (call) => {
+          prompts.push(promptText(call));
+          return '<Edit><Set id="metriccard-1" value="$84k"/></Edit>';
+        },
+      ),
+    });
+
+    const original = await runtime.create({ prompt: "my largest transactions this year" }, ctx);
+    await runtime.edit(original.id, "only show this month", ctx);
+
+    expect(prompts[0]).toContain(`CURRENT DATE: ${today}`);
+    expect(prompts.at(-1)).toContain(`CURRENT DATE: ${today}`);
+  });
+
 
   it("reports wrong-typed host props as catalog issues", async () => {
     const wrongProps = '<App name="Broken metric"><MetricCard label="Revenue" value={42}/></App>';

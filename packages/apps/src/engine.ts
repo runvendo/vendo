@@ -206,7 +206,7 @@ const pinBaselinesPrompt = (baselines: readonly PinBaseline[] = []): string => J
 );
 
 interface GenerationPromptSection {
-  id: "role" | "tree-contract" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots" | "prewired-props";
+  id: "role" | "tree-contract" | "clock" | "component-styling" | "catalog" | "theme" | "design-rules" | "remixable-slots" | "prewired-props";
   content: string;
 }
 
@@ -233,6 +233,12 @@ const generationPromptSections = (deps: GenerationDependencies): GenerationPromp
 - Queries are {name, tool, input?}; name is a bare identifier. Actions embedded in props are {action,payload?}.
 - Query tools and action names are host tool names, or fn:<name> where name matches [A-Za-z_][A-Za-z0-9_-]*. A rung-1 tree cannot use fn: because it has no server.
 `,
+}, {
+  // v4 (M9) — without a clock the model guesses the year and hardcodes it
+  // into filters/headers ("Top 10 in 2025" over 2026 data = a false empty
+  // state). Computed per call, never cached.
+  id: "clock",
+  content: `CURRENT DATE: ${new Date().toISOString().slice(0, 10)} — this is "now" for the host's data. Resolve every relative period the user asks for ("this year", "this month", "next 90 days") from this date; never assume or hardcode a different year or period.`,
 }, {
   id: "component-styling",
   content: `GENERATED COMPONENT STYLING:
@@ -302,7 +308,7 @@ ${islandContract()}
   content: componentsPromptSection(),
 }, ...hostToolSections(deps),
 ...generationPromptSections(deps).filter(({ id }) =>
-  id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
+  id === "clock" || id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules")];
 
 /** W4b — a one-line sketch of a tool's INPUT (top-level fields, one nesting
  *  level deep). Without it the model guesses arg shapes: the live P3 island
@@ -1130,7 +1136,7 @@ ${islandContract()}
 - <ForkPin slot="exact remixable slot" into="parent-id" at={index} props={{...}}/> forks a remixable host slot (see REMIXABLE HOST SLOTS).
 Emit at least one op. Keep patches minimal and local to the instruction.`,
 }, ...generationPromptSections(deps).filter(({ id }) =>
-  id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules" || id === "remixable-slots")]);
+  id === "clock" || id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules" || id === "remixable-slots")]);
 
 /** Raw-text model call for the edit dialect (no streaming seam: edits are
  *  small and apply atomically). */
