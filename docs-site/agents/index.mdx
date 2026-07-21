@@ -110,7 +110,11 @@ commands, and rules below don't survive paraphrase.
    each extracted tool's real handler and rewrite its description, then
    review risk labels (you may raise, never lower), then grade any
    statically-unclassifiable tools with reasoning, then write the brief from
-   the code — rather than drafting everything in one glance. Deterministic
+   the code — rather than drafting everything in one glance. Report every
+   API surface you found that is missing from the extracted list in
+   `missedSurfaces`, even ones you judge non-business — you report, the
+   human filters (a blind A/B showed delegated passes silently dropping
+   coverage the staged engine always emits). Deterministic
    guards validate the draft; a non-zero exit prints the rejection reason —
    fix and re-apply. This satisfies the tail's brief.md item, and it is part
    of a complete install, not an optional extra.
