@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -57,17 +58,56 @@ export interface TelemetryOptions {
   env?: Record<string, string | undefined>;
   posthogKey?: string;
   fetchImpl?: typeof fetch;
+  /** The command's TARGET project dir: projectIdHash/packageManager derive
+      from it (not the shell cwd — `vendo sync ../app` must attribute to
+      ../app), and it is where the .env.local cloud-key read looks. Defaults
+      to process.cwd(). */
+  cwd?: string;
+}
+
+/**
+ * The value of one NAME=value line in `<root>/.env.local`. Matches dotenv
+ * semantics for hand-authored entries: surrounding quotes are stripped, and
+ * unquoted values lose their ` #…` inline comment. Non-throwing: a missing
+ * or unreadable file is null. Sync on purpose — telemetry client creation is
+ * synchronous.
+ */
+export function envLocalValueSync(root: string, name: string): string | null {
+  try {
+    const raw = readFileSync(join(root, ".env.local"), "utf8");
+    const match = raw.match(new RegExp(`^\\s*${name}\\s*=\\s*(.+?)\\s*$`, "m"));
+    const value = match?.[1];
+    if (value === undefined) return null;
+    const quoted = value.match(/^(["'])(.*)\1$/);
+    if (quoted?.[2] !== undefined) return quoted[2];
+    return value.replace(/\s+#.*$/, "").trimEnd();
+  } catch {
+    return null;
+  }
 }
 
 export function toolingTelemetry(options: TelemetryOptions & {
   log?: (message: string) => void;
 } = {}): Telemetry {
   try {
+    let env = options.env ?? process.env;
+    // Cloud-lane key sourcing widens to the project's .env.local — exactly
+    // where `vendo login` / cloud-init / --cloud-key land the key — because
+    // a dev-mode key almost never lives in the process env. Only
+    // VENDO_API_KEY widens: consent vars (DO_NOT_TRACK, CI, …) keep coming
+    // from the caller's env untouched, and an explicit non-blank env value
+    // always wins over .env.local (the same precedence init's credential
+    // merge uses).
+    if ((env.VENDO_API_KEY ?? "").trim() === "") {
+      const stored = envLocalValueSync(options.cwd ?? process.cwd(), "VENDO_API_KEY");
+      if (stored !== null) env = { ...env, VENDO_API_KEY: stored };
+    }
     return initTelemetry({
       version: CLI_VERSION,
       runtime: false,
       home: options.home,
-      env: options.env ?? process.env,
+      env,
+      cwd: options.cwd,
       posthogKey: options.posthogKey ?? process.env.VENDO_POSTHOG_KEY,
       fetchImpl: options.fetchImpl,
       log: options.log,
@@ -135,7 +175,13 @@ export async function withCommandRun(
   const started = Date.now();
   // The first-run notice keeps its console.error default — several wrapped
   // commands (sync --json, mcp server-json) own their stdout byte-for-byte.
-  const telemetry = toolingTelemetry(input.telemetry ?? {});
+  // The target root rides in as the client's cwd so projectIdHash and the
+  // .env.local cloud-key read attribute to the project being operated on,
+  // not the shell cwd (an explicit seam cwd still wins).
+  const telemetry = toolingTelemetry({
+    ...(input.root === undefined ? {} : { cwd: input.root }),
+    ...(input.telemetry ?? {}),
+  });
   const failure: { failedStep?: string } = {};
   const track = async (ok: boolean, thrown?: { error: unknown }): Promise<void> => {
     try {

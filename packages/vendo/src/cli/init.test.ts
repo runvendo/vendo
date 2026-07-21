@@ -1554,4 +1554,32 @@ describe("init telemetry enrichment", () => {
     expect(failed!.properties.errorDetail).toBe("boom at [path]");
     expect(failed!.properties.errorClass).toBe("TypeError");
   });
+
+  it("a pre-existing VENDO_API_KEY in the target's .env.local activates the cloud lane (P1 review)", async () => {
+    const root = await fixture();
+    const key = `vnd_${"c".repeat(40)}`;
+    await writeFile(join(root, ".env.local"), `VENDO_API_KEY=${key}\n`);
+    const sink = output();
+    const tele = await telemetrySink(); // NO key in the telemetry env
+    expect(await run(root, sink, { telemetry: tele.telemetry })).toBe(0);
+    const completed = tele.events().find((entry) => entry.event === "init_completed");
+    expect(completed!.properties.cloud).toBe(true);
+    // The whole run rides the lane: the first client already read .env.local.
+    const started = tele.events().find((entry) => entry.event === "init_started");
+    expect(started!.properties.cloud).toBe(true);
+  });
+
+  it("a --cloud-key landed THIS run activates the cloud lane for init_completed (P1 review)", async () => {
+    const root = await fixture();
+    const key = `vnd_${"d".repeat(40)}`;
+    const sink = output();
+    const tele = await telemetrySink(); // NO key anywhere until the flag lands it
+    expect(await run(root, sink, { telemetry: tele.telemetry, cloudKey: key })).toBe(0);
+    // init_started fired before the key existed — anonymous.
+    const started = tele.events().find((entry) => entry.event === "init_started");
+    expect("cloud" in started!.properties).toBe(false);
+    // The rebuilt client picked the freshly written key up from .env.local.
+    const completed = tele.events().find((entry) => entry.event === "init_completed");
+    expect(completed!.properties.cloud).toBe(true);
+  });
 });

@@ -40,6 +40,7 @@ import {
 import {
   cloudProjectProps,
   consoleOutput,
+  envLocalValueSync,
   errorClass,
   exists,
   readOptional,
@@ -729,16 +730,10 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
 
 /** The value of one NAME=value line in .env.local (the cloud step's upsert
     target) — the same-run pickup reads the freshly minted key back from disk.
-    Matches dotenv semantics for hand-authored entries: surrounding quotes are
-    stripped, and unquoted values lose their ` #…` inline comment. */
+    One parser for the whole CLI: shared.ts's envLocalValueSync (telemetry's
+    cloud-key read uses the same one, so the two can never disagree). */
 async function envLocalValue(root: string, name: string): Promise<string | null> {
-  const raw = await readOptional(join(root, ".env.local"));
-  const match = raw?.match(new RegExp(`^\\s*${name}\\s*=\\s*(.+?)\\s*$`, "m"));
-  const value = match?.[1];
-  if (value === undefined) return null;
-  const quoted = value.match(/^(["'])(.*)\1$/);
-  if (quoted?.[2] !== undefined) return quoted[2];
-  return value.replace(/\s+#.*$/, "").trimEnd();
+  return envLocalValueSync(root, name);
 }
 
 async function ensureVendoEnvExample(root: string): Promise<void> {
@@ -753,8 +748,11 @@ async function ensureVendoEnvExample(root: string): Promise<void> {
   await writeText(path, `${current}${separator}${VENDO_ENV_EXAMPLE}`);
 }
 
-function telemetryFor(options: InitOptions, output: Output): Telemetry {
-  return toolingTelemetry({ ...options.telemetry, log: (message) => output.log(message) });
+/** root rides in as the client's cwd: projectIdHash/packageManager and the
+    .env.local cloud-key read attribute to the TARGET project, not the shell
+    cwd (`vendo init ../app` from elsewhere). Seams in options.telemetry win. */
+function telemetryFor(options: InitOptions, output: Output, root: string): Telemetry {
+  return toolingTelemetry({ cwd: root, ...options.telemetry, log: (message) => output.log(message) });
 }
 
 /** 09-vendo §5 — idempotent, zero-question setup. */
@@ -826,7 +824,7 @@ export async function runInit(options: InitOptions): Promise<number> {
   const detectStarted = Date.now();
   const { plan, changes, manualSteps, authAdvice, authWired, compositionPath, registryPath } = await buildPlan(options, confirmAuth, selectAuth);
   const detectMs = Date.now() - detectStarted;
-  const telemetry = telemetryFor(options, output);
+  let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
 
   try {
@@ -882,6 +880,13 @@ export async function runInit(options: InitOptions): Promise<number> {
         effectiveEnv = { ...effectiveEnv, VENDO_API_KEY: minted };
         credential = await (options.resolveCredential ?? resolveDevCredential)({ env: effectiveEnv });
       }
+    }
+    // A key that landed in .env.local THIS run (--cloud-key upsert or the
+    // login ceremony) must activate the telemetry cloud lane for the rest of
+    // this run's events too — rebuild the client so it re-reads .env.local.
+    // A pre-existing key was already picked up at the first construction.
+    if (options.cloudKey !== undefined || cloud.wroteEnvLocal) {
+      telemetry = telemetryFor(options, output, root);
     }
 
     // Wire — apply the bounded change set and list it. No gates, no prompts.

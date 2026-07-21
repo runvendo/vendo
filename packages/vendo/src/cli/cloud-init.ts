@@ -99,7 +99,9 @@ export interface CloudStepResult {
     behavior: the tracker is fully guarded and a thrown error still rethrows. */
 export async function runCloudStep(options: CloudStepOptions): Promise<CloudStepResult> {
   const started = Date.now();
-  const telemetry = toolingTelemetry(options.telemetry ?? {});
+  // The step's target root is the client's cwd: projectIdHash and the
+  // .env.local cloud-key read attribute to the project init runs against.
+  const telemetry = toolingTelemetry({ cwd: options.root, ...(options.telemetry ?? {}) });
   const failure: { failedStep?: string } = {};
   const track = async (thrown?: { error: unknown }): Promise<void> => {
     try {

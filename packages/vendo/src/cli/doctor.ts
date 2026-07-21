@@ -68,8 +68,11 @@ async function hasDependency(root: string): Promise<boolean> {
   }
 }
 
-function telemetryFor(options: DoctorOptions, output: Output): Telemetry {
-  return toolingTelemetry({ ...options.telemetry, log: (message) => output.log(message) });
+/** root rides in as the client's cwd: projectIdHash/packageManager and the
+    .env.local cloud-key read attribute to the TARGET project, not the shell
+    cwd. Seams in options.telemetry win. */
+function telemetryFor(options: DoctorOptions, output: Output, root: string): Telemetry {
+  return toolingTelemetry({ cwd: root, ...options.telemetry, log: (message) => output.log(message) });
 }
 
 interface DoctorProbeBody {
@@ -93,7 +96,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const output = options.output ?? consoleOutput;
   const json = options.json === true;
   const env = options.env ?? process.env;
-  const telemetry = telemetryFor(options, output);
+  const telemetry = telemetryFor(options, output, root);
   let failures = 0;
   let warnings = 0;
   const checks: DoctorCheck[] = [];

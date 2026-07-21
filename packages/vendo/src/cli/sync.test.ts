@@ -1,4 +1,8 @@
-import { rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { PROJECT_ID_SALT } from "@vendoai/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runSync } from "./sync.js";
 import { telemetryCapture } from "./telemetry.test-util.js";
@@ -424,5 +428,63 @@ describe("sync telemetry", () => {
 
     await rm(ok.home, { recursive: true, force: true });
     await rm(gated.home, { recursive: true, force: true });
+  });
+});
+
+describe("telemetry project attribution + cloud-key sourcing (P1 review)", () => {
+  const CLOUD_KEY = `vnd_${"0123456789abcdef".repeat(2)}01234567`; // vnd_ + 40 hex
+  const offline = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+  const quiet = { log() {}, error() {} };
+  const dirs: string[] = [];
+  afterEach(async () => {
+    await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+  async function target(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "vendo-sync-target-"));
+    dirs.push(dir);
+    return dir;
+  }
+
+  it("derives projectIdHash from the TARGET dir, not the shell cwd", async () => {
+    const dir = await target();
+    await mkdir(join(dir, ".git"));
+    await writeFile(join(dir, ".git", "config"), '[remote "origin"]\n\turl = https://github.com/acme/target-app.git\n');
+    expect(process.cwd()).not.toBe(dir);
+    const tele = await telemetryCapture();
+    dirs.push(tele.home);
+    await runSync({ targetDir: dir, output: quiet, fetchImpl: offline, sync: async () => report(), telemetry: tele.telemetry });
+    const expected = createHash("sha256").update(`${PROJECT_ID_SALT}github.com/acme/target-app`).digest("hex");
+    expect(tele.event("command_run").properties.projectIdHash).toBe(expected);
+  });
+
+  it("activates the cloud lane from a VENDO_API_KEY in the target's .env.local", async () => {
+    const dir = await target();
+    await writeFile(join(dir, ".env.local"), `VENDO_API_KEY=${CLOUD_KEY}\n`);
+    const tele = await telemetryCapture();
+    dirs.push(tele.home);
+    await runSync({ targetDir: dir, output: quiet, fetchImpl: offline, sync: async () => report(), telemetry: tele.telemetry });
+    const props = tele.event("command_run").properties;
+    expect(props.cloud).toBe(true);
+    expect(props.cloudKeyHash).toBe(createHash("sha256").update(CLOUD_KEY).digest("hex"));
+  });
+
+  it("stays anonymous when the .env.local key is malformed", async () => {
+    const dir = await target();
+    await writeFile(join(dir, ".env.local"), "VENDO_API_KEY=vnd_not-a-real-key\n");
+    const tele = await telemetryCapture();
+    dirs.push(tele.home);
+    await runSync({ targetDir: dir, output: quiet, fetchImpl: offline, sync: async () => report(), telemetry: tele.telemetry });
+    const props = tele.event("command_run").properties;
+    expect("cloud" in props).toBe(false);
+    expect("cloudKeyHash" in props).toBe(false);
+  });
+
+  it("process-env consent still wins: DO_NOT_TRACK sends nothing despite an .env.local key", async () => {
+    const dir = await target();
+    await writeFile(join(dir, ".env.local"), `VENDO_API_KEY=${CLOUD_KEY}\n`);
+    const tele = await telemetryCapture({ DO_NOT_TRACK: "1" });
+    dirs.push(tele.home);
+    await runSync({ targetDir: dir, output: quiet, fetchImpl: offline, sync: async () => report(), telemetry: tele.telemetry });
+    expect(tele.events()).toEqual([]);
   });
 });
