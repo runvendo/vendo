@@ -499,12 +499,12 @@ describe("end pass (flagged, polish-only, structurally cannot break)", () => {
     expect(document.name).toBe("Draft board");
   });
 
-  it("applies up to 4 ops and its contract leads with label truth (v4)", async () => {
+  it("applies a relabel and its contract leads with label truth (v4)", async () => {
     let endPassPrompt = "";
     const model = scriptedLanguageModel((call) => {
       if (isEndPassCall(call)) {
         endPassPrompt = promptText(call);
-        return '<Edit><SetName name="Revenue at a glance"/><Set id="metriccard-1" label="Monthly revenue"/><Set id="metriccard-1" value="$43k"/></Edit>';
+        return '<Edit><SetName name="Revenue at a glance"/><Set id="metriccard-1" label="Monthly revenue"/></Edit>';
       }
       return valid;
     });
@@ -515,8 +515,43 @@ describe("end pass (flagged, polish-only, structurally cannot break)", () => {
     );
 
     expect(document.name).toBe("Revenue at a glance");
+    const card = (document.tree as { nodes: Nodes }).nodes.find(({ component }) => component === "MetricCard");
+    expect(card?.props?.["label"]).toBe("Monthly revenue");
     expect(endPassPrompt).toContain("tell the truth about their bindings");
     expect(endPassPrompt).toContain("AT MOST 4 ops");
+  });
+
+  it("drops a patch whose Set rewrites a data prop — relabel only, never rewrite values (review P1)", async () => {
+    const model = scriptedLanguageModel((call) =>
+      isEndPassCall(call)
+        ? '<Edit><Set id="metriccard-1" label="Monthly revenue"/><Set id="metriccard-1" value="$43k"/></Edit>'
+        : valid);
+
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      deps(model, { pipeline: { endPass: true } }),
+    );
+
+    // The whole patch drops (including the legitimate relabel riding with it).
+    expect(document.name).toBe("Draft board");
+    const card = (document.tree as { nodes: Nodes }).nodes.find(({ component }) => component === "MetricCard");
+    expect(card?.props?.["value"]).toBe("$42k");
+    expect(card?.props?.["label"]).toBe("Revenue");
+  });
+
+  it("drops a patch that adds nodes — proofread, never restructure", async () => {
+    const model = scriptedLanguageModel((call) =>
+      isEndPassCall(call)
+        ? '<Edit><Insert into="root"><Text text="bonus section"/></Insert></Edit>'
+        : valid);
+
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      deps(model, { pipeline: { endPass: true } }),
+    );
+
+    expect(document.name).toBe("Draft board");
+    expect((document.tree as { nodes: Nodes }).nodes.some(({ props }) => props?.["text"] === "bonus section")).toBe(false);
   });
 
   it("drops a patch that exceeds the 4-op budget", async () => {

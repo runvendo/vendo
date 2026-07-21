@@ -895,11 +895,77 @@ export const structuredRepair = async (
 const END_PASS_CONTRACT = `You are the Vendo end-pass editor: one quick read-through of a finished app against the user's ask. Return ONLY one vendo-genui/v2 <Edit>...</Edit> patch document. No prose, no markdown, no JSON.
 PROOFREAD ONLY, AT MOST 4 ops. Priority one — labels must tell the truth about their bindings: a stat, badge, title, or caption claiming "total", "all accounts", "this month", or a specific figure must match what its bound data actually is. When it doesn't, RELABEL to describe the real data (never invent numbers, never rebind) — e.g. a card bound to one checking account labeled "Total balance" becomes <Set id="..." label="Checking balance"/>. Prefer emitting a fix when a label overstates its binding; an unfixed lying label is worse than an extra op. Then: deduplicate repeated titles/stats, retitle so the app answers the ask, drop a redundant node. Never restructure, never add features, never touch queries or islands.
 Ops (patch the CURRENT_APP wire against its id="..." anchors):
-- <Set id="node-id" attr=.../> merges attributes into the node's props.
+- <Set id="node-id" attr=.../> merges attributes into the node's props. Set/Unset may touch ONLY copy props (label, title, text, caption, description, subtitle, heading, placeholder, helper, emptyLabel, badgeLabel) with plain string values — touching any other attribute, a binding, or a non-string value drops your whole patch.
 - <Unset id="node-id" propName/> removes the named props.
 - <Remove id="node-id"/> removes a redundant node and its subtree.
 - <SetName name="..."/> renames the app.
 If nothing needs polish, emit exactly <Edit></Edit>.`;
+
+/** v4 review hardening — the contract's "relabel, never rebind, never
+ *  restructure" was prompt-only: any compiling <Set> (including one that
+ *  overwrites a live value or binding with an invented figure) survived. This
+ *  makes the contract structural. A surviving patch may only rename the app,
+ *  remove nodes, and set/unset STRING copy props; anything else — new nodes,
+ *  component/island changes, query or data changes, a binding on either side
+ *  of a change, a non-copy prop, a non-string value — drops the whole patch
+ *  (the original document ships, per the pass's drop-silently invariant). */
+const END_PASS_COPY_PROPS = new Set([
+  "label", "title", "text", "caption", "description", "subtitle",
+  "heading", "placeholder", "helper", "emptyLabel", "badgeLabel",
+]);
+
+/** True when `after` only removes entries from `before` (order preserved) —
+ *  the shape a <Remove> leaves behind; anything else is a restructure. */
+const onlyRemovals = (before: readonly string[], after: readonly string[]): boolean => {
+  let cursor = 0;
+  for (const id of before) if (after[cursor] === id) cursor += 1;
+  return cursor === after.length;
+};
+
+const sameJson = (a: unknown, b: unknown): boolean =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+export const endPassViolations = (
+  base: TreeV2,
+  patched: TreeV2,
+  baseComponents: Record<string, string>,
+  patchedComponents: Record<string, string>,
+): string[] => {
+  const violations: string[] = [];
+  const baseNodes = new Map(base.nodes.map((node) => [node.id, node]));
+  for (const node of patched.nodes) {
+    const before = baseNodes.get(node.id);
+    if (before === undefined) {
+      violations.push(`adds node ${node.id}`);
+      continue;
+    }
+    if (node.component !== before.component) violations.push(`changes component on ${node.id}`);
+    if (!onlyRemovals(before.children ?? [], node.children ?? [])) {
+      violations.push(`restructures children of ${node.id}`);
+    }
+    const beforeProps = (before.props ?? {}) as Record<string, unknown>;
+    const afterProps = (node.props ?? {}) as Record<string, unknown>;
+    for (const key of new Set([...Object.keys(beforeProps), ...Object.keys(afterProps)])) {
+      const beforeValue = beforeProps[key];
+      const afterValue = afterProps[key];
+      if (sameJson(beforeValue, afterValue)) continue;
+      if (!END_PASS_COPY_PROPS.has(key)) {
+        violations.push(`touches non-copy prop "${key}" on ${node.id}`);
+        continue;
+      }
+      if (isPathBinding(beforeValue) || isStateBinding(beforeValue)) {
+        violations.push(`unbinds "${key}" on ${node.id}`);
+      }
+      if (afterValue !== undefined && typeof afterValue !== "string") {
+        violations.push(`sets non-string copy "${key}" on ${node.id}`);
+      }
+    }
+  }
+  if (!sameJson(base.queries ?? [], patched.queries ?? [])) violations.push("touches queries");
+  if (!sameJson(base.data ?? {}, patched.data ?? {})) violations.push("touches data");
+  if (!sameJson(baseComponents, patchedComponents)) violations.push("touches islands");
+  return violations;
+};
 
 /** Same fence tolerance as engine.ts's extractWire, for <Edit> documents
  *  (shared by the edit dialect and the end pass). */
@@ -953,6 +1019,11 @@ export const endPass = async (
     });
     if (!patched.complete || patched.issues.length > 0 || patched.bindingErrors.length > 0) return finish(document);
     if (patched.appliedOps === 0 || patched.appliedOps > 4 || patched.extensionOps.length > 0) return finish(document);
+    // Structural proofread guard: the patch may only relabel, remove, and
+    // rename — a Set that rebinds or rewrites data drops the whole patch.
+    if (endPassViolations(base.tree, patched.tree, base.components, patched.components).length > 0) {
+      return finish(document);
+    }
     const validated = await context.validate(recompile({
       tree: patched.tree,
       components: patched.components,
