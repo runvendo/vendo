@@ -45,6 +45,23 @@ function bareVersion(range: unknown): string | undefined {
 }
 
 /**
+ * The HOST's installed `ai` version (#478 short-term): @vendoai/vendo speaks
+ * AI SDK v6 to the host's `ai` package (peer `ai >=6 <7`), but npm installs
+ * the peer conflict anyway — so the version must be read from the TARGET
+ * dir's node_modules, never the CLI's own dependency tree. Non-throwing:
+ * an absent install or malformed metadata returns null (the missing-
+ * dependency story belongs to the wiring checks, not this reader).
+ */
+export async function installedAiVersion(root: string): Promise<string | null> {
+  try {
+    const manifest = JSON.parse(await readFile(join(root, "node_modules", "ai", "package.json"), "utf8")) as { version?: unknown };
+    return typeof manifest.version === "string" ? manifest.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read the host project's dependency versions (deps + devDeps) for telemetry.
  * Non-throwing: a missing or malformed package.json returns {}.
  */

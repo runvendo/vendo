@@ -839,6 +839,56 @@ describe("vendo doctor error codes + fix_refs", () => {
     }
   });
 
+  // #478 short-term — npm installs the ai@7 peer conflict without failing, the
+  // static checks all pass, and then every internal turn throws
+  // AI_InvalidPromptError (v7 removed system-role messages). Doctor reads the
+  // HOST's installed `ai` and fails fast on an unsupported major.
+  it("fails fast with E-DEP-001 when the host has ai@7 installed", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "node_modules", "ai"), { recursive: true });
+    await writeFile(join(root, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version: "7.0.2" }));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "deps/ai-sdk-major");
+    expect(check).toMatchObject({
+      status: "broken",
+      error_code: "E-DEP-001",
+      fix_ref: doctorFixRef("E-DEP-001"),
+    });
+    expect(check?.message).toContain("ai@7.0.2");
+    expect(check?.message).toContain("ai@6");
+    expect(check?.message).toContain("npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3");
+    expect(check?.message).toContain("github.com/runvendo/vendo/issues/478");
+  });
+
+  it("passes the ai major check on an ai@6 host", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "node_modules", "ai"), { recursive: true });
+    await writeFile(join(root, "node_modules", "ai", "package.json"), JSON.stringify({ name: "ai", version: "6.0.28" }));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(0);
+    const check = report.checks.find((entry) => entry.id === "deps/ai-sdk-major");
+    expect(check).toMatchObject({ status: "ok" });
+    expect(check?.message).toContain("ai@6.0.28");
+  });
+
+  it("skips the ai major check silently when ai is not installed", async () => {
+    // The missing-dependency story belongs to the wiring checks and the live
+    // turn — an absent node_modules/ai must not break (or even mention) this.
+    const { exit, report } = await jsonChecks({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(0);
+    expect(report.checks.some((entry) => entry.id === "deps/ai-sdk-major")).toBe(false);
+  });
+
   it("exits nonzero while any single check fails", async () => {
     const root = await healthy();
     await rm(join(root, ".vendo", "brief.md"));

@@ -119,6 +119,28 @@ control was deleted, so `.vendo/data/` contents could get committed.
 !.gitignore
 ```
 
+## Host dependencies
+
+### E-DEP-001 {#E-DEP-001}
+
+**Symptom:** The installed `ai` package is major version 7 or newer; the
+message names the exact version found.
+
+**Cause:** `@vendoai/vendo` drives the host's `ai` package with AI SDK v6
+calls (peer range `ai >=6 <7`), but npm installs the peer conflict without
+failing. Every static check passes on such a host — and then every internal
+Vendo turn throws `AI_InvalidPromptError`, because ai@7 removed system-role
+messages from the messages array.
+
+**Fix:** Downgrade to the supported majors:
+
+```bash
+npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3
+```
+
+ai@7 support is tracked in
+[runvendo/vendo#478](https://github.com/runvendo/vendo/issues/478).
+
 ## Ejected UI
 
 ### E-UI-001 {#E-UI-001}

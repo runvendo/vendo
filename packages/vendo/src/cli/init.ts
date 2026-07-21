@@ -12,7 +12,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { VendoTheme } from "@vendoai/core";
 import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
-import { detectDepVersions } from "./dep-versions.js";
+import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
 import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
@@ -1107,6 +1107,14 @@ export async function runInit(options: InitOptions): Promise<number> {
     // key exists (the full emphasized block already ran up top; no repeat).
     if (credential.rung === "none") {
       output.log("No model key yet: set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY in .env.local, or run `vendo login` for a free dev key.");
+    }
+
+    // #478 short-term — npm installs the ai@7 peer conflict without failing
+    // and every internal turn then throws AI_InvalidPromptError; warn in the
+    // end-of-run summary instead of waiting for doctor to fail (E-DEP-001).
+    const aiVersion = await installedAiVersion(root);
+    if (aiVersion !== null && Number.parseInt(aiVersion, 10) >= 7) {
+      output.error(`warning: installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
     }
 
     // Done — the one paste that is the user's, then their own dev server.
