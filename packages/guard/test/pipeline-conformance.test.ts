@@ -69,7 +69,8 @@ describe("decision pipeline conformance", () => {
             code: { action: "block", decidedBy: "rule" },
             judge: { action: "block", decidedBy: "judge" },
             // 05 §6: away holds only app-bound grants — the default posture
-            // auto-runs present calls but parks away ones.
+            // auto-runs present calls but parks away ones (reads included: away
+            // execution needs captured authority to act as the user).
             default:
               presence === "away"
                 ? { action: "ask", decidedBy: "default" }

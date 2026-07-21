@@ -1349,6 +1349,21 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // cadence (deny path, idempotent); disabled by parkedCallTtlMs 0.
     if (parkedCallTtlMs > 0) {
       await byoApprovals.sweepExpired(parkedCallTtlMs, sessionNow());
+      // Spec 2026-07-20 (#5): the same backstop over the general approvals
+      // collection. Chat approvals are abandoned on the next thread turn and
+      // BYO parked calls swept above, but away/automation/app approvals and
+      // approvals stranded by a mid-stream turn failure have no resuming turn —
+      // this TTL sweep denies them (idempotent) so the queue self-heals instead
+      // of piling up. Shares the parked-call TTL; disabled by the same 0.
+      if (guard.sweepExpiredApprovals !== undefined) {
+        try {
+          await guard.sweepExpiredApprovals(parkedCallTtlMs, sessionNow());
+        } catch (error) {
+          console.error("[vendo] approval TTL sweep failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     }
     if (sessionsConfig.ttlMs <= 0) return;
     for (const subject of await sessionOps.sweep(sessionsConfig.ttlMs, sessionNow())) {
