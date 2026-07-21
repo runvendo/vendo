@@ -1,5 +1,0 @@
----
-"@vendoai/actions": minor
----
-
-Static GraphQL extractor behind the extractor seam plus an additive `graphql` binding kind in `vendo/tools@1` (ENG-247). Schemas are read statically from SDL files (parsed with the host's own graphql package) and from code-first `@nestjs/graphql` / `type-graphql` resolvers (TypeScript compiler API) — no host code runs. One tool per query and mutation, deterministic `inputSchema` from GraphQL argument types, and depth-limited default selection sets baked into executable documents. Execution POSTs `{ query, variables }` to the host endpoint with auth semantics identical to route bindings; a 200-with-`errors` response surfaces as an http-error outcome. Fail-closed rules: queries earn `read` only with read-shaped names, mutations default `write`, the destructive word list applies unchanged, and subscriptions, statically-unresolvable types, and multi-endpoint hosts are emitted `disabled: true` with a note. Route-scan tools under a GraphQL endpoint are shadowed like tRPC mounts.

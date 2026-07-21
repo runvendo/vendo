@@ -1,6 +1,6 @@
 {
   "name": "@vendoai-examples/mastra-agent",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Mastra's weather-agent starter, fronted per Mastra's Next.js guide, plus the four-touch Vendo diff: guarded tools, generated UI, and approvals inside your own agent loop.",
   "scripts": {
