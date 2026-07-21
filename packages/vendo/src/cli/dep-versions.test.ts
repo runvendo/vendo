@@ -58,6 +58,18 @@ describe("detectDepVersions", () => {
     });
   });
 
+  it("omits digit-bearing non-version specifiers and unwraps npm aliases", async () => {
+    const root = await fixture({
+      dependencies: {
+        react: "catalog:react19", // named catalog, not a version
+        zod: "npm:zod-compat@^2.1.0", // npm alias: version after the last "@"
+        typescript: "file:../react-18-fork", // path digits are not a version
+        next: "https://registry.example.com:8443/next-15.tgz", // port/URL digits either
+      },
+    });
+    expect(await detectDepVersions(root, "next")).toEqual({ zodVersion: "2.1.0" });
+  });
+
   it("prefers dependencies over devDependencies for the same package", async () => {
     const root = await fixture({
       dependencies: { react: "19.0.0" },

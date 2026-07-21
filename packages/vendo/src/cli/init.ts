@@ -11,7 +11,7 @@ import {
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { VendoTheme } from "@vendoai/core";
-import { repoHost, scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
+import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
 import { detectDepVersions } from "./dep-versions.js";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
@@ -38,6 +38,7 @@ import {
   type ThemeSummary,
 } from "./theme/extract-theme.js";
 import {
+  cloudProjectProps,
   consoleOutput,
   errorClass,
   exists,
@@ -1068,14 +1069,6 @@ export async function runInit(options: InitOptions): Promise<number> {
 
     // Project-shape enrichment (posthog-analytics §3): bools, closed enums,
     // counts, and bare dependency versions only — never names or content.
-    let projectName: string | undefined;
-    try {
-      const name = (JSON.parse((await readOptional(join(root, "package.json"))) ?? "{}") as { name?: unknown }).name;
-      if (typeof name === "string" && name.length > 0) projectName = name;
-    } catch {
-      // package.json is optional context; the cloud lane just omits projectName.
-    }
-    const forge = repoHost(root);
     await telemetry.track("init_completed", {
       framework: plan.framework,
       command: "init",
@@ -1097,8 +1090,7 @@ export async function runInit(options: InitOptions): Promise<number> {
       engineMs,
       ...(themeMs === undefined ? {} : { themeMs }),
       wiringMs,
-      ...(projectName === undefined ? {} : { projectName }),
-      ...(forge === undefined ? {} : { repoHost: forge }),
+      ...(await cloudProjectProps(root)),
     });
 
     // The one short Cloud reminder in the end-of-run summary — ONLY while no
