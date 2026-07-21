@@ -1,14 +1,17 @@
 ---
 title: "Auth presets: Auth.js, Supabase, Clerk, Auth0"
+sidebarTitle: "Auth presets"
 description: "Fill Vendo's principal, actAs, and door OAuth seams from one auth preset, or wire Auth.js, Supabase, Clerk, Auth0, or a generic HS256 JWT into the actAs seam by hand."
 ---
 
 Away automations, scheduled runs, and MCP door calls all reach host APIs
-through the `actAs` seam because none of them carry a browser session. Presets
-in `@vendoai/actions/presets` mint the right auth material for common
-providers so you don't have to hand-roll `actAs` for each one.
+through the `actAs` seam because none of them carry a browser session.
+Presets in `@vendoai/actions/presets` mint the right auth material for common
+providers so you don't have to hand-roll `actAs` for each one. Pass one as
+`auth` to `createVendo` and it fills the principal, `actAs`, and door OAuth
+seams from a single config key.
 
-## `auth` — one identity story, three seams
+## `auth`: one preset, three seams
 
 Start here. Pass a named preset as `auth` and it fills `principal`, `actAs`,
 and the door's `oauth` seam from one config key:
@@ -20,7 +23,7 @@ import { createVendo } from "@vendoai/vendo/server";
 export const vendo = createVendo({ model, auth: authJs() });
 ```
 
-Every preset is zero-argument in the standard case — it reads its own
+Every preset is zero-argument in the standard case: it reads its own
 provider's env variable and derives the principal's `display` from
 name/email session-token claims:
 
@@ -30,12 +33,12 @@ name/email session-token claims:
 | `clerk()` | `CLERK_SECRET_KEY` (+ optional `CLERK_JWT_KEY`) | `__session` cookie or `Authorization: Bearer` |
 | `supabase()` | `SUPABASE_JWT_SECRET` (HS256, offline) and/or `SUPABASE_URL` (ES256 logins via GoTrue's JWKS) | `sb-*-auth-token` cookie or `Authorization: Bearer` |
 | `auth0()` | `AUTH0_DOMAIN` / `AUTH0_ISSUER_BASE_URL` (tenant JWKS) | `Authorization: Bearer` |
-| `jwt({ secret })` | none — a host-owned scheme has no vendor env, so `secret` is required | `Authorization: Bearer` |
+| `jwt({ secret })` | none (a host-owned scheme has no vendor env, so `secret` is required) | `Authorization: Bearer` |
 
 Both options are shared across every preset: `secret` overrides the
 provider's env-read secret, and `user(subject, claims)` swaps in custom
 subject→user resolution instead of the provider's claims defaults (returning
-`null` means "subject unknown to host" — the principal resolves to anonymous
+`null` means "subject unknown to host": the principal resolves to anonymous
 and away/MCP minting for that subject declines).
 
 ```ts
@@ -52,12 +55,11 @@ export const vendo = createVendo({
 });
 ```
 
-`auth` is mutually exclusive with the per-seam trio below — supplying `auth`
-together with any of `principal`, `actAs`, or `oauth` throws
-`VendoError("validation")` at compose time. Each preset's `actAs` half IS the
-matching preset documented below; the `oauth` half implements the door's
-identity seam. Reach for the per-seam presets directly when no shipped `auth`
-preset matches your setup, or when you are composing the three seams by hand.
+Each preset's `actAs` half IS the matching preset documented below, and the
+`oauth` half implements the door's identity seam. Reach for the per-seam
+presets directly when no shipped `auth` preset matches your setup, or when
+you are composing the three seams by hand. See [Auth reference](#auth-and-per-seam-presets-are-mutually-exclusive)
+for the compose-time validation this implies.
 
 ## When to use a per-seam preset
 
@@ -74,20 +76,9 @@ matter for [away calls](/reference/handler-options).
 
 ## Choose a preset
 
-Presets fall into two shapes depending on what the identity provider allows.
-
-**Offline session minting.** Auth.js and Supabase let a host holding the
-session secret mint a session token the provider's own verifier accepts. The
-preset mints a fresh token per away call — no extra middleware in your app.
-
-**Host-owned away tokens.** Clerk and Auth0 sign sessions with RS256 private
-keys you don't hold, so offline minting is impossible. These presets ship two
-halves: a producer that signs a short-lived `VendoAway` HS256 token, and a
-verify middleware you mount on your host app to trade that token for the
-verified identity headers your API code reads.
-
-**Generic HS256.** For any other provider that accepts an HS256 JWT with
-configurable claims and header shape.
+Presets fall into two shapes depending on what the identity provider allows,
+plus a generic fallback. See [Auth reference](#offline-minting-vs-host-owned-tokens)
+for what separates offline session minting from a host-owned away token.
 
 | Preset | Provider | Shape |
 | --- | --- | --- |
@@ -103,7 +94,7 @@ Import the preset you want and hand it to `createVendo` as `actAs`. Each
 preset closes over a secret you provision (session secret, project JWT
 secret, or a host-generated away secret) and returns the `ActAs` function
 Vendo calls before every away tool call. Clerk and Auth0 return a preset
-object instead — pass its `actAs` half.
+object instead: pass its `actAs` half.
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
@@ -114,14 +105,14 @@ export const vendo = createVendo({
   principal: resolvePrincipal,
   actAs: authJsPreset({
     secret: process.env.AUTH_SECRET!,
-    // Cookie name doubles as the JWE salt — match your Auth.js config.
+    // Cookie name doubles as the JWE salt. Match your Auth.js config.
     cookieName: "authjs.session-token",
     secureCookie: process.env.NODE_ENV === "production",
   }),
 });
 ```
 
-Supabase is similar — pass the project JWT secret and the claims the preset
+Supabase is similar: pass the project JWT secret and the claims the preset
 should stamp on each minted token:
 
 ```ts
@@ -168,7 +159,7 @@ actAs: genericJwtPreset({
 Because the Clerk and Auth0 presets sign a host-owned token instead of a real
 Clerk or Auth0 session, your host API needs to accept that token on away
 requests and turn it back into a user. Each preset exports a Next.js
-middleware and an Express middleware — mount the one that fits your app.
+middleware and an Express middleware; mount the one that fits your app.
 
 ```ts
 // middleware.ts (Next.js)
@@ -206,26 +197,8 @@ Middleware does three things on every request:
 - Rejects forged, expired, or wrong-audience tokens before your handler
   runs.
 
-The `secret` the producer and the middleware constructions read must match
-(both default to the `VENDO_AWAY_TOKEN_SECRET` env variable). Store it as an
-environment variable and rotate by redeploying both halves.
-
-## Impersonation guard
-
-Vendo compares the grant's `subject` to the current principal's `subject`
-before invoking `actAs`. If they don't match, the call fails closed with an
-`act-as-subject-mismatch` outcome and no outbound request is made. This
-covers both away automations and MCP door calls, and applies to every
-preset — you don't wire it separately.
-
-## Token caching and rotation
-
-Every preset caches minted tokens in memory until just before expiry (default
-300 s token lifetime, refreshed 30 s before expiry). Cache keys
-include a fingerprint of the signing secret, so rotating the secret
-invalidates the cache immediately — the next away call mints against the new
-secret. Expired entries are dropped on write, so the cache size stays bounded
-by the number of active principals.
+See [Auth reference](#the-away-token-secret) for how the producer and
+middleware secret must match.
 
 ## Verify wiring
 
@@ -239,5 +212,52 @@ token so a misconfigured secret surfaces before the first real away call.
 
 If away calls fail with `not-implemented`, `actAs` is not configured. If they
 fail with `act-as-subject-mismatch`, the grant belongs to a different user
-than the current principal — see the [troubleshooting
-guide](/deploy/troubleshooting).
+than the current principal. See the [troubleshooting
+guide](/deploy/troubleshooting), and [Auth reference](#impersonation-guard)
+for how the mismatch is detected.
+
+## Auth reference
+
+### `auth` and per-seam presets are mutually exclusive
+
+`auth` is mutually exclusive with the per-seam trio: supplying `auth`
+together with any of `principal`, `actAs`, or `oauth` throws
+`VendoError("validation")` at compose time.
+
+### Offline minting vs. host-owned tokens
+
+**Offline session minting.** Auth.js and Supabase let a host holding the
+session secret mint a session token the provider's own verifier accepts. The
+preset mints a fresh token per away call: no extra middleware in your app.
+
+**Host-owned away tokens.** Clerk and Auth0 sign sessions with RS256 private
+keys you don't hold, so offline minting is impossible. These presets ship two
+halves: a producer that signs a short-lived `VendoAway` HS256 token, and a
+verify middleware you mount on your host app to trade that token for the
+verified identity headers your API code reads.
+
+**Generic HS256.** For any other provider that accepts an HS256 JWT with
+configurable claims and header shape.
+
+### The away-token secret
+
+The `secret` the producer and the middleware constructions read must match
+(both default to the `VENDO_AWAY_TOKEN_SECRET` env variable). Store it as an
+environment variable and rotate by redeploying both halves.
+
+### Impersonation guard
+
+Vendo compares the grant's `subject` to the current principal's `subject`
+before invoking `actAs`. If they don't match, the call fails closed with an
+`act-as-subject-mismatch` outcome and no outbound request is made. This
+covers both away automations and MCP door calls, and applies to every
+preset: you don't wire it separately.
+
+### Token caching and rotation
+
+Every preset caches minted tokens in memory until just before expiry (default
+300 s token lifetime, refreshed 30 s before expiry). Cache keys
+include a fingerprint of the signing secret, so rotating the secret
+invalidates the cache immediately: the next away call mints against the new
+secret. Expired entries are dropped on write, so the cache size stays bounded
+by the number of active principals.
