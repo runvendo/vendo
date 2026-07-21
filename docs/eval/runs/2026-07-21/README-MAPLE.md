@@ -1,0 +1,25 @@
+# V4 FINAL GATE — Maple half (scoring run, 2026-07-21)
+
+Official v4-wave scoring run. One attempt per prompt, zero tuning, production boot
+(`next start`, port 3000), main @ e6dbfe40 + gate branch `eval/v4-final-gate`
+(candidate config: `pipeline: { promptRewrite: true, endPass: true }` in both hosts,
+committed before the first prompt; onPipeline server-log diagnostics, pure reporting).
+Prompts: M1–M15 (frozen 30) + F1–F5 (Tranche 2) + G1–G5 (Tranche 3, authored blind
+pre-gate — first commit of this branch).
+
+Judge bar: docs/eval/GOLDEN.md PASS bar. Browser: dedicated headless Chromium
+(Playwright 1.61.1, 1440x900), never shared. Timing = submit (Create click) → app
+visible (first rendered content in the open-app region, text-settle confirmed;
+full-page screenshot taken after settle). Repair engagement read from the onPipeline
+server log (`repair` events) — no more timing guesswork. End-pass adoption =
+`end-pass applied` per create, same log.
+
+## Results
+
+| id | prompt | verdict | timing | class-if-fail | repair? | end-pass | note |
+|----|--------|---------|--------|---------------|---------|----------|------|
+| M1 | show me my account balances at a glance | PASS | 5.6s | — | no | applied | Headline "TOTAL BALANCE $54,907.15" is the TRUE all-accounts total (the 2026-07-20 run's checking-only blemish is gone), trend chart, 4-account table all formatted ($9,412.20 / $28,141.35 / -$1,288.40 / $18,642.00). No errors. |
+
+## Summary
+
+(run in progress)
