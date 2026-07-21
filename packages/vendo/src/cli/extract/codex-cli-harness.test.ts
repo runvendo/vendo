@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codexCliHarness } from "./codex-cli-harness.js";
+import { codexCliHarness, insertOutputLastMessageFlag, resolveCodexExecResult } from "./codex-cli-harness.js";
 
 describe("codexCliHarness", () => {
   it("is unavailable without the codex binary on PATH, regardless of credentials", async () => {
@@ -102,5 +102,42 @@ describe("codexCliHarness", () => {
     });
     await expect(harness.run({ root: "/x", env: {}, instructions: "go" }))
       .rejects.toThrow(/codex exited with code 1/);
+  });
+});
+
+describe("insertOutputLastMessageFlag", () => {
+  it("inserts --output-last-message before the trailing free-text instructions positional, not after it", () => {
+    const args = ["exec", "--sandbox", "read-only", "-C", "/root", "go read the codebase --with a dash"];
+    expect(insertOutputLastMessageFlag(args, "/tmp/out.txt")).toEqual([
+      "exec", "--sandbox", "read-only", "-C", "/root",
+      "--output-last-message", "/tmp/out.txt",
+      "go read the codebase --with a dash",
+    ]);
+  });
+});
+
+describe("resolveCodexExecResult", () => {
+  it("passes the raw process result through unchanged on nonzero exit", () => {
+    expect(resolveCodexExecResult(1, "narration", "boom", undefined)).toEqual({
+      stdout: "narration",
+      stderr: "boom",
+      code: 1,
+    });
+  });
+
+  it("returns the final message as stdout on a clean exit with a readable output file", () => {
+    expect(resolveCodexExecResult(0, "narration", "", '{"brief":"b","tools":[]}')).toEqual({
+      stdout: '{"brief":"b","tools":[]}',
+      stderr: "",
+      code: 0,
+    });
+  });
+
+  it("synthesizes a code-1 failure when codex exits 0 but the output-last-message file is missing", () => {
+    expect(resolveCodexExecResult(0, "narration", "", undefined)).toEqual({
+      stdout: "",
+      stderr: "codex produced no final message (--output-last-message file missing)",
+      code: 1,
+    });
   });
 });
