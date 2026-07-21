@@ -102,10 +102,9 @@ export const hostCatalog = [{
     process.chdir(root);
     const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_drift" };
 
-    // ONE host process lifetime: fork the pin and edit the fork.
+    // ONE host process lifetime: fork the pin (gesture, no model) and edit the fork.
     const vendo = createVendo({
       model: scriptedModel([
-        `<Edit><ForkPin slot="${slot}" into="root"/></Edit>`,
         `<Edit><Island name="${componentName}">${remixedSource}</Island></Edit>`,
       ]),
       principal: async () => principal,
@@ -124,9 +123,14 @@ export const hostCatalog = [{
       },
     } as AppDocument, ctx);
     const appId = imported.id;
-    const forked = await vendo.apps.edit(appId, "Remix the net worth card", ctx);
-    expect(forked.failure).toBeUndefined();
-    expect(forked.driftedPins).toBeUndefined();
+    // Gesture-owned forking (2026-07-21): the fork rides its own wire route,
+    // executed deterministically by the engine — the model never sees it.
+    const forkResponse = await vendo.handler(request("POST", `/apps/${appId}/fork-pin`, { slot }));
+    expect(forkResponse.status).toBe(200);
+    const forked = await forkResponse.json();
+    expect(forked.componentName).toBe(componentName);
+    expect(forked.app.pins).toEqual([{ slot, base: oldHash }]);
+    expect(forked.app.components[componentName]).toContain("$1.2M");
     const remixed = await vendo.apps.edit(appId, "Call out that it is remixed", ctx);
     expect(remixed.failure).toBeUndefined();
     expect(remixed.app.pins).toEqual([{ slot, base: oldHash }]);

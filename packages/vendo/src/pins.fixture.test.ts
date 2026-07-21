@@ -170,8 +170,12 @@ export const hostCatalog = [{
     const edited = await vendo.apps.edit(imported.id, "Remix the net worth card", ctx);
 
     expect(prompt).toContain("net-worth-card");
-    expect(prompt).toContain("MapleNetWorthCard");
-    expect(prompt).toContain("$1.2M");
+    expect(prompt).toContain("PinnedNetWorthCard");
+    // Gesture-owned forking (2026-07-21): the edit prompt teaches only the
+    // slot -> pinned-component mapping — the captured source and the <ForkPin>
+    // grammar no longer ride it (the op still compiles, as this model shows).
+    expect(prompt).not.toContain("$1.2M");
+    expect(prompt).not.toContain("<ForkPin");
     expect(edited.app.pins).toEqual([{
       slot: "net-worth-card",
       base: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),

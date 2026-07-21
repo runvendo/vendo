@@ -89,7 +89,11 @@ function jailNonce(): string {
 export interface JailedComponentProps {
   name: string;
   source: string;
-  /** Live tree props. Absent means the captured sampleProps rehearsal stub wins. */
+  /** Live tree props, MERGED OVER the furnishing's captured sampleProps: a
+   *  node that sets only some props (e.g. a fork's `initialRange`) must not
+   *  clobber the baseline's sample seed for the rest — partial props crashed
+   *  captured components (remix eval fail class 4). Absent means the
+   *  sampleProps rehearsal stub alone wins. */
   props?: Record<string, unknown>;
   furnishing?: JailFurnishing;
   /** Host brand tokens as `--vendo-*` custom properties, applied to the jail root. */
@@ -167,15 +171,22 @@ export function JailedComponent({
     () => new Set(toolManifest ?? islandToolFallbackManifest(source)),
     [source, toolManifest],
   );
+  // Live node props merge OVER the captured sampleProps (never replace them
+  // wholesale): a pinned fork whose node carries only `initialRange` still
+  // gets the baseline's `valueCents`/`series` seed instead of crashing.
+  const effectiveProps = useMemo(
+    () => ({ ...furnishing?.sampleProps, ...props }),
+    [furnishing, props],
+  );
   const allowedActions = useMemo(() => {
     const allowed = new Set(manifest);
-    collectActionNames(props ?? furnishing?.sampleProps ?? {}, allowed);
+    collectActionNames(effectiveProps, allowed);
     // Legacy islands call `props.vendo.action("tool", …)` directly; their
     // literal action names in CODE (never strings/comments — review) are part
     // of the source the host holds, so they stay allowed.
     for (const literal of islandVendoActionNames(source)) allowed.add(literal);
     return allowed;
-  }, [furnishing, manifest, props, source]);
+  }, [effectiveProps, manifest, source]);
 
   useEffect(() => {
     setError(undefined);
@@ -189,7 +200,7 @@ export function JailedComponent({
         vendo: true,
         kind: "render",
         source,
-        props: props ?? furnishing?.sampleProps ?? {},
+        props: effectiveProps,
         ...(furnishing?.sourceImports === undefined ? {} : { sourceImports: furnishing.sourceImports }),
         ...(furnishing?.subSources === undefined ? {} : { subSources: furnishing.subSources }),
         ...(furnishing?.styles === undefined ? {} : { styles: furnishing.styles }),
@@ -298,7 +309,7 @@ export function JailedComponent({
       window.removeEventListener("message", handleMessage);
       iframe.removeEventListener("load", sendRender);
     };
-  }, [allowedActions, furnishing, manifest, onAction, onStateSet, props, source, themeVars]);
+  }, [allowedActions, effectiveProps, furnishing, manifest, onAction, onStateSet, source, themeVars]);
 
   if (error) {
     return <ContainedNotice label="Generated component error">{`${name}: ${error}`}</ContainedNotice>;
