@@ -383,26 +383,18 @@ email-OTP fallback `vendo cloud login <email>` sends a 6-10 digit code,
 prompts for it, and stores the session at `~/.vendo/cloud-session.json`;
 `--token <jwt>` stores an access token instead.
 Other subcommands: `logout`, `whoami`, `orgs`, `keys` (`list`, `create`,
-`revoke`), `members`, `invite`, `deployments`, `usage`, `billing`, and
-`deploy`. Read results print as JSON, with
-one exception: `deploy` prints a concise summary table by default and switches
-to raw JSON with `--json`. There is no validate subcommand: key problems
+`revoke`), `members`, `invite`, `deployments`, `usage`, and `billing`. Read
+results print as JSON. There is no validate subcommand: key problems
 surface on the first real call, and `vendo cloud usage` and
 `vendo cloud deployments` read the server-side metering from real traffic.
 
-`vendo cloud deploy` pushes local enabled automations from `.vendo/data` to a
-hosted instance. Use `--app <id>` (repeatable) to restrict the set, `--subject
-<id>` when the local store holds more than one subject, and `--secret
-NAME=VALUE` (repeatable) to send referenced secret values. See
-[Vendo Cloud](/deploy/vendo-cloud#deploy-local-automations-to-hosted) for the
-full walkthrough.
+There is no deploy subcommand. With `VENDO_API_KEY` set, automations you
+build sync to Vendo Cloud automatically and run on Vendo's schedulers — see
+[Vendo Cloud](/deploy/vendo-cloud) for the full walkthrough.
 
 Global options:
 
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default `https://console.vendo.run`).
-- `--key <vnd_...>` overrides `VENDO_API_KEY` for the machine command
-  (`deploy`). Keys must match `vnd_` followed by 40 hex characters or the
-  command exits before any network call.
 
 Org-scoped commands take `--org <id>`; omit it only when your account has one
 organization. Run `vendo cloud help` for the full list. See
