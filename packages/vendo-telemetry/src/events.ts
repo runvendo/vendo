@@ -49,6 +49,8 @@ export type EventName =
   | "init_completed"
   | "init_failed"
   | "doctor_run"
+  | "extract_completed"
+  | "command_run"
   | "agent_run"
   | "error_class";
 
@@ -73,10 +75,50 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
     "remixSkipped",
     "toolCount",
     "durationMs",
+    // What kind of project init ran against — bools and closed enums only.
+    "typescript",
+    // Next router flavor: app | pages | none.
+    "router",
+    // AI-polish engine that ran: claude | codex | npx-engine | none.
+    "engine",
+    // How the API surface was detected: route-scan | zod | none.
+    "apiDetectMethod",
+    "routeCount",
+    "themeExtracted",
+    // Bare dependency versions (range prefixes stripped) — non-identifying,
+    // in line with what Astro/Nx collect anonymously.
+    "frameworkVersion",
+    "reactVersion",
+    "zodVersion",
+    "typescriptVersion",
   ]),
-  init_failed: new Set([...BASE_PROP_KEYS, "framework", "failedStep"]),
+  init_failed: new Set([...BASE_PROP_KEYS, "framework", "failedStep", "errorClass"]),
   // `vendo doctor` health-check run: counts + a wired bool, never any content.
   doctor_run: new Set([...BASE_PROP_KEYS, "failures", "warnings", "wired"]),
+  // `vendo extract --apply` result: counts, enums, versions — same voice as
+  // init_completed. `method` is the api-detect enum: route-scan | zod | none.
+  extract_completed: new Set([
+    ...BASE_PROP_KEYS,
+    "framework",
+    "method",
+    "routeCount",
+    "toolCount",
+    "ok",
+    "durationMs",
+    "frameworkVersion",
+    "zodVersion",
+  ]),
+  // One row per non-init CLI command run. `command` is a closed enum:
+  // extract | theme | eject | playground | refine | sync | cloud-init | mcp.
+  // failedStep/errorClass are short enums/class names, never message text.
+  command_run: new Set([
+    ...BASE_PROP_KEYS,
+    "command",
+    "ok",
+    "failedStep",
+    "errorClass",
+    "durationMs",
+  ]),
   // dev-time feature usage
   agent_run: new Set([...BASE_PROP_KEYS]),
   error_class: new Set([...BASE_PROP_KEYS, "errorClass"]),

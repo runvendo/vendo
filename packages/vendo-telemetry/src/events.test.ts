@@ -23,12 +23,73 @@ describe("event allowlist", () => {
       "init_completed",
       "init_failed",
       "doctor_run",
+      "extract_completed",
+      "command_run",
       "agent_run",
       "error_class",
     ];
     for (const name of names) {
       expect(EVENT_ALLOWLIST[name]).toBeInstanceOf(Set);
     }
+    expect(Object.keys(EVENT_ALLOWLIST).sort()).toEqual([...names].sort());
+  });
+
+  it("init_completed permits exactly the documented enrichment set", () => {
+    expect([...EVENT_ALLOWLIST.init_completed].sort()).toEqual(
+      [
+        ...BASE_PROP_KEYS,
+        "framework",
+        "provider",
+        "llmSkipped",
+        "keyPrompt",
+        "command",
+        "componentsOffered",
+        "componentCount",
+        "remixOffered",
+        "remixWrapped",
+        "remixSkipped",
+        "toolCount",
+        "durationMs",
+        "typescript",
+        "router",
+        "engine",
+        "apiDetectMethod",
+        "routeCount",
+        "themeExtracted",
+        "frameworkVersion",
+        "reactVersion",
+        "zodVersion",
+        "typescriptVersion",
+      ].sort(),
+    );
+  });
+
+  it("init_failed permits exactly framework, failedStep, and errorClass", () => {
+    expect([...EVENT_ALLOWLIST.init_failed].sort()).toEqual(
+      [...BASE_PROP_KEYS, "framework", "failedStep", "errorClass"].sort(),
+    );
+  });
+
+  it("extract_completed permits exactly the documented result metrics", () => {
+    expect([...EVENT_ALLOWLIST.extract_completed].sort()).toEqual(
+      [
+        ...BASE_PROP_KEYS,
+        "framework",
+        "method",
+        "routeCount",
+        "toolCount",
+        "ok",
+        "durationMs",
+        "frameworkVersion",
+        "zodVersion",
+      ].sort(),
+    );
+  });
+
+  it("command_run permits exactly the closed command-outcome shape", () => {
+    expect([...EVENT_ALLOWLIST.command_run].sort()).toEqual(
+      [...BASE_PROP_KEYS, "command", "ok", "failedStep", "errorClass", "durationMs"].sort(),
+    );
   });
 
   it("never allows a content-shaped key on any event", () => {
