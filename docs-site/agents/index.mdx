@@ -12,23 +12,33 @@ is left.
 
 ## Install flow
 
-1. **Detect the stack.** Read `package.json`. A `next` dependency means
+1. **Check for an existing agent.** If the host repo already runs its own
+   agent loop — an `ai` (AI SDK) dependency driving a chat route or
+   `streamText` loop, or `@mastra/core` — stop and ask your human which path
+   they want: install Vendo's agent (this playbook), or keep their loop and
+   add Vendo's tool pack instead
+   ([existing agents](/existing-agents); raw Markdown at
+   `https://docs.vendo.run/existing-agents.md`). Never assume the full
+   install in a repo that already has an agent.
+
+2. **Detect the stack.** Read `package.json`. A `next` dependency means
    Next.js; an `express` dependency means Express. Those are the two scaffolded
    paths. Anything else is generic Node: Vendo's handler is a plain fetch
    handler, so follow the Express page's shape by hand
    ([Express & other runtimes quickstart](/quickstart#wire-the-express-adapter))
    and tell your human detection did not apply.
 
-2. **Install the package.**
+3. **Install the package.**
 
    ```bash
    npm install vendoai
    ```
 
-   `vendoai` is a thin alias of `@vendoai/vendo`; see
-   [Install](/install#stage-1-base-install) for the full picture.
+   `vendoai` is a thin alias of `@vendoai/vendo`; see the
+   [quickstart](/quickstart) for the full picture (including the
+   release-cooldown gotcha right after a Vendo release).
 
-3. **Run init with value flags.** Every wizard question has a flag, so a
+4. **Run init with value flags.** Every wizard question has a flag, so a
    non-interactive run never hangs on a prompt. Answer auth
    ([which preset?](/agents/host-auth)) and the model-key question explicitly:
 
@@ -42,14 +52,19 @@ is left.
 
    `--auth` takes `authJs`, `clerk`, `supabase`, `auth0`, `jwt`, or `none`.
    `--byo` declines the Vendo Cloud offer; `--cloud-key <key>` answers it with
-   an existing key instead. Cloud vs bring-your-own is your human's call: ask
-   before running `vendo cloud login` or assuming a provider key exists.
+   an existing key instead. Cloud vs bring-your-own is your human's call:
+   ask first. If they choose Vendo Cloud, run `vendo login` — it prints an
+   approval URL and code, your human approves in the browser, and the
+   credential is delivered straight to the CLI (no email OTP, and no key
+   ever transits your transcript; the raw protocol is
+   [auth.md](https://vendo.run/auth.md)). If they bring a provider key,
+   never assume it exists — ask where it is set.
    `--framework <next|express>` is required only when detection fails (init
    errors with that exact instruction rather than guessing). See the
    [CLI reference](/reference/cli#vendo-init-dir) for every other flag and
    [vendo init](/connect/vendo-init) for exactly what it writes.
 
-4. **Hand-wire the gaps the agent tail names.** A non-interactive init ends
+5. **Hand-wire the gaps the agent tail names.** A non-interactive init ends
    with an `Agent tail:` block listing the exact files this run left for you;
    typically: wrap the root layout (or client entry) in the printed
    `<VendoRoot>` lines, register real host components in `vendo/registry.tsx`
@@ -58,7 +73,7 @@ is left.
    ([host auth](/agents/host-auth)). Follow the tail, not memory; it is
    derived from what init actually wrote in this repo.
 
-5. **Gate on doctor.** Start the dev server yourself (in `--json` mode doctor
+6. **Gate on doctor.** Start the dev server yourself (in `--json` mode doctor
    never starts it for you), then loop:
 
    ```bash
@@ -71,7 +86,7 @@ is left.
 ## Rules of engagement
 
 - **Ask your human before creating any account or key.** That includes Vendo
-  Cloud (`vendo cloud login`), model provider keys, and sandbox accounts
+  Cloud (`vendo login`), model provider keys, and sandbox accounts
   (E2B or the managed Cloud sandbox). Relay the choice; never sign up on your own.
 - **Never invent props or tools outside the catalog.** Only components
   registered in `vendo/registry.tsx` exist, and only with the props their
@@ -94,3 +109,18 @@ is left.
   component catalog contract and anti-prop-invention rules.
 - [Verify](/agents/verify): every doctor error code: symptom, cause, exact
   fix.
+
+## Agent surfaces reference
+
+| Surface | What it serves |
+| --- | --- |
+| `https://vendo.run/agents.md` | This playbook as raw Markdown (append `.md` to any docs page) |
+| `https://docs.vendo.run/existing-agents.md` | The tool-pack path for hosts that already have an agent |
+| `https://vendo.run/auth.md` | The raw claim-ceremony protocol behind `vendo login` |
+| `https://docs.vendo.run/llms.txt` | Index of every docs page for LLM ingestion (also at `/.well-known/llms.txt`) |
+| `https://docs.vendo.run/llms-full.txt` | The whole docs site as one file |
+| `npx vendo init --agent` | Read-only JSON plan: framework, files init would write, code diffs, extracted tools, risk recommendations, AI-polish delegation contract (writes nothing) |
+| `npx vendo sync --json` | One machine-readable sync report object on stdout |
+| `.claude/skills/vendo-setup/` | Setup skill shipped in the npm tarball; init offers to install it when `.claude/` exists |
+
+See the [CLI reference](/reference/cli) for every flag and exit code.

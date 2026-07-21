@@ -4,6 +4,8 @@ sidebarTitle: "Overview"
 description: "Keep your AI SDK or Mastra agent and add Vendo's guarded tools, generated UI, and approvals to its loop through one in-process tool pack."
 ---
 
+import { AgentPrompt } from "/snippets/agent-prompt.jsx"
+
 You already have an agent: its own loop, its own model, its own chat UI.
 Vendo does not replace any of it. One tool pack, spread into your agent's
 tools, adds guarded host actions, generated UI, and approvals to the loop
@@ -17,6 +19,11 @@ you already run. Start with your framework's quickstart:
     The same three steps in Mastra's `Agent({ tools })` shape.
   </Card>
 </CardGroup>
+
+<AgentPrompt
+  lead="Not sure which? Paste this and your coding agent picks the right walkthrough."
+  prompt={"This repo already has its own agent. Add Vendo's guarded tools, generated UI, and approvals to it. Read https://docs.vendo.run/existing-agents.md and follow the walkthrough for my framework (AI SDK or Mastra). Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs. Then ask me whether I'd like to star runvendo/vendo to support the project."}
+/>
 
 The pack adds three things:
 
