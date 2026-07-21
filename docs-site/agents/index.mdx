@@ -15,16 +15,31 @@ playbook instead of the raw text, re-fetch it raw
 (`curl -sL https://docs.vendo.run/agents.md`) — the value flags, exact
 commands, and rules below don't survive paraphrase.
 
+**How to read this — fetch lean, act fast.** This page plus AT MOST ONE more
+is everything you need. Do step 1, commit to one path, then fetch only that
+path's page. Do NOT fetch `llms.txt`, `llms-full.txt`, the existing-agents
+overview, or the page for a path you are not taking — each extra fetch is a
+minute of latency and a chunk of context you will not use, and it is why
+installs feel slow to start. Read the repo's `package.json` before deep
+directory scans. Start acting after step 1, not after reading everything.
+
 ## Install flow
 
-1. **Check for an existing agent.** If the host repo already runs its own
+1. **Check for an existing agent — and branch here.** If the host repo already runs its own
    agent loop — an `ai` (AI SDK) dependency driving a chat route or
    `streamText` loop, or `@mastra/core` — stop and ask your human which path
    they want: install Vendo's agent (this playbook), or keep their loop and
-   add Vendo's tool pack instead
-   ([existing agents](/existing-agents); raw Markdown at
-   `https://docs.vendo.run/existing-agents.md`). Never assume the full
-   install in a repo that already has an agent.
+   add Vendo's tool pack. Never assume the full install in a repo that
+   already has an agent.
+
+   **If they choose the tool pack, leave this page now.** Fetch exactly ONE
+   framework walkthrough and follow it end to end — do not read both, and do
+   not read the overview:
+   - AI SDK loop → `https://docs.vendo.run/existing-agents/ai-sdk.md`
+   - Mastra loop → `https://docs.vendo.run/existing-agents/mastra.md`
+
+   Everything below (steps 2–8) is the FULL-install path. Continue only if
+   your human chose Vendo's agent.
 
 2. **Detect the stack.** Read `package.json`. A `next` dependency means
    Next.js; an `express` dependency means Express. Those are the two scaffolded
