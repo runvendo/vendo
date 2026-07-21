@@ -873,6 +873,136 @@ export async function GET(req: Request) {
   });
 });
 
+/** Part 0 (Task 5 review, blocking): the json-read receiver must be the
+ * handler's own request parameter — an UPSTREAM fetch response's `.json()`
+ * (demo-bank's `/api/voice`: `(await upstream.json().catch(...)) as {...}`)
+ * is not body evidence, even though it syntactically matches `<x>.json()`
+ * exactly like `req.json()` does. Without this gate both the zod and checker
+ * collectors fabricated a schema from whatever type happened to sit on the
+ * cast, regardless of what expression was actually being read. */
+describe("json-read evidence gated to the request parameter (Part 0 regression)", () => {
+  it("does not fabricate a schema from an upstream fetch response's .json() cast (demo-bank voice route shape)", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    await write(root, "app/api/voice/route.ts", `
+export async function POST(req: Request): Promise<Response> {
+  const upstream = await fetch("https://api.openai.com/v1/realtime/client_secrets", { method: "POST" });
+  const body = (await upstream.json().catch(() => ({}))) as { value?: string; error?: { message?: string } };
+  if (!upstream.ok || !body.value) {
+    return Response.json({ error: body.error?.message }, { status: 502 });
+  }
+  return Response.json({ clientSecret: body.value });
+}
+`);
+    const { tools } = await scanRoutes(root);
+    const tool = tools.find((candidate) => candidate.binding.kind === "route" && candidate.binding.method === "POST");
+    expect(tool?.inputSchema).toEqual({ type: "object", properties: {}, additionalProperties: true });
+    expect(tool?.note).toBeUndefined();
+  });
+
+  it("does not resolve a zod .parse(...) call reading an upstream fetch response instead of the request", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST(req: Request) {
+  const upstream = await fetch("https://example.com");
+  const body = schema.parse(await upstream.json());
+  return Response.json(body);
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    expect(await inferRouteInput(route, "POST", state)).toBeNull();
+  });
+
+  it("does not resolve a checker as-cast reading an upstream fetch response instead of the request", async () => {
+    const root = await temporaryRoot();
+    await writeTsconfig(root);
+    const file = path.join(root, "app/api/widgets/route.ts");
+    await write(root, "app/api/widgets/route.ts", `
+type UpstreamBody = { value: string };
+export async function POST(req: Request) {
+  const upstream = await fetch("https://example.com");
+  const body = (await upstream.json()) as UpstreamBody;
+  return Response.json(body);
+}
+`);
+    const route: RouteContext = { file, source: await fs.readFile(file, "utf8"), urlPath: "/api/widgets", kind: "app" };
+    const state = createRouteScanState(root, [file]);
+
+    expect(await inferRouteInput(route, "POST", state)).toBeNull();
+  });
+
+  it("still resolves the json read when the receiver is the handler's parameter under a different name", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST(request: Request) {
+  const body = schema.parse(await request.json());
+  return Response.json(body);
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    const result = await inferRouteInput(route, "POST", state);
+    expect(result?.bodySchema).toEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
+  });
+
+  it("fails closed when the handler destructures its parameter (no identifiable request identifier)", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST({ headers }: Request) {
+  const body = schema.parse(await headers.json());
+  return Response.json(body);
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    expect(await inferRouteInput(route, "POST", state)).toBeNull();
+  });
+
+  it("fails closed when the handler takes no parameter at all", async () => {
+    const route: RouteContext = {
+      file: "/repo/app/api/widgets/route.ts",
+      source: `
+import { z } from "zod";
+const schema = z.object({ name: z.string() });
+export async function POST() {
+  const upstream = await fetch("https://example.com");
+  const body = schema.parse(await upstream.json());
+  return Response.json(body);
+}
+`,
+      urlPath: "/api/widgets",
+      kind: "app",
+    };
+    const state = createRouteScanState("/repo");
+
+    expect(await inferRouteInput(route, "POST", state)).toBeNull();
+  });
+});
+
 /** The review carry-over (04 §1 Task 4, and Task 1's `mergeRouteInput` doc
  * comment): the runtime (`runtime/registry.ts`'s route execution) sends every
  * non-path argument as `searchParams` for a query-bound tool but as a single

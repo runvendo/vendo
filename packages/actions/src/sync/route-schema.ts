@@ -153,6 +153,21 @@ function hasExportKeyword(ts: typeof TS, statement: TS.Statement): boolean {
     && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
 }
 
+/** A discovered handler: its body plus the identifier name of its first
+ * parameter, when that parameter is a plain identifier (`req`, `request`,
+ * ...) — `null` when the handler has no parameter at all or destructures it
+ * (`{ headers }: Request`), since neither shape gives the json-read gate
+ * (below) an identifier to check evidence against. `paramName` is what
+ * distinguishes "the request itself" from any other in-scope value a handler
+ * happens to call `.json()` on (an upstream `fetch` response, most notably —
+ * Part 0 review carry-over: demo-bank's `/api/voice` calls
+ * `upstream.json()`, and without this gate that read looked identical to a
+ * real body read). */
+interface HandlerMatch {
+  body: TS.Node;
+  paramName: string | null;
+}
+
 /** The handler function body for `method`, when the route module exports it
  * directly as a named function declaration or a const arrow/function
  * expression. Route files may re-export handlers from other modules or
@@ -160,17 +175,24 @@ function hasExportKeyword(ts: typeof TS, statement: TS.Statement): boolean {
  * route-scan.ts's job (verb discovery), not this collector's; a same-file
  * named export is the only shape the zod collector looks inside, and it fails
  * closed (returns `null`, no handler body to search) for everything else. */
-function methodHandlerBody(module: FileModule, ts: typeof TS, method: HttpMethod): TS.Node | null {
+function methodHandlerBody(module: FileModule, ts: typeof TS, method: HttpMethod): HandlerMatch | null {
+  const paramNameOf = (parameters: readonly TS.ParameterDeclaration[]): string | null => {
+    const first = parameters[0];
+    return first && ts.isIdentifier(first.name) ? first.name.text : null;
+  };
+
   for (const statement of module.sf.statements) {
     if (ts.isFunctionDeclaration(statement) && statement.name?.text === method
       && hasExportKeyword(ts, statement) && statement.body) {
-      return statement.body;
+      return { body: statement.body, paramName: paramNameOf(statement.parameters) };
     }
     if (ts.isVariableStatement(statement) && hasExportKeyword(ts, statement)) {
       for (const declaration of statement.declarationList.declarations) {
         if (!ts.isIdentifier(declaration.name) || declaration.name.text !== method || !declaration.initializer) continue;
         const init = declaration.initializer;
-        if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) return init.body;
+        if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) {
+          return { body: init.body, paramName: paramNameOf(init.parameters) };
+        }
       }
     }
   }
@@ -203,12 +225,26 @@ function unwrapJsonCandidate(ts: typeof TS, node: TS.Node): TS.Node {
   }
 }
 
-/** True for an (unwrapped) `<x>.json()` call — the request-body read the zod
- * collector looks for as a `.parse`/`.safeParse` argument, per the plan's
- * "argument CONTAINING await x.json()" (04 §1 Task 2). */
-function isJsonReadExpression(ts: typeof TS, node: TS.Node): boolean {
+/** True for an (unwrapped) `<x>.json()` call whose receiver `<x>` is
+ * literally the handler's own request parameter — the request-body read the
+ * zod collector looks for as a `.parse`/`.safeParse` argument, per the plan's
+ * "argument CONTAINING await x.json()" (04 §1 Task 2). `paramName` is `null`
+ * when the handler's parameter couldn't be identified (destructured or
+ * absent — see `methodHandlerBody`'s `HandlerMatch`), which fails every
+ * receiver closed rather than matching anything.
+ *
+ * Part 0 (Task 5 review, blocking): this receiver check is what keeps an
+ * UPSTREAM response's `.json()` (`await upstream.json()`, demo-bank's
+ * `/api/voice`) from reading as body evidence just because it's syntactically
+ * a `<x>.json()` call — `<x>` has to be the request, not any in-scope value
+ * that happens to expose the same method name. */
+function isJsonReadExpression(ts: typeof TS, node: TS.Node, paramName: string | null): boolean {
   const inner = unwrapJsonCandidate(ts, node);
-  return ts.isCallExpression(inner) && ts.isPropertyAccessExpression(inner.expression) && inner.expression.name.text === "json";
+  if (!ts.isCallExpression(inner) || !ts.isPropertyAccessExpression(inner.expression) || inner.expression.name.text !== "json") {
+    return false;
+  }
+  const receiver = inner.expression.expression;
+  return paramName !== null && ts.isIdentifier(receiver) && receiver.text === paramName;
 }
 
 /** One-hop local resolution (review-decided, no data-flow analysis): when the
@@ -231,11 +267,11 @@ function localDeclarationInitializer(ts: typeof TS, functionBody: TS.Node, name:
   return null;
 }
 
-function isJsonBodyArgument(ts: typeof TS, argument: TS.Expression, functionBody: TS.Node): boolean {
-  if (isJsonReadExpression(ts, argument)) return true;
+function isJsonBodyArgument(ts: typeof TS, argument: TS.Expression, functionBody: TS.Node, paramName: string | null): boolean {
+  if (isJsonReadExpression(ts, argument, paramName)) return true;
   if (!ts.isIdentifier(argument)) return false;
   const initializer = localDeclarationInitializer(ts, functionBody, argument.text);
-  return initializer !== null && isJsonReadExpression(ts, initializer);
+  return initializer !== null && isJsonReadExpression(ts, initializer, paramName);
 }
 
 /** The first `.parse`/`.safeParse` call in `body` whose argument reads the
@@ -243,14 +279,14 @@ function isJsonBodyArgument(ts: typeof TS, argument: TS.Expression, functionBody
  * than once picks the first read in source order). Returns the callee's
  * receiver expression (the schema construction/reference), not the call
  * itself. */
-function findZodParseReceiver(ts: typeof TS, body: TS.Node): TS.Expression | null {
+function findZodParseReceiver(ts: typeof TS, body: TS.Node, paramName: string | null): TS.Expression | null {
   let found: TS.Expression | null = null;
   const visit = (node: TS.Node): void => {
     if (found) return;
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
       && (node.expression.name.text === "parse" || node.expression.name.text === "safeParse")) {
       const argument = node.arguments[0];
-      if (argument && isJsonBodyArgument(ts, argument, body)) {
+      if (argument && isJsonBodyArgument(ts, argument, body, paramName)) {
         found = node.expression.expression;
         return;
       }
@@ -315,9 +351,9 @@ async function zodCollector(
   const extraction = zodExtractionFor(state);
   if (!extraction) return null;
   const module = parseModule(extraction, route.file, route.source);
-  const body = methodHandlerBody(module, extraction.ts, method);
-  if (!body) return null;
-  const receiver = findZodParseReceiver(extraction.ts, body);
+  const handler = methodHandlerBody(module, extraction.ts, method);
+  if (!handler) return null;
+  const receiver = findZodParseReceiver(extraction.ts, handler.body, handler.paramName);
   if (!receiver) return null;
 
   const interpreted = await zodFromExpression(extraction, module, receiver, 0);
@@ -399,15 +435,15 @@ function checkerProgramFor(state: RouteScanState): { ts: typeof TS; program: TS.
  * unannotated, uncast `await req.json()` with no reads — 04 §1 Task 3's
  * "voice-proxy case") means `null`, and the checker is never consulted for
  * this route+method. */
-function findCheckerCandidateType(ts: typeof TS, body: TS.Node): TS.TypeNode | null {
+function findCheckerCandidateType(ts: typeof TS, body: TS.Node, paramName: string | null): TS.TypeNode | null {
   let found: TS.TypeNode | null = null;
   const visit = (node: TS.Node): void => {
     if (found) return;
-    if (ts.isAsExpression(node) && isJsonReadExpression(ts, node.expression)) {
+    if (ts.isAsExpression(node) && isJsonReadExpression(ts, node.expression, paramName)) {
       found = node.type;
       return;
     }
-    if (ts.isVariableDeclaration(node) && node.type && node.initializer && isJsonReadExpression(ts, node.initializer)) {
+    if (ts.isVariableDeclaration(node) && node.type && node.initializer && isJsonReadExpression(ts, node.initializer, paramName)) {
       found = node.type;
       return;
     }
@@ -592,8 +628,8 @@ async function checkerCollector(
   const extraction = zodExtractionFor(state);
   if (!extraction) return null;
   const syntacticModule = parseModule(extraction, route.file, route.source);
-  const syntacticBody = methodHandlerBody(syntacticModule, extraction.ts, method);
-  if (!syntacticBody || !findCheckerCandidateType(extraction.ts, syntacticBody)) return null;
+  const syntacticHandler = methodHandlerBody(syntacticModule, extraction.ts, method);
+  if (!syntacticHandler || !findCheckerCandidateType(extraction.ts, syntacticHandler.body, syntacticHandler.paramName)) return null;
 
   const resolved = checkerProgramFor(state);
   if (!resolved) return null;
@@ -601,9 +637,9 @@ async function checkerCollector(
 
   const sourceFile = program.getSourceFile(route.file);
   if (!sourceFile) return null;
-  const body = methodHandlerBody({ file: route.file, source: route.source, sf: sourceFile }, ts, method);
-  if (!body) return null;
-  const typeNode = findCheckerCandidateType(ts, body);
+  const handler = methodHandlerBody({ file: route.file, source: route.source, sf: sourceFile }, ts, method);
+  if (!handler) return null;
+  const typeNode = findCheckerCandidateType(ts, handler.body, handler.paramName);
   if (!typeNode) return null;
 
   // The checker never throws for the shapes this collector already excludes,
@@ -756,10 +792,10 @@ async function queryCollector(
   const extraction = zodExtractionFor(state);
   if (!extraction) return null;
   const module = parseModule(extraction, route.file, route.source);
-  const body = methodHandlerBody(module, extraction.ts, method);
-  if (!body) return null;
+  const handler = methodHandlerBody(module, extraction.ts, method);
+  if (!handler) return null;
 
-  const properties = collectQueryProperties(extraction.ts, body);
+  const properties = collectQueryProperties(extraction.ts, handler.body);
   for (const key of pathParamNames(route.urlPath)) delete properties[key];
   if (Object.keys(properties).length === 0) return null;
 
