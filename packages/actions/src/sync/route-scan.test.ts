@@ -30,6 +30,18 @@ async function methodsFor(root: string, urlPath: string): Promise<string[]> {
     .sort();
 }
 
+// Path-params-only input schema, the shape every route-bound tool carries
+// until a collector (route-schema.ts, PR 2) recognizes something richer.
+function blankInput(properties: Record<string, unknown> = {}): Record<string, unknown> {
+  const required = Object.keys(properties);
+  return {
+    type: "object",
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    additionalProperties: true,
+  };
+}
+
 describe("app route verb evidence", () => {
   it("reads exported declarations, declaration lists, and destructured exports", async () => {
     const root = await temporaryRoot();
@@ -40,6 +52,22 @@ describe("app route verb evidence", () => {
     expect(await methodsFor(root, "/api/fn")).toEqual(["GET"]);
     expect(await methodsFor(root, "/api/list")).toEqual(["POST"]);
     expect(await methodsFor(root, "/api/pair")).toEqual(["GET", "PUT"]);
+
+    // Byte-identical baseline (no-regression net for the whole route-schema
+    // inference PR — harvested from today's scanRoutes output).
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_fn_list", description: "GET /api/fn", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/fn", argsIn: "query" } },
+        { name: "host_list_create", description: "POST /api/list", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/list", argsIn: "body" } },
+        { name: "host_pair_list", description: "GET /api/pair", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/pair", argsIn: "query" } },
+        { name: "host_pair_update", description: "PUT /api/pair", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "PUT", path: "/api/pair", argsIn: "body" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("reads local aliased export lists and ignores non-verb names", async () => {
@@ -50,6 +78,14 @@ describe("app route verb evidence", () => {
       "async function handle() { return new Response(); }\nexport { handle as PATCH, handle as helper };\n",
     );
     expect(await methodsFor(root, "/api/aliased")).toEqual(["PATCH"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_aliased_update", description: "PATCH /api/aliased", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "PATCH", path: "/api/aliased", argsIn: "body" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("follows named and star re-exports to the implementing module", async () => {
@@ -63,6 +99,20 @@ describe("app route verb evidence", () => {
     // semantics — the corpus locks it).
     expect(await methodsFor(root, "/api/named")).toEqual(["DELETE", "GET"]);
     expect(await methodsFor(root, "/api/star")).toEqual(["DELETE", "GET"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_named_list", description: "GET /api/named", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/named", argsIn: "query" } },
+        { name: "host_named_delete", description: "DELETE /api/named", inputSchema: blankInput(), risk: "destructive",
+          binding: { kind: "route", method: "DELETE", path: "/api/named", argsIn: "query" } },
+        { name: "host_star_list", description: "GET /api/star", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/star", argsIn: "query" } },
+        { name: "host_star_delete", description: "DELETE /api/star", inputSchema: blankInput(), risk: "destructive",
+          binding: { kind: "route", method: "DELETE", path: "/api/star", argsIn: "query" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("keeps re-exported verbs when the route also declares inline verbs", async () => {
@@ -74,6 +124,16 @@ describe("app route verb evidence", () => {
       "export async function GET() { return new Response(); }\nexport { POST } from \"../../../lib/post-impl\";\n",
     );
     expect(await methodsFor(root, "/api/mixed")).toEqual(["GET", "POST"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_mixed_list", description: "GET /api/mixed", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/mixed", argsIn: "query" } },
+        { name: "host_mixed_create", description: "POST /api/mixed", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/mixed", argsIn: "body" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("ignores verb-looking text inside strings and comments", async () => {
@@ -84,6 +144,14 @@ describe("app route verb evidence", () => {
       "// export function GET() {}\nconst usage = \"export function POST\";\nexport function PUT() { return new Response(usage); }\n",
     );
     expect(await methodsFor(root, "/api/noise")).toEqual(["PUT"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_noise_update", description: "PUT /api/noise", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "PUT", path: "/api/noise", argsIn: "body" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("classifies a defaultHandler verb-keyed object argument", async () => {
@@ -94,6 +162,16 @@ describe("app route verb evidence", () => {
       "import { defaultHandler } from \"../../../lib/router\";\nconst run = defaultHandler({ GET: () => null, \"POST\": () => null, other: () => null });\nexport default run;\n",
     );
     expect(await methodsFor(root, "/api/keyed")).toEqual(["GET", "POST"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_keyed_list", description: "GET /api/keyed", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/keyed", argsIn: "query" } },
+        { name: "host_keyed_create", description: "POST /api/keyed", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/keyed", argsIn: "body" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("assigns route-map entries to collection, item, and catch-all routes", async () => {
@@ -113,6 +191,24 @@ describe("app route verb evidence", () => {
     expect(await methodsFor(root, "/api/things")).toEqual(["GET", "POST"]);
     expect(await methodsFor(root, "/api/things/{id}")).toEqual(["PUT"]);
     expect(await methodsFor(root, "/api/blob/{rest}")).toEqual(["GET", "POST", "PUT"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_blob_get", description: "GET /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/blob/{rest}", argsIn: "query" } },
+        { name: "host_blob_create", description: "POST /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/blob/{rest}", argsIn: "body" } },
+        { name: "host_blob_update", description: "PUT /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
+          binding: { kind: "route", method: "PUT", path: "/api/blob/{rest}", argsIn: "body" } },
+        { name: "host_things_list", description: "GET /api/things", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/things", argsIn: "query" } },
+        { name: "host_things_create", description: "POST /api/things", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/things", argsIn: "body" } },
+        { name: "host_things_update", description: "PUT /api/things/{id}", inputSchema: blankInput({ id: { type: "string" } }), risk: "write",
+          binding: { kind: "route", method: "PUT", path: "/api/things/{id}", argsIn: "body" } },
+      ],
+      warnings: [],
+    });
   });
 });
 
@@ -144,6 +240,26 @@ describe("pages route verb evidence", () => {
     expect(await methodsFor(root, "/api/switch")).toEqual(["DELETE", "GET"]);
     expect(await methodsFor(root, "/api/allow-array")).toEqual(["GET", "POST"]);
     expect(await methodsFor(root, "/api/allow-string")).toEqual(["GET", "PATCH"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_allow_array_list", description: "GET /api/allow-array", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/allow-array", argsIn: "query" } },
+        { name: "host_allow_array_create", description: "POST /api/allow-array", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/allow-array", argsIn: "body" } },
+        { name: "host_allow_string_list", description: "GET /api/allow-string", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/allow-string", argsIn: "query" } },
+        { name: "host_allow_string_update", description: "PATCH /api/allow-string", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "PATCH", path: "/api/allow-string", argsIn: "body" } },
+        { name: "host_compare_update", description: "PUT /api/compare", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "PUT", path: "/api/compare", argsIn: "body" } },
+        { name: "host_switch_list", description: "GET /api/switch", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/switch", argsIn: "query" } },
+        { name: "host_switch_delete", description: "DELETE /api/switch", inputSchema: blankInput(), risk: "destructive",
+          binding: { kind: "route", method: "DELETE", path: "/api/switch", argsIn: "query" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("treats a NextAuth handler as GET+POST", async () => {
@@ -154,6 +270,16 @@ describe("pages route verb evidence", () => {
       "import NextAuth from \"next-auth\";\nexport default NextAuth({ providers: [] });\n",
     );
     expect(await methodsFor(root, "/api/auth/{nextauth}")).toEqual(["GET", "POST"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_auth_get", description: "GET /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/auth/{nextauth}", argsIn: "query" } },
+        { name: "host_auth_create", description: "POST /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/auth/{nextauth}", argsIn: "body" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("follows a req/res delegate call into the imported handler", async () => {
@@ -169,6 +295,14 @@ describe("pages route verb evidence", () => {
       "import impl from \"../../lib/impl\";\nexport default function handler(req: any, res: any) { return impl(req, res); }\n",
     );
     expect(await methodsFor(root, "/api/delegate")).toEqual(["POST"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_delegate_create", description: "POST /api/delegate", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/delegate", argsIn: "body" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("follows an imported default re-export into the implementing module", async () => {
@@ -180,6 +314,14 @@ describe("pages route verb evidence", () => {
     );
     await write(root, "pages/api/re-exported.ts", "import impl from \"../../lib/impl\";\nexport default impl;\n");
     expect(await methodsFor(root, "/api/re-exported")).toEqual(["DELETE"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_re_exported_delete", description: "DELETE /api/re-exported", inputSchema: blankInput(), risk: "destructive",
+          binding: { kind: "route", method: "DELETE", path: "/api/re-exported", argsIn: "query" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("infers verbs for method-blind default handlers", async () => {
@@ -209,6 +351,22 @@ describe("pages route verb evidence", () => {
     expect(await methodsFor(root, "/api/upload")).toEqual(["POST"]);
     expect(await methodsFor(root, "/api/stripe/webhook")).toEqual(["POST"]);
     expect(await methodsFor(root, "/api/raw")).toEqual(["POST"]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [
+        { name: "host_raw_create", description: "POST /api/raw", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/raw", argsIn: "body" } },
+        { name: "host_stripe_webhook_create", description: "POST /api/stripe/webhook", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/stripe/webhook", argsIn: "body" } },
+        { name: "host_trpc_page_list", description: "GET /api/trpc-page", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "GET", path: "/api/trpc-page", argsIn: "query" } },
+        { name: "host_trpc_page_create", description: "POST /api/trpc-page", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/trpc-page", argsIn: "body" } },
+        { name: "host_upload_create", description: "POST /api/upload", inputSchema: blankInput(), risk: "write",
+          binding: { kind: "route", method: "POST", path: "/api/upload", argsIn: "body" } },
+      ],
+      warnings: [],
+    });
   });
 
   it("emits an unclassified disabled tool when no evidence exists", async () => {
@@ -222,5 +380,18 @@ describe("pages route verb evidence", () => {
       binding: expect.objectContaining({ method: "POST", path: "/api/opaque" }),
     })]);
     expect(warnings).toEqual([expect.stringContaining("/api/opaque")]);
+
+    expect(await scanRoutes(root)).toEqual({
+      tools: [{
+        name: "host_opaque_unclassified",
+        description: "Route /api/opaque could not be classified",
+        inputSchema: { type: "object", properties: {} },
+        risk: "destructive",
+        disabled: true,
+        note: "pages handler has no supported HTTP method evidence; enable only after review; overrides.json can flip disabled/risk",
+        binding: { kind: "route", method: "POST", path: "/api/opaque", argsIn: "body" },
+      }],
+      warnings: ["route /api/opaque could not be classified: pages handler has no supported HTTP method evidence"],
+    });
   });
 });

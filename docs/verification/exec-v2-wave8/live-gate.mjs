@@ -85,7 +85,8 @@ const vendo = createVendo({
   model: anthropic("claude-sonnet-4-5"),
   principal: async () => ({ kind: "user", subject: "user_w8_gate" }),
   store,
-  apps: { experimentalServedApps: true },
+  // Wave 9 — served apps now require the machines flag too.
+  apps: { experimentalServedApps: true, experimentalMachines: true },
 });
 
 const server = http.createServer(async (req, res) => {

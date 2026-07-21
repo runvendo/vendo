@@ -31,6 +31,13 @@ injection. Pass `--json` to print the machine-readable scorecard, and
 `--strict` to make hard failures return a nonzero exit code. Without `--strict`,
 the sweep reports all repo failures and exits 0.
 
+The sweep always consents to init's AI extraction pass (`--ai-polish`), so the
+theme stage's LLM fallback runs through the staged extraction pipeline instead
+of silently skipping — the only reason nightly theme coverage stays honest.
+That pass needs `ANTHROPIC_API_KEY` in the environment plus a `claude` binary
+on `PATH` (the harness does not ship the Agent SDK); without either, init
+degrades gracefully and the deterministic checks still run.
+
 ## Local Vendo injection
 
 The harness owns the local-pack boundary. Once per sweep it builds the workspace

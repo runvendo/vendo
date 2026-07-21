@@ -102,6 +102,8 @@ async function setup(): Promise<{ vendo: Vendo; store: VendoStore; fires: string
     },
     store,
     sandbox: adapter,
+    // Wave 9 — machine provisioning is flag-gated.
+    apps: { experimentalMachines: true },
   });
   await vendo.apps.machine.provision(doc.id, {
     principal: ADA,

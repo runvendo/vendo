@@ -66,6 +66,9 @@ const setup = (options: {
     tools,
     catalog: [],
     model: scriptedLanguageModel(options.edit ?? '<Edit><SetName name="unused"/></Edit>'),
+    // Wave 9 — served apps (layer 3) require machines (layer 2); every setup
+    // here exercises box machinery, so the machines flag is always on.
+    experimentalMachines: true,
     ...(options.experimentalServedApps === undefined ? {} : { experimentalServedApps: options.experimentalServedApps }),
     ...(options.theme === undefined ? {} : { theme: options.theme }),
     machine: { sandbox, buildEnv: () => ({ PORT: "8080" }), implicitDomains: ["host.vendo.test"], boxEditPollMs: 5 },
@@ -110,7 +113,9 @@ describe("experimental flag OFF (the default)", () => {
       edit: '<Edit><Query id="data" tool="fn:listInvoices"/><Insert into="root"><Text text={data.summary}/></Insert></Edit>',
     });
     await seedAppRow(store, treeApp(), "user_ada");
-    const result = await runtime.edit("app_served", "Watch my invoices on a schedule and store the results", ctx());
+    // Wave 9 — a box-rung instruction (custom logic): schedule-y phrasing now
+    // rides the automations ladder and would never reach the box.
+    const result = await runtime.edit("app_served", "Reconcile my invoices with custom matching logic and store the results", ctx());
     expect(result.app.ui).toBe("tree");
     expect(result.app.tree).toBeDefined();
     expect(result.issues?.some((issue) => issue.includes("experimentalServedApps"))).toBe(true);

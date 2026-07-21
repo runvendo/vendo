@@ -146,6 +146,19 @@ access rides the same callback seam as layer 2.
 
 Deviations from this record as built, plus the known backlog. One line each.
 
+- Wave 9 (post-close-out economics ruling): the graduation judge became an
+  ESCALATION LADDER — server-shaped instructions prefer a steps automation,
+  then an agentic automation (both on the existing automations engine:
+  seconds, no machine; results land in an app records collection the tree
+  queries via `vendo_apps_data_list`), and reach box graduation only when
+  custom code is required. Machines went EXPERIMENTAL like served apps
+  (`apps.experimentalMachines`, off by default): new graduation/provisioning
+  refuses with a typed VendoError while off, `experimentalServedApps` now
+  requires it, and apps that already carry a machine keep every runtime path
+  (only NEW graduation is gated). Ladder-authored automations are armed
+  through `automations.enable` (grant capture at creation; the parked
+  standing-grant approvals ride `EditResult.automation.pendingGrants`).
+
 - ~~In-box agent is a thin custom loop (box harness `agent-loop.mjs` against
   the inference door), not the Claude Agent SDK~~ RESOLVED Wave 8: the box
   agent IS the Claude Agent SDK (`agent-sdk.mjs`, headless `query()` with the

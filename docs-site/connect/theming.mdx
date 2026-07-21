@@ -24,8 +24,11 @@ adjust tokens without touching the file. Shipped chrome derives its colors,
 typography, radius, density, and motion from these tokens and does not
 hardcode a Vendo brand.
 
-Generation receives the same theme. An optional `.vendo/design-rules.md`
-adds generation-time design rules without changing runtime tokens.
+Generation receives the same theme. Optional design rules add
+generation-time guidance without changing runtime tokens: set
+`createVendo({ apps: { designRules } })` in config, or keep a
+`.vendo/design-rules.md` file, re-read per generation (a non-blank config
+value wins over the file).
 
 ## See it flow through
 

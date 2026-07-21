@@ -13,7 +13,7 @@ description: "Every path inside the .vendo directory, which tool writes it, and 
 | `policy.json` | init / human | `vendo/policy@1` (05) |
 | `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
 | `brief.md` | init | product brief for the system prompt (03 §3) |
-| `design-rules.md` | host, optional | generation-time design rules (06 §5) |
+| `design-rules.md` | host, optional | generation-time design rules (06 §5), re-read per generation so edits apply without a restart; `createVendo({ apps: { designRules } })` wins over it |
 | `theme.json` | init extraction | `VendoTheme` |
 | `data/` | store | PGlite files (gitignored; init writes the ignore) |
 | `data/misses.jsonl` | runtime | one `vendo/capability-miss@1` event per line ([Telemetry](/deploy/telemetry#capability-misses)) |

@@ -27,10 +27,12 @@ You also have vendo_* tools: use vendo_create_app to build live interactive UI
 inline in the chat automatically, so never offer to show it. Use
 vendo_send_trip_report to email a report — it may return a pending approval the
 user resolves in the chat.`,
-  // The starter pins openai/gpt-5-mini; multi-turn tool use with it currently
-  // trips OpenAI's "message without its required reasoning item" (Mastra
-  // #9005 / #7823 — history replay drops Responses-API reasoning items).
-  // gpt-4.1-mini is the documented workaround until that lands.
+  // The starter pins openai/gpt-5-mini; multi-turn tool use with it trips
+  // OpenAI's "provided without its required 'reasoning' item" (Mastra #9005 /
+  // #7823 — memory's history replay drops Responses-API reasoning items).
+  // Retested 2026-07-20 on @mastra/core 1.51.0 (latest stable, #9005 closed
+  // upstream 2025-11-27): still reproduces live on the second turn, so the
+  // documented gpt-4.1-mini workaround stays.
   model: 'openai/gpt-4.1-mini',
   // --- vendo: touch 3 of 4 (continued) — the starter's weatherTool plus the
   // guard-wrapped pack (vendo_get_weather, vendo_send_trip_report,

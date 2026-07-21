@@ -44,6 +44,12 @@ the `/box` callback routes.
 stay queryable. Ephemeral (anonymous) principals write ordinary rows under
 their subject, and a TTL sweep erases idle sessions.
 
+If a Cloud console deployment does not serve the session doors
+(`/api/v1/store/sessions/*` answering a bare 404), the composition detects
+it, warns once, and disables anonymous-session registration, the
+anonymous-to-signed-in merge, and the hosted TTL sweep for that process.
+Anonymous traffic keeps serving, and local stores are unaffected.
+
 ## Store reference
 
 ### Stable tables

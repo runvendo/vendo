@@ -47,6 +47,7 @@ const setup = async () => {
     guard,
     tools,
     catalog: [],
+    experimentalMachines: true,
     machine: {
       sandbox,
       // The host assembler sees exactly the grant set the runtime resolved;

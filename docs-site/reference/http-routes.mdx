@@ -17,7 +17,7 @@ stream over SSE.
 | `/grants` · `/grants/:id` | GET · DELETE | grants · revoke |
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
 | `/apps/:id` | GET · DELETE | app · delete |
-| `/apps/:id/open` | GET | `OpenSurface` |
+| `/apps/:id/open` | GET | `OpenSurface`; with `?pending=1` a not-yet-servable app answers `{ kind: "pending" }` (HTTP 200) instead of a 404, the build-window poll `<VendoAppEmbed>` uses |
 | `/apps/:id/ship-diff` | GET | `ShipDiff`, the reviewable code diff against the last approved baseline, hash-pinned to the current version. Owner-scoped. See [In-client venue](/concepts/in-client-venue). |
 | `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls) |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |

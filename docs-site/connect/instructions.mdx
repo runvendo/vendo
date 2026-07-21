@@ -14,7 +14,8 @@ each to that place and to its position in the assembled prompt.
 | `.vendo/brief.md` | product brief placed near the start of the agent prompt |
 | `.vendo/policy.json` `directions` | company steering returned by guard |
 | `createAgent({ system: { instructions } })` | final host additions to the agent prompt |
-| `.vendo/design-rules.md` | optional rules for app generation |
+| `.vendo/design-rules.md` | optional rules for app generation, re-read per generation (edits apply without a restart) |
+| `createVendo({ apps: { designRules } })` | the same rules in config; a non-blank value wins over the file |
 
 Directions are policy data. Put them in the policy file or inline
 `PolicyConfig`; there is no merge rule between two directions channels.
@@ -31,8 +32,9 @@ The agent assembles its system prompt fresh for each turn:
 6. Host instructions.
 
 The apps generation engine has its own specialized prompts for tree emission
-and code edits. It receives the component catalog, theme, optional
-`.vendo/design-rules.md`, and format limits. It can use the same model as the
+and code edits. It receives the component catalog, theme, optional design
+rules (`createVendo({ apps: { designRules } })`, else `.vendo/design-rules.md`
+re-read per generation), and format limits. It can use the same model as the
 agent or a different AI SDK `LanguageModel`.
 
 Memory is deferred and has no reserved v0 seam.

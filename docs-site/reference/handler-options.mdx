@@ -33,7 +33,7 @@ sessions, and default persistence.
 | `agent` | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSteps` (see [Agent context](#agent-context)) |
 | `sessions` | ephemeral (anonymous) session lifecycle: `ttlMs` idle timeout before a session is swept (default 30 minutes; `0` disables eviction) and `sweepIntervalMs` sweep cadence (default 60 seconds) |
 | `approvals` | approval lifecycle knobs: `parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry). Past it, the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired". Vendo-thread approvals are untouched |
-| `apps` | apps-block options: `experimentalServedApps` opts the project into layer-3 served apps (off by default) — see [Generated UI](/concepts/generated-ui) |
+| `apps` | apps-block options: `experimentalMachines` opts the project into layer-2 box machines, `experimentalServedApps` into layer-3 served apps (both off by default; served apps require machines) — see [Generated UI](/concepts/generated-ui) |
 
 Named presets: `"cautious"` lets reads run and asks before writes or
 destructive calls, `"readonly"` lets reads run and blocks everything else,
