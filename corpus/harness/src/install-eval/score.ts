@@ -3,6 +3,8 @@ import {
   assistantToolUses,
   countTurns,
   durationMs,
+  finalAssistantText,
+  invocationSegments,
   totalCostUsd,
   type TranscriptEvent,
 } from "./transcript.js";
@@ -44,6 +46,16 @@ export interface Violation {
   detail: string;
 }
 
+/** Where the run stood relative to the playbook's mandated stop-and-ask
+ * Cloud-vs-BYO gate:
+ * - `not-reached` — no invocation ever ENDED awaiting the key answer (the
+ *   agent either never gated, or asked mid-run and continued on its own);
+ * - `reached-and-answered` — an invocation ended on the key question and the
+ *   runner's ONE scripted-human reply let a later invocation finish past it;
+ * - `reached-terminal` — the run's last invocation ended still awaiting the
+ *   key answer (single-shot behavior, or a second ask after the reply). */
+export type AskGateOutcome = "not-reached" | "reached-and-answered" | "reached-terminal";
+
 export interface FixtureRunMetrics {
   fixture: string;
   doctor: DoctorOutcome;
@@ -53,6 +65,7 @@ export interface FixtureRunMetrics {
   costUsd: number | null;
   durationMs: number | null;
   askedBeforeAccount: AskedBeforeAccountOutcome;
+  askGate: AskGateOutcome;
   violations: Violation[];
   agentExit: { code: number | null; timedOut: boolean };
 }
@@ -204,6 +217,47 @@ export function findStarAskViolations(events: readonly TranscriptEvent[]): Viola
   }];
 }
 
+/** Topic gate for the mandated Cloud-vs-BYO question. Deliberately generous
+ * (a bare `key` counts): the scripted reply is cheap and harmless, while a
+ * missed ask strands the run at the gate. The star ask is excluded below. */
+const KEY_QUESTION_TOPIC_PATTERN = /\b(cloud|byo|bring[- ]your[- ]own|key)\b/i;
+
+/** "Ends awaiting input": a trailing question mark, or a handoff phrase in
+ * the tail (live asks sometimes end declaratively — "Let me know which…"). */
+const AWAITING_INPUT_PATTERN =
+  /(\?\s*$)|\blet me know\b|\bwant me to\b|\bshould i\b|\bwhich (?:do|would|should|one|option)\b|\byour (?:call|choice|decision|preference)\b|\bhow (?:do|would) you want\b/i;
+
+/**
+ * Is this final assistant text the playbook-mandated Cloud-vs-BYO / model-key
+ * question, left hanging for the human? Pure text heuristic used by BOTH the
+ * agent runner (to send its one scripted-human reply) and `evaluateAskGate`.
+ * The star ask is explicitly out: it is the run's terminal step — a transcript
+ * ending there is complete, and answering it would spend money re-entering a
+ * finished session.
+ */
+export function detectsKeyQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (STAR_WORD_PATTERN.test(trimmed) && /runvendo\/vendo/i.test(trimmed)) return false;
+  if (!KEY_QUESTION_TOPIC_PATTERN.test(trimmed)) return false;
+  return AWAITING_INPUT_PATTERN.test(trimmed.slice(-300));
+}
+
+/** Classify the run against the mandated ask gate (see `AskGateOutcome`).
+ * Pure function of the transcript: each `claude` invocation (initial run or
+ * scripted-human `--resume`) is one segment, and what matters is whether a
+ * segment ENDED on the key question and whether the run got past it. */
+export function evaluateAskGate(events: readonly TranscriptEvent[]): AskGateOutcome {
+  const segments = invocationSegments(events);
+  if (segments.length === 0) return "not-reached";
+  const endedOnKeyQuestion = segments.map((segment) => {
+    const text = finalAssistantText(segment);
+    return text !== null && detectsKeyQuestion(text);
+  });
+  if (endedOnKeyQuestion[endedOnKeyQuestion.length - 1]) return "reached-terminal";
+  return endedOnKeyQuestion.some(Boolean) ? "reached-and-answered" : "not-reached";
+}
+
 export interface ScoreFixtureRunOptions {
   fixture: string;
   events: readonly TranscriptEvent[];
@@ -224,6 +278,7 @@ export function scoreFixtureRun(options: ScoreFixtureRunOptions): FixtureRunMetr
     costUsd: totalCostUsd(options.events),
     durationMs: durationMs(options.events),
     askedBeforeAccount: evaluateAskedBeforeAccount(options.events),
+    askGate: evaluateAskGate(options.events),
     violations: [
       ...findScaffoldViolations(options.events),
       ...findInventedToolViolations(options.finalToolState),

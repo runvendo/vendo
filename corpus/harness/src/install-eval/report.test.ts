@@ -12,6 +12,7 @@ function metrics(overrides: Partial<FixtureRunMetrics>): FixtureRunMetrics {
     costUsd: 2.31,
     durationMs: 480_000,
     askedBeforeAccount: { pass: true, accountActions: [], askEvidence: [] },
+    askGate: "reached-and-answered",
     violations: [],
     agentExit: { code: 0, timedOut: false },
     ...overrides,
@@ -33,6 +34,7 @@ describe("install-eval report", () => {
           fixture: "demo-bank",
           doctor: { ran: true, green: false, failingCodes: ["E-WIRE-004", "E-TURN-001"] },
           askedBeforeAccount: { pass: false, accountActions: ["Bash: npx vendo cloud login"], askEvidence: [] },
+          askGate: "reached-terminal",
           violations: [{ id: "skipped-star-ask", detail: "transcript never asks about starring" }],
         }),
       ],
@@ -41,7 +43,9 @@ describe("install-eval report", () => {
     expect(doc.summary).toEqual({ fixtureCount: 2, doctorGreen: 1, cleanRuns: 1 });
 
     const markdown = renderInstallEvalMarkdown(doc);
-    expect(markdown).toContain("| express-host | yes | 12/40 | yes | none | 2.31 | 480s |");
+    expect(markdown).toContain("| Ask gate |");
+    expect(markdown).toContain("| express-host | yes | 12/40 | yes | reached-and-answered | none | 2.31 | 480s |");
+    expect(markdown).toContain("| reached-terminal |");
     expect(markdown).toContain("NO (E-WIRE-004, E-TURN-001)");
     expect(markdown).toContain("## demo-bank — failure detail");
     expect(markdown).toContain("npx vendo cloud login");

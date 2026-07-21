@@ -79,8 +79,8 @@ export function renderInstallEvalMarkdown(doc: InstallEvalReportDocument): strin
     `Summary: ${doc.summary.doctorGreen}/${doc.summary.fixtureCount} doctor-green; `
       + `${doc.summary.cleanRuns}/${doc.summary.fixtureCount} clean (green + asked + zero violations).`,
     "",
-    "| Fixture | Doctor green | Turns (budget) | Asked before account | Violations | Cost (USD) | Duration |",
-    "| --- | --- | --- | --- | --- | --- | --- |",
+    "| Fixture | Doctor green | Turns (budget) | Asked before account | Ask gate | Violations | Cost (USD) | Duration |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
 
   for (const fixture of doc.fixtures) {
@@ -91,7 +91,7 @@ export function renderInstallEvalMarkdown(doc: InstallEvalReportDocument): strin
     const violations = fixture.violations.length === 0
       ? "none"
       : fixture.violations.map((violation) => violation.id).join(", ");
-    lines.push(`| ${fixture.fixture} | ${escapeCell(doctor)} | ${turns} | ${yesNo(fixture.askedBeforeAccount.pass)} | ${escapeCell(violations)} | ${fixture.costUsd === null ? "—" : fixture.costUsd.toFixed(2)} | ${fixture.durationMs === null ? "—" : `${Math.round(fixture.durationMs / 1000)}s`} |`);
+    lines.push(`| ${fixture.fixture} | ${escapeCell(doctor)} | ${turns} | ${yesNo(fixture.askedBeforeAccount.pass)} | ${fixture.askGate} | ${escapeCell(violations)} | ${fixture.costUsd === null ? "—" : fixture.costUsd.toFixed(2)} | ${fixture.durationMs === null ? "—" : `${Math.round(fixture.durationMs / 1000)}s`} |`);
   }
 
   for (const fixture of doc.fixtures) {
