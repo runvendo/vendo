@@ -53,20 +53,13 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
   <Tab title="Next.js">
     ## The two files you own
 
-    A host's entire server wiring is two files: `vendo/registry.tsx`, the shared
-    component registry, and the composition — one `createVendo` call with a
-    model, an auth preset, and that registry. On Next.js the composition lives
-    inline in the catch-all route `app/api/vendo/[...vendo]/route.ts`, which is
-    exactly what `vendo init` scaffolds.
+    On Next.js the composition lives inline in the catch-all route
+    `app/api/vendo/[...vendo]/route.ts`, which is exactly what `vendo init`
+    scaffolds. How the pieces fit: see [How Vendo works](/concepts/architecture).
 
     ### `vendo/registry.tsx`
 
-    One object, keyed by component name. Each entry holds the real component
-    reference, a description the model reads, and an optional zod props schema.
-    The same object serves both sides: `createVendo` reads it as `catalog` and
-    uses only the data fields; `<VendoRoot>` reads it as `components` and uses
-    only the component references — no second map to keep in sync. See
-    [Host components](/connect/host-components) for the full registration
+    See [Host components](/connect/host-components) for the full registration
     reference.
 
     ```tsx
@@ -85,10 +78,6 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
       },
     } satisfies ComponentRegistry;
     ```
-
-    The props schema is optional — a schema-less entry is legal and renders as a
-    description-only prompt entry the model infers props for. The model-facing
-    JSON Schema is derived from `props` internally; you never hand-write it.
 
     ### The catch-all route — the composition
 
@@ -114,9 +103,7 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
     turn](#send-the-first-turn) for what `policy: {}` activates). `authJs()` is
     zero-argument in the standard case: it reads `AUTH_SECRET` (mirroring Auth.js
     itself) and derives the principal's display name and email from the
-    session-token claims. `auth` is one preset that fills all three identity
-    seams `createVendo` needs — the request→principal resolver, the away/MCP
-    `actAs` seam, and the door's OAuth adapter — from one config key. Presets
+    session-token claims. Presets
     also exist for Clerk, Supabase, Auth0, and a generic JWT scheme; see
     [actAs presets](/connect/act-as-presets) for the full list and the per-seam
     escape hatch (`principal`/`actAs`/`oauth`) for hosts without a shipped
@@ -151,9 +138,7 @@ Bun, or any Node-compatible runtime. The umbrella requires Node 20 or later.
     }
     ```
 
-    `components` accepts the same registry object the composition passes as
-    `catalog` — it reads only the component references and ignores the data
-    fields. Choose headless hooks from `@vendoai/ui` or a ready-made surface from
+    Choose headless hooks from `@vendoai/ui` or a ready-made surface from
     `@vendoai/ui/chrome`. Every read hook shares a
     `{ data, error, isLoading, refresh }` shape with optional polling — see
     [Headless hooks](/reference/hooks).

@@ -1,7 +1,12 @@
 ---
-title: "Architecture: the nine Vendo blocks and how they compose"
-description: "How the nine Vendo blocks fit together: their one-way dependency rule, the umbrella composition, and where host code plugs into each seam."
+title: "How Vendo works"
+sidebarTitle: "How Vendo works"
+description: "What Vendo is made of: the nine blocks, the two files you own, and how a request flows from the browser through the guard to your API."
 ---
+
+Vendo is nine packages behind one umbrella, wired into your app through two
+files you own. When you finish this page you have the map: what each block
+does, which parts are yours, and how a request travels through them.
 
 | Block | One job |
 | --- | --- |
@@ -17,6 +22,41 @@ description: "How the nine Vendo blocks fit together: their one-way dependency r
 
 `@vendoai/vendo` composes the blocks and owns the public wire and CLI.
 
+## The two files you own
+
+A host's entire server wiring is two files:
+
+- `vendo/registry.tsx`: one object, keyed by component name. Each entry
+  holds the real component reference, a description the model reads, and an
+  optional props schema.
+- The composition: one `createVendo` call with a model, an auth preset, and
+  that registry. On Next.js it lives inline in the catch-all route
+  `app/api/vendo/[...vendo]/route.ts`; on Express it lives in
+  `vendo/server.ts`.
+
+The same registry object serves both sides. `createVendo` reads it as
+`catalog` and uses only the data fields; `<VendoRoot>` reads it as
+`components` and uses only the component references. There is no second map
+to keep in sync.
+
+`auth` is one preset that fills all three identity seams `createVendo`
+needs from one config key: the request-to-principal resolver, the away/MCP
+`actAs` seam, and the door's OAuth adapter. See
+[actAs presets](/connect/act-as-presets) for the preset list and the
+per-seam escape hatch.
+
+Everything else lives in `.vendo/` as data (tools, policy, theme, brief)
+that `vendo init` and `vendo sync` maintain. See
+[.vendo files](/reference/dot-vendo).
+
+## How a request flows
+
+The browser speaks only the umbrella's HTTP wire. Every tool registry handed
+to agent, apps, and automations is guard-bound, so each call passes policy,
+approvals, grants, and audit before it reaches your API. See
+[Tools and safety](/concepts/tools-and-safety). App machines speak back
+through the guarded tool proxy.
+
 ## Dependency rule
 
 ```text
@@ -28,7 +68,3 @@ vendo -> every block
 Cross-block communication uses the seams in core: `Guard`, `StoreAdapter`,
 `ActAs`, `SecretsProvider`, `AgentRunner`, and `ToolRegistry`. The umbrella is
 the only package allowed to wire sibling implementations together.
-
-Every tool registry handed to agent, apps, and automations is guard-bound.
-The browser speaks only the umbrella's HTTP wire. App machines speak back
-through the guarded tool proxy.
