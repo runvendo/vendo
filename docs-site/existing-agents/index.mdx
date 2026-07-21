@@ -97,8 +97,9 @@ your own chat.
 ## Two models, deliberately
 
 Your agent keeps its own model. Vendo's `model` seam still powers app
-generation and the delegate, resolving on its own through the
-[dev-mode credential ladder](/connect/dev-mode); in the common case that
+generation and the delegate: an explicit `createVendo({ model })` wins, and
+when you omit it Vendo resolves one through the
+[dev-mode credential ladder](/connect/dev-mode). In the common case that
 means zero extra model config.
 
 ## In-process vs. the MCP door

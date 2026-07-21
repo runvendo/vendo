@@ -173,7 +173,8 @@ cp .env.example .env   # add OPENAI_API_KEY (the starter agent's model)
 pnpm dev               # http://localhost:3000
 ```
 
-App generation resolves its own model independently, walking the
+App generation resolves its own model independently: an explicit
+`createVendo({ model })` wins, otherwise Vendo walks the
 [dev-mode credential ladder](/connect/dev-mode). Two models, deliberately:
 your agent keeps its model; Vendo's `model` seam powers generation and the
 delegate.
