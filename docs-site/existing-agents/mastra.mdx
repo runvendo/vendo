@@ -133,6 +133,17 @@ the embed contract is framework-agnostic.
 
 ## Try it
 
+<Warning>
+  Your agent's OWN model still needs its own credential — `VENDO_API_KEY`
+  powers Vendo's internal turns (app builds, the delegate), never your loop.
+  If the starter's model has no key on this machine (e.g. no
+  `OPENAI_API_KEY`), either set one or point your agent's `model` at
+  `devModel()` from `@vendoai/vendo/server` to ride the same Vendo Cloud
+  credential. The done-criterion is a REAL chat turn that renders a Vendo
+  tool output — run ask 2 yourself before calling the install done; doctor
+  cannot check your loop's model.
+</Warning>
+
 One thread, three asks:
 
 1. **"What's the weather in Paris?"** Your agent's own tool, untouched.
