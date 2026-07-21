@@ -20,7 +20,7 @@ Baseline at freeze: see the run ledger at the bottom (first run lands in
 1. **FROZEN. Never tuned against.** No scenario here ever guides a code change,
    prompt edit, or schema tweak. Fails are the data.
 2. **Run ONCE per wave.** One full pass over the 12 scenarios, one attempt per
-   measured instruction, with timing and a verdict per scenario.
+   measured step, with timing and a verdict per scenario.
 3. **Browser-judged with screenshots.** Every measured step is driven through
    the real Apps surface in a real browser; verdicts come from reading the
    rendered fork against the PASS bar, with committed screenshots (fork render,
@@ -46,10 +46,18 @@ Baseline at freeze: see the run ledger at the bottom (first run lands in
 - **Honesty beats MUST-use-host (the F4 ruling).** When a host catalog
   component's REQUIRED data props cannot be truthfully bound from any tool, it
   "doesn't fit" and the must-use-host rule does not apply (law 1: never invent
-  numbers). For the two demo slots — whose catalog schemas demand live numbers
-  (`valueCents`+`series`, `missingCount`+`clientCount`) no host tool supplies —
-  the honest "add the card" surface is the sample-seeded FORK the gesture
-  produces, and a host node with invented props is the FAIL, not the fork.
+  numbers). Checked against the two hosts' tool inventories and the binding
+  grammar (one tool call plus a plain field path — no arithmetic, no
+  aggregation), the premise splits by host: the Maple slot's
+  `valueCents`+`series` bind from NO tool (there is no balance-history
+  endpoint, and a total would need summing account balances), so the honest
+  "add the card" surface there is the sample-seeded FORK the gesture produces
+  and a host node with invented props is the FAIL. The Cadence slot's
+  `missingCount`+`clientCount` DO bind truthfully — `getDashboard` returns
+  `data.clientsMissingDocs`/`data.clientsTotal`, the very fields the host's
+  own page passes in — so must-use-host APPLIES on Cadence: the tool-bound
+  host node is the covered answer, and invented or frozen literals are the
+  FAIL.
 
 ## What remix is (for the judge)
 
@@ -106,8 +114,9 @@ A remix scenario PASSES only when ALL of these hold for its measured steps:
    instruction — however remix-shaped — must not mint a pin on its own (a
    confirmation affordance for a tap is the sanctioned future UX). And when a
    typed ask names a host component: use the host catalog node ONLY where its
-   required props bind truthfully from tools; where they cannot (both demo
-   slots), honest handling wins — an honest empty-state/omission, or pointing
+   required props bind truthfully from tools; where they cannot (the Maple
+   slot — the Cadence hero binds from `getDashboard`, see the F4 ruling),
+   honest handling wins — an honest empty-state/omission, or pointing
    the user at the Remix gesture. A hand-rolled lookalike island or a host
    node with invented props is a FAIL. (A gesture fork with no instruction is
    the CORRECT "add the card as-is" surface and expects an EMPTY delta.)
@@ -226,16 +235,18 @@ gesture.
   two-change delta.
 - **R-C4** [no-silent-fork][honesty] — (A) TEXT edit `add the missing
   documents hero card to this page as-is`. Expect: NO pin minted by text; per
-  the F4 ruling a host node demands `missingCount`/`clientCount` no tool
-  supplies, so invented props are a FAIL and so is an imitation island —
-  honest handling (empty-state/note, or the Remix affordance once the
-  confirmation UX exists) passes.
+  the F4 ruling the host node FITS here — `missingCount`/`clientCount` bind
+  truthfully from `getDashboard` (`data.clientsMissingDocs`/`data.clientsTotal`)
+  — so the PASS is the host catalog node with tool-bound props. Invented or
+  frozen literal props, an imitation island, or a silently minted pin are
+  FAILs.
 - **R-C5** [no-silent-fork] — (A) TEXT edit `a section with the missing
   documents hero on top and a table of clients with outstanding documents
   below it`. Expect: no pin (text never forks; nothing about the hero is being
-  changed), the hero region handled per the F4 ruling (honest handling — no
-  invented-prop host node, no lookalike), and the table composed from real
-  data. A silently minted pin or fabricated hero numbers are FAILs.
+  changed), the hero rendered as the host catalog node with tool-bound props
+  per the F4 ruling (no invented literals, no lookalike), and the table
+  composed from real data. A silently minted pin or fabricated hero numbers
+  are FAILs.
 - **R-C6** [gesture-fork][pin-preserve] — (A) Remix gesture with «make the
   label read 'Clients still owing documents'». (B) text edit `add a donut of
   documents by status next to it`. Expect: (B) leaves the fork byte-identical,
