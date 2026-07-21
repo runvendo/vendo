@@ -4,7 +4,7 @@ import { runDeviceLogin, type DeviceLoginOptions } from "./device-login.js";
 import { runKeys } from "./keys.js";
 import { runInvite, runMembers } from "./members.js";
 import { consoleOutput } from "../shared.js";
-import { runBilling, runOrgs, runUsage } from "./read.js";
+import { runOrgs, runUsage } from "./read.js";
 
 const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
 
@@ -20,13 +20,12 @@ User commands:
   logout                               Delete the stored cloud session
   whoami [--token <jwt>]                List organizations for the current user
   orgs                                  List organizations
-  keys list --org <id>                  List API keys
-  keys create --org <id> --name <name> Create an API key
-  keys revoke --org <id> --id <keyId>  Revoke an API key
-  usage --org <id> [--days <days>]     Show usage (default 30 days)
+  keys list --project <id>              List API keys
+  keys create --project <id> --name <name>  Create an API key
+  keys revoke --project <id> --id <keyId>   Revoke an API key
+  usage --project <id> [--days <days>]  Show usage (default 30 days)
   members --org <id>                   List organization members
   invite --org <id> --email <email> --role <admin|member>
-  billing --org <id>                   Show billing status
 
 Global options:
   --api-url <url>  Override VENDO_CLOUD_URL / https://console.vendo.run
@@ -51,7 +50,6 @@ export async function runCloud(args: string[], options: RunCloudOptions = {}): P
   if (command === "usage") return runUsage(commandArgs, options);
   if (command === "members") return runMembers(commandArgs, options);
   if (command === "invite") return runInvite(commandArgs, options);
-  if (command === "billing") return runBilling(commandArgs, options);
   output.error(`Unknown cloud command: ${command}\n\n${CLOUD_HELP}`);
   return 1;
 }

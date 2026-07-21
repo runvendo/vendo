@@ -34,7 +34,7 @@ for the current behavior.
 
 ## User principal (stored session or --token JWT)
 - `vendo cloud whoami --token <jwt>` → `{ orgs: [{id,name,role}] }`
-- `vendo cloud keys list --org <id> --token <jwt>` → `{ keys: [...] }`
+- `vendo cloud keys list --project <id> --token <jwt>` → `{ keys: [...] }`
 
 All shapes match the frozen flowlet wave-2 contracts; the 402 `cloud-required`
 envelope is surfaced as a friendly message. The auth/share/publish flows were

@@ -1,6 +1,6 @@
 import { option } from "./args.js";
 import {
-  resolveOrgId,
+  resolveProjectId,
   runCommand,
   userOptions,
   type CloudCommandOptions,
@@ -10,10 +10,10 @@ export function runKeys(args: string[], options: CloudCommandOptions = {}): Prom
   return runCommand(options, async (context) => {
     const [action] = args;
     if (!action || !["list", "create", "revoke"].includes(action)) {
-      throw new Error("Usage: vendo cloud keys <list|create|revoke> --org <id>");
+      throw new Error("Usage: vendo cloud keys <list|create|revoke> --project <id>");
     }
-    const orgId = await resolveOrgId(args, context);
-    const root = `/api/v1/orgs/${encodeURIComponent(orgId)}/keys`;
+    const projectId = await resolveProjectId(args, context);
+    const root = `/api/v1/projects/${encodeURIComponent(projectId)}/keys`;
     if (action === "list") return context.fetcher(root, userOptions(args, context));
     if (action === "create") {
       const name = option(args, "--name");
