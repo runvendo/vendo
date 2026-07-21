@@ -397,9 +397,9 @@ export const V4_EXEMPLARS: ReadonlyArray<{ title: string; request: string; wire:
   wire: `<App name="Overdue invoices">
   <Stack gap={5}>
     <Row gap={4}>
-      <Card title="Overdue total" tone="accent"><Money cents={acme_getReceivables({}).overdueTotalCents}/></Card>
-      <Card title="Invoices overdue"><Num value={acme_getReceivables({}).overdueCount}/></Card>
-      <Card title="Oldest due"><DateTime value={acme_getReceivables({}).oldestDueDate} mode="date"/></Card>
+      <Stat label="Overdue total" value={acme_getReceivables({}).overdueTotalCents} format="money" tone="accent"/>
+      <Stat label="Invoices overdue" value={acme_getReceivables({}).overdueCount}/>
+      <Stat label="Oldest due" value={acme_getReceivables({}).oldestDueDate} format="date"/>
     </Row>
     <DataTable rows={acme_listInvoices({status:"overdue"}).data} sortBy="dueDate asc" searchable columns={[{key:"clientName",label:"Client"},{key:"amountCents",label:"Amount",format:"money",align:"end"},{key:"dueDate",label:"Due",format:"date"},{key:"status",label:"Status"}]} emptyState="No overdue invoices — nothing to chase."/>
     <Button label="Send reminder for the most overdue" onClick={{action:"acme_sendReminder", payload:{invoiceId: acme_listInvoices({status:"overdue"}).data.0.id}}}/>
@@ -454,8 +454,8 @@ export default function PayInvoicePanel() {
       <EnumBadge value={acme_listInvoices({}).data.0.status}/>
     </Row>
     <Row gap={4}>
-      <Card title="Amount"><Money cents={acme_listInvoices({}).data.0.amountCents}/></Card>
-      <Card title="Due"><DateTime value={acme_listInvoices({}).data.0.dueDate} mode="date"/></Card>
+      <Stat label="Amount" value={acme_listInvoices({}).data.0.amountCents} format="money"/>
+      <Stat label="Due" value={acme_listInvoices({}).data.0.dueDate} format="date"/>
       <Stat label="Invoice #" value={acme_listInvoices({}).data.0.number}/>
     </Row>
     <DataTable rows={acme_listInvoices({}).data.0.lineItems} columns={[{key:"description",label:"Item"},{key:"amountCents",label:"Amount",format:"money",align:"end"}]} emptyState="No line items on this invoice."/>

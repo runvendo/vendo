@@ -38,7 +38,7 @@ export const PREWIRED_SCHEMAS: Readonly<Record<string, PrewiredSchema>> = {
   Select: { signature: `Select(options: (string | object)[], labelField?, valueField?, value?, label?, placeholder?, name?, hint?, disabled?, required?, onChange?: <tool-or-fn>) — bind RAW tool rows to options and name the fields with labelField/valueField (visible label / submitted value); primitive items render as-is`, props: ["options", "labelField", "valueField", "value", "label", "placeholder", "name", "hint", "disabled", "required", "onChange"] },
   Table: { signature: `Table(columns: (string | {key, label?, align?})[], rows: object[], caption?, emptyLabel?, rowKey? = "id") — the data prop is rows (bind it to tool rows), NOT data`, props: ["columns", "rows", "caption", "emptyLabel", "rowKey"] },
   Badge: { signature: `Badge(label: string, tone?: "neutral"|"accent"|"danger")`, props: ["label", "tone"] },
-  Stat: { signature: `Stat(label: string, value?, trend?, prefix?, suffix?, tone?: "default"|"accent"|"danger")`, props: ["label", "value", "trend", "prefix", "suffix", "tone"] },
+  Stat: { signature: `Stat(label: string, value?, format?: "money"|"date"|"percent"|"number", trend?, prefix?, suffix?, tone?: "default"|"accent"|"danger") — format is the value tier: money takes integer CENTS raw, never pre-formatted`, props: ["label", "value", "format", "trend", "prefix", "suffix", "tone"] },
   Tabs: { signature: `Tabs(tabs: (string | {value, label, disabled?})[], value?, label?, onChange?: <tool-or-fn>) — items is an accepted alias for tabs`, props: ["tabs", "items", "value", "label", "onChange"] },
 };
 
