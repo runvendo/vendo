@@ -1,0 +1,145 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Student loan"
+      - button "Remove Student loan": ×
+    - listitem:
+      - button "Subscription audit"
+      - button "Remove Subscription audit": ×
+    - listitem:
+      - button "Bill-pay center"
+      - button "Remove Bill-pay center": ×
+    - listitem:
+      - button "Can I afford a $3,000 vacation in October?"
+      - button "Remove Can I afford a $3,000 vacation in October?": ×
+    - listitem:
+      - button "Add payee & send $50"
+      - button "Remove Add payee & send $50": ×
+    - listitem:
+      - button "Net worth & accounts"
+      - button "Remove Net worth & accounts": ×
+    - listitem:
+      - button "Crypto portfolio"
+      - button "Remove Crypto portfolio": ×
+    - listitem:
+      - button "Balance currency converter"
+      - button "Remove Balance currency converter": ×
+    - listitem:
+      - button "Pay credit card bill"
+      - button "Remove Pay credit card bill": ×
+    - listitem:
+      - button "Monthly budget"
+      - button "Remove Monthly budget": ×
+    - listitem:
+      - button "Largest transactions this year"
+      - button "Remove Largest transactions this year": ×
+    - listitem:
+      - button "Transfer to savings"
+      - button "Remove Transfer to savings": ×
+    - listitem:
+      - 'button "Spending: this month vs last month"'
+      - 'button "Remove Spending: this month vs last month"': ×
+    - listitem:
+      - button "Vacation Fund Tracker"
+      - button "Remove Vacation Fund Tracker": ×
+    - listitem:
+      - button "Duplicate & suspicious charges"
+      - button "Remove Duplicate & suspicious charges": ×
+    - listitem:
+      - button "Card spending tracker"
+      - button "Remove Card spending tracker": ×
+    - listitem:
+      - button "Upcoming scheduled payments"
+      - button "Remove Upcoming scheduled payments": ×
+    - listitem:
+      - button "Monthly cash flow"
+      - button "Remove Monthly cash flow": ×
+    - listitem:
+      - button "Account balances"
+      - button "Remove Account balances": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+    - listitem:
+      - button "Spending this month"
+      - button "Remove Spending this month": ×
+  - note: Student loan data isn't available This host has no connection to student loan servicers or loan accounts. Loan balances, interest rates, payoff schedules, and amortization plans can't be shown here because no tool on this host exposes that data.
+  - heading "Your accounts at a glance" [level=3]
+  - text: These are the accounts this app can see. A savings or checking balance may help you plan extra payments toward your loan outside this app.
+  - article "Total balance across accounts":
+    - text: Total balance across accounts
+    - strong: $9,412.20
+  - table "Your linked accounts":
+    - caption: Your linked accounts
+    - rowgroup:
+      - row "Account Type Ending Balance":
+        - columnheader "Account"
+        - columnheader "Type"
+        - columnheader "Ending"
+        - columnheader "Balance"
+    - rowgroup:
+      - row "Maple Checking checking 4471 $9,412.20":
+        - cell "Maple Checking"
+        - cell "checking"
+        - cell "4471"
+        - cell "$9,412.20"
+      - row "Maple Savings savings 8820 $28,141.35":
+        - cell "Maple Savings"
+        - cell "savings"
+        - cell "8820"
+        - cell "$28,141.35"
+      - row "Maple Credit credit 0934 -$1,288.40":
+        - cell "Maple Credit"
+        - cell "credit"
+        - cell "0934"
+        - cell "-$1,288.40"
+      - row "Maple Invest investing 5567 $18,642.00":
+        - cell "Maple Invest"
+        - cell "investing"
+        - cell "5567"
+        - cell "$18,642.00"
+  - text: To manage your student loan, visit your loan servicer's website (e.g. studentaid.gov, Nelnet, MOHELA, or Navient) directly.
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert
