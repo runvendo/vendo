@@ -13,12 +13,26 @@ Build and development telemetry runs in build and development tooling. It does
 not fire from a deployed production app and does not collect end-user product
 activity.
 
-Events contain a random anonymous id plus allowlisted counts and short enums.
-They never contain source, file paths, prompts, generated UI, tool inputs or
-outputs, keys, environment values, request bodies, error messages, or stack
-traces.
+It has two lanes:
 
-Disable telemetry with any of these controls:
+- **Anonymous** (the default): events carry a random anonymous id plus
+  allowlisted counts and short enums, and a salted one-way hash of the git
+  origin URL (or package name) so events from the same repo group together.
+- **Cloud**: a well-formed `VENDO_API_KEY` additionally marks every event
+  with `cloud: true` and the SHA-256 hash of the key — joinable to the owning
+  account in the Vendo console — and may add the project name, repo host
+  classification, setup counts, init timings, and a scrubbed error detail.
+  The raw key itself is never sent.
+
+Events never contain source, file paths, prompts, generated UI, tool inputs
+or outputs, keys, environment values, request bodies, raw error messages, or
+stack traces. The cloud lane's `errorDetail` is the only free-text property
+ever sent, and it is scrubbed first: file paths, email addresses, and
+secret-shaped strings are replaced with fixed tokens, then the result is
+capped at 200 characters.
+
+Disable telemetry with any of these controls — each applies to both lanes, so
+an opted-out user with a cloud key sends nothing:
 
 - `VENDO_TELEMETRY_DISABLED=1`
 - `"optedOut": true` in `~/.vendo/telemetry.json`
@@ -29,7 +43,10 @@ Disable telemetry with any of these controls:
 The stored id is a random UUID and is not derived from a machine, account,
 project, or host app. Deleting the file rotates it.
 
-The full event allowlist is maintained in the repository's `TELEMETRY.md`.
+The full event allowlist and cloud-lane property set are maintained in the
+repository's
+[`TELEMETRY.md`](https://github.com/runvendo/vendo/blob/main/TELEMETRY.md),
+the authoritative document.
 
 ## Capability misses
 

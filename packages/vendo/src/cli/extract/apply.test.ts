@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runExtractApply } from "./apply.js";
+import { telemetryCapture } from "../telemetry.test-util.js";
 import { composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./delegate.js";
 import type { Output } from "../shared.js";
 
@@ -186,5 +187,49 @@ describe("the delegation contract", () => {
     expect(Object.keys(schema.properties.tools.items.properties)).toEqual(
       ["name", "description", "risk", "critical", "disabled", "reasoning"],
     );
+  });
+});
+
+describe("extract telemetry", () => {
+  it("tracks command_run extract and extract_completed with the result metrics", async () => {
+    const root = await fixture();
+    // The fixture has no package.json — write one so framework + versions resolve.
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host",
+      dependencies: { next: "^15.3.1", zod: "~3.24.0" },
+    }));
+    const draft = await draftFile(root, {
+      brief: "Maple is a consumer bank.",
+      tools: [{ name: "host_invoices_list", description: "List invoices, filterable by status." }],
+    });
+    const tele = await telemetryCapture();
+    cleanup.push(tele.home);
+    expect(await runExtractApply({ targetDir: root, apply: draft, output: output().output, sync: okSync(), telemetry: tele.telemetry })).toBe(0);
+    expect(tele.event("command_run").properties).toMatchObject({ command: "extract", ok: true });
+    expect(tele.event("extract_completed").properties).toMatchObject({
+      framework: "next",
+      method: "none", // fixture tools carry no route bindings
+      routeCount: 0,
+      toolCount: 3,
+      ok: true,
+      frameworkVersion: "15.3.1",
+      zodVersion: "3.24.0",
+    });
+    expect(typeof tele.event("extract_completed").properties.durationMs).toBe("number");
+  });
+
+  it("tracks a failed run with the step that failed, and no extract_completed", async () => {
+    const root = await fixture();
+    const tele = await telemetryCapture();
+    cleanup.push(tele.home);
+    expect(await runExtractApply({
+      targetDir: root,
+      apply: join(root, "missing-draft.json"),
+      output: output().output,
+      sync: okSync(),
+      telemetry: tele.telemetry,
+    })).toBe(1);
+    expect(tele.event("command_run").properties).toMatchObject({ command: "extract", ok: false, failedStep: "draft" });
+    expect(tele.events().some((entry) => entry.event === "extract_completed")).toBe(false);
   });
 });

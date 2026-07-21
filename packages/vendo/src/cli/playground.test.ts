@@ -1,5 +1,7 @@
+import { rm } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { browserOpenCommand, runPlayground, startPlaygroundServer } from "./playground.js";
+import { telemetryCapture } from "./telemetry.test-util.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -106,5 +108,14 @@ describe("runPlayground", () => {
 
     expect(code).toBe(1);
     expect(errors.join("\n")).toContain(String(port));
+  });
+});
+
+describe("playground telemetry", () => {
+  it("tracks command_run playground ok once the server has served and closed", async () => {
+    const tele = await telemetryCapture();
+    cleanup.push(() => rm(tele.home, { recursive: true, force: true }));
+    expect(await runPlayground({ open: false, wait: false, output: output().sink, telemetry: tele.telemetry })).toBe(0);
+    expect(tele.event("command_run").properties).toMatchObject({ command: "playground", ok: true });
   });
 });

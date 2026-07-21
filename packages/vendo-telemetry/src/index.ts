@@ -5,13 +5,17 @@ import { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.j
 
 export { envOptOut, resolveConsent } from "./consent.js";
 export { loadConfig, saveConfig, configPath, type TelemetryConfig } from "./config.js";
-export { EVENT_ALLOWLIST, type EventName } from "./events.js";
+export { CLOUD_PROP_KEYS, EVENT_ALLOWLIST, type EventName } from "./events.js";
 export { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.js";
 export { maybeShowNotice } from "./notice.js";
+export { PROJECT_ID_SALT, repoHost, type RepoHost } from "./base-props.js";
+export { scrubErrorDetail } from "./scrub.js";
 
 export interface InitTelemetryOptions {
   version: string;
   env?: Record<string, string | undefined>;
+  /** Project directory for projectIdHash lookup; defaults to process.cwd(). */
+  cwd?: string;
   runtime?: boolean;
   posthogKey?: string;
   home?: string;
@@ -37,6 +41,7 @@ export function initTelemetry(opts: InitTelemetryOptions): Telemetry {
     version: opts.version,
     config: afterNotice,
     env,
+    cwd: opts.cwd,
     runtime: opts.runtime ?? false,
     posthogKey: opts.posthogKey ?? env.VENDO_POSTHOG_KEY ?? DEFAULT_POSTHOG_KEY,
     fetchImpl: opts.fetchImpl,

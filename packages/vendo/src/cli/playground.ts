@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { PLAYGROUND_BUNDLE_SOURCE } from "./playground/bundle.gen.js";
 import { EMBED_BUNDLE_SOURCE } from "./playground/embed-bundle.gen.js";
-import { consoleOutput, type Output } from "./shared.js";
+import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 /**
  * `vendo playground` — a local page rendering every shipped Vendo surface
@@ -101,6 +101,8 @@ export interface PlaygroundOptions {
   openBrowser?: (url: string) => void;
   /** When false, return right after startup instead of blocking until Ctrl+C. */
   wait?: boolean;
+  /** Injectable telemetry deps (matches init/doctor). */
+  telemetry?: TelemetryOptions;
 }
 
 /** Windows' `start` is a cmd built-in, not an executable — execFile can only
@@ -119,12 +121,26 @@ function defaultOpenBrowser(url: string): void {
 
 export async function runPlayground(options: PlaygroundOptions = {}): Promise<number> {
   const output = options.output ?? consoleOutput;
+  return withCommandRun(
+    {
+      command: "playground",
+      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    },
+    (failure) => playground(options, output, failure),
+  );
+}
 
+async function playground(
+  options: PlaygroundOptions,
+  output: Output,
+  failure: { failedStep?: string },
+): Promise<number> {
   let server: PlaygroundServer;
   try {
     server = await startPlaygroundServer({ port: options.port });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "unknown error";
+    failure.failedStep = "listen";
     output.error(`vendo playground: could not listen on port ${options.port ?? 0} (${detail}) — pass a different --port`);
     return 1;
   }

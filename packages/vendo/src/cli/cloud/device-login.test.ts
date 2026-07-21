@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runDeviceLogin } from "./device-login.js";
+import { runDeviceLogin, runLoginCommand } from "./device-login.js";
+import { telemetryCapture } from "../telemetry.test-util.js";
 
 // `vendo cloud device-login` — the auth.md user-claimed ceremony against a
 // scripted console. The whole RFC 8628 dance runs through the injectable
@@ -257,5 +258,43 @@ describe("runDeviceLogin", () => {
     });
     expect(exit).toBe(0);
     expect(messages.logs.join("\n")).not.toContain("Re-run `vendo init`");
+  });
+});
+
+describe("login telemetry (runLoginCommand)", () => {
+  it("tracks command_run login with ok reflecting the ceremony's exit code", async () => {
+    const root = await tempRoot();
+    const ok = await telemetryCapture();
+    cleanup.push(() => rm(ok.home, { recursive: true, force: true }));
+    const approved = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    expect(await runLoginCommand(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl: approved.fetchImpl,
+      root,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+      telemetry: ok.telemetry,
+    })).toBe(0);
+    expect(ok.event("command_run").properties).toMatchObject({ command: "login", ok: true });
+    expect(typeof ok.event("command_run").properties.durationMs).toBe("number");
+
+    const denied = await telemetryCapture();
+    cleanup.push(() => rm(denied.home, { recursive: true, force: true }));
+    const deniedConsole = scriptedFetch([
+      { status: 400, body: { error: "access_denied" } },
+    ]);
+    expect(await runLoginCommand(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl: deniedConsole.fetchImpl,
+      root,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+      telemetry: denied.telemetry,
+    })).toBe(1);
+    expect(denied.event("command_run").properties).toMatchObject({ command: "login", ok: false });
   });
 });
