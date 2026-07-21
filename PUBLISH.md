@@ -124,7 +124,7 @@ NPM_CONFIG_MIN_RELEASE_AGE=0 npx create-next-app@latest app --ts --tailwind --es
 cd app
 NPM_CONFIG_MIN_RELEASE_AGE=0 npm install vendoai 'ai@^6' '@ai-sdk/anthropic@^3'
 npx --no-install vendo --version   # must print 0.4.0
-npx --no-install vendo init --yes --brief 'Vendo 0.4.0 registry verification.'
+npx --no-install vendo init --yes
 npm run build
 npm run dev -- --hostname 127.0.0.1 --port 3137 >"$root/dev.log" 2>&1 &
 server_pid=$!
@@ -134,7 +134,10 @@ kill "$server_pid"
 ```
 
 Success: CLI and `/status` both report `0.4.0`, init writes the `.vendo`
-contract and Next wiring, the app builds, doctor exits 0. Repeat with
+contract and Next wiring, the app builds, and doctor shows the wiring checks
+and the `/status` live round-trip green. Without a model key doctor's live
+model turn is `broken` by design and doctor exits nonzero — that is the
+expected keyless outcome, not a packaging failure. Repeat with
 `npm install @vendoai/vendo` for the scoped umbrella if paranoid.
 
 ## Releases after launch
