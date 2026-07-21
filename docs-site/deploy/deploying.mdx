@@ -36,3 +36,18 @@ and only declared, owner-granted secrets are injected into the box.
 Use `/status` for a live composition probe. Use the public Postgres tables for
 backup and retention. If something is broken, start with
 [Troubleshooting](/deploy/troubleshooting).
+
+## Block unlocks
+
+Past the checklist, turn on the rest of the platform deliberately, one block
+at a time. `vendo doctor` ends with a ladder line naming exactly what each
+remaining block unlocks for your install.
+
+| Unlock | What it adds | Where |
+| --- | --- | --- |
+| Persistence on Postgres | Same schema as the PGlite default, for production | [Persistence](/deploy/persistence) |
+| Sandbox | User apps that need a server escalate into a jail | [How Vendo works](/concepts/architecture) |
+| Connectors | External tools executed as the signed-in user | [Connected accounts](/capabilities/connected-accounts) |
+| MCP door | Claude, ChatGPT, and Cursor use your product's tools; a host decision, never a default, needing a `HostOAuthAdapter` and `createVendo({ mcp: true, oauth })` | [MCP](/capabilities/mcp) |
+| Voice | Real-time voice surfaces over the same tools and policy | [Voice](/ui/components#voice) |
+| Vendo Cloud | Sharing, publishing, org overlays, hosted automations via `VENDO_API_KEY` | [Vendo Cloud](/deploy/vendo-cloud) |

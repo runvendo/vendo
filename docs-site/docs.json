@@ -26,51 +26,110 @@
   },
   "favicon": "/favicon.svg",
   "contextual": {
-    "options": ["copy", "view", "mcp", "chatgpt", "claude", "cursor", "vscode"]
+    "options": [
+      "copy",
+      "view",
+      "mcp",
+      "chatgpt",
+      "claude",
+      "cursor",
+      "vscode"
+    ]
   },
   "navigation": {
     "groups": [
       {
         "group": "Start here",
-        "pages": ["index", "install", "concepts/architecture", "concepts/tools-and-safety"]
+        "pages": [
+          "index",
+          "concepts/architecture",
+          "concepts/tools-and-safety"
+        ]
       },
       {
         "group": "Bring your own agent",
         "tag": "Recommended",
-        "pages": ["existing-agents/index", "existing-agents/ai-sdk", "existing-agents/mastra", "existing-agents/embeds"]
+        "pages": [
+          "existing-agents/index",
+          "existing-agents/ai-sdk",
+          "existing-agents/mastra",
+          "existing-agents/embeds"
+        ]
       },
       {
         "group": "Use Vendo's agent",
         "tag": "Beta",
-        "pages": ["quickstart", "ui/components"]
+        "pages": [
+          "quickstart",
+          "ui/components"
+        ]
       },
       {
         "group": "Connect your app",
-        "pages": ["connect/vendo-init", "connect/api-tools", "connect/act-as-presets", "connect/dev-mode"]
+        "pages": [
+          "connect/vendo-init",
+          "connect/api-tools",
+          "connect/act-as-presets",
+          "connect/dev-mode"
+        ]
       },
       {
         "group": "Make it yours",
-        "pages": ["connect/theming", "connect/host-components", "connect/instructions"]
+        "pages": [
+          "connect/theming",
+          "connect/host-components",
+          "connect/instructions"
+        ]
       },
       {
         "group": "Give it reach",
-        "pages": ["capabilities/connected-accounts", "capabilities/mcp", "capabilities/mcp-registry", "capabilities/compound-tools", "concepts/generated-ui", "concepts/in-client-venue"]
+        "pages": [
+          "capabilities/connected-accounts",
+          "capabilities/mcp",
+          "capabilities/mcp-registry",
+          "capabilities/compound-tools",
+          "concepts/generated-ui",
+          "concepts/in-client-venue"
+        ]
       },
       {
         "group": "Ship it",
-        "pages": ["deploy/deploying", "deploy/persistence", "deploy/vendo-cloud", "deploy/principals-and-orgs", "deploy/scheduler-and-webhooks", "deploy/telemetry", "deploy/troubleshooting"]
+        "pages": [
+          "deploy/deploying",
+          "deploy/persistence",
+          "deploy/vendo-cloud",
+          "deploy/principals-and-orgs",
+          "deploy/scheduler-and-webhooks",
+          "deploy/telemetry",
+          "deploy/troubleshooting"
+        ]
       },
       {
         "group": "For coding agents",
-        "pages": ["agents/index", "agents/host-auth", "agents/tools", "agents/verify"]
+        "pages": [
+          "agents/index",
+          "agents/host-auth",
+          "agents/tools",
+          "agents/verify"
+        ]
       },
       {
         "group": "Reference",
-        "pages": ["reference/handler-options", "reference/server-api", "reference/hooks", "reference/cli", "reference/dot-vendo", "reference/http-routes", "reference/environment-variables"]
+        "pages": [
+          "reference/handler-options",
+          "reference/server-api",
+          "reference/hooks",
+          "reference/cli",
+          "reference/dot-vendo",
+          "reference/http-routes",
+          "reference/environment-variables"
+        ]
       },
       {
         "group": "Changelog",
-        "pages": ["changelog/overview"]
+        "pages": [
+          "changelog/overview"
+        ]
       }
     ]
   },
@@ -98,6 +157,11 @@
     {
       "source": "/connect/tool-labels",
       "destination": "/ui/components",
+      "permanent": true
+    },
+    {
+      "source": "/install",
+      "destination": "/agents",
       "permanent": true
     }
   ],
