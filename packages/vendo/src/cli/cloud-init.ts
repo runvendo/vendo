@@ -5,7 +5,16 @@ import type { DevCredential } from "../dev-creds/resolve.js";
 import { runLogin } from "./cloud/auth.js";
 import { CloudError, cloudFetch, isVendoKey, type CloudFetchOptions } from "./cloud/client.js";
 import { cloudDoctor, type CloudDoctorResult } from "./doctor-live.js";
-import { askYesNo, readOptional, writeText, type Output } from "./shared.js";
+import {
+  askYesNo,
+  cloudProjectProps,
+  errorClass,
+  readOptional,
+  toolingTelemetry,
+  writeText,
+  type Output,
+  type TelemetryOptions,
+} from "./shared.js";
 
 /**
  * ENG-339 (install-dx design §6) — cloud in init. Detect VENDO_API_KEY when
@@ -122,6 +131,8 @@ export interface CloudStepOptions {
   cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   login?: (email: string) => Promise<number>;
   mint?: () => Promise<string | null>;
+  /** Injectable telemetry deps (matches init/doctor). */
+  telemetry?: TelemetryOptions;
 }
 
 export interface CloudStepResult {
@@ -130,8 +141,40 @@ export interface CloudStepResult {
   wroteEnvLocal: boolean;
 }
 
-/** init's cloud step (design §6). Never changes init's exit code. */
+/** init's cloud step (design §6). Never changes init's exit code. Tracked as
+    `command_run` command "cloud-init" (TELEMETRY.md): ok is "the step ended
+    in a non-error outcome" — a valid key, a clean skip/decline, or a minted
+    starter key; failures name their step. Telemetry never changes the step's
+    behavior: the tracker is fully guarded and a thrown error still rethrows. */
 export async function runCloudStep(options: CloudStepOptions): Promise<CloudStepResult> {
+  const started = Date.now();
+  const telemetry = toolingTelemetry(options.telemetry ?? {});
+  const failure: { failedStep?: string } = {};
+  const track = async (thrown?: { error: unknown }): Promise<void> => {
+    try {
+      await telemetry.track("command_run", {
+        command: "cloud-init",
+        ok: thrown === undefined && failure.failedStep === undefined,
+        durationMs: Date.now() - started,
+        ...(failure.failedStep === undefined ? {} : { failedStep: failure.failedStep }),
+        ...(thrown === undefined ? {} : { errorClass: errorClass(thrown.error) }),
+        ...(await cloudProjectProps(options.root)),
+      });
+    } catch {
+      // Telemetry must never break init. Intentional silent failure.
+    }
+  };
+  try {
+    const result = await cloudStep(options, failure);
+    await track();
+    return result;
+  } catch (error) {
+    await track({ error });
+    throw error;
+  }
+}
+
+async function cloudStep(options: CloudStepOptions, failure: { failedStep?: string }): Promise<CloudStepResult> {
   const { root, output, credential } = options;
   const env = options.env ?? process.env;
   const cloud = await (options.cloudProbe ?? cloudDoctor)({ env });
@@ -141,6 +184,7 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
     return { keyPresent: true, keyValid: true, wroteEnvLocal: false };
   }
   if (cloud.present) {
+    failure.failedStep = "key-invalid";
     output.error(`\nVendo Cloud: VENDO_API_KEY is set but not usable (${cloud.error ?? "malformed"}). Fix or remove it; \`vendo cloud login\` can issue a fresh one.`);
     return { keyPresent: true, keyValid: false, wroteEnvLocal: false };
   }
@@ -178,12 +222,14 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
 
   const email = await (options.promptEmail ?? askText)("Vendo Cloud email");
   if (email.length === 0) {
+    failure.failedStep = "email";
     output.error("No email entered; skipped Vendo Cloud login.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
   const login = options.login ?? ((address: string) => runLogin([address], { home: options.home, env }));
   const exit = await login(email);
   if (exit !== 0) {
+    failure.failedStep = "login";
     output.error("Vendo Cloud login did not complete; run `vendo cloud login` and re-run `vendo init`.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
@@ -200,11 +246,13 @@ export async function runCloudStep(options: CloudStepOptions): Promise<CloudStep
       ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
     })))();
   } catch (error) {
+    failure.failedStep = "mint";
     const message = error instanceof Error ? error.message : String(error);
     output.error(`Vendo Cloud starter-allowance minting failed: ${message} Set a provider key or retry \`vendo init\` later; init continues.`);
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }
   if (key === null) {
+    failure.failedStep = "mint-unsupported";
     output.error("Logged in, but this console does not serve the dev-mode starter allowance yet (older console). Set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) for now.");
     return { keyPresent: false, keyValid: false, wroteEnvLocal: false };
   }

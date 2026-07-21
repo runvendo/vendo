@@ -6,6 +6,7 @@ import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveRefineModel, runRefineCommand } from "./refine.js";
+import { telemetryCapture } from "./telemetry.test-util.js";
 import type { Output } from "./shared.js";
 
 // `vendo refine` CLI surface (ENG-250): diffs are presented and applied only
@@ -263,5 +264,32 @@ describe("resolveRefineModel", () => {
       importModule: async () => { throw new Error("the ladder must not resolve when --model-import is passed"); },
     });
     expect((model as { modelId: string }).modelId).toBe("own");
+  });
+});
+
+describe("refine telemetry", () => {
+  it("tracks command_run refine with ok reflecting the exit code", async () => {
+    const ok = await telemetryCapture();
+    cleanups.push(() => rm(ok.home, { recursive: true, force: true }));
+    const root = await makeRoot();
+    expect(await runRefineCommand({
+      targetDir: root,
+      output: testOutput(),
+      model: proposalModel(COMPOUND_PROPOSAL),
+      yes: true,
+      telemetry: ok.telemetry,
+    })).toBe(0);
+    expect(ok.event("command_run").properties).toMatchObject({ command: "refine", ok: true });
+
+    const failed = await telemetryCapture();
+    cleanups.push(() => rm(failed.home, { recursive: true, force: true }));
+    const bare = await makeRoot(false);
+    expect(await runRefineCommand({
+      targetDir: bare,
+      output: testOutput(),
+      model: proposalModel({}),
+      telemetry: failed.telemetry,
+    })).toBe(1);
+    expect(failed.event("command_run").properties).toMatchObject({ command: "refine", ok: false, failedStep: "tools" });
   });
 });

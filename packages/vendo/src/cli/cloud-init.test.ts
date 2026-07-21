@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevCredential } from "../dev-creds/resolve.js";
 import { AUTH_MD_URL, agentKeyPointerLines, mintStarterAllowance, runCloudStep } from "./cloud-init.js";
+import { telemetryCapture } from "./telemetry.test-util.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -301,5 +302,72 @@ describe("runCloudStep", () => {
       confirm,
     });
     expect(confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("cloud-init telemetry", () => {
+  it("tracks command_run cloud-init: ok for a valid key, key-invalid for a bad one", async () => {
+    const root = await tempRoot();
+    const ok = await telemetryCapture();
+    cleanup.push(() => rm(ok.home, { recursive: true, force: true }));
+    await runCloudStep({
+      root,
+      output: output().sink,
+      yes: true,
+      credential: envKey,
+      cloudProbe: async () => ({ present: true, ok: true, unlocks: [] }),
+      telemetry: ok.telemetry,
+    });
+    expect(ok.event("command_run").properties).toMatchObject({ command: "cloud-init", ok: true });
+    expect(typeof ok.event("command_run").properties.durationMs).toBe("number");
+
+    const invalid = await telemetryCapture();
+    cleanup.push(() => rm(invalid.home, { recursive: true, force: true }));
+    await runCloudStep({
+      root,
+      output: output().sink,
+      yes: true,
+      credential: envKey,
+      cloudProbe: async () => ({ present: true, ok: false, error: "malformed", unlocks: [] }),
+      telemetry: invalid.telemetry,
+    });
+    expect(invalid.event("command_run").properties).toMatchObject({
+      command: "cloud-init",
+      ok: false,
+      failedStep: "key-invalid",
+    });
+  });
+
+  it("a clean decline is ok (declining the offer is not a failure), and a throwing probe still rethrows", async () => {
+    const root = await tempRoot();
+    const declined = await telemetryCapture();
+    cleanup.push(() => rm(declined.home, { recursive: true, force: true }));
+    await runCloudStep({
+      root,
+      output: output().sink,
+      yes: false,
+      isTty: true,
+      credential: noKey,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] }),
+      confirm: async () => false,
+      telemetry: declined.telemetry,
+    });
+    expect(declined.event("command_run").properties).toMatchObject({ command: "cloud-init", ok: true });
+
+    const thrown = await telemetryCapture();
+    cleanup.push(() => rm(thrown.home, { recursive: true, force: true }));
+    await expect(runCloudStep({
+      root,
+      output: output().sink,
+      yes: true,
+      credential: noKey,
+      cloudProbe: async () => { throw new TypeError("probe exploded"); },
+      telemetry: thrown.telemetry,
+    })).rejects.toThrow("probe exploded");
+    expect(thrown.event("command_run").properties).toMatchObject({
+      command: "cloud-init",
+      ok: false,
+      errorClass: "TypeError",
+    });
   });
 });

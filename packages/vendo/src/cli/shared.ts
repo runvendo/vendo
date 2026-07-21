@@ -2,7 +2,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
+import { initTelemetry, repoHost, type Telemetry } from "@vendoai/telemetry";
 
 export const CLI_VERSION = "0.3.0";
 
@@ -50,11 +50,16 @@ function noTelemetry(): Telemetry {
   return { async track() {} };
 }
 
-export function toolingTelemetry(options: {
+/** The injectable telemetry deps every CLI command's options carry
+    (init/doctor already ride this exact shape). */
+export interface TelemetryOptions {
   home?: string;
   env?: Record<string, string | undefined>;
   posthogKey?: string;
   fetchImpl?: typeof fetch;
+}
+
+export function toolingTelemetry(options: TelemetryOptions & {
   log?: (message: string) => void;
 } = {}): Telemetry {
   try {
@@ -75,6 +80,83 @@ export function toolingTelemetry(options: {
 export function errorClass(error: unknown): string {
   if (error instanceof Error && error.name) return error.name.slice(0, 64);
   return "unknown";
+}
+
+/** The closed `command_run.command` enum (TELEMETRY.md). init keeps its own
+    richer events; "theme" is reserved — no `vendo theme` entrypoint exists
+    yet. */
+export type CommandName =
+  | "extract"
+  | "theme"
+  | "eject"
+  | "playground"
+  | "refine"
+  | "sync"
+  | "cloud-init"
+  | "mcp";
+
+/** Cloud-lane project identity (projectName + repoHost) for commands that
+    have a target project dir. Anonymous-lane sends strip both keys. */
+export async function cloudProjectProps(root: string | undefined): Promise<Record<string, unknown>> {
+  if (root === undefined) return {};
+  const props: Record<string, unknown> = {};
+  try {
+    const name = (JSON.parse((await readOptional(join(root, "package.json"))) ?? "{}") as { name?: unknown }).name;
+    if (typeof name === "string" && name.length > 0) props.projectName = name;
+  } catch {
+    // No usable package.json — the cloud lane just omits projectName.
+  }
+  const forge = repoHost(root);
+  if (forge !== undefined) props.repoHost = forge;
+  return props;
+}
+
+/**
+ * Run a CLI command body with one `command_run` telemetry row: ok is the
+ * exit code (0 = true), a throw records the error class and rethrows, and a
+ * body can name the step it failed at via the mutable `failure` argument.
+ * The body also receives the telemetry client for extra events (extract's
+ * `extract_completed`). Telemetry NEVER changes command behavior or exit
+ * codes — the client never throws, and this wrapper's own prop assembly is
+ * guarded too.
+ */
+export async function withCommandRun(
+  input: {
+    command: CommandName;
+    telemetry?: TelemetryOptions;
+    /** Host project dir for the cloud lane's projectName/repoHost; omitted
+        for commands without a target project (playground, mcp). */
+    root?: string;
+  },
+  body: (failure: { failedStep?: string }, telemetry: Telemetry) => Promise<number>,
+): Promise<number> {
+  const started = Date.now();
+  // The first-run notice keeps its console.error default — several wrapped
+  // commands (sync --json, mcp server-json) own their stdout byte-for-byte.
+  const telemetry = toolingTelemetry(input.telemetry ?? {});
+  const failure: { failedStep?: string } = {};
+  const track = async (ok: boolean, thrown?: { error: unknown }): Promise<void> => {
+    try {
+      await telemetry.track("command_run", {
+        command: input.command,
+        ok,
+        durationMs: Date.now() - started,
+        ...(failure.failedStep === undefined ? {} : { failedStep: failure.failedStep }),
+        ...(thrown === undefined ? {} : { errorClass: errorClass(thrown.error) }),
+        ...(await cloudProjectProps(input.root)),
+      });
+    } catch {
+      // Telemetry must never break a command. Intentional silent failure.
+    }
+  };
+  try {
+    const exit = await body(failure, telemetry);
+    await track(exit === 0);
+    return exit;
+  } catch (error) {
+    await track(false, { error });
+    throw error;
+  }
 }
 
 /** Lockfile-derived package manager for `run dev` (doctor's probe starter). */

@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { exists, type Output } from "./shared.js";
 import { rewriteTemplateSource, runEject } from "./eject.js";
+import { telemetryCapture } from "./telemetry.test-util.js";
 
 function sink(): { output: Output; logs: string[]; errors: string[] } {
   const logs: string[] = [];
@@ -243,3 +244,19 @@ describe("runEject", () => {
 async function readFileUtf8(path: string): Promise<string> {
   return readFile(path, "utf8");
 }
+
+describe("eject telemetry", () => {
+  it("tracks command_run eject with ok reflecting the exit code", async () => {
+    await makeHost();
+    const ok = await telemetryCapture();
+    expect(await runEject({ targetDir: root, surface: "thread", output: sink().output, telemetry: ok.telemetry })).toBe(0);
+    expect(ok.event("command_run").properties).toMatchObject({ command: "eject", ok: true });
+    expect(typeof ok.event("command_run").properties.durationMs).toBe("number");
+
+    const failed = await telemetryCapture();
+    expect(await runEject({ targetDir: root, surface: "sidebar", output: sink().output, telemetry: failed.telemetry })).toBe(1);
+    expect(failed.event("command_run").properties).toMatchObject({ command: "eject", ok: false, failedStep: "surface" });
+    await rm(ok.home, { recursive: true, force: true });
+    await rm(failed.home, { recursive: true, force: true });
+  });
+});

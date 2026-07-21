@@ -1,10 +1,19 @@
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { vendoSync } from "@vendoai/actions";
+import type { Telemetry } from "@vendoai/telemetry";
+import { detectDepVersions } from "../dep-versions.js";
+import { detectFramework } from "../framework.js";
 import { applyDraft, reportApplied } from "./extraction.js";
 import { parseDraft } from "./harness.js";
 import { staticToolSchema, type StaticTool } from "./stages.js";
-import { consoleOutput, readOptional, type Output } from "../shared.js";
+import {
+  consoleOutput,
+  readOptional,
+  withCommandRun,
+  type Output,
+  type TelemetryOptions,
+} from "../shared.js";
 
 /**
  * `vendo extract --apply <draft.json>` — the delegation surface. An external
@@ -23,6 +32,8 @@ export interface ExtractApplyOptions {
   output?: Output;
   /** Test seam (matches sync.ts): the re-sync implementation. */
   sync?: (input: { root: string; out: string }) => Promise<{ warnings: string[] }>;
+  /** Injectable telemetry deps (matches init/doctor). */
+  telemetry?: TelemetryOptions;
 }
 
 function describeError(error: unknown): string {
@@ -38,9 +49,28 @@ function describeError(error: unknown): string {
 export async function runExtractApply(options: ExtractApplyOptions): Promise<number> {
   const output = options.output ?? consoleOutput;
   const root = resolve(options.targetDir);
+  const started = Date.now();
+  return withCommandRun(
+    {
+      command: "extract",
+      root,
+      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    },
+    (failure, telemetry) => extractApply(options, output, root, started, failure, telemetry),
+  );
+}
 
+async function extractApply(
+  options: ExtractApplyOptions,
+  output: Output,
+  root: string,
+  started: number,
+  failure: { failedStep?: string },
+  telemetry: Telemetry,
+): Promise<number> {
   const toolsRaw = await readOptional(join(root, ".vendo", "tools.json"));
   if (toolsRaw === null) {
+    failure.failedStep = "tools";
     output.error("No .vendo/tools.json here — run `vendo init` first, then apply the draft.");
     return 1;
   }
@@ -48,6 +78,7 @@ export async function runExtractApply(options: ExtractApplyOptions): Promise<num
   try {
     tools = z.object({ tools: z.array(staticToolSchema) }).parse(JSON.parse(toolsRaw)).tools;
   } catch (error) {
+    failure.failedStep = "tools";
     output.error(`.vendo/tools.json is unreadable (${describeError(error)}) — run \`vendo sync\` and try again.`);
     return 1;
   }
@@ -58,10 +89,12 @@ export async function runExtractApply(options: ExtractApplyOptions): Promise<num
   try {
     draftRaw = await readOptional(resolve(options.apply));
   } catch (error) {
+    failure.failedStep = "draft";
     output.error(`Draft file unreadable: ${options.apply} (${describeError(error)})`);
     return 1;
   }
   if (draftRaw === null) {
+    failure.failedStep = "draft";
     output.error(`Draft file not found: ${options.apply}`);
     return 1;
   }
@@ -69,6 +102,7 @@ export async function runExtractApply(options: ExtractApplyOptions): Promise<num
   try {
     draft = parseDraft(draftRaw);
   } catch (error) {
+    failure.failedStep = "draft";
     output.error(`Draft rejected — it must match the aiPolish.draftSchema from \`vendo init --agent\` (${describeError(error)}).`);
     return 1;
   }
@@ -84,6 +118,7 @@ export async function runExtractApply(options: ExtractApplyOptions): Promise<num
       ...(options.force === undefined ? {} : { force: options.force }),
     });
   } catch (error) {
+    failure.failedStep = "apply";
     output.error(`Could not apply the draft (${describeError(error)}) — check .vendo/overrides.json and re-apply.`);
     return 1;
   }
@@ -93,9 +128,33 @@ export async function runExtractApply(options: ExtractApplyOptions): Promise<num
     const resynced = await (options.sync ?? vendoSync)({ root, out: join(root, ".vendo") });
     for (const warning of resynced.warnings) output.error(`warning: ${warning}`);
   } catch (error) {
+    failure.failedStep = "resync";
     output.error(`Draft applied, but re-sync failed (${describeError(error)}) — run \`vendo sync\` to refresh tools.json.`);
     return 1;
   }
   reportApplied({ output, applied, briefDrafted: applied.briefWritten });
+
+  // Result metrics (counts and enums only; TELEMETRY.md extract_completed).
+  // Guarded like the wrapper: telemetry can never change the exit code.
+  try {
+    const framework = await detectFramework(root);
+    // staticToolSchema strips bindings — count route tools off the raw file.
+    const bindings = (JSON.parse(toolsRaw) as { tools?: Array<{ binding?: { kind?: string } }> }).tools ?? [];
+    const routeCount = bindings.filter((tool) => tool.binding?.kind === "route").length;
+    const versions = await detectDepVersions(root, framework);
+    await telemetry.track("extract_completed", {
+      framework,
+      // route-scan today; "zod" reserved for a future oracle-backed detect.
+      method: routeCount > 0 ? "route-scan" : "none",
+      routeCount,
+      toolCount: tools.length,
+      ok: true,
+      durationMs: Date.now() - started,
+      ...(versions.frameworkVersion === undefined ? {} : { frameworkVersion: versions.frameworkVersion }),
+      ...(versions.zodVersion === undefined ? {} : { zodVersion: versions.zodVersion }),
+    });
+  } catch {
+    // Intentional silent failure.
+  }
   return 0;
 }

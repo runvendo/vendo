@@ -1,5 +1,7 @@
+import { rm } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runSync } from "./sync.js";
+import { telemetryCapture } from "./telemetry.test-util.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -396,5 +398,31 @@ describe("vendo sync", () => {
       sync: async () => { throw new Error("scan"); },
     })).toBe(2);
     expect(JSON.parse(strict.logs[0]!)).toMatchObject({ ok: false, exitCode: 2, error: "sync failed soft: scan" });
+  });
+});
+
+describe("sync telemetry", () => {
+  it("tracks command_run sync with ok reflecting the exit code", async () => {
+    const output = { log() {}, error() {} };
+    const fetchImpl = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+
+    const ok = await telemetryCapture();
+    expect(await runSync({ targetDir: ".", output, fetchImpl, sync: async () => report(), telemetry: ok.telemetry })).toBe(0);
+    expect(ok.event("command_run").properties).toMatchObject({ command: "sync", ok: true });
+    expect(typeof ok.event("command_run").properties.durationMs).toBe("number");
+
+    const gated = await telemetryCapture();
+    expect(await runSync({
+      targetDir: ".",
+      strict: true,
+      output,
+      fetchImpl,
+      sync: async () => report([{ tool: "host_x", change: "removed" }]),
+      telemetry: gated.telemetry,
+    })).toBe(2);
+    expect(gated.event("command_run").properties).toMatchObject({ command: "sync", ok: false });
+
+    await rm(ok.home, { recursive: true, force: true });
+    await rm(gated.home, { recursive: true, force: true });
   });
 });
