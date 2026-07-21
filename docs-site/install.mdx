@@ -39,6 +39,20 @@ machine-readable surface.
 
     `vendoai` is a thin alias of `@vendoai/vendo`: either name installs the
     same composition and the same `vendo` bin.
+
+    <Note>
+      Right after a Vendo release, package managers with a release cooldown
+      (pnpm 11 holds new versions for one day by default via
+      `minimumReleaseAge`; npm's `min-release-age` is opt-in) may resolve to
+      nothing and fail with "no versions available". Either wait out your
+      cooldown or exclude Vendo in `pnpm-workspace.yaml`:
+
+      ```yaml
+      minimumReleaseAgeExclude:
+        - vendoai
+        - "@vendoai/*"
+      ```
+    </Note>
   </Step>
   <Step title="Run init">
     ```bash

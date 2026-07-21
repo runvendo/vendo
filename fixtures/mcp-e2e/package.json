@@ -1,6 +1,6 @@
 {
   "name": "@vendoai-fixtures/mcp-e2e",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Wave-6 full-stack e2e harness for @vendoai/mcp: a REAL MCP SDK client driving the door against fixture host app + real store + real guard + real actions, composed the way the umbrella will compose them.",
   "type": "module",

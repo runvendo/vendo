@@ -1,6 +1,6 @@
 {
   "name": "@vendoai-examples/ai-sdk-agent",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "The AI SDK Next.js quickstart chatbot plus the four-touch Vendo diff: guarded host actions, generated UI, and approvals inside your existing agent loop.",
   "scripts": {
