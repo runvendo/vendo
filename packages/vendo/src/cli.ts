@@ -40,6 +40,7 @@ Options:
   --framework <name>         Init only: override framework detection (next, express) — required non-interactively when detection fails
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
   --email <address>          Login only: pre-fill the approval page (login hint)
+  --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
   --engine <name>            Init only: pin the AI-polish engine (claude, codex, npx) instead of first-available
@@ -88,7 +89,7 @@ const REFINE_FLAGS = new Set(["--yes"]);
 const REFINE_VALUE_OPTIONS = ["--url", "--model-import", "--ask"];
 const SYNC_FLAGS = new Set(["--strict", "--json", "--report"]);
 const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url"];
-const LOGIN_VALUE_OPTIONS = ["--email", "--api-url"];
+const LOGIN_VALUE_OPTIONS = ["--email", "--api-url", "--wait"];
 
 /** ENG-335: options the CLI does not recognize — or value options missing
     their value — must fail loudly before anything runs. Silently dropping a
@@ -164,6 +165,10 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "login") {
     const problems = optionErrors(args, new Set(), LOGIN_VALUE_OPTIONS);
+    const wait = option(args, "--wait");
+    if (wait !== undefined && !/^\d+$/.test(wait)) {
+      problems.push("--wait takes a whole number of seconds (example: vendo login --wait 90)");
+    }
     if (problems.length > 0) {
       console.error(`vendo login: ${problems.join("; ")}\n\n${HELP}`);
       return 1;

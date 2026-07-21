@@ -18,7 +18,7 @@ npx vendo init
 
 <AgentPrompt
   lead="Paste this prompt instead of following the steps by hand."
-  prompt={"Add Vendo to this repo's existing Mastra agent. Read https://docs.vendo.run/existing-agents/mastra.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs. Then ask me whether I'd like to star runvendo/vendo to support the project."}
+  prompt={"Add Vendo to this repo's existing Mastra agent. Read https://docs.vendo.run/existing-agents/mastra.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-mastra to support the project."}
 />
 
 Init scaffolds the wire route (`app/api/vendo/[...vendo]/route.ts`), extracts
@@ -132,6 +132,17 @@ The frontend is identical to the [AI SDK quickstart](/existing-agents/ai-sdk):
 the embed contract is framework-agnostic.
 
 ## Try it
+
+<Warning>
+  Your agent's OWN model still needs its own credential — `VENDO_API_KEY`
+  powers Vendo's internal turns (app builds, the delegate), never your loop.
+  If the starter's model has no key on this machine (e.g. no
+  `OPENAI_API_KEY`), either set one or point your agent's `model` at
+  `devModel()` from `@vendoai/vendo/server` to ride the same Vendo Cloud
+  credential. The done-criterion is a REAL chat turn that renders a Vendo
+  tool output — run ask 2 yourself before calling the install done; doctor
+  cannot check your loop's model.
+</Warning>
 
 One thread, three asks:
 

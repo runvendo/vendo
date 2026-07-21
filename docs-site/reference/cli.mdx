@@ -112,6 +112,16 @@ one opened.
 Options:
 
 - `[email]` or `--email <address>` pre-fills the approval page (login hint).
+- `--wait <seconds>` bounds how long this one invocation polls before giving
+  up — capped by the claim's expiry. When the budget elapses with the request
+  still pending, the command prints a resumable line, leaves the pending claim
+  in place, and exits `0` (pending is not a failure). A re-run resumes the same
+  claim. `--wait 0` opens (or resumes) the claim, polls once, and exits
+  resumably if still pending — the "open and print the code" first call. Absent
+  the flag, behavior is unchanged: it blocks until the claim expires (~10 min).
+  Built for coding agents: run short bounded calls in a loop instead of one
+  long blocking call that a command timeout would kill mid-wait (see
+  [agents](/agents)).
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default
   `https://console.vendo.run`).
 
