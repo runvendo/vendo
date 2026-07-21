@@ -35,14 +35,17 @@ export interface ProjectProps {
 /**
  * Normalize a git remote URL so ssh/https spellings of the same repo hash
  * identically: strip scheme ("https://", "ssh://") and "user@" prefixes,
- * unify the ssh ":" host separator to "/", lowercase, drop trailing ".git".
- * `git@github.com:a/b.git` and `https://github.com/a/b` both become
- * `github.com/a/b`.
+ * drop an explicit ":PORT", unify the ssh ":" host separator to "/",
+ * lowercase, drop trailing ".git". `git@github.com:a/b.git` and
+ * `https://github.com/a/b` both become `github.com/a/b`.
  */
 export function normalizeRemoteUrl(url: string): string {
   let s = url.trim().toLowerCase();
   s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//, ""); // scheme prefix
   s = s.replace(/^[^/@]+@/, ""); // user@ prefix
+  // Explicit port before the path (host:8443/a/b). Must run before the scp
+  // rewrite below so an all-digit port isn't kept as a path segment.
+  s = s.replace(/^([^/:]+):\d+(?=\/)/, "$1");
   s = s.replace(":", "/"); // ssh host:path separator
   s = s.replace(/\/+$/, "").replace(/\.git$/, "");
   return s;

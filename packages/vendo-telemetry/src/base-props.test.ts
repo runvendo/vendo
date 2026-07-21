@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { baseProps, projectProps, PROJECT_ID_SALT } from "./base-props.js";
+import { baseProps, normalizeRemoteUrl, projectProps, PROJECT_ID_SALT } from "./base-props.js";
 
 describe("baseProps", () => {
   it("returns only allowlisted base keys with primitive values", () => {
@@ -40,6 +40,30 @@ function gitRepoDir(originUrl?: string): string {
 function expectedHash(input: string): string {
   return createHash("sha256").update(PROJECT_ID_SALT + input).digest("hex");
 }
+
+describe("normalizeRemoteUrl", () => {
+  it.each([
+    ["git@github.com:RunVendo/Vendo.git", "github.com/runvendo/vendo"],
+    ["https://github.com/runvendo/vendo.git", "github.com/runvendo/vendo"],
+    ["ssh://git@github.com/runvendo/vendo.git", "github.com/runvendo/vendo"],
+    [" https://github.com/runvendo/vendo/ ", "github.com/runvendo/vendo"],
+  ])("normalizes %s to %s", (url, expected) => {
+    expect(normalizeRemoteUrl(url)).toBe(expected);
+  });
+
+  it("strips an explicit port so ssh and https spellings still match", () => {
+    expect(normalizeRemoteUrl("https://git.corp.example:8443/group/repo.git")).toBe(
+      "git.corp.example/group/repo",
+    );
+    expect(normalizeRemoteUrl("ssh://git@git.corp.example:8443/group/repo.git")).toBe(
+      "git.corp.example/group/repo",
+    );
+  });
+
+  it("leaves scp-style paths intact when there is no port", () => {
+    expect(normalizeRemoteUrl("git@github.com:a/b.git")).toBe("github.com/a/b");
+  });
+});
 
 describe("projectProps.projectIdHash", () => {
   it("is a deterministic salted sha256 of the normalized origin url", () => {
@@ -82,6 +106,19 @@ describe("projectProps.projectIdHash", () => {
   it("is omitted entirely when neither source exists", () => {
     const p = projectProps({}, tempDir());
     expect("projectIdHash" in p).toBe(false);
+  });
+
+  it("resolves a linked worktree's .git pointer file back to the main repo config", () => {
+    // Mirror `git worktree add` layout: the linked checkout gets a `.git` FILE
+    // pointing at <main>/.git/worktrees/<name>, whose `commondir` file points
+    // back at the shared <main>/.git that holds the real config.
+    const main = gitRepoDir("https://github.com/runvendo/vendo.git");
+    const worktreeGitDir = join(main, ".git", "worktrees", "wt");
+    mkdirSync(worktreeGitDir, { recursive: true });
+    writeFileSync(join(worktreeGitDir, "commondir"), "../..\n");
+    const linked = tempDir();
+    writeFileSync(join(linked, ".git"), `gitdir: ${worktreeGitDir}\n`);
+    expect(projectProps({}, linked).projectIdHash).toBe(expectedHash("github.com/runvendo/vendo"));
   });
 
   it("never throws on unreadable or malformed git state", () => {

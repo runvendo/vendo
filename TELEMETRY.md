@@ -50,7 +50,7 @@ Example payload:
 
 ## What Is Never Collected
 
-Vendo telemetry never collects source code, file paths, prompts, generated UI, tool inputs or outputs, API keys, host app names, environment values, request bodies, error messages, or stack traces.
+Vendo telemetry never collects source code, file paths, prompts, generated UI, tool inputs or outputs, API keys, host app names, environment values, request bodies, error messages, or stack traces. The `packageManager` name is classified into a closed enum from the npm user-agent env var; no raw env values are sent.
 
 ## Anonymous Identity
 

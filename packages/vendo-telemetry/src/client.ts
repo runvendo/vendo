@@ -1,5 +1,5 @@
 import { resolveConsent } from "./consent.js";
-import { baseProps, projectProps } from "./base-props.js";
+import { baseProps, projectProps, type ProjectProps } from "./base-props.js";
 import { EVENT_ALLOWLIST, type EventName } from "./events.js";
 import type { TelemetryConfig } from "./config.js";
 
@@ -62,7 +62,14 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 export function createTelemetry(deps: TelemetryDeps): Telemetry {
   const doFetch = deps.fetchImpl ?? fetch;
   // Filesystem-backed props are computed once per client, never per event.
-  const project = projectProps(deps.env, deps.cwd);
+  // Guarded so the never-throw contract holds at the API surface even if
+  // cwd resolution or the filesystem probes fail in an unexpected way.
+  let project: ProjectProps = {};
+  try {
+    project = projectProps(deps.env, deps.cwd);
+  } catch {
+    // Telemetry must never break the caller; send without project props.
+  }
   return {
     async track(event, props) {
       try {
