@@ -79,6 +79,13 @@ projects people run Vendo against and how those runs turn out.
   (app/pages/none), `engine` (claude/codex/npx-engine/none),
   `apiDetectMethod` (route-scan/zod/none), `routeCount`, `themeExtracted`
   (bool).
+- Framework/dependency versions as plain version-string enums on init and
+  extract events: `frameworkVersion`, `reactVersion`, `zodVersion`,
+  `typescriptVersion`. Versions are non-identifying and in line with what
+  Astro/Nx collect anonymously.
+- Structured failure data on every command: `failedStep` plus an expanded
+  closed `errorClass` taxonomy on `command_run` and `init_failed` — never
+  error message text in this lane.
 - New events:
   - `extract_completed`: framework, method, route/tool counts, ok, duration.
   - `command_run`: `{ command, ok, failedStep?, durationMs }` with a closed
@@ -93,9 +100,15 @@ projects people run Vendo against and how those runs turn out.
 - Events additionally carry `cloudKeyHash` (SHA-256 of the API key) and
   `cloud: true`. The console already stores key hashes, so account joins
   happen on Vendo's side; PostHog never receives the key itself.
-- Richer result detail permitted on cloud events: fuller config enums and
-  more specific sanitized error classes (still never raw error messages,
-  paths, or code).
+- Richer result detail on cloud events (all six agreed with Yousef):
+  1. `projectName` (package.json name),
+  2. framework + key dependency versions (also in the anonymous lane),
+  3. `errorDetail`: first ~200 chars of the error message with file paths,
+     emails, and key/secret-shaped substrings redacted — cloud lane only,
+  4. per-stage init timings (detect/engine/theme/wiring/components),
+  5. config surface counts/enums (connections configured, toolkits enabled,
+     served apps, experimental flags),
+  6. `repoHost` (github.com/gitlab/other/none — host only, never the URL).
 - Documented in TELEMETRY.md as a distinct section ("When Vendo Cloud is
   configured") and referenced from the cloud docs, so the two lanes and their
   different postures are explicit.
@@ -122,4 +135,23 @@ enforces the mirror).
 
 Two PRs, one per repo, each green on build/test/typecheck/lint per repo
 rules; console PR includes browser screenshots. CLI PR and console PR are
-independent and can land in either order.
+independent; launch sequencing is console → docs → CLI (launch is
+2026-07-22).
+
+## Launch gate: live E2E verification
+
+Nothing ships on a green test suite alone. Before launch, each surface is
+verified end-to-end against the real PostHog project (via Yousef's logged-in
+PostHog session, since the shipped key is write-only):
+
+- **CLI:** real `vendo init`/`extract`/deliberately-failing runs on a test
+  project, once without and once with `VENDO_API_KEY`; every expected event
+  row and property confirmed in the PostHog activity feed for both lanes.
+- **Console:** deployed branch clicked through (login → keys → billing) in a
+  real browser; autocapture, identify, activation events, and a watchable
+  recording with masked inputs/secrets all confirmed; re-tested with an ad
+  blocker enabled to prove the `/ingest` proxy.
+- **Docs:** after deploy, pageviews and a recording from docs.vendo.run
+  confirmed.
+- Yousef's two PostHog-UI toggles (recordings on, both domains authorized)
+  are on the critical path and happen first.
