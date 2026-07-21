@@ -1,0 +1,224 @@
+- complementary:
+  - link "Cadence dashboard":
+    - /url: /
+    - text: cadence .
+  - navigation "Main":
+    - list:
+      - listitem:
+        - link "Dashboard":
+          - /url: /
+      - listitem:
+        - link "Vendo":
+          - /url: /assistant
+    - paragraph: Workspace
+    - list:
+      - listitem:
+        - link "Clients":
+          - /url: /clients
+      - listitem:
+        - link "Work":
+          - /url: /work
+      - listitem:
+        - link "Calendar":
+          - /url: /calendar
+      - listitem:
+        - link "Inbox":
+          - /url: /inbox
+    - paragraph: Firm
+    - list:
+      - listitem:
+        - link "Team":
+          - /url: /team
+      - listitem:
+        - link "Integrations":
+          - /url: /integrations
+      - listitem:
+        - link "Settings":
+          - /url: /settings
+  - paragraph: Hartwell & Associates
+  - paragraph: Tax season 2026
+- banner:
+  - search:
+    - searchbox "Search"
+    - text: ⌘K
+  - text: Hartwell & Associates
+  - button "Notifications"
+  - button "M maya@cadence.test"
+- main:
+  - main "Vendo workspace":
+    - tablist "Workspace sections":
+      - tab "Chat"
+      - tab "Apps" [selected]
+      - tab "Automations"
+      - tab "Accounts"
+      - tab "Activity"
+    - tabpanel "Apps":
+      - form "Create app":
+        - text: Describe a new app
+        - textbox "Describe a new app"
+        - button "Create" [disabled]
+      - article:
+        - strong: Blue Bottle Coffee — Client Detail
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client filing progress — Q3 2026
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Staff performance review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Deadline risk
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: End-of-week status report
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document completion by staff
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Update filing deadline
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Season progress
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client contacts
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Tax document collection tracker
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Payroll summary
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase list — this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client onboarding checklist
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Filing deadlines — next 90 days
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Workload by staff member
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase missing documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document collection progress
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients — staff & deadlines
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client health — document status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients missing documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - region "Open app":
+        - heading "Blue Bottle Coffee" [level=3]
+        - text: Missing docs S-Corp
+        - article "Contact":
+          - text: Contact
+          - strong: Marisol Rivera
+        - article "Email":
+          - text: Email
+          - strong: yousef+rivera@vendo.run
+        - article "Assigned to":
+          - text: Assigned to
+          - strong: Maya Alvarez
+        - article "Filing deadline":
+          - text: Filing deadline
+          - strong: Jul 23, 2026
+        - article:
+          - paragraph: Clients missing documents
+          - text: 6 docs received (all clients)
+          - paragraph: of 3 active clients need chasing
+        - text: Document progress
+        - progressbar
+        - text: "3"
+        - heading "Recent activity (all clients)" [level=3]
+        - table:
+          - rowgroup:
+            - row "Activity Type When":
+              - columnheader "Activity"
+              - columnheader "Type"
+              - columnheader "When"
+          - rowgroup:
+            - row "firm messaged Blue Bottle Coffee message_sent Jul 21, 2026":
+              - cell "firm messaged Blue Bottle Coffee"
+              - cell "message_sent"
+              - cell "Jul 21, 2026"
+            - row "Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing deadline_approaching Jul 21, 2026":
+              - cell "Blue Bottle Coffee filing deadline is 2 days out with 3 documents missing"
+              - cell "deadline_approaching"
+              - cell "Jul 21, 2026"
+            - row "Marisol Rivera replied about the outstanding 1099-NECs message_sent Jul 20, 2026":
+              - cell "Marisol Rivera replied about the outstanding 1099-NECs"
+              - cell "message_sent"
+              - cell "Jul 20, 2026"
+            - row "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf) upload_received Jul 20, 2026":
+              - cell "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf)"
+              - cell "upload_received"
+              - cell "Jul 20, 2026"
+            - row "Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf) upload_received Jul 19, 2026":
+              - cell "Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf)"
+              - cell "upload_received"
+              - cell "Jul 19, 2026"
+            - row "Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf) upload_received Jul 19, 2026":
+              - cell "Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf)"
+              - cell "upload_received"
+              - cell "Jul 19, 2026"
+            - row "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf) upload_received Jul 18, 2026":
+              - cell "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf)"
+              - cell "upload_received"
+              - cell "Jul 18, 2026"
+            - row "Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf) upload_received Jul 17, 2026":
+              - cell "Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf)"
+              - cell "upload_received"
+              - cell "Jul 17, 2026"
+        - iframe
+- button "AI agent"
+- alert
