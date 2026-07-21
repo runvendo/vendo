@@ -19,7 +19,7 @@ import {
   scriptedLanguageModel,
   type ScriptedModelCall,
 } from "./testing/index.js";
-import { instructionRequiresServedApp, instructionRequiresServer, modelEngine } from "./engine.js";
+import { instructionRequiresServedApp, instructionRequiresServer, modelEngine, V4_EXEMPLARS, V4_EXEMPLAR_TOOLS } from "./engine.js";
 import { fakeBoxSandbox } from "./testing/fake-box.js";
 
 const ctx: RunContext = {
@@ -159,6 +159,82 @@ describe("generation engine through createApps", () => {
     expect(capturedPrompt).toContain('"examples": [');
     expect(capturedPrompt).toContain('{\\"label\\":\\"Revenue\\",\\"value\\":\\"$42k\\",\\"trend\\":12}');
     expect(capturedPrompt).toContain('you MUST use a source:"host" node with its exact name and props schema');
+  });
+
+  it("includes the current date in create and edit prompts (M9: the model hardcodes a guessed year without a clock)", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const prompts: string[] = [];
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(
+        (call) => {
+          prompts.push(promptText(call));
+          return validCreate();
+        },
+        (call) => {
+          prompts.push(promptText(call));
+          return '<Edit><Set id="metriccard-1" value="$84k"/></Edit>';
+        },
+      ),
+    });
+
+    const original = await runtime.create({ prompt: "my largest transactions this year" }, ctx);
+    await runtime.edit(original.id, "only show this month", ctx);
+
+    expect(prompts[0]).toContain(`CURRENT DATE: ${today}`);
+    expect(prompts.at(-1)).toContain(`CURRENT DATE: ${today}`);
+  });
+
+  describe("v4 create contract (pipeline.promptRewrite)", () => {
+    it("selects the rewritten contract only under the flag", async () => {
+      const prompts: string[] = [];
+      const make = (promptRewrite: boolean) => createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools,
+        catalog,
+        model: scriptedLanguageModel((call) => {
+          prompts.push(promptText(call));
+          return validCreate();
+        }),
+        pipeline: { promptRewrite },
+      });
+
+      await make(true).create({ prompt: "Dashboard" }, ctx);
+      await make(false).create({ prompt: "Dashboard" }, ctx);
+
+      expect(prompts[0]).toContain("<building_great_apps>");
+      expect(prompts[0]).toContain("<examples>");
+      expect(prompts[0]).toContain("Claims tell the truth");
+      expect(prompts[0]).toContain(`CURRENT DATE: ${new Date().toISOString().slice(0, 10)}`);
+      expect(prompts[1]).not.toContain("<building_great_apps>");
+      expect(prompts[1]).toContain("WIRE DIALECT");
+    });
+
+    // A broken example teaches broken apps: every exemplar must survive the
+    // REAL create path (compile + full validation) against its fictional host.
+    it.each(V4_EXEMPLARS.map((exemplar) => [exemplar.title, exemplar] as const))(
+      "exemplar %s compiles and validates",
+      async (_title, exemplar) => {
+        const withTools = createApps({
+          store: memoryStore(),
+          guard: guardFixture(),
+          tools: {
+            async descriptors() { return V4_EXEMPLAR_TOOLS.map((tool) => ({ ...tool })); },
+            async execute() { return { status: "error", error: { code: "not-found", message: "fictional" } }; },
+          },
+          catalog: [],
+          model: scriptedLanguageModel(() => exemplar.wire),
+          pipeline: { structuredRepair: false },
+        });
+        await expect(withTools.create({ prompt: exemplar.request }, ctx)).resolves.toMatchObject({
+          name: expect.any(String),
+        });
+      },
+    );
   });
 
 

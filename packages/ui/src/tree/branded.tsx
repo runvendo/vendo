@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import type { BRANDED_COMPONENT_NAMES } from "@vendoai/core";
+import { applyFormat, type ValueFormat } from "../kit/format.js";
 
 type PrimitiveAction = () => unknown;
 type PrimitiveValue = string | number | boolean | null | undefined;
@@ -458,6 +459,12 @@ export function Badge({ label, tone = "neutral", children }: PropsWithChildren<B
 export interface StatProps {
   label: PrimitiveValue;
   value?: PrimitiveValue;
+  /** v4 — value-tier token (money takes cents), same union as a DataTable
+   *  column. Additive: absent means the legacy raw rendering, so stored apps
+   *  render byte-identically. Root cause fix for the raw-cents stat-tile
+   *  class: the Kit Stat's name is shadowed by this legacy one in tree wire,
+   *  so this was the only stat surface with no semantic formatting path. */
+  format?: ValueFormat;
   trend?: PrimitiveValue;
   prefix?: PrimitiveValue;
   suffix?: PrimitiveValue;
@@ -465,7 +472,8 @@ export interface StatProps {
 }
 
 /** Branded metric summary with optional accent or danger emphasis. */
-export function Stat({ label, value, trend, prefix, suffix, tone = "default" }: StatProps) {
+export function Stat({ label, value, format, trend, prefix, suffix, tone = "default" }: StatProps) {
+  const formattedValue = format === undefined || format === "text" ? undefined : applyFormat(value, format);
   const emphasis = tone === "accent"
     ? "var(--vendo-color-accent, #111111)"
     : tone === "danger"
@@ -501,7 +509,10 @@ export function Stat({ label, value, trend, prefix, suffix, tone = "default" }: 
           lineHeight: 1.12,
         }}
       >
-        {content(prefix)}{content(value, "—")}{content(suffix)}
+        {/* undefined = no format set (legacy raw rendering, byte-identical);
+            null = format set but unrenderable — the placeholder, NEVER the
+            raw value ("$NaN"/pre-formatted strings must not ship). */}
+        {content(prefix)}{formattedValue === undefined ? content(value, "—") : formattedValue ?? "—"}{content(suffix)}
       </strong>
       {trend !== undefined && trend !== null ? (
         <span style={{ color: "var(--vendo-color-muted, #6b6b76)", fontSize: "0.8em", lineHeight: 1.35 }}>
