@@ -71,8 +71,11 @@ commands, and rules below don't survive paraphrase.
    npx vendo login --wait 90
    ```
 
-   Run it BARE — never pass `--email`, a positional email, or any identity
-   hint. You do not know which account your human wants; they sign in as
+   Run this step ALONE — never batched in parallel with other commands — and
+   the moment the URL and code print, STOP and put both in your very next
+   message to your human: they cannot see your shell. Do not start other
+   work until you have relayed them. Run it BARE — never pass `--email`, a
+   positional email, or any identity hint. You do not know which account your human wants; they sign in as
    whoever they choose on the approval page, and a guessed hint (from git
    config or anywhere else) is an assumption, not a fact. The first run
    prints an approval URL and code; relay both to your human so
