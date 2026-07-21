@@ -33,15 +33,31 @@ commands, and rules below don't survive paraphrase.
    ([Express & other runtimes quickstart](/quickstart#wire-the-express-adapter))
    and tell your human detection did not apply.
 
-3. **Install the package.**
+3. **Install the package, then verify what actually resolved.**
 
    ```bash
    npm install vendoai
+   npx vendo --version   # must be >= 0.4.0
    ```
 
-   `vendoai` is a thin alias of `@vendoai/vendo`; see the
-   [quickstart](/quickstart) for the full picture (including the
-   release-cooldown gotcha right after a Vendo release).
+   `vendoai` is a thin alias of `@vendoai/vendo`. The version check is not
+   optional: stale placeholder versions (0.1.x) exist on npm, and package
+   managers with a release-age cooldown (pnpm 11 holds new releases for a
+   day by default via `minimumReleaseAge`; npm's `min-release-age` is
+   opt-in) will SILENTLY resolve a fresh Vendo release to that stale
+   version — or to nothing. Everything this playbook uses (`init --agent`,
+   `vendo login`, `doctor --json`) does not exist there. If the version is
+   old or missing, exclude Vendo from the cooldown and reinstall:
+
+   ```yaml
+   # pnpm-workspace.yaml
+   minimumReleaseAgeExclude:
+     - vendoai
+     - "@vendoai/*"
+   ```
+
+   (npm: unset `min-release-age` for this install, or pin the exact latest
+   version.) Re-run the version check before continuing.
 
 4. **Run init with value flags.** Every wizard question has a flag, so a
    non-interactive run never hangs on a prompt. Answer auth
