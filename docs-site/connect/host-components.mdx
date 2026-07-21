@@ -38,19 +38,26 @@ object keys, so there is no second client-side map to keep in sync:
 import { createVendo } from "@vendoai/vendo/server";
 import type { ComponentRegistry } from "@vendoai/core";
 import { z } from "zod";
-import { SpendingDonut } from "@/components/charts/spending-donut";
+import {
+  SpendingDonut
+} from "@/components/charts/spending-donut";
 
 const registry = {
   MapleSpendingDonut: {
     component: SpendingDonut,
     description:
-      "Category breakdown of spending. Use when the user asks to see spend by category.",
+      "Category breakdown of spending. " +
+      "Use when the user asks to see spend by category.",
     props: z.object({
-      categories: z.array(z.object({ label: z.string(), amount: z.number() })),
+      categories: z.array(
+        z.object({ label: z.string(), amount: z.number() })
+      ),
       currency: z.string().default("USD"),
     }),
     examples: [
-      '{ "categories": [{ "label": "Groceries", "amount": 412.55 }], "currency": "USD" }',
+      '{ "categories":' +
+        ' [{ "label": "Groceries", "amount": 412.55 }],' +
+        ' "currency": "USD" }',
     ],
   },
 } satisfies ComponentRegistry;
