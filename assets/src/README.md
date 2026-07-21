@@ -1,0 +1,1 @@
+These are the editable sources for the README brand assets, with live `<text>` nodes so they are easy to open and tweak in a vector editor or by hand. The shipped copies in `assets/` have all text converted to paths so rendering does not depend on any installed font. After editing a file here, regenerate the shipped versions with `node scripts/readme-assets-build.mjs`.

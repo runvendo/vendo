@@ -1,0 +1,20 @@
+<svg viewBox="0 0 1280 240" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="fblur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="28"/></filter>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E0B1A"/><stop offset="1" stop-color="#0E0B1A" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="1280" height="240" fill="#0E0B1A"/>
+  <g filter="url(#fblur)">
+    <ellipse cx="240" cy="250" rx="180" ry="90" fill="#6C3BFF" opacity="0.5"><animate attributeName="cy" values="250;225;250" dur="7s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="520" cy="265" rx="200" ry="100" fill="#A78BFA" opacity="0.35"><animate attributeName="cy" values="265;235;265" dur="9s" begin="1s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="800" cy="255" rx="190" ry="95" fill="#6C3BFF" opacity="0.45"><animate attributeName="cy" values="255;230;255" dur="8s" begin=".5s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="1080" cy="265" rx="200" ry="100" fill="#A78BFA" opacity="0.4"><animate attributeName="cy" values="265;240;265" dur="10s" begin="1.5s" repeatCount="indefinite"/></ellipse>
+  </g>
+  <rect width="1280" height="140" fill="url(#fade)"/>
+  <text x="640" y="108" font-family="Onest" font-weight="800" font-size="38" letter-spacing="-0.03em" fill="#FFFFFF" text-anchor="middle">Shaped to every customer.</text>
+  <g transform="translate(524,138)">
+    <rect width="232" height="40" rx="20" fill="#FFFFFF"/>
+    <text x="116" y="25" font-family="Geist Mono" font-size="13.5" font-weight="600" fill="#0E0B1A" text-anchor="middle">★ Star runvendo/vendo</text>
+  </g>
+  <text x="640" y="212" font-family="Geist Mono" font-size="12" fill="#8B879B" text-anchor="middle">Apache-2.0 · docs.vendo.run · vendo.run · Backed by Y Combinator</text>
+</svg>
