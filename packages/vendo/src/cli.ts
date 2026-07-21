@@ -42,6 +42,7 @@ Options:
   --email <address>          Login only: pre-fill the approval page (login hint)
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
+  --engine <name>            Init only: pin the AI-polish engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
   --model-import <specifier> Refine only: module exporting the host's ai-SDK model
@@ -73,11 +74,12 @@ function options(args: string[], name: string): string[] {
 }
 
 const INIT_FLAGS = new Set(["--agent", "--yes", "--force", "--byo", "--ai-polish"]);
-const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme"];
+const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "--engine"];
 /** Agent-install-dx: every init wizard question has a value-flag answer; a
     bad value fails as loudly as an unknown flag, with the valid choices. */
 const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
 const INIT_FRAMEWORK_VALUES = ["next", "express"];
+const INIT_ENGINE_VALUES = ["claude", "codex", "npx"];
 const EXTRACT_FLAGS = new Set(["--force"]);
 const EXTRACT_VALUE_OPTIONS = ["--apply"];
 const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
@@ -184,6 +186,10 @@ export async function main(argv: string[]): Promise<number> {
     if (cloudKey !== undefined && !isVendoKey(cloudKey)) {
       problems.push("--cloud-key must be a Vendo Cloud key (vnd_ + 40 hex; `vendo login` issues one)");
     }
+    const engine = option(args, "--engine");
+    if (engine !== undefined && !INIT_ENGINE_VALUES.includes(engine)) {
+      problems.push(`--engine must be one of ${INIT_ENGINE_VALUES.join(", ")} (example: vendo init --engine codex)`);
+    }
     if (cloudKey !== undefined && args.includes("--byo")) {
       problems.push("--cloud-key and --byo answer the same question — pass one or the other");
     }
@@ -206,6 +212,7 @@ export async function main(argv: string[]): Promise<number> {
       ...(cloudKey === undefined ? {} : { cloudKey }),
       ...(args.includes("--byo") ? { byo: true } : {}),
       ...(args.includes("--ai-polish") ? { aiPolish: true } : {}),
+      ...(engine === undefined ? {} : { engine }),
       ...(themePairs.length === 0 ? {} : {
         themeAnswers: Object.fromEntries(themePairs.map((pair) => {
           const at = pair.indexOf("=");

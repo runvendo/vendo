@@ -1,6 +1,7 @@
 import type { AppDocument, PermissionGrant, Principal } from "@vendoai/core";
 import { appStore, createStore, grantStore } from "@vendoai/store";
 import { describe, expect, it, vi } from "vitest";
+import { CLI_VERSION } from "../shared.js";
 import { CloudError, cloudFetch } from "./client.js";
 import { readLocalProject, runDeploy } from "./deploy.js";
 
@@ -103,7 +104,7 @@ describe("cloud deploy", () => {
       method: "POST",
       headers: {
         accept: "application/json",
-        "user-agent": "vendo-cli/0.3.0",
+        "user-agent": `vendo-cli/${CLI_VERSION}`,
         "content-type": "application/json",
         authorization: "Bearer vnd_test",
         "x-vendo-deployment-host": expect.any(String),

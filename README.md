@@ -25,17 +25,21 @@ npx vendo init
 
 Paste this inside your app's repo:
 
+<!-- Canonical prompt text: vendo-web lib/prompts.ts (mirrored by the docs
+     AgentPrompt cards). Change it there first. -->
+
 ```text
 Install Vendo in this repo. Read https://vendo.run/agents.md and follow
-it exactly. Use `vendo init` for scaffolding. Don't hand-write what it
-generates. Ask me before creating any account or key. You're done when
-`vendo doctor --json` reports all green. Then ask me whether I would like to
+it exactly. Ask me before creating any account or key. You're done when
+`vendo doctor --json` reports all green. Then ask me whether I'd like to
 star runvendo/vendo to support the project.
 ```
 
 The playbook behind that URL walks the agent through detection, `vendo init`
 value flags, host-auth wiring, and the `vendo doctor --json` gate, where every
-error code links to its exact fix.
+error code links to its exact fix. Already have an agent (AI SDK or Mastra)?
+Use the prompt on [existing agents](https://docs.vendo.run/existing-agents.md)
+instead — it adds Vendo's guarded tools to your loop without replacing it.
 
 `@vendoai/vendo` is the default composition. The `vendoai` package is a thin
 alias. Install individual blocks when you want to compose Vendo yourself.
@@ -108,8 +112,8 @@ reviewable `.vendo/` directory and leaves the PGlite data directory ignored.
 Run `vendo doctor` to check wiring and probe `/status`. Run `vendo sync` in
 build and development flows to refresh extracted tools and remix baselines.
 
-Agents get the same journey machine-readable: the staged playbook at
-[docs.vendo.run/install.md](https://docs.vendo.run/install.md) (with
+Agents get the same journey machine-readable: the playbook at
+[vendo.run/agents.md](https://vendo.run/agents.md) (with
 [llms.txt](https://docs.vendo.run/llms.txt) indexing every docs page),
 `vendo init --agent` for a read-only JSON plan carrying extracted tools and
 risk recommendations, `vendo sync --json`, and a `vendo-setup` skill shipped

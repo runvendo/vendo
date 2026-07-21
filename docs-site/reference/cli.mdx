@@ -52,6 +52,14 @@ Options:
   `--byo` declines the Cloud offer (bring your own model key).
 - `--ai-polish` consents to the AI pass non-interactively: tool judgment
   (descriptions, risk, brief) and theme-slot filling, one consent for both.
+- `--engine <claude|codex|npx>` pins which engine runs the AI pass instead of
+  first-available (`claude` = Claude Agent SDK or the `claude` CLI, `codex` =
+  the `codex` CLI, `npx` = the npx-fetched engine on Vendo Cloud fuel). A
+  pinned engine that is not available skips the AI pass with one loud line —
+  it never falls back to a different provider. Interactively, when more than
+  one engine is available, the consent question itself becomes a pick (your
+  source goes to the provider you choose), so the flag is mostly for
+  unattended runs.
 - `--theme <slot=value>` overrides a theme slot value directly (repeatable).
 - `--force` regenerates Vendo-owned files under `.vendo/`. It does not replace
   existing host source files.

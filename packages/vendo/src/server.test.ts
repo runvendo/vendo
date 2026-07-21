@@ -15,6 +15,7 @@ import {
 import type { SandboxAdapter } from "@vendoai/apps";
 import type { Connector } from "@vendoai/actions";
 import type { ConnectionsService } from "./connections.js";
+import { VERSION as WIRE_VERSION } from "./wire/shared.js";
 import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
 import { createHmac, randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
@@ -365,7 +366,7 @@ describe("09 §3 public wire", () => {
     const status = await vendo.handler(request("GET", "/status"));
     expect(await status.json()).toEqual({
       posture: "unconfigured",
-      version: "0.3.0",
+      version: WIRE_VERSION,
       blocks: {
         store: true,
         agent: true,

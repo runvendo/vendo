@@ -9,7 +9,7 @@ Vendo embeds an agent inside a host product: it extracts the host's API as
 tools, renders generated UI in a sandboxed brand-native surface, and acts as
 the signed-in user. This skill installs and verifies Vendo in a host repo.
 
-The canonical staged playbook lives at https://docs.vendo.run/install.md —
+The canonical agent playbook lives at https://vendo.run/agents.md —
 fetch it when you need more detail than this skill carries.
 
 ## Stage 1 — base install

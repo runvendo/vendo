@@ -25,9 +25,23 @@ npm install @vendoai/vendo
 npx vendo init
 ```
 
+<Note>
+  Right after a Vendo release, package managers with a release cooldown
+  (pnpm 11 holds new versions for one day by default via
+  `minimumReleaseAge`; npm's `min-release-age` is opt-in) may resolve to
+  nothing and fail with "no versions available". Either wait out your
+  cooldown or exclude Vendo in `pnpm-workspace.yaml`:
+
+  ```yaml
+  minimumReleaseAgeExclude:
+    - vendoai
+    - "@vendoai/*"
+  ```
+</Note>
+
 <AgentPrompt
   lead={<>Paste this prompt and it runs the whole install against the <a href="/agents">agent playbook</a>.</>}
-  prompt={"Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Use `vendo init` for scaffolding. Don't hand-write what it generates. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green. Then ask me whether I would like to star runvendo/vendo to support the project."}
+  prompt={"Install Vendo in this repo. Read https://vendo.run/agents.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green. Then ask me whether I'd like to star runvendo/vendo to support the project."}
 />
 
 Init asks nothing on the happy path. It detects your framework and auth from

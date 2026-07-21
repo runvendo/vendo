@@ -7,6 +7,7 @@ import { claudeHarness } from "./claude-harness.js";
 import { codexCliHarness } from "./codex-cli-harness.js";
 import { parseDraft, type ExtractionHarness } from "./harness.js";
 import { npxEngineHarness } from "./npx-engine-harness.js";
+import { plainSelect, type SelectOption } from "../pretty.js";
 import {
   BRIEF_TEMPLATE,
   runStagedExtraction,
@@ -185,9 +186,15 @@ export interface AiExtractionOptions {
       when non-interactive (the flag IS the answer). */
   consent?: boolean;
   force?: boolean;
+  /** --engine: pin the rung family (claude | codex | npx) instead of
+      first-available. An unavailable pin skips loudly — never a fallback. */
+  engine?: string;
   /** Seams (tests / future harnesses). */
   harnesses?: ExtractionHarness[];
   confirm?: (question: string, defaultYes: boolean) => Promise<boolean>;
+  /** The multi-engine consent select (init passes pretty.select); default is
+      the plain numbered select. Resolves to an option value or "skip". */
+  choose?: (question: string, options: SelectOption[], defaultIndex: number) => Promise<string>;
   interactive?: boolean;
   /** Optional theme-stage input (init's exact-only summary, projected) — see
       `StagedExtractionInput.theme`. Omitted when init has no theme pass to
@@ -197,12 +204,24 @@ export interface AiExtractionOptions {
 
 /** The telemetry `engine` enum value for each ladder rung (both Claude rungs
     are the same engine reached two ways). Unlisted ids (test seams) map to
-    undefined — the caller's "none" default covers them. */
+    undefined — the caller's "none" default covers them. Distinct from
+    ENGINE_FAMILIES below: telemetry's closed enum says "npx-engine" while the
+    user-facing `--engine` family is "npx". */
 const ENGINE_BY_HARNESS_ID: Record<string, "claude" | "codex" | "npx-engine"> = {
   "claude-agent-sdk": "claude",
   "claude-cli": "claude",
   "codex-cli": "codex",
   "npx-engine": "npx-engine",
+};
+
+/** Rung id → user-facing engine family (`--engine` values). The Agent SDK and
+    the claude CLI are one family: same provider, same credential story. An
+    unknown id (test fakes, future rungs) is its own family. */
+const ENGINE_FAMILIES: Record<string, string> = {
+  "claude-agent-sdk": "claude",
+  "claude-cli": "claude",
+  "codex-cli": "codex",
+  "npx-engine": "npx",
 };
 
 /** init's AI extraction step. Never changes init's exit code. */
@@ -236,33 +255,74 @@ export async function runAiExtraction(
   // Ordered engine ladder (install-dx: init-selfcontained-engine, Task 2/4):
   // Agent SDK -> claude CLI -> codex CLI -> npx-fetched engine. A rung whose
   // availability() is null (binary missing or present-but-unauthenticated) is
-  // skipped and the next rung is tried; the first non-null credential wins.
-  // The npx rung is last on purpose: it's the only one with a real first-run
-  // cost (an npm fetch), so every rung that can run for free (something
-  // already installed) gets first refusal.
+  // skipped; ladder order encodes preference (the npx rung is last on purpose:
+  // it's the only one with a real first-run cost, an npm fetch, so every rung
+  // that can run for free gets first refusal). Availability is checked across
+  // the WHOLE ladder (every check is local and cheap) so `--engine` can pin a
+  // family and the interactive consent can offer a choice when there is one;
+  // the first available rung of a family speaks for that family.
   const harnesses = options.harnesses
     ?? [claudeHarness(), claudeCliHarness(), codexCliHarness(), npxEngineHarness()];
-  let chosen: { harness: ExtractionHarness; credential: string } | null = null;
+  const available: Array<{ harness: ExtractionHarness; credential: string; family: string }> = [];
   for (const harness of harnesses) {
+    const family = ENGINE_FAMILIES[harness.id] ?? harness.id;
+    if (available.some((entry) => entry.family === family)) continue;
     const credential = await harness.availability({ root, env });
-    if (credential !== null) {
-      chosen = { harness, credential };
-      break;
-    }
+    if (credential !== null) available.push({ harness, credential, family });
   }
-  if (chosen === null) {
+  if (available.length === 0) {
     output.log("AI polish: unavailable — needs Claude Code installed (`npm install -g @anthropic-ai/claude-code`) or @anthropic-ai/claude-agent-sdk resolvable, plus a Claude Code login or ANTHROPIC_API_KEY; or the `codex` CLI installed, plus a codex login (`codex login`) or OPENAI_API_KEY; or a VENDO_API_KEY (`vendo login`), which fetches Claude Code on the fly via npx. Extractor defaults stand; re-run `vendo init` once set up.");
     return { ran: false };
   }
 
-  const confirm = options.confirm ?? askYesNo;
-  const consented = options.consent === true || await confirm(
-    `Let ${chosen.credential} read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to your model provider under your account.`,
-    true,
-  );
-  if (!consented) {
-    output.log("Skipped — extractor defaults stand; re-run `vendo init` any time to add the AI polish.");
-    return { ran: false };
+  // --engine pins a family. An unavailable pin never falls back to another
+  // provider (the pin is usually a privacy/policy choice about where source
+  // goes) — one loud line naming what IS available, exit code untouched.
+  let chosen: { harness: ExtractionHarness; credential: string };
+  if (options.engine !== undefined) {
+    const pinned = available.find((entry) => entry.family === options.engine);
+    if (pinned === undefined) {
+      const alternatives = available
+        .map((entry) => `\`--engine ${entry.family}\` (${entry.credential})`)
+        .join(", or ");
+      output.log(`AI polish: \`--engine ${options.engine}\` requested but that engine isn't available on this machine. Available: ${alternatives}. Extractor defaults stand; re-run \`vendo init\` once it's set up.`);
+      return { ran: false };
+    }
+    chosen = pinned;
+  } else {
+    chosen = available[0]!;
+  }
+
+  if (options.consent !== true) {
+    if (options.engine === undefined && available.length > 1) {
+      // Several engines: the SAME single consent question, as a pick-with-
+      // default instead of yes/no — never a second question.
+      const choose = options.choose ?? plainSelect;
+      const picked = await choose(
+        "Let a coding agent read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to the chosen provider under your account.",
+        [
+          ...available.map((entry) => ({ value: entry.family, label: entry.credential, hint: `--engine ${entry.family}` })),
+          { value: "skip", label: "Skip — keep extractor defaults" },
+        ],
+        0,
+      );
+      const selected = available.find((entry) => entry.family === picked);
+      if (selected === undefined) {
+        output.log("Skipped — extractor defaults stand; re-run `vendo init` any time to add the AI polish.");
+        return { ran: false };
+      }
+      chosen = selected;
+    } else {
+      const confirm = options.confirm ?? askYesNo;
+      const consented = await confirm(
+        `Let ${chosen.credential} read this codebase to draft tool descriptions, review risk, write the product brief, and fill unresolved theme slots? Source goes to your model provider under your account.`,
+        true,
+      );
+      if (!consented) {
+        output.log("Skipped — extractor defaults stand; re-run `vendo init` any time to add the AI polish.");
+        return { ran: false };
+      }
+    }
   }
 
   let appName = "app";
