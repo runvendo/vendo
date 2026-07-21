@@ -88,6 +88,14 @@
 
 ## Follow-ups
 
+- Scope model/gateway credentials inside the corpus harness to the init child
+  only: today the harness's clone bootstrap (third-party `pnpm install`,
+  lifecycle scripts) inherits the step env, so `ANTHROPIC_API_KEY` (pre-existing,
+  ai-matrix legs) and now `VENDO_API_KEY` (npx-engine leg) are visible to
+  untrusted install scripts. Both keys are metered/revocable CI credentials and
+  the exposure class predates this program, but the harness should strip them
+  from bootstrap commands and inject them only into the `vendo init` subprocess.
+  (Raised by cubic on PR #457.)
 - Remove the corpus harness's `@ai-sdk/anthropic` injection into cloned repos
   (see `corpus/harness` bootstrap/injection code) once the npx-engine rung is
   proven live in a nightly run (`npx-engine-leg` in
