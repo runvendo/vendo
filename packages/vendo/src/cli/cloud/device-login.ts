@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { join } from "node:path";
-import { option, positionals } from "./args.js";
+import { option } from "./args.js";
 import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
 import { deletePendingClaim, readPendingClaim, writePendingClaim } from "./pending-claim.js";
@@ -173,13 +173,15 @@ export async function runDeviceLogin(
       userCode = resume.user_code;
       verificationUriComplete = resume.verification_uri_complete;
     } else {
-      // Optional email hint — shown to the human on the approval page.
-      const email = option(args, "--email") ?? positionals(args, ["--api-url", "--email", "--wait"])[0];
+      // No identity hint by design: the human signs in as whoever they choose
+      // on the approval page. A guessed login_hint (git email, positional arg)
+      // is an assumption that mis-attributes the claim, so the ceremony never
+      // sends one.
       const claim = await postJson(
         fetchImpl,
         `${base}${CLAIM_PATH}`,
         "application/json",
-        JSON.stringify(email === undefined ? {} : { login_hint: email }),
+        "{}",
       );
       if (claim.status !== 200) {
         const envelope = claim.body as { error?: { message?: unknown } } | null;

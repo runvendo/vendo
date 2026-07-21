@@ -68,7 +68,7 @@ describe("runDeviceLogin", () => {
     ]);
     const messages = output();
 
-    const exit = await runDeviceLogin(["dev@example.com", "--api-url", "https://console.test"], {
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
       output: messages.sink,
       fetchImpl,
       root,
@@ -81,9 +81,9 @@ describe("runDeviceLogin", () => {
     });
 
     expect(exit).toBe(0);
-    // Claim request carried the login hint, JSON-encoded.
+    // Claim request carries NO identity hint — the human chooses the account.
     expect(requests[0].url).toBe("https://console.test/api/v1/agent/claim");
-    expect(JSON.parse(requests[0].body)).toEqual({ login_hint: "dev@example.com" });
+    expect(JSON.parse(requests[0].body)).toEqual({});
     // Polls are form-encoded with the auth.md grant type + claim token.
     expect(requests[1].contentType).toContain("application/x-www-form-urlencoded");
     const poll = new URLSearchParams(requests[1].body);
