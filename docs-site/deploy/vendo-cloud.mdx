@@ -91,10 +91,9 @@ revoked key surfaces on the first real service call with
 `Invalid or revoked API key (401)`.
 
 Every key-authed call carries sanitized deployment-identity headers
-(`X-Vendo-Deployment-Host`, `X-Vendo-Deployment-Name`), so usage and
-deployments appear in the console, `vendo cloud usage`, and
-`vendo cloud deployments` from real traffic. To confirm a CI key works, make
-a real call and check the exit code.
+(`X-Vendo-Deployment-Host`, `X-Vendo-Deployment-Name`), so usage appears in
+the console and `vendo cloud usage` from real traffic. To confirm a CI key
+works, make a real call and check the exit code.
 
 ## Point at a different Vendo Cloud URL
 

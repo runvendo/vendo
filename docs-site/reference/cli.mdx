@@ -383,10 +383,10 @@ email-OTP fallback `vendo cloud login <email>` sends a 6-10 digit code,
 prompts for it, and stores the session at `~/.vendo/cloud-session.json`;
 `--token <jwt>` stores an access token instead.
 Other subcommands: `logout`, `whoami`, `orgs`, `keys` (`list`, `create`,
-`revoke`), `members`, `invite`, `deployments`, `usage`, and `billing`. Read
+`revoke`), `members`, `invite`, `usage`, and `billing`. Read
 results print as JSON. There is no validate subcommand: key problems
-surface on the first real call, and `vendo cloud usage` and
-`vendo cloud deployments` read the server-side metering from real traffic.
+surface on the first real call, and `vendo cloud usage` reads the
+server-side metering from real traffic.
 
 There is no deploy subcommand. With `VENDO_API_KEY` set, automations you
 build sync to Vendo Cloud automatically and run on Vendo's schedulers — see
