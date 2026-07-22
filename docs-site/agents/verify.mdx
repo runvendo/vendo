@@ -322,6 +322,21 @@ mount the generated `vendo/vendo-root.tsx` wrapper in the layout instead of
 importing the registry there (see [E-WIRE-004](#E-WIRE-004)); re-run
 `npx vendo init` to generate the wrapper if it is missing.
 
+### E-LIVE-007 {#E-LIVE-007}
+
+**Symptom:** `/status` reports the e2b execution venue, but `E2B_API_KEY` is
+not set for this project or the `e2b` package does not resolve from it.
+
+**Cause:** The running wire selected e2b as the sandbox venue that it cannot
+actually use — typically an `E2B_API_KEY` inherited from the shell without the
+`e2b` package installed. Server-app builds die in the unusable venue instead
+of riding the managed Cloud sandbox.
+
+**Fix:** To use e2b, install the `e2b` package and set `E2B_API_KEY` in the
+project env. To use the managed Cloud sandbox instead, remove `E2B_API_KEY`
+from the server env and keep `VENDO_API_KEY` set. Restart the dev server and
+re-run `vendo doctor`.
+
 ## Auth probes
 
 ### E-AUTH-001 {#E-AUTH-001}

@@ -113,7 +113,7 @@ function output(): { logs: string[]; errors: string[]; sink: { log(message: stri
 }
 
 function successfulProbeFetch(
-  blocks: Record<string, unknown> = { store: true, sandbox: "e2b" },
+  blocks: Record<string, unknown> = { store: true, sandbox: "cloud" },
 ): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -335,7 +335,7 @@ describe("vendo doctor", () => {
     fetchImpl.mockImplementation(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "e2b" } });
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       }
       if (url.endsWith("/doctor/present") || url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/machines")) {
@@ -368,7 +368,7 @@ describe("vendo doctor", () => {
     fetchImpl.mockImplementation(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "e2b" } });
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       }
       if (url.endsWith("/doctor/present") || url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/machines")) {
@@ -387,7 +387,7 @@ describe("vendo doctor", () => {
     expect(messages.logs.join("\n")).toContain("schedule caller configured");
   });
 
-  it.each(["e2b", "cloud", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
+  it.each(["cloud", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
     const messages = output();
     expect(await doctor({
       targetDir: await healthy(),
@@ -396,6 +396,53 @@ describe("vendo doctor", () => {
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
     expect(messages.logs).toContain(`ok: execution venue: ${sandbox}`);
+  });
+
+  // 0.4.4 defect C — an e2b venue is blessed only when it is USABLE: key set
+  // and SDK resolvable from the project. "ok: execution venue: e2b" on a
+  // keyless host certified a composition whose every server-app build died
+  // (the venue ladder had picked e2b over the Cloud sandbox).
+  it("reports a lit e2b execution venue when the key is set and the SDK resolves", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
+      env: { E2B_API_KEY: "e2b_key" },
+      e2bResolvable: () => true,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.logs).toContain("ok: execution venue: e2b");
+  });
+
+  it("fails when the wire selected e2b but no E2B_API_KEY is set", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
+      env: {},
+      e2bResolvable: () => true,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors).toContain(
+      "broken: the running wire selected the e2b execution venue but E2B_API_KEY is not set; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor",
+    );
+  });
+
+  it("fails when the wire selected e2b but the SDK does not resolve from the project", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
+      env: { E2B_API_KEY: "e2b_key" },
+      e2bResolvable: () => false,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors).toContain(
+      "broken: the running wire selected the e2b execution venue but the e2b package does not resolve from this project; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor",
+    );
   });
 
   it("warns with actionable guidance when the execution venue is dark", async () => {
@@ -565,7 +612,7 @@ describe("vendo doctor", () => {
 function probeFetchWithTurn(reply = "I can respond.", options: { errorFrame?: boolean } = {}): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "e2b" } });
+    if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
     if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
     if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
     if (url.endsWith("/threads") && init?.method === "POST") {
@@ -699,7 +746,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       const url = String(input);
       if (url.endsWith("/status")) {
         if (!serverUp) throw new Error("connection refused");
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "e2b" } });
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       }
       if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
@@ -738,7 +785,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       const url = String(input);
       if (url.endsWith("/status")) {
         if (!serverUp) throw new Error("connection refused");
-        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "e2b" } });
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       }
       if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
@@ -1107,7 +1154,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url === "http://localhost:3000/") return new Response("boom", { status: 500 });
-      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "e2b" } });
+      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
       return Response.json({}, { status: 404 });
@@ -1129,7 +1176,7 @@ describe("vendo doctor error codes + fix_refs", () => {
     const root = await healthy();
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: "0.4.1", blocks: { store: true, sandbox: "e2b" } });
+      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: "0.4.1", blocks: { store: true, sandbox: "cloud" } });
       if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
       return Response.json({}, { status: 404 });
@@ -1200,7 +1247,7 @@ function discoveryFetch(challenge?: string): typeof fetch {
   return vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     if (url.endsWith("/api/vendo/status")) {
-      return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { mcp: true, sandbox: "e2b" } });
+      return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { mcp: true, sandbox: "cloud" } });
     }
     if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
     if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });

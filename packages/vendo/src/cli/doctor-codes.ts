@@ -34,6 +34,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-LIVE-004": "no execution venue is configured",
   "E-LIVE-005": "the host /status does not report an execution venue (version skew)",
   "E-LIVE-006": "the app's root page returns a server error while the wire answers",
+  "E-LIVE-007": "the selected e2b execution venue is unusable (E2B_API_KEY or the e2b package is missing)",
   "E-AUTH-001": "present credentials did not reach the host API",
   "E-AUTH-002": "the present credential probe is unreachable",
   "E-AUTH-003": "the present credential probe cannot run while the dev server is down",

@@ -116,14 +116,56 @@ const networkOptions = (allowedDomains: string[] | undefined, allTraffic: string
     ? { allowInternetAccess: true as const }
     : { network: { allowOut: [...allowedDomains], denyOut: [allTraffic] } };
 
-/** True when the optional `e2b` SDK resolves from this package, so callers can
-    avoid wiring an adapter whose first create() would die on a missing module.
-    Runtimes without `import.meta.resolve` (bundlers inline the dependency) are
-    treated as available. */
-export const e2bInstalled = (): boolean => {
-  if (typeof import.meta.resolve !== "function") return true;
+/** True when the optional `e2b` SDK is actually loadable from this runtime,
+    so callers can avoid wiring an adapter whose first create() would die on a
+    missing module. Because loadE2b routes through a mutable specifier, NO
+    bundler ever inlines the SDK — the runtime's own module resolution is the
+    only truth — so the probe must test USABILITY, not importability: ask
+    Node's require.resolve first (authoritative even inside a server bundle,
+    where the emulated `import.meta` carries no `resolve` — Turbopack's shim
+    made the old "no resolve ⇒ bundler inlined it ⇒ available" fallback claim
+    e2b on hosts without the SDK, flipping the venue ladder away from the
+    Cloud sandbox: 0.4.4 defect C), then real `import.meta.resolve` (pure-ESM
+    Node without process.getBuiltinModule), and read an unverifiable runtime
+    as NOT installed — a dynamic import of the bare specifier would fail there
+    anyway. The specifier parameter exists for tests. */
+export const e2bInstalled = (specifier: string = E2B_SPECIFIER): boolean => {
+  const nodeResolves = nodeResolveProbe(specifier);
+  if (nodeResolves !== undefined) return nodeResolves;
+  if (typeof import.meta.resolve === "function") {
+    try {
+      import.meta.resolve(specifier);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
+
+/** require.resolve probe via process.getBuiltinModule (Node ≥20.16) — no
+    static node:module import, so Worker/edge bundles of this module stay
+    clean. Returns undefined when this runtime has no Node resolver to ask. */
+const nodeResolveProbe = (specifier: string): boolean | undefined => {
+  const proc = (globalThis as {
+    process?: { getBuiltinModule?: (id: string) => unknown; cwd?: () => string };
+  }).process;
+  if (typeof proc?.getBuiltinModule !== "function") return undefined;
+  let createRequire: ((from: string) => { resolve: (id: string) => string }) | undefined;
   try {
-    import.meta.resolve(E2B_SPECIFIER);
+    createRequire = (proc.getBuiltinModule("node:module") as { createRequire?: typeof createRequire } | undefined)?.createRequire;
+  } catch {
+    return undefined;
+  }
+  if (typeof createRequire !== "function") return undefined;
+  // Resolve from where the runtime import itself resolves: this module's URL
+  // (bundlers rewrite import.meta.url to the original or bundled file path —
+  // both walk up to the host's node_modules), falling back to the process cwd.
+  const base = typeof import.meta.url === "string" && import.meta.url.startsWith("file:")
+    ? import.meta.url
+    : `${proc.cwd?.() ?? ""}/__vendo-e2b-probe__.js`;
+  try {
+    createRequire(base).resolve(specifier);
     return true;
   } catch {
     return false;
