@@ -1,4 +1,5 @@
 import {
+  VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_TREE_FORMAT_V2,
   VendoError,
   checkBindingShapes,
@@ -1694,7 +1695,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // code + message, so nothing un-canned crosses to clients).
         throw new VendoError(
           error instanceof VendoError ? error.code : "validation",
-          `app build failed: ${reason}`,
+          `${VENDO_APP_BUILD_FAILED_PREFIX}: ${reason}`,
           { appId, reason, retryable, issues: detailLines },
         );
       }

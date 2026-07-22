@@ -21,6 +21,14 @@ export const VENDO_APPS_TOOL_PREFIX = "vendo_apps_";
  *  partial views through the VENDO_VIEW_STREAM bridge seam (stream-parts). */
 export const VENDO_APPS_CREATE_TOOL = "vendo_apps_create";
 
+/** 0.4.4 cert defect B — the message prefix the apps runtime stamps on a
+ *  terminally failed BUILD's error ("app build failed: <classified reason>").
+ *  The agent loop reads it to end the turn and raise the failed-build banner;
+ *  named once here so neither side string-matches the other. Only this class
+ *  ends a turn — a cheap create error (input validation, feature-flag
+ *  refusal) stays the model's to handle. */
+export const VENDO_APP_BUILD_FAILED_PREFIX = "app build failed";
+
 /** 01-core §4 */
 export type RiskLabel = "read" | "write" | "destructive";
 

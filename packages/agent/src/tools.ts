@@ -1,4 +1,5 @@
 import {
+  VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_APPS_CREATE_TOOL,
   VENDO_APPS_TOOL_PREFIX,
   VENDO_VIEW_STREAM,
@@ -14,6 +15,7 @@ import {
   type ToolOutcome,
   type ToolRegistry,
   type VendoApprovalPart,
+  type VendoBuildFailedPart,
   type VendoConnectPart,
   type VendoViewPart,
   type VendoViewStreamingToolCall,
@@ -26,7 +28,7 @@ import {
   type UIMessageStreamWriter,
 } from "ai";
 
-type VendoPart = VendoApprovalPart | VendoConnectPart | VendoViewPart;
+type VendoPart = VendoApprovalPart | VendoBuildFailedPart | VendoConnectPart | VendoViewPart;
 
 /** 03-agent §2 */
 export interface ToolBridgeOptions {
@@ -164,6 +166,24 @@ export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options
           connector: outcome.connect.connector,
           toolkit: outcome.connect.toolkit,
           message: outcome.connect.message,
+        });
+      } else if (
+        outcome.status === "error"
+        && descriptor.name === VENDO_APPS_CREATE_TOOL
+        && outcome.error.message.startsWith(VENDO_APP_BUILD_FAILED_PREFIX)
+      ) {
+        // 0.4.4 cert defect B: a terminally failed BUILD is content the user
+        // must see — the error outcome alone is model-visible only (the tray
+        // renders nothing for an output-available error result), so the turn
+        // ended (or worse, retried minutes-long doomed builds) with no banner
+        // and no reason. The message is the runtime's canned classified
+        // reason (buildFailureReason) — provider-safe by construction. Scoped
+        // to the runtime's build-failed prefix: a cheap create error (input
+        // validation, feature-flag refusal) stays the model's to handle.
+        writePart(options.writer, {
+          type: "data-vendo-build-failed",
+          toolCallId,
+          reason: outcome.error.message,
         });
       }
 
