@@ -6,7 +6,7 @@ import {
   type ToolDescriptor,
 } from "@vendoai/core";
 import { envOptOut, loadConfig, type TelemetryConfig } from "@vendoai/telemetry";
-import { cloudFetch } from "./cli/cloud/client.js";
+import { cloudKeyFetch } from "./cloud-key-fetch.js";
 
 const DEFAULT_DATA_DIR = ".vendo/data";
 const DEFAULT_BATCH_SIZE = 100;
@@ -130,8 +130,7 @@ function createMissUploader(options: {
       unrefTimer(timeout);
       try {
         const surface = await options.surface;
-        const response = await cloudFetch<{ accepted: number; duplicates: number }>("/api/v1/misses", {
-          auth: "key",
+        const response = await cloudKeyFetch<{ accepted: number; duplicates: number }>("/api/v1/misses", {
           apiKey: options.apiKey,
           env: options.env,
           fetchImpl: options.fetchImpl,
