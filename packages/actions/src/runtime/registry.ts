@@ -36,6 +36,7 @@ import {
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
 import { searchToolDescriptors, tokenize, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
+import { defaultFetch } from "@vendoai/core";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
@@ -655,7 +656,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
 
   const outcome = await (async (): Promise<ToolOutcome> => {
     try {
-      const request = config.fetch ?? globalThis.fetch;
+      const request = config.fetch ?? defaultFetch;
       const response = await request(url, {
         method,
         headers,
