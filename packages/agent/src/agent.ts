@@ -1,4 +1,6 @@
 import {
+  VENDO_APP_BUILD_FAILED_PREFIX,
+  VENDO_APPS_CREATE_TOOL,
   VendoError,
   toVendoWirePart,
   type AgentRunner,
@@ -19,6 +21,8 @@ import {
   streamText,
   type LanguageModel,
   type ModelMessage,
+  type StopCondition,
+  type ToolSet,
   type UIMessage,
 } from "ai";
 import { assembleSystemPrompt } from "./prompt.js";
@@ -301,6 +305,28 @@ function guardApprovalIds(messages: UIMessage[], toolCallIds: string[]): Approva
   return ids;
 }
 
+/** 0.4.4 cert defect B — a terminally failed app BUILD ends the turn. A build
+ *  is a minutes-long operation and its failure is deterministic for the same
+ *  ask, so letting the model auto-retry inside the turn kept the thread
+ *  streaming for up to maxSteps × build-length with nothing visible. The tool
+ *  bridge has already streamed the `data-vendo-build-failed` banner with the
+ *  classified reason by the time this fires; re-asking is the user's call
+ *  (the same resolution the BYO embed's failed vocabulary points at). */
+const buildFailedStop: StopCondition<ToolSet> = ({ steps }) => {
+  const last = steps.at(-1);
+  return last !== undefined && last.toolResults.some((result) => {
+    if (result.toolName !== VENDO_APPS_CREATE_TOOL) return false;
+    const output = result.output as { status?: unknown; error?: { message?: unknown } } | null;
+    // Scoped to the runtime's build-failed class (the canned prefix): a cheap
+    // create error (input validation, feature-flag refusal) costs seconds,
+    // stays model-visible, and the loop may recover from it.
+    return typeof output === "object" && output !== null
+      && output.status === "error"
+      && typeof output.error?.message === "string"
+      && output.error.message.startsWith(VENDO_APP_BUILD_FAILED_PREFIX);
+  });
+};
+
 function providerHistory(messages: UIMessage[]): UIMessage[] {
   return messages.map((message) => ({
     ...message,
@@ -478,7 +504,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
             model: config.model,
             messages: modelMessages,
             tools,
-            stopWhen: stepCountIs(maxSteps),
+            stopWhen: [stepCountIs(maxSteps), buildFailedStop],
             maxOutputTokens: config.context?.maxOutputTokens,
             // ENG-252 loadout: restrict what the model may pick to the current
             // loadout. `prepareStep` re-reads it each step so a tool loaded via

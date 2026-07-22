@@ -1,4 +1,4 @@
-import type { ApprovalRequest, Json, RiskLabel, VendoViewPart } from "@vendoai/core";
+import type { ApprovalRequest, Json, RiskLabel, VendoBuildFailedPart, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { useState } from "react";
 import { useVendoContext } from "../../context.js";
@@ -82,6 +82,27 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
     if (part.state !== "output-error") return null;
     const risk = risks.get(part.toolCallId) ?? "read";
     return <BuildBeat part={part} risk={risk} count={count} />;
+  }
+  if (part.type === "data-vendo-build-failed") {
+    // 0.4.4 cert defect B — a terminally failed app build is content, not
+    // progress: the turn ends right after this part, so without it the thread
+    // showed no trace of why nothing appeared. Same beat vocabulary as a
+    // failed tool call, plus the runtime's classified (provider-safe) reason.
+    const data = partData(part) as Partial<VendoBuildFailedPart>;
+    if (typeof data.reason !== "string" || data.reason.length === 0) return null;
+    return (
+      <div className="fl-buildfail" data-vendo-build-failed="">
+        <div className="fl-beat fl-beat-error">
+          <span className="fl-beat-ic fl-beat-x" aria-hidden="true">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </span>
+          <span className="fl-beat-label">Couldn&apos;t build the app</span>
+        </div>
+        <div className="fl-approval-more" role="alert">{data.reason}</div>
+      </div>
+    );
   }
   if (part.type === "data-vendo-view") {
     const data = partData(part) as Partial<VendoViewPart>;
