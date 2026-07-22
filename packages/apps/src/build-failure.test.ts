@@ -1,7 +1,7 @@
 import type { LanguageModel } from "ai";
 import type { RunContext, ToolRegistry } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildFailureReason, createApps } from "./index.js";
 import { guardFixture, memoryStore, scriptedLanguageModel } from "./testing/index.js";
 
@@ -91,6 +91,47 @@ describe("build-failure lifecycle (#492)", () => {
     const { runtime } = setup(throwingModel("boom"));
     await expect(runtime.open("app_never", context("user_ada"))).rejects.toMatchObject({ code: "not-found" });
   });
+
+  it("re-throws CARRYING the classified reason (tool outcome + wire read it from the message), and logs the failure server-side", async () => {
+    // Wave 2 (0.4.x E2E): the calling agent saw only {code:"validation",
+    // message:"model could not produce a valid app"} and the server log was
+    // silent — the reason must ride the thrown error and the operator log.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { runtime } = setup(throwingModel("boom"));
+      const rejection = await runtime.create({ prompt: "Dashboard" }, context("user_ada"))
+        .then(() => undefined, (error: unknown) => error);
+      expect(rejection).toBeInstanceOf(VendoError);
+      const thrown = rejection as VendoError;
+      expect(thrown.message).toBe("app build failed: generation failed");
+      expect(thrown.detail).toMatchObject({ reason: "generation failed", retryable: true });
+      expect((thrown.detail as { appId: string }).appId).toMatch(/^app_/);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("app build failed"));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("surfaces the dev-model's actionable no-key line in the failed record, open(), and the thrown error", async () => {
+    // 0.4.x E2E defect: with a provider key set but the @ai-sdk package
+    // missing, the surface said {"code":"validation","model could not produce
+    // a valid app"} while the actionable install line was terminal-only.
+    const line = "OPENAI_API_KEY is set but @ai-sdk/openai is not installed in this app; install it (`npm install ai@^6 @ai-sdk/openai@^3`).";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { runtime, store } = setup(throwingModel(line));
+      const ctx = context("user_ada");
+      const rejection = await runtime.create({ prompt: "Dashboard" }, ctx)
+        .then(() => undefined, (error: unknown) => error);
+      expect(rejection).toBeInstanceOf(VendoError);
+      expect((rejection as VendoError).message).toBe(`app build failed: ${line}`);
+      const rows = await store.records("vendo_apps").list({});
+      const surface = await runtime.open(rows.records[0]!.id, ctx);
+      expect(surface).toEqual({ kind: "failed", reason: line, retryable: false });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });
 
 describe("buildFailureReason", () => {
@@ -116,5 +157,23 @@ describe("buildFailureReason", () => {
     expect(buildFailureReason(new VendoError("validation", "model could not produce a valid app", [
       "model generation failed: unparseable output",
     ]))).toEqual({ reason: "generation failed", retryable: true });
+  });
+
+  it("passes the dev-model's own unavailable-credential lines through verbatim (they ARE the fix)", () => {
+    const installLine = "ANTHROPIC_API_KEY is set but @ai-sdk/anthropic is not installed in this app; install it (`npm install ai@^6 @ai-sdk/anthropic@^3`).";
+    expect(buildFailureReason(new VendoError("validation", "model could not produce a valid app", [
+      `model generation failed: ${installLine}`,
+    ]))).toEqual({ reason: installLine, retryable: false });
+    const noKeyLine = "Vendo found no model key. Set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY "
+      + "in .env.local (with the matching @ai-sdk provider installed), or run `vendo login` for a "
+      + "free dev key. Production always needs a real server-side key.";
+    expect(buildFailureReason(new Error(noKeyLine))).toEqual({ reason: noKeyLine, retryable: false });
+  });
+
+  it("never mistakes a provider key error for the dev-model class (no raw-message leak)", () => {
+    // A provider message that mentions a key must stay canned — raw provider
+    // text (which can echo key prefixes) never reaches the surface.
+    expect(buildFailureReason(new Error("Incorrect API key provided: sk-proj-123")))
+      .toEqual({ reason: "generation failed", retryable: true });
   });
 });

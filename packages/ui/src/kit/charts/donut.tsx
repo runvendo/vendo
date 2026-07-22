@@ -27,7 +27,9 @@ export function DonutChart({
   height = 220,
   emptyState = "No data to chart",
 }: DonutChartProps) {
-  const slices = data
+  // W3 — fail SOFT on missing data (a failed query resolves to undefined),
+  // the same guard the other Kit charts get via sanitizeSeries.
+  const slices = (Array.isArray(data) ? data : [])
     .map((row) => ({ name: String(row[categoryKey] ?? ""), value: row[valueKey] }))
     .filter((s) => isRenderableNumber(s.value) && (s.value as number) > 0) as Array<{ name: string; value: number }>;
   if (slices.length === 0) {

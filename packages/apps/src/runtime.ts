@@ -3,6 +3,7 @@ import {
   VendoError,
   checkBindingShapes,
   deriveShapeCard,
+  safeErrorMessage,
   validateAppDocument,
   type AppDocument,
   type AppId,
@@ -285,6 +286,15 @@ const fallbackAppName = (prompt: string): string => {
 
 const QUOTA_SIGNAL = /quota|insufficient|payment|billing|\b402\b/i;
 const TIMEOUT_SIGNAL = /time?d?\s*out|timeout|abort/i;
+/** The dev-model's own no-usable-credential lines (missing provider package /
+ *  no key at all). These are written by Vendo, not a provider — the ONE
+ *  failure class whose full message IS the honest reason, so it surfaces
+ *  verbatim instead of collapsing to "generation failed" (0.4.x E2E: the
+ *  surface said {code:"validation"} while the actionable `npm install
+ *  @ai-sdk/...` line landed only in the operator terminal). Anchored to the
+ *  exact shapes in vendo/dev-creds so a provider error that merely mentions a
+ *  key can never leak through. */
+const MODEL_UNAVAILABLE_SIGNAL = /^(?:[A-Z][A-Z0-9_]* is set but @ai-sdk\/[\w-]+ is not installed in this app|Vendo found no model key)/;
 
 /**
  * Map a generation-turn throw to the short, honest, NON-LEAKY reason persisted
@@ -308,12 +318,19 @@ export const buildFailureReason = (
   if (statusCode === 402 || (error instanceof VendoError && error.code === "cloud-required")) {
     return { reason: "quota exhausted", retryable: false };
   }
-  const text = [
+  const candidates = [
     error instanceof Error ? error.message : String(error),
     ...(error instanceof VendoError && Array.isArray(error.detail)
       ? error.detail.filter((item): item is string => typeof item === "string")
       : []),
-  ].join(" ");
+  ];
+  // Vendo's own dev-model unavailable lines pass through verbatim (they are
+  // the actionable fix), stripped of the engine's stream-catch prefix.
+  const unavailable = candidates
+    .map((candidate) => candidate.replace(/^model generation failed: /, ""))
+    .find((candidate) => MODEL_UNAVAILABLE_SIGNAL.test(candidate));
+  if (unavailable !== undefined) return { reason: unavailable, retryable: false };
+  const text = candidates.join(" ");
   if (QUOTA_SIGNAL.test(text)) return { reason: "quota exhausted", retryable: false };
   if (TIMEOUT_SIGNAL.test(text)) return { reason: "timed out", retryable: true };
   return { reason: "generation failed", retryable: true };
@@ -1661,7 +1678,25 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           name: fallbackAppName(input.prompt),
           buildFailed: { reason, retryable, at: new Date().toISOString() },
         }, ctx.principal.subject)).catch(() => undefined);
-        throw error;
+        // The operator's terminal gets the un-canned detail (the engine folds
+        // provider errors into the VendoError's issue list) — a silent failed
+        // build was the 0.4.x E2E's hardest defect to self-diagnose.
+        const detail = error instanceof VendoError && Array.isArray(error.detail)
+          ? error.detail.filter((item): item is string => typeof item === "string")
+          : [];
+        const detailLines = detail.length > 0 ? detail : [safeErrorMessage(error)];
+        console.error(`[vendo] app build failed (${appId}): ${reason}${detailLines
+          .map((line) => `\n  - ${line}`).join("")}`);
+        // Re-throw CARRYING the classified reason: the tool outcome the calling
+        // agent reads is built from this message, and "model could not produce
+        // a valid app" told it (and the user) nothing actionable. detail keeps
+        // the raw issue list for in-process callers (the wire serializes only
+        // code + message, so nothing un-canned crosses to clients).
+        throw new VendoError(
+          error instanceof VendoError ? error.code : "validation",
+          `app build failed: ${reason}`,
+          { appId, reason, retryable, issues: detailLines },
+        );
       }
       const app: AppDocument = {
         ...generated,

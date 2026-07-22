@@ -49,6 +49,29 @@ describe("chart empty/invalid states (never a broken chart)", () => {
     expect(screen.getByText("Nothing")).toBeTruthy();
   });
 
+  it("DonutChart shows the empty state (never crashes) when data is undefined or not an array", () => {
+    // 0.4.x E2E defect D6: a generated app bound an empty/failed query into a
+    // donut and the node error-boxed on `undefined.map`.
+    render(
+      <DonutChart
+        data={undefined as unknown as Array<Record<string, unknown>>}
+        categoryKey="label"
+        valueKey="value"
+        emptyState="No data yet"
+      />,
+    );
+    expect(screen.getByText("No data yet")).toBeTruthy();
+    render(
+      <DonutChart
+        data={"nope" as unknown as Array<Record<string, unknown>>}
+        categoryKey="label"
+        valueKey="value"
+        emptyState="Still no data"
+      />,
+    );
+    expect(screen.getByText("Still no data")).toBeTruthy();
+  });
+
   it("Sparkline renders nothing renderable as an empty state", () => {
     render(<Sparkline data={[Number.NaN]} emptyState="—" />);
     expect(screen.getByText("—")).toBeTruthy();
