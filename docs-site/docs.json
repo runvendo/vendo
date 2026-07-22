@@ -103,6 +103,7 @@
         "pages": [
           "deploy/deploying",
           "deploy/persistence",
+          "deploy/edge-runtimes",
           "deploy/vendo-cloud",
           "deploy/principals-and-orgs",
           "deploy/scheduler-and-webhooks",

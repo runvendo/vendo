@@ -176,6 +176,99 @@ export function serverActionsModuleSource(root: string, wiringDir: string, regis
     `export const serverActions = {\n${entries.join("\n")}\n};\n`;
 }
 
+/** The runtime-neutral composition (`--framework custom`): plain Request →
+ *  Response with env passed per call, so ONE generated module serves any
+ *  Web-standard host — Cloudflare Workers, Bun, Deno, Hono, Lambda adapters.
+ *  Construction is lazy (first request): the safe shape everywhere and the
+ *  only legal one at Workers module scope. With a Vendo Cloud key the four
+ *  infrastructure seams wire the Cloud adapters explicitly per the adapter
+ *  rule (reference shape: the vendo-on-Workers field integration,
+ *  2026-07-21). */
+export function customServerSource(typescript: boolean, auth: AuthMatch | null = null): string {
+  const registrySpecifier = typescript ? "./registry" : "./registry.mjs";
+  const envType = typescript
+    ? `\nexport interface VendoEnv {\n` +
+      `  VENDO_API_KEY?: string;\n` +
+      `  VENDO_CLOUD_URL?: string;\n` +
+      `  VENDO_BASE_URL?: string;\n` +
+      `}\n`
+    : "";
+  const signatures = typescript
+    ? {
+        vendoVar: `let vendo: ReturnType<typeof createVendo> | null = null;`,
+        getVendo: `(env: VendoEnv = {})`,
+        handle: `(request: Request, env: VendoEnv = {}): Promise<Response>`,
+      }
+    : {
+        vendoVar: `let vendo = null;`,
+        getVendo: `(env = {})`,
+        handle: `(request, env = {})`,
+      };
+  const clientHint = typescript
+    ? ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
+      ` *   // the cast narrows TypeScript's widened JSON-module string literals;\n` +
+      ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
+      ` *   import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";\n` +
+      ` *   import { registry } from "<path-to>/vendo/registry";\n` +
+      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
+      ` *   import type { VendoTheme } from "@vendoai/vendo";\n` +
+      ` *   root.render(<VendoRoot components={registry} theme={theme as VendoTheme}><App /><VendoOverlay /></VendoRoot>);\n`
+    : ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
+      ` *   // <VendoOverlay /> is the visible surface (launcher pill + panel):\n` +
+      ` *   import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";\n` +
+      ` *   import { registry } from "<path-to>/vendo/registry.mjs";\n` +
+      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
+      ` *   root.render(<VendoRoot components={registry} theme={theme}><App /><VendoOverlay /></VendoRoot>);\n`;
+  return `/**\n` +
+    ` * Route your runtime's requests through this module:\n` +
+    ` *   // Cloudflare Workers:\n` +
+    ` *   //   export default { fetch: (request, env) => handleVendoRequest(request, env) };\n` +
+    ` *   // Bun / Deno / Hono / Node: serve your /api/vendo routes through\n` +
+    ` *   //   handleVendoRequest(request)\n` +
+    clientHint +
+    ` * Deployed hosts must set VENDO_BASE_URL to their public origin\n` +
+    ` * (credential forwarding fails closed without it — vendo doctor checks).\n` +
+    ` */\n` +
+    `import { createAnthropic } from "@ai-sdk/anthropic";\n` +
+    authImportLine(auth) +
+    `import { cloudConnections, cloudSandbox, cloudTools, createVendo, hostedStore } from "@vendoai/vendo/server";\n` +
+    `import { registry } from ${JSON.stringify(registrySpecifier)};\n` +
+    envType +
+    `\n${signatures.vendoVar}\n` +
+    `\n/** Lazy singleton: constructed on the first request, never at module\n` +
+    `    scope — Workers forbids I/O and timers there, and lazy is correct on\n` +
+    `    every other runtime too. */\n` +
+    `function getVendo${signatures.getVendo} {\n` +
+    `  if (vendo === null) {\n` +
+    `    const processEnv = globalThis.process?.env ?? {};\n` +
+    `    const apiKey = env.VENDO_API_KEY ?? processEnv.VENDO_API_KEY;\n` +
+    `    const baseUrl = (env.VENDO_CLOUD_URL ?? processEnv.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\\/+$/, "");\n` +
+    `    const cloud = apiKey === undefined || apiKey === "" ? undefined : { apiKey, baseUrl };\n` +
+    `    vendo = createVendo({\n` +
+    (auth === null ? anonymousPrincipalLines() : authConfigLines(auth))
+      .split("\n").map((line) => (line === "" ? line : `    ${line}`)).join("\n") +
+    `      catalog: registry,\n` +
+    `      policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
+    `      // With a Vendo Cloud key the infrastructure seams wire the Cloud\n` +
+    `      // adapters EXPLICITLY (composition decides; blocks never read the\n` +
+    `      // environment). Without one, pass your own adapters here — model,\n` +
+    `      // store, connections, sandbox all accept custom implementations.\n` +
+    `      ...(cloud === undefined ? {} : {\n` +
+    `        model: createAnthropic({ apiKey: cloud.apiKey, baseURL: \`\${cloud.baseUrl}/api/v1\` })("vendo-default"),\n` +
+    `        store: hostedStore(cloud),\n` +
+    `        connections: cloudConnections(cloud),\n` +
+    `        connectors: [cloudTools(cloud)],\n` +
+    `        sandbox: cloudSandbox(cloud),\n` +
+    `      }),\n` +
+    `    });\n` +
+    `  }\n` +
+    `  return vendo;\n` +
+    `}\n` +
+    `\nexport function handleVendoRequest${signatures.handle} {\n` +
+    `  return getVendo(env).handler(request);\n` +
+    `}\n`;
+}
+
 export function expressServerSource(typescript: boolean, auth: AuthMatch | null = null): string {
   const imports = typescript
     ? `import { once } from "node:events";\n` +

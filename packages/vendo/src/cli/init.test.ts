@@ -73,6 +73,17 @@ async function expressFixture(wired: boolean): Promise<string> {
   return root;
 }
 
+async function customFixture(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "vendo-init-custom-"));
+  cleanup.push(root);
+  await writeFile(join(root, "package.json"), JSON.stringify({
+    name: "worker-host",
+    dependencies: { vite: "6.0.0", "@vendoai/vendo": "0.3.0" },
+  }));
+  await writeFile(join(root, "tsconfig.json"), "{}\n");
+  return root;
+}
+
 function output(): { output: Output; logs: string[]; errors: string[] } {
   const logs: string[] = [];
   const errors: string[] = [];
@@ -105,7 +116,9 @@ describe("vendo init (zero-question)", () => {
   it.each([
     [{ dependencies: { express: "5.0.0" } }, "express"],
     [{ dependencies: { express: "5.0.0", next: "16.0.0" } }, "next"],
-    [{ dependencies: { react: "19.0.0" } }, "unknown"],
+    // detection "unknown" lands on the runtime-neutral custom scaffold — the
+    // safe default (guessing Next into a Worker host was the field failure).
+    [{ dependencies: { react: "19.0.0" } }, "custom"],
   ] as const)("detects the host framework from package.json", async (manifest, expected) => {
     const root = await mkdtemp(join(tmpdir(), "vendo-init-detect-"));
     cleanup.push(root);
@@ -624,14 +637,18 @@ describe("vendo init (zero-question)", () => {
       .resolves.toContain("createVendo");
   });
 
-  it("interactive init on an undetectable framework is unchanged: it still scaffolds the Next layout", async () => {
+  it("interactive init on an undetectable framework scaffolds the runtime-neutral module, never the Next layout", async () => {
+    // The old fall-through guessed the Next layout into unknown hosts — the
+    // exact failure that scaffolded app/api routes into a Cloudflare Worker
+    // (field report 2026-07-21). Unknown now lands on the custom scaffold.
     const root = await mkdtemp(join(tmpdir(), "vendo-init-nofw-tty-"));
     cleanup.push(root);
     await writeFile(join(root, "package.json"), JSON.stringify({ name: "host", dependencies: { react: "19.0.0" } }));
     const sink = output();
     expect(await run(root, sink, { interactive: true })).toBe(0);
-    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
-      .resolves.toContain("createVendo");
+    await expect(readFile(join(root, "vendo", "server.mjs"), "utf8"))
+      .resolves.toContain("handleVendoRequest");
+    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8")).rejects.toThrow();
   });
 
   it("--cloud-key lands the key in .env.local and the login offer never fires", async () => {
@@ -1756,5 +1773,40 @@ describe("init telemetry enrichment", () => {
     // The rebuilt client picked the freshly written key up from .env.local.
     const completed = tele.events().find((entry) => entry.event === "init_completed");
     expect(completed!.properties.cloud).toBe(true);
+  });
+});
+
+
+describe("vendo init (custom runtime)", () => {
+  it("scaffolds the runtime-neutral lazy module: Request→Response, env-passed, Cloud adapters explicit", async () => {
+    const root = await customFixture();
+    const sink = output();
+    expect(await run(root, sink, { framework: "custom" })).toBe(0);
+
+    const server = await readFile(join(root, "vendo", "server.ts"), "utf8");
+    // Lazy singleton — never construct at module scope (Workers global-scope ban).
+    expect(server).toContain("let vendo: ReturnType<typeof createVendo> | null = null;");
+    expect(server).toContain("export function handleVendoRequest(request: Request, env: VendoEnv = {}): Promise<Response>");
+    // Adapter rule: with a Cloud key the seams wire EXPLICITLY (model via the
+    // stock Anthropic provider at the console gateway — the dev ladder cannot
+    // resolve provider installs inside a Worker bundle).
+    expect(server).toContain('createAnthropic({ apiKey: cloud.apiKey, baseURL: `${cloud.baseUrl}/api/v1` })("vendo-default")');
+    expect(server).toContain("store: hostedStore(cloud),");
+    expect(server).toContain("sandbox: cloudSandbox(cloud),");
+    // No framework file-layout assumptions.
+    expect(await readFile(join(root, "vendo", "registry.tsx"), "utf8")).toContain("ComponentRegistry");
+
+    const log = sink.logs.join("\n");
+    expect(log).toContain("handleVendoRequest(request, env)");
+    expect(log).toContain("VENDO_BASE_URL");
+  });
+
+  it("an undetectable host falls through to the custom scaffold interactively, never the Next layout", async () => {
+    const root = await customFixture();
+    const sink = output();
+    expect(await run(root, sink, { agent: true })).toBe(0);
+    const plan = JSON.parse(sink.logs.join("\n")) as { framework: string; writes: string[] };
+    expect(plan.framework).toBe("custom");
+    expect(plan.writes.join("\n")).not.toContain("app/api/vendo");
   });
 });

@@ -22,6 +22,7 @@ import { detectFramework, detectVendoWiring, type HostFramework } from "./framew
 import { resolveScaffoldAuth, type AuthMatch, type AuthPresetName, type ConfirmAuth, type SelectAuth } from "./init-auth.js";
 import { ensureProviderDeps, type InstallRunner } from "./provider-deps.js";
 import {
+  customServerSource,
   expressServerSource,
   registrySource,
   routeSource,
@@ -117,7 +118,7 @@ export interface RiskRecommendation {
 }
 
 export interface InitPlan {
-  framework: HostFramework;
+  framework: Exclude<HostFramework, "unknown"> | "custom";
   root: string;
   writes: string[];
   codeChanges: Array<{ path: string; diff: string }>;
@@ -148,7 +149,7 @@ export interface InitOptions {
       detection comes back "unknown" (there is no safe default to guess).
       "unknown" is excluded: an override that answers nothing would silently
       bypass the non-interactive framework guard. */
-  framework?: Exclude<HostFramework, "unknown">;
+  framework?: Exclude<HostFramework, "unknown"> | "custom";
   /** --cloud-key: answer the cloud-login offer with an existing key — landed
       in .env.local exactly where the mint would put it. */
   cloudKey?: string;
@@ -252,7 +253,7 @@ async function appDirectory(root: string): Promise<string> {
 
 /** Telemetry `router` enum (init_completed): app | pages | none, from the
     same directory evidence appDirectory rides. Express hosts are "none". */
-async function detectRouter(root: string, framework: HostFramework): Promise<"app" | "pages" | "none"> {
+async function detectRouter(root: string, framework: Exclude<HostFramework, "unknown"> | "custom"): Promise<"app" | "pages" | "none"> {
   if (framework === "next") {
     if (await exists(join(root, "src", "app")) || await exists(join(root, "app"))) return "app";
     if (await exists(join(root, "src", "pages")) || await exists(join(root, "pages"))) return "pages";
@@ -460,6 +461,16 @@ async function manualWiringLines(root: string, layout: LayoutWiring, withRegistr
       `${wrap}  // around your client root (see vendo/server for the imports; <VendoOverlay /> is the visible launcher + panel)`,
     ];
   }
+  if (layout.kind === "custom") {
+    const wrap = withRegistry
+      ? `<VendoRoot components={registry} theme={theme}>…<VendoOverlay /></VendoRoot>`
+      : `<VendoRoot theme={theme}>…<VendoOverlay /></VendoRoot>`;
+    return [
+      `Route your runtime's requests through the generated module — Cloudflare Workers: export default { fetch: (request, env) => handleVendoRequest(request, env) };`,
+      `${wrap}  // around your client root (see vendo/server for the imports; <VendoOverlay /> is the visible launcher + panel)`,
+      `Set VENDO_BASE_URL to the deployed origin (credential forwarding fails closed without it).`,
+    ];
+  }
   if (layout.kind === "wired" || layout.kind === "already") return [];
   if (layout.kind === "overlay-missing") {
     return [
@@ -504,7 +515,7 @@ async function manualWiringLines(root: string, layout: LayoutWiring, withRegistr
     work, not documentation: the playbook carries the teaching. */
 async function agentTailLines(args: {
   root: string;
-  framework: HostFramework;
+  framework: Exclude<HostFramework, "unknown"> | "custom";
   registryPath: string | null;
   compositionPath: string | null;
   authWired: AuthMatch | null;
@@ -607,7 +618,10 @@ type LayoutWiring =
       `{children}`) — the printed paste is the fallback. */
   | { kind: "manual" }
   /** Express hosts keep their two printed wiring lines. */
-  | { kind: "express" };
+  | { kind: "express" }
+  /** Custom-runtime hosts (--framework custom): the generated module's two
+      printed wiring lines — route requests through it, mount the client. */
+  | { kind: "custom" };
 
 /** Where the wrapped `{children}` insert lands: the SINGLE JSX-rendered
     `{children}` (between a `>` and a `<`). Requiring the JSX position keeps
@@ -668,7 +682,12 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   layout: LayoutWiring;
 }> {
   const root = resolve(options.targetDir);
-  const framework = options.framework ?? await detectFramework(root);
+  // "unknown" detection lands on the runtime-neutral custom scaffold — the
+  // safe default that exists now (guessing the Next layout into a Worker
+  // host was the field failure; the non-interactive guard still demands an
+  // explicit --framework so agents never inherit a guess silently).
+  const detected = options.framework ?? await detectFramework(root);
+  const framework: "next" | "express" | "custom" = detected === "unknown" ? "custom" : detected;
   const changes: PlannedChange[] = [];
   let authAdvice: string | null = null;
   let authWired: AuthMatch | null = null;
@@ -677,7 +696,39 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   let withRegistry = false;
   let layout: LayoutWiring = { kind: "manual" };
 
-  if (framework === "express") {
+  if (framework === "custom") {
+    layout = { kind: "custom" };
+    const wiring = await detectVendoWiring(root);
+    if (!wiring.server || !wiring.client) {
+      const typescript = await exists(join(root, "tsconfig.json"));
+      const server = join(root, "vendo", typescript ? "server.ts" : "server.mjs");
+      const registryFile = join(root, "vendo", typescript ? "registry.tsx" : "registry.mjs");
+      const registryBefore = await readOptional(registryFile);
+      const serverBefore = await readOptional(server);
+      // Same ownership rules as the Express branch: init composes only when
+      // it CREATES the composition, and the registry regenerates only for a
+      // consumer that uses it.
+      const scaffolding = serverBefore === null && !wiring.server;
+      const registryPlanned = registryBefore === null
+        && (scaffolding || serverBefore?.includes("./registry") === true);
+      if (registryPlanned) {
+        const path = relative(root, registryFile);
+        const registryAfter = registrySource(typescript ? "tsx" : "mjs");
+        changes.push({ absolute: registryFile, path, before: null, after: registryAfter, diff: diff(path, null, registryAfter) });
+        registryPath = path;
+      }
+      if (scaffolding) {
+        const path = relative(root, server);
+        const auth = await resolveScaffoldAuth(root, path, options.auth, confirmAuth, selectAuth);
+        const serverAfter = customServerSource(typescript, auth.wired);
+        changes.push({ absolute: server, path, before: null, after: serverAfter, diff: diff(path, null, serverAfter) });
+        authAdvice = auth.advice;
+        authWired = auth.wired;
+        compositionPath = path;
+      }
+      withRegistry = registryBefore !== null || registryPlanned;
+    }
+  } else if (framework === "express") {
     layout = { kind: "express" };
     const wiring = await detectVendoWiring(root);
     if (!wiring.server || !wiring.client) {
@@ -951,7 +1002,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     && await detectFramework(root) === "unknown") {
     output.error(
       "Framework not detected (no next or express dependency in package.json) and this run cannot ask. " +
-      "Pass --framework. Example: vendo init --yes --framework next",
+      "Pass --framework. Examples: vendo init --yes --framework next · --framework custom (any Web-standard runtime: Cloudflare Workers, Bun, Hono, ...)",
     );
     return 1;
   }

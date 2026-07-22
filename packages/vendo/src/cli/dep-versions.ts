@@ -65,7 +65,7 @@ export async function installedAiVersion(root: string): Promise<string | null> {
  * Read the host project's dependency versions (deps + devDeps) for telemetry.
  * Non-throwing: a missing or malformed package.json returns {}.
  */
-export async function detectDepVersions(root: string, framework: HostFramework): Promise<DepVersions> {
+export async function detectDepVersions(root: string, framework: HostFramework | "custom"): Promise<DepVersions> {
   try {
     const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
       dependencies?: Record<string, unknown>;
@@ -73,7 +73,7 @@ export async function detectDepVersions(root: string, framework: HostFramework):
     };
     const dependencies = { ...manifest.devDependencies, ...manifest.dependencies };
     const out: DepVersions = {};
-    const frameworkPackage = framework === "unknown" ? undefined : FRAMEWORK_PACKAGE[framework];
+    const frameworkPackage = framework === "unknown" || framework === "custom" ? undefined : FRAMEWORK_PACKAGE[framework];
     const frameworkVersion = frameworkPackage === undefined ? undefined : bareVersion(dependencies[frameworkPackage]);
     if (frameworkVersion !== undefined) out.frameworkVersion = frameworkVersion;
     const reactVersion = bareVersion(dependencies["react"]);
