@@ -249,10 +249,29 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
     dockOpen, setDockOpen, dockButtonRef,
     queued, setQueued, attachError, fileRef, textareaRef, send,
   } = composer;
+  // The tray exits with an animation instead of popping out of the DOM: on the
+  // open→closed edge it stays mounted in a `closing` phase and unmounts on a
+  // timer (not animationend — reduced-motion kills the animation and would
+  // strand it). Reopening mid-exit cancels the timer and the tray never
+  // remounts, so search text and scroll position survive the bounce.
+  const [trayClosing, setTrayClosing] = useState(false);
+  const trayWasOpenRef = useRef(dockOpen);
+  useEffect(() => {
+    const wasOpen = trayWasOpenRef.current;
+    trayWasOpenRef.current = dockOpen;
+    if (!wasOpen || dockOpen) return;
+    setTrayClosing(true);
+    const timer = setTimeout(() => setTrayClosing(false), 200);
+    return () => {
+      clearTimeout(timer);
+      setTrayClosing(false);
+    };
+  }, [dockOpen]);
   return (
     <div className="fl-dock-anchor">
-      {dockOpen ? (
+      {dockOpen || trayClosing ? (
         <ConnectTray
+          closing={!dockOpen}
           anchorRef={dockButtonRef}
           onClose={() => {
             setDockOpen(false);
