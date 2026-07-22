@@ -1,4 +1,4 @@
-import { VendoError, type Principal } from "@vendoai/core";
+import { defaultFetch, VendoError, type Principal } from "@vendoai/core";
 import type { Connector, ConnectorAccount, ConnectorConnections } from "@vendoai/actions";
 import { consoleSender, raiseCloudError } from "./cloud-console.js";
 
@@ -162,7 +162,7 @@ const raiseConnectionsError = (response: Response): Promise<never> =>
  * the wire it must serve. */
 export function cloudConnections(options: CloudConnectionsOptions): ConnectionsService {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
-  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const fetchImpl = options.fetch ?? defaultFetch;
   // The key-authed console sender (cloud-console.ts): Bearer auth + deployment
   // identity (the console meters usage from real traffic) + per-request abort
   // timeout, raising through the shared error table on any non-2xx.
