@@ -56,8 +56,12 @@ changes nothing about auth; you add the one line yourself.
 - `--auth jwt`: nothing is wired. `jwt()` cannot be zero-argument (no vendor
   env var exists for a host-owned scheme); init prints the recipe and you add
   `auth: jwt({ secret: () => process.env.YOUR_SIGNING_SECRET })` by hand.
-- `--auth none`: the composition gets `principal: async () => null`; every
-  session is anonymous until a preset line replaces it.
+- `--auth none`: the composition gets a demo principal —
+  `principal: async () => ({ kind: "user" as const, subject: "demo-user" })` —
+  matching the demo principal the existing-agents quickstarts set in their
+  chat routes, so apps and approvals created through your agent loop stay
+  visible to the embeds (which call the wire route directly). Replace both
+  sides with your real session lookup, or a preset line, before production.
 
 ## Per-preset wiring
 

@@ -27,6 +27,7 @@ import {
   routeSource,
   serverActionsModuleSource,
   VENDO_ENV_EXAMPLE,
+  vendoRootWrapperSource,
   wiringServerActions,
 } from "./init-scaffolds.js";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
@@ -54,17 +55,24 @@ import {
  * `vendo init` (install-dx v1, re-derived 2026-07-18): one command, zero
  * questions on the happy path, no ceremony.
  *
- *   scan → wire (the two-file surface — empty vendo/registry.tsx + the
- *   catch-all handler wired to it; a detected auth preset gets one
- *   consent-style confirm in interactive runs, --yes/non-interactive accept
- *   it silently — plus package.json hooks; never edits user-authored code)
+ *   scan → wire (the surface files — empty vendo/registry.tsx, the client
+ *   mount vendo/vendo-root.tsx, the catch-all handler wired to the registry,
+ *   and the ONE bounded layout edit that mounts <VendoRoot> + <VendoOverlay />
+ *   so a by-the-book install is actually visible (0.4.1 E2E cert B3); a
+ *   detected auth preset gets one consent-style confirm in interactive runs,
+ *   --yes/non-interactive accept it silently — plus package.json hooks)
  *   → key (env stated, else the cloud starter offer) → done summary (files
- *   changed, the VendoRoot line to paste, next steps).
+ *   changed, any remaining paste, next steps).
  *
- * Removed by design: the interview, per-diff y/N approvals, the layout
- * codemod, the lib/ai.ts scaffold (createVendo's `model` is optional now),
- * remix offers, the encryption-key step, the refine offer, and the finale
- * ceremony (doctor owns verification and the live turn).
+ * The layout edit is the one place init touches user-authored code: it is
+ * idempotent (skipped when <VendoRoot> or <VendoOverlay> is already mounted),
+ * bounded (wrap the single JSX `{children}` + one import line), and degrades
+ * to the printed paste when the layout can't be edited safely.
+ *
+ * Removed by design: the interview, per-diff y/N approvals, the lib/ai.ts
+ * scaffold (createVendo's `model` is optional now), remix offers, the
+ * encryption-key step, the refine offer, and the finale ceremony (doctor owns
+ * verification and the live turn).
  */
 
 const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
@@ -113,7 +121,8 @@ export interface InitPlan {
   root: string;
   writes: string[];
   codeChanges: Array<{ path: string; diff: string }>;
-  /** The one line init never writes itself: the user pastes it. */
+  /** Whatever wiring the run could not do safely itself (empty when the
+      layout auto-wire landed): the paste lines for the user. */
   manualSteps: string[];
   /** --agent only: deterministic extraction results, so an agent can act on
       real tool names instead of re-deriving them. */
@@ -434,27 +443,48 @@ async function setupSkillSource(): Promise<string | null> {
   }
 }
 
-/** The one line init never writes: the user pastes the VendoRoot wrap. When
-    the shared registry exists (scaffolded or host-authored) the wrap carries
-    `components={registry}` — the client half of the one-file/two-consumers
-    pattern; it stays ONE pasted line plus its imports. */
-async function vendoRootPasteLines(root: string, framework: HostFramework, withRegistry: boolean): Promise<string[]> {
-  if (framework === "express") {
+/** The remaining manual wiring lines, derived from how far the auto-wire got.
+    A layout wired this run (or one that already mounts a surface) leaves
+    nothing to paste; an uneditable layout gets the wrapper paste (the wrapper
+    owns the registry/theme imports — pasting them into a Server Component
+    layout is the RSC-serialization crash the wrapper exists to avoid); a
+    <VendoRoot>-without-surface host gets the one overlay line; Express keeps
+    its printed wiring lines. */
+async function manualWiringLines(root: string, layout: LayoutWiring, withRegistry: boolean): Promise<string[]> {
+  if (layout.kind === "express") {
     const wrap = withRegistry
-      ? `<VendoRoot components={registry} theme={theme}>…</VendoRoot>`
-      : `<VendoRoot theme={theme}>…</VendoRoot>`;
+      ? `<VendoRoot components={registry} theme={theme}>…<VendoOverlay /></VendoRoot>`
+      : `<VendoRoot theme={theme}>…<VendoOverlay /></VendoRoot>`;
     return [
       `app.use("/api/vendo", mountVendo());   // in your server`,
-      `${wrap}  // around your client root (see vendo/server for the imports)`,
+      `${wrap}  // around your client root (see vendo/server for the imports; <VendoOverlay /> is the visible launcher + panel)`,
+    ];
+  }
+  if (layout.kind === "wired" || layout.kind === "already") return [];
+  if (layout.kind === "overlay-missing") {
+    return [
+      `In ${layout.layoutPath}: nothing renders yet — <VendoRoot> is a context provider. Mount the visible surface inside it:`,
+      `  import { VendoOverlay } from "@vendoai/vendo/react";`,
+      `  … then add: <VendoOverlay />  (the launcher pill + panel users open)`,
     ];
   }
   const app = await appDirectory(root);
+  const layoutRel = relative(root, join(app, "layout.tsx"));
+  if (withRegistry) {
+    const wrapperSpecifier = relative(app, join(dirname(app), "vendo", "vendo-root")).split(sep).join("/");
+    return [
+      `In ${layoutRel}:`,
+      `  import { VendoRoot } from ${JSON.stringify(wrapperSpecifier)};`,
+      `  … then wrap: <VendoRoot>{children}</VendoRoot>`,
+      `  (${join("vendo", "vendo-root.tsx")} mounts <VendoOverlay />, the visible launcher + panel)`,
+    ];
+  }
+  // No registry consumer (a hand-wired route that ignores it): the direct
+  // provider + overlay paste — theme.json is serializable, so it may cross
+  // the Server Component boundary; the registry may not.
   const specifier = await themeImportSpecifier(root, app);
-  const layout = relative(root, join(app, "layout.tsx"));
-  const registrySpecifier = relative(app, join(dirname(app), "vendo", "registry")).split(sep).join("/");
   const importLines = [
-    `import { VendoRoot } from "@vendoai/vendo/react";`,
-    ...(withRegistry ? [`import { registry } from ${JSON.stringify(registrySpecifier)};`] : []),
+    `import { VendoOverlay, VendoRoot } from "@vendoai/vendo/react";`,
     ...(specifier === null
       ? []
       : [
@@ -462,12 +492,8 @@ async function vendoRootPasteLines(root: string, framework: HostFramework, withR
           `import type { VendoTheme } from "@vendoai/vendo";`,
         ]),
   ];
-  const props = [
-    ...(withRegistry ? ["components={registry}"] : []),
-    ...(specifier === null ? [] : ["theme={theme as VendoTheme}"]),
-  ];
-  const wrap = `<VendoRoot${props.length === 0 ? "" : ` ${props.join(" ")}`}>{children}</VendoRoot>`;
-  return [`In ${layout}:`, ...importLines.map((line) => `  ${line}`), `  … then wrap: ${wrap}`];
+  const wrap = `<VendoRoot${specifier === null ? "" : " theme={theme as VendoTheme}"}>{children}<VendoOverlay /></VendoRoot>`;
+  return [`In ${layoutRel}:`, ...importLines.map((line) => `  ${line}`), `  … then wrap: ${wrap}`];
 }
 
 /** The repo-specific agent tail (agent-install-dx): a non-interactive
@@ -482,6 +508,8 @@ async function agentTailLines(args: {
   registryPath: string | null;
   compositionPath: string | null;
   authWired: AuthMatch | null;
+  /** How far the visible-surface wiring got this run. */
+  layout: LayoutWiring;
   /** No model credential resolved this run — the tail points the agent at
       the auth.md key flow (Agent Install DX, Layer 2). */
   cloudKeyMissing: boolean;
@@ -507,10 +535,14 @@ async function agentTailLines(args: {
   if (args.framework === "express") {
     // No exact entry file exists to name on Express — point at the printed
     // wiring lines instead of guessing a path.
-    lines.push("edit your server and client entries — paste the mountVendo() and <VendoRoot> lines above");
-  } else {
+    lines.push("edit your server and client entries — paste the mountVendo() and <VendoRoot>/<VendoOverlay /> lines above (without a mounted surface, users see nothing)");
+  } else if (args.layout.kind === "wired") {
+    lines.push(`surface: ${args.layout.layoutPath} wired this run — <VendoRoot> wraps the app and mounts <VendoOverlay /> (the visible launcher + panel) via ${join("vendo", "vendo-root.tsx")}; review the diff`);
+  } else if (args.layout.kind === "overlay-missing") {
+    lines.push(`edit ${args.layout.layoutPath} — add <VendoOverlay /> inside your <VendoRoot> (see the lines above; <VendoRoot> alone renders NOTHING visible)`);
+  } else if (args.layout.kind === "manual") {
     const layout = relative(args.root, join(await appDirectory(args.root), "layout.tsx"));
-    lines.push(`edit ${layout} — wrap the app in the <VendoRoot> lines above`);
+    lines.push(`edit ${layout} — wrap the app in the <VendoRoot> lines above (it mounts <VendoOverlay />, the visible surface; without it users see nothing)`);
   }
   if (await readOptional(join(args.root, ".vendo", "brief.md")) === BRIEF_PLACEHOLDER) {
     lines.push(`edit ${join(".vendo", "brief.md")} — replace the placeholder with what this product does and for whom`);
@@ -560,6 +592,66 @@ export function starViaGh(spawnStar: NonNullable<InitOptions["spawnStar"]>, time
   });
 }
 
+/** How the visible surface reached (or didn't reach) the host's layout —
+    drives the manual fallback lines and the agent tail. */
+type LayoutWiring =
+  /** Init edited the layout this run: <VendoRoot> (the generated wrapper)
+      now wraps `{children}` and mounts <VendoOverlay />. */
+  | { kind: "wired"; layoutPath: string }
+  /** The layout already mounts <VendoRoot> but no <VendoOverlay /> is
+      mounted anywhere obvious — the one remaining paste is the overlay. */
+  | { kind: "overlay-missing"; layoutPath: string }
+  /** A Vendo mount already exists — nothing to do or say. */
+  | { kind: "already" }
+  /** The layout couldn't be edited safely (missing, no single JSX
+      `{children}`) — the printed paste is the fallback. */
+  | { kind: "manual" }
+  /** Express hosts keep their two printed wiring lines. */
+  | { kind: "express" };
+
+/** Where the wrapped `{children}` insert lands: the SINGLE JSX-rendered
+    `{children}` (between a `>` and a `<`). Requiring the JSX position keeps
+    the layout's own `({ children })` parameter destructure out of the count. */
+const LAYOUT_CHILDREN = /(>)(\s*\{\s*children\s*\}\s*)(<)/g;
+
+/** End index for the wrapper import: after the last top-level import
+    statement (lazy up to its module-specifier string literal, so multi-line
+    destructures work), else after a leading directive ("use client"), else 0. */
+function importInsertionIndex(source: string): number {
+  const heads = [...source.matchAll(/^import\b/gm)];
+  if (heads.length === 0) {
+    const directive = /^(?:\s*(?:'[^']*'|"[^"]*");?[^\S\n]*\n)+/.exec(source);
+    return directive === null ? 0 : directive[0].length;
+  }
+  const last = heads[heads.length - 1]!.index!;
+  const statement = /import\s[\s\S]*?["'][^"']*["'][^\S\n]*;?/.exec(source.slice(last));
+  const end = last + (statement === null ? 0 : statement[0].length);
+  const newline = source.indexOf("\n", end);
+  return newline === -1 ? source.length : newline + 1;
+}
+
+/**
+ * The one bounded edit init makes to user-authored code (visible-surface fix,
+ * 0.4.1 E2E cert B3): mount the generated client wrapper around the layout's
+ * `{children}` and import it. Null — leave the file untouched, fall back to
+ * the printed paste — whenever a Vendo mount already exists (idempotence) or
+ * the file doesn't have exactly one JSX `{children}` to wrap (ambiguity).
+ * Exported for direct unit tests.
+ */
+export function wireNextLayout(source: string, wrapperSpecifier: string): string | null {
+  if (source.includes("VendoRoot") || source.includes("VendoOverlay")) return null;
+  const matches = [...source.matchAll(LAYOUT_CHILDREN)];
+  if (matches.length !== 1) return null;
+  const match = matches[0]!;
+  const open = match.index! + match[1]!.length;
+  const close = match.index! + match[0]!.length - match[3]!.length;
+  let next = `${source.slice(0, open)}<VendoRoot>${source.slice(open, close)}</VendoRoot>${source.slice(close)}`;
+  const at = importInsertionIndex(next);
+  const importLine = `import { VendoRoot } from ${JSON.stringify(wrapperSpecifier)};\n`;
+  next = `${next.slice(0, at)}${importLine}${next.slice(at)}`;
+  return next;
+}
+
 async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, selectAuth?: SelectAuth): Promise<{
   plan: InitPlan;
   changes: PlannedChange[];
@@ -572,6 +664,8 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   compositionPath: string | null;
   /** Relative path of the registry generated THIS run; null otherwise. */
   registryPath: string | null;
+  /** How the visible surface reached (or didn't reach) the layout. */
+  layout: LayoutWiring;
 }> {
   const root = resolve(options.targetDir);
   const framework = options.framework ?? await detectFramework(root);
@@ -581,8 +675,10 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   let compositionPath: string | null = null;
   let registryPath: string | null = null;
   let withRegistry = false;
+  let layout: LayoutWiring = { kind: "manual" };
 
   if (framework === "express") {
+    layout = { kind: "express" };
     const wiring = await detectVendoWiring(root);
     if (!wiring.server || !wiring.client) {
       const typescript = await exists(join(root, "tsconfig.json"));
@@ -673,6 +769,45 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
         changes.push({ absolute: route, path, before: routeBefore, after: wiredRoute, diff: diff(path, routeBefore, wiredRoute) });
       }
     }
+
+    // Visible surface (0.4.1 E2E cert B3): the client mount wrapper next to
+    // the registry — the "use client" boundary that owns the registry + theme
+    // imports (passing the registry from the Server Component layout into the
+    // client provider fails RSC serialization) and mounts <VendoOverlay /> —
+    // plus the ONE bounded layout edit that wraps `{children}` in it. Both
+    // idempotent: an existing wrapper is never clobbered, a layout already
+    // mounting <VendoRoot> or <VendoOverlay> is never re-edited, and an
+    // uneditable layout degrades to the printed paste.
+    const wrapperFile = join(dirname(app), "vendo", "vendo-root.tsx");
+    const wrapperBefore = await readOptional(wrapperFile);
+    const layoutFile = join(app, "layout.tsx");
+    const layoutBefore = await readOptional(layoutFile);
+    // The generated wrapper doesn't count as a host mount: its overlay is
+    // only real once a layout mounts the wrapper itself.
+    const mounts = await detectVendoWiring(root, { exclude: [wrapperFile] });
+    if (mounts.client || mounts.surface) {
+      // A mounted <VendoRoot> next to an existing wrapper IS the surface —
+      // the wrapper renders <VendoOverlay /> (the re-run after an auto-wire).
+      layout = mounts.surface || wrapperBefore !== null
+        ? { kind: "already" }
+        : { kind: "overlay-missing", layoutPath: relative(root, layoutFile) };
+    } else if (withRegistry) {
+      // The wrapper consumes ./registry, so it exists only alongside one —
+      // a hand-wired host that ignores the registry keeps the manual paste.
+      if (wrapperBefore === null) {
+        const path = relative(root, wrapperFile);
+        const themeSpecifier = await themeImportSpecifier(root, dirname(wrapperFile));
+        const wrapperAfter = vendoRootWrapperSource({ themeSpecifier });
+        changes.push({ absolute: wrapperFile, path, before: null, after: wrapperAfter, diff: diff(path, null, wrapperAfter) });
+      }
+      const wrapperSpecifier = relative(app, join(dirname(app), "vendo", "vendo-root")).split(sep).join("/");
+      const layoutAfter = layoutBefore === null ? null : wireNextLayout(layoutBefore, wrapperSpecifier);
+      if (layoutAfter !== null) {
+        const path = relative(root, layoutFile);
+        changes.push({ absolute: layoutFile, path, before: layoutBefore, after: layoutAfter, diff: diff(path, layoutBefore, layoutAfter) });
+        layout = { kind: "wired", layoutPath: path };
+      }
+    }
   }
   const packageJson = join(root, "package.json");
   const packageBefore = await readOptional(packageJson);
@@ -712,7 +847,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     ".vendo/theme.json",
     ".vendo/data/.gitignore",
   ];
-  const manualSteps = await vendoRootPasteLines(root, framework, withRegistry);
+  const manualSteps = await manualWiringLines(root, layout, withRegistry);
   return {
     changes,
     manualSteps,
@@ -720,6 +855,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     authWired,
     compositionPath,
     registryPath,
+    layout,
     plan: {
       framework,
       root,
@@ -829,7 +965,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const { plan, changes, manualSteps, authAdvice, authWired, compositionPath, registryPath } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, manualSteps, authAdvice, authWired, compositionPath, registryPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
   const detectMs = Date.now() - detectStarted;
   let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -1131,9 +1267,15 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.error(`warning: installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
     }
 
-    // Done — the one paste that is the user's, then their own dev server.
-    output.log("\nLast steps are yours:");
-    for (const line of manualSteps) output.log(`  ${line}`);
+    // Done — whatever paste remains (none when the layout auto-wire landed),
+    // then their own dev server.
+    if (layout.kind === "wired") {
+      output.log(`\nMounted <VendoRoot> + <VendoOverlay /> (the visible launcher + panel) in ${layout.layoutPath} — review the diff before committing.`);
+    }
+    if (manualSteps.length > 0) {
+      output.log("\nLast steps are yours:");
+      for (const line of manualSteps) output.log(`  ${line}`);
+    }
     output.log("\nThen start your dev server — the agent is live in your app.");
     output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
 
@@ -1143,7 +1285,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // never reaches here (its read-only JSON plan returned above).
     if (options.yes === true || !interactive) {
       output.log("\nAgent tail:");
-      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, cloudKeyMissing: credential.rung === "none" });
+      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, layout, cloudKeyMissing: credential.rung === "none" });
       for (const line of tail) output.log(`  ${line}`);
     } else {
       // Star ask (agent-install-dx §CLI-5): the interactive success screen

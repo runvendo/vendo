@@ -16,7 +16,7 @@ import type { SandboxAdapter } from "@vendoai/apps";
 import type { Connector } from "@vendoai/actions";
 import type { ConnectionsService } from "./connections.js";
 import { VERSION as WIRE_VERSION } from "./wire/shared.js";
-import { createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
+import { appStore, createStore, secretStore, storeSecrets, type VendoStore } from "@vendoai/store";
 import { createHmac, randomBytes } from "node:crypto";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -267,6 +267,32 @@ describe("09 §3 public wire", () => {
     const flagged = await vendo.handler(request("GET", "/apps/app_doomed/open?pending=1"));
     expect(flagged.status).toBe(200);
     expect(await flagged.json()).toEqual({ kind: "failed", reason: "quota exhausted", retryable: false });
+  });
+
+  it("open?pending=1 answers {kind:'failed'} — not pending — when the record exists under another principal (0.4.1 E2E cert B4)", async () => {
+    // Principal mismatch (wire principal ≠ chat principal): the record
+    // EXISTS, just not for this caller, and it never will — masking that
+    // owner-scoped not-found as {kind:"pending"} was the infinite skeleton.
+    // The flag now answers the terminal failed vocabulary with the diagnosis
+    // so the embed resolves promptly. A genuinely absent record (the build
+    // window) keeps answering pending, covered above.
+    const store = await tempStore("vendo-wire-b4-");
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    stubRouteBlocks(vendo);
+    await store.ensureSchema();
+    await appStore(store).put({ kind: "user", subject: "someone_else" }, app("app_foreign"));
+    vi.spyOn(vendo.apps, "open").mockRejectedValue(new VendoError("not-found", "app not found: app_foreign"));
+
+    const flagged = await vendo.handler(request("GET", "/apps/app_foreign/open?pending=1"));
+    expect(flagged.status).toBe(200);
+    const body = await flagged.json() as { kind: string; reason?: string; retryable?: boolean };
+    expect(body.kind).toBe("failed");
+    expect(body.retryable).toBe(false);
+    expect(body.reason).toContain("principal");
+
+    // Unflagged callers keep the contracted 404 envelope.
+    const bare = await vendo.handler(request("GET", "/apps/app_foreign/open"));
+    expect(bare.status).toBe(404);
   });
 
   it("does not read history for an unowned app on GET or undo", async () => {

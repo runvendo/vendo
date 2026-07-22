@@ -36,6 +36,10 @@ import { createVendo } from "@vendoai/vendo/server";
 import { serverActions } from "./vendo-actions";
 
 export const vendo = createVendo({
+  // The embeds call this wire route directly, so this MUST resolve the same
+  // subject your chat route passes below — a mismatch makes every app and
+  // approval your agent creates invisible to the embeds (infinite skeleton).
+  principal: async () => ({ kind: "user" as const, subject: "demo-user" }),
   policy: "cautious", // run reads, ask before writes
   serverActions,      // the map init generated from your actions
 });

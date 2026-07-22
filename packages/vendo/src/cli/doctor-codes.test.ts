@@ -29,12 +29,14 @@ describe("doctor error-code registry", () => {
         "E-CFG-002": ".vendo/data/.gitignore is missing",
         "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
         "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
+        "E-DEP-002": "the running wire serves a different @vendoai/vendo version than this CLI (split-brain install)",
         "E-DEV-001": "the dev server could not be started for the probe",
         "E-LIVE-001": "/status returned an invalid composition response",
         "E-LIVE-002": "/status is unreachable",
         "E-LIVE-003": "/status returned an invalid execution venue",
         "E-LIVE-004": "no execution venue is configured",
         "E-LIVE-005": "the host /status does not report an execution venue (version skew)",
+        "E-LIVE-006": "the app's root page returns a server error while the wire answers",
         "E-MCP-001": "MCP protected-resource metadata did not resolve",
         "E-MCP-002": "MCP authorization-server metadata did not resolve",
         "E-MCP-003": "the MCP server card did not parse",
@@ -52,6 +54,7 @@ describe("doctor error-code registry", () => {
         "E-WIRE-003": "the Next.js catch-all handler app/api/vendo/[...vendo]/route.ts is missing",
         "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoRoot>",
         "E-WIRE-005": "the @vendoai/vendo (or vendoai alias) dependency is not declared",
+        "E-WIRE-006": "no visible agent surface is mounted (<VendoRoot> alone renders nothing)",
       }
     `);
   });
