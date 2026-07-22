@@ -41,6 +41,17 @@ describe("createVendo construction purity (Workers global scope)", () => {
     expect(timerSpy).not.toHaveBeenCalled();
   });
 
+  it("triggers schema readiness from a guardedTools execute (BYO agent loops never call the handler)", async () => {
+    const { store, ensureSchema } = await tempStore();
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    expect(ensureSchema).not.toHaveBeenCalled();
+    await vendo.guardedTools.execute(
+      { id: "call_lazy", tool: "vendo_apps_list", args: {} },
+      { principal, venue: "byo", presence: "absent", sessionId: "session_lazy" },
+    ).catch(() => undefined);
+    expect(ensureSchema).toHaveBeenCalledTimes(1);
+  });
+
   it("runs schema readiness once, on first request, and starts the sweep then", async () => {
     const timerSpy = vi.spyOn(globalThis, "setInterval");
     const { store, ensureSchema } = await tempStore();

@@ -1602,7 +1602,19 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
     agent,
     guard,
-    guardedTools: byoApprovals.registry,
+    // The BYO seam (ai-sdk.ts / mastra.ts tool packs) reaches the store
+    // without ever touching handler/emit, so its execute leg arms the same
+    // ready() latch — the composed-block head start the old eager kick gave
+    // such hosts, without the construction-time I/O Workers forbids. Direct
+    // vendo.store/automations reach-ins still own their readiness (await
+    // store.ensureSchema(), as the mastra example and defer tests do).
+    guardedTools: {
+      ...byoApprovals.registry,
+      execute: async (call, ctx) => {
+        await ready();
+        return byoApprovals.registry.execute(call, ctx);
+      },
+    },
     apps,
     automations,
     actions,
