@@ -1,5 +1,51 @@
 # @vendoai/apps
 
+## 0.4.5
+
+### Patch Changes
+
+- 31f899e: A chat turn whose app build terminally fails now ENDS, with the classified
+  failure reason visible in the thread. Before, the failed build came back as a
+  plain error outcome only the model could see: the tray rendered nothing, and
+  the model re-ran the minutes-long doomed build inside the same turn until the
+  step cap — a thread stuck "streaming" for 10+ minutes with no banner and no
+  reason (0.4.4 E2E cert). The agent's tool bridge now streams an additive
+  `data-vendo-build-failed` part (toolCallId + the runtime's canned, non-leaky
+  reason) beside the failed `vendo_apps_create` result, the agent loop stops the
+  turn after the failed build (re-asking is the user's call, matching the BYO
+  embed's failed vocabulary), and the thread renders the part as an error beat
+  with the reason.
+
+  The generation engine also names an empty model stream as its own failure
+  class ("completed without any text output") instead of reporting the empty
+  string's wire-parse issues — the 0.4.4 cert's "wire missing-app / empty
+  layout" failures were a gateway alias ending turns reasoning-only, not a
+  model-format defect, and the old issue list mis-routed that triage.
+
+- 87eadba: fix(venue): e2b is only selectable when actually usable — 0.4.4 regression
+
+  `e2bInstalled()` treated a runtime without `import.meta.resolve` as "the
+  bundler inlined the SDK, so it must be available". Inside Turbopack/webpack
+  server bundles that fallback always fired, so a stray `E2B_API_KEY` (for
+  example inherited from the shell) flipped the venue ladder to an e2b the
+  runtime could never load, outranking the Vendo Cloud sandbox and killing
+  every server-app build — 0.4.3 printed `execution venue: cloud`, 0.4.4
+  printed `e2b` on the same host. The probe now tests usability instead of
+  importability: it asks Node's own resolver (`require.resolve` via
+  `process.getBuiltinModule`, which works inside server bundles), falls back to
+  a real `import.meta.resolve`, and reads an unverifiable runtime as NOT
+  installed — the SDK is never bundler-inlined (the mutable-specifier import
+  from the edge-portability work guarantees it), so the runtime resolver is the
+  only truth. With `VENDO_API_KEY` set and no usable e2b, the venue is the
+  Cloud sandbox again.
+
+  `vendo doctor` also stops false-blessing the venue: `execution venue: e2b`
+  now passes only when `E2B_API_KEY` is set and the `e2b` package resolves from
+  the project; otherwise it fails with E-LIVE-007 and a concrete fix line.
+
+- Updated dependencies [31f899e]
+  - @vendoai/core@0.4.5
+
 ## 0.4.4
 
 ### Patch Changes
