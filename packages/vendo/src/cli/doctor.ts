@@ -148,8 +148,25 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const warn = (id: string, code: DoctorErrorCode, message: string): void => { warnings += 1; checks.push({ id, status: "warning", message, error_code: code, fix_ref: doctorFixRef(code) }); if (!json) output.error(`warning: ${message}`); };
 
   const framework = await detectFramework(root);
+  // The generated vendo/vendo-root.tsx wrapper carries the <VendoRoot> AND
+  // <VendoOverlay /> markers itself, so an unexcluded scan would pass the
+  // client/surface gates even when NO layout mounts the wrapper — the exact
+  // doctor-green-but-invisible failure E-WIRE-006 exists to catch. Mirror
+  // init's layout decision: exclude the wrapper from the scan, then let a
+  // user-code <VendoRoot> mount next to an overlay-bearing wrapper satisfy
+  // the surface (the wrapper renders the overlay once a layout mounts it).
+  const wrapperCandidates = [
+    join(root, "vendo", "vendo-root.tsx"),
+    join(root, "src", "vendo", "vendo-root.tsx"),
+  ];
+  let wrapperWithOverlay = false;
+  for (const candidate of wrapperCandidates) {
+    const source = await readFile(candidate, "utf8").catch(() => null);
+    if (source !== null && source.includes("<VendoOverlay")) wrapperWithOverlay = true;
+  }
+  const scanned = await detectVendoWiring(root, { exclude: wrapperCandidates });
+  const wiring = { ...scanned, surface: scanned.surface || (scanned.client && wrapperWithOverlay) };
   if (framework === "express") {
-    const wiring = await detectVendoWiring(root);
     if (wiring.server) pass("wiring/express-server", "Express server is wired");
     else fail("wiring/express-server", "E-WIRE-001", "Express server is not wired with createVendo from @vendoai/vendo/server");
     if (wiring.client) pass("wiring/express-client", "<VendoRoot> wraps the client");
@@ -162,17 +179,29 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     if ((await Promise.all(routeCandidates.map(exists))).some(Boolean)) pass("wiring/next-route", "catch-all handler is wired");
     else fail("wiring/next-route", "E-WIRE-003", "missing app/api/vendo/[...vendo]/route.ts");
 
-    const layoutCandidates = [join(root, "app", "layout.tsx"), join(root, "src", "app", "layout.tsx")];
+    // The mount may live in ANY layout, not just the root one (i18n/route-group
+    // hosts mount in e.g. app/[locale]/layout.tsx — the literal root-layout
+    // grep fought exactly that correct wiring in the 0.4.1 E2E cert), and the
+    // correct scaffold mounts the generated vendo/vendo-root.tsx wrapper —
+    // whose export is also named VendoRoot, so the marker holds there too.
     let rootWired = false;
-    for (const path of layoutCandidates) {
-      try {
-        if ((await readFile(path, "utf8")).includes("<VendoRoot")) rootWired = true;
-      } catch {
-        // Try the other layout convention.
+    for (const appDir of [join(root, "app"), join(root, "src", "app")]) {
+      for (const path of await walk(appDir, (rel) => /(^|[\\/])layout\.(?:tsx|jsx|js)$/.test(rel))) {
+        const source = await readFile(path, "utf8").catch(() => "");
+        if (source.includes("<VendoRoot") || source.includes("<VendoProvider")) rootWired = true;
       }
     }
     if (rootWired) pass("wiring/next-root", "<VendoRoot> wraps the app");
-    else fail("wiring/next-root", "E-WIRE-004", "root layout is not wrapped in <VendoRoot>");
+    else fail("wiring/next-root", "E-WIRE-004", "no app layout mounts <VendoRoot> — wrap the app in the generated vendo/vendo-root.tsx wrapper (its export is also named VendoRoot), in the root layout or any layout that covers your pages");
+  }
+
+  // Visible surface (0.4.1 E2E cert B3): <VendoRoot> is a context provider
+  // that renders NOTHING — two certified stacks ended doctor-green with no
+  // way for a user to reach the agent. Green must mean visible.
+  if (wiring.surface) {
+    pass("wiring/surface", "a visible agent surface is mounted (<VendoOverlay /> or an equivalent)");
+  } else {
+    fail("wiring/surface", "E-WIRE-006", "no visible agent surface is mounted — <VendoRoot> renders nothing by itself; mount <VendoOverlay /> (init generates vendo/vendo-root.tsx for this), or render your own surface (<VendoThread />, <VendoToolResult>, the BYO embeds)");
   }
 
   if (await hasDependency(root)) pass("wiring/dependency", "@vendoai/vendo dependency is declared");
@@ -271,6 +300,17 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     } else {
       pass("live/status", `/status live round-trip (${body.version}, ${body.posture})`);
       liveComposition = true;
+      // Split-brain guard (0.4.2 re-run, invoify defect 13): a direct
+      // @vendoai/vendo dependency pinned to an older range beats the vendoai
+      // umbrella's for the APP import, so `npm install vendoai@latest` runs a
+      // new CLI while /status silently serves the old runtime. Any CLI/wire
+      // version disagreement — split-brain or just a dev server started
+      // before the upgrade — means doctor is not certifying what users run.
+      if (body.version === CLI_VERSION) {
+        pass("deps/version-skew", `CLI and running wire agree on @vendoai/vendo ${CLI_VERSION}`);
+      } else {
+        fail("deps/version-skew", "E-DEP-002", `the running wire serves @vendoai/vendo ${body.version} but this CLI is ${CLI_VERSION} — likely a split-brain install (a direct @vendoai/vendo dependency pinned to an older range wins over the vendoai umbrella's). Fix: npm install @vendoai/vendo@${CLI_VERSION} (or remove the direct @vendoai/vendo dependency and reinstall), then restart the dev server and re-run doctor.`);
+      }
       // 10-mcp §1 — the door flag lives under blocks.mcp.
       mcpEnabled = body.blocks.mcp === true;
       sandboxVenue = body.blocks.sandbox;
@@ -286,7 +326,25 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       }
     }
   } catch {
-    fail("live/status", "E-LIVE-002", `/status is unreachable at ${statusUrl}/status`);
+    fail("live/status", "E-LIVE-002", `/status is unreachable at ${statusUrl}/status — doctor expects the WIRE BASE (your app origin plus the mount path, e.g. http://localhost:3000/api/vendo); a bare site origin passed to --url is missing the /api/vendo part`);
+  }
+
+  // Render gate (0.4.1 E2E cert M3): a live wire proves nothing about the
+  // PAGES — the certified invoify install had every page 500ing (registry
+  // passed across the Server Component boundary) while doctor exited 0. One
+  // cheap GET of the app root catches a site that is down for users.
+  if (liveComposition) {
+    try {
+      const response = await fetchImpl(`${new URL(statusUrl).origin}/`, { headers: { accept: "text/html" } });
+      if (response.status >= 500) {
+        fail("live/render", "E-LIVE-006", `the app's root page returned ${response.status} — the site is crashing for users even though the wire answers (typical cause: the component registry imported in a Server Component layout; mount it via the generated vendo/vendo-root.tsx wrapper instead). Check the dev server log.`);
+      } else {
+        pass("live/render", `the app's root page renders (HTTP ${response.status})`);
+      }
+    } catch {
+      // The wire answered but the origin root didn't resolve at all — hosts
+      // that serve no page at / are not doctor's business; skip silently.
+    }
   }
 
   if (!liveComposition) {
