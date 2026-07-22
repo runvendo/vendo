@@ -103,9 +103,12 @@ interface TrayRow {
     composer it docks onto. `anchorRef` is the dock button that opened it — an
     outside-press on THAT button must not close (the button's own click toggles;
     closing here first would let the toggle reopen it, Devin/Greptile review). */
-export function ConnectTray({ onClose, anchorRef }: {
+export function ConnectTray({ onClose, anchorRef, closing = false }: {
   onClose(): void;
   anchorRef?: React.RefObject<HTMLButtonElement | null>;
+  /** Exit phase: the composer keeps the tray mounted while the close
+      animation runs; `data-closing` drives it and disables pointer events. */
+  closing?: boolean;
 }) {
   const { client } = useVendoContext();
   const { options: connectors } = useConnectorCatalog();
@@ -263,7 +266,7 @@ export function ConnectTray({ onClose, anchorRef }: {
   };
 
   return (
-    <div ref={trayRef} className="fl-tray" role="dialog" aria-label="Connect tools">
+    <div ref={trayRef} className="fl-tray" role="dialog" aria-label="Connect tools" data-closing={closing ? "" : undefined}>
       <div className="fl-picker">
         <div className="fl-picker-toprow">
           <input

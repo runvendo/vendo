@@ -190,6 +190,19 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-tray { position: absolute; bottom: calc(100% - 10px); left: 16px; right: 16px;
   z-index: 30; transform-origin: bottom center; overflow: hidden; border-radius: 14px 14px 0 0;
   display: flex; flex-direction: column; justify-content: flex-end; }
+/* The tray blooms out of the bar edge instead of popping: rise + un-shrink
+   anchored at the seam, the same easing family as the item entrance. Exit is
+   the reverse, shorter — the composer keeps it mounted (data-closing) until
+   the animation has run, then squares its corners back via its own radius
+   transition. Guarded by the media query (plus the data-vendo-motion="reduced"
+   kill-switch above) so reduced-motion users get the old instant tray. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-tray { animation: fl-tray-open .32s cubic-bezier(.22, 1, .36, 1) both; }
+  .fl-tray[data-closing] { animation: fl-tray-close .18s cubic-bezier(.4, 0, 1, 1) both; }
+}
+.fl-tray[data-closing] { pointer-events: none; }
+@keyframes fl-tray-open { from { opacity: 0; transform: translateY(12px) scaleY(.96); } }
+@keyframes fl-tray-close { to { opacity: 0; transform: translateY(10px) scaleY(.97); } }
 /* While the tray is up (incl. its exit animation) the bar squares its top
    corners so the two read as one card; the bar's top border is the seam. */
 .fl-dock-anchor:has(.fl-tray) .fl-composer { border-top-left-radius: 0; border-top-right-radius: 0; }
