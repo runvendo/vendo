@@ -63,23 +63,27 @@ Do not mount the handler anywhere else; doctor checks these two paths only.
 
 ### E-WIRE-004 {#E-WIRE-004}
 
-**Symptom:** Root layout is not wrapped in `<VendoRoot>`.
+**Symptom:** No app layout mounts `<VendoRoot>`.
 
-**Cause:** Neither `app/layout.tsx` nor `src/app/layout.tsx` contains a
-`<VendoRoot` element.
+**Cause:** No `layout.tsx` (or `.jsx`/`.js`) under `app/` or `src/app/` — root
+or nested — contains a `<VendoRoot` (or `<VendoProvider`) element.
 
-**Fix:** In the root layout, wrap `{children}`:
+**Fix:** Run `npx vendo init`: it generates the client mount wrapper
+`vendo/vendo-root.tsx` and wires it into the root layout itself (the wrapper's
+export is also named `VendoRoot`). If init could not edit your layout, wrap
+`{children}` yourself in the layout that covers your pages:
 
 ```tsx
-import { VendoRoot } from "@vendoai/vendo/react";
-import { registry } from "../vendo/registry";
-import theme from "../.vendo/theme.json";
-import type { VendoTheme } from "@vendoai/vendo";
+import { VendoRoot } from "../vendo/vendo-root";
 
-<VendoRoot components={registry} theme={theme as VendoTheme}>{children}</VendoRoot>
+<VendoRoot>{children}</VendoRoot>
 ```
 
-`vendo init` prints these lines with the import paths resolved for your repo.
+Do NOT import the registry in the layout and pass it to the provider directly:
+a Server Component layout cannot pass component references to a client
+provider (RSC serialization crashes every page with "Only plain objects can be
+passed to Client Components"). The generated wrapper is the `"use client"`
+boundary that owns the registry and theme imports.
 
 ### E-WIRE-005 {#E-WIRE-005}
 
@@ -90,6 +94,31 @@ devDependencies.
 
 **Fix:** `npm install vendoai` (a thin alias of `@vendoai/vendo`; either name
 works and both ship the `vendo` bin).
+
+### E-WIRE-006 {#E-WIRE-006}
+
+**Symptom:** No visible agent surface is mounted. Everything else can be green
+and a user opening the app still sees nothing — `<VendoRoot>` is a context
+provider that renders no UI of its own.
+
+**Cause:** Doctor scanned the repo's source files and found none that mounts a
+visible surface: `<VendoOverlay />`, `<VendoThread />`, a BYO embed
+(`<VendoToolResult>`, `<VendoAppEmbed>`, `<VendoApprovalEmbed>`), or a
+surface-driving hook (`useVendoOverlay`, `useVendoThread`, `useSlotApp`).
+
+**Fix:** Run `npx vendo init`: it generates `vendo/vendo-root.tsx`, which
+mounts `<VendoOverlay />` (the launcher pill + panel) inside the provider, and
+wires it into the layout. Hand-wiring instead:
+
+```tsx
+import { VendoOverlay } from "@vendoai/vendo/react";
+
+// anywhere inside <VendoRoot> / <VendoProvider>:
+<VendoOverlay />
+```
+
+BYO-agent hosts that render tool outputs through `<VendoToolResult>` in their
+own chat UI already pass this check.
 
 ## Config files
 
@@ -141,6 +170,27 @@ npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3
 ai@7 support is tracked in
 [runvendo/vendo#478](https://github.com/runvendo/vendo/issues/478).
 
+### E-DEP-002 {#E-DEP-002}
+
+**Symptom:** The running wire's `/status` reports a different `@vendoai/vendo`
+version than the CLI running doctor; the message names both versions.
+
+**Cause:** A split-brain install. A direct `@vendoai/vendo` dependency pinned
+to an older range wins over the `vendoai` umbrella's for the app import, so
+`npm install vendoai@latest` upgrades the CLI while the app silently keeps
+serving the old runtime. A dev server started before an upgrade shows the
+same skew until restarted.
+
+**Fix:** Align the runtime with the CLI, then restart the dev server:
+
+```bash
+npm install @vendoai/vendo@<cli-version>
+```
+
+or remove the direct `@vendoai/vendo` dependency from `package.json` (the
+`vendoai` umbrella provides it) and reinstall. Re-run doctor after the dev
+server restarts.
+
 ## Ejected UI
 
 ### E-UI-001 {#E-UI-001}
@@ -189,10 +239,13 @@ mountVendo())`) and that `--url`/`VENDO_URL` points at it.
 **Symptom:** `/status` is unreachable.
 
 **Cause:** Nothing is listening at the probed base: the dev server is not
-running, or it runs on a different port than the probe target.
+running, it runs on a different port than the probe target, or `--url` was
+given the site root instead of the wire base.
 
-**Fix:** Start the dev server and re-run doctor. The default probe base is
-`http://localhost:3000/api/vendo`; override with `--url <base>` or
+**Fix:** Start the dev server and re-run doctor. `--url` expects the WIRE
+BASE — your app origin plus the mount path (for example
+`http://localhost:3000/api/vendo`), not the bare origin. The default probe
+base is `http://localhost:3000/api/vendo`; override with `--url <base>` or
 `VENDO_URL`. All live checks (auth probes, model turn) depend on this one.
 
 ### E-LIVE-003 {#E-LIVE-003}
@@ -228,6 +281,21 @@ key.
 
 **Fix:** Upgrade: `npm install vendoai@latest`, restart the dev server, re-run
 doctor.
+
+### E-LIVE-006 {#E-LIVE-006}
+
+**Symptom:** The app's root page returns a 5xx while the wire answers — the
+site is down for actual users even though every API-level check passes.
+
+**Cause:** Doctor GETs the app origin's root page after `/status` succeeds.
+The most common cause after a fresh install is the component registry imported
+in a Server Component layout and passed to the client provider: React refuses
+to serialize component references across the boundary and every page 500s.
+
+**Fix:** Read the dev server log for the real stack. For the registry case,
+mount the generated `vendo/vendo-root.tsx` wrapper in the layout instead of
+importing the registry there (see [E-WIRE-004](#E-WIRE-004)); re-run
+`npx vendo init` to generate the wrapper if it is missing.
 
 ## Auth probes
 

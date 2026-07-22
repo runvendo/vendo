@@ -92,7 +92,7 @@ describe("vendo doctor MCP discovery live", () => {
     await write(root, "package.json", JSON.stringify({
       dependencies: { "@vendoai/vendo": "0.3.0", next: "16" },
     }));
-    await write(root, "app/layout.tsx", "export default ({children}) => <VendoRoot>{children}</VendoRoot>;");
+    await write(root, "app/layout.tsx", "export default ({children}) => <VendoRoot>{children}<VendoOverlay /></VendoRoot>;");
     await write(root, "app/api/vendo/[...vendo]/route.ts", "export const GET = () => {};\n");
     for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
       await write(root, `.vendo/${file}`, "{}\n");
