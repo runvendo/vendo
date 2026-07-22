@@ -59,13 +59,15 @@ export function ScenarioMount({ scenario, theme, root }: {
     [scenario],
   );
   useAutoSend(scenario, root);
+  // No explicit `connectors` prop: the surfaces resolve the auto catalog from
+  // the fake client (fake-client.ts), so the tray demos search + scroll over
+  // a realistic host's toolkit breadth.
   return (
     <VendoProvider
       client={client}
       transport={transport}
       theme={theme}
       tools={playgroundToolMeta}
-      connectors={[{ toolkit: "slack", label: "Slack" }, { toolkit: "github", label: "GitHub" }]}
     >
       {scenario.render()}
     </VendoProvider>

@@ -2,12 +2,8 @@ import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import {
-  mergeOverrides,
-  vendoSync,
-  type ExtractedTool,
-  type OverridesFile,
-} from "@vendoai/actions";
+import type { ExtractedTool, OverridesFile } from "@vendoai/actions";
+import { mergeOverrides, vendoSync } from "@vendoai/actions/sync";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { VendoTheme } from "@vendoai/core";

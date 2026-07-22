@@ -5,6 +5,7 @@ import {
   type CloudAppsClient,
 } from "@vendoai/apps";
 import { consoleSender, raiseCloudError } from "./cloud-console.js";
+import { defaultFetch } from "@vendoai/core";
 
 /** The Cloud share/publish client — the implementation the composition seam
  * (createVendo) injects into the apps block's CloudAppsClient seam when
@@ -44,7 +45,7 @@ export function cloudApps(options: CloudAppsOptions): CloudAppsClient {
     mountPath: CONSOLE_APPS_PATH,
     apiKey: options.apiKey,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    fetchImpl: options.fetch ?? globalThis.fetch,
+    fetchImpl: options.fetch ?? defaultFetch,
     raise: raiseAppsError,
   });
 

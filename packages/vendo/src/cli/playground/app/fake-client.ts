@@ -80,12 +80,19 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
 
     connections: {
       list: async () => [...state.connections],
-      // The scripted catalog mirrors the scenarios' explicit connectors prop;
-      // surfaces resolving in auto mode see the same two toolkits.
-      catalog: async () => [
-        { toolkit: "slack", connector: "composio" },
-        { toolkit: "github", connector: "composio" },
-      ],
+      // A realistic host catalog: the toolkits the scenarios act through
+      // (slack, github) plus the breadth a real Composio-brokered host
+      // exposes, so the connect tray demos search + scroll + real brand
+      // marks (every slug below has a real logo on logos.composio.dev).
+      catalog: async () =>
+        [
+          "slack", "github", "gmail", "googlecalendar", "googledrive",
+          "googlesheets", "notion", "linear", "jira", "confluence", "asana",
+          "trello", "clickup", "monday", "todoist", "hubspot", "salesforce",
+          "stripe", "shopify", "intercom", "zendesk", "airtable", "dropbox",
+          "figma", "discord", "zoom", "outlook", "calendly", "mailchimp",
+          "typeform",
+        ].map((toolkit) => ({ toolkit, connector: "composio" })),
       initiate: async ({ toolkit, connector }) => ({
         id: `conn_${toolkit}_new`,
         connector: connector ?? "composio",

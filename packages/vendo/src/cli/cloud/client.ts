@@ -25,15 +25,10 @@ export class CloudError extends Error {
   }
 }
 
-export interface CloudUrlOptions {
-  apiUrl?: string;
-  env?: Record<string, string | undefined>;
-}
-
-export function resolveCloudBaseUrl(options: CloudUrlOptions = {}): string {
-  const value = options.apiUrl ?? (options.env ?? process.env).VENDO_CLOUD_URL ?? DEFAULT_CLOUD_URL;
-  return value.replace(/\/+$/, "");
-}
+// Base-URL resolution lives with the portable runtime helper so server-side
+// code (capability misses) never imports this Node/CLI module.
+export { resolveCloudBaseUrl, type CloudUrlOptions } from "../../cloud-key-fetch.js";
+import { resolveCloudBaseUrl, type CloudUrlOptions } from "../../cloud-key-fetch.js";
 
 export interface SessionStore {
   read(): Promise<CloudSession | null>;

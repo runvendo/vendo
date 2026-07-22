@@ -46,7 +46,7 @@ const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
 
 export interface WireDeps {
   principal: (req: Request) => Promise<Principal | null>;
-  ready: Promise<void>;
+  ready: () => Promise<void>;
   /** VENDO_BASE_URL is https → TLS terminates upstream; see secureRequest. */
   trustedBaseIsHttps: boolean;
   sessionId: string;

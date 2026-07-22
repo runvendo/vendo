@@ -1,4 +1,4 @@
-import { parseModule, zodFromExpression, type StaticExtraction } from "@vendoai/actions";
+import { parseModule, zodFromExpression, type StaticExtraction } from "@vendoai/actions/sync";
 import type { ComponentCatalog, ComponentRegistry, NormalizedCatalog } from "@vendoai/core";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";

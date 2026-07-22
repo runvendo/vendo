@@ -1,4 +1,4 @@
-import { VendoError } from "@vendoai/core";
+import { safeErrorMessage, VendoError } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -123,10 +123,31 @@ const networkOptions = (allowedDomains: string[] | undefined, allTraffic: string
 export const e2bInstalled = (): boolean => {
   if (typeof import.meta.resolve !== "function") return true;
   try {
-    import.meta.resolve("e2b");
+    import.meta.resolve(E2B_SPECIFIER);
     return true;
   } catch {
     return false;
+  }
+};
+
+/** Routed through a mutable binding so NO bundler statically resolves the
+    optional SDK: the webpack/turbopack ignore comments below are webpack
+    dialect, and esbuild (Wrangler, Bun) ignores them and hard-fails the build
+    on a literal `import("e2b")` when the SDK isn't installed (field case:
+    vendo-on-Cloudflare-Workers). A `let` defeats esbuild constant folding. */
+let E2B_SPECIFIER = "e2b";
+
+type E2BModule = typeof import("e2b");
+
+const loadE2b = async (): Promise<E2BModule> => {
+  try {
+    return await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ E2B_SPECIFIER) as E2BModule;
+  } catch (error) {
+    throw new VendoError(
+      "sandbox-unavailable",
+      "the optional `e2b` SDK is not installed in this deployment; install `e2b` (and set E2B_API_KEY) to use the E2B sandbox adapter, or leave the sandbox seam to Vendo Cloud / a custom adapter",
+      { loadError: safeErrorMessage(error) },
+    );
   }
 };
 
@@ -266,7 +287,7 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
     async create(spec: E2BCreateSpec) {
       // Optional SDK: keep it a runtime import so hosts without e2b installed
       // don't fail Next's (webpack/Turbopack) bundling of the vendo route.
-      const { ALL_TRAFFIC, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
+      const { ALL_TRAFFIC, Sandbox } = await loadE2b();
       const allowedDomains = spec.allowedDomains;
       const createOptions = {
         ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
@@ -284,7 +305,7 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
       // Lane E — a wake enforces the CURRENT egress policy when the caller
       // passes one; the snapshot-time allowlist applies only to a bare resume.
       const allowedDomains = policy === undefined ? state.allowedDomains : policy.allowedDomains;
-      const { ALL_TRAFFIC, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
+      const { ALL_TRAFFIC, Sandbox } = await loadE2b();
       return wrap(await Sandbox.create(state.snapshotId, {
         ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
         timeoutMs,
@@ -293,7 +314,7 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
     },
     async destroy(snapshotRef) {
       const state = decodeSnapshotRef(snapshotRef);
-      const { NotFoundError, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
+      const { NotFoundError, Sandbox } = await loadE2b();
       const apiOptions = options.apiKey === undefined ? {} : { apiKey: options.apiKey };
       // Best-effort reap of the sandbox the sleep flow left paused behind this
       // ref (recorded by v2 refs; absent from retired v1 refs). It is usually

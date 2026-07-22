@@ -1,7 +1,6 @@
 import { VendoError } from "@vendoai/core";
-import { randomUUID } from "node:crypto";
-import type { Db } from "./db.js";
-import { withSchemaLock } from "./db.js";
+import type { Db } from "#store/db";
+import { withSchemaLock } from "#store/db";
 
 /** 02-store §4. v3 (block-actions design §C, ENG-263) historically added the
     Vendo-owned org tables (`vendo_orgs` + `vendo_org_members`); those tables
@@ -210,7 +209,7 @@ async function migrate(query: Query): Promise<void> {
   await query(
     `INSERT INTO vendo_meta (key, value) VALUES ('boot_id', $1::jsonb)
      ON CONFLICT (key) DO NOTHING`,
-    [JSON.stringify(randomUUID())],
+    [JSON.stringify(globalThis.crypto.randomUUID())],
   );
 }
 

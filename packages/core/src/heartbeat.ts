@@ -16,6 +16,7 @@
  * or the wire answers `active: false`. Non-streaming, non-ok, or header-less
  * responses pass through untouched.
  */
+import { defaultFetch } from "./fetch.js";
 
 const THREAD_ID_HEADER = "x-vendo-thread-id";
 const DEFAULT_BEAT_INTERVAL_MS = 5_000;
@@ -35,7 +36,7 @@ export function withTurnHeartbeat(response: Response, options: TurnHeartbeatOpti
   const threadId = response.headers.get(THREAD_ID_HEADER);
   if (threadId === null || !response.ok || response.body === null) return response;
 
-  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const fetchImpl = options.fetch ?? defaultFetch;
   const url = `${options.baseUrl.replace(/\/$/, "")}/threads/${encodeURIComponent(threadId)}/heartbeat`;
   let timer: ReturnType<typeof setInterval> | undefined;
   let stopped = false;

@@ -13,27 +13,34 @@ import { scenarios, type PlaygroundScenario } from "./scenarios.js";
 import { ThemeEditor, useGoogleFont } from "./theme-editor.js";
 import { decodeThemeParam, encodeThemeParam } from "./theme-state.js";
 
+/* Vendo brand shell (brand kit): Porcelain #FAFAF8, Ink #17171A, Ultramarine
+   #4338CA, Onest (its @font-face rides in via the chrome stylesheet). The
+   STAGE column deliberately has no fixed background — App paints it with the
+   active theme's colors.background so every chrome surface sits on its own
+   canvas edge-to-edge instead of printing an abrupt theme-colored rectangle
+   on the shell. */
 const SHELL_CSS = `
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: Inter, system-ui, -apple-system, sans-serif; background: #f3ede2; color: #14151a; }
+  body { margin: 0; font-family: Onest, Inter, system-ui, -apple-system, sans-serif; background: #fafaf8; color: #17171a; }
   .pg-shell { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 100vh; }
-  .pg-nav { border-right: 1px solid #e3ddd2; background: #faf6ee; padding: 18px 14px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .pg-nav { border-right: 1px solid rgba(23, 23, 26, 0.08); background: #fafaf8; padding: 18px 14px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
   .pg-brand { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; margin: 4px 6px 2px; }
-  .pg-brand small { display: block; font-weight: 500; font-size: 11px; color: #8a8b92; margin-top: 3px; }
-  .pg-group { font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.08em; color: #8a8b92; margin: 18px 6px 6px; }
-  .pg-link { display: block; padding: 7px 10px; border-radius: 8px; font-size: 13px; color: #34353b; text-decoration: none; }
-  .pg-link:hover { background: #f0e9dc; }
-  .pg-link[aria-current="page"] { background: #14151a; color: #fffdf9; }
-  .pg-main { padding: 26px 30px 60px; min-width: 0; }
+  .pg-brand-mark { color: #4338ca; }
+  .pg-brand small { display: block; font-weight: 500; font-size: 11px; color: #6f6f78; margin-top: 3px; }
+  .pg-group { font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.08em; color: #85858f; margin: 18px 6px 6px; }
+  .pg-link { display: block; padding: 7px 10px; border-radius: 8px; font-size: 13px; color: #3a3a41; text-decoration: none; transition: background .12s, color .12s; }
+  .pg-link:hover { background: rgba(67, 56, 202, 0.07); color: #17171a; }
+  .pg-link[aria-current="page"] { background: #17171a; color: #fafaf8; }
+  .pg-main { padding: 26px 30px 60px; min-width: 0; transition: background .2s, color .2s; }
   @media (max-width: 640px) {
     .pg-shell { grid-template-columns: 1fr; }
-    .pg-nav { position: static; height: auto; border-right: none; border-bottom: 1px solid #e3ddd2; }
+    .pg-nav { position: static; height: auto; border-right: none; border-bottom: 1px solid rgba(23, 23, 26, 0.08); }
     .pg-main { padding: 18px 16px 80px; }
   }
   .pg-head { max-width: 860px; margin-bottom: 20px; }
   .pg-head h1 { font-size: 19px; letter-spacing: -0.01em; margin: 0 0 6px; }
-  .pg-head p { font-size: 13.5px; color: #5c5d64; line-height: 1.55; margin: 0; }
+  .pg-head p { font-size: 13.5px; opacity: 0.72; line-height: 1.55; margin: 0; }
   .pg-stage { max-width: 860px; }
   .pg-embed { padding: 0; }
 `;
@@ -109,7 +116,9 @@ function App() {
 
   if (embed) {
     return (
-      <div className="pg-embed">
+      // Same host-canvas rule as the stage: the embed page (the phone iframe's
+      // whole viewport) wears the theme background so the surface blends.
+      <div className="pg-embed" style={{ background: theme.colors.background, minHeight: "100vh" }}>
         {/* keyed: a scenario switch must remount the chrome + fresh transport */}
         <ScenarioMount key={scenario.id} scenario={scenario} theme={theme} />
       </div>
@@ -121,7 +130,7 @@ function App() {
     <div className="pg-shell">
       <nav className="pg-nav" aria-label="Scenarios">
         <div className="pg-brand">
-          Vendo playground
+          <span className="pg-brand-mark">vendo</span> playground
           <small>every surface · scripted data · no model key</small>
         </div>
         {groups.map((group) => (
@@ -142,7 +151,10 @@ function App() {
           </div>
         ))}
       </nav>
-      <main className="pg-main">
+      {/* The stage is the "host page": it wears the ACTIVE theme's background
+          and text color, so surfaces (whose ChromeRoot paints that same
+          background) blend seamlessly under any theme-editor theme. */}
+      <main className="pg-main" style={{ background: theme.colors.background, color: theme.colors.text }}>
         <header className="pg-head">
           <h1>{scenario.title}</h1>
           <p>{scenario.description}</p>
