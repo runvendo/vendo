@@ -27,34 +27,40 @@ your host actions into agent tools, and captures your theme
 ([what init writes](/connect/vendo-init)). The wire route serves generated
 apps and approvals to the embeds; your own chat route stays the loop.
 
-Your chat route needs the same `vendo` instance the wire route uses, so lift
-the generated composition into a shared module both import:
+Your chat route needs the same `vendo` instance the wire route uses. Init
+writes the whole `createVendo` composition inline in the generated route, so
+lift it into a shared module both import. Copy the call out of YOUR generated
+route verbatim — the exact keys mirror what init found in your repo: an auth
+preset or a `principal` line, `catalog`, and a `serverActions` map only when
+init detected `"use server"` actions. Lifted, it looks like:
 
 ```ts
-// lib/vendo.ts — init's composition, moved so your loop can import it
+// lib/vendo.ts — the composition init wrote into the wire route,
+// moved so your loop can import it too
 import { createVendo } from "@vendoai/vendo/server";
-import { serverActions } from "./vendo-actions";
+import { registry } from "@/vendo/registry";
 
 export const vendo = createVendo({
-  // The embeds call this wire route directly, so this MUST resolve the same
-  // subject your chat route passes below — a mismatch makes every app and
-  // approval your agent creates invisible to the embeds (infinite skeleton).
+  // Who the wire's callers act as — init's line. It must resolve the SAME
+  // subject your chat route passes (step 2) — a mismatch makes every app
+  // and approval invisible to the embeds (infinite skeleton).
   principal: async () => ({ kind: "user" as const, subject: "demo-user" }),
-  policy: "cautious", // run reads, ask before writes
-  serverActions,      // the map init generated from your actions
+  catalog: registry, // the component registry init generated
+  policy: {},        // .vendo/policy.json: destructive asks, reads run
 });
 ```
 
 ```ts
-// app/api/vendo/[...vendo]/route.ts
+// app/api/vendo/[...vendo]/route.ts — now just the handler
 import { nextVendoHandler } from "@vendoai/vendo/server";
 import { vendo } from "@/lib/vendo";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
+
+The route needs no `runtime` or `dynamic` exports: Node is the default
+runtime, route handlers are dynamic by default, and on a Next 16 app with
+`cacheComponents: true` an `export const dynamic` line is a build error.
 
 One Next.js config line keeps Vendo's native and wasm dependencies out of
 the bundler:
@@ -96,6 +102,14 @@ The pack adds one guarded `vendo_<action>` tool per host action, plus
 Vendo's agent a whole task). It is built per request because tool execution
 needs a principal-scoped context.
 
+The principal you pass here and the one your shared composition's
+`principal` resolves (step 1) must name the SAME caller. Apps and approvals
+are principal-scoped: the chat turn creates them as this subject, and the
+embeds fetch them through the wire route as whatever its `principal`
+resolves. If the two disagree, everything the agent creates is invisible to
+the embeds — the app embed polls "pending" forever. Resolve both from the
+same session.
+
 ## 3. Render the embeds
 
 Wrap the chat once in `VendoProvider` and hand finished tool outputs to
@@ -114,14 +128,24 @@ case "dynamic-tool":
 ## Try it
 
 <Warning>
-  Your agent's OWN model still needs its own credential — `VENDO_API_KEY`
-  powers Vendo's internal turns (app builds, the delegate), never your loop.
-  If the starter's model has no key on this machine (e.g. no
-  `OPENAI_API_KEY`), either set one or point your agent's `model` at
-  `devModel()` from `@vendoai/vendo/server` to ride the same Vendo Cloud
-  credential. The done-criterion is a REAL chat turn that renders a Vendo
-  tool output — run ask 2 yourself before calling the install done; doctor
-  cannot check your loop's model.
+  Two models are in play, on two separate credentials. Your agent's OWN loop
+  keeps its own key (here `ANTHROPIC_API_KEY` for `claude-sonnet-4-6`) — no
+  Vendo key replaces it. Vendo's internal turns (app builds, the delegate)
+  resolve their model through the
+  [dev-mode credential ladder](/connect/dev-mode), where an explicit provider
+  key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GOOGLE_GENERATIVE_AI_API_KEY`) always beats `VENDO_API_KEY` — explicit
+  keys win over implicit ones. With a provider key in the environment for
+  your loop, Vendo's builds ride that key too, NOT your Cloud key; to force
+  builds through the Vendo Cloud gateway, set
+  `VENDO_DEV_CREDENTIAL=vendo-cloud` (the gateway rides the stock
+  `@ai-sdk/anthropic` provider, so that package must be installed). No
+  `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
+  straight into `.env.local`. If your loop's model has no key on this
+  machine, either set one or point your `model` at `devModel()` from
+  `@vendoai/vendo/server` to ride the same ladder. The done-criterion is a
+  REAL chat turn that renders a Vendo tool output — run ask 2 yourself
+  before calling the install done; doctor cannot check your loop's model.
 </Warning>
 
 One thread, three asks:
@@ -131,9 +155,15 @@ One thread, three asks:
 2. **"Make me a dashboard comparing the weather in Paris, London and
    Tokyo."** `vendo_create_app` returns an app ref immediately and the app
    builds live inline in the chat.
-3. **"Email that trip report to boss@example.com."** A write parks on the
-   cautious policy and renders as an approval card. Approve executes it in
-   place; deny resolves it to "declined".
+3. **A guarded call from your own catalog.** Open `.vendo/tools.json`, pick
+   a tool init labeled `destructive` (or one marked critical in
+   `.vendo/overrides.json`), and ask for it in plain language. The call
+   parks on the generated policy (destructive asks, reads run) and renders
+   as an approval card; Approve executes it in place, Deny resolves it to
+   "declined". (The [full example](#the-full-example) parks
+   `vendo_send_trip_report` on "Email that trip report to boss@example.com"
+   — but a stock starter has no email action, so ask for one that actually
+   exists in YOUR extracted list.)
 
 ## The full example
 

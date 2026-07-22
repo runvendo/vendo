@@ -52,6 +52,12 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
   nothing reaches the host API. Each attempt is audited with its disposition
   (`minted`, `declined`, `mismatch`, or `error`); grants that don't match the
   current principal fail closed with `act-as-subject-mismatch`.
+- Upgrading from the 0.4.1 era: if your repo added a direct `@vendoai/vendo`
+  dependency alongside the `vendoai` alias, bumping `vendoai` alone
+  half-upgrades — the CLI is new while the runtime stays pinned old. Bump
+  the direct `@vendoai/vendo` entry to the same version (or drop it and
+  depend on `vendoai` only), then reinstall. `vendo doctor` (0.4.3+) flags
+  the mismatch.
 - Cookie-authenticated mutations require `Content-Type: application/json`.
 - `/tick` requires the configured bearer secret.
 - Webhook verification uses the raw body and delivery headers.

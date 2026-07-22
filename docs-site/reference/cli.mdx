@@ -99,7 +99,11 @@ is preserved.
 Claims a Vendo Cloud key through the [auth.md](https://vendo.run/auth.md)
 user-claimed ceremony: the CLI opens a claim, shows the pairing code and
 approval URL, and polls until the request is approved in the browser. The
-minted `VENDO_API_KEY` is written to `.env.local` — never printed.
+minted `VENDO_API_KEY` is written to `.env.local` — never printed. The
+success message may suggest re-running `vendo init`; that applies only to a
+repo that is not wired yet. In an already-initialized repo nothing needs
+re-running — the runtime picks the key up from `.env.local` on the next
+turn, and `vendo doctor` confirms it.
 
 In a terminal (TTY) the browser opens automatically at the approval URL; the
 URL and code stay printed as the fallback. For a non-TTY caller — a coding
