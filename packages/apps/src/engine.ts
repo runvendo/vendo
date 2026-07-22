@@ -665,18 +665,29 @@ const streamWire = async (
   };
   try {
     const { streamText } = await import("ai");
+    // streamText does NOT throw provider errors: its default onError logs the
+    // raw error object and the text stream simply ends, so a model failure
+    // (no key, missing @ai-sdk package, quota, timeout) used to reach the
+    // caller as an unparseable-wire issue — unclassifiable downstream. Capture
+    // the error here so the "model generation failed: …" issue carries the
+    // real message (buildFailureReason classifies from it).
+    let streamError: unknown;
     const result = streamText({
       model: deps.model,
       system,
       prompt,
       temperature: 0,
       maxRetries: 0,
+      onError: ({ error }) => { streamError = error; },
     });
     for await (const delta of result.textStream) {
       text += delta;
       schedule();
     }
     await finishPartials();
+    if (streamError !== undefined) {
+      return { issues: [`model generation failed: ${streamError instanceof Error ? streamError.message : "unknown error"}`] };
+    }
     if (deps.onTiming !== undefined && timing !== undefined) {
       const usage = await Promise.resolve(result.usage).catch(() => undefined);
       reportTiming("complete", usage === undefined ? undefined : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });

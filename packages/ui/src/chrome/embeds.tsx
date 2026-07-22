@@ -199,7 +199,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   const { client, components } = useVendoContext();
   const { appId, title } = refValue;
   const [surface, setSurface] = useState<OpenSurface>();
-  const [failed, setFailed] = useState<{ reason: string }>();
+  const [failed, setFailed] = useState<{ reason: string; retryable?: boolean }>();
 
   useEffect(() => {
     setSurface(undefined);
@@ -223,7 +223,10 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
         // reason — the same in-place resolution a denied/expired approval
         // gets — never a wait for the client build deadline.
         if (next.kind === "failed") {
-          setFailed({ reason: next.reason });
+          setFailed({
+            reason: next.reason,
+            ...(next.retryable === undefined ? {} : { retryable: next.retryable }),
+          });
           return;
         }
         if (next.kind !== "pending") {
@@ -275,6 +278,9 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
             <>
               <BeatLine state="error">{title} — couldn't finish</BeatLine>
               <div className="fl-approval-more">{failed.reason}</div>
+              {failed.retryable === true && (
+                <div className="fl-approval-more">Retryable — ask for the app again to rebuild it.</div>
+              )}
             </>
           ) : (
             <span className="fl-slot-skel" role="status" aria-label={`Building ${title}`}>

@@ -2224,11 +2224,15 @@ describe("09 §2 apps composition", () => {
       },
     });
     // A genuine type violation against the same disk schema still fails.
+    // Wave 2 — create() re-throws with the classified reason in the message;
+    // the raw issue list rides detail.issues for in-process callers.
     await expect(vendo.apps.create({ prompt: "Show the broken metric" }, ctx)).rejects.toMatchObject({
       code: "validation",
-      detail: expect.arrayContaining([
-        expect.stringContaining('props invalid for host component "DiskMetric"'),
-      ]),
+      detail: {
+        issues: expect.arrayContaining([
+          expect.stringContaining('props invalid for host component "DiskMetric"'),
+        ]),
+      },
     });
   });
 
