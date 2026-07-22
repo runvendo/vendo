@@ -1312,6 +1312,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   border: 1px solid var(--vendo-danger-border); background: var(--vendo-danger-bg);
   color: var(--vendo-danger); font-size: 12.5px;
   display: flex; align-items: center; gap: 10px; }
+.fl-error-detail { display: block; margin-top: 3px; font-size: 12px; opacity: 0.85; overflow-wrap: anywhere; }
 .fl-error-retry { margin-left: auto; flex-shrink: 0; padding: 4px 11px; border-radius: 8px;
   border: 1px solid var(--vendo-danger-border); background: transparent;
   color: var(--vendo-danger); font: 600 12px/1.2 var(--vendo-font); cursor: pointer; }
