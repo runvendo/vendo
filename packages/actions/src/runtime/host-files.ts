@@ -34,5 +34,12 @@ export async function readOptionalVendoJson<T>(
       cause: cause instanceof Error ? cause.message : String(cause),
     });
   }
-  return parse(value);
+
+  try {
+    return parse(value);
+  } catch (cause) {
+    throw new VendoError("validation", `Invalid Vendo actions file ${path}`, {
+      cause: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
 }
