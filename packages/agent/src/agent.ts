@@ -321,6 +321,30 @@ function providerHistory(messages: UIMessage[]): UIMessage[] {
 }
 
 /** 03-agent §1 */
+
+/** The one gate raw errors pass on their way to the wire. Vendo's OWN errors
+ *  (code + operator-crafted message) are safe and actionable, so they travel
+ *  recognizably prefixed — the thread UI renders the detail line only for
+ *  this shape. Anything else (provider/transport internals can carry request
+ *  URLs, keys, prompts) stays the fixed generic string. Either way the REAL
+ *  error lands in the server log: the operator's terminal is where the
+ *  honest message belongs (field case: a dead apps-create turn surfaced as
+ *  nothing but "Something went wrong" anywhere).
+ */
+function wireErrorMessage(error: unknown): string {
+  console.error("[vendo] turn stream error:", error);
+  // Name+code duck check besides instanceof: a host bundle can carry a second
+  // @vendoai/core copy (dual-package hazard), and its VendoErrors are just as
+  // safe — same crafted messages, same code enum.
+  const vendoShaped = error instanceof VendoError
+    || (error instanceof Error && error.name === "VendoError" && typeof (error as { code?: unknown }).code === "string");
+  if (vendoShaped) {
+    const { message, code } = error as { message: string; code: string };
+    return `Vendo: ${message} (${code})`;
+  }
+  return "An error occurred while generating the response.";
+}
+
 export function createAgent(config: AgentConfig): VendoAgent {
   validateConfig(config);
   // kill-list B5: a host that omits `store` still gets thread persistence —
@@ -475,7 +499,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
             originalMessages: thread.messages,
             // Raw provider/model error strings never reach the wire (they can
             // carry request internals); the error part is a fixed generic message.
-            onError: () => "An error occurred while generating the response.",
+            onError: (error) => wireErrorMessage(error),
           }));
           // AGENT-7: exhausting the step cap is VISIBLE. A run that still wants
           // tool calls after its final permitted step ended because of the cap,
@@ -497,7 +521,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
         onFinish: async ({ messages }) => {
           await persistFinishedTurn(threads, thread, messages, input.ctx);
         },
-        onError: () => "An error occurred while generating the response.",
+        onError: (error) => wireErrorMessage(error),
       });
       const response = createUIMessageStreamResponse({ stream });
       // ENG-211: a caller may begin without an id, in which case resolve()
