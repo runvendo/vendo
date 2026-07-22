@@ -84,6 +84,13 @@ export {
   type GuardPosture,
   type VendoStatus,
 } from "@vendoai/ui";
+// The visible agent surface (launcher pill + panel) — re-exported from the
+// chrome subpath so the init-scaffolded layout wrapper can import everything
+// from "@vendoai/vendo/react": hosts only get @vendoai/vendo as a direct
+// dependency, and under pnpm strict linking the transitive "@vendoai/ui/chrome"
+// does not resolve for them (same TS2307 story as the registry's
+// ComponentRegistry import).
+export { VendoOverlay, type VendoOverlayProps } from "@vendoai/ui/chrome";
 export { remixable, type RemixableRegistration, type RemixableReportOptions } from "./remixable.js";
 
 type ProviderProps = ComponentProps<typeof VendoProvider>;

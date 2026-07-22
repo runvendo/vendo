@@ -1,5 +1,21 @@
 import { VendoError, type Json } from "@vendoai/core";
+import { appStore, type VendoStore } from "@vendoai/store";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
+
+/** Unscoped existence probe behind the ?pending=1 disambiguation: does ANY
+    principal own a record with this id? Owner-scoped open() answers not-found
+    for both "still building" and "exists under someone else", and masking the
+    latter as pending is the infinite skeleton of 0.4.1 E2E cert B4 (wire
+    principal ≠ chat principal). No document content leaves this check. A
+    store that can't answer (hosted wire-door stores have no local db handle)
+    keeps the pending window — today's behavior. */
+async function appRecordExists(store: VendoStore, appId: string): Promise<boolean> {
+  try {
+    return (await appStore(store).get(appId)) !== null;
+  } catch {
+    return false;
+  }
+}
 
 /** 06-apps / 09 §3 — the /apps wire area: CRUD, open/call/edit, history,
     ship-diff, pin drift/rebase, the gesture fork (fork-pin), export/import,
@@ -71,12 +87,25 @@ export const appRoutes: RouteEntry[] = [
       // console 404. Under the additive ?pending=1 flag, ONLY that expected
       // pre-servable miss becomes a quiet 200 {kind:"pending"}; unflagged
       // callers keep the contracted 404, and every other failure keeps its
-      // envelope and status either way.
+      // envelope and status either way. A record that DOES exist — just not
+      // for this caller — is not a build in progress and never will be: that
+      // answers the terminal failed vocabulary (with the principal-mismatch
+      // diagnosis) so the embed resolves promptly instead of skeleton-polling
+      // to its deadline (0.4.1 E2E cert B4).
       if (wire.url.searchParams.get("pending") === "1") {
         try {
           return json(await deps.apps.open(appId, ctx));
         } catch (reason) {
           if (reason instanceof VendoError && reason.code === "not-found") {
+            if (await appRecordExists(deps.store, appId)) {
+              return json({
+                kind: "failed",
+                reason: "this app exists but is not visible to this surface's caller — "
+                  + "the wire route's principal must resolve the same subject your agent loop uses "
+                  + "(see the principal comment in the generated route, or docs.vendo.run/existing-agents)",
+                retryable: false,
+              });
+            }
             return json({ kind: "pending" });
           }
           throw reason;

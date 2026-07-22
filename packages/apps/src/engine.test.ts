@@ -250,9 +250,13 @@ describe("generation engine through createApps", () => {
 
     await expect(runtime.create({ prompt: "Build a broken metric" }, ctx)).rejects.toMatchObject({
       code: "validation",
-      detail: expect.arrayContaining([
-        expect.stringMatching(/node "metriccard-1" props.*MetricCard.*value.*Expected string/i),
-      ]),
+      // Wave 2 — create() re-throws with the classified reason in the message;
+      // the raw issue list rides detail.issues for in-process callers.
+      detail: {
+        issues: expect.arrayContaining([
+          expect.stringMatching(/node "metriccard-1" props.*MetricCard.*value.*Expected string/i),
+        ]),
+      },
     });
   });
 

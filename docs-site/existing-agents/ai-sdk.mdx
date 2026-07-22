@@ -42,7 +42,8 @@ import { registry } from "@/vendo/registry";
 
 export const vendo = createVendo({
   // Who the wire's callers act as — init's line. It must resolve the SAME
-  // subject your chat route passes (step 2); replace both sides together.
+  // subject your chat route passes (step 2) — a mismatch makes every app
+  // and approval invisible to the embeds (infinite skeleton).
   principal: async () => ({ kind: "user" as const, subject: "demo-user" }),
   catalog: registry, // the component registry init generated
   policy: {},        // .vendo/policy.json: destructive asks, reads run

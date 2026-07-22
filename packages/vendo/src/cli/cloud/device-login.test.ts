@@ -127,6 +127,87 @@ describe("runDeviceLogin", () => {
     expect(envLocal).not.toContain("VENDO_API_KEY=old");
   });
 
+  // M4 (0.4.1 E2E cert): a claim is single-use, so the landing file must be
+  // proven writable BEFORE anything touches the network — a sandboxed agent
+  // run that cannot write .env.local must fail here, not after the key mints.
+  it("refuses to start the ceremony when .env.local is not writable — nothing minted, distinct copy", async () => {
+    const root = await tempRoot();
+    await mkdir(join(root, ".env.local")); // a directory: append-open fails like a denied write
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home: await tempRoot(),
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(1);
+    // The preflight fired before ANY network call: no claim was opened.
+    expect(requests).toEqual([]);
+    const error = messages.errors.join("\n");
+    expect(error).toContain(join(root, ".env.local"));
+    expect(error).toContain("no key was minted");
+    expect(error).toContain("not a timeout");
+  });
+
+  it("the preflight probe leaves no artifact behind when .env.local did not exist", async () => {
+    const root = await tempRoot();
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    expect(await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root,
+      home: await tempRoot(),
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    })).toBe(0);
+    // The ceremony's own write is the only .env.local: it holds the key.
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
+  });
+
+  it("a redemption-time write failure reads as a WRITE failure (revoke + retry), never the timeout copy", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    // Preflight passes; the landing file turns unwritable between preflight
+    // and redemption (the sandbox-deny race the preflight can't fully close).
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      await request.text();
+      if (request.url.endsWith("/api/v1/agent/claim")) return Response.json(CEREMONY);
+      await rm(join(root, ".env.local"), { force: true });
+      await mkdir(join(root, ".env.local"), { recursive: true });
+      return Response.json({ access_token: KEY, token_type: "Bearer" }, { status: 200 });
+    }) as unknown as typeof fetch;
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(1);
+    const error = messages.errors.join("\n");
+    expect(error).toContain("the key was minted");
+    expect(error).toContain("revoke it in the console");
+    expect(error).not.toContain("expired");
+    expect(error).not.toContain(KEY); // the key is never printed, even on failure
+    // The claim is consumed server-side: the pending file must be gone so the
+    // next login opens a FRESH claim instead of resuming into invalid_grant.
+    const { readPendingClaim } = await import("./pending-claim.js");
+    expect(await readPendingClaim(root, { home })).toBeNull();
+  });
+
   it("stops loudly on access_denied and expired_token", async () => {
     for (const [error, fragment] of [
       ["access_denied", "denied"],

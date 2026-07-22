@@ -312,9 +312,14 @@ export function Root({ children }: { children: React.ReactNode }) {
 
 `components` accepts the same registry object the composition passes as
 `catalog` — it reads only the component references and ignores the data
-fields. Use the headless hooks from `@vendoai/ui`, or add a shipped surface
-from `@vendoai/ui/chrome`. `<VendoThread />`, `<VendoOverlay />`,
-`<VendoPage />`, and `<VendoPalette />` all speak to the same wire.
+fields. `<VendoRoot>` is a context provider and renders nothing by itself:
+mount a visible surface inside it or users cannot reach the agent. Use the
+headless hooks from `@vendoai/ui`, or add a shipped surface from
+`@vendoai/ui/chrome` (also re-exported from `@vendoai/vendo/react`).
+`<VendoThread />`, `<VendoOverlay />`, `<VendoPage />`, and
+`<VendoPalette />` all speak to the same wire; on Next.js, `vendo init`
+generates `vendo/vendo-root.tsx` mounting `<VendoOverlay />` and wires it
+into the layout for you.
 
 ## First turn
 

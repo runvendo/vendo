@@ -45,6 +45,74 @@ export const VENDO_SESSION_KEY = "vendo-session-id";
 
 export type VendoMastraTool = Tool<unknown, unknown>;
 
+/** The bridge property carrying an OPEN tool's arguments (see
+ *  {@link isOpenObjectSchema}). */
+const OPEN_ARGS_KEY = "args";
+
+/**
+ * An OPEN tool input: an object schema with no declared properties that
+ * accepts arbitrary fields (extraction emits these for routes whose body shape
+ * it cannot type, e.g. `{type:"object", properties:{}, additionalProperties:
+ * true}`). Mastra's provider schema-compat layers hard-close every object node
+ * for strict-mode providers (the OpenAI layer sets `additionalProperties:
+ * false` on all of them), so an open schema reaches the model as "this tool
+ * takes NO arguments" — and the model dutifully calls it with `{}` even when
+ * the user dictated exact args (0.4.x E2E, report-mastra defect 5: the
+ * approved call then executed with an empty body). A schema with declared
+ * properties survives those transforms, so open inputs ride a single declared
+ * JSON-string property instead, unwrapped in execute before the guard.
+ */
+function isOpenObjectSchema(schema: unknown): boolean {
+  if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return false;
+  const record = schema as Record<string, unknown>;
+  if (record.type !== undefined && record.type !== "object") return false;
+  const properties = record.properties;
+  const declared = typeof properties === "object" && properties !== null
+    && Object.keys(properties).length > 0;
+  return !declared && record.additionalProperties !== false;
+}
+
+function openArgsBridgeSchema(tool: string): JSONSchema7 {
+  return {
+    type: "object",
+    properties: {
+      [OPEN_ARGS_KEY]: {
+        // Both forms validate at runtime; strict-mode providers ride the
+        // string branch (their compat layer closes every object node), and
+        // permissive providers may pass the object directly.
+        type: ["string", "object"],
+        description: `The arguments to pass to ${tool}: a JSON object, or that object encoded as one JSON string literal (e.g. {"field":"value"}). Include every field the request calls for; pass {} when there are none.`,
+      },
+    },
+  };
+}
+
+/** Recover the real tool args from a bridged call: a JSON-string `args`
+ *  (the advertised shape), a plain-object `args` (a model that skipped the
+ *  encoding), or the raw payload itself (a provider that ignored the bridge). */
+function unwrapOpenArgs(input: unknown): unknown {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return input ?? {};
+  const record = input as Record<string, unknown>;
+  if (OPEN_ARGS_KEY in record) {
+    const value = record[OPEN_ARGS_KEY];
+    if (value === null || value === undefined) return {};
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed === "") return {};
+      try {
+        return JSON.parse(trimmed) as unknown;
+      } catch {
+        throw new VendoError(
+          "validation",
+          `${OPEN_ARGS_KEY} must be one JSON object literal (e.g. {"field":"value"}); the provided value did not parse as JSON`,
+        );
+      }
+    }
+    if (typeof value === "object" && !Array.isArray(value)) return value;
+  }
+  return record;
+}
+
 function principalFrom(context: ToolExecutionContext | undefined): Principal {
   const candidate = context?.requestContext?.get(VENDO_PRINCIPAL_KEY) as Principal | undefined;
   if (typeof candidate?.kind !== "string" || typeof candidate.subject !== "string") {
@@ -98,11 +166,12 @@ export async function vendoMastraTools(
   });
   const tools: Record<string, VendoMastraTool> = {};
   for (const entry of pack) {
+    const bridged = isOpenObjectSchema(entry.inputSchema);
     tools[entry.name] = createTool({
       id: entry.name,
       description: entry.description,
-      inputSchema: entry.inputSchema as JSONSchema7,
-      execute: (inputData, context) => entry.execute(inputData, {
+      inputSchema: bridged ? openArgsBridgeSchema(entry.name) : entry.inputSchema as JSONSchema7,
+      execute: (inputData, context) => entry.execute(bridged ? unwrapOpenArgs(inputData) : inputData, {
         ctx: runContextFrom(context),
         ...(context?.agent?.toolCallId === undefined ? {} : { callId: context.agent.toolCallId }),
       }),
