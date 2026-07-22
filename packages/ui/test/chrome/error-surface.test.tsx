@@ -49,6 +49,33 @@ describe("visible error surface + retry (ENG-214)", () => {
     expect(status?.textContent).toMatch(/^error:/);
   });
 
+  it("renders the Vendo detail line when the error part is Vendo-shaped", async () => {
+    wire.state.streamFailures = 1;
+    wire.state.streamFailureText = "Vendo: this deployment's plan does not include app machines (cloud-required)";
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+
+    sendFromComposer("Hello");
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const banner = retry.closest(".fl-error");
+    expect(banner?.textContent).toContain("Something went wrong");
+    // The detail is OUR safe, operator-crafted message (agent wireErrorMessage
+    // shape) — rendered without the wire prefix, code kept for support.
+    expect(banner?.textContent).toContain("this deployment's plan does not include app machines (cloud-required)");
+  });
+
+  it("never prints non-Vendo error text in the banner (raw transport strings stay hidden)", async () => {
+    wire.state.streamFailures = 1;
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+
+    sendFromComposer("Hello");
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const banner = retry.closest(".fl-error");
+    expect(banner?.textContent).toContain("Something went wrong");
+    expect(banner?.textContent).not.toContain("connection reset");
+  });
+
   it("retries a mid-stream failure without duplicating messages", async () => {
     wire.state.streamFailures = 1;
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
