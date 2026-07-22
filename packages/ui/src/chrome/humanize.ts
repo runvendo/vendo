@@ -60,6 +60,10 @@ const TOOLKIT_DISPLAY: Record<string, string> = {
   notion: "Notion",
   linear: "Linear",
   googlecalendar: "Google Calendar",
+  googledrive: "Google Drive",
+  googlesheets: "Google Sheets",
+  hubspot: "HubSpot",
+  clickup: "ClickUp",
 };
 
 /** Display name for a toolkit slug: the known-brand table first (separator-less

@@ -337,7 +337,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-typing span:nth-child(3) { animation-delay: .36s; }
 @keyframes fl-typing { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 
-.fl-turn-user { align-self: flex-end; background: var(--vendo-user-bubble); color: var(--vendo-user-bubble-fg);
+.fl-turn-user { position: relative; align-self: flex-end; background: var(--vendo-user-bubble); color: var(--vendo-user-bubble-fg);
   padding: 9px 14px; border-radius: var(--vendo-radius-lg) var(--vendo-radius-lg) var(--vendo-radius-sm) var(--vendo-radius-lg);
   max-width: 82%; font-size: var(--vendo-text-body); line-height: 1.5;
   letter-spacing: -.006em; border: 1px solid var(--vendo-border);
@@ -822,10 +822,16 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-turn-assistant:focus-within .fl-turn-actions,
 .fl-turn-assistant:last-child .fl-turn-actions { opacity: 1; }
 /* ENG-215 — the last user turn carries an Edit action; reveal on hover/focus so
-   keyboard users reach it too (the button stays tabbable while faint). */
-.fl-turn-user .fl-turn-actions { justify-content: flex-end; }
+   keyboard users reach it too (the button stays tabbable while faint).
+   Overlaid BELOW the bubble, out of flow: in flow the invisible row reserved a
+   whole blank line inside the bubble (it reads as a stray trailing newline).
+   pointer-events gate so the hidden row never eats clicks in the list gap it
+   overlays; hovering down onto the revealed row keeps :hover (it is still a
+   descendant of the turn). */
+.fl-turn-user .fl-turn-actions { justify-content: flex-end;
+  position: absolute; top: calc(100% + 2px); right: 0; margin-top: 0; pointer-events: none; }
 .fl-turn-user:hover .fl-turn-actions,
-.fl-turn-user:focus-within .fl-turn-actions { opacity: 1; }
+.fl-turn-user:focus-within .fl-turn-actions { opacity: 1; pointer-events: auto; }
 .fl-turn-btn { display: inline-flex; align-items: center; gap: 5px; height: 27px; min-width: 27px; padding: 0 6px;
   border: 0; border-radius: 7px; background: transparent; color: var(--vendo-fg-muted); cursor: pointer;
   font: 550 12px/1 var(--vendo-font); transition: background .12s, color .12s; }
