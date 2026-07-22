@@ -688,6 +688,15 @@ const streamWire = async (
     if (streamError !== undefined) {
       return { issues: [`model generation failed: ${streamError instanceof Error ? streamError.message : "unknown error"}`] };
     }
+    // 0.4.4 cert defect A — a stream that completes with NO text at all is a
+    // provider/gateway failure mode (observed live: a gateway alias with
+    // forced extended thinking sometimes ends the turn reasoning-only), not a
+    // malformed document. Naming it beats reporting the empty string's
+    // compile issues ("wire missing-app…"), which read as a model-format
+    // defect and sent the 0.4.4 triage down the wrong path.
+    if (text.trim().length === 0) {
+      return { issues: ["model generation failed: the model stream completed without any text output (empty or reasoning-only response from the provider)"] };
+    }
     if (deps.onTiming !== undefined && timing !== undefined) {
       const usage = await Promise.resolve(result.usage).catch(() => undefined);
       reportTiming("complete", usage === undefined ? undefined : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });

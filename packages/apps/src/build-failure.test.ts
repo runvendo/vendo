@@ -112,6 +112,26 @@ describe("build-failure lifecycle (#492)", () => {
     }
   });
 
+  it("names an empty model stream as the failure instead of the empty string's wire-parse issues (0.4.4 defect A)", async () => {
+    // 0.4.4 E2E cert: a gateway alias with forced extended thinking sometimes
+    // ends the turn reasoning-only — the stream completes cleanly with ZERO
+    // text. Compiling "" reported "wire missing-app… / empty layout", which
+    // reads as a model-format defect and mis-routed the triage. The stream
+    // helper now names the real failure class.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { runtime } = setup(scriptedLanguageModel(""));
+      const rejection = await runtime.create({ prompt: "Track invoice statuses" }, context("user_ada"))
+        .then(() => undefined, (error: unknown) => error);
+      expect(rejection).toBeInstanceOf(VendoError);
+      const issues = ((rejection as VendoError).detail as { issues: string[] }).issues;
+      expect(issues.some((issue) => issue.includes("completed without any text output"))).toBe(true);
+      expect(issues.some((issue) => issue.includes("missing-app"))).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("surfaces the dev-model's actionable no-key line in the failed record, open(), and the thrown error", async () => {
     // 0.4.x E2E defect: with a provider key set but the @ai-sdk package
     // missing, the surface said {"code":"validation","model could not produce

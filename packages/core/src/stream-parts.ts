@@ -140,6 +140,28 @@ export const vendoStepLimitPartSchema = z.object({
   message: z.string(),
 }).passthrough() satisfies z.ZodType<VendoStepLimitPart>;
 
+/** 0.4.4 cert defect B (additive — 01 §16 amendment parked, same footing as
+ *  the step-limit part): streamed beside the native tool part when an app
+ *  BUILD terminally fails in a chat turn, so the thread shows the classified
+ *  reason instead of ending (or retrying for minutes) with no visible trace.
+ *  `reason` is the runtime's canned, non-leaky failure line (06-apps
+ *  buildFailureReason) — never a raw provider message. Consumers that don't
+ *  recognize it ignore it (§15 forward-compat). */
+export interface VendoBuildFailedPart {
+  type: "data-vendo-build-failed";
+  /** The failed `vendo_apps_create` call, for placement beside its beat. */
+  toolCallId: string;
+  /** The renderable, provider-safe failure reason. */
+  reason: string;
+}
+
+/** 0.4.4 cert defect B */
+export const vendoBuildFailedPartSchema = z.object({
+  type: z.literal("data-vendo-build-failed"),
+  toolCallId: z.string(),
+  reason: z.string().min(1),
+}).passthrough() satisfies z.ZodType<VendoBuildFailedPart>;
+
 /** AGENT-10 — the nested wire envelope of {@link vendoViewPartSchema}. */
 export const vendoViewWirePartSchema = wirePartSchema(
   "data-vendo-view",
