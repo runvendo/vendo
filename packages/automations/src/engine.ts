@@ -361,7 +361,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const resuming = new Set<string>();
   const inFlightDeliveries = new Set<string>();
   const abortControllers = new Map<string, AbortController>();
-  const engineInstanceId = globalThis.crypto.randomUUID();
+  // Minted on first claim, not at construction: Workers forbids generating
+  // random values in global scope, and createVendo composes this engine at
+  // module init in the edge wiring.
+  let engineInstanceId: string | undefined;
+  const instanceId = (): string => (engineInstanceId ??= globalThis.crypto.randomUUID());
   let tickTail: Promise<void> = Promise.resolve();
   // Absent localTriggerKinds → every kind fires locally (today's behavior, unchanged).
   const firesLocally = (kind: "schedule" | "external"): boolean =>
@@ -826,7 +830,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       if (approval === null) return;
       const approvalData = approvalRowSchema.parse(approval.data);
 
-      const claimedBy = `${engineInstanceId}:${globalThis.crypto.randomUUID()}`;
+      const claimedBy = `${instanceId()}:${globalThis.crypto.randomUUID()}`;
       const claims = config.store.records(RESUME_CLAIMS);
       const atomicClaim = claims.atomic === undefined
         ? undefined

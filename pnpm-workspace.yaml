@@ -15,13 +15,15 @@ packages:
 
 # pnpm 9 ran every dependency build script; pnpm 11 (strictDepBuilds) requires
 # an explicit allowlist. These five are the deps with build scripts in the
-# tree — all allowed, preserving pnpm 9 behavior.
+# tree — all allowed, preserving pnpm 9 behavior. workerd is miniflare's
+# runtime for the portability gate (scripts/portability-gate.mjs).
 allowBuilds:
   cbor-extract: true
   esbuild: true
   protobufjs: true
   sharp: true
   unrs-resolver: true
+  workerd: true
 
 minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.214'

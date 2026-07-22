@@ -3,7 +3,7 @@ import {
   extractServerActions,
   serverActionRegistrations,
   type ServerActionRegistration,
-} from "@vendoai/actions";
+} from "@vendoai/actions/sync";
 import { AUTH_FAMILY_INFO, AUTH_PRESET_SPECIFIER, type AuthMatch } from "./init-auth.js";
 
 /** The wired preset line plus its escape-hatch comment. The lead-in stays

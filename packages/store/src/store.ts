@@ -1,7 +1,7 @@
 import type { BlobStore, RecordStore, StoreAdapter } from "@vendoai/core";
 import { createBlobStore } from "./blobs.js";
-import { validateEncryptionKey } from "./crypto.js";
-import { createDb, type Db, type StoreConfig } from "./db.js";
+import { validateEncryptionKey } from "#store/crypto";
+import { createDb, type Db, type StoreConfig } from "#store/db";
 import { createRecordStore } from "./records.js";
 import { createReservedRecordStore } from "./routing.js";
 import { ensureSchema as migrateSchema } from "./schema.js";

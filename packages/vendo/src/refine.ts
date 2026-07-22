@@ -25,6 +25,7 @@ import {
 import { generateObject } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
+import { defaultFetch } from "@vendoai/core";
 
 /**
  * The refine engine (ENG-250, extraction spec §3). One engine, two surfaces:
@@ -636,7 +637,7 @@ const stringify = (value: unknown): string => `${JSON.stringify(value, null, 2)}
 
 export async function runRefine(options: RefineOptions): Promise<RefineResult> {
   const root = resolve(options.root);
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? defaultFetch;
   const interview = options.interview ?? [];
   const startedAt = new Date().toISOString();
 
