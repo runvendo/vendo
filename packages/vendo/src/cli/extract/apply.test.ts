@@ -175,6 +175,10 @@ describe("the delegation contract", () => {
     expect(instructions).toContain("never lower");
     expect(instructions).toContain('"brief": string');
     expect(instructions).toContain("vendo extract --apply");
+    // Devin P1 on #514: the delegated path must grade audience like the
+    // staged pipeline, or `init --agent` ships privileged surfaces enabled.
+    expect(instructions).toContain("audience");
+    expect(instructions).toMatch(/unsure.*internal|internal.*unsure/i);
   });
 
   it("publishes a draft schema whose shape matches parseDraft's expectations", () => {
@@ -185,7 +189,7 @@ describe("the delegation contract", () => {
     expect(schema.required).toEqual(["brief", "tools"]);
     expect(schema.properties.tools.items.required).toEqual(["name", "description"]);
     expect(Object.keys(schema.properties.tools.items.properties)).toEqual(
-      ["name", "description", "risk", "critical", "disabled", "reasoning"],
+      ["name", "description", "risk", "critical", "disabled", "audience", "reasoning"],
     );
   });
 });

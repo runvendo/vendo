@@ -138,10 +138,14 @@ export function composeInstructions(
     "",
     "Rules:",
     "- Reply with ONLY one fenced json block matching:",
-    '  { "tools": [{ "name", "description", "risk"?, "critical"?, "disabled"?, "reasoning"? }], "missedSurfaces"?: string[] }',
+    '  { "tools": [{ "name", "description", "risk"?, "critical"?, "disabled"?, "audience"?, "reasoning"? }], "missedSurfaces"?: string[] }',
     "- tools: include ONLY names from the list above. Rewrite each description so an agent choosing tools understands what it actually does (read the handler source). <= 200 chars each.",
     "- risk: you may RAISE risk (read->write->destructive) when the handler is more dangerous than labeled; never lower it. Mark irreversible operations critical: true.",
     "- A tool listed as disabled was statically unclassifiable. If you can read its handler and grade it, set disabled: false WITH a risk and one-line reasoning. Leave it out otherwise.",
+    "- audience: who the handler's own auth admits — \"end-user\" (a signed-in customer acting on their own data),",
+    "  \"operator\" (admin/staff/support consoles), or \"internal\" (machine-to-machine: webhooks, cron, reconciliation,",
+    "  service tokens). Read the auth checks, not the route name. When unsure, default to internal — non-end-user",
+    "  tools are excluded from the embedded agent by default, and a wrong \"end-user\" grade exposes a privileged surface.",
     "- missedSurfaces: API surfaces you found that the list is missing (path + one line). Do not invent tools for them.",
   ].join("\n");
 }
