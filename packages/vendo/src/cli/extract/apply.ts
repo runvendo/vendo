@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import { vendoSync } from "@vendoai/actions";
+import { vendoSync } from "@vendoai/actions/sync";
 import type { Telemetry } from "@vendoai/telemetry";
 import { detectDepVersions } from "../dep-versions.js";
 import { detectFramework } from "../framework.js";

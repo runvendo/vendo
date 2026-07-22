@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { readOptionalVendoJson } from "#actions/host-files";
 import {
   VendoError,
   descriptorHash,
@@ -166,34 +165,6 @@ function mergeOverride<T extends ToolDescriptor>(descriptor: T, override?: ToolO
   };
 }
 
-async function readOptionalJson<T>(path: string, parse: (value: unknown) => T): Promise<T | undefined> {
-  let source: string;
-  try {
-    source = await readFile(path, "utf8");
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw new VendoError("validation", `Could not read ${path}`, {
-      cause: cause instanceof Error ? cause.message : String(cause),
-    });
-  }
-
-  let value: unknown;
-  try {
-    value = JSON.parse(source);
-  } catch (cause) {
-    throw new VendoError("validation", `Malformed JSON in ${path}`, {
-      cause: cause instanceof Error ? cause.message : String(cause),
-    });
-  }
-
-  try {
-    return parse(value);
-  } catch (cause) {
-    throw new VendoError("validation", `Invalid Vendo actions file ${path}`, {
-      cause: cause instanceof Error ? cause.message : String(cause),
-    });
-  }
-}
 
 function appendQuery(url: URL, key: string, value: unknown): void {
   const values = Array.isArray(value) ? value : [value];
@@ -728,12 +699,10 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
           ...(configuredCapabilities === undefined ? {} : { capabilities: configuredCapabilities }),
         };
       }
-      // `dir` may be the host root (we look inside its .vendo/) or the .vendo directory itself.
-      const vendoDir = basename(resolve(config.dir)) === ".vendo" ? config.dir : join(config.dir, ".vendo");
       const [toolsFile, overrides, capabilitiesFile] = await Promise.all([
-        readOptionalJson(join(vendoDir, "tools.json"), (value) => toolsFileSchema.parse(value)),
-        readOptionalJson(join(vendoDir, "overrides.json"), (value) => overridesFileSchema.parse(value)),
-        readOptionalJson(join(vendoDir, "capabilities.json"), (value) => capabilitiesFileSchema.parse(value)),
+        readOptionalVendoJson(config.dir, "tools.json", (value) => toolsFileSchema.parse(value)),
+        readOptionalVendoJson(config.dir, "overrides.json", (value) => overridesFileSchema.parse(value)),
+        readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value)),
       ]);
       const capabilities = configuredCapabilities ?? capabilitiesFile;
       return {
