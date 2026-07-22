@@ -1,5 +1,12 @@
 # @vendoai/guard
 
+## 0.4.4
+
+### Patch Changes
+
+- Updated dependencies [835d17a]
+  - @vendoai/core@0.4.4
+
 ## 0.4.3
 
 ### Patch Changes

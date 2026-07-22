@@ -23,7 +23,7 @@ import type { RuntimeCaptureHandler } from "../runtime-capture.js";
     wire/context.ts; server.ts assembles the table from the per-area modules
     under src/wire/. */
 
-export const VERSION = "0.4.3";
+export const VERSION = "0.4.4";
 export const BASE_PATH = "/api/vendo";
 
 export type SandboxVenue = "e2b" | "cloud" | "custom" | false;
