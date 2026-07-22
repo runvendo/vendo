@@ -17,6 +17,9 @@ export const draftToolSchema = z.object({
   critical: z.boolean().optional(),
   /** false = wake a statically-unclassifiable tool (needs reasoning). */
   disabled: z.boolean().optional(),
+  /** Who the handler's own auth admits; non-end-user grades exclude the tool
+   *  by default (applyDraft). */
+  audience: z.enum(["end-user", "operator", "internal"]).optional(),
   reasoning: z.string().max(500).optional(),
 });
 export type DraftTool = z.infer<typeof draftToolSchema>;
