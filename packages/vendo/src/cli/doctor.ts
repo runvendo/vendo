@@ -148,7 +148,24 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const warn = (id: string, code: DoctorErrorCode, message: string): void => { warnings += 1; checks.push({ id, status: "warning", message, error_code: code, fix_ref: doctorFixRef(code) }); if (!json) output.error(`warning: ${message}`); };
 
   const framework = await detectFramework(root);
-  const wiring = await detectVendoWiring(root);
+  // The generated vendo/vendo-root.tsx wrapper carries the <VendoRoot> AND
+  // <VendoOverlay /> markers itself, so an unexcluded scan would pass the
+  // client/surface gates even when NO layout mounts the wrapper — the exact
+  // doctor-green-but-invisible failure E-WIRE-006 exists to catch. Mirror
+  // init's layout decision: exclude the wrapper from the scan, then let a
+  // user-code <VendoRoot> mount next to an overlay-bearing wrapper satisfy
+  // the surface (the wrapper renders the overlay once a layout mounts it).
+  const wrapperCandidates = [
+    join(root, "vendo", "vendo-root.tsx"),
+    join(root, "src", "vendo", "vendo-root.tsx"),
+  ];
+  let wrapperWithOverlay = false;
+  for (const candidate of wrapperCandidates) {
+    const source = await readFile(candidate, "utf8").catch(() => null);
+    if (source !== null && source.includes("<VendoOverlay")) wrapperWithOverlay = true;
+  }
+  const scanned = await detectVendoWiring(root, { exclude: wrapperCandidates });
+  const wiring = { ...scanned, surface: scanned.surface || (scanned.client && wrapperWithOverlay) };
   if (framework === "express") {
     if (wiring.server) pass("wiring/express-server", "Express server is wired");
     else fail("wiring/express-server", "E-WIRE-001", "Express server is not wired with createVendo from @vendoai/vendo/server");

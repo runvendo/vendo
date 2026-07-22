@@ -927,6 +927,44 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(errors).toContain("<VendoOverlay />");
   });
 
+  // The generated wrapper carries <VendoRoot> AND <VendoOverlay /> markers
+  // itself — it must NOT satisfy the client/surface gates while no layout
+  // mounts it, or doctor-green-but-invisible comes right back.
+  it("fails E-WIRE-006 when only the UNMOUNTED generated wrapper carries the overlay", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "app", "layout.tsx"),
+      "export default ({children}) => <html><body>{children}</body></html>;");
+    await mkdir(join(root, "vendo"), { recursive: true });
+    await writeFile(join(root, "vendo", "vendo-root.tsx"),
+      "\"use client\";\nexport function VendoRoot({children}) { return <VendoRoot>{children}<VendoOverlay /></VendoRoot>; }");
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("no visible agent surface is mounted");
+  });
+
+  // The auto-wired shape: the layout mounts <VendoRoot> imported FROM the
+  // wrapper (so the layout itself carries no overlay marker) and the wrapper
+  // renders <VendoOverlay /> — that IS the surface, same rule init applies.
+  it("passes when the layout mounts the overlay-bearing wrapper's <VendoRoot>", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "app", "layout.tsx"),
+      "import { VendoRoot } from \"../vendo/vendo-root\";\nexport default ({children}) => <VendoRoot>{children}</VendoRoot>;");
+    await mkdir(join(root, "vendo"), { recursive: true });
+    await writeFile(join(root, "vendo", "vendo-root.tsx"),
+      "\"use client\";\nexport function VendoRoot({children}) { return <VendoRoot>{children}<VendoOverlay /></VendoRoot>; }");
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: output().sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+  });
+
   it("accepts a BYO embed (<VendoToolResult>) as the visible surface", async () => {
     const root = await healthy();
     await writeFile(join(root, "app", "layout.tsx"),
