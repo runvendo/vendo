@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { applyDraft, composeInstructions, runAiExtraction } from "./extraction.js";
+import { applyDraft, composeInstructions, reportApplied, runAiExtraction } from "./extraction.js";
 import { parseDraft, type ExtractionHarness, type ExtractionRunInput } from "./harness.js";
 import type { Output } from "../shared.js";
 
@@ -69,6 +69,14 @@ describe("composeInstructions", () => {
     expect(instructions).toContain("never lower");
     expect(instructions).toContain("maple");
   });
+
+  it("asks for an audience grade and defaults the unsure case to internal", () => {
+    const instructions = composeInstructions(TOOLS, "maple");
+    expect(instructions).toContain("audience");
+    expect(instructions).toContain("end-user");
+    expect(instructions).toContain("operator");
+    expect(instructions).toMatch(/unsure.*internal|internal.*unsure/i);
+  });
 });
 
 describe("applyDraft (deterministic verification)", () => {
@@ -92,6 +100,65 @@ describe("applyDraft (deterministic verification)", () => {
     expect(overrides.tools["host_invoices_create"]).toMatchObject({ risk: "destructive", critical: true });
     expect(overrides.tools["host_admin_unclassified"]).toMatchObject({ disabled: false, risk: "destructive" });
     expect(await readFile(join(root, ".vendo", "brief.md"), "utf8")).toContain("consumer bank");
+  });
+
+  it("excludes operator/internal-audience tools (disabled, audience recorded); end-user stays live", async () => {
+    const root = await fixture();
+    const summary = await applyDraft({
+      root,
+      tools: TOOLS,
+      draft: {
+        brief: "Maple is a consumer bank.",
+        tools: [
+          { name: "host_invoices_list", description: "List the signed-in user's invoices.", audience: "end-user" },
+          { name: "host_invoices_create", description: "Reconciliation hook for the billing cron.", audience: "internal", reasoning: "handler requires a service token" },
+        ],
+      },
+    });
+    expect(summary).toMatchObject({ excluded: 1, refused: [] });
+    const overrides = await readOverrides(root);
+    expect(overrides.tools["host_invoices_create"]).toMatchObject({ disabled: true, audience: "internal" });
+    expect(overrides.tools["host_invoices_list"]).not.toHaveProperty("disabled");
+    expect(overrides.tools["host_invoices_list"]).toMatchObject({ audience: "end-user" });
+  });
+
+  it("audience exclusion never reverses a human enable decision", async () => {
+    const root = await fixture({
+      format: "vendo/overrides@1",
+      tools: { host_invoices_create: { disabled: false } },
+      remix: { ignoreSlots: [] },
+    });
+    const summary = await applyDraft({
+      root,
+      tools: TOOLS,
+      draft: {
+        brief: "Maple.",
+        tools: [{ name: "host_invoices_create", description: "Billing cron hook.", audience: "internal" }],
+      },
+    });
+    expect(summary.excluded).toBe(0);
+    const overrides = await readOverrides(root);
+    expect(overrides.tools["host_invoices_create"]).toMatchObject({ disabled: false });
+  });
+
+  it("reportApplied warns loudly when the applied surface leaves the agent with zero live tools", async () => {
+    const root = await fixture();
+    const summary = await applyDraft({
+      root,
+      tools: TOOLS,
+      draft: {
+        brief: "Maple.",
+        tools: [
+          { name: "host_invoices_list", description: "Billing webhook.", audience: "internal" },
+          { name: "host_invoices_create", description: "Reconciliation cron.", audience: "internal" },
+        ],
+      },
+    });
+    expect(summary.enabledAfter).toBe(0);
+    const { output: out, errors } = output();
+    reportApplied({ output: out, applied: summary, briefDrafted: true });
+    expect(errors.join("\n")).toMatch(/zero live tools/i);
+    expect(errors.join("\n")).toMatch(/overrides\.json/);
   });
 
   it("refuses unknown tools, risk downgrades, and unreasoned wakes", async () => {

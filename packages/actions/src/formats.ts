@@ -270,6 +270,10 @@ export interface ToolOverride {
   critical?: boolean;
   disabled?: boolean;
   description?: string;
+  /** Who can legitimately call this through the product's own auth. Extraction
+   *  records it as provenance for the default exclusion of non-end-user tools
+   *  (operator/internal surfaces never reach the embedded agent unreviewed). */
+  audience?: "end-user" | "operator" | "internal";
   /** W3 — host-declared field semantics for this tool's RESPONSE, keyed by
    *  collapsed dot path (arrays collapse: `data.amountCents`). The highest
    *  authority in `.vendo/semantics.json`: annotation > sync-time inference. */
@@ -281,6 +285,7 @@ export const toolOverrideSchema = z.object({
   critical: z.boolean().optional(),
   disabled: z.boolean().optional(),
   description: z.string().optional(),
+  audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
 }).strict() satisfies z.ZodType<ToolOverride>;
 

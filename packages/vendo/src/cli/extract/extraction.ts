@@ -59,6 +59,10 @@ export interface AppliedSummary {
   riskRaised: number;
   critical: number;
   woken: number;
+  /** Non-end-user-audience tools excluded (disabled) this apply. */
+  excluded: number;
+  /** Tools still live after this apply — zero means the agent cannot act on the host API at all. */
+  enabledAfter: number;
   briefWritten: boolean;
   refused: string[];
   missedSurfaces: string[];
@@ -80,7 +84,7 @@ export async function applyDraft(input: {
     : overridesSchema.parse(JSON.parse(raw));
 
   const summary: AppliedSummary = {
-    described: 0, riskRaised: 0, critical: 0, woken: 0,
+    described: 0, riskRaised: 0, critical: 0, woken: 0, excluded: 0, enabledAfter: 0,
     briefWritten: false, refused: [], missedSurfaces: input.draft.missedSurfaces ?? [],
   };
 
@@ -102,7 +106,10 @@ export async function applyDraft(input: {
     // evidence, so a reasoned wake carries the model's grade without tripping
     // the downgrade guard (Greptile P1 / Devin on #363). A human-set risk or
     // disabled decision always wins.
-    const isWake = entry.disabled === false && fact.disabled === true;
+    // A wake claiming a non-end-user audience is contradictory; audience
+    // exclusion (fail-closed) wins and the wake leg never runs.
+    const nonEndUser = entry.audience === "operator" || entry.audience === "internal";
+    const isWake = entry.disabled === false && fact.disabled === true && !nonEndUser;
     if (isWake && existing.disabled === undefined) {
       if (entry.reasoning === undefined || entry.risk === undefined) {
         summary.refused.push(`${entry.name}: waking a disabled tool needs reasoning and a risk grade`);
@@ -126,8 +133,26 @@ export async function applyDraft(input: {
       next.critical = true;
       summary.critical += 1;
     }
+    // Audience: recorded as provenance; a non-end-user grade excludes the
+    // tool by default. A human decision on either field always wins — a
+    // hand-set disabled (true OR false) or audience is never touched.
+    if (entry.audience !== undefined && existing.audience === undefined) {
+      next.audience = entry.audience;
+      if (nonEndUser && existing.disabled === undefined && next.disabled !== false) {
+        if (next.disabled !== true) summary.excluded += 1;
+        next.disabled = true;
+      }
+    }
     if (JSON.stringify(next) !== JSON.stringify(existing)) overrides.tools[entry.name] = next;
   }
+
+  // The number that actually matters to an end user: how many tools the
+  // agent can still call once static grades and overrides settle. Zero means
+  // the product's core promise silently degraded — reportApplied warns.
+  summary.enabledAfter = input.tools.filter((tool) => {
+    const override = overrides.tools[tool.name] ?? {};
+    return (override.disabled ?? tool.disabled ?? false) !== true;
+  }).length;
 
   await writeText(overridesPath, `${JSON.stringify(overrides, null, 2)}\n`);
 
@@ -155,11 +180,19 @@ export function reportApplied(input: {
     ...(applied.riskRaised > 0 ? [`${applied.riskRaised} risk raises`] : []),
     ...(applied.critical > 0 ? [`${applied.critical} critical marks`] : []),
     ...(applied.woken > 0 ? [`${applied.woken} tools woken`] : []),
+    ...(applied.excluded > 0 ? [`${applied.excluded} operator/internal tools excluded`] : []),
     ...(input.briefDrafted ? ["brief drafted"] : []),
   ];
   output.log(`AI polish applied: ${parts.join(" · ")} → .vendo/overrides.json, .vendo/brief.md${input.artifactsNote ?? ""}`);
   for (const note of input.notes ?? []) output.error(`  ${note}`);
   for (const refused of applied.refused) output.error(`  refused: ${refused}`);
+  if (applied.enabledAfter === 0) {
+    output.error(
+      "  WARNING: zero live tools after apply — every extracted tool is disabled or excluded, so the embedded "
+      + "agent cannot act on this product's API. Review the audience exclusions in .vendo/overrides.json "
+      + "(re-enable the end-user surface with disabled: false) or re-run extraction.",
+    );
+  }
   for (const missed of applied.missedSurfaces) output.log(`  missed surface (not extracted yet): ${missed}`);
 }
 
