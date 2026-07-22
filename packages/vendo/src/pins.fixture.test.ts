@@ -1,7 +1,8 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { capturedPinBaselineSchema, vendoSync } from "@vendoai/actions";
+import { capturedPinBaselineSchema } from "@vendoai/actions";
+import { vendoSync } from "@vendoai/actions/sync";
 import { pinBaselineSchema } from "@vendoai/apps";
 import { VENDO_APP_FORMAT, type AppDocument, type RunContext } from "@vendoai/core";
 import { createStore } from "@vendoai/store";

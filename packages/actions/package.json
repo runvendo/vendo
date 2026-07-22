@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/actions",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Every API becomes agent tools, executed as the signed-in user: sync-as-build-step extraction (OpenAPI + route-scan), .vendo tool formats, connectors, and the ActionsRegistry runtime.",
   "keywords": [
     "ai",
@@ -39,6 +39,10 @@
     "./presets/auth-js": {
       "types": "./dist/presets/auth-js.d.ts",
       "default": "./dist/presets/auth-js.js"
+    },
+    "./sync": {
+      "types": "./dist/sync/public.d.ts",
+      "default": "./dist/sync/public.js"
     }
   },
   "files": [
@@ -78,5 +82,14 @@
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",
     "zod-to-json-schema": "^3.25.2"
+  },
+  "imports": {
+    "#actions/host-files": {
+      "workerd": "./dist/runtime/host-files-edge.js",
+      "worker": "./dist/runtime/host-files-edge.js",
+      "edge-light": "./dist/runtime/host-files-edge.js",
+      "browser": "./dist/runtime/host-files-edge.js",
+      "default": "./dist/runtime/host-files.js"
+    }
   }
 }

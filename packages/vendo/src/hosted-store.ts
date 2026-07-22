@@ -15,6 +15,7 @@ import {
 } from "@vendoai/store";
 import { consoleSender, raiseCloudError, toArrayBuffer } from "./cloud-console.js";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
+import { defaultFetch } from "@vendoai/core";
 
 /** The console mounts the hosted-store surface here
  * (apps/console/app/api/v1/store/*). */
@@ -130,7 +131,7 @@ function parseNullableRecord(value: unknown): VendoRecord | null {
 export function hostedStore(options: HostedStoreOptions): HostedStore {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const fetchImpl = options.fetch ?? defaultFetch;
 
   const send = consoleSender({
     base,

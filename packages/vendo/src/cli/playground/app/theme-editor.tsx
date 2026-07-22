@@ -19,51 +19,51 @@ const EDITOR_CSS = `
   /* Above the chrome's own overlay/takeover layers (they top out at
      2147483100) — the editor is harness tooling and must stay reachable
      while the overlay scenario is open. */
-  .te-card, .te-pill { position: fixed; top: 16px; right: 16px; z-index: 2147483200; font-family: Inter, system-ui, sans-serif; }
-  .te-card { width: 302px; max-height: calc(100vh - 32px); display: flex; flex-direction: column; background: #faf6ee; border: 1px solid #e3ddd2; border-radius: 14px; box-shadow: 0 18px 44px rgba(20, 21, 26, 0.18); transform-origin: top right; transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 320ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .te-card, .te-pill { position: fixed; top: 16px; right: 16px; z-index: 2147483200; font-family: Onest, Inter, system-ui, sans-serif; }
+  .te-card { width: 302px; max-height: calc(100vh - 32px); display: flex; flex-direction: column; background: #fafaf8; border: 1px solid rgba(23, 23, 26, 0.1); border-radius: 14px; box-shadow: 0 18px 44px rgba(23, 23, 26, 0.18); transform-origin: top right; transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 320ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .te-card[data-closed="true"] { transform: scale(0.6) translateY(-8px); opacity: 0; pointer-events: none; }
-  .te-pill { display: inline-flex; align-items: center; gap: 7px; background: #14151a; color: #fffdf9; border: none; border-radius: 999px; font: 600 12.5px Inter, sans-serif; padding: 9px 15px; cursor: pointer; box-shadow: 0 10px 26px rgba(20, 21, 26, 0.25); opacity: 0; pointer-events: none; transition: opacity 320ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .te-pill { display: inline-flex; align-items: center; gap: 7px; background: #17171a; color: #fafaf8; border: none; border-radius: 999px; font: 600 12.5px Onest, Inter, sans-serif; padding: 9px 15px; cursor: pointer; box-shadow: 0 10px 26px rgba(23, 23, 26, 0.25); opacity: 0; pointer-events: none; transition: opacity 320ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .te-pill[data-shown="true"] { opacity: 1; pointer-events: auto; }
-  .te-dot { width: 13px; height: 13px; border-radius: 50%; background: conic-gradient(#e7683c, #f5c644, #55a06f, #2f5af5, #7c6cff, #e7683c); border: 1px solid rgba(255, 255, 255, 0.4); }
+  .te-dot { width: 13px; height: 13px; border-radius: 50%; background: conic-gradient(#4338ca, #818cf8, #22d3ee, #4338ca); border: 1px solid rgba(255, 255, 255, 0.4); }
   .te-grab { display: none; }
-  .te-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 10px; border-bottom: 1px solid #e3ddd2; flex-shrink: 0; }
-  .te-head b { font-size: 12.5px; color: #14151a; }
-  .te-head small { display: block; font-weight: 500; font-size: 10.5px; color: #8a8b92; margin-top: 2px; }
-  .te-x { border: none; background: none; color: #8a8b92; font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 6px; line-height: 1; }
-  .te-x:hover { background: #f0e9dc; color: #14151a; }
-  .te-body { overflow-y: auto; padding: 10px 14px 12px; font-size: 12.5px; color: #14151a; }
+  .te-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 10px; border-bottom: 1px solid rgba(23, 23, 26, 0.1); flex-shrink: 0; }
+  .te-head b { font-size: 12.5px; color: #17171a; }
+  .te-head small { display: block; font-weight: 500; font-size: 10.5px; color: #6f6f78; margin-top: 2px; }
+  .te-x { border: none; background: none; color: #6f6f78; font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 6px; line-height: 1; }
+  .te-x:hover { background: rgba(67, 56, 202, 0.08); color: #17171a; }
+  .te-body { overflow-y: auto; padding: 10px 14px 12px; font-size: 12.5px; color: #17171a; }
   .te-sec { margin-bottom: 14px; }
-  .te-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #8a8b92; margin-bottom: 7px; }
+  .te-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #85858f; margin-bottom: 7px; }
   .te-presets { display: flex; flex-wrap: wrap; gap: 6px; }
-  .te-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e3ddd2; background: #fffdf9; border-radius: 999px; padding: 4px 10px 4px 5px; font: 600 11.5px Inter, sans-serif; cursor: pointer; color: #14151a; }
+  .te-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(23, 23, 26, 0.1); background: #ffffff; border-radius: 999px; padding: 4px 10px 4px 5px; font: 600 11.5px Onest, Inter, sans-serif; cursor: pointer; color: #17171a; }
   .te-chip .te-swatch { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.12); }
-  .te-chip[aria-pressed="true"] { border-color: #14151a; box-shadow: inset 0 0 0 1px #14151a; }
+  .te-chip[aria-pressed="true"] { border-color: #4338ca; box-shadow: inset 0 0 0 1px #4338ca; }
   .te-crow { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
-  .te-crow input[type="color"] { width: 24px; height: 24px; border: 1px solid #e3ddd2; border-radius: 7px; padding: 1px; background: #fffdf9; cursor: pointer; flex-shrink: 0; }
+  .te-crow input[type="color"] { width: 24px; height: 24px; border: 1px solid rgba(23, 23, 26, 0.1); border-radius: 7px; padding: 1px; background: #ffffff; cursor: pointer; flex-shrink: 0; }
   .te-crow span { flex: 1; font-weight: 550; font-size: 11.5px; }
-  .te-crow code { font: 500 10.5px ui-monospace, monospace; color: #8a8b92; }
-  .te-body select, .te-body input[type="text"] { width: 100%; font: 500 12px Inter, sans-serif; color: #14151a; background: #fffdf9; border: 1px solid #e3ddd2; border-radius: 8px; padding: 6px 8px; }
+  .te-crow code { font: 500 10.5px ui-monospace, monospace; color: #6f6f78; }
+  .te-body select, .te-body input[type="text"] { width: 100%; font: 500 12px Onest, Inter, sans-serif; color: #17171a; background: #ffffff; border: 1px solid rgba(23, 23, 26, 0.1); border-radius: 8px; padding: 6px 8px; }
   .te-body input[type="text"] { margin-top: 6px; }
   .te-srow { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
   .te-srow label { font-size: 11.5px; font-weight: 550; width: 62px; flex-shrink: 0; }
-  .te-srow input[type="range"] { flex: 1; accent-color: #14151a; min-width: 0; }
-  .te-srow output { font: 500 10.5px ui-monospace, monospace; color: #8a8b92; width: 34px; text-align: right; flex-shrink: 0; }
+  .te-srow input[type="range"] { flex: 1; accent-color: #4338ca; min-width: 0; }
+  .te-srow output { font: 500 10.5px ui-monospace, monospace; color: #6f6f78; width: 34px; text-align: right; flex-shrink: 0; }
   .te-segs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .te-seg { display: flex; background: #fffdf9; border: 1px solid #e3ddd2; border-radius: 9px; padding: 2px; gap: 2px; }
-  .te-seg button { flex: 1; border: none; background: none; font: 600 11px Inter, sans-serif; color: #6b6c72; padding: 5px 0; border-radius: 7px; cursor: pointer; }
-  .te-seg button[aria-pressed="true"] { background: #14151a; color: #fffdf9; }
-  .te-foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid #e3ddd2; flex-shrink: 0; }
-  .te-foot button { flex: 1; font: 600 11.5px Inter, sans-serif; border-radius: 8px; padding: 7px 0; cursor: pointer; }
-  .te-copy { background: #14151a; color: #fffdf9; border: 1px solid #14151a; }
-  .te-link { background: #fffdf9; color: #14151a; border: 1px solid #e3ddd2; }
+  .te-seg { display: flex; background: #ffffff; border: 1px solid rgba(23, 23, 26, 0.1); border-radius: 9px; padding: 2px; gap: 2px; }
+  .te-seg button { flex: 1; border: none; background: none; font: 600 11px Onest, Inter, sans-serif; color: #6f6f78; padding: 5px 0; border-radius: 7px; cursor: pointer; }
+  .te-seg button[aria-pressed="true"] { background: #17171a; color: #fafaf8; }
+  .te-foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid rgba(23, 23, 26, 0.1); flex-shrink: 0; }
+  .te-foot button { flex: 1; font: 600 11.5px Onest, Inter, sans-serif; border-radius: 8px; padding: 7px 0; cursor: pointer; }
+  .te-copy { background: #17171a; color: #fafaf8; border: 1px solid #17171a; }
+  .te-link { background: #ffffff; color: #17171a; border: 1px solid rgba(23, 23, 26, 0.1); }
   @media (prefers-reduced-motion: reduce) {
     .te-card, .te-pill { transition: none; }
   }
   @media (max-width: 640px) {
-    .te-card { top: auto; right: 0; left: 0; bottom: 0; width: auto; max-height: 72vh; border-radius: 18px 18px 0 0; border-left: none; border-right: none; border-bottom: none; padding-bottom: env(safe-area-inset-bottom, 0px); transform-origin: bottom center; box-shadow: 0 -16px 44px rgba(20, 21, 26, 0.3); }
+    .te-card { top: auto; right: 0; left: 0; bottom: 0; width: auto; max-height: 72vh; border-radius: 18px 18px 0 0; border-left: none; border-right: none; border-bottom: none; padding-bottom: env(safe-area-inset-bottom, 0px); transform-origin: bottom center; box-shadow: 0 -16px 44px rgba(23, 23, 26, 0.3); }
     .te-card[data-closed="true"] { transform: translateY(105%); opacity: 1; }
     .te-pill { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
-    .te-grab { display: block; width: 40px; height: 4px; border-radius: 2px; background: #d7d2c7; margin: 8px auto 0; flex-shrink: 0; }
+    .te-grab { display: block; width: 40px; height: 4px; border-radius: 2px; background: rgba(23, 23, 26, 0.18); margin: 8px auto 0; flex-shrink: 0; }
     .te-x { padding: 6px 10px; }
   }
 `;

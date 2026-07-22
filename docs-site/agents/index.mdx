@@ -74,6 +74,12 @@ directory scans. Start acting after step 1, not after reading everything.
    (npm: unset `min-release-age` for this install, or pin the exact latest
    version.) Re-run the version check before continuing.
 
+   Upgrading instead of installing fresh? If the repo carries a direct
+   `@vendoai/vendo` dependency next to the `vendoai` alias (common in
+   0.4.1-era installs), bump BOTH to the same version — bumping `vendoai`
+   alone half-upgrades: new CLI, old runtime. `vendo doctor` (0.4.3+) flags
+   the mismatch.
+
 4. **Run init with value flags.** Every wizard question has a flag, so a
    non-interactive run never hangs on a prompt. Answer auth
    ([which preset?](/agents/host-auth)) and the model-key question explicitly:
@@ -115,7 +121,11 @@ directory scans. Start acting after step 1, not after reading everything.
    SAME request — no new code, no duplicate key — so the human's approval lands
    whenever it arrives. Never background this command and never wrap it in a
    shorter timeout: a 90s bounded call returns on its own; a killed call is why
-   you loop. The credential is delivered straight to the CLI (no email OTP, and
+   you loop. On success the CLI may suggest re-running `vendo init` — that
+   applies only when the repo is not wired yet. In a repo you already
+   initialized, nothing needs re-running: the key is picked up from
+   `.env.local`, so go straight to doctor.
+   The credential is delivered straight to the CLI (no email OTP, and
    no key ever transits your transcript; the raw protocol is
    [auth.md](https://vendo.run/auth.md)). If they bring a provider key,
    never assume it exists — ask where it is set.
@@ -127,11 +137,27 @@ directory scans. Start acting after step 1, not after reading everything.
 5. **Hand-wire the gaps the agent tail names.** A non-interactive init ends
    with an `Agent tail:` block listing the exact files this run left for you;
    typically: wrap the root layout (or client entry) in the printed
-   `<VendoRoot>` lines, register real host components in `vendo/registry.tsx`
-   ([tools and catalog](/agents/tools)), replace the `.vendo/brief.md`
-   placeholder, and add the auth line if none was wired
-   ([host auth](/agents/host-auth)). Follow the tail, not memory; it is
-   derived from what init actually wrote in this repo.
+   `<VendoRoot>` lines, mount a visible surface, register real host
+   components in `vendo/registry.tsx` ([tools and catalog](/agents/tools)),
+   replace the `.vendo/brief.md` placeholder, and add the auth line if none
+   was wired ([host auth](/agents/host-auth)). Follow the tail, not memory;
+   it is derived from what init actually wrote in this repo.
+
+   The surface matters: `VendoRoot` is provider-only and renders NOTHING by
+   itself, and doctor does not check for a mounted surface. Init's generated
+   client wrapper already mounts `<VendoOverlay />` (the launcher pill +
+   panel) inside the wrap — use the printed lines as-is and your human has
+   something to SEE. If your wrap predates that wrapper or you rolled your
+   own, mount the overlay yourself:
+
+   ```tsx
+   import { VendoOverlay } from "@vendoai/vendo/react";
+   // inside the VendoRoot wrap:
+   <VendoOverlay />
+   ```
+
+   Confirm a visible surface exists before you call the install done —
+   doctor green alone does not prove your human can see anything.
 
 6. **Do the AI polish yourself.** Non-interactive init skips its AI
    extraction pass — YOU are the AI in the room, with better context than

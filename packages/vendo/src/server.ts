@@ -86,11 +86,11 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
-import { devModel } from "./dev-creds/model.js";
+import { devModel } from "#dev-creds/model";
 // install-dx v1 — `devModel()` is the env-resolving model createVendo composes
 // when the host passes none; the resolver is shared by init and doctor (one
 // credential story, real keys only).
-export { devModel, type DevModelOptions } from "./dev-creds/model.js";
+export { devModel, type DevModelOptions } from "#dev-creds/model";
 import {
   byoConnections,
   cloudConnections,
@@ -874,7 +874,7 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
       // addressing a real Vendo WIRE route may (04 §4), and the door's paths are
       // the door's, not wire routes.
       if (deps.door !== undefined && isDoorPath(url.pathname)) {
-        await deps.ready;
+        await deps.ready();
         return await deps.door.handler(request);
       }
       const path = relativePath(url);
@@ -885,7 +885,7 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
       if (jsonMutationRequired(request, path) && !isJsonRequest(request)) {
         throw new VendoError("validation", "content-type must be application/json");
       }
-      await deps.ready;
+      await deps.ready();
 
       // The per-request view the route table dispatches on (kill-list B4).
       // Segments decode lazily so raw-matched pre-routes (proxy, webhooks,
@@ -977,10 +977,23 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // Inference, selected by the adapter rule at this composition seam
   // (selectModel above) — the one model the agent and apps blocks consume.
   const inference = selectModel(config.model);
-  const ready = store.ensureSchema();
-  // Keep eager schema readiness for hosts that reach into composed blocks,
-  // while preventing an unhandled rejection before the first handler/emit awaits it.
-  void ready.catch(() => undefined);
+  // Construction stays PURE — no I/O, no timers — because the common edge
+  // wiring calls createVendo() at module init, where Workers forbids both
+  // (Mohamed's field report: "Disallowed operation called within global
+  // scope"). The first handler/emit touch starts schema readiness and the
+  // background sweep together through this once-latch; on Node the first
+  // request pays the same cost the old eager kick merely front-loaded.
+  let startBackgroundSweep: () => void = () => undefined;
+  let readyState: Promise<void> | undefined;
+  const ready = (): Promise<void> => {
+    if (readyState === undefined) {
+      readyState = store.ensureSchema();
+      // No unhandled rejection before a handler/emit awaits the latch.
+      void readyState.catch(() => undefined);
+      startBackgroundSweep();
+    }
+    return readyState;
+  };
   let resolveAppToolRisk: AppsRuntime["agentToolRisk"] | undefined;
   const guard = createGuard({
     store,
@@ -1404,16 +1417,21 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // engine pattern) so an idle process still reclaims sessions with no traffic;
   // unref'd means it never keeps the event loop alive. Torn down with the store.
   if (sweepEnabled) {
-    const sweepTimer = setInterval(() => {
-      runSweep().catch((error: unknown) => {
-        console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
-      });
-    }, sessionsConfig.sweepIntervalMs);
-    (sweepTimer as unknown as { unref?: () => void }).unref?.();
-    const closeStore = store.close.bind(store);
-    store.close = async (): Promise<void> => {
-      clearInterval(sweepTimer);
-      await closeStore();
+    // Armed by the ready() latch above, NOT at construction: timers are
+    // illegal in Workers global scope, and a process that never serves a
+    // request has nothing to sweep.
+    startBackgroundSweep = (): void => {
+      const sweepTimer = setInterval(() => {
+        runSweep().catch((error: unknown) => {
+          console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }, sessionsConfig.sweepIntervalMs);
+      (sweepTimer as unknown as { unref?: () => void }).unref?.();
+      const closeStore = store.close.bind(store);
+      store.close = async (): Promise<void> => {
+        clearInterval(sweepTimer);
+        await closeStore();
+      };
     };
   }
   // Wave 2 (Cloud auto): a keyed deployment's schedule- and external-triggered
@@ -1505,7 +1523,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       ...(theme === undefined ? {} : { theme }),
     });
   }
-  const sessionId = `session_${globalThis.crypto.randomUUID()}`;
+  // Minted on first request via the deps getter below — Workers forbids
+  // generating random values in global scope, and createVendo runs at module
+  // init in the edge wiring. Still one fallback id per process.
+  let processSessionId: string | undefined;
+  const sessionId = (): string => (processSessionId ??= `session_${globalThis.crypto.randomUUID()}`);
   // Anonymous principals are minted per-CLIENT in the handler (opaque cookie
   // pointer; the store's vendo_sessions row is the authority — kill-list B3).
   // An https VENDO_BASE_URL means TLS terminates at a trusted proxy and requests
@@ -1527,7 +1549,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     principal: resolvePrincipal,
     ready,
     trustedBaseIsHttps,
-    sessionId,
+    get sessionId() { return sessionId(); },
     store,
     telemetry: telemetryClient(config.telemetry),
     agent,
@@ -1575,12 +1597,24 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   return {
     handler,
     async emit(event, payload, principal) {
-      await ready;
+      await ready();
       return automations.emit(event, payload, principal);
     },
     agent,
     guard,
-    guardedTools: byoApprovals.registry,
+    // The BYO seam (ai-sdk.ts / mastra.ts tool packs) reaches the store
+    // without ever touching handler/emit, so its execute leg arms the same
+    // ready() latch — the composed-block head start the old eager kick gave
+    // such hosts, without the construction-time I/O Workers forbids. Direct
+    // vendo.store/automations reach-ins still own their readiness (await
+    // store.ensureSchema(), as the mastra example and defer tests do).
+    guardedTools: {
+      ...byoApprovals.registry,
+      execute: async (call, ctx) => {
+        await ready();
+        return byoApprovals.registry.execute(call, ctx);
+      },
+    },
     apps,
     automations,
     actions,

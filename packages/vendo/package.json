@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/vendo",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "The Vendo umbrella: default composition, public wire routes, React provider, and the vendo CLI.",
   "keywords": [
     "ai",
@@ -147,5 +147,14 @@
     "typescript": "^5.6.0",
     "vite": "^6.0.0",
     "vitest": "^2.1.0"
+  },
+  "imports": {
+    "#dev-creds/model": {
+      "workerd": "./dist/dev-creds/model-edge.js",
+      "worker": "./dist/dev-creds/model-edge.js",
+      "edge-light": "./dist/dev-creds/model-edge.js",
+      "browser": "./dist/dev-creds/model-edge.js",
+      "default": "./dist/dev-creds/model.js"
+    }
   }
 }
