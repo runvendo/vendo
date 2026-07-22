@@ -333,7 +333,15 @@ function providerHistory(messages: UIMessage[]): UIMessage[] {
  */
 function wireErrorMessage(error: unknown): string {
   console.error("[vendo] turn stream error:", error);
-  if (error instanceof VendoError) return `Vendo: ${error.message} (${error.code})`;
+  // Name+code duck check besides instanceof: a host bundle can carry a second
+  // @vendoai/core copy (dual-package hazard), and its VendoErrors are just as
+  // safe — same crafted messages, same code enum.
+  const vendoShaped = error instanceof VendoError
+    || (error instanceof Error && error.name === "VendoError" && typeof (error as { code?: unknown }).code === "string");
+  if (vendoShaped) {
+    const { message, code } = error as { message: string; code: string };
+    return `Vendo: ${message} (${code})`;
+  }
   return "An error occurred while generating the response.";
 }
 
