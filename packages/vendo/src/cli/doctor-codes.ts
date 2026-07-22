@@ -20,6 +20,8 @@ export const DOCTOR_ERROR_CODES = {
   "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoRoot>",
   "E-WIRE-005": "the @vendoai/vendo (or vendoai alias) dependency is not declared",
   "E-WIRE-006": "no visible agent surface is mounted (<VendoRoot> alone renders nothing)",
+  "E-WIRE-007": "no createVendo server wiring found in an unknown-framework host",
+  "E-WIRE-008": "no <VendoRoot> found in an unknown-framework host's source",
   "E-CFG-001": "a required .vendo/ config file is missing",
   "E-CFG-002": ".vendo/data/.gitignore is missing",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
@@ -51,6 +53,8 @@ export const DOCTOR_ERROR_CODES = {
   "E-TURN-001": "the live model turn did not answer",
   "E-TURN-002": "the live model turn cannot run while the dev server is down",
   "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
+  "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
+  "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
 } as const;
 
 export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;

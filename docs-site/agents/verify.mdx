@@ -122,6 +122,31 @@ own chat UI already pass this check.
 
 ## Config files
 
+### E-WIRE-007 {#E-WIRE-007}
+
+**Symptom:** Doctor found no `createVendo` server wiring in a host it cannot
+pattern-match to Next.js or Express (a Cloudflare Worker, Bun server, Hono
+app, ...).
+
+**Cause:** No source file imports `createVendo` from `@vendoai/vendo/server`
+(or nothing mounts its handler), so there is no Vendo wire for the runtime to
+serve.
+
+**Fix:** Import `createVendo` and route your runtime's request entry through
+`vendo.handler(request)` — construct lazily (first request), not at module
+scope, on edge runtimes.
+
+### E-WIRE-008 {#E-WIRE-008}
+
+**Symptom:** Doctor found no `<VendoRoot>` in an unknown-framework host's
+source (warning, not failure).
+
+**Cause:** The `@vendoai/ui` hooks and embeds need the `<VendoRoot>` context
+provider; a host that renders them without it gets runtime errors.
+
+**Fix:** Wrap the client app in `<VendoRoot>`. Ignore this warning if the
+host drives a fully custom surface without `@vendoai/ui`.
+
 ### E-CFG-001 {#E-CFG-001}
 
 **Symptom:** A required `.vendo/` file is missing; the message names it, one
@@ -522,3 +547,28 @@ revoked key surfaces on the first real service call instead.
 run `vendo login` (your human approves a code in the browser) — the minted
 key lands in `.env.local` (ask your human first). Unsetting `VENDO_API_KEY`
 also clears the warning; Cloud is optional.
+
+
+### E-TOOLS-001 {#E-TOOLS-001}
+
+**Symptom:** Every extracted host tool is disabled or excluded — the embedded
+agent cannot call a single host API.
+
+**Cause:** All entries in `.vendo/tools.json` are disabled, either statically
+or by `.vendo/overrides.json` (including extraction's audience exclusions:
+operator/internal endpoints are excluded by default).
+
+**Fix:** Review `.vendo/overrides.json`; re-enable the end-user surface with
+`"disabled": false` on tools users should reach, or re-run `vendo init`
+extraction if the surface classification looks wrong.
+
+### E-TOOLS-002 {#E-TOOLS-002}
+
+**Symptom:** `.vendo/tools.json` carries zero tools (warning, not failure).
+
+**Cause:** Extraction found no end-user API surface, or every proposed tool
+was removed by hand.
+
+**Fix:** Re-run `vendo init` extraction. Connector-only deployments (the
+agent works purely through connected third-party tools) can ignore this
+warning.

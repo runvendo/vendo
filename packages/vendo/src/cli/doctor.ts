@@ -12,6 +12,7 @@ import {
 import { installedAiVersion } from "./dep-versions.js";
 import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
+import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
@@ -166,7 +167,16 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   }
   const scanned = await detectVendoWiring(root, { exclude: wrapperCandidates });
   const wiring = { ...scanned, surface: scanned.surface || (scanned.client && wrapperWithOverlay) };
-  if (framework === "express") {
+  if (framework === "unknown") {
+    // No framework to pattern-match (field case: a Cloudflare Worker + Vite
+    // host failed E-WIRE-003/004 forever) — judge the wiring by the same
+    // bounded source scan init uses, never by another framework's file
+    // layout. The surface check below still runs; it is source-generic.
+    if (scanned.server) pass("wiring/server", "createVendo server wiring found");
+    else fail("wiring/server", "E-WIRE-007", "no createVendo server wiring found — import createVendo from @vendoai/vendo/server and mount vendo.handler on your runtime's request entry");
+    if (scanned.client) pass("wiring/client", "<VendoRoot> wraps the client");
+    else warn("wiring/client", "E-WIRE-008", "no <VendoRoot> found in the host source — the @vendoai/ui hooks and embeds need it; ignore this if the host renders a fully custom surface");
+  } else if (framework === "express") {
     if (wiring.server) pass("wiring/express-server", "Express server is wired");
     else fail("wiring/express-server", "E-WIRE-001", "Express server is not wired with createVendo from @vendoai/vendo/server");
     if (wiring.client) pass("wiring/express-client", "<VendoRoot> wraps the client");
@@ -226,6 +236,39 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     else fail(`config/${file}`, "E-CFG-001", `missing .vendo/${file}`);
   }
   if (!await exists(join(root, ".vendo", "data", ".gitignore"))) warn("config/data-gitignore", "E-CFG-002", ".vendo/data/.gitignore is missing");
+
+  // The core promise, statically checkable: does the agent have any HOST
+  // tool it may actually call? All-disabled is an explicit misconfiguration
+  // (fail); an empty extraction is a strong warning — connector-only hosts
+  // are legitimate, but a fresh install landing here means extraction found
+  // nothing user-facing (field case: an infra product whose surface was all
+  // internal endpoints ended with tools: [] and a silently useless agent).
+  const toolsRaw = await readOptional(join(root, ".vendo", "tools.json"));
+  const overridesRaw = await readOptional(join(root, ".vendo", "overrides.json"));
+  if (toolsRaw !== null) {
+    try {
+      const toolsFile = toolsFileSchema.parse(JSON.parse(toolsRaw));
+      let overridesTools: Record<string, { disabled?: boolean }> = {};
+      if (overridesRaw !== null) {
+        try {
+          overridesTools = overridesFileSchema.parse(JSON.parse(overridesRaw)).tools;
+        } catch {
+          // Malformed overrides are their own (pre-existing) failure surface.
+        }
+      }
+      const live = toolsFile.tools.filter((tool) => (overridesTools[tool.name]?.disabled ?? tool.disabled ?? false) !== true);
+      if (toolsFile.tools.length === 0) {
+        warn("tools/live-surface", "E-TOOLS-002", "the extracted tool surface is empty — the agent cannot act on this product's API; re-run `vendo init` extraction (or ignore if this deployment is connector-only)");
+      } else if (live.length === 0) {
+        fail("tools/live-surface", "E-TOOLS-001", `zero live host tools — all ${toolsFile.tools.length} extracted tools are disabled or excluded; review the audience exclusions in .vendo/overrides.json and re-enable the end-user surface (disabled: false)`);
+      } else {
+        pass("tools/live-surface", `${live.length} live host tool${live.length === 1 ? "" : "s"}`);
+      }
+    } catch {
+      // Not the vendo/tools@1 shape (e.g. a placeholder {}) — the config
+      // checks above already govern presence; nothing to grade here.
+    }
+  }
 
   // §4 customization ladder — ejected chrome drift. The ejected pixels are the
   // host's code, so a version gap is awareness (warn), never breakage (fail):
