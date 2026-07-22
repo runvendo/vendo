@@ -86,11 +86,11 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
-import { devModel } from "./dev-creds/model.js";
+import { devModel } from "#dev-creds/model";
 // install-dx v1 — `devModel()` is the env-resolving model createVendo composes
 // when the host passes none; the resolver is shared by init and doctor (one
 // credential story, real keys only).
-export { devModel, type DevModelOptions } from "./dev-creds/model.js";
+export { devModel, type DevModelOptions } from "#dev-creds/model";
 import {
   byoConnections,
   cloudConnections,
