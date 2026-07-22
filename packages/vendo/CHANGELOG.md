@@ -1,5 +1,28 @@
 # @vendoai/vendo
 
+## 0.4.2
+
+### Patch Changes
+
+- 8eaceb5: Login and first-turn fixes from the 0.4.1 E2E certification campaign:
+  `vendo login` pending claims are now scoped per project directory —
+  concurrent logins in different repos can no longer clobber or resume each
+  other's ceremonies (the machine-global file could deliver one project's key
+  to another). A matching pre-0.4.2 claim file is migrated automatically.
+  `vendo init` now installs the model provider its resolved credential loads
+  at runtime (`ai@^6` plus `@ai-sdk/anthropic@^3` / `@ai-sdk/openai@^3` /
+  `@ai-sdk/google@^3`), so the first turn no longer 500s on a fresh install
+  until the provider is added by hand.
+  - @vendoai/core@0.4.2
+  - @vendoai/store@0.4.2
+  - @vendoai/agent@0.4.2
+  - @vendoai/actions@0.4.2
+  - @vendoai/guard@0.4.2
+  - @vendoai/apps@0.4.2
+  - @vendoai/automations@0.4.2
+  - @vendoai/ui@0.4.2
+  - @vendoai/mcp@0.4.2
+
 ## 0.4.1
 
 ### Patch Changes

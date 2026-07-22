@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/store",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Persistence under everything: core's StoreAdapter on Postgres — PGlite zero-config default, real Postgres in prod, one schema.",
   "keywords": [
     "ai",

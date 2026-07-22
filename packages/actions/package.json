@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/actions",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Every API becomes agent tools, executed as the signed-in user: sync-as-build-step extraction (OpenAPI + route-scan), .vendo tool formats, connectors, and the ActionsRegistry runtime.",
   "keywords": [
     "ai",
