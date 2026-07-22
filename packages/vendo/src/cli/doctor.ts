@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import type { Telemetry } from "@vendoai/telemetry";
@@ -42,6 +43,7 @@ export interface DoctorOptions {
   liveTurn?: (base: string) => Promise<LiveTurnResult>;
   cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   startDevServer?: (options: { root: string; statusUrl: string; env?: Record<string, string | undefined>; fetchImpl?: typeof fetch }) => Promise<{ ok: boolean; stop: () => void }>;
+  e2bResolvable?: (root: string) => boolean;
 }
 
 type CheckStatus = "ok" | "broken" | "warning";
@@ -55,6 +57,20 @@ interface DoctorCheck {
   message: string;
   error_code?: DoctorErrorCode;
   fix_ref?: string;
+}
+
+/** Whether the optional `e2b` SDK resolves from the target project — the same
+ *  node_modules walk the running wire's dynamic `import("e2b")` performs, so
+ *  doctor certifies the venue against the resolution that will actually be
+ *  asked to load it (0.4.4 defect C: /status said e2b on a host without the
+ *  SDK, and the first build died in an unusable venue). */
+function e2bResolvableFrom(root: string): boolean {
+  try {
+    createRequire(join(root, "__vendo-doctor-probe__.js")).resolve("e2b");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function hasDependency(root: string): Promise<boolean> {
@@ -357,7 +373,23 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       // 10-mcp §1 — the door flag lives under blocks.mcp.
       mcpEnabled = body.blocks.mcp === true;
       sandboxVenue = body.blocks.sandbox;
-      if (sandboxVenue === "e2b" || sandboxVenue === "cloud" || sandboxVenue === "custom") {
+      if (sandboxVenue === "e2b") {
+        // 0.4.4 defect C — "ok: execution venue: e2b" on a host that cannot
+        // actually run e2b is a false blessing: the venue must be USABLE
+        // (key set and SDK resolvable from this project), or every server-app
+        // build dies in it instead of riding the Cloud sandbox.
+        const keyPresent = typeof env.E2B_API_KEY === "string" && env.E2B_API_KEY.trim() !== "";
+        const installed = (options.e2bResolvable ?? e2bResolvableFrom)(root);
+        if (keyPresent && installed) {
+          pass("live/venue", "execution venue: e2b");
+        } else {
+          const missing = [
+            ...(keyPresent ? [] : ["E2B_API_KEY is not set"]),
+            ...(installed ? [] : ["the e2b package does not resolve from this project"]),
+          ].join(" and ");
+          fail("live/venue", "E-LIVE-007", `the running wire selected the e2b execution venue but ${missing}; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor`);
+        }
+      } else if (sandboxVenue === "cloud" || sandboxVenue === "custom") {
         pass("live/venue", `execution venue: ${sandboxVenue}`);
       } else if (sandboxVenue === false) {
         warn("live/venue", "E-LIVE-004", "install the e2b package and set E2B_API_KEY, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");

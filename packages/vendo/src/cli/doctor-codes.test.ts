@@ -37,6 +37,7 @@ describe("doctor error-code registry", () => {
         "E-LIVE-004": "no execution venue is configured",
         "E-LIVE-005": "the host /status does not report an execution venue (version skew)",
         "E-LIVE-006": "the app's root page returns a server error while the wire answers",
+        "E-LIVE-007": "the selected e2b execution venue is unusable (E2B_API_KEY or the e2b package is missing)",
         "E-MCP-001": "MCP protected-resource metadata did not resolve",
         "E-MCP-002": "MCP authorization-server metadata did not resolve",
         "E-MCP-003": "the MCP server card did not parse",
