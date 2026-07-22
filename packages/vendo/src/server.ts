@@ -1523,7 +1523,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       ...(theme === undefined ? {} : { theme }),
     });
   }
-  const sessionId = `session_${globalThis.crypto.randomUUID()}`;
+  // Minted on first request via the deps getter below — Workers forbids
+  // generating random values in global scope, and createVendo runs at module
+  // init in the edge wiring. Still one fallback id per process.
+  let processSessionId: string | undefined;
+  const sessionId = (): string => (processSessionId ??= `session_${globalThis.crypto.randomUUID()}`);
   // Anonymous principals are minted per-CLIENT in the handler (opaque cookie
   // pointer; the store's vendo_sessions row is the authority — kill-list B3).
   // An https VENDO_BASE_URL means TLS terminates at a trusted proxy and requests
@@ -1545,7 +1549,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     principal: resolvePrincipal,
     ready,
     trustedBaseIsHttps,
-    sessionId,
+    get sessionId() { return sessionId(); },
     store,
     telemetry: telemetryClient(config.telemetry),
     agent,
