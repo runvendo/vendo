@@ -78,6 +78,30 @@ async function expressHost(wired: boolean): Promise<string> {
   return root;
 }
 
+/** A host doctor cannot pattern-match: no next, no express (Cloudflare
+ *  Worker + Vite was the field case — E-WIRE-003/004 false positives). */
+async function customHost(wired: boolean): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "vendo-doctor-custom-"));
+  cleanup.push(() => rm(root, { recursive: true, force: true }));
+  const write = async (relative: string, body: string): Promise<void> => {
+    const path = join(root, relative);
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, body);
+  };
+  await write("package.json", JSON.stringify({
+    dependencies: { "@vendoai/vendo": "0.3.0", vite: "6.0.0" },
+  }));
+  if (wired) {
+    await write("src/worker.ts", 'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ model, principal });\n');
+    await write("src/app.tsx", "export const App = () => <VendoRoot><main /><VendoOverlay /></VendoRoot>;\n");
+  } else {
+    await write("src/worker.ts", "export default { fetch: () => new Response('ok') };\n");
+  }
+  for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) await write(`.vendo/${file}`, "{}\n");
+  await write(".vendo/data/.gitignore", "*\n");
+  return root;
+}
+
 function output(): { logs: string[]; errors: string[]; sink: { log(message: string): void; error(message: string): void } } {
   const logs: string[] = [];
   const errors: string[] = [];
@@ -209,6 +233,83 @@ describe("vendo doctor", () => {
       "broken: Express server is not wired with createVendo from @vendoai/vendo/server",
       "broken: Express client is not wrapped in <VendoRoot>",
     ]));
+  });
+
+  it("judges an unknown-framework host by its wiring, not Next's file layout", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await customHost(true),
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toEqual([]);
+    const log = messages.logs.join("\n");
+    expect(log).not.toContain("catch-all handler");
+    expect(log).toContain("ok: createVendo server wiring found");
+  });
+
+  it("an unknown-framework host with no createVendo anywhere fails the generic wiring check", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await customHost(false),
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("no createVendo server wiring found");
+    expect(messages.errors.join("\n")).not.toContain("app/api/vendo/[...vendo]/route.ts");
+  });
+
+  it("fails when the extracted tool surface has zero live tools (the agent cannot act on the host)", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [{
+        name: "host_internal_hook", description: "d", inputSchema: { type: "object" }, risk: "write", disabled: true,
+        binding: { kind: "route", method: "POST", path: "/api/hook", argsIn: "body" },
+      }],
+    }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toMatch(/zero live host tools/i);
+  });
+
+  it("warns (does not fail) when extraction produced zero tools — connector-only hosts are legitimate", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors.join("\n")).toMatch(/tool surface is empty/i);
+  });
+
+  it("a live tool surface passes the zero-live-tools check", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [{
+        name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+      }],
+    }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toEqual([]);
   });
 
   it("checks wiring and performs one live status round-trip", async () => {

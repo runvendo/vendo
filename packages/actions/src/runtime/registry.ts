@@ -685,6 +685,24 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     }
   }
 
+  // The product's core promise, warned at the seam that knows: an agent with
+  // zero live host tools serves users it cannot help (field case: an
+  // extraction stripped to tools: [] shipped a silently useless agent).
+  let zeroLiveWarned = false;
+  const warnZeroLiveTools = (host: LoadedHost): LoadedHost => {
+    if (zeroLiveWarned) return host;
+    const live = host.tools.filter((tool) => !(host.overrides.tools[tool.name]?.disabled ?? tool.disabled ?? false));
+    if (live.length === 0) {
+      zeroLiveWarned = true;
+      console.warn(
+        "[vendo] zero live host tools — every extracted tool is absent, disabled, or excluded, so the agent cannot "
+        + "act on this product's API. Review .vendo/tools.json and the audience exclusions in .vendo/overrides.json, "
+        + "or re-run `vendo init` extraction. (Connector-only deployments can ignore this.)",
+      );
+    }
+    return host;
+  };
+
   function loadHost(): Promise<LoadedHost> {
     if (!hostPromise) hostPromise = (async () => {
       const emptyOverrides: OverridesFile = { format: "vendo/overrides@1", tools: {} };
@@ -711,7 +729,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         ...(capabilities === undefined ? {} : { capabilities }),
       };
     })();
-    return hostPromise;
+    return hostPromise.then(warnZeroLiveTools);
   }
 
   function cachedDescriptors(source: Connector | ToolRegistry): Promise<ToolDescriptor[]> {

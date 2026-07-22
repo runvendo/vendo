@@ -46,6 +46,8 @@ describe("doctor error-code registry", () => {
         "E-MCP-007": "the local MCP registry auth challenge is malformed",
         "E-MCP-008": "the live MCP registry auth challenge is malformed",
         "E-SCHED-001": "apps declare vendo.json schedules but no schedule caller is configured",
+        "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
+        "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
         "E-TURN-001": "the live model turn did not answer",
         "E-TURN-002": "the live model turn cannot run while the dev server is down",
         "E-UI-001": "an ejected surface predates the installed @vendoai/ui",
@@ -55,6 +57,8 @@ describe("doctor error-code registry", () => {
         "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoRoot>",
         "E-WIRE-005": "the @vendoai/vendo (or vendoai alias) dependency is not declared",
         "E-WIRE-006": "no visible agent surface is mounted (<VendoRoot> alone renders nothing)",
+        "E-WIRE-007": "no createVendo server wiring found in an unknown-framework host",
+        "E-WIRE-008": "no <VendoRoot> found in an unknown-framework host's source",
       }
     `);
   });
