@@ -213,9 +213,19 @@ export function VendoThread({
   // The copy stays friendly — raw transport errors are announced to assistive
   // tech below but never printed to end users. Retry regenerates the failed
   // turn from the preserved user message (no duplication).
+  // A "Vendo: " prefixed message is the agent's OWN safe error (VendoError
+  // code + operator-crafted text, wireErrorMessage in @vendoai/agent) — the
+  // ONE error shape end users may see in detail. Raw transport/provider
+  // strings never match the prefix and stay hidden (ENG-214 policy).
+  const errorDetail = thread.error?.message?.startsWith("Vendo: ") === true
+    ? thread.error.message.slice("Vendo: ".length)
+    : null;
   const errorBanner = thread.error ? (
     <div className="fl-error">
-      <span>Something went wrong and the response didn&rsquo;t finish.</span>
+      <span>
+        Something went wrong and the response didn&rsquo;t finish.
+        {errorDetail !== null && <span className="fl-error-detail">{errorDetail}</span>}
+      </span>
       <button
         type="button"
         className="fl-error-retry"

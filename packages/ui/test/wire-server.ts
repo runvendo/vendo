@@ -234,6 +234,9 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // surfaces client-side). A counter rather than a text marker so a retry
     // of the SAME user message can succeed.
     streamFailures: 0,
+    /** Error-part text for simulated failures; default mirrors a raw
+        transport string (which the banner must NOT print). */
+    streamFailureText: undefined as string | undefined,
     posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
     threadReplyGate: undefined as Promise<void> | undefined,
     // ENG-217 — optional pacing gates for the canned turn so specs can observe
@@ -321,7 +324,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
               writer.write({ type: "text-delta", id: "text_fail", delta: "Starting an answer that will be cut" });
               throw new Error("connection reset mid-stream");
             },
-            onError: error => (error instanceof Error ? error.message : String(error)),
+            onError: error => state.streamFailureText ?? (error instanceof Error ? error.message : String(error)),
           });
           const failingResponse = createUIMessageStreamResponse({ stream: failingChunks });
           failingResponse.headers.set("x-vendo-thread-id", threadId);
