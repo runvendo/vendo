@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { resolveAppRoot } from "./app-root.js";
 import { normalizeBootstrapInstallCommand } from "./install-command.js";
 import { pnpmDeclaresBuiltDependencies } from "./pnpm-build-policy.js";
@@ -12,6 +13,9 @@ export type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "localPath" 
 export interface BootstrapOptions {
   context?: CorpusRunContext;
   env?: NodeJS.ProcessEnv;
+  /** Backoff before the one bootstrap retry (transient failures only).
+      Tests pass 0 to keep the suite fast. */
+  retryDelayMs?: number;
 }
 
 export interface BootstrapLogPaths {
@@ -76,6 +80,25 @@ async function pathExists(file: string): Promise<boolean> {
   return access(file).then(() => true, () => false);
 }
 
+const DEFAULT_RETRY_DELAY_MS = 5_000;
+
+// Small, deliberately narrow transient-failure class (nextcrm flake:
+// ERR_PNPM_NO_MATCHING_VERSION on a re-resolved React-19 type-alias override,
+// identical retry succeeded). Real dependency/config errors are NOT in this
+// list on purpose — only failures that look like registry/resolver hiccups
+// get the one bounded retry.
+const TRANSIENT_BOOTSTRAP_FAILURE_PATTERNS: readonly RegExp[] = [
+  /ERR_PNPM_NO_MATCHING_VERSION/,
+  /ECONNRESET/,
+  /ETIMEDOUT/,
+  /\bE5\d{2}\b/, // npm/pnpm registry 5xx error codes (E500, E502, E503, ...)
+  /\b5\d{2}\b.*registry/i, // "... 500 ... registry ..." style transport errors
+];
+
+function isTransientBootstrapFailure(output: string): boolean {
+  return TRANSIENT_BOOTSTRAP_FAILURE_PATTERNS.some((pattern) => pattern.test(output));
+}
+
 function runInstallCommand(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, {
@@ -131,11 +154,28 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     dropIgnoreWorkspace: hasPnpmWorkspace,
     pnpmConfig: repoCuratesBuilds ? ["--config.minimumReleaseAge=0"] : undefined,
   });
-  const result = await runInstallCommand(installCommand.command, repoDir, env);
+  let result = await runInstallCommand(installCommand.command, repoDir, env);
   const normalizationNote = installCommand.changed
     ? `Corpus harness normalized bootstrap install command from "${repo.bootstrap.installCommand}" to "${installCommand.command}" so lockfile updates are allowed.\n`
     : "";
-  await writeFile(logs.stdout, `${normalizationNote}${result.stdout}`);
+
+  // ONE bounded retry for transient-looking registry/resolver failures (the
+  // nextcrm flake: ERR_PNPM_NO_MATCHING_VERSION on its React-19 type-alias
+  // overrides, identical retry succeeded). Anything else fails immediately —
+  // this is not a general flaky-install workaround.
+  let retryNote = "";
+  if (result.code !== 0 && isTransientBootstrapFailure(`${result.stdout}\n${result.stderr}`)) {
+    const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+    retryNote = `Bootstrap install for ${repo.name} failed with a transient-looking registry/resolver error on attempt 1; retrying once after ${retryDelayMs}ms...\n`;
+    if (retryDelayMs > 0) await delay(retryDelayMs);
+    const retryResult = await runInstallCommand(installCommand.command, repoDir, env);
+    retryNote += retryResult.code === 0
+      ? `Bootstrap retry succeeded for ${repo.name} — transient registry/resolver failure recovered on attempt 2.\n`
+      : `Bootstrap retry did not recover for ${repo.name} — attempt 2 failed too.\n`;
+    result = retryResult;
+  }
+
+  await writeFile(logs.stdout, `${normalizationNote}${retryNote}${result.stdout}`);
   await writeFile(logs.stderr, result.stderr);
 
   if (result.code !== 0) {

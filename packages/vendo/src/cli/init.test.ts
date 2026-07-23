@@ -238,6 +238,23 @@ describe("vendo init (zero-question)", () => {
     expect(layout).toContain('import { VendoRoot } from "../vendo/vendo-root";');
   });
 
+  it("scaffolds app/ under src/ when the host's pages router lives there (teable: pages+app must share one base)", async () => {
+    // Next hard-fails ("pages and app directories should be under the same
+    // folder") when app/ and pages/ sit at different bases. A host with
+    // src/pages/ but no app/ anywhere must get its scaffold at src/app, not
+    // root-level app/, even though appDirectory has no src/app to find yet.
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-srcpages-"));
+    cleanup.push(root);
+    await mkdir(join(root, "src", "pages"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "host", dependencies: { next: "16.0.0" } }));
+    await writeFile(join(root, "src", "pages", "index.tsx"), "export default function Home() { return null; }\n");
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const route = await readFile(join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
+    expect(route).toContain('import { registry } from ' + '"../../../../vendo/registry";');
+    expect(await readdir(root)).not.toContain("app");
+  });
+
   it("generates a theme-less wrapper when the project disables resolveJsonModule", async () => {
     const root = await fixture();
     await writeFile(join(root, "tsconfig.json"), JSON.stringify({ compilerOptions: { resolveJsonModule: false } }));
