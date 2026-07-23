@@ -1,0 +1,91 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Account balances"
+      - button "Remove Account balances": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+    - listitem:
+      - button "Spending this month"
+      - button "Remove Spending this month": ×
+  - article:
+    - text: Total balance $54,907.15 ▲ 2.3% this month
+    - button "1W"
+    - button "1M"
+    - button "3M"
+    - button "1Y"
+    - button "All"
+  - table "Account balances":
+    - caption: Account balances
+    - rowgroup:
+      - row "Account Type •••• Balance":
+        - columnheader "Account"
+        - columnheader "Type"
+        - columnheader "••••"
+        - columnheader "Balance"
+    - rowgroup:
+      - row "Maple Checking checking 4471 $9,412.20":
+        - cell "Maple Checking"
+        - cell "checking"
+        - cell "4471"
+        - cell "$9,412.20"
+      - row "Maple Savings savings 8820 $28,141.35":
+        - cell "Maple Savings"
+        - cell "savings"
+        - cell "8820"
+        - cell "$28,141.35"
+      - row "Maple Credit credit 0934 -$1,288.40":
+        - cell "Maple Credit"
+        - cell "credit"
+        - cell "0934"
+        - cell "-$1,288.40"
+      - row "Maple Invest investing 5567 $18,642.00":
+        - cell "Maple Invest"
+        - cell "investing"
+        - cell "5567"
+        - cell "$18,642.00"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

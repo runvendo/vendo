@@ -1,0 +1,276 @@
+- complementary:
+  - link "Cadence dashboard":
+    - /url: /
+    - text: cadence .
+  - navigation "Main":
+    - list:
+      - listitem:
+        - link "Dashboard":
+          - /url: /
+      - listitem:
+        - link "Vendo":
+          - /url: /assistant
+    - paragraph: Workspace
+    - list:
+      - listitem:
+        - link "Clients":
+          - /url: /clients
+      - listitem:
+        - link "Work":
+          - /url: /work
+      - listitem:
+        - link "Calendar":
+          - /url: /calendar
+      - listitem:
+        - link "Inbox":
+          - /url: /inbox
+    - paragraph: Firm
+    - list:
+      - listitem:
+        - link "Team":
+          - /url: /team
+      - listitem:
+        - link "Integrations":
+          - /url: /integrations
+      - listitem:
+        - link "Settings":
+          - /url: /settings
+  - paragraph: Hartwell & Associates
+  - paragraph: Tax season 2026
+- banner:
+  - search:
+    - searchbox "Search"
+    - text: ⌘K
+  - text: Hartwell & Associates
+  - button "Notifications"
+  - button "M maya@cadence.test"
+- main:
+  - main "Vendo workspace":
+    - tablist "Workspace sections":
+      - tab "Chat"
+      - tab "Apps" [selected]
+      - tab "Automations"
+      - tab "Accounts"
+      - tab "Activity"
+    - tabpanel "Apps":
+      - form "Create app":
+        - text: Describe a new app
+        - textbox "Describe a new app"
+        - button "Create" [disabled]
+      - article:
+        - strong: Season progress
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client contacts
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Tax document collection tracker
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Payroll summary
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase list — this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client onboarding checklist
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Filing deadlines — next 90 days
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Workload by staff member
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Chase missing documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document collection progress
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients — staff & deadlines
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Client health — document status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients missing documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - region "Open app":
+        - article:
+          - paragraph: Clients missing documents
+          - text: 8 Missing docs
+          - paragraph: of 12 active clients need chasing
+        - heading "Documents collected firm-wide" [level=3]
+        - article "Collected":
+          - text: Collected
+          - strong: "38"
+        - article "Outstanding":
+          - text: Outstanding
+          - strong: "21"
+        - article "Total requested":
+          - text: Total requested
+          - strong: "59"
+        - text: Documents collected 64%
+        - progressbar
+        - heading "Client completion" [level=3]
+        - searchbox "Search table"
+        - combobox "Filter by Status":
+          - option "All Status" [selected]
+          - option "complete"
+          - option "missing_docs"
+        - table:
+          - rowgroup:
+            - row "Client Contact Entity Assigned to Deadline ▲ Received Total Status":
+              - columnheader "Client"
+              - columnheader "Contact"
+              - columnheader "Entity"
+              - columnheader "Assigned to"
+              - columnheader "Deadline ▲"
+              - columnheader "Received"
+              - columnheader "Total"
+              - columnheader "Status"
+          - rowgroup:
+            - row "Blue Bottle Coffee Marisol Rivera s_corp Maya Alvarez Jul 23, 2026 3 6 missing_docs":
+              - cell "Blue Bottle Coffee"
+              - cell "Marisol Rivera"
+              - cell "s_corp"
+              - cell "Maya Alvarez"
+              - cell "Jul 23, 2026"
+              - cell "3"
+              - cell "6"
+              - cell "missing_docs"
+            - row "Linear Wei Chen sole_prop Maya Alvarez Jul 24, 2026 3 5 missing_docs":
+              - cell "Linear"
+              - cell "Wei Chen"
+              - cell "sole_prop"
+              - cell "Maya Alvarez"
+              - cell "Jul 24, 2026"
+              - cell "3"
+              - cell "5"
+              - cell "missing_docs"
+            - row "Sweetgreen Antonio Delgado partnership Maya Alvarez Aug 11, 2026 4 6 missing_docs":
+              - cell "Sweetgreen"
+              - cell "Antonio Delgado"
+              - cell "partnership"
+              - cell "Maya Alvarez"
+              - cell "Aug 11, 2026"
+              - cell "4"
+              - cell "6"
+              - cell "missing_docs"
+            - row "Equinox Dana Kowalski s_corp Priya Natarajan Aug 15, 2026 3 5 missing_docs":
+              - cell "Equinox"
+              - cell "Dana Kowalski"
+              - cell "s_corp"
+              - cell "Priya Natarajan"
+              - cell "Aug 15, 2026"
+              - cell "3"
+              - cell "5"
+              - cell "missing_docs"
+            - row "TaskRabbit Greg Foster sole_prop Tomas Okafor Aug 19, 2026 1 4 missing_docs":
+              - cell "TaskRabbit"
+              - cell "Greg Foster"
+              - cell "sole_prop"
+              - cell "Tomas Okafor"
+              - cell "Aug 19, 2026"
+              - cell "1"
+              - cell "4"
+              - cell "missing_docs"
+            - row "Anjali Patel Anjali Patel individual Maya Alvarez Aug 23, 2026 2 4 missing_docs":
+              - cell "Anjali Patel"
+              - cell "Anjali Patel"
+              - cell "individual"
+              - cell "Maya Alvarez"
+              - cell "Aug 23, 2026"
+              - cell "2"
+              - cell "4"
+              - cell "missing_docs"
+            - row "Compass Susan Kim partnership Priya Natarajan Aug 28, 2026 2 5 missing_docs":
+              - cell "Compass"
+              - cell "Susan Kim"
+              - cell "partnership"
+              - cell "Priya Natarajan"
+              - cell "Aug 28, 2026"
+              - cell "2"
+              - cell "5"
+              - cell "missing_docs"
+            - row "Jiffy Lube Luis Cortez sole_prop Tomas Okafor Sep 2, 2026 1 5 missing_docs":
+              - cell "Jiffy Lube"
+              - cell "Luis Cortez"
+              - cell "sole_prop"
+              - cell "Tomas Okafor"
+              - cell "Sep 2, 2026"
+              - cell "1"
+              - cell "5"
+              - cell "missing_docs"
+            - row "Banfield Pet Hospital Emily Rhodes c_corp Priya Natarajan Sep 8, 2026 6 6 complete":
+              - cell "Banfield Pet Hospital"
+              - cell "Emily Rhodes"
+              - cell "c_corp"
+              - cell "Priya Natarajan"
+              - cell "Sep 8, 2026"
+              - cell "6"
+              - cell "6"
+              - cell "complete"
+            - row "Figma Jonah Whitfield sole_prop Daniel Hartwell Sep 14, 2026 4 4 complete":
+              - cell "Figma"
+              - cell "Jonah Whitfield"
+              - cell "sole_prop"
+              - cell "Daniel Hartwell"
+              - cell "Sep 14, 2026"
+              - cell "4"
+              - cell "4"
+              - cell "complete"
+            - row "LegalZoom Alice Mercer partnership Daniel Hartwell Sep 21, 2026 5 5 complete":
+              - cell "LegalZoom"
+              - cell "Alice Mercer"
+              - cell "partnership"
+              - cell "Daniel Hartwell"
+              - cell "Sep 21, 2026"
+              - cell "5"
+              - cell "5"
+              - cell "complete"
+            - row "Grant Ellison Grant Ellison individual Maya Alvarez Sep 29, 2026 4 4 complete":
+              - cell "Grant Ellison"
+              - cell "Grant Ellison"
+              - cell "individual"
+              - cell "Maya Alvarez"
+              - cell "Sep 29, 2026"
+              - cell "4"
+              - cell "4"
+              - cell "complete"
+        - heading "Nearest filing deadline" [level=3]
+        - article "Client":
+          - text: Client
+          - strong: Blue Bottle Coffee
+        - article "Deadline":
+          - text: Deadline
+          - strong: Jul 23, 2026
+- button "AI agent"
+- alert

@@ -1,0 +1,164 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Largest transactions this year"
+      - button "Remove Largest transactions this year": ×
+    - listitem:
+      - button "Transfer to savings"
+      - button "Remove Transfer to savings": ×
+    - listitem:
+      - 'button "Spending: this month vs last month"'
+      - 'button "Remove Spending: this month vs last month"': ×
+    - listitem:
+      - button "Vacation Fund Tracker"
+      - button "Remove Vacation Fund Tracker": ×
+    - listitem:
+      - button "Duplicate & suspicious charges"
+      - button "Remove Duplicate & suspicious charges": ×
+    - listitem:
+      - button "Card spending tracker"
+      - button "Remove Card spending tracker": ×
+    - listitem:
+      - button "Upcoming scheduled payments"
+      - button "Remove Upcoming scheduled payments": ×
+    - listitem:
+      - button "Monthly cash flow"
+      - button "Remove Monthly cash flow": ×
+    - listitem:
+      - button "Account balances"
+      - button "Remove Account balances": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+    - listitem:
+      - button "Spending this month"
+      - button "Remove Spending this month": ×
+  - article "Largest 10 transactions this year":
+    - text: Largest 10 transactions this year
+    - strong: "150"
+  - searchbox "Search table"
+  - table:
+    - rowgroup:
+      - row "Merchant Category Amount ▼ Date Status Method":
+        - columnheader "Merchant"
+        - columnheader "Category"
+        - columnheader "Amount ▼"
+        - columnheader "Date"
+        - columnheader "Status"
+        - columnheader "Method"
+    - rowgroup:
+      - row "Amazon shopping $34.99 Jul 14, 2026 posted Maple Debit ·· 4471":
+        - cell "Amazon"
+        - cell "shopping"
+        - cell "$34.99"
+        - cell "Jul 14, 2026"
+        - cell "posted"
+        - cell "Maple Debit ·· 4471"
+      - row "Blue Bottle Coffee coffee -$8.10 Jul 14, 2026 posted Maple Debit ·· 4471":
+        - cell "Blue Bottle Coffee"
+        - cell "coffee"
+        - cell "-$8.10"
+        - cell "Jul 14, 2026"
+        - cell "posted"
+        - cell "Maple Debit ·· 4471"
+      - row "Tartine Bakery dining -$16.21 Jul 19, 2026 posted Maple Debit ·· 4471":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$16.21"
+        - cell "Jul 19, 2026"
+        - cell "posted"
+        - cell "Maple Debit ·· 4471"
+      - row "Lyft transport -$23.40 Jul 17, 2026 posted Maple Debit ·· 4471":
+        - cell "Lyft"
+        - cell "transport"
+        - cell "-$23.40"
+        - cell "Jul 17, 2026"
+        - cell "posted"
+        - cell "Maple Debit ·· 4471"
+      - row "Uber Eats dining -$34.60 Jul 17, 2026 posted Maple Debit ·· 4471":
+        - cell "Uber Eats"
+        - cell "dining"
+        - cell "-$34.60"
+        - cell "Jul 17, 2026"
+        - cell "posted"
+        - cell "Maple Debit ·· 4471"
+      - row "Shell transport -$66.17 Jul 16, 2026 posted Maple Debit ·· 4471":
+        - cell "Shell"
+        - cell "transport"
+        - cell "-$66.17"
+        - cell "Jul 16, 2026"
+        - cell "posted"
+        - cell "Maple Debit ·· 4471"
+      - row "Apple Store shopping -$71.25 Jul 16, 2026 posted Maple Debit ·· 4471":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$71.25"
+        - cell "Jul 16, 2026"
+        - cell "posted"
+        - cell "Maple Debit ·· 4471"
+      - row "Apple Store shopping -$176.07 Jul 14, 2026 posted Maple Debit ·· 4471":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$176.07"
+        - cell "Jul 14, 2026"
+        - cell "posted"
+        - cell "Maple Debit ·· 4471"
+      - row "Apple Store shopping -$200.04 Jul 20, 2026 posted Maple Debit ·· 4471":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$200.04"
+        - cell "Jul 20, 2026"
+        - cell "posted"
+        - cell "Maple Debit ·· 4471"
+      - row "United Airlines transport -$418.00 Jul 20, 2026 authorized Maple Debit ·· 4471":
+        - cell "United Airlines"
+        - cell "transport"
+        - cell "-$418.00"
+        - cell "Jul 20, 2026"
+        - cell "authorized"
+        - cell "Maple Debit ·· 4471"
+  - application: "-$450.00 -$300.00 -$150.00 $0.00 $150.00 Apple Store UnitedAirlines Tartine Bakery Lyft Uber Eats Shell Apple Store Apple Store Amazon Blue BottleCoffee"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

@@ -1,0 +1,91 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Monthly budget"
+      - button "Remove Monthly budget": ×
+    - listitem:
+      - button "Largest transactions this year"
+      - button "Remove Largest transactions this year": ×
+    - listitem:
+      - button "Transfer to savings"
+      - button "Remove Transfer to savings": ×
+    - listitem:
+      - 'button "Spending: this month vs last month"'
+      - 'button "Remove Spending: this month vs last month"': ×
+    - listitem:
+      - button "Vacation Fund Tracker"
+      - button "Remove Vacation Fund Tracker": ×
+    - listitem:
+      - button "Duplicate & suspicious charges"
+      - button "Remove Duplicate & suspicious charges": ×
+    - listitem:
+      - button "Card spending tracker"
+      - button "Remove Card spending tracker": ×
+    - listitem:
+      - button "Upcoming scheduled payments"
+      - button "Remove Upcoming scheduled payments": ×
+    - listitem:
+      - button "Monthly cash flow"
+      - button "Remove Monthly cash flow": ×
+    - listitem:
+      - button "Account balances"
+      - button "Remove Account balances": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+    - listitem:
+      - button "Spending this month"
+      - button "Remove Spending this month": ×
+  - article "Categories tracked":
+    - text: Categories tracked
+    - strong: —
+  - article "Total budgeted":
+    - text: Total budgeted
+    - strong: $600.00
+  - application
+  - text: Total $4,845.30
+  - iframe
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

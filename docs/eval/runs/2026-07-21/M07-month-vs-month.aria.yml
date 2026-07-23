@@ -1,0 +1,134 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - 'button "Spending: this month vs last month"'
+      - 'button "Remove Spending: this month vs last month"': ×
+    - listitem:
+      - button "Vacation Fund Tracker"
+      - button "Remove Vacation Fund Tracker": ×
+    - listitem:
+      - button "Duplicate & suspicious charges"
+      - button "Remove Duplicate & suspicious charges": ×
+    - listitem:
+      - button "Card spending tracker"
+      - button "Remove Card spending tracker": ×
+    - listitem:
+      - button "Upcoming scheduled payments"
+      - button "Remove Upcoming scheduled payments": ×
+    - listitem:
+      - button "Monthly cash flow"
+      - button "Remove Monthly cash flow": ×
+    - listitem:
+      - button "Account balances"
+      - button "Remove Account balances": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+    - listitem:
+      - button "Spending this month"
+      - button "Remove Spending this month": ×
+  - article "This month (Jul 1–21)":
+    - text: This month (Jul 1–21)
+    - strong: $0.36
+  - article "Last month (Jun 1–30)":
+    - text: Last month (Jun 1–30)
+    - strong: $0.51
+  - iframe
+  - text: This month by category
+  - application
+  - text: Total $4,845.30 Recent transactions (this month)
+  - table:
+    - rowgroup:
+      - row "Merchant Category Amount Date":
+        - columnheader "Merchant"
+        - columnheader "Category"
+        - columnheader "Amount"
+        - columnheader "Date"
+    - rowgroup:
+      - row "Apple Store shopping -$200.04 Jul 20, 2026":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$200.04"
+        - cell "Jul 20, 2026"
+      - row "United Airlines transport -$418.00 Jul 20, 2026":
+        - cell "United Airlines"
+        - cell "transport"
+        - cell "-$418.00"
+        - cell "Jul 20, 2026"
+      - row "Tartine Bakery dining -$16.21 Jul 19, 2026":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$16.21"
+        - cell "Jul 19, 2026"
+      - row "Lyft transport -$23.40 Jul 17, 2026":
+        - cell "Lyft"
+        - cell "transport"
+        - cell "-$23.40"
+        - cell "Jul 17, 2026"
+      - row "Uber Eats dining -$34.60 Jul 17, 2026":
+        - cell "Uber Eats"
+        - cell "dining"
+        - cell "-$34.60"
+        - cell "Jul 17, 2026"
+      - row "Shell transport -$66.17 Jul 16, 2026":
+        - cell "Shell"
+        - cell "transport"
+        - cell "-$66.17"
+        - cell "Jul 16, 2026"
+      - row "Apple Store shopping -$71.25 Jul 16, 2026":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$71.25"
+        - cell "Jul 16, 2026"
+      - row "Apple Store shopping -$176.07 Jul 14, 2026":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$176.07"
+        - cell "Jul 14, 2026"
+  - text: Page 1 of 2
+  - button "Previous" [disabled]
+  - button "Next"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

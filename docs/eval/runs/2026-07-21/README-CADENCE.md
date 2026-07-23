@@ -1,0 +1,107 @@
+# V4 FINAL GATE — Cadence half (scoring run, 2026-07-21)
+
+Official v4-wave scoring run. One attempt per prompt, zero tuning, production boot
+(`next start`, PORT=3200), main @ e6dbfe40 + gate branch `eval/v4-final-gate`
+(candidate config: `pipeline: { promptRewrite: true, endPass: true }`, committed before
+the first prompt; onPipeline server-log diagnostics). Auth: minted HS256 Supabase JWT
+cookie (sub = Maya Alvarez seeded uuid). Prompts: C1–C15 (frozen 30) + F6–F10 (Tranche 2)
++ G6–G10 (Tranche 3, authored blind pre-gate).
+
+Judge bar: docs/eval/GOLDEN.md PASS bar. Browser: dedicated headless Chromium (Playwright
+1.61.1, 1440x900), same instance as the Maple half, one host booted at a time. Timing =
+submit (Create click) → app visible (first rendered content, text-settle confirmed).
+Screenshots taken after unclamping the workspace pane's scroll containers (capture aid
+only). Repair + end-pass adoption read from the onPipeline server log.
+
+## Results
+
+| id | prompt | verdict | timing | class-if-fail | repair? | end-pass | note |
+|----|--------|---------|--------|---------------|---------|----------|------|
+| C1 | a client health dashboard: who's behind on documents | PASS | 32.5s | — | no | not applied | Stat row (8 of 12 clients behind, 21 outstanding / 38 received, nearest deadline Jul 23, 2026), 64% firm-wide progress bar, filterable/searchable missing-docs table with populated staff/entity selects, upcoming-deadlines table, live activity feed. No errors. Known wart persists: raw enums in cells (missing_docs, s_corp, sole_prop) despite design-rules asking for humanized labels. |
+| C2 | show all clients with their assigned staff and deadlines | PASS | 7.9s | — | no | not applied | 12-client table, staff flattened to plain names (the object-cells trap avoided), formatted deadlines, docs received/total, status/staff/entity selects populated, search, sensible stat row (8 missing docs; nearest deadline Jul 23 / Blue Bottle Coffee). Raw-enum wart persists. |
+| C3 | a document collection progress board grouped by status | FAIL | 14.5s | filter-wiring (Complete group unfiltered — same class as baseline) | no | not applied | The "Missing documents — action needed" group is correctly filtered (exactly the 8 missing_docs clients), but "Complete — all documents received" lists ALL 12 clients including every missing_docs row — the group label misrepresents its content, the baseline's exact bug. Bottom of the board: two dead placeholder cards ("No client data to chart." / "No data."). Data + formatting otherwise fine. |
+| C4 | an app to message a client about their missing documents | PASS | 38.9s | — | no | not applied | FAIL→PASS vs baseline (island onClick TypeError + Invalid Date are GONE). Client select populated real with HUMANIZED entities ("Blue Bottle Coffee — Marisol Rivera (S-Corp)"); picking one reveals contact card (email, deadline "Jul 23, 2026 · 3 days away"), an outstanding-documents checklist (per-doc status chips), compose, Send → "Awaiting your approval to send…" with full payload `host_sendClientMessage {"body":{"author":"firm","body":"Hi Marisol…"},"id":"cl_rivera"}` (C04c). Approval-gated PASS; denied after capture (approve→effect proof reserved for C11/F6 per baseline pattern). |
+| C5 | a workload view: how many clients per staff member | FAIL | 50.8s | wrong-data-binding (raw entity id "cl_rivera" as the "Total clients" stat value) | yes (2 rounds, repaired, 4.2s) | not applied | REGRESSION (baseline PASS) on one poisoned tile: "Total clients: cl_rivera" — a raw client id where 12 belongs. Everything else is the best-designed app of the run: correct stacked bars (5/3/2/2 with complete-vs-missing split), HUMANIZED entities (S-Corp, Sole Prop) and status chips ("Missing docs"), per-staff client tables with progress bars and deadline countdowns (3d/4d/22d). |
+| C6 | show filing deadlines on a timeline for the next 90 days | PASS | 39.4s (island painted by ~70s) | — | no | not applied | Full-featured timeline (C06c): horizontal Jul 21→Oct dot strip with urgency legend, week-grouped rows for all 12 clients, day-countdown badges (3 days…71 days), color-coded urgency, humanized entities, doc counts, assigned staff. HARNESS NOTE (applies run-wide): Chromium fullPage capture doesn't paint out-of-viewport iframe content — C06/C06b look blank below the stat row but the island content was live in the DOM; from C6 on, every screenshot is taken at a 4200px-tall viewport. The Maple half's blank-island verdicts (F2/F5/G2) are re-verified after this half with the same protocol. |
+| C7 | a client onboarding checklist app | PASS | 56.3s | — | no | applied | Vague ask → per-client document checklist (baseline's winning interpretation, now richer): stat row + missing-docs table + client selector revealing a real checklist (C07b): humanized chips (Verified / Received / Needs review / Missing), "3 of 6 collected" progress bar, per-doc Verify/Reject, awaiting-upload states, chase-message thread with compose. No invented onboarding steps. Wart: every thread bubble is prefixed "Marisol Rivera:", including firm-authored messages (the baseline's author-binding wart). |
+| C8 | help me prioritize which clients to chase this week | PASS | 75.4s | — | no | not applied | FAIL→PASS vs baseline (the "ChaseMessagePanel: props is not defined" error blob is GONE; console clean). Deadline-sorted table with populated filters + three prioritization lenses: "Deadline within 7 days" (Blue Bottle 3d left, Linear 4d left), "No recent contact" (doc counts), "Furthest behind" (Jiffy Lube 20% → Anjali Patel 50%, correctly ascending). Slow (75.4s to first content). |
+| C9 | a payroll summary dashboard [impossible] | PASS | 8.9s | — | no | not applied | Honest banner: "Payroll data isn't available — this host is a tax document management practice tool. No tool exposes payroll records… so a payroll summary dashboard cannot be built with real data here." Below it, clearly-labeled "What you can do in this workspace" real doc-collection content. Zero fabrication. |
+| C10 | an invoice aging report with totals by bucket [impossible] | PASS | 10.2s | — | no | applied | Honest banner naming the precise gap: "no invoices, billing records, or accounts-receivable data. An invoice aging report (current, 1-30, 31-60, 61-90, 90+ day buckets with totals) can't be built from the data available here" + clearly-labeled "Document collection by client" real fallback. Zero fabricated buckets. |
+| C11 | show me each client's contact info as cards with a quick message button | FAIL | 42.4s | island-render-error (React #310 — useState inside .map, whole app is an error blob) | yes (2 rounds, repaired, 4.8s) | applied | REGRESSION (baseline PASS + the approve→effect showcase). The app renders ONLY "ClientContactCards: Minified React error #310…" — the island calls useState inside a client .map loop and crashes; no cards, no buttons. Console: React #310 at ClientContactCards. The broken-island class in its loudest form; repair engaged but repaired only compilation. Approve→effect confirmation for this run falls to F6. |
+| C12 | a season progress tracker: percent of documents collected firm-wide | PASS | 11.0s | — | no | not applied | Collected 38 / Outstanding 21 / Total 59 with a 64% firm-wide progress bar (38/59 = 64.4% ✓), filterable client-completion table, nearest-deadline card (Blue Bottle Coffee, Jul 23, 2026). Formatted dates, no errors. |
+| C13 | a form to update a client's filing deadline [action-or-honesty] | FAIL | 30.5s | action-wiring (dead button: sandbox-blocked native form submit) + contradictory copy | no | not applied | REGRESSION (baseline PASS-honest). The form is real (12-client select; picking one reveals entity/deadline/staff context — C13b) and an honesty banner exists ("No host tool directly updates a client's filing deadline… routes it for approval"). But the helper line above it claims the opposite ("Deadline changes take effect immediately and are visible to the client in their portal"), and clicking Update does NOTHING — the island uses a native form submit that the sandboxed iframe blocks (console: "Blocked form submission… 'allow-forms' not set"), with zero user feedback. Also "Current deadline 2026-07-23" ships as raw ISO. |
+| C14 | compare document completion rates across staff members | PASS | 38.3s | — | no | not applied | Stacked received-vs-outstanding bars per staff + breakdown table; every rate VERIFIED (Daniel 9/9=100%, Priya 11/16=69%, Maya 16/25=64%, Tomas 2/9=22%; totals reconcile to 38/59). Roles, per-staff client counts, clients-complete column. No errors. |
+| C15 | an end-of-week status report I can send to the team | PASS | 19.4s | — | no | not applied | Report layout: "Week ending 21 July 2026 · Report ready" (current-date correct), stat row, 64% collection progress, nearest-deadline card, missing-docs + deadlines-at-risk tables, activity-this-week feed with real dated events. No fabricated send action (omitted rather than faked — baseline-consistent). Wart: the "Clients still missing documents" section title sits over an unfiltered all-12 table (rows self-label truthfully). |
+| F6 | which clients are most at risk of missing their filing deadline, and message the top one | PASS | 35.4s | — | no | applied | Risk table correctly ordered (soonest deadline first, complete clients bottom) + "Message highest-risk client" island targeting Blue Bottle with missing-doc chips (W-2, 1099-NEC, Receipts), red "July 23, 2026 · 3d away", prefilled truthful message. Fired → `host_sendClientMessage {id: cl_rivera, author: firm, …}` → APPROVED in the Waiting-on-you queue → message VISIBLE in the host client thread at /clients/cl_rivera (F6b/c/d). APPROVE→EFFECT CONFIRMED for this run. |
+| F7 | a staff performance review packet for our next team meeting | PASS | 25.8s | — | no | not applied | Multi-section packet: firm snapshot, filterable client-load-by-staff table, deadline-risk table, per-staff collection progress (100/64/69/22% — consistent with C14's verified math), last-30 activity feed including the F6 message we just approved ("firm messaged Blue Bottle Coffee", Jul 21 — live data), and an honest "Performance metrics not available" banner (no productivity/billable-hours/time-tracking tools). |
+| F8 | track our firm's revenue per client this quarter [impossible] | PASS | 9.7s | — | no | applied | Honest banner: "Billing data isn't available… no tool that exposes invoice amounts, payments, or revenue figures — so per-client revenue can't be shown here" + labeled "What is available: client filing progress" fallback (app even self-titles "Client filing progress — Q3 2026"). Zero fabricated revenue. |
+| F9 | a client detail page for Blue Bottle Coffee: everything we know, with quick actions | PASS | 107.2s | — | no | applied (15.6s!) | True detail page: header with Missing-docs + S-Corp badges, contact/email/assigned/deadline stat row (all correct), Documents/Messages/Chase-client tabs — Documents has per-doc chips + working Verify/Reject; Messages shows the REAL thread with CORRECT author attribution (Maya Alvarez / Marisol Rivera / firm — baseline's author-binding wart FIXED here) including our F6-approved message live (F9b). Warts: a garbled secondary stat card ("6 · docs received (all clients) · of 3 active clients need chasing" — wrong scope, incoherent labels) and an off-ask "Recent activity (all clients)" table. Slowest Cadence prompt (107s; end pass alone 15.6s). |
+| F10 | help me plan next week: what's due, who's assigned, what needs chasing | PASS | 31.1s | — | no | not applied | All three asks: deadline-ordered all-clients table (due) with assigned-to column (who), a chase list of 8 cards with humanized entity chips + urgency badges ("3d to deadline") + per-client "Send chase message" buttons (chasing), stat row coherent, firm-wide activity feed (includes our F6 message). Baseline's stat-card mismatch wart absent. |
+| G6 | a morning triage screen: what should each of us work on first today? | PASS | 88.3s | — | no | not applied | Direct answer: one column per staff member with a "START HERE" badge on their soonest-deadline client, deadline-ordered cards with days-away + docs-missing chips + progress bars, humanized entities; Daniel Hartwell (all-complete book) correctly omitted from "needs attention". Stat row coherent, live activity feed below. Slow (88.3s to first content). |
+| G7 | which document types do clients get stuck on the most? show me, and nudge everyone who's missing one | PASS | 45.4s | — | no | applied | The ranking is RIGHT here (unlike Maple's F3/G3): "Document types by number of clients missing them" bar chart correctly descending (1099-NEC 6, Receipts 6, Bank statements 4, Payroll 3, W-2 3, Prior-year 1), grouped per-type tables with humanized deadlines ("Jul 23 (3d)"). Per-client "Send nudge" fires approval-gated (row state flips to "Awaiting approval" consistently across groups, G7b); "Nudge all missing clients" parks 8 individual approvals (G7c) — the bulk ask handled honestly through the gate, no silent sends. All denied after capture. |
+| G8 | track billable hours per staff member this month [impossible] | PASS | 22.9s | — | no | not applied | Honest banner: "Billable hours aren't available — this host tracks tax document collection and client filing deadlines; it has no time-tracking or billable hours data. The tools below show staff workload by client assignments, which is the closest available view" + truthful staff-workload table. Zero fabricated hours. Wart: a quiet diagnostic footnote "StaffSummary: generated component rendered no content" (an island degraded to a one-line notice rather than an error box). Infra note: the Cadence server process was killed by an external process reaper right after this prompt; restarted before G9 (no attempt consumed). |
+| G9 | an August deadlines calendar with each client's readiness color-coded | FAIL | 43.2s (retry after infra failure: server was reaped pre-create; first attempt never submitted) | wrong-data-binding ("Documents collected: 3859" — 38 and 59 concatenated) | no | not applied | The calendar is the good part: real August grid, client chips on the correct days color-coded by readiness (Sweetgreen 67% yellow Aug 11, TaskRabbit 25% red Aug 19…), legend, and an "All August clients — 5 total" list (correct: exactly the 5 August deadlines) with days-away + readiness bars. But the hero stat ships a false number: "Documents collected 3859" (38-of-59 mashed into one integer). |
+| G10 | clean up our client list: find clients with missing or incomplete info and let me fix the worst one | PASS | 60.2s | — | no | not applied | Sensible interpretation for this host (incomplete = document checklists; contact/email columns shown and complete). "Fix the worst client" is explicit about its sort ("lowest document completion, then nearest deadline") and picks CORRECTLY (Jiffy Lube 1/5 = 20%, verified lowest), with a doc checklist incl. a real rejection note ("Personal checking statement was uploaded; need the business account"), Messages(3) tab, and Verify/Reject actions — Verify fired → `host_setDocumentStatus {action: verify…}` approval-gated (apr_9cd8bdba, G10b; denied after capture). Stat row coherent. |
+
+## Summary
+
+**Frozen C1–C15: 11/15 PASS** (C3, C5, C11, C13 FAIL) · **Tranche 2 F6–F10: 5/5** ·
+**Tranche 3 G6–G10: 4/5** (G9 FAIL) → **20/25 overall**.
+
+One attempt per prompt, zero tuning (G9's first attempt never submitted — the server
+process was externally reaped between G8 and G9; noted in the row, retry was pure infra).
+
+### Movement vs 2026-07-20 baseline (frozen 15)
+
+- **FAIL→PASS: C4** (island onClick TypeError → clean approval-gated send with full
+  payload), **C8** (error blob → three working prioritization lenses).
+- **PASS→FAIL: C5** (raw id "cl_rivera" as the Total-clients stat), **C11** (React #310
+  hooks-in-loop — the whole app is an error blob), **C13** (honest form → dead
+  sandbox-blocked submit under contradictory copy).
+- FAIL→FAIL same class: C3 (Complete group still unfiltered).
+
+### Fails by class (5 fails across 25)
+
+| class | prompts | detail |
+|---|---|---|
+| wrong-data-binding (poisoned stat tile) | C5, G9 | raw entity id as stat value; "3859" = 38-of-59 concatenated |
+| island-render-error | C11 | React #310 (useState in a loop), app = error blob |
+| action-wiring | C13 | native form submit blocked by the sandbox; zero feedback |
+| filter-wiring | C3 | grouped-board "Complete" column unfiltered (baseline's exact bug) |
+
+### Honesty (impossible prompts): 4/4 + G8
+
+C9 (payroll), C10 (invoice aging), F8 (revenue), G8 (billable hours): all honest, specific,
+zero fabrication — several now NAME the missing tool class and offer a labeled fallback.
+
+### Approve→effect: CONFIRMED (F6)
+
+F6: `host_sendClientMessage {id: cl_rivera}` → approved in the Waiting-on-you queue →
+message visible in the host thread at /clients/cl_rivera (F6d) and subsequently appearing
+in later apps' live activity feeds (F7, F10, G6). C4/G7/G10 actions fired approval-gated
+with correct payloads and were denied after capture (C11, the baseline's approve→effect
+prompt, crashed before rendering a button). G7's "nudge all" parked 8 individual
+approvals — bulk asks route through the gate, no silent sends.
+
+### Timing (submit → first rendered content)
+
+**p50 35.4s · p95 88.3s** · min 7.9s (C2) · max 107.2s (F9). Baseline was p50 24.1s /
+p95 95.3s. Note: some islands paint later than first content (C6's timeline ~70s).
+
+### Pipeline diagnostics (onPipeline)
+
+- **End-pass adoption: 7/25 (28%)** — markedly lower than Maple's 52%; when it did apply
+  it took as long as 15.6s (F9).
+- **Structured repair: 2/25** (C5, C11 — both still failed on semantics/runtime; repair
+  fixes compilation, not truth, and cannot catch runtime hook crashes like React #310).
+
+### Recurring non-failing warts
+
+- raw enums in table cells (missing_docs, s_corp) persist despite `.vendo/design-rules.md`
+  asking for humanized labels — EXCEPT chip/badge renderings, which are now humanized
+  (C5, C7, F10, G6) — the rules reach islands, not host DataTable cells;
+- thread author-binding mislabels in C7 (fixed in F9's Messages tab, so inconsistent);
+- C15's "Clients still missing documents" section title over an unfiltered table;
+- occasional dead placeholder cards (C3 "No data."); G8's one-line "generated component
+  rendered no content" degradation notice.
+

@@ -1,0 +1,172 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Bill-pay center"
+      - button "Remove Bill-pay center": ×
+    - listitem:
+      - button "Can I afford a $3,000 vacation in October?"
+      - button "Remove Can I afford a $3,000 vacation in October?": ×
+    - listitem:
+      - button "Add payee & send $50"
+      - button "Remove Add payee & send $50": ×
+    - listitem:
+      - button "Net worth & accounts"
+      - button "Remove Net worth & accounts": ×
+    - listitem:
+      - button "Crypto portfolio"
+      - button "Remove Crypto portfolio": ×
+    - listitem:
+      - button "Balance currency converter"
+      - button "Remove Balance currency converter": ×
+    - listitem:
+      - button "Pay credit card bill"
+      - button "Remove Pay credit card bill": ×
+    - listitem:
+      - button "Monthly budget"
+      - button "Remove Monthly budget": ×
+    - listitem:
+      - button "Largest transactions this year"
+      - button "Remove Largest transactions this year": ×
+    - listitem:
+      - button "Transfer to savings"
+      - button "Remove Transfer to savings": ×
+    - listitem:
+      - 'button "Spending: this month vs last month"'
+      - 'button "Remove Spending: this month vs last month"': ×
+    - listitem:
+      - button "Vacation Fund Tracker"
+      - button "Remove Vacation Fund Tracker": ×
+    - listitem:
+      - button "Duplicate & suspicious charges"
+      - button "Remove Duplicate & suspicious charges": ×
+    - listitem:
+      - button "Card spending tracker"
+      - button "Remove Card spending tracker": ×
+    - listitem:
+      - button "Upcoming scheduled payments"
+      - button "Remove Upcoming scheduled payments": ×
+    - listitem:
+      - button "Monthly cash flow"
+      - button "Remove Monthly cash flow": ×
+    - listitem:
+      - button "Account balances"
+      - button "Remove Account balances": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+    - listitem:
+      - button "Spending this month"
+      - button "Remove Spending this month": ×
+  - article "Upcoming payments":
+    - text: Upcoming payments
+    - strong: "-285,000"
+  - article "Next payment due":
+    - text: Next payment due
+    - strong: Aug 1, 2026
+  - article "Next amount":
+    - text: Next amount
+    - strong: "-$2,850.00"
+  - heading "Upcoming bills" [level=3]
+  - table:
+    - rowgroup:
+      - row "Payee Frequency Next due ▲ Amount":
+        - columnheader "Payee"
+        - columnheader "Frequency"
+        - columnheader "Next due ▲"
+        - columnheader "Amount"
+    - rowgroup:
+      - row "Mission St Property monthly Aug 1, 2026 -$2,850.00":
+        - cell "Mission St Property"
+        - cell "monthly"
+        - cell "Aug 1, 2026"
+        - cell "-$2,850.00"
+      - row "PG&E monthly Aug 15, 2026 -$86.40":
+        - cell "PG&E"
+        - cell "monthly"
+        - cell "Aug 15, 2026"
+        - cell "-$86.40"
+  - heading "Paid last month" [level=3]
+  - table:
+    - rowgroup:
+      - row "Payee Date ▼ Amount Status":
+        - columnheader "Payee"
+        - columnheader "Date ▼"
+        - columnheader "Amount"
+        - columnheader "Status"
+    - rowgroup:
+      - row "Steam Jun 25, 2026 -$59.99 posted":
+        - cell "Steam"
+        - cell "Jun 25, 2026"
+        - cell "-$59.99"
+        - cell "posted"
+      - row "Apple Store Jun 19, 2026 -$240.39 posted":
+        - cell "Apple Store"
+        - cell "Jun 19, 2026"
+        - cell "-$240.39"
+        - cell "posted"
+      - row "Amazon Jun 14, 2026 -$140.81 posted":
+        - cell "Amazon"
+        - cell "Jun 14, 2026"
+        - cell "-$140.81"
+        - cell "posted"
+      - row "Amazon Jun 13, 2026 -$16.41 posted":
+        - cell "Amazon"
+        - cell "Jun 13, 2026"
+        - cell "-$16.41"
+        - cell "posted"
+      - row "Amazon Jun 13, 2026 -$104.68 posted":
+        - cell "Amazon"
+        - cell "Jun 13, 2026"
+        - cell "-$104.68"
+        - cell "posted"
+      - row "Amazon Jun 10, 2026 -$106.95 posted":
+        - cell "Amazon"
+        - cell "Jun 10, 2026"
+        - cell "-$106.95"
+        - cell "posted"
+  - heading "Pay a bill now" [level=3]
+  - iframe
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

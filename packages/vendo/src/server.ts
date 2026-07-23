@@ -308,6 +308,14 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
+    /** W4 pipeline knobs, forwarded verbatim to the generation engine
+        (AppsConfig.pipeline): structured repair default-on; `promptRewrite`
+        (v4 create contract) and `endPass` opt-in while the A/B is measured.
+        Pure passthrough — no behavior unless the host sets it. */
+    pipeline?: AppsConfig["pipeline"];
+    /** W4 pipeline per-stage diagnostics hook (repair rounds, end-pass
+        adoption, wall-clock) — forwarded verbatim; pure observability. */
+    onPipeline?: AppsConfig["onPipeline"];
     /** Host design rules for app generation (spec 2026-07-20): the same prose
         `.vendo/design-rules.md` carries, for hosts that prefer programmatic
         config. A non-blank string wins over the file and is fixed for the
@@ -1275,6 +1283,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // that runs generated web apps is a deliberate per-project decision).
     ...(config.apps?.experimentalServedApps === undefined ? {} : { experimentalServedApps: config.apps.experimentalServedApps }),
     ...(config.apps?.experimentalMachines === undefined ? {} : { experimentalMachines: config.apps.experimentalMachines }),
+    // v4 gate — pipeline knobs are host configuration, forwarded verbatim.
+    ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
+    ...(config.apps?.onPipeline === undefined ? {} : { onPipeline: config.apps.onPipeline }),
     // Wave 9 — a ladder-authored automation is armed through the automations
     // engine's own enable(), so the 07 §3 grant-capture flow runs at creation
     // and the missing standing-grant approvals surface on the edit result.
