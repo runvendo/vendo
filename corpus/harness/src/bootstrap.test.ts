@@ -281,6 +281,64 @@ describe("bootstrapRepo", () => {
     );
   });
 
+  it("retries once and succeeds when the install fails with a transient resolver/registry error (nextcrm flake class)", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    const attemptFile = path.join(repoDir, "attempt.txt");
+    await writeInstallScript(repoDir, `
+      import { existsSync, readFileSync, writeFileSync } from "node:fs";
+      const marker = ${JSON.stringify(attemptFile)};
+      const attempt = existsSync(marker) ? Number(readFileSync(marker, "utf8")) + 1 : 1;
+      writeFileSync(marker, String(attempt));
+      if (attempt === 1) {
+        console.error("ERR_PNPM_NO_MATCHING_VERSION  No matching version found for @types/react@^19.0.0");
+        process.exit(1);
+      }
+      console.log("install stdout attempt " + attempt);
+    `);
+
+    const result = await bootstrapRepo(repo, { context, retryDelayMs: 0 });
+
+    await expect(readFile(attemptFile, "utf8")).resolves.toBe("2");
+    const stdoutLog = await readFile(result.logs.stdout, "utf8");
+    expect(stdoutLog).toMatch(/retry/i);
+    expect(stdoutLog).toContain("install stdout attempt 2");
+  });
+
+  it("does not retry a non-transient install failure (fails immediately on attempt 1)", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    const attemptFile = path.join(repoDir, "attempt.txt");
+    await writeInstallScript(repoDir, `
+      import { existsSync, readFileSync, writeFileSync } from "node:fs";
+      const marker = ${JSON.stringify(attemptFile)};
+      const attempt = existsSync(marker) ? Number(readFileSync(marker, "utf8")) + 1 : 1;
+      writeFileSync(marker, String(attempt));
+      console.error("SyntaxError: Unexpected token in package.json");
+      process.exit(1);
+    `);
+
+    await expect(bootstrapRepo(repo, { context, retryDelayMs: 0 })).rejects.toThrow(/install command failed/i);
+    await expect(readFile(attemptFile, "utf8")).resolves.toBe("1");
+  });
+
+  it("retries at most once: two consecutive transient failures still fail the bootstrap", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    const attemptFile = path.join(repoDir, "attempt.txt");
+    await writeInstallScript(repoDir, `
+      import { existsSync, readFileSync, writeFileSync } from "node:fs";
+      const marker = ${JSON.stringify(attemptFile)};
+      const attempt = existsSync(marker) ? Number(readFileSync(marker, "utf8")) + 1 : 1;
+      writeFileSync(marker, String(attempt));
+      console.error("ETIMEDOUT while fetching from registry");
+      process.exit(1);
+    `);
+
+    await expect(bootstrapRepo(repo, { context, retryDelayMs: 0 })).rejects.toThrow(/install command failed/i);
+    await expect(readFile(attemptFile, "utf8")).resolves.toBe("2");
+  });
+
   it("degrades npm ci bootstrap recipes to npm install", async () => {
     const { corpusRoot, repo, repoDir } = await makeRepo();
     const context = createRunContext({ corpusRoot });
