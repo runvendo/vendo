@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/apps",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "The Vendo app artifact, build engine, sandbox seam, and runtime.",
   "keywords": [
     "ai",
