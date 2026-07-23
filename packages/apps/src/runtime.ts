@@ -1823,8 +1823,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           const { id: _verifyId, ...unidentified } = structuredClone(app);
           const verified = await verifyDocumentAgainstData(unidentified, input.prompt, verifiedData, generationDeps);
           app = { ...verified, id: appId };
-        } catch {
-          // The unverified app ships; open() resolves its data as always.
+        } catch (error) {
+          // The unverified app ships; open() resolves its data as always. But
+          // say so in the operator's terminal — a silently skipped verify pass
+          // is indistinguishable from a verify pass that found nothing.
+          console.warn(`[vendo] data-sighted verify skipped for ${appId} (the unverified app ships): ${safeErrorMessage(error)}`);
         }
       }
       let finalTree: TreeV2 | undefined;
