@@ -21,6 +21,15 @@ Repeated failures are detected automatically; if the reporter says the miss was 
 // automation runs and the MCP door get no component vocabulary.
 const TREE_VENUES: ReadonlySet<RunContext["venue"]> = new Set(["chat", "app"]);
 
+// Demo-refresh 2026-07-23: a rendered view owns its data — the reply around
+// it must not compete with it. Venue-gated with the catalog: only surfaces
+// that render trees have views to defer to.
+const PRESENTATION_PROMPT = `Presentation
+- When a view or app renders, it owns the data: never restate its data as a markdown table, list, or repeated numbers in your reply.
+- Around a rendered view, reply with at most a sentence or two of insight the view does not already show.
+- Do not narrate surface mechanics ("the chart is loading above", "see the table below").
+- Match the product's voice. No emoji unless the user or the host's directions use them.`;
+
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
   guard: Guard,
@@ -34,6 +43,7 @@ export async function assembleSystemPrompt(
   capabilityMiss = false,
 ): Promise<string> {
   const sections = [OPERATING_PROMPT];
+  if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT);
   if (capabilityMiss) sections.push(CAPABILITY_MISS_PROMPT);
   const product = (typeof system?.product === "function" ? system.product() : system?.product)?.trim();
   if (product) sections.push(`Product\n${product}`);

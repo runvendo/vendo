@@ -296,6 +296,10 @@ export interface CreateVendoConfig {
       DEFAULT_TOOL_OUTPUT_CAP so one huge host-tool response can't blow the context;
       pass 0 to disable. `historyWindow` bounds messages re-sent per turn (default: full). */
   agent?: {
+    /** Host voice and standing guidance, appended to the agent's system
+        prompt every turn (03 §3 `instructions`) — tone, formatting, what to
+        emphasize. Policy belongs in guard directions, not here. */
+    instructions?: string;
     toolOutputCap?: number;
     maxOutputTokens?: number;
     historyWindow?: number;
@@ -1501,10 +1505,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ? composeBrief
     : () => selectConfigSurface("brief.md", { explicit: config.brief, readFile: readSurfaceFile, cloud: configCloud }).value?.trim() || undefined;
   const promptCatalog = catalogThemeSummary(catalog, theme);
-  const system = product !== undefined || promptCatalog !== undefined
+  const hostInstructions = config.agent?.instructions?.trim();
+  const system = product !== undefined || hostInstructions || promptCatalog !== undefined
     ? {
         ...(product === undefined ? {} : { product }),
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
+        ...(hostInstructions ? { instructions: hostInstructions } : {}),
       }
     : undefined;
   const agent = createAgent({
