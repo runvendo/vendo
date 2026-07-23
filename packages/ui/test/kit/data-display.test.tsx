@@ -17,6 +17,28 @@ describe("Stat", () => {
     render(<Stat label="Broken" value={Number.NaN} format="money" />);
     expect(screen.queryByText(/NaN/)).toBeNull();
   });
+
+  it("renders an empty value as a compact em dash with a tooltip, never a bare tile", () => {
+    render(<Stat label="Bank" value="" />);
+    const dash = screen.getByText("—");
+    expect(dash.getAttribute("title")).toBe("No data yet");
+    expect(dash.hasAttribute("data-empty")).toBe(true);
+  });
+
+  it("caps prose-length values with the full text in the tooltip (a KPI tile is not a paragraph)", () => {
+    const prose = "No host tool exposes session metrics, so this can't be shown.";
+    render(<Stat label="Sessions" value={prose} />);
+    expect(screen.queryByText(prose)).toBeNull();
+    const capped = screen.getByText(/…$/);
+    expect(capped.textContent!.length).toBeLessThanOrEqual(40);
+    expect(capped.getAttribute("title")).toBe(prose);
+  });
+
+  it("leaves a short text value untouched — no tooltip, no truncation", () => {
+    render(<Stat label="Plan" value="Growth (annual)" />);
+    const value = screen.getByText("Growth (annual)");
+    expect(value.getAttribute("title")).toBeNull();
+  });
 });
 
 describe("Badge", () => {
@@ -49,5 +71,17 @@ describe("CardList", () => {
   it("shows an empty state when there are no items", () => {
     render(<CardList items={[]} titleField="name" emptyState="No clients" />);
     expect(screen.getByText("No clients")).toBeTruthy();
+  });
+
+  it("renders an em dash for an empty field value, never a bare label", () => {
+    render(
+      <CardList
+        items={[{ id: 1, name: "Hartwell", bank: "" }]}
+        titleField="name"
+        fields={[{ key: "bank", label: "Bank" }]}
+      />,
+    );
+    expect(screen.getByText("Bank")).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
   });
 });

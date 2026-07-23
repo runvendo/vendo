@@ -152,7 +152,13 @@ export function applyFormat(value: unknown, format: ValueFormat = "text"): strin
         ? formatDateTime(value as DateInput, { mode: format })
         : null;
     case "text":
-    default:
-      return value === null || value === undefined ? null : String(value);
+    default: {
+      if (value === null || value === undefined) return null;
+      const text = String(value);
+      // An empty/whitespace field is unrenderable like NaN is: `null` here is
+      // what turns a bare "Bank:" label into "Bank: —" everywhere the data
+      // tier renders label/value pairs (Stat, CardList, DataTable cells).
+      return text.trim() === "" ? null : text;
+    }
   }
 }

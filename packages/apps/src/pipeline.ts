@@ -1107,7 +1107,7 @@ const outlineSchema = (toolNames: string[]): Record<string, unknown> => ({
   additionalProperties: false,
   required: ["appName", "sharedFacts", "sections"],
   properties: {
-    appName: { type: "string", description: "The app's display name." },
+    appName: { type: "string", description: "The app's display title — at most 40 characters, human and specific, never the user's request echoed back." },
     sharedFacts: {
       type: "string",
       description: "Shared data/state facts every section must agree on (which queries feed what, shared filters, units). Empty string when none.",

@@ -22,7 +22,10 @@ const descriptors: ToolDescriptor[] = [
   {
     // The agent's streaming-view bridge keys on this exact core-defined name.
     name: VENDO_APPS_CREATE_TOOL,
-    description: "Create a Vendo app from a natural-language prompt.",
+    // Empty-states batch — calling agents were pre-computing data into the
+    // prompt ("Total Spent: $0.00"), which the engine's data-honesty law
+    // rejects as hand-typed figures; the app binds live host data itself.
+    description: "Create a Vendo app from a natural-language prompt. Pass the user's request (with any clarifying context) as the prompt. Never bake data values you computed or fetched (counts, totals, amounts) into the prompt — the app binds live host data itself and hardcoded figures fail its build. Never specify fonts, colors, or branding — the app inherits the host theme.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",

@@ -231,7 +231,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 /* App boundary: the generated view sits inside a titled frame so it reads as a
    discrete piece of software, cleanly separated from the surrounding chat. */
 .fl-appcard { border: 1px solid var(--vendo-border); border-radius: 14px; overflow: hidden;
-  background: var(--vendo-surface); box-shadow: var(--vendo-shadow); }
+  background: var(--vendo-surface); box-shadow: var(--vendo-shadow);
+  /* Breathing room when the settled card scrolls its top into view. */
+  scroll-margin-top: 10px; }
 .fl-appcard-bar { display: flex; align-items: center; gap: 8px; padding: 9px 13px;
   border-bottom: 1px solid var(--vendo-border);
   background: color-mix(in srgb, var(--vendo-surface) 92%, var(--vendo-fg) 8%); }
