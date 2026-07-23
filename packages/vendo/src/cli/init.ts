@@ -233,8 +233,18 @@ async function defaultThemeReview(summary: ThemeSummary): Promise<Record<string,
   return overrides;
 }
 
+/** Where init scaffolds app/api/vendo/[...vendo] and (for a fresh scaffold)
+    the app-router layout wrap. Next hard-fails ("pages and app directories
+    should be under the same folder") when app/ and pages/ sit at different
+    bases, so a host whose pages router already lives under src/ must get its
+    NEW app/ segment there too, mirroring detectRouter's src/pages signal
+    below — even before any src/app exists to detect directly. This still
+    hands a pure-Pages host an App-Router route segment by design (valid in
+    Next as long as both share one base); whether pages-native hosts deserve
+    a pages/api scaffold instead is a separate, unaddressed question. */
 async function appDirectory(root: string): Promise<string> {
   if (await exists(join(root, "src", "app"))) return join(root, "src", "app");
+  if (await exists(join(root, "src", "pages"))) return join(root, "src", "app");
   return join(root, "app");
 }
 
