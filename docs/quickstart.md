@@ -45,10 +45,9 @@ this order:
    the minted metered dev-mode key is written to `.env.local` for you. You
    never paste a key. (`vendo cloud login <email>` remains as an email-OTP
    fallback.)
-   Model calls go through the Vendo Cloud model gateway (curated aliases:
-   `vendo-default`, `vendo-fast`, `vendo-strong` — pick with
-   `VENDO_CLOUD_MODEL`, served via the installed `@ai-sdk/anthropic`) and
-   meter your dev-mode runs allowance.
+   Model calls go through the Vendo Cloud model gateway (`vendo` by
+   default — pin another id with `VENDO_MODEL`, served via the installed
+   `@ai-sdk/anthropic`) and meter your dev-mode runs allowance.
 3. Nothing available: chat fails honestly, with exact instructions in the
    server log.
 

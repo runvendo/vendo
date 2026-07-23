@@ -1807,7 +1807,7 @@ describe("vendo init (custom runtime)", () => {
     // Adapter rule: with a Cloud key the seams wire EXPLICITLY (model via the
     // stock Anthropic provider at the console gateway — the dev ladder cannot
     // resolve provider installs inside a Worker bundle).
-    expect(server).toContain('createAnthropic({ apiKey: cloud.apiKey, baseURL: `${cloud.baseUrl}/api/v1` })("vendo-default")');
+    expect(server).toContain('createAnthropic({ apiKey: cloud.apiKey, baseURL: `${cloud.baseUrl}/api/v1` })("vendo")');
     expect(server).toContain("store: hostedStore(cloud),");
     expect(server).toContain("sandbox: cloudSandbox(cloud),");
     // No framework file-layout assumptions.
