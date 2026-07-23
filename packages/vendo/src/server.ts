@@ -86,11 +86,16 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
-import { devModel } from "#dev-creds/model";
-// install-dx v1 — `devModel()` is the env-resolving model createVendo composes
-// when the host passes none; the resolver is shared by init and doctor (one
-// credential story, real keys only).
-export { devModel, type DevModelOptions } from "#dev-creds/model";
+import { configureVendoModelSlots } from "#dev-creds/model";
+// Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
+// entry: the lazily-resolving env ladder createVendo composes when the host
+// passes none, exported for host code too (judge wiring, host features). No
+// argument means `vendo` semantics (per-rung defaults); a name passes through
+// VERBATIM to the resolved rung. `devModel` stays as the deprecated alias.
+export { devModel, vendoModel, type DevModelOptions, type VendoModelOptions, type VendoModelSlot } from "#dev-creds/model";
+import { resolveModels } from "./models-config.js";
+export { type ModelsConfig } from "./models-config.js";
+import type { ModelsConfig } from "./models-config.js";
 import {
   byoConnections,
   cloudConnections,
@@ -132,7 +137,6 @@ import {
   errorResponse,
   internalError,
   routeSegments,
-  type ModelVenue,
   type RouteEntry,
   type SandboxVenue,
   type WireContext,
@@ -186,17 +190,26 @@ export interface Vendo {
 }
 
 export interface CreateVendoConfig {
-  /** The agent's LLM — the inference adapter seam (03-agent §1): any ai-SDK
-      LanguageModel. Optional since install-dx v1: an explicitly passed model
-      always wins (BYO-LLM); when absent the seam resolves a real key from the
-      environment — provider keys via devModel's ladder, then VENDO_API_KEY →
-      Vendo Cloud managed inference — and fails honestly with instructions
-      when none exists (precedence: selectModel). */
+  /** @deprecated Superseded by `models.agent` (models spec 2026-07-22);
+      still functional for one release. The agent's LLM — the inference
+      adapter seam (03-agent §1): any ai-SDK LanguageModel. An explicitly
+      passed model always wins (BYO-LLM); when absent the seam resolves a
+      real key from the environment — provider keys via vendoModel's ladder,
+      then VENDO_API_KEY → Vendo Cloud managed inference — and fails honestly
+      with instructions when none exists (precedence: resolveModels). */
   model?: LanguageModel;
-  /** v2 spec §4 — tier-0 paint lane knob for app generation. `model` is the
-      no-think switch (a thinking-disabled model instance for the instant
-      paint); `disabled` forces single-lane generation. */
+  /** @deprecated The `model` half is superseded by `models.paint`;
+      `disabled` remains the single-lane switch. v2 spec §4 — tier-0 paint
+      lane knob for app generation. */
   paint?: AppsConfig["paint"];
+  /** Models spec 2026-07-22 (DX surface 3) — the models block, keyed by slot,
+      valued by a model-name string (resolved through vendoModel's credential
+      ladder: VERBATIM passthrough, per-rung defaults, env pins) or an
+      explicit ai-SDK LanguageModel object (wins as-is). `agent` supersedes
+      the top-level `model`; `paint` supersedes `paint.model`; `judge` only
+      feeds a judge the host wired from a string — vendoAutoJudge(
+      vendoModel("vendo-judge")) — there is NO judge-on-by-default. */
+  models?: ModelsConfig;
   /** 09-vendo §2.1 — ONE host-identity preset filling the principal, actAs, and
       oauth seams from one config key. Mutually exclusive with all three:
       mixing throws VendoError("validation") at compose time. */
@@ -474,25 +487,18 @@ function selectConnections(
   return cloud !== undefined ? cloudConnections(cloud) : unconfiguredConnections();
 }
 
-/** ADAPTER RULE, inference seam (cloned from selectConnections): the agent and
-    apps blocks consume one ai-SDK LanguageModel; which implementation composes
-    is decided HERE. Precedence, top to bottom:
-      1. an explicitly passed model always wins (BYO-LLM — any ai-SDK model);
-      2. otherwise devModel()'s env ladder composes as the default, and the
-         remaining rungs live INSIDE it (resolveDevCredential): a provider key
-         (ANTHROPIC / OPENAI / GOOGLE) via the host-installed @ai-sdk provider,
-         then VENDO_API_KEY via @ai-sdk/anthropic pointed at the Cloud model
-         gateway (`<console>/api/v1` — Anthropic-compatible /messages), then
-         the honest keyless failure with exact instructions on first use.
-    devModel is the one seam-sanctioned lazy env resolver; every other adapter
-    still never reads the environment. */
-function selectModel(configured: LanguageModel | undefined): {
-  model: LanguageModel;
-  venue: ModelVenue;
-} {
-  if (configured !== undefined) return { model: configured, venue: "custom" };
-  return { model: devModel(), venue: "ladder" };
-}
+/* ADAPTER RULE, inference seam: the agent and apps blocks consume one ai-SDK
+   LanguageModel; which implementation composes is decided at resolveModels
+   (models-config.ts). Precedence per slot: an explicitly passed model object
+   always wins (BYO-LLM) → env pin (VENDO_MODEL / VENDO_MODEL_<SLOT>) →
+   `models` string → the per-rung default. Every string rides vendoModel()'s
+   env ladder, whose rungs live INSIDE it (resolveDevCredential): a provider
+   key (ANTHROPIC / OPENAI / GOOGLE) via the host-installed @ai-sdk provider,
+   then VENDO_API_KEY via @ai-sdk/anthropic pointed at the Cloud model gateway
+   (`<console>/api/v1` — Anthropic-compatible /messages), then the honest
+   keyless failure with exact instructions on first use. vendoModel is the one
+   seam-sanctioned lazy env resolver; every other adapter still never reads
+   the environment. */
 
 /** The ephemeral-session operations bound to the composed store (02-store §4):
     registration == touch, adoption on sign-in, and the TTL sweep. Selected
@@ -975,8 +981,13 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   );
   const sandbox = selectSandbox(config.sandbox);
   // Inference, selected by the adapter rule at this composition seam
-  // (selectModel above) — the one model the agent and apps blocks consume.
-  const inference = selectModel(config.model);
+  // (resolveModels, models-config.ts) — the agent model the agent and apps
+  // blocks consume, plus the composed paint knob (family fast pick when the
+  // agent slot rides the ladder; the deprecated paint.model otherwise).
+  const inference = resolveModels(config);
+  // models.judge feeds host-wired vendoModel("vendo-judge") instances (v1
+  // plumbing, see configureVendoModelSlots) — there is NO judge default.
+  configureVendoModelSlots(config.models);
   // Construction stays PURE — no I/O, no timers — because the common edge
   // wiring calls createVendo() at module init, where Workers forbids both
   // (Mohamed's field report: "Disallowed operation called within global
@@ -1192,16 +1203,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     }
     const cloud = cloudKeyOptions();
     if (cloud !== undefined) {
-      // The gateway base mirrors devModel's vendo-cloud rung: `<console>/api/v1`.
+      // The gateway base mirrors vendoModel's vendo-cloud rung: `<console>/api/v1`.
       const base = (cloud.baseUrl ?? "https://console.vendo.run").replace(/\/+$/, "");
-      // The gateway serves curated aliases only (vendo-default / vendo-fast /
-      // vendo-strong); the box harness's own default is a raw claude-* id the
-      // gateway would grace-remap, so pin the alias unless the operator chose
-      // a model via VENDO_INFERENCE_MODEL.
+      // The gateway serves the vendo model family as literal ids (`vendo` is
+      // the flagship); the box harness's own default is a raw claude-* id the
+      // gateway would grace-remap, so pin the family name unless the operator
+      // chose a model via VENDO_INFERENCE_MODEL.
       return {
         url: base.endsWith("/api/v1") ? base : `${base}/api/v1`,
         key: cloud.apiKey,
-        model: model ?? "vendo-default",
+        model: model ?? "vendo",
       };
     }
     return undefined;
@@ -1267,7 +1278,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     guard,
     tools: boundTools,
-    model: inference.model,
+    model: inference.agent.model,
     catalog,
     pinBaselines,
     // execution-v2 Waves 4+9 — the layer-2/3 experimental opt-ins, host-config
@@ -1284,7 +1295,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       }
       return automationsForArming.enable(appId, armCtx);
     },
-    ...(config.paint === undefined ? {} : { paint: config.paint }),
+    // Paint invisibility (models spec 2026-07-22): the composed knob — the
+    // family fast pick when the agent slot rides the ladder, the deprecated
+    // paint.model otherwise; paint.disabled survives as the one-lane switch.
+    ...(inference.paint === undefined ? {} : { paint: inference.paint }),
     ...(theme === undefined ? {} : { theme }),
     designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
@@ -1324,7 +1338,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       }
     : undefined;
   const agent = createAgent({
-    model: inference.model,
+    model: inference.agent.model,
     tools: boundTools,
     guard,
     store,
@@ -1563,7 +1577,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     byoApprovals,
     connections,
     sandbox: sandbox.venue,
-    model: inference.venue,
+    model: inference.agent.venue,
     doctor,
     mcp: mcpOptions !== undefined,
     development,
