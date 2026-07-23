@@ -1,6 +1,7 @@
 ---
 title: "Quickstart: Mastra"
 description: "Give an existing Mastra agent guarded host actions, generated UI, and approvals: vendo init, vendoMastraTools in the agent's tools, one embed component."
+icon: "/images/logos/mastra.svg"
 ---
 
 import { AgentPrompt } from "/snippets/agent-prompt.jsx"
@@ -26,12 +27,12 @@ your host actions into agent tools, and captures your theme
 ([what init writes](/connect/vendo-init)). The wire route serves generated
 apps and approvals to the embeds; your Mastra agent stays the loop.
 
-Your agent needs the same `vendo` instance the wire route uses. Init writes
-the whole `createVendo` composition inline in the generated route, so lift it
-into a shared module both import. Copy the call out of YOUR generated route
-verbatim — the exact keys mirror what init found in your repo: an auth preset
-or a `principal` line, `catalog`, and a `serverActions` map only when init
-detected `"use server"` actions. Lifted, it looks like:
+Your agent needs the same `vendo` instance the wire route uses, so lift the
+`createVendo` call init wrote into the generated route out to a shared
+module both import. Copy it out of YOUR route verbatim — its keys mirror
+what init found in your repo: an auth preset or a `principal` line,
+`catalog`, and a `serverActions` map only when init detected `"use server"`
+actions. Lifted, it looks like:
 
 ```ts
 // src/lib/vendo.ts — the composition init wrote into the wire route,
@@ -40,8 +41,8 @@ import { createVendo } from "@vendoai/vendo/server";
 import { registry } from "@/vendo/registry";
 
 export const vendo = createVendo({
-  // Who the wire's callers act as — init's line. It must resolve the SAME
-  // subject your chat route sets (step 2); replace both sides together.
+  // Who the wire's callers act as — init's line. Must resolve the same
+  // subject your chat route sets in step 2.
   principal: async () => ({ kind: "user" as const, subject: "demo-user" }),
   catalog: registry, // the component registry init generated
   policy: {},        // .vendo/policy.json: destructive asks, reads run
@@ -87,14 +88,14 @@ the shim takes no principal. Instead, set the caller's principal server-side
 on the `RequestContext` in your chat route; a `vendo_*` call without one
 fails closed.
 
-The principal you set here and the one your shared composition's `principal`
-resolves (step 1) must name the SAME caller. Apps and approvals are
-principal-scoped: the chat turn creates them as this subject, and the embeds
-fetch them through the wire route as whatever its `principal` resolves. If
-the two disagree, everything the agent creates is invisible to the embeds —
-the app embed polls "pending" forever while the agent claims the dashboard
-is ready. Resolve both from the same session (or the same shared constant,
-as the [full example](#the-full-example) does):
+<Note>
+  Apps and approvals are principal-scoped: the principal you set here and
+  the one your shared composition resolves (step 1) must name the same
+  caller — resolve both from the same session (or the same shared constant,
+  as the [full example](#the-full-example) does). If they disagree,
+  everything the agent creates is invisible to the embeds, and the app
+  embed polls "pending" forever.
+</Note>
 
 ```ts
 // src/app/api/chat/route.ts — Mastra's own Next.js guide route, two additions
@@ -126,8 +127,8 @@ export async function POST(req: Request) {
 
 <Note>
   Multi-turn tool use with GPT-5 reasoning models currently fails on history
-  replay ([mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005));
-  pin `openai/gpt-4.1-mini` as the workaround those issues document.
+  replay — pin `openai/gpt-4.1-mini`
+  ([mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005)).
 </Note>
 
 ## 3. Render the embeds
@@ -153,23 +154,16 @@ the embed contract is framework-agnostic.
 ## Try it
 
 <Warning>
-  Two models are in play, on two separate credentials. Your agent's OWN loop
-  keeps its own key (here `OPENAI_API_KEY` for `openai/gpt-4.1-mini`) — no
-  Vendo key replaces it. Vendo's internal turns (app builds, the delegate)
-  resolve their model through the
-  [dev-mode credential ladder](/connect/dev-mode), where an explicit provider
-  key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-  `GOOGLE_GENERATIVE_AI_API_KEY`) always beats `VENDO_API_KEY` — explicit
-  keys win over implicit ones. This setup requires `OPENAI_API_KEY` for your
-  loop, so by default Vendo's builds ride that OpenAI key too, NOT your Cloud
-  key — and OpenAI's default build model can be far slower than the Cloud
-  aliases. To force builds through the Vendo Cloud gateway, set
-  `VENDO_DEV_CREDENTIAL=vendo-cloud` (the gateway rides the stock
-  `@ai-sdk/anthropic` provider, so that package must be installed). No
-  `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
-  straight into `.env.local`. The done-criterion is a REAL chat turn that
-  renders a Vendo tool output — run ask 2 yourself before calling the
-  install done; doctor cannot check your loop's model.
+  Two models, two credentials. Your loop keeps its own key (here
+  `OPENAI_API_KEY`) — no Vendo key replaces it. Vendo's internal turns
+  (app builds, the delegate) resolve theirs through the
+  [dev-mode credential ladder](/connect/dev-mode), where an explicit
+  provider key beats `VENDO_API_KEY` — so builds ride your OpenAI key
+  (noticeably slower for builds) unless you set
+  `VENDO_DEV_CREDENTIAL=vendo-cloud`. No key at all? `npx vendo login`
+  mints a free metered dev key into `.env.local`. The done-criterion is a
+  real chat turn that renders a Vendo tool output — run ask 2 yourself;
+  doctor cannot check your loop's model.
 </Warning>
 
 One thread, three asks:
