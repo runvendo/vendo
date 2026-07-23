@@ -82,6 +82,13 @@ export function buildClaudeArgs(options: ClaudeArgsOptions): string[] {
 export function agentEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...base };
   delete env["VENDO_API_KEY"];
+  // The agent exercises the REAL end-user flow — `npx vendo init` runs with
+  // telemetry live on purpose, so the eval also certifies the telemetry path.
+  // VENDO_INTERNAL tags those events `internal: true` (the analytics project
+  // filters on it) instead of dropping them. Deliberately not
+  // VENDO_TELEMETRY_DISABLED: dropping would blind the cert to telemetry
+  // regressions while these runs polluted launch metrics untagged.
+  env["VENDO_INTERNAL"] = "1";
   return env;
 }
 
