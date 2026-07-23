@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/mcp",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "The door: serve your product's tools to outside agents over MCP — OAuth, tool serving, and MCP Apps rendering behind one flag.",
   "keywords": [
     "ai",
