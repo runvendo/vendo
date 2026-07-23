@@ -2,13 +2,15 @@
 title: "Quickstart: AI SDK"
 sidebarTitle: "Quickstart: AI SDK"
 description: "Give an existing AI SDK chatbot guarded host actions, generated UI, and approvals: vendo init, one tools spread, one embed component."
+icon: "/images/logos/vercel.svg"
 ---
 
 import { AgentPrompt } from "/snippets/agent-prompt.jsx"
 
-Keep your `useChat` + `streamText` loop, your model, and your chat UI. Three
-steps add Vendo to it: run `vendo init`, spread the tool pack into
-`streamText`, and render tool outputs with one component.
+Keep your Vercel AI SDK chatbot as it is — the `useChat` + `streamText`
+loop, your model, and your chat UI. Three steps add Vendo to it: run
+`vendo init`, spread the tool pack into `streamText`, and render tool
+outputs with one component.
 
 ## 1. Install and init
 
@@ -27,12 +29,12 @@ your host actions into agent tools, and captures your theme
 ([what init writes](/connect/vendo-init)). The wire route serves generated
 apps and approvals to the embeds; your own chat route stays the loop.
 
-Your chat route needs the same `vendo` instance the wire route uses. Init
-writes the whole `createVendo` composition inline in the generated route, so
-lift it into a shared module both import. Copy the call out of YOUR generated
-route verbatim — the exact keys mirror what init found in your repo: an auth
-preset or a `principal` line, `catalog`, and a `serverActions` map only when
-init detected `"use server"` actions. Lifted, it looks like:
+Your chat route needs the same `vendo` instance the wire route uses, so
+lift the `createVendo` call init wrote into the generated route out to a
+shared module both import. Copy it out of YOUR route verbatim — its keys
+mirror what init found in your repo: an auth preset or a `principal` line,
+`catalog`, and a `serverActions` map only when init detected `"use server"`
+actions. Lifted, it looks like:
 
 ```ts
 // lib/vendo.ts — the composition init wrote into the wire route,
@@ -41,9 +43,8 @@ import { createVendo } from "@vendoai/vendo/server";
 import { registry } from "@/vendo/registry";
 
 export const vendo = createVendo({
-  // Who the wire's callers act as — init's line. It must resolve the SAME
-  // subject your chat route passes (step 2) — a mismatch makes every app
-  // and approval invisible to the embeds (infinite skeleton).
+  // Who the wire's callers act as — init's line. Must resolve the same
+  // subject your chat route passes in step 2.
   principal: async () => ({ kind: "user" as const, subject: "demo-user" }),
   catalog: registry, // the component registry init generated
   policy: {},        // .vendo/policy.json: destructive asks, reads run
@@ -102,13 +103,13 @@ The pack adds one guarded `vendo_<action>` tool per host action, plus
 Vendo's agent a whole task). It is built per request because tool execution
 needs a principal-scoped context.
 
-The principal you pass here and the one your shared composition's
-`principal` resolves (step 1) must name the SAME caller. Apps and approvals
-are principal-scoped: the chat turn creates them as this subject, and the
-embeds fetch them through the wire route as whatever its `principal`
-resolves. If the two disagree, everything the agent creates is invisible to
-the embeds — the app embed polls "pending" forever. Resolve both from the
-same session.
+<Note>
+  Apps and approvals are principal-scoped: the principal you pass here and
+  the one your shared composition resolves (step 1) must name the same
+  caller — resolve both from the same session. If they disagree, everything
+  the agent creates is invisible to the embeds, and the app embed polls
+  "pending" forever.
+</Note>
 
 ## 3. Render the embeds
 
@@ -128,24 +129,15 @@ case "dynamic-tool":
 ## Try it
 
 <Warning>
-  Two models are in play, on two separate credentials. Your agent's OWN loop
-  keeps its own key (here `ANTHROPIC_API_KEY` for `claude-sonnet-4-6`) — no
-  Vendo key replaces it. Vendo's internal turns (app builds, the delegate)
-  resolve their model through the
-  [dev-mode credential ladder](/connect/dev-mode), where an explicit provider
-  key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-  `GOOGLE_GENERATIVE_AI_API_KEY`) always beats `VENDO_API_KEY` — explicit
-  keys win over implicit ones. With a provider key in the environment for
-  your loop, Vendo's builds ride that key too, NOT your Cloud key; to force
-  builds through the Vendo Cloud gateway, set
-  `VENDO_DEV_CREDENTIAL=vendo-cloud` (the gateway rides the stock
-  `@ai-sdk/anthropic` provider, so that package must be installed). No
-  `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
-  straight into `.env.local`. If your loop's model has no key on this
-  machine, either set one or point your `model` at `devModel()` from
-  `@vendoai/vendo/server` to ride the same ladder. The done-criterion is a
-  REAL chat turn that renders a Vendo tool output — run ask 2 yourself
-  before calling the install done; doctor cannot check your loop's model.
+  Two models, two credentials. Your loop keeps its own key (here
+  `ANTHROPIC_API_KEY`) — no Vendo key replaces it. Vendo's internal turns
+  (app builds, the delegate) resolve theirs through the
+  [dev-mode credential ladder](/connect/dev-mode), where an explicit
+  provider key beats `VENDO_API_KEY` — so builds ride your provider key
+  unless you set `VENDO_DEV_CREDENTIAL=vendo-cloud`. No key at all?
+  `npx vendo login` mints a free metered dev key into `.env.local`. The
+  done-criterion is a real chat turn that renders a Vendo tool output — run
+  ask 2 yourself; doctor cannot check your loop's model.
 </Warning>
 
 One thread, three asks:
