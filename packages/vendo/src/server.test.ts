@@ -23,6 +23,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // authJs now ships on its own subpath (@vendoai/vendo/auth/auth-js), not
 // "./server.js" — corpus-triage Task 9.
 import { authJs } from "./auth-presets/auth-js.js";
+import { hostedStore } from "./hosted-store.js";
+import { fakeConsole } from "./hosted-store.test-util.js";
 import { createVendo, nextVendoHandler, wellKnownVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -293,6 +295,90 @@ describe("09 §3 public wire", () => {
     // Unflagged callers keep the contracted 404 envelope.
     const bare = await vendo.handler(request("GET", "/apps/app_foreign/open"));
     expect(bare.status).toBe(404);
+  });
+
+  it("open?pending=1 passes a TERMINAL failed record through with its server-written reason when open() refuses the caller (0.4.6 cert defect D2)", async () => {
+    // A terminal build failure is terminal for EVERY caller: a subject the
+    // owner-scoped open() refuses must still see {kind:"failed"} with the
+    // persisted reason — masking it as {kind:"pending"} is the D2 infinite
+    // skeleton. The record shape mirrors the runtime's #532 write exactly
+    // (records-door put; a failed doc has no ui payload).
+    const store = await tempStore("vendo-wire-d2-");
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    stubRouteBlocks(vendo);
+    await store.ensureSchema();
+    await store.records("vendo_apps").put({
+      id: "app_dead",
+      data: {
+        subject: "someone_else",
+        enabled: false,
+        doc: {
+          format: VENDO_APP_FORMAT,
+          id: "app_dead",
+          name: "Dead app",
+          buildFailed: { reason: "quota exhausted", retryable: false, at: new Date().toISOString() },
+        },
+      },
+      refs: { subject: "someone_else" },
+    });
+    vi.spyOn(vendo.apps, "open").mockRejectedValue(new VendoError("not-found", "app not found: app_dead"));
+
+    const flagged = await vendo.handler(request("GET", "/apps/app_dead/open?pending=1"));
+    expect(flagged.status).toBe(200);
+    expect(await flagged.json()).toEqual({ kind: "failed", reason: "quota exhausted", retryable: false });
+  });
+
+  it("open?pending=1 disambiguates on a HOSTED wire-door store: pending only while no record exists, terminal failures and principal mismatches resolve (defect D2)", async () => {
+    // The 0.4.6 cert environment: VENDO_API_KEY makes Cloud the hosted store,
+    // which has NO local db handle — the old appStore()-based existence probe
+    // threw on every call there, so every owner-scoped not-found masked to
+    // {kind:"pending"}: terminal #532 records never reached the embed, and
+    // the B4 principal-mismatch diagnosis was unreachable. The probe now
+    // reads through the adapter interface, which every store shape serves.
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const store = hostedStore({
+      apiKey: "vnd_secret",
+      baseUrl: "https://cloud.test",
+      fetch: fakeConsole().handler as unknown as typeof fetch,
+    });
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    cleanups.push(async () => { await vendo.store.close(); });
+    stubRouteBlocks(vendo);
+    vi.spyOn(vendo.apps, "open").mockRejectedValue(new VendoError("not-found", "app not found"));
+
+    // (a) no record at all — the true build window keeps answering pending.
+    const building = await vendo.handler(request("GET", "/apps/app_building/open?pending=1"));
+    expect(await building.json()).toEqual({ kind: "pending" });
+
+    // (b) a terminal failed record resolves with its reason for any caller.
+    await store.records("vendo_apps").put({
+      id: "app_dead",
+      data: {
+        subject: "someone_else",
+        enabled: false,
+        doc: {
+          format: VENDO_APP_FORMAT,
+          id: "app_dead",
+          name: "Dead app",
+          buildFailed: { reason: "the build never finished", retryable: true, at: new Date().toISOString() },
+        },
+      },
+      refs: { subject: "someone_else" },
+    });
+    const dead = await vendo.handler(request("GET", "/apps/app_dead/open?pending=1"));
+    expect(await dead.json()).toEqual({ kind: "failed", reason: "the build never finished", retryable: true });
+
+    // (c) a live record under another subject answers the B4 principal-
+    // mismatch diagnosis — reachable on hosted stores for the first time.
+    await store.records("vendo_apps").put({
+      id: "app_foreign",
+      data: { subject: "someone_else", enabled: true, doc: app("app_foreign") },
+      refs: { subject: "someone_else" },
+    });
+    const foreign = await vendo.handler(request("GET", "/apps/app_foreign/open?pending=1"));
+    const body = await foreign.json() as { kind: string; reason?: string };
+    expect(body.kind).toBe("failed");
+    expect(body.reason).toContain("principal");
   });
 
   it("does not read history for an unowned app on GET or undo", async () => {

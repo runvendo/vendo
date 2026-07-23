@@ -210,6 +210,35 @@ describe("existing-agents embeds", () => {
       await waitFor(() => expect(screen.getByText("Late app surface")).toBeDefined(), { timeout: 5000 });
     });
 
+    it("resolves the failed vocabulary at the deadline when the wire answers {kind:'pending'} forever (0.4.6 defect D2)", async () => {
+      // The D2 masking (a wire that keeps answering pending for a terminally
+      // failed app) must still terminate client-side: the deadline turns the
+      // eternal pending into the failed beat at its bound.
+      vi.useFakeTimers();
+      try {
+        const masked: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_masked", title: "Masked app" };
+        const pendingClient: VendoClient = {
+          ...client,
+          apps: {
+            ...client.apps,
+            open: (() => Promise.resolve({ kind: "pending" })) as VendoClient["apps"]["open"],
+          },
+        };
+        render(
+          <VendoProvider client={pendingClient}>
+            <VendoAppEmbed refValue={masked} />
+          </VendoProvider>,
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5 * 60_000 + 2_000);
+        });
+        expect(screen.getByText(/couldn't finish/i)).toBeDefined();
+        expect(screen.getByText("the build never finished")).toBeDefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("resolves the failed vocabulary at the deadline even when every poll HANGS (0.4.5 defect D)", async () => {
       // The wire client has no fetch timeout, and the poll loop only checked
       // the deadline when a request settled — a hung open() left the building
