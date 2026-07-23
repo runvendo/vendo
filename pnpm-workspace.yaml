@@ -15,13 +15,15 @@ packages:
 
 # pnpm 9 ran every dependency build script; pnpm 11 (strictDepBuilds) requires
 # an explicit allowlist. These five are the deps with build scripts in the
-# tree — all allowed, preserving pnpm 9 behavior.
+# tree — all allowed, preserving pnpm 9 behavior. workerd is miniflare's
+# runtime for the portability gate (scripts/portability-gate.mjs).
 allowBuilds:
   cbor-extract: true
   esbuild: true
   protobufjs: true
   sharp: true
   unrs-resolver: true
+  workerd: true
 
 minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.214'
@@ -37,5 +39,9 @@ minimumReleaseAgeExclude:
 # pnpm 11 no longer reads the `pnpm` field in package.json; overrides live here.
 overrides:
   "@types/react": "^19.2.0"
+  # Security floors (2026-07-21 advisories): fast-uri GHSA-v2hh-gcrm-f6hx,
+  # sharp/libvips GHSA-f88m-g3jw-g9cj — both reach us only via examples/demos.
+  "fast-uri": ">=3.1.4"
+  "sharp": ">=0.35.0"
   "@types/react-dom": "^19.2.0"
   "postcss@<8.5.10": ">=8.5.10"

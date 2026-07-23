@@ -128,14 +128,16 @@ describe("vendo CLI commands", () => {
 
     expect(await main(["--help"])).toBe(0);
     const help = log.mock.calls.flat().join("\n");
-    expect(help).toContain("login [email]");
-    expect(help).toContain("--email <address>");
+    expect(help).toContain("login");
+    // login takes no --email/identity flag: the human chooses the account
+    // on the approval page (removed 2026-07-21).
+    expect(help).not.toContain("--email <address>");
 
     expect(await main(["login", "--emial", "x@y.z"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --emial");
 
-    expect(await main(["login", "--email"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--email requires a value");
+    expect(await main(["login", "--email", "x@y.z"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --email");
 
     log.mockRestore();
     error.mockRestore();

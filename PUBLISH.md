@@ -1,35 +1,27 @@
-# Vendo 0.3.0 publish runbook
+# Vendo 0.4.0 launch runbook
 
-This runbook is for Yousef's TTY because npm publishing and deprecation require
-passkey/WebAuthn 2FA. The repository is publish-ready; this document does not
-authorize an automated or sandboxed publish.
+The 0.4.0 launch publish runs from Yousef's TTY because npm publish and
+unpublish require passkey/WebAuthn 2FA, and because trusted publishing can
+only be configured for packages that already exist on the registry. Every
+release after this one is CI-only (see "Releases after launch").
 
 ## What will publish
 
-`pnpm -r publish` skips private workspaces and publishes these twelve packages
-at `0.3.0`:
+`pnpm -r publish` skips private workspaces and publishes these thirteen
+packages:
 
-- `@vendoai/actions`
-- `@vendoai/agent`
-- `@vendoai/apps`
-- `@vendoai/automations`
-- `@vendoai/core`
-- `@vendoai/guard`
-- `@vendoai/mcp`
-- `@vendoai/store`
-- `@vendoai/telemetry`
-- `@vendoai/ui`
-- `@vendoai/vendo`
-- `vendoai`
+| Package | Version |
+| --- | --- |
+| `@vendoai/actions`, `@vendoai/agent`, `@vendoai/apps`, `@vendoai/automations`, `@vendoai/core`, `@vendoai/guard`, `@vendoai/mcp`, `@vendoai/store`, `@vendoai/ui`, `@vendoai/vendo`, `vendoai` | 0.4.0 (fixed group) |
+| `@vendoai/telemetry` | 0.3.0 (hand-versioned) |
+| `@vendoai/engine` | 0.1.0 (new; must ship or init's npx-engine ladder rung 404s) |
 
 Demos, fixtures, corpus tooling/hosts, the benchmark, and spikes remain
-`private: true`. There is no separate sandbox-shims package to publish; the
-runtime artifacts needed by consumers are already inside the owning packages'
-`dist` directories.
+`private: true`.
 
-## Publish from a TTY
+## Step 1 — publish from a TTY (launch day)
 
-From the repository root on the reviewed commit, with a clean worktree:
+From the repository root on merged `main`, clean worktree, after `pnpm build`:
 
 ```bash
 NPM_CONFIG_MIN_RELEASE_AGE=0 pnpm -r publish --access public --no-git-checks
@@ -37,130 +29,133 @@ NPM_CONFIG_MIN_RELEASE_AGE=0 pnpm -r publish --access public --no-git-checks
 
 The override is required: `~/.npmrc` has `min-release-age=7`, which otherwise
 causes false `ENOVERSIONS` failures while fresh workspace dependencies are
-being published.
+being published. Keep it on every npm command in this runbook.
 
-## Deprecate the pre-v0 package line
-
-Run these after 0.3.0 is visible. The unscoped `vendoai` package is superseded
-by `vendoai@0.3.0` and must **not** be deprecated.
+Then tag the release commit so the repo records what shipped (the Release
+workflow will run and skip every already-published version — that no-op run
+also proves the CI path):
 
 ```bash
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/cli@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/client@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/components@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/core@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/react@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/runtime@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/server@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/shell@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/stage@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/store@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm deprecate "@vendoai/telemetry@0.1.0" "Pre-v0 package; use vendoai instead. See https://docs.vendo.run/quickstart."
+git tag v0.4.0 && git push origin v0.4.0
 ```
 
-## Registry propagation check
+## Step 2 — verify propagation
 
-Brand-new scoped packages can return anonymous `404` responses for several
-minutes after a successful publish. Wait and retry before treating that as a
-failure. Keep the release-age override on every view/install check:
+Brand-new scoped packages can return anonymous `404` for several minutes
+after a successful publish. Wait and retry before treating that as a failure.
 
 ```bash
 for package in \
   @vendoai/actions @vendoai/agent @vendoai/apps @vendoai/automations \
   @vendoai/core @vendoai/guard @vendoai/mcp @vendoai/store \
-  @vendoai/telemetry @vendoai/ui @vendoai/vendo vendoai
+  @vendoai/ui @vendoai/vendo vendoai
 do
-  NPM_CONFIG_MIN_RELEASE_AGE=0 npm view "$package@0.3.0" version
+  NPM_CONFIG_MIN_RELEASE_AGE=0 npm view "$package@0.4.0" version
 done
-
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm view "@vendoai/vendo@0.3.0" readme | sed -n '1,20p'
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm view "vendoai@0.3.0" readme | sed -n '1,20p'
+NPM_CONFIG_MIN_RELEASE_AGE=0 npm view "@vendoai/telemetry@0.3.0" version
+NPM_CONFIG_MIN_RELEASE_AGE=0 npm view "@vendoai/engine@0.1.0" version
 ```
 
-## Post-publish clean-room verification
+## Step 3 — unrelease the pre-0.4.0 era
 
-Verify each public install name in its own fresh Next.js app. The starter model
-module written by init uses the AI SDK v6 Anthropic provider, so install the two
-provider packages before building. Use `npx --no-install vendo` only after the
-local package install; a global deployment CLI also named `vendo` exists on this
-machine and can shadow `npx vendo` when neither Vendo npm package is local.
+0.4.0 is the first public release; everything older comes off the registry.
+Run this only **after** Step 2 succeeds — fully unpublishing a package blocks
+republishing that name for 24 hours, and an unpublished version number can
+never be reused.
 
-### Unscoped alias
+Remove the placeholder versions from packages that live on (this also kills
+pnpm's silent non-strict remap to the broken 0.1.0 line):
 
 ```bash
-alias_root=$(mktemp -d /private/tmp/vendo-registry-alias.XXXXXX)
-cd "$alias_root"
-NPM_CONFIG_MIN_RELEASE_AGE=0 npx create-next-app@16.2.9 app --ts --tailwind --eslint --app --src-dir --use-npm --yes
+NPM_CONFIG_MIN_RELEASE_AGE=0 npm unpublish vendoai@0.0.1
+NPM_CONFIG_MIN_RELEASE_AGE=0 npm unpublish vendoai@0.1.0
+NPM_CONFIG_MIN_RELEASE_AGE=0 npm unpublish @vendoai/core@0.1.0
+NPM_CONFIG_MIN_RELEASE_AGE=0 npm unpublish @vendoai/store@0.1.0
+NPM_CONFIG_MIN_RELEASE_AGE=0 npm unpublish @vendoai/telemetry@0.1.0
+```
+
+Remove the dead pre-v0 package names entirely:
+
+```bash
+for package in \
+  @vendoai/cli @vendoai/client @vendoai/components @vendoai/react \
+  @vendoai/runtime @vendoai/server @vendoai/shell @vendoai/stage
+do
+  NPM_CONFIG_MIN_RELEASE_AGE=0 npm unpublish "$package" --force
+done
+```
+
+npm allows unpublishing packages older than 72 hours only when they have no
+dependents, under 300 weekly downloads, and a single maintainer — all true
+for this set. If npm refuses one anyway, fall back to `npm deprecate` with
+"Pre-v0 package; use vendoai instead."
+
+## Step 4 — configure trusted publishing (one-time, ~15 min)
+
+This is what makes every future release tokenless. For **each of the 13
+packages**, open `https://www.npmjs.com/package/<name>/access` (the settings
+live on the Access page, not general settings) and add a trusted publisher:
+
+- Provider: **GitHub Actions**
+- Organization or user: `runvendo`
+- Repository: `vendo`
+- Workflow filename: `release.yml` (filename only, with extension)
+- Environment: leave blank
+- Allowed actions: **npm publish**
+
+The Release workflow already carries `permissions: id-token: write` and
+deliberately does **not** set `registry-url` on setup-node — setup-node would
+write an `_authToken` placeholder into `.npmrc` that defeats OIDC
+(actions/setup-node#1551). Don't add it back, and never add an `NPM_TOKEN`
+secret; there is none by design. The CI publish runs `pnpm pack` + `npm
+publish <tarball>` rather than `pnpm publish`: pnpm 11.10's own OIDC token
+exchange 404s against npmjs while the npm CLI (>= 11.5.1) works — don't
+"simplify" it back to `pnpm publish` without re-testing that.
+
+## Step 5 — clean-room verification
+
+Verify each public install name in a fresh Next.js app. Init's starter model
+module uses the AI SDK v6 Anthropic provider, so install the provider pair.
+Use `npx --no-install vendo` only after the local package install; a global
+deployment CLI also named `vendo` exists on this machine and can shadow
+`npx vendo`.
+
+```bash
+root=$(mktemp -d /private/tmp/vendo-registry-check.XXXXXX)
+cd "$root"
+NPM_CONFIG_MIN_RELEASE_AGE=0 npx create-next-app@latest app --ts --tailwind --eslint --app --src-dir --use-npm --yes
 cd app
 NPM_CONFIG_MIN_RELEASE_AGE=0 npm install vendoai 'ai@^6' '@ai-sdk/anthropic@^3'
-npx --no-install vendo --version
-npx --no-install vendo init --yes --brief 'Vendo 0.3.0 registry verification.'
+npx --no-install vendo --version   # must print 0.4.0
+npx --no-install vendo init --yes
 npm run build
-npm run dev -- --hostname 127.0.0.1 --port 3137 >"$alias_root/dev.log" 2>&1 &
+npm run dev -- --hostname 127.0.0.1 --port 3137 >"$root/dev.log" 2>&1 &
 server_pid=$!
-trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 until curl --fail --silent http://127.0.0.1:3137/api/vendo/status >/dev/null; do sleep 1; done
 npx --no-install vendo doctor --url http://127.0.0.1:3137/api/vendo
 kill "$server_pid"
-wait "$server_pid" || true
-trap - EXIT
 ```
 
-### Scoped umbrella
+Success: CLI and `/status` both report `0.4.0`, init writes the `.vendo`
+contract and Next wiring, the app builds, and doctor shows the wiring checks
+and the `/status` live round-trip green. Without a model key doctor's live
+model turn is `broken` by design and doctor exits nonzero — that is the
+expected keyless outcome, not a packaging failure. Repeat with
+`npm install @vendoai/vendo` for the scoped umbrella if paranoid.
 
-```bash
-scoped_root=$(mktemp -d /private/tmp/vendo-registry-scoped.XXXXXX)
-cd "$scoped_root"
-NPM_CONFIG_MIN_RELEASE_AGE=0 npx create-next-app@16.2.9 app --ts --tailwind --eslint --app --src-dir --use-npm --yes
-cd app
-NPM_CONFIG_MIN_RELEASE_AGE=0 npm install @vendoai/vendo 'ai@^6' '@ai-sdk/anthropic@^3'
-npx --no-install vendo --version
-npx --no-install vendo init --yes --brief 'Vendo 0.3.0 registry verification.'
-npm run build
-npm run dev -- --hostname 127.0.0.1 --port 3138 >"$scoped_root/dev.log" 2>&1 &
-server_pid=$!
-trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-until curl --fail --silent http://127.0.0.1:3138/api/vendo/status >/dev/null; do sleep 1; done
-npx --no-install vendo doctor --url http://127.0.0.1:3138/api/vendo
-kill "$server_pid"
-wait "$server_pid" || true
-trap - EXIT
-```
+## Releases after launch
 
-Success means both installs report CLI version `0.3.0`, init writes the complete
-`.vendo` contract and Next wiring, the app builds, and doctor reports a live
-`/status` round trip with version `0.3.0`.
+Steady state is two clicks and a tag; no npm login, no tokens:
 
-## Local rehearsal evidence
-
-Rehearsed on 2026-07-14 in
-`/private/tmp/vendo-install-dx-wave1.hedhyg`:
-
-- Packed all 12 public workspaces; every tarball was version `0.3.0`, contained
-  `README.md`, and had zero remaining `workspace:` references.
-- Confirmed `vendoai` packed `@vendoai/vendo` as concrete version `0.3.0`.
-- Created a fresh Next.js 16.2.9 app and installed all 12 local tarballs plus
-  the documented AI SDK v6 provider pair.
-- `npx vendo --version` printed `0.3.0`; `npx vendo init --yes` completed; the
-  generated app passed `next build`.
-- Both the alias and canonical bin entry points printed `0.3.0`, and all three
-  exports (`.`, `./server`, and `./react`) imported through both package names.
-- Booted the app on `127.0.0.1:3137`; `npx vendo doctor` exited 0 after a live
-  `/status` response reporting `0.3.0` and posture `unconfigured`.
-
-### Friction log
-
-- The local-tarball injector omitted `@vendoai/mcp`, allowing the umbrella's
-  dependency to fall through to the unpublished registry package. The injector
-  and its pack-once regression test now include MCP.
-- `@vendoai/telemetry` was still versioned `0.2.0`; it is now aligned with the
-  locked 0.3.0 block set.
-- Init intentionally writes a starter model module but does not install its
-  provider. Installing the exact pair printed by init (`ai@^6` and
-  `@ai-sdk/anthropic@^3`) made the clean app build; credential/model ladder work
-  remains Wave 2.
-- npm reported two moderate transitive audit findings and allow-scripts notices
-  for `sharp` and `unrs-resolver`; neither affected install, build, init, or
-  doctor.
-- The first dev compilation of `/api/vendo/status` took about 12 seconds;
-  doctor waited and passed.
+1. Feature PRs include a changeset (`pnpm changeset`).
+2. The **Version Packages** workflow keeps a `chore: version packages` PR
+   open on `main` with the accumulated bumps and changelogs. PRs opened by
+   the default `GITHUB_TOKEN` don't trigger CI — close and reopen the PR to
+   run checks before merging.
+3. Merge it, then tag the merge commit: `git tag vX.Y.Z && git push origin
+   vX.Y.Z`. The Release workflow runs build/test/typecheck/lint and publishes
+   via OIDC trusted publishing with provenance. Re-runs are safe — pnpm skips
+   versions already on the registry.
+4. To rehearse without publishing, dispatch the Release workflow manually
+   (Actions → Release → Run workflow); that runs the full gate stack plus
+   `pnpm publish --dry-run`.

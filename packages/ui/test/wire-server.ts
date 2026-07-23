@@ -223,6 +223,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // Existing-agents polish — how many open polls `app_building_lands`
     // misses before its build "lands" (the browser harness's build window).
     buildingOpensRemaining: 2,
+    // #492 — apps whose build turn terminally FAILED: a flagged open poll
+    // answers {kind:"failed"} with the reason (the record exists as a failure),
+    // so the embed resolves promptly instead of spinning to its deadline.
+    failedApps: new Map<string, { reason: string; retryable?: boolean }>(),
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
@@ -230,6 +234,9 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // surfaces client-side). A counter rather than a text marker so a retry
     // of the SAME user message can succeed.
     streamFailures: 0,
+    /** Error-part text for simulated failures; default mirrors a raw
+        transport string (which the banner must NOT print). */
+    streamFailureText: undefined as string | undefined,
     posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
     threadReplyGate: undefined as Promise<void> | undefined,
     // ENG-217 — optional pacing gates for the canned turn so specs can observe
@@ -317,7 +324,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
               writer.write({ type: "text-delta", id: "text_fail", delta: "Starting an answer that will be cut" });
               throw new Error("connection reset mid-stream");
             },
-            onError: error => (error instanceof Error ? error.message : String(error)),
+            onError: error => state.streamFailureText ?? (error instanceof Error ? error.message : String(error)),
           });
           const failingResponse = createUIMessageStreamResponse({ stream: failingChunks });
           failingResponse.headers.set("x-vendo-thread-id", threadId);
@@ -589,6 +596,13 @@ export async function createWireServer(options: WireServerOptions = {}) {
         }
         const index = state.apps.findIndex(item => item.id === id);
         if (index < 0) {
+          // #492 — a terminally failed build resolves open() with its reason
+          // whether or not the poll carried the pending flag (the failure
+          // record exists), so the embed shows the reason promptly.
+          if (action === "open" && method === "GET" && state.failedApps.has(id)) {
+            const failure = state.failedApps.get(id)!;
+            return json(response, { kind: "failed", reason: failure.reason, ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }) });
+          }
           // The real wire's flag-gated build-window answer: a flagged open
           // poll gets a quiet 200 pending envelope instead of the 404.
           if (action === "open" && method === "GET" && url.searchParams.get("pending") === "1") {

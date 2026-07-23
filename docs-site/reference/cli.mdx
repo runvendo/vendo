@@ -9,10 +9,13 @@ The umbrella owns the `vendo` bin. It has ten commands.
 ## `vendo init [dir]`
 
 Non-interactive setup with zero questions on the happy path. It scans the app,
-scaffolds the two-file surface (an empty `vendo/registry.tsx` plus the
-composition wired to it), writes the `.vendo/` contract, and prints the one
-`<VendoRoot>` line it leaves for you. Theme is extracted automatically and auth
-is detected from `package.json`; init never edits code you authored. See
+scaffolds the server surface (an empty `vendo/registry.tsx` plus the
+composition wired to it), writes the `.vendo/` contract, and — on Next.js —
+generates the `vendo/vendo-root.tsx` client mount (which renders
+`<VendoOverlay />`, the visible launcher + panel) and wires it into your
+layout with one bounded, reviewable edit; a layout it can't edit unambiguously
+gets the exact paste lines instead. Theme is extracted automatically and auth
+is detected from `package.json`. See
 [vendo init](/connect/vendo-init) for the full walkthrough and
 [the agent playbook](/agents) for the agent-driven flow.
 
@@ -34,8 +37,9 @@ which future sync runs respect.
 Options:
 
 - `--agent` emits the setup plan as JSON and writes nothing: the detected
-  framework, every file init would write, every proposed code diff, the
-  `<VendoRoot>` paste lines, `extraction` (deterministic extraction runs first,
+  framework, every file init would write, every proposed code diff (including
+  the layout mount), any remaining `<VendoRoot>` paste lines, `extraction`
+  (deterministic extraction runs first,
   against a throwaway directory, so the plan carries the extracted tools),
   `riskRecommendations` (per-tool advice: destructive tools should be marked
   critical, disabled tools reviewed before enabling), and an `aiPolish`
@@ -95,7 +99,11 @@ is preserved.
 Claims a Vendo Cloud key through the [auth.md](https://vendo.run/auth.md)
 user-claimed ceremony: the CLI opens a claim, shows the pairing code and
 approval URL, and polls until the request is approved in the browser. The
-minted `VENDO_API_KEY` is written to `.env.local` — never printed.
+minted `VENDO_API_KEY` is written to `.env.local` — never printed. The
+success message may suggest re-running `vendo init`; that applies only to a
+repo that is not wired yet. In an already-initialized repo nothing needs
+re-running — the runtime picks the key up from `.env.local` on the next
+turn, and `vendo doctor` confirms it.
 
 In a terminal (TTY) the browser opens automatically at the approval URL; the
 URL and code stay printed as the fallback. For a non-TTY caller — a coding
@@ -112,6 +120,16 @@ one opened.
 Options:
 
 - `[email]` or `--email <address>` pre-fills the approval page (login hint).
+- `--wait <seconds>` bounds how long this one invocation polls before giving
+  up — capped by the claim's expiry. When the budget elapses with the request
+  still pending, the command prints a resumable line, leaves the pending claim
+  in place, and exits `0` (pending is not a failure). A re-run resumes the same
+  claim. `--wait 0` opens (or resumes) the claim, polls once, and exits
+  resumably if still pending — the "open and print the code" first call. Absent
+  the flag, behavior is unchanged: it blocks until the claim expires (~10 min).
+  Built for coding agents: run short bounded calls in a loop instead of one
+  long blocking call that a command timeout would kill mid-wait (see
+  [agents](/agents)).
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default
   `https://console.vendo.run`).
 
@@ -120,12 +138,16 @@ email-OTP `vendo cloud login <email>` remains available as a fallback.
 
 ## `vendo doctor [dir]`
 
-Checks wiring, makes one live `/status` round trip, and sends one seeded
-message through the mounted `POST /threads` route to prove the wired model
-answers. It recognizes both Next.js (catch-all route plus a layout that
-mounts `<VendoRoot>`) and Express (the server composes `createVendo` from
-`@vendoai/vendo/server`; the client mounts `<VendoRoot>`). It ends with the
-config line that unlocks each remaining block.
+Checks wiring, makes one live `/status` round trip, GETs the app's root page
+(a 5xx there fails doctor — a live wire with crashing pages is not a working
+install), and sends one seeded message through the mounted `POST /threads`
+route to prove the wired model answers. It recognizes both Next.js (catch-all
+route plus any layout that mounts `<VendoRoot>`) and Express (the server
+composes `createVendo` from `@vendoai/vendo/server`; the client mounts
+`<VendoRoot>`), and it fails unless a VISIBLE surface is mounted somewhere —
+`<VendoOverlay />`, `<VendoThread />`, a BYO embed, or a surface hook —
+because `<VendoRoot>` alone renders nothing a user can reach. It ends with
+the config line that unlocks each remaining block.
 
 Doctor also runs two live HTTP probes against the running dev server so silent
 credential-forwarding traps surface before you ship:

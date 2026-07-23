@@ -23,7 +23,7 @@ import type { RuntimeCaptureHandler } from "../runtime-capture.js";
     wire/context.ts; server.ts assembles the table from the per-area modules
     under src/wire/. */
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.4.5";
 export const BASE_PATH = "/api/vendo";
 
 export type SandboxVenue = "e2b" | "cloud" | "custom" | false;
@@ -46,7 +46,7 @@ const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
 
 export interface WireDeps {
   principal: (req: Request) => Promise<Principal | null>;
-  ready: Promise<void>;
+  ready: () => Promise<void>;
   /** VENDO_BASE_URL is https → TLS terminates upstream; see secureRequest. */
   trustedBaseIsHttps: boolean;
   sessionId: string;

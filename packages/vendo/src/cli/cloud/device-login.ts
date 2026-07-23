@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
+import { open, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { option, positionals } from "./args.js";
+import { option } from "./args.js";
 import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
 import { deletePendingClaim, readPendingClaim, writePendingClaim } from "./pending-claim.js";
@@ -50,6 +51,29 @@ export interface DeviceLoginOptions {
 function defaultOpenBrowser(url: string): void {
   const { command, args } = browserOpenCommand(process.platform, url);
   execFile(command, args, () => undefined); // best-effort: the printed URL is the fallback
+}
+
+/**
+ * Write-preflight (0.4.1 E2E cert M4): prove `.env.local` is writable BEFORE
+ * any claim is opened or redeemed. Sandboxed agent runs — headless Claude
+ * Code protects env files even under --dangerously-skip-permissions — can
+ * deny the write; without this check the ceremony redeems the single-use
+ * claim, the key mints server-side, and the write failure loses it. A real
+ * append-mode open is the probe (permission checks like `access(W_OK)` don't
+ * see sandbox policies, which deny at open time); a probe-created empty file
+ * is removed again. Returns the failure detail, or null when writable.
+ */
+export async function preflightEnvLocalWrite(root: string): Promise<string | null> {
+  const path = join(root, ".env.local");
+  const existedBefore = await stat(path).then(() => true, () => false);
+  try {
+    const handle = await open(path, "a");
+    await handle.close();
+    if (!existedBefore) await unlink(path).catch(() => undefined);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 interface Ceremony {
@@ -135,15 +159,42 @@ export async function runDeviceLogin(
     env: options.env ?? process.env,
   });
 
+  // `--wait <seconds>` (#479): the MAX wall-clock THIS invocation polls before
+  // giving up resumably — independent of, and capped by, the claim deadline.
+  // Absent: unchanged, block until the claim deadline (~10 min). `--wait 0`:
+  // one immediate poll, then exit resumably if still pending. An invalid value
+  // is ignored here (the `vendo login` entry validates it up front).
+  const waitRaw = option(args, "--wait");
+  const waitSeconds = waitRaw !== undefined && /^\d+$/.test(waitRaw) ? Number(waitRaw) : undefined;
+  const waitMs = waitSeconds === undefined ? undefined : waitSeconds * 1000;
+
   const pendingHome = options.home === undefined ? {} : { home: options.home };
+  const claimCwd = options.root ?? process.cwd();
+
+  // Prove the key's landing file is writable BEFORE the ceremony touches the
+  // network: a claim is single-use, so a post-approval write failure loses
+  // the minted key (M4). This is a WRITE failure, distinct from a timeout —
+  // the error says so instead of the generic polling copy.
+  const writeProblem = await preflightEnvLocalWrite(claimCwd);
+  if (writeProblem !== null) {
+    output.error(
+      `Cannot write ${join(claimCwd, ".env.local")} (${writeProblem}). ` +
+      "`vendo login` lands the minted key there, so the ceremony was NOT started and no key was minted. " +
+      "This is a file-write problem, not a timeout: fix write access (sandboxed agent runs often deny env-file " +
+      "writes — re-run outside the sandbox or have your human run `vendo login`), then re-run.",
+    );
+    return 1;
+  }
 
   try {
     // A still-open claim from a dead process (#479): resume polling it so the
     // human's late approval — against the code they were already shown —
-    // still lands the key. An expired or unreadable file is discarded (a
-    // fresh ceremony overwrites it below).
-    const pending = await readPendingClaim(pendingHome);
-    const resume = pending !== null && pending.api_url === base && pending.expires_at > now()
+    // still lands the key. Claims are scoped per project directory (0.4.2):
+    // only THIS cwd's ceremony is ever resumed, so concurrent logins in other
+    // repos neither clobber this one nor get resumed by it. An expired or
+    // unreadable file is discarded (a fresh ceremony overwrites it below).
+    const pending = await readPendingClaim(claimCwd, pendingHome);
+    const resume = pending !== null && pending.api_url === base && pending.cwd === claimCwd && pending.expires_at > now()
       ? pending
       : null;
 
@@ -151,6 +202,8 @@ export async function runDeviceLogin(
     let deadline: number;
     let intervalMs: number;
     let root: string;
+    let userCode: string;
+    let verificationUriComplete: string;
     if (resume !== null) {
       output.log(`Resuming pending approval — code ${resume.user_code}, approve at ${resume.verification_uri_complete}`);
       output.log(`Waiting for approval (the code expires in ${Math.max(1, Math.round((resume.expires_at - now()) / 60_000))} minutes)…`);
@@ -159,14 +212,18 @@ export async function runDeviceLogin(
       intervalMs = Math.max(resume.interval, 1) * 1000;
       // The key lands where the ORIGINAL run intended, not where the resume runs.
       root = resume.cwd;
+      userCode = resume.user_code;
+      verificationUriComplete = resume.verification_uri_complete;
     } else {
-      // Optional email hint — shown to the human on the approval page.
-      const email = option(args, "--email") ?? positionals(args, ["--api-url", "--email"])[0];
+      // No identity hint by design: the human signs in as whoever they choose
+      // on the approval page. A guessed login_hint (git email, positional arg)
+      // is an assumption that mis-attributes the claim, so the ceremony never
+      // sends one.
       const claim = await postJson(
         fetchImpl,
         `${base}${CLAIM_PATH}`,
         "application/json",
-        JSON.stringify(email === undefined ? {} : { login_hint: email }),
+        "{}",
       );
       if (claim.status !== 200) {
         const envelope = claim.body as { error?: { message?: unknown } } | null;
@@ -193,6 +250,8 @@ export async function runDeviceLogin(
       deadline = now() + ceremony.expires_in * 1000;
       intervalMs = Math.max(ceremony.interval, 1) * 1000;
       root = options.root ?? process.cwd();
+      userCode = ceremony.user_code;
+      verificationUriComplete = approvalUrl;
       // Persist the ceremony so a fresh run can resume it if this process
       // dies mid-poll. Deleted on redemption/denial/expiry; deliberately left
       // in place on transient errors and interrupts.
@@ -212,8 +271,14 @@ export async function runDeviceLogin(
       claim_token: claimToken,
     }).toString();
 
-    while (now() < deadline) {
-      await sleep(intervalMs);
+    if (waitMs !== undefined) {
+      output.log(`This call polls for up to ${waitSeconds}s — re-run \`vendo login\` to continue this same request.`);
+    }
+
+    // One RFC 8628 token poll. Returns the loop's next move; terminal outcomes
+    // (approved/denied/expired) settle the pending file and return/throw here.
+    type PollResult = "approved" | "pending" | "slow_down";
+    const pollOnce = async (): Promise<PollResult> => {
       const poll = await postJson(
         fetchImpl,
         `${base}${TOKEN_PATH}`,
@@ -226,8 +291,23 @@ export async function runDeviceLogin(
         if (typeof key !== "string" || !isVendoKey(key)) {
           throw new Error("Vendo Cloud returned an invalid credential");
         }
-        await upsertEnvLocal(root, "VENDO_API_KEY", key);
-        await deletePendingClaim(pendingHome);
+        try {
+          await upsertEnvLocal(root, "VENDO_API_KEY", key);
+        } catch (writeError) {
+          // The claim is consumed and the key minted — a resume can never
+          // succeed, so the pending file goes; and this must read as a WRITE
+          // failure, never the timeout/polling copy (M4). The key is never
+          // printed, so the minted key is unrecoverable here: name the
+          // console cleanup explicitly.
+          await deletePendingClaim(claimCwd, pendingHome);
+          throw new Error(
+            `Approved and the key was minted, but writing it to ${join(root, ".env.local")} failed ` +
+            `(${writeError instanceof Error ? writeError.message : String(writeError)}). ` +
+            "The key was NOT saved and is not shown anywhere: revoke it in the console (Keys page), " +
+            "fix write access to .env.local, and run `vendo login` again.",
+          );
+        }
+        await deletePendingClaim(claimCwd, pendingHome);
         // Never print the key itself — .env.local is the hand-off, last4 the
         // receipt. A resumed run names the full path: it may differ from cwd.
         output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to ${
@@ -236,32 +316,76 @@ export async function runDeviceLogin(
           output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
         }
         printJson(output, { deviceLogin: true, wroteEnvLocal: true, keyLast4: key.slice(-4) });
-        return 0;
+        return "approved";
       }
 
       const error = (poll.body as { error?: unknown } | null)?.error;
-      if (error === "authorization_pending") continue;
-      if (error === "slow_down") {
-        intervalMs += 5000; // RFC 8628 §3.5
-        continue;
-      }
+      if (error === "authorization_pending") return "pending";
+      if (error === "slow_down") return "slow_down"; // RFC 8628 §3.5
       if (error === "expired_token") {
-        await deletePendingClaim(pendingHome);
+        await deletePendingClaim(claimCwd, pendingHome);
         throw new Error("The code expired before it was approved; run `vendo login` again.");
       }
       if (error === "access_denied") {
-        await deletePendingClaim(pendingHome);
+        await deletePendingClaim(claimCwd, pendingHome);
         throw new Error("Your human denied the request — no key was minted.");
       }
+      // Any other token error is terminal for THIS claim (invalid_grant =
+      // consumed/denied server-side; single-use means it can never succeed
+      // again). Delete the pending file so the next `vendo login` opens a
+      // fresh claim instead of resuming into the same error forever — the
+      // exact trap a live install hit.
+      await deletePendingClaim(claimCwd, pendingHome);
       const description = (poll.body as { error_description?: unknown } | null)?.error_description;
       throw new Error(
         typeof description === "string"
           ? description
           : `Vendo Cloud token polling failed (${typeof error === "string" ? error : poll.status})`,
       );
+    };
+
+    // Budget still pending: leave the claim file in place and exit 0 — pending
+    // is not a failure. A re-run resumes this same claim (#479).
+    const pendingExit = (): number => {
+      output.log(`Still waiting on approval — code ${userCode}. Re-run \`vendo login\` to resume (it continues this same request).`);
+      printJson(output, {
+        deviceLogin: true,
+        pending: true,
+        userCode,
+        verificationUriComplete,
+      });
+      return 0;
+    };
+
+    if (waitMs === undefined) {
+      // No budget: block to the claim deadline — unchanged TTY behavior.
+      while (now() < deadline) {
+        await sleep(intervalMs);
+        const result = await pollOnce();
+        if (result === "approved") return 0;
+        if (result === "slow_down") intervalMs += 5000;
+      }
+      await deletePendingClaim(claimCwd, pendingHome);
+      throw new Error("The code expired before it was approved; run `vendo login` again.");
     }
-    await deletePendingClaim(pendingHome);
-    throw new Error("The code expired before it was approved; run `vendo login` again.");
+
+    // Bounded budget: poll immediately, then pace by interval, stopping at
+    // min(now+wait, deadline). `--wait 0` polls exactly once.
+    const pollDeadline = Math.min(deadline, now() + waitMs);
+    while (true) {
+      const result = await pollOnce();
+      if (result === "approved") return 0;
+      if (result === "slow_down") intervalMs += 5000;
+      if (now() >= deadline) {
+        await deletePendingClaim(claimCwd, pendingHome);
+        throw new Error("The code expired before it was approved; run `vendo login` again.");
+      }
+      if (now() >= pollDeadline) return pendingExit();
+      // Cap the wait to the remaining budget so a small `--wait` (e.g. 1s
+      // against the default 5s interval) exits within its bound instead of
+      // sleeping a whole interval past it.
+      await sleep(Math.min(intervalMs, pollDeadline - now()));
+    }
   } catch (error) {
     output.error(errorMessage(error));
     return 1;

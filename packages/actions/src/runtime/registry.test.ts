@@ -920,3 +920,34 @@ describe("host HTTP execution — graphql bindings (04 §1 GraphQL transport)", 
     });
   });
 });
+
+describe("zero-live-host-tools boot warning", () => {
+  it("warns once when the composed host surface has no live tool", async () => {
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
+    try {
+      const actions = createActions({ tools: [] });
+      await actions.descriptors();
+      await actions.descriptors();
+      const hits = warned.filter((line) => line.includes("zero live host tools"));
+      expect(hits).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("stays quiet when a live host tool exists", async () => {
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
+    try {
+      const actions = createActions({ tools: [{
+        name: "host_ping", description: "d", inputSchema: { type: "object" }, risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/ping", argsIn: "query" },
+      }] });
+      await actions.descriptors();
+      expect(warned.filter((line) => line.includes("zero live host tools"))).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
 import type { Telemetry } from "@vendoai/telemetry";
@@ -12,6 +13,7 @@ import {
 import { installedAiVersion } from "./dep-versions.js";
 import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
+import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
@@ -41,6 +43,7 @@ export interface DoctorOptions {
   liveTurn?: (base: string) => Promise<LiveTurnResult>;
   cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   startDevServer?: (options: { root: string; statusUrl: string; env?: Record<string, string | undefined>; fetchImpl?: typeof fetch }) => Promise<{ ok: boolean; stop: () => void }>;
+  e2bResolvable?: (root: string) => boolean;
 }
 
 type CheckStatus = "ok" | "broken" | "warning";
@@ -54,6 +57,20 @@ interface DoctorCheck {
   message: string;
   error_code?: DoctorErrorCode;
   fix_ref?: string;
+}
+
+/** Whether the optional `e2b` SDK resolves from the target project — the same
+ *  node_modules walk the running wire's dynamic `import("e2b")` performs, so
+ *  doctor certifies the venue against the resolution that will actually be
+ *  asked to load it (0.4.4 defect C: /status said e2b on a host without the
+ *  SDK, and the first build died in an unusable venue). */
+function e2bResolvableFrom(root: string): boolean {
+  try {
+    createRequire(join(root, "__vendo-doctor-probe__.js")).resolve("e2b");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function hasDependency(root: string): Promise<boolean> {
@@ -148,8 +165,34 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const warn = (id: string, code: DoctorErrorCode, message: string): void => { warnings += 1; checks.push({ id, status: "warning", message, error_code: code, fix_ref: doctorFixRef(code) }); if (!json) output.error(`warning: ${message}`); };
 
   const framework = await detectFramework(root);
-  if (framework === "express") {
-    const wiring = await detectVendoWiring(root);
+  // The generated vendo/vendo-root.tsx wrapper carries the <VendoRoot> AND
+  // <VendoOverlay /> markers itself, so an unexcluded scan would pass the
+  // client/surface gates even when NO layout mounts the wrapper — the exact
+  // doctor-green-but-invisible failure E-WIRE-006 exists to catch. Mirror
+  // init's layout decision: exclude the wrapper from the scan, then let a
+  // user-code <VendoRoot> mount next to an overlay-bearing wrapper satisfy
+  // the surface (the wrapper renders the overlay once a layout mounts it).
+  const wrapperCandidates = [
+    join(root, "vendo", "vendo-root.tsx"),
+    join(root, "src", "vendo", "vendo-root.tsx"),
+  ];
+  let wrapperWithOverlay = false;
+  for (const candidate of wrapperCandidates) {
+    const source = await readFile(candidate, "utf8").catch(() => null);
+    if (source !== null && source.includes("<VendoOverlay")) wrapperWithOverlay = true;
+  }
+  const scanned = await detectVendoWiring(root, { exclude: wrapperCandidates });
+  const wiring = { ...scanned, surface: scanned.surface || (scanned.client && wrapperWithOverlay) };
+  if (framework === "unknown") {
+    // No framework to pattern-match (field case: a Cloudflare Worker + Vite
+    // host failed E-WIRE-003/004 forever) — judge the wiring by the same
+    // bounded source scan init uses, never by another framework's file
+    // layout. The surface check below still runs; it is source-generic.
+    if (scanned.server) pass("wiring/server", "createVendo server wiring found");
+    else fail("wiring/server", "E-WIRE-007", "no createVendo server wiring found — import createVendo from @vendoai/vendo/server and mount vendo.handler on your runtime's request entry");
+    if (scanned.client) pass("wiring/client", "<VendoRoot> wraps the client");
+    else warn("wiring/client", "E-WIRE-008", "no <VendoRoot> found in the host source — the @vendoai/ui hooks and embeds need it; ignore this if the host renders a fully custom surface");
+  } else if (framework === "express") {
     if (wiring.server) pass("wiring/express-server", "Express server is wired");
     else fail("wiring/express-server", "E-WIRE-001", "Express server is not wired with createVendo from @vendoai/vendo/server");
     if (wiring.client) pass("wiring/express-client", "<VendoRoot> wraps the client");
@@ -162,17 +205,29 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     if ((await Promise.all(routeCandidates.map(exists))).some(Boolean)) pass("wiring/next-route", "catch-all handler is wired");
     else fail("wiring/next-route", "E-WIRE-003", "missing app/api/vendo/[...vendo]/route.ts");
 
-    const layoutCandidates = [join(root, "app", "layout.tsx"), join(root, "src", "app", "layout.tsx")];
+    // The mount may live in ANY layout, not just the root one (i18n/route-group
+    // hosts mount in e.g. app/[locale]/layout.tsx — the literal root-layout
+    // grep fought exactly that correct wiring in the 0.4.1 E2E cert), and the
+    // correct scaffold mounts the generated vendo/vendo-root.tsx wrapper —
+    // whose export is also named VendoRoot, so the marker holds there too.
     let rootWired = false;
-    for (const path of layoutCandidates) {
-      try {
-        if ((await readFile(path, "utf8")).includes("<VendoRoot")) rootWired = true;
-      } catch {
-        // Try the other layout convention.
+    for (const appDir of [join(root, "app"), join(root, "src", "app")]) {
+      for (const path of await walk(appDir, (rel) => /(^|[\\/])layout\.(?:tsx|jsx|js)$/.test(rel))) {
+        const source = await readFile(path, "utf8").catch(() => "");
+        if (source.includes("<VendoRoot") || source.includes("<VendoProvider")) rootWired = true;
       }
     }
     if (rootWired) pass("wiring/next-root", "<VendoRoot> wraps the app");
-    else fail("wiring/next-root", "E-WIRE-004", "root layout is not wrapped in <VendoRoot>");
+    else fail("wiring/next-root", "E-WIRE-004", "no app layout mounts <VendoRoot> — wrap the app in the generated vendo/vendo-root.tsx wrapper (its export is also named VendoRoot), in the root layout or any layout that covers your pages");
+  }
+
+  // Visible surface (0.4.1 E2E cert B3): <VendoRoot> is a context provider
+  // that renders NOTHING — two certified stacks ended doctor-green with no
+  // way for a user to reach the agent. Green must mean visible.
+  if (wiring.surface) {
+    pass("wiring/surface", "a visible agent surface is mounted (<VendoOverlay /> or an equivalent)");
+  } else {
+    fail("wiring/surface", "E-WIRE-006", "no visible agent surface is mounted — <VendoRoot> renders nothing by itself; mount <VendoOverlay /> (init generates vendo/vendo-root.tsx for this), or render your own surface (<VendoThread />, <VendoToolResult>, the BYO embeds)");
   }
 
   if (await hasDependency(root)) pass("wiring/dependency", "@vendoai/vendo dependency is declared");
@@ -197,6 +252,39 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     else fail(`config/${file}`, "E-CFG-001", `missing .vendo/${file}`);
   }
   if (!await exists(join(root, ".vendo", "data", ".gitignore"))) warn("config/data-gitignore", "E-CFG-002", ".vendo/data/.gitignore is missing");
+
+  // The core promise, statically checkable: does the agent have any HOST
+  // tool it may actually call? All-disabled is an explicit misconfiguration
+  // (fail); an empty extraction is a strong warning — connector-only hosts
+  // are legitimate, but a fresh install landing here means extraction found
+  // nothing user-facing (field case: an infra product whose surface was all
+  // internal endpoints ended with tools: [] and a silently useless agent).
+  const toolsRaw = await readOptional(join(root, ".vendo", "tools.json"));
+  const overridesRaw = await readOptional(join(root, ".vendo", "overrides.json"));
+  if (toolsRaw !== null) {
+    try {
+      const toolsFile = toolsFileSchema.parse(JSON.parse(toolsRaw));
+      let overridesTools: Record<string, { disabled?: boolean }> = {};
+      if (overridesRaw !== null) {
+        try {
+          overridesTools = overridesFileSchema.parse(JSON.parse(overridesRaw)).tools;
+        } catch {
+          // Malformed overrides are their own (pre-existing) failure surface.
+        }
+      }
+      const live = toolsFile.tools.filter((tool) => (overridesTools[tool.name]?.disabled ?? tool.disabled ?? false) !== true);
+      if (toolsFile.tools.length === 0) {
+        warn("tools/live-surface", "E-TOOLS-002", "the extracted tool surface is empty — the agent cannot act on this product's API; re-run `vendo init` extraction (or ignore if this deployment is connector-only)");
+      } else if (live.length === 0) {
+        fail("tools/live-surface", "E-TOOLS-001", `zero live host tools — all ${toolsFile.tools.length} extracted tools are disabled or excluded; review the audience exclusions in .vendo/overrides.json and re-enable the end-user surface (disabled: false)`);
+      } else {
+        pass("tools/live-surface", `${live.length} live host tool${live.length === 1 ? "" : "s"}`);
+      }
+    } catch {
+      // Not the vendo/tools@1 shape (e.g. a placeholder {}) — the config
+      // checks above already govern presence; nothing to grade here.
+    }
+  }
 
   // §4 customization ladder — ejected chrome drift. The ejected pixels are the
   // host's code, so a version gap is awareness (warn), never breakage (fail):
@@ -271,10 +359,37 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     } else {
       pass("live/status", `/status live round-trip (${body.version}, ${body.posture})`);
       liveComposition = true;
+      // Split-brain guard (0.4.2 re-run, invoify defect 13): a direct
+      // @vendoai/vendo dependency pinned to an older range beats the vendoai
+      // umbrella's for the APP import, so `npm install vendoai@latest` runs a
+      // new CLI while /status silently serves the old runtime. Any CLI/wire
+      // version disagreement — split-brain or just a dev server started
+      // before the upgrade — means doctor is not certifying what users run.
+      if (body.version === CLI_VERSION) {
+        pass("deps/version-skew", `CLI and running wire agree on @vendoai/vendo ${CLI_VERSION}`);
+      } else {
+        fail("deps/version-skew", "E-DEP-002", `the running wire serves @vendoai/vendo ${body.version} but this CLI is ${CLI_VERSION} — likely a split-brain install (a direct @vendoai/vendo dependency pinned to an older range wins over the vendoai umbrella's). Fix: npm install @vendoai/vendo@${CLI_VERSION} (or remove the direct @vendoai/vendo dependency and reinstall), then restart the dev server and re-run doctor.`);
+      }
       // 10-mcp §1 — the door flag lives under blocks.mcp.
       mcpEnabled = body.blocks.mcp === true;
       sandboxVenue = body.blocks.sandbox;
-      if (sandboxVenue === "e2b" || sandboxVenue === "cloud" || sandboxVenue === "custom") {
+      if (sandboxVenue === "e2b") {
+        // 0.4.4 defect C — "ok: execution venue: e2b" on a host that cannot
+        // actually run e2b is a false blessing: the venue must be USABLE
+        // (key set and SDK resolvable from this project), or every server-app
+        // build dies in it instead of riding the Cloud sandbox.
+        const keyPresent = typeof env.E2B_API_KEY === "string" && env.E2B_API_KEY.trim() !== "";
+        const installed = (options.e2bResolvable ?? e2bResolvableFrom)(root);
+        if (keyPresent && installed) {
+          pass("live/venue", "execution venue: e2b");
+        } else {
+          const missing = [
+            ...(keyPresent ? [] : ["E2B_API_KEY is not set"]),
+            ...(installed ? [] : ["the e2b package does not resolve from this project"]),
+          ].join(" and ");
+          fail("live/venue", "E-LIVE-007", `the running wire selected the e2b execution venue but ${missing}; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor`);
+        }
+      } else if (sandboxVenue === "cloud" || sandboxVenue === "custom") {
         pass("live/venue", `execution venue: ${sandboxVenue}`);
       } else if (sandboxVenue === false) {
         warn("live/venue", "E-LIVE-004", "install the e2b package and set E2B_API_KEY, or set VENDO_API_KEY for the managed Cloud sandbox, or pass sandbox: to createVendo; without one, server apps (rungs 2-4) return sandbox-unavailable");
@@ -286,7 +401,25 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       }
     }
   } catch {
-    fail("live/status", "E-LIVE-002", `/status is unreachable at ${statusUrl}/status`);
+    fail("live/status", "E-LIVE-002", `/status is unreachable at ${statusUrl}/status — doctor expects the WIRE BASE (your app origin plus the mount path, e.g. http://localhost:3000/api/vendo); a bare site origin passed to --url is missing the /api/vendo part`);
+  }
+
+  // Render gate (0.4.1 E2E cert M3): a live wire proves nothing about the
+  // PAGES — the certified invoify install had every page 500ing (registry
+  // passed across the Server Component boundary) while doctor exited 0. One
+  // cheap GET of the app root catches a site that is down for users.
+  if (liveComposition) {
+    try {
+      const response = await fetchImpl(`${new URL(statusUrl).origin}/`, { headers: { accept: "text/html" } });
+      if (response.status >= 500) {
+        fail("live/render", "E-LIVE-006", `the app's root page returned ${response.status} — the site is crashing for users even though the wire answers (typical cause: the component registry imported in a Server Component layout; mount it via the generated vendo/vendo-root.tsx wrapper instead). Check the dev server log.`);
+      } else {
+        pass("live/render", `the app's root page renders (HTTP ${response.status})`);
+      }
+    } catch {
+      // The wire answered but the origin root didn't resolve at all — hosts
+      // that serve no page at / are not doctor's business; skip silently.
+    }
   }
 
   if (!liveComposition) {

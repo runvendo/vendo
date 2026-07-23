@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions";
+import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
 import { syncSemantics } from "./semantics.js";

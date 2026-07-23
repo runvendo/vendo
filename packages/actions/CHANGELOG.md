@@ -1,5 +1,69 @@
 # @vendoai/actions
 
+## 0.4.5
+
+### Patch Changes
+
+- Updated dependencies [31f899e]
+  - @vendoai/core@0.4.5
+
+## 0.4.4
+
+### Patch Changes
+
+- 52c72c2: Doctor judges unknown-framework hosts (Cloudflare Workers, Bun, Hono, ...)
+  by their actual wiring instead of Next.js file layout — no more permanent
+  E-WIRE-003/004 false positives on custom runtimes (new codes E-WIRE-007/008).
+  The tool surface is now graded statically: all extracted tools disabled or
+  excluded fails doctor (E-TOOLS-001), an empty surface warns (E-TOOLS-002),
+  and the actions registry warns at runtime when the agent composes with zero
+  live host tools — the silently-useless-agent failure mode is no longer
+  silent anywhere.
+- 835d17a: Edge-runtime portability: the server entry now bundles and boots on
+  Web-standard runtimes (Cloudflare Workers first). Fetch defaults are
+  invocation-safe, the optional e2b SDK no longer breaks esbuild/Wrangler
+  builds, Node-only legs (local store engines, dev model ladder, telemetry
+  disk config, actions sync tooling) sit behind worker/edge export
+  conditions with honest guidance, and createVendo performs no I/O, timers,
+  or random generation at construction — module-scope wiring works. A CI
+  portability gate (bundle + real workerd boot) keeps it that way.
+
+  Note for hosts that reach into composed blocks directly: the BYO tool seam
+  (`vendo.guardedTools`, and the ai-sdk/mastra packs built on it) arms schema
+  readiness on first execute. Raw `vendo.store`/`vendo.automations` reach-ins
+  should `await vendo.store.ensureSchema()` first — the previous eager kick
+  only ever gave that pattern a racy head start.
+
+- 70b59db: Extraction now grades every tool's audience (end-user / operator / internal)
+  by reading the handler's own auth checks, and excludes non-end-user tools
+  from the embedded agent by default (recorded as `audience` in
+  .vendo/overrides.json; human decisions always win). Applying a surface that
+  leaves the agent with zero live tools warns loudly instead of shipping a
+  silently useless agent. Field origin: an infra product's extraction proposed
+  operator/reconciliation endpoints; stripping them by hand left an empty
+  toolkit and an agent that couldn't act.
+- Updated dependencies [835d17a]
+  - @vendoai/core@0.4.4
+
+## 0.4.3
+
+### Patch Changes
+
+- @vendoai/core@0.4.3
+
+## 0.4.2
+
+### Patch Changes
+
+- @vendoai/core@0.4.2
+
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [b7a860f]
+  - @vendoai/core@0.4.1
+
 ## 0.4.0
 
 ### Minor Changes

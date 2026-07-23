@@ -166,6 +166,31 @@ describe("existing-agents embeds", () => {
       expect(screen.getByText(/Building/)).toBeDefined();
     });
 
+    it("resolves the failed vocabulary WITH the reason promptly when the build terminally fails (#492)", async () => {
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_doomed", title: "Budget tracker" };
+      // The build turn threw server-side: open() now answers {kind:"failed"}
+      // instead of an eternal pending, so the embed resolves on the FIRST poll
+      // rather than waiting for APP_BUILD_DEADLINE_MS.
+      wire.state.failedApps.set("app_doomed", { reason: "quota exhausted", retryable: false });
+      mount(<VendoAppEmbed refValue={doomed} />);
+      await waitFor(() => expect(screen.getByText(/couldn't finish/i)).toBeDefined());
+      // The honest reason is shown, not just the generic failed beat.
+      expect(screen.getByText("quota exhausted")).toBeDefined();
+      // A non-retryable failure carries no retry hint.
+      expect(screen.queryByText(/Retryable/)).toBeNull();
+      // Resolved terminally — no skeletons still building.
+      expect(screen.queryByRole("status")).toBeNull();
+    });
+
+    it("shows the retry hint when the terminal failure is retryable", async () => {
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry", title: "Retry tracker" };
+      wire.state.failedApps.set("app_retry", { reason: "generation failed", retryable: true });
+      mount(<VendoAppEmbed refValue={doomed} />);
+      await waitFor(() => expect(screen.getByText(/couldn't finish/i)).toBeDefined());
+      expect(screen.getByText("generation failed")).toBeDefined();
+      expect(screen.getByText(/Retryable — ask for the app again/)).toBeDefined();
+    });
+
     it("resolves the build beat into the app when the build lands mid-poll", async () => {
       const late: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_late", title: "Late app" };
       mount(<VendoAppEmbed refValue={late} />);

@@ -1,0 +1,40 @@
+name: Version Packages
+
+# Keeps a "chore: version packages" PR open on main whenever there are
+# pending changesets. Releasing = merge that PR, then push the v* tag
+# (release.yml does the publish). No `publish` input on purpose — publishing
+# stays on the tag so a release is always a deliberate act.
+#
+# Known GitHub limitation: PRs opened by the default GITHUB_TOKEN do not
+# trigger CI. Close and reopen the Version Packages PR (or push any commit to
+# it) to run checks before merging.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version:
+    if: github.repository == 'runvendo/vendo'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          version: pnpm changeset:version
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

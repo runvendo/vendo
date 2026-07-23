@@ -49,7 +49,7 @@ async function healthy(): Promise<string> {
     await writeFile(path, body);
   };
   await write("package.json", JSON.stringify({ dependencies: { "@vendoai/vendo": "0.3.0", next: "16" } }));
-  await write("app/layout.tsx", "export default ({children}) => <VendoRoot>{children}</VendoRoot>;");
+  await write("app/layout.tsx", "export default ({children}) => <VendoRoot>{children}<VendoOverlay /></VendoRoot>;");
   await write("app/api/vendo/[...vendo]/route.ts", "export const GET = () => {};\n");
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) await write(`.vendo/${file}`, "{}\n");
   await write(".vendo/data/.gitignore", "*\n");
@@ -69,9 +69,33 @@ async function expressHost(wired: boolean): Promise<string> {
   }));
   if (wired) {
     await write("src/server.ts", 'import { createVendo } from "@vendoai/vendo/server";\ncreateVendo({ model, principal });\n');
-    await write("src/client.tsx", "export const App = () => <VendoRoot><main /></VendoRoot>;\n");
+    await write("src/client.tsx", "export const App = () => <VendoRoot><main /><VendoOverlay /></VendoRoot>;\n");
   } else {
     await write("src/notes.ts", "/* TODO: import createVendo from @vendoai/vendo/server and render <VendoRoot> */\n");
+  }
+  for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) await write(`.vendo/${file}`, "{}\n");
+  await write(".vendo/data/.gitignore", "*\n");
+  return root;
+}
+
+/** A host doctor cannot pattern-match: no next, no express (Cloudflare
+ *  Worker + Vite was the field case — E-WIRE-003/004 false positives). */
+async function customHost(wired: boolean): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "vendo-doctor-custom-"));
+  cleanup.push(() => rm(root, { recursive: true, force: true }));
+  const write = async (relative: string, body: string): Promise<void> => {
+    const path = join(root, relative);
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, body);
+  };
+  await write("package.json", JSON.stringify({
+    dependencies: { "@vendoai/vendo": "0.3.0", vite: "6.0.0" },
+  }));
+  if (wired) {
+    await write("src/worker.ts", 'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({ model, principal });\n');
+    await write("src/app.tsx", "export const App = () => <VendoRoot><main /><VendoOverlay /></VendoRoot>;\n");
+  } else {
+    await write("src/worker.ts", "export default { fetch: () => new Response('ok') };\n");
   }
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) await write(`.vendo/${file}`, "{}\n");
   await write(".vendo/data/.gitignore", "*\n");
@@ -89,12 +113,12 @@ function output(): { logs: string[]; errors: string[]; sink: { log(message: stri
 }
 
 function successfulProbeFetch(
-  blocks: Record<string, unknown> = { store: true, sandbox: "e2b" },
+  blocks: Record<string, unknown> = { store: true, sandbox: "cloud" },
 ): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.endsWith("/status")) {
-      return Response.json({ posture: "unconfigured", version: "0.3.0", blocks });
+      return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks });
     }
     if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
     if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
@@ -211,6 +235,83 @@ describe("vendo doctor", () => {
     ]));
   });
 
+  it("judges an unknown-framework host by its wiring, not Next's file layout", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await customHost(true),
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toEqual([]);
+    const log = messages.logs.join("\n");
+    expect(log).not.toContain("catch-all handler");
+    expect(log).toContain("ok: createVendo server wiring found");
+  });
+
+  it("an unknown-framework host with no createVendo anywhere fails the generic wiring check", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await customHost(false),
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("no createVendo server wiring found");
+    expect(messages.errors.join("\n")).not.toContain("app/api/vendo/[...vendo]/route.ts");
+  });
+
+  it("fails when the extracted tool surface has zero live tools (the agent cannot act on the host)", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [{
+        name: "host_internal_hook", description: "d", inputSchema: { type: "object" }, risk: "write", disabled: true,
+        binding: { kind: "route", method: "POST", path: "/api/hook", argsIn: "body" },
+      }],
+    }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toMatch(/zero live host tools/i);
+  });
+
+  it("warns (does not fail) when extraction produced zero tools — connector-only hosts are legitimate", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors.join("\n")).toMatch(/tool surface is empty/i);
+  });
+
+  it("a live tool surface passes the zero-live-tools check", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [{
+        name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+      }],
+    }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toEqual([]);
+  });
+
   it("checks wiring and performs one live status round-trip", async () => {
     const fetchImpl = successfulProbeFetch();
     expect(await doctor({
@@ -219,11 +320,13 @@ describe("vendo doctor", () => {
       output: { log() {}, error() {} },
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
     expect(fetchImpl.mock.calls[0]?.[0]).toBe("http://localhost:3000/api/vendo/status");
-    expect(fetchImpl.mock.calls[1]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/present");
-    expect(fetchImpl.mock.calls[2]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/act-as");
-    expect(fetchImpl.mock.calls[3]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/machines");
+    // The render gate rides the same live pass: one GET of the app origin.
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe("http://localhost:3000/");
+    expect(fetchImpl.mock.calls[2]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/present");
+    expect(fetchImpl.mock.calls[3]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/act-as");
+    expect(fetchImpl.mock.calls[4]?.[0]).toBe("http://localhost:3000/api/vendo/doctor/machines");
   });
 
   // execution-v2 Lane D — machine/schedule reporting (dev-only wire surface).
@@ -232,7 +335,7 @@ describe("vendo doctor", () => {
     fetchImpl.mockImplementation(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       }
       if (url.endsWith("/doctor/present") || url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/machines")) {
@@ -265,7 +368,7 @@ describe("vendo doctor", () => {
     fetchImpl.mockImplementation(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith("/status")) {
-        return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       }
       if (url.endsWith("/doctor/present") || url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/machines")) {
@@ -284,7 +387,7 @@ describe("vendo doctor", () => {
     expect(messages.logs.join("\n")).toContain("schedule caller configured");
   });
 
-  it.each(["e2b", "cloud", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
+  it.each(["cloud", "custom"] as const)("reports a lit %s execution venue", async (sandbox) => {
     const messages = output();
     expect(await doctor({
       targetDir: await healthy(),
@@ -293,6 +396,53 @@ describe("vendo doctor", () => {
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
     expect(messages.logs).toContain(`ok: execution venue: ${sandbox}`);
+  });
+
+  // 0.4.4 defect C — an e2b venue is blessed only when it is USABLE: key set
+  // and SDK resolvable from the project. "ok: execution venue: e2b" on a
+  // keyless host certified a composition whose every server-app build died
+  // (the venue ladder had picked e2b over the Cloud sandbox).
+  it("reports a lit e2b execution venue when the key is set and the SDK resolves", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
+      env: { E2B_API_KEY: "e2b_key" },
+      e2bResolvable: () => true,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.logs).toContain("ok: execution venue: e2b");
+  });
+
+  it("fails when the wire selected e2b but no E2B_API_KEY is set", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
+      env: {},
+      e2bResolvable: () => true,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors).toContain(
+      "broken: the running wire selected the e2b execution venue but E2B_API_KEY is not set; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor",
+    );
+  });
+
+  it("fails when the wire selected e2b but the SDK does not resolve from the project", async () => {
+    const messages = output();
+    expect(await doctor({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch({ store: true, sandbox: "e2b" }),
+      env: { E2B_API_KEY: "e2b_key" },
+      e2bResolvable: () => false,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors).toContain(
+      "broken: the running wire selected the e2b execution venue but the e2b package does not resolve from this project; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor",
+    );
   });
 
   it("warns with actionable guidance when the execution venue is dark", async () => {
@@ -462,7 +612,7 @@ describe("vendo doctor", () => {
 function probeFetchWithTurn(reply = "I can respond.", options: { errorFrame?: boolean } = {}): ReturnType<typeof vi.fn> {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+    if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
     if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
     if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
     if (url.endsWith("/threads") && init?.method === "POST") {
@@ -596,7 +746,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       const url = String(input);
       if (url.endsWith("/status")) {
         if (!serverUp) throw new Error("connection refused");
-        return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       }
       if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
@@ -635,7 +785,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       const url = String(input);
       if (url.endsWith("/status")) {
         if (!serverUp) throw new Error("connection refused");
-        return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { store: true, sandbox: "e2b" } });
+        return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
       }
       if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
       if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
@@ -906,13 +1056,198 @@ describe("vendo doctor error codes + fix_refs", () => {
       fix_ref: doctorFixRef("E-CFG-001"),
     });
   });
+
+  // Visible-surface gate (0.4.1 E2E cert B3): green must mean a user can SEE
+  // the agent — <VendoRoot> alone is a provider that renders nothing.
+  it("fails E-WIRE-006 when nothing visible is mounted, and exits 1", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "app", "layout.tsx"),
+      "export default ({children}) => <VendoRoot>{children}</VendoRoot>;");
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    const errors = messages.errors.join("\n");
+    expect(errors).toContain("no visible agent surface is mounted");
+    expect(errors).toContain("<VendoOverlay />");
+  });
+
+  // The generated wrapper carries <VendoRoot> AND <VendoOverlay /> markers
+  // itself — it must NOT satisfy the client/surface gates while no layout
+  // mounts it, or doctor-green-but-invisible comes right back.
+  it("fails E-WIRE-006 when only the UNMOUNTED generated wrapper carries the overlay", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "app", "layout.tsx"),
+      "export default ({children}) => <html><body>{children}</body></html>;");
+    await mkdir(join(root, "vendo"), { recursive: true });
+    await writeFile(join(root, "vendo", "vendo-root.tsx"),
+      "\"use client\";\nexport function VendoRoot({children}) { return <VendoRoot>{children}<VendoOverlay /></VendoRoot>; }");
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("no visible agent surface is mounted");
+  });
+
+  // The auto-wired shape: the layout mounts <VendoRoot> imported FROM the
+  // wrapper (so the layout itself carries no overlay marker) and the wrapper
+  // renders <VendoOverlay /> — that IS the surface, same rule init applies.
+  it("passes when the layout mounts the overlay-bearing wrapper's <VendoRoot>", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "app", "layout.tsx"),
+      "import { VendoRoot } from \"../vendo/vendo-root\";\nexport default ({children}) => <VendoRoot>{children}</VendoRoot>;");
+    await mkdir(join(root, "vendo"), { recursive: true });
+    await writeFile(join(root, "vendo", "vendo-root.tsx"),
+      "\"use client\";\nexport function VendoRoot({children}) { return <VendoRoot>{children}<VendoOverlay /></VendoRoot>; }");
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: output().sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+  });
+
+  it("accepts a BYO embed (<VendoToolResult>) as the visible surface", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "app", "layout.tsx"),
+      "export default ({children}) => <VendoRoot>{children}</VendoRoot>;");
+    await mkdir(join(root, "app", "chat"), { recursive: true });
+    await writeFile(join(root, "app", "chat", "page.tsx"),
+      "export default () => <VendoToolResult output={null} />;");
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: output().sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+  });
+
+  // E-WIRE-004 broadened: hosts with route groups or i18n mount in a NESTED
+  // layout (invoify: app/[locale]/layout.tsx) — the root-layout-only grep
+  // fought exactly that correct wiring in the 0.4.1 E2E cert.
+  it("finds the <VendoRoot> mount in a nested layout", async () => {
+    const root = await healthy();
+    await writeFile(join(root, "app", "layout.tsx"),
+      "export default ({children}) => <html><body>{children}</body></html>;");
+    await mkdir(join(root, "app", "[locale]"), { recursive: true });
+    await writeFile(join(root, "app", "[locale]", "layout.tsx"),
+      "export default ({children}) => <VendoRoot>{children}<VendoOverlay /></VendoRoot>;");
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: output().sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+  });
+
+  // Render gate (0.4.1 E2E cert M3): the certified invoify install had every
+  // page 500ing while doctor exited 0 — a live wire proves nothing about the
+  // pages users load.
+  it("fails E-LIVE-006 and exits 1 when the app's root page 500s while the wire answers", async () => {
+    const root = await healthy();
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "http://localhost:3000/") return new Response("boom", { status: 500 });
+      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud" } });
+      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
+      return Response.json({}, { status: 404 });
+    });
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("root page returned 500");
+  });
+
+  // Split-brain guard (0.4.2 re-run): a direct @vendoai/vendo dep pinned to
+  // an older range beats the vendoai umbrella's for the app import, so the
+  // CLI upgrades while /status silently serves the old runtime.
+  it("fails E-DEP-002 with the exact fix when the wire's version disagrees with the CLI", async () => {
+    const root = await healthy();
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/status")) return Response.json({ posture: "unconfigured", version: "0.4.1", blocks: { store: true, sandbox: "cloud" } });
+      if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
+      if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
+      return Response.json({}, { status: 404 });
+    });
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    const errors = messages.errors.join("\n");
+    expect(errors).toContain(`serves @vendoai/vendo 0.4.1 but this CLI is ${CLI_VERSION}`);
+    expect(errors).toContain(`npm install @vendoai/vendo@${CLI_VERSION}`);
+    expect(errors).toContain("restart the dev server");
+  });
+
+  it("passes the version-skew check when CLI and wire agree", async () => {
+    const root = await healthy();
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.logs.join("\n")).toContain(`CLI and running wire agree on @vendoai/vendo ${CLI_VERSION}`);
+  });
+
+  // Exit-code honesty (3b): a failing live model turn is a broken: line AND
+  // a nonzero exit — never a green verdict with broken output.
+  it("a broken live model turn prints broken: and exits 1", async () => {
+    const root = await healthy();
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+      liveTurn: async () => ({
+        attempted: true,
+        ok: false,
+        rung: "none",
+        credential: "no credential",
+        error: "no reply text arrived",
+        elapsedMs: 5,
+      }),
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("broken: live model turn did not answer");
+  });
+
+  // --url copy (D8): a wrong --url should name the wire base it expects.
+  it("the unreachable-/status failure names the wire base --url expects", async () => {
+    const root = await healthy();
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      url: "http://localhost:4999",
+      fetchImpl: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")) as unknown as typeof fetch,
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("e.g. http://localhost:3000/api/vendo");
+  });
 });
 
 function discoveryFetch(challenge?: string): typeof fetch {
   return vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     if (url.endsWith("/api/vendo/status")) {
-      return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { mcp: true, sandbox: "e2b" } });
+      return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { mcp: true, sandbox: "cloud" } });
     }
     if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
     if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });

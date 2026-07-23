@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/engine",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "npx-fetched Agent SDK runner: harness job in, final agent text out. Not a dependency of any Vendo package — init's last-resort engine rung fetches it via `npm exec` at a pinned version so its ~250MB Claude Code binary never lands in a host app's install.",
   "keywords": [
     "ai",

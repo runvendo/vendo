@@ -249,10 +249,28 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
     dockOpen, setDockOpen, dockButtonRef,
     queued, setQueued, attachError, fileRef, textareaRef, send,
   } = composer;
+  // The tray exits with an animation instead of popping out of the DOM: on the
+  // open→closed edge it enters a `closing` phase and unmounts on a timer (not
+  // animationend — reduced-motion kills the animation and would strand it).
+  // The open→closing transition is a RENDER-PHASE state adjustment, not an
+  // effect: an effect runs after paint, so the close render would first commit
+  // a frame with no tray at all and the closing tray would then remount over
+  // it — a visible flash. Adjusting during render keeps the tray mounted
+  // through the whole open → closing → closed walk (and reopening mid-exit
+  // just flips it back to open, no remount).
+  const [trayState, setTrayState] = useState<"closed" | "open" | "closing">(dockOpen ? "open" : "closed");
+  if (dockOpen && trayState !== "open") setTrayState("open");
+  if (!dockOpen && trayState === "open") setTrayState("closing");
+  useEffect(() => {
+    if (trayState !== "closing") return;
+    const timer = setTimeout(() => setTrayState("closed"), 200);
+    return () => clearTimeout(timer);
+  }, [trayState]);
   return (
     <div className="fl-dock-anchor">
-      {dockOpen ? (
+      {trayState !== "closed" ? (
         <ConnectTray
+          closing={trayState === "closing"}
           anchorRef={dockButtonRef}
           onClose={() => {
             setDockOpen(false);

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,7 +69,7 @@ describe("runDeviceLogin", () => {
     ]);
     const messages = output();
 
-    const exit = await runDeviceLogin(["dev@example.com", "--api-url", "https://console.test"], {
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
       output: messages.sink,
       fetchImpl,
       root,
@@ -81,9 +82,9 @@ describe("runDeviceLogin", () => {
     });
 
     expect(exit).toBe(0);
-    // Claim request carried the login hint, JSON-encoded.
+    // Claim request carries NO identity hint — the human chooses the account.
     expect(requests[0].url).toBe("https://console.test/api/v1/agent/claim");
-    expect(JSON.parse(requests[0].body)).toEqual({ login_hint: "dev@example.com" });
+    expect(JSON.parse(requests[0].body)).toEqual({});
     // Polls are form-encoded with the auth.md grant type + claim token.
     expect(requests[1].contentType).toContain("application/x-www-form-urlencoded");
     const poll = new URLSearchParams(requests[1].body);
@@ -124,6 +125,87 @@ describe("runDeviceLogin", () => {
     expect(envLocal).toContain("FOO=bar");
     expect(envLocal).toContain(`VENDO_API_KEY=${KEY}`);
     expect(envLocal).not.toContain("VENDO_API_KEY=old");
+  });
+
+  // M4 (0.4.1 E2E cert): a claim is single-use, so the landing file must be
+  // proven writable BEFORE anything touches the network — a sandboxed agent
+  // run that cannot write .env.local must fail here, not after the key mints.
+  it("refuses to start the ceremony when .env.local is not writable — nothing minted, distinct copy", async () => {
+    const root = await tempRoot();
+    await mkdir(join(root, ".env.local")); // a directory: append-open fails like a denied write
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home: await tempRoot(),
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(1);
+    // The preflight fired before ANY network call: no claim was opened.
+    expect(requests).toEqual([]);
+    const error = messages.errors.join("\n");
+    expect(error).toContain(join(root, ".env.local"));
+    expect(error).toContain("no key was minted");
+    expect(error).toContain("not a timeout");
+  });
+
+  it("the preflight probe leaves no artifact behind when .env.local did not exist", async () => {
+    const root = await tempRoot();
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    expect(await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root,
+      home: await tempRoot(),
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    })).toBe(0);
+    // The ceremony's own write is the only .env.local: it holds the key.
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
+  });
+
+  it("a redemption-time write failure reads as a WRITE failure (revoke + retry), never the timeout copy", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    // Preflight passes; the landing file turns unwritable between preflight
+    // and redemption (the sandbox-deny race the preflight can't fully close).
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      await request.text();
+      if (request.url.endsWith("/api/v1/agent/claim")) return Response.json(CEREMONY);
+      await rm(join(root, ".env.local"), { force: true });
+      await mkdir(join(root, ".env.local"), { recursive: true });
+      return Response.json({ access_token: KEY, token_type: "Bearer" }, { status: 200 });
+    }) as unknown as typeof fetch;
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(1);
+    const error = messages.errors.join("\n");
+    expect(error).toContain("the key was minted");
+    expect(error).toContain("revoke it in the console");
+    expect(error).not.toContain("expired");
+    expect(error).not.toContain(KEY); // the key is never printed, even on failure
+    // The claim is consumed server-side: the pending file must be gone so the
+    // next login opens a FRESH claim instead of resuming into invalid_grant.
+    const { readPendingClaim } = await import("./pending-claim.js");
+    expect(await readPendingClaim(root, { home })).toBeNull();
   });
 
   it("stops loudly on access_denied and expired_token", async () => {
@@ -274,18 +356,22 @@ describe("runDeviceLogin", () => {
 // so a fresh `vendo login` can resume polling after the original process dies
 // and a late human approval still lands the key.
 describe("pending claim persistence", () => {
-  const pendingPath = (home: string) => join(home, ".vendo", "pending-claim.json");
+  // Claims are scoped per project directory (0.4.2): the file name is the
+  // cwd hash, so concurrent logins in different repos cannot clobber or
+  // resume each other's ceremonies.
+  const pendingPath = (home: string, cwd: string) =>
+    join(home, ".vendo", "pending-claims", `${createHash("sha256").update(cwd).digest("hex").slice(0, 16)}.json`);
 
-  async function writePending(home: string, overrides: Record<string, unknown> = {}): Promise<void> {
-    await mkdir(join(home, ".vendo"), { recursive: true });
-    await writeFile(pendingPath(home), JSON.stringify({
+  async function writePending(home: string, cwd: string, overrides: Record<string, unknown> = {}): Promise<void> {
+    await mkdir(join(pendingPath(home, cwd), ".."), { recursive: true });
+    await writeFile(pendingPath(home, cwd), JSON.stringify({
       claim_token: `vct_${"c".repeat(64)}`,
       user_code: "WXYZ-PQRS",
       verification_uri_complete: "https://console.test/claim?code=WXYZ-PQRS",
       expires_at: Date.now() + 600_000,
       interval: 5,
       api_url: "https://console.test",
-      cwd: home,
+      cwd,
       ...overrides,
     }));
   }
@@ -304,8 +390,8 @@ describe("pending claim persistence", () => {
       root,
       home,
       sleep: async () => {
-        const mode = (await stat(pendingPath(home))).mode & 0o777;
-        seenDuringPoll.push({ ...JSON.parse(await readFile(pendingPath(home), "utf8")), mode });
+        const mode = (await stat(pendingPath(home, root))).mode & 0o777;
+        seenDuringPoll.push({ ...JSON.parse(await readFile(pendingPath(home, root), "utf8")), mode });
       },
       env: {},
       isTty: false,
@@ -323,14 +409,13 @@ describe("pending claim persistence", () => {
     });
     expect(typeof (seenDuringPoll[0] as { expires_at: unknown }).expires_at).toBe("number");
     // Redeemed — nothing left to resume.
-    await expect(stat(pendingPath(home))).rejects.toThrow();
+    await expect(stat(pendingPath(home, root))).rejects.toThrow();
   });
 
-  it("resumes a pending claim: polls the same claim_token without re-opening a claim", async () => {
+  it("resumes this project's pending claim: polls the same claim_token without re-opening", async () => {
     const home = await tempRoot();
-    const originalCwd = await tempRoot();
-    const otherCwd = await tempRoot();
-    await writePending(home, { cwd: originalCwd });
+    const projectCwd = await tempRoot();
+    await writePending(home, projectCwd);
     const { fetchImpl, requests } = scriptedFetch([
       { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
     ]);
@@ -338,7 +423,7 @@ describe("pending claim persistence", () => {
     const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
       output: messages.sink,
       fetchImpl,
-      root: otherCwd,
+      root: projectCwd,
       home,
       sleep: async () => {},
       env: {},
@@ -352,24 +437,82 @@ describe("pending claim persistence", () => {
     expect(messages.logs.join("\n")).toContain(
       "Resuming pending approval — code WXYZ-PQRS, approve at https://console.test/claim?code=WXYZ-PQRS",
     );
-    // The key lands where the ORIGINAL run intended, and the output says so.
-    const envLocal = await readFile(join(originalCwd, ".env.local"), "utf8");
+    const envLocal = await readFile(join(projectCwd, ".env.local"), "utf8");
     expect(envLocal).toContain(`VENDO_API_KEY=${KEY}`);
-    await expect(readFile(join(otherCwd, ".env.local"), "utf8")).rejects.toThrow();
-    expect(messages.logs.join("\n")).toContain(join(originalCwd, ".env.local"));
-    await expect(stat(pendingPath(home))).rejects.toThrow();
+    await expect(stat(pendingPath(home, projectCwd))).rejects.toThrow();
   });
 
-  it("discards an expired pending claim and opens a fresh one", async () => {
+  it("never resumes ANOTHER project's claim — a fresh ceremony opens and theirs survives (0.4.2)", async () => {
     const home = await tempRoot();
-    await writePending(home, { expires_at: Date.now() - 1_000 });
+    const otherProject = await tempRoot();
+    const thisProject = await tempRoot();
+    await writePending(home, otherProject);
     const { fetchImpl, requests } = scriptedFetch([
       { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
     ]);
     const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
       output: output().sink,
       fetchImpl,
-      root: await tempRoot(),
+      root: thisProject,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // A fresh ceremony was opened for THIS project…
+    expect(requests[0].url).toBe("https://console.test/api/v1/agent/claim");
+    // …the key lands here, not in the other project…
+    expect(await readFile(join(thisProject, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
+    await expect(readFile(join(otherProject, ".env.local"), "utf8")).rejects.toThrow();
+    // …and the other project's pending ceremony is untouched, still resumable.
+    await expect(stat(pendingPath(home, otherProject))).resolves.toBeTruthy();
+  });
+
+  it("migrates a matching pre-0.4.2 machine-global claim file and resumes it", async () => {
+    const home = await tempRoot();
+    const projectCwd = await tempRoot();
+    const legacyPath = join(home, ".vendo", "pending-claim.json");
+    await mkdir(join(home, ".vendo"), { recursive: true });
+    await writeFile(legacyPath, JSON.stringify({
+      claim_token: `vct_${"c".repeat(64)}`,
+      user_code: "WXYZ-PQRS",
+      verification_uri_complete: "https://console.test/claim?code=WXYZ-PQRS",
+      expires_at: Date.now() + 600_000,
+      interval: 5,
+      api_url: "https://console.test",
+      cwd: projectCwd,
+    }));
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root: projectCwd,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // Resumed (no fresh claim), key landed, and the legacy file is gone.
+    expect(requests.some((request) => request.url.endsWith("/api/v1/agent/claim"))).toBe(false);
+    expect(await readFile(join(projectCwd, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
+    await expect(stat(legacyPath)).rejects.toThrow();
+  });
+
+  it("discards an expired pending claim and opens a fresh one", async () => {
+    const home = await tempRoot();
+    const root = await tempRoot();
+    await writePending(home, root, { expires_at: Date.now() - 1_000 });
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink,
+      fetchImpl,
+      root,
       home,
       sleep: async () => {},
       env: {},
@@ -383,18 +526,226 @@ describe("pending claim persistence", () => {
 
   it("removes the pending claim when the human denies the request", async () => {
     const home = await tempRoot();
+    const root = await tempRoot();
     const { fetchImpl } = scriptedFetch([{ status: 400, body: { error: "access_denied" } }]);
     const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
       output: output().sink,
       fetchImpl,
-      root: await tempRoot(),
+      root,
       home,
       sleep: async () => {},
       env: {},
       isTty: false,
     });
     expect(exit).toBe(1);
-    await expect(stat(pendingPath(home))).rejects.toThrow();
+    await expect(stat(pendingPath(home, root))).rejects.toThrow();
+  });
+});
+
+// A bounded per-invocation poll budget (#479): `--wait <seconds>` caps how
+// long ONE call polls before exiting resumably, so a coding agent can loop
+// short re-runs (each resuming the same claim) instead of a 10-min block.
+describe("bounded --wait budget (#479)", () => {
+  // Claims are scoped per project directory (0.4.2): the file name is the
+  // cwd hash, so concurrent logins in different repos cannot clobber or
+  // resume each other's ceremonies.
+  const pendingPath = (home: string, cwd: string) =>
+    join(home, ".vendo", "pending-claims", `${createHash("sha256").update(cwd).digest("hex").slice(0, 16)}.json`);
+  const tokenPolls = (requests: Array<{ url: string }>) =>
+    requests.filter((request) => request.url.endsWith("/api/v1/oauth/token"));
+
+  async function writePending(home: string, cwd: string, overrides: Record<string, unknown> = {}): Promise<void> {
+    await mkdir(join(pendingPath(home, cwd), ".."), { recursive: true });
+    await writeFile(pendingPath(home, cwd), JSON.stringify({
+      claim_token: `vct_${"c".repeat(64)}`,
+      user_code: "WXYZ-PQRS",
+      verification_uri_complete: "https://console.test/claim?code=WXYZ-PQRS",
+      expires_at: Date.now() + 600_000,
+      interval: 5,
+      api_url: "https://console.test",
+      cwd,
+      ...overrides,
+    }));
+  }
+
+  it("(a) exits 0 and leaves the claim resumable when the budget elapses while pending", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    let clock = 0;
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "10"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+      env: {},
+      isTty: false,
+    });
+    // Pending is not a failure — exit 0, no throw.
+    expect(exit).toBe(0);
+    expect(messages.errors).toEqual([]);
+    // The claim file stays on disk for the next re-run to resume.
+    await expect(stat(pendingPath(home, root))).resolves.toBeTruthy();
+    // No key was written.
+    await expect(readFile(join(root, ".env.local"), "utf8")).rejects.toThrow();
+    // The resumable line + budget hint were printed, with the JSON pending shape.
+    const joined = messages.logs.join("\n");
+    expect(joined).toContain("This call polls for up to 10s");
+    expect(joined).toContain(
+      "Still waiting on approval — code BCDF-GHJK. Re-run `vendo login` to resume (it continues this same request).",
+    );
+    expect(messages.logs).toContainEqual(JSON.stringify({
+      deviceLogin: true,
+      pending: true,
+      userCode: "BCDF-GHJK",
+      verificationUriComplete: "https://console.test/claim?code=BCDF-GHJK",
+    }, null, 2));
+  });
+
+  it("(b) a --wait re-run resumes the same claim_token and lands the key when approval arrives", async () => {
+    const home = await tempRoot();
+    const projectCwd = await tempRoot();
+    await writePending(home, projectCwd);
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "90"], {
+      output: output().sink,
+      fetchImpl,
+      root: projectCwd,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // No new claim opened — it polls the persisted claim_token directly.
+    expect(requests.some((request) => request.url.endsWith("/api/v1/agent/claim"))).toBe(false);
+    expect(new URLSearchParams(requests[0].body).get("claim_token")).toBe(`vct_${"c".repeat(64)}`);
+    // The key landed and the pending file is gone.
+    const envLocal = await readFile(join(projectCwd, ".env.local"), "utf8");
+    expect(envLocal).toContain(`VENDO_API_KEY=${KEY}`);
+    await expect(stat(pendingPath(home, projectCwd))).rejects.toThrow();
+  });
+
+  it("(c) without --wait the call still blocks to the claim deadline (unchanged)", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    let clock = 0;
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+      env: {},
+      isTty: false,
+    });
+    // Legacy path: it runs to the deadline and reports expiry (exit 1), never
+    // the resumable pending exit, and clears the pending file.
+    expect(exit).toBe(1);
+    expect(messages.errors.join("\n")).toContain("expired");
+    expect(messages.logs.join("\n")).not.toContain("Still waiting on approval");
+    await expect(stat(pendingPath(home, root))).rejects.toThrow();
+  });
+
+  it("(d) --wait 0 does exactly one poll then exits resumably if still pending", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    const sleeps: number[] = [];
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "0"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // Exactly one token poll, and no pacing sleep before that single poll.
+    expect(tokenPolls(requests)).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+    // Still resumable: claim on disk, no key, resumable line printed.
+    await expect(stat(pendingPath(home, root))).resolves.toBeTruthy();
+    await expect(readFile(join(root, ".env.local"), "utf8")).rejects.toThrow();
+    expect(messages.logs.join("\n")).toContain("Still waiting on approval — code BCDF-GHJK");
+  });
+
+  it("(f) a terminal token error (invalid_grant) deletes the pending claim — no resume trap", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    await writePending(home, root);
+    // Server says the claim is consumed/denied: single-use, never succeeds again.
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "invalid_grant" } },
+    ]);
+    const messages = output();
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "10"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async () => {},
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(1);
+    // The dead claim is gone: the next `vendo login` opens a fresh one.
+    await expect(stat(pendingPath(home, root))).rejects.toThrow();
+  });
+
+  it("(e) caps the pacing sleep to the remaining budget so a sub-interval --wait honors its bound", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    let clock = 0;
+    const sleeps: number[] = [];
+    // Always pending: the loop only ends by the budget, never by approval.
+    const { fetchImpl } = scriptedFetch([
+      { status: 400, body: { error: "authorization_pending" } },
+    ]);
+    const messages = output();
+    // --wait 1 against the default 5s interval: the sleep must be capped to
+    // the 1s remaining budget, not the full 5s interval.
+    const exit = await runDeviceLogin(["--api-url", "https://console.test", "--wait", "1"], {
+      output: messages.sink,
+      fetchImpl,
+      root,
+      home,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+      now: () => clock,
+      env: {},
+      isTty: false,
+    });
+    expect(exit).toBe(0);
+    // Every pacing sleep stayed within the remaining budget — never a full 5s.
+    expect(Math.max(...sleeps, 0)).toBeLessThanOrEqual(1000);
+    // Total slept wall-clock did not overshoot the 1s budget.
+    expect(sleeps.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(1000);
+    expect(messages.logs.join("\n")).toContain("Still waiting on approval — code BCDF-GHJK");
   });
 });
 

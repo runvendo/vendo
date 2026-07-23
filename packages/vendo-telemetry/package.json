@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/telemetry",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "Anonymous, opt-out telemetry for Vendo tooling.",
   "keywords": [
     "ai",
@@ -27,6 +27,10 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "workerd": "./dist/edge.js",
+      "worker": "./dist/edge.js",
+      "edge-light": "./dist/edge.js",
+      "browser": "./dist/edge.js",
       "default": "./dist/index.js"
     }
   },

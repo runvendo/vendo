@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/store",
-  "version": "0.4.0",
+  "version": "0.4.5",
   "description": "Persistence under everything: core's StoreAdapter on Postgres — PGlite zero-config default, real Postgres in prod, one schema.",
   "keywords": [
     "ai",
@@ -55,5 +55,21 @@
     "@types/pg": "^8.11.10",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
+  },
+  "imports": {
+    "#store/db": {
+      "workerd": "./dist/db-edge.js",
+      "worker": "./dist/db-edge.js",
+      "edge-light": "./dist/db-edge.js",
+      "browser": "./dist/db-edge.js",
+      "default": "./dist/db.js"
+    },
+    "#store/crypto": {
+      "workerd": "./dist/crypto-edge.js",
+      "worker": "./dist/crypto-edge.js",
+      "edge-light": "./dist/crypto-edge.js",
+      "browser": "./dist/crypto-edge.js",
+      "default": "./dist/crypto.js"
+    }
   }
 }

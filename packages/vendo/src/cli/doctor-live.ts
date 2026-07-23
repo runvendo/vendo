@@ -232,7 +232,17 @@ export async function startDevServerForProbe(options: StartDevServerOptions): Pr
     log.push(`spawn error: ${error.message}\n`);
     failSpawn();
   });
-  const stop = (): void => { child.kill("SIGTERM"); };
+  // Destroy the piped streams too: `npm run dev` grandchildren (the actual
+  // next/vite process) can survive the SIGTERM and keep the inherited pipe
+  // fds open, and the live 'data' listeners would then hold doctor's event
+  // loop — the process would hang after printing its verdict instead of
+  // exiting with it (exit-code honesty, 0.4.1 E2E cert defect 13 family).
+  const stop = (): void => {
+    child.kill("SIGTERM");
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    child.unref?.(); // injected test doubles may not implement it
+  };
   const up = await Promise.race([
     waitForStatus(options.statusUrl, fetchImpl, options.timeoutMs ?? 120_000),
     spawnFailed,

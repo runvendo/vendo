@@ -1,5 +1,5 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
-import { VendoError, type VendoErrorCode } from "@vendoai/core";
+import { defaultFetch, VendoError, type VendoErrorCode } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 import {
   CLOUD_BOX_PORT,
@@ -192,7 +192,7 @@ const isGone = (error: unknown): boolean =>
 export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
   const base = (options.baseUrl ?? "https://console.vendo.run").replace(/\/$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const fetchImpl = options.fetch ?? defaultFetch;
 
   const send = async (path: string, init: RequestInit = {}): Promise<Response> => {
     const response = await fetchImpl(`${base}${CLOUD_SANDBOX_PATH}${path}`, {

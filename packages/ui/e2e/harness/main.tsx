@@ -285,6 +285,35 @@ const unknownViewThread: Thread = {
   }],
 };
 
+/** 0.4.4 cert defect B — a turn whose app build terminally FAILED: the loop
+ *  ended right after the failed create, and the data-vendo-build-failed part
+ *  beside it carries the classified reason into the transcript. */
+const buildFailedThread: Thread = {
+  id: "thr_build_failed",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    {
+      id: "msg_build_failed_user",
+      role: "user",
+      parts: [{ type: "text", text: "build me a small app that tracks invoice statuses" }],
+    },
+    {
+      id: "msg_build_failed_turn",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "Building that for you now." },
+        {
+          type: "data-vendo-build-failed",
+          id: "vendo-build-failed:call_1",
+          data: { toolCallId: "call_1", reason: "app build failed: generation failed" },
+        },
+      ],
+    },
+  ],
+};
+
 function threadClient(client: VendoClient, thread: Thread): VendoClient {
   // A thread that get() serves must also appear in list(): useVendoThread only
   // adopts a supplied threadId after confirming it exists in list() (the ENG-211
@@ -1031,6 +1060,17 @@ function LandingScenario() {
   );
 }
 
+/** 0.4.4 cert defect B — the restored failing turn: the thread must show the
+ *  failed-build error beat with the classified reason, never a bare turn that
+ *  ends with no trace of why nothing appeared. */
+function BuildFailedScenario() {
+  return (
+    <VendoProvider client={threadClient(baseClient, buildFailedThread)} components={components}>
+      <VendoThread threadId="thr_build_failed" />
+    </VendoProvider>
+  );
+}
+
 /** Containment (c): an unregistered formatVersion must render a contained notice
  *  both when handed straight to the renderer AND when it arrives in a thread. */
 function UnknownFormatScenario() {
@@ -1670,6 +1710,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-v2-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeV2ShapeScenario /> };
     case "/tree-v2-edit": return { title: "vendo-genui/v2 — one-dialect edit (wave 4)", content: <TreeV2EditScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
+    case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };
     case "/slot-empty": return { title: "Inline slot — empty CTA (Maple)", theme: mapleTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };
     case "/slot-empty-dark": return { title: "Inline slot — empty CTA (dark)", theme: darkTheme, content: <><VendoSlot id="hero" /><VendoPalette /><VendoOverlay launcher="none" /></> };

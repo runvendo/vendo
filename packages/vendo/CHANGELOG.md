@@ -1,5 +1,210 @@
 # @vendoai/vendo
 
+## 0.4.5
+
+### Patch Changes
+
+- 87eadba: fix(venue): e2b is only selectable when actually usable — 0.4.4 regression
+
+  `e2bInstalled()` treated a runtime without `import.meta.resolve` as "the
+  bundler inlined the SDK, so it must be available". Inside Turbopack/webpack
+  server bundles that fallback always fired, so a stray `E2B_API_KEY` (for
+  example inherited from the shell) flipped the venue ladder to an e2b the
+  runtime could never load, outranking the Vendo Cloud sandbox and killing
+  every server-app build — 0.4.3 printed `execution venue: cloud`, 0.4.4
+  printed `e2b` on the same host. The probe now tests usability instead of
+  importability: it asks Node's own resolver (`require.resolve` via
+  `process.getBuiltinModule`, which works inside server bundles), falls back to
+  a real `import.meta.resolve`, and reads an unverifiable runtime as NOT
+  installed — the SDK is never bundler-inlined (the mutable-specifier import
+  from the edge-portability work guarantees it), so the runtime resolver is the
+  only truth. With `VENDO_API_KEY` set and no usable e2b, the venue is the
+  Cloud sandbox again.
+
+  `vendo doctor` also stops false-blessing the venue: `execution venue: e2b`
+  now passes only when `E2B_API_KEY` is set and the `e2b` package resolves from
+  the project; otherwise it fails with E-LIVE-007 and a concrete fix line.
+
+- Updated dependencies [31f899e]
+- Updated dependencies [87eadba]
+  - @vendoai/core@0.4.5
+  - @vendoai/agent@0.4.5
+  - @vendoai/apps@0.4.5
+  - @vendoai/ui@0.4.5
+  - @vendoai/actions@0.4.5
+  - @vendoai/automations@0.4.5
+  - @vendoai/guard@0.4.5
+  - @vendoai/mcp@0.4.5
+  - @vendoai/store@0.4.5
+
+## 0.4.4
+
+### Patch Changes
+
+- 52c72c2: Doctor judges unknown-framework hosts (Cloudflare Workers, Bun, Hono, ...)
+  by their actual wiring instead of Next.js file layout — no more permanent
+  E-WIRE-003/004 false positives on custom runtimes (new codes E-WIRE-007/008).
+  The tool surface is now graded statically: all extracted tools disabled or
+  excluded fails doctor (E-TOOLS-001), an empty surface warns (E-TOOLS-002),
+  and the actions registry warns at runtime when the agent composes with zero
+  live host tools — the silently-useless-agent failure mode is no longer
+  silent anywhere.
+- 835d17a: Edge-runtime portability: the server entry now bundles and boots on
+  Web-standard runtimes (Cloudflare Workers first). Fetch defaults are
+  invocation-safe, the optional e2b SDK no longer breaks esbuild/Wrangler
+  builds, Node-only legs (local store engines, dev model ladder, telemetry
+  disk config, actions sync tooling) sit behind worker/edge export
+  conditions with honest guidance, and createVendo performs no I/O, timers,
+  or random generation at construction — module-scope wiring works. A CI
+  portability gate (bundle + real workerd boot) keeps it that way.
+
+  Note for hosts that reach into composed blocks directly: the BYO tool seam
+  (`vendo.guardedTools`, and the ai-sdk/mastra packs built on it) arms schema
+  readiness on first execute. Raw `vendo.store`/`vendo.automations` reach-ins
+  should `await vendo.store.ensureSchema()` first — the previous eager kick
+  only ever gave that pattern a racy head start.
+
+- 70b59db: Extraction now grades every tool's audience (end-user / operator / internal)
+  by reading the handler's own auth checks, and excludes non-end-user tools
+  from the embedded agent by default (recorded as `audience` in
+  .vendo/overrides.json; human decisions always win). Applying a surface that
+  leaves the agent with zero live tools warns loudly instead of shipping a
+  silently useless agent. Field origin: an infra product's extraction proposed
+  operator/reconciliation endpoints; stripping them by hand left an empty
+  toolkit and an agent that couldn't act.
+- 0c1fca2: `vendo init --framework custom`: a runtime-neutral wiring for any
+  Web-standard host (Cloudflare Workers, Bun, Deno, Hono). The generated
+  vendo/server.ts is a lazy Request→Response module with the environment
+  passed per call; with a Vendo Cloud key it wires the Cloud adapters
+  explicitly (model = stock Anthropic provider at the console gateway).
+  Unknown-framework detection lands here instead of guessing the Next
+  layout into hosts that aren't Next.
+- Updated dependencies [52c72c2]
+- Updated dependencies [835d17a]
+- Updated dependencies [70b59db]
+- Updated dependencies [89e3d2b]
+  - @vendoai/actions@0.4.4
+  - @vendoai/core@0.4.4
+  - @vendoai/apps@0.4.4
+  - @vendoai/automations@0.4.4
+  - @vendoai/store@0.4.4
+  - @vendoai/telemetry@0.3.2
+  - @vendoai/agent@0.4.4
+  - @vendoai/ui@0.4.4
+  - @vendoai/guard@0.4.4
+  - @vendoai/mcp@0.4.4
+
+## 0.4.3
+
+### Patch Changes
+
+- 7355eed: Install-funnel fixes from the 0.4.x E2E certification (Wave 2):
+
+  - **Visible surface (B3).** `vendo init` now generates a `"use client"` mount
+    wrapper (`vendo/vendo-root.tsx`) that applies the registry + theme and
+    mounts `<VendoOverlay />`, and wires it into the Next.js layout with one
+    bounded, idempotent edit (skipped when a Vendo mount already exists;
+    degraded to printed paste lines when the layout has no single unambiguous
+    `{children}`). The wrapper is the RSC-safe home for the registry import —
+    the previously printed registry-in-server-layout paste crashed every page.
+    `VendoOverlay` is re-exported from `@vendoai/vendo/react` so the scaffold
+    resolves under pnpm strict linking.
+  - **Principal alignment (B4).** The anonymous scaffold's wire principal now
+    resolves the same demo subject the existing-agents quickstart chat routes
+    set (`demo-user`) instead of `null`, so apps and approvals created through
+    a BYO agent loop are visible to the embeds. `GET /apps/:id/open?pending=1`
+    now distinguishes a record that exists under another principal (terminal
+    `{kind:"failed"}` with the mismatch diagnosis) from a still-building app
+    (`{kind:"pending"}`) — no more infinite skeleton.
+  - **Doctor honesty.** New E-WIRE-006 check fails when no visible surface is
+    mounted anywhere; new E-LIVE-006 render gate GETs the app root and fails on
+    a 5xx; new E-DEP-002 fails when the running wire's `/status` version
+    disagrees with the CLI's (split-brain installs where a direct
+    `@vendoai/vendo` pin beats the `vendoai` umbrella); E-WIRE-004 now accepts
+    a `<VendoRoot>` mount in ANY app layout (not just the root one); the
+    unreachable-`/status` copy names the wire base `--url` expects; the probe
+    dev-server's pipes are destroyed on stop so doctor's exit code always
+    lands.
+  - **Login write-preflight (M4).** `vendo login` proves `.env.local` is
+    writable before opening (or resuming) a claim — a sandboxed run that cannot
+    write the file fails up front instead of consuming the single-use claim and
+    losing the minted key — and a redemption-time write failure now reads as a
+    distinct write error (revoke + retry) instead of the timeout copy.
+
+- a48b1b7: Wave 2 runtime fixes from the 0.4.x E2E certification campaign:
+
+  - Mastra shim: open-schema guarded tools (extracted routes whose body shape
+    is untyped) no longer execute with `{}` when the user dictated args.
+    Mastra's provider schema-compat layers hard-close every object schema for
+    strict-mode providers, so an open input reached the model as "takes no
+    arguments"; the shim now bridges open inputs through one declared `args`
+    property (JSON object or JSON-encoded string) and unwraps it before the
+    guard, so approvals park — and replay — with the real arguments.
+  - Failed app builds now carry their reason everywhere: `create()` re-throws
+    with the classified reason in the message (the tool outcome the calling
+    agent reads), logs the un-canned issue list to the operator terminal
+    (previously a silent failure), and the app embed shows a retry hint for
+    retryable failures. The generation engine now captures streamText's
+    swallowed provider errors, so quota/timeout/no-key failures classify
+    correctly instead of collapsing to "generation failed".
+  - The dev model's no-usable-credential lines (missing provider package, no
+    key at all) surface verbatim in the failed-build reason — the in-surface
+    error now carries the actionable `npm install @ai-sdk/...` / `vendo login`
+    instruction instead of `model could not produce a valid app`.
+  - `@vendoai/ui` DonutChart no longer crashes on `undefined`/non-array data
+    inside generated apps; it renders the designed empty state like the other
+    Kit charts.
+
+- Updated dependencies [a48b1b7]
+  - @vendoai/apps@0.4.3
+  - @vendoai/ui@0.4.3
+  - @vendoai/automations@0.4.3
+  - @vendoai/core@0.4.3
+  - @vendoai/store@0.4.3
+  - @vendoai/agent@0.4.3
+  - @vendoai/actions@0.4.3
+  - @vendoai/guard@0.4.3
+  - @vendoai/mcp@0.4.3
+
+## 0.4.2
+
+### Patch Changes
+
+- 8eaceb5: Login and first-turn fixes from the 0.4.1 E2E certification campaign:
+  `vendo login` pending claims are now scoped per project directory —
+  concurrent logins in different repos can no longer clobber or resume each
+  other's ceremonies (the machine-global file could deliver one project's key
+  to another). A matching pre-0.4.2 claim file is migrated automatically.
+  `vendo init` now installs the model provider its resolved credential loads
+  at runtime (`ai@^6` plus `@ai-sdk/anthropic@^3` / `@ai-sdk/openai@^3` /
+  `@ai-sdk/google@^3`), so the first turn no longer 500s on a fresh install
+  until the provider is added by hand.
+  - @vendoai/core@0.4.2
+  - @vendoai/store@0.4.2
+  - @vendoai/agent@0.4.2
+  - @vendoai/actions@0.4.2
+  - @vendoai/guard@0.4.2
+  - @vendoai/apps@0.4.2
+  - @vendoai/automations@0.4.2
+  - @vendoai/ui@0.4.2
+  - @vendoai/mcp@0.4.2
+
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [b7a860f]
+  - @vendoai/core@0.4.1
+  - @vendoai/telemetry@0.3.1
+  - @vendoai/actions@0.4.1
+  - @vendoai/agent@0.4.1
+  - @vendoai/apps@0.4.1
+  - @vendoai/automations@0.4.1
+  - @vendoai/guard@0.4.1
+  - @vendoai/mcp@0.4.1
+  - @vendoai/store@0.4.1
+  - @vendoai/ui@0.4.1
+
 ## 0.4.0
 
 ### Minor Changes

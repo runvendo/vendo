@@ -19,9 +19,13 @@ export const DOCTOR_ERROR_CODES = {
   "E-WIRE-003": "the Next.js catch-all handler app/api/vendo/[...vendo]/route.ts is missing",
   "E-WIRE-004": "the Next.js root layout is not wrapped in <VendoRoot>",
   "E-WIRE-005": "the @vendoai/vendo (or vendoai alias) dependency is not declared",
+  "E-WIRE-006": "no visible agent surface is mounted (<VendoRoot> alone renders nothing)",
+  "E-WIRE-007": "no createVendo server wiring found in an unknown-framework host",
+  "E-WIRE-008": "no <VendoRoot> found in an unknown-framework host's source",
   "E-CFG-001": "a required .vendo/ config file is missing",
   "E-CFG-002": ".vendo/data/.gitignore is missing",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
+  "E-DEP-002": "the running wire serves a different @vendoai/vendo version than this CLI (split-brain install)",
   "E-UI-001": "an ejected surface predates the installed @vendoai/ui",
   "E-DEV-001": "the dev server could not be started for the probe",
   "E-LIVE-001": "/status returned an invalid composition response",
@@ -29,6 +33,8 @@ export const DOCTOR_ERROR_CODES = {
   "E-LIVE-003": "/status returned an invalid execution venue",
   "E-LIVE-004": "no execution venue is configured",
   "E-LIVE-005": "the host /status does not report an execution venue (version skew)",
+  "E-LIVE-006": "the app's root page returns a server error while the wire answers",
+  "E-LIVE-007": "the selected e2b execution venue is unusable (E2B_API_KEY or the e2b package is missing)",
   "E-AUTH-001": "present credentials did not reach the host API",
   "E-AUTH-002": "the present credential probe is unreachable",
   "E-AUTH-003": "the present credential probe cannot run while the dev server is down",
@@ -48,6 +54,8 @@ export const DOCTOR_ERROR_CODES = {
   "E-TURN-001": "the live model turn did not answer",
   "E-TURN-002": "the live model turn cannot run while the dev server is down",
   "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
+  "E-TOOLS-001": "every extracted host tool is disabled or excluded (zero live host tools)",
+  "E-TOOLS-002": "the extracted tool surface is empty (zero host tools)",
 } as const;
 
 export type DoctorErrorCode = keyof typeof DOCTOR_ERROR_CODES;

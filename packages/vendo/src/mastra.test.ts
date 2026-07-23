@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Agent } from "@mastra/core/agent";
 import { RequestContext } from "@mastra/core/request-context";
 import { Tool, noopObserve } from "@mastra/core/tools";
 import type { ExtractedTool } from "@vendoai/actions";
@@ -165,5 +166,111 @@ describe("@vendoai/vendo/mastra — vendoMastraTools", () => {
       tools["vendo_host_list"]!.execute!({}, contextFor(undefined)),
     ).rejects.toThrowError(new RegExp(VENDO_PRINCIPAL_KEY));
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// 0.4.x E2E (report-mastra defect 5) — Mastra's provider schema-compat layers
+// hard-close every object schema for strict-mode providers (the OpenAI layer
+// sets additionalProperties:false on all of them), so an OPEN extracted tool
+// input ({type:"object", properties:{}, additionalProperties:true}) reached
+// the model as "takes no arguments" and every call — including one whose args
+// the user dictated verbatim — executed (and parked, and replayed after
+// approval) with {}. The shim now bridges open inputs through one declared
+// JSON-string `args` property and unwraps it before the guard.
+describe("@vendoai/vendo/mastra — open-schema args bridge", () => {
+  const dictated = { id: "chat_1", messages: [{ role: "user", content: "hello" }] };
+
+  it("unwraps the advertised JSON-string form into the parked call's args", async () => {
+    const { vendo, fetchSpy } = await compose();
+    const tools = await vendoMastraTools(vendo);
+    const output = await tools["vendo_host_send"]!.execute!(
+      { args: JSON.stringify(dictated) },
+      contextFor("user_mastra"),
+    );
+    vendoApprovalRefSchema.parse(output);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const pending = await vendo.guard.approvals.pending(principal);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.call.args).toEqual(dictated);
+  });
+
+  it("accepts a plain-object args (a model that skipped the string encoding) and a raw payload (a provider that ignored the bridge)", async () => {
+    const { vendo } = await compose();
+    const tools = await vendoMastraTools(vendo);
+    await tools["vendo_host_send"]!.execute!({ args: dictated }, contextFor("user_a"));
+    await tools["vendo_host_send"]!.execute!(dictated, contextFor("user_b"));
+    const [a] = await vendo.guard.approvals.pending({ kind: "user", subject: "user_a" });
+    const [b] = await vendo.guard.approvals.pending({ kind: "user", subject: "user_b" });
+    expect(a!.call.args).toEqual(dictated);
+    expect(b!.call.args).toEqual(dictated);
+  });
+
+  it("treats a missing/empty args as {} and fails closed on unparseable JSON", async () => {
+    const { vendo, fetchSpy } = await compose();
+    const tools = await vendoMastraTools(vendo);
+    const output = await tools["vendo_host_list"]!.execute!({ args: "" }, contextFor("user_mastra"));
+    expect(output).toEqual({ ok: true });
+    const [, options] = fetchSpy.mock.calls[0] as [unknown, { method?: string } | undefined];
+    expect(options?.method ?? "GET").toBe("GET");
+    await expect(
+      tools["vendo_host_send"]!.execute!({ args: "{not json" }, contextFor("user_mastra")),
+    ).rejects.toThrowError(VendoError);
+  });
+
+  it("a REAL Mastra agent turn on an OpenAI-identified model advertises the bridge and parks the dictated args intact", async () => {
+    const { vendo } = await compose();
+    // A deterministic v2-spec model wearing OpenAI identity, so Mastra applies
+    // its OpenAI schema-compat layer — the exact transform that flattened open
+    // schemas to "no arguments" in the live lane.
+    let sawToolSchema: Record<string, unknown> | undefined;
+    let calls = 0;
+    const model = {
+      specificationVersion: "v2",
+      provider: "openai.chat",
+      modelId: "gpt-4.1-mini",
+      supportedUrls: {},
+      async doGenerate(options: { tools?: Array<{ name: string; inputSchema?: Record<string, unknown> }> }) {
+        sawToolSchema ??= options.tools?.find((tool) => tool.name === "vendo_host_send")?.inputSchema;
+        calls += 1;
+        if (calls > 1) {
+          return {
+            content: [{ type: "text", text: "done" }],
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        }
+        return {
+          content: [{
+            type: "tool-call",
+            toolCallId: `call_${calls}`,
+            toolName: "vendo_host_send",
+            input: JSON.stringify({ args: JSON.stringify(dictated) }),
+          }],
+          finishReason: "tool-calls",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+      async doStream() {
+        throw new Error("doStream not scripted");
+      },
+    } as unknown as LanguageModel;
+    const agent = new Agent({
+      id: "bridge-agent",
+      name: "Bridge Agent",
+      instructions: "Call vendo_host_send with the dictated args.",
+      model,
+      tools: async () => vendoMastraTools(vendo),
+    });
+    const requestContext = new RequestContext();
+    requestContext.set(VENDO_PRINCIPAL_KEY, principal);
+    await agent.generate("send it", { requestContext });
+    // The model-facing schema must DECLARE the bridge property — an open
+    // object here would have been closed to additionalProperties:false with
+    // zero properties (the defect).
+    const properties = sawToolSchema?.properties as Record<string, unknown> | undefined;
+    expect(properties?.args).toBeDefined();
+    const pending = await vendo.guard.approvals.pending(principal);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.call.args).toEqual(dictated);
   });
 });

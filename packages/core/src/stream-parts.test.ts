@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   toVendoWirePart,
   vendoApprovalPartSchema,
+  vendoBuildFailedPartSchema,
   vendoStepLimitPartSchema,
   vendoConnectPartSchema,
   vendoViewPartSchema,
@@ -150,6 +151,30 @@ describe("vendoStepLimitPartSchema", () => {
       type: "data-vendo-step-limit",
       limit: 1.5,
       message: "x",
+    }).success).toBe(false);
+  });
+});
+
+/** 0.4.4 cert defect B (additive): visible terminal build failure. */
+describe("vendoBuildFailedPartSchema", () => {
+  it("accepts a failed-build banner with the call id and a renderable reason", () => {
+    expect(vendoBuildFailedPartSchema.safeParse({
+      type: "data-vendo-build-failed",
+      toolCallId: "call_1",
+      reason: "app build failed: generation failed",
+    }).success).toBe(true);
+  });
+
+  it("rejects a wrong type literal or an empty reason", () => {
+    expect(vendoBuildFailedPartSchema.safeParse({
+      type: "data-vendo-step-limit",
+      toolCallId: "call_1",
+      reason: "x",
+    }).success).toBe(false);
+    expect(vendoBuildFailedPartSchema.safeParse({
+      type: "data-vendo-build-failed",
+      toolCallId: "call_1",
+      reason: "",
     }).success).toBe(false);
   });
 });

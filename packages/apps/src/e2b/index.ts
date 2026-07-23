@@ -1,4 +1,4 @@
-import { VendoError } from "@vendoai/core";
+import { safeErrorMessage, VendoError } from "@vendoai/core";
 import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -116,17 +116,80 @@ const networkOptions = (allowedDomains: string[] | undefined, allTraffic: string
     ? { allowInternetAccess: true as const }
     : { network: { allowOut: [...allowedDomains], denyOut: [allTraffic] } };
 
-/** True when the optional `e2b` SDK resolves from this package, so callers can
-    avoid wiring an adapter whose first create() would die on a missing module.
-    Runtimes without `import.meta.resolve` (bundlers inline the dependency) are
-    treated as available. */
-export const e2bInstalled = (): boolean => {
-  if (typeof import.meta.resolve !== "function") return true;
+/** True when the optional `e2b` SDK is actually loadable from this runtime,
+    so callers can avoid wiring an adapter whose first create() would die on a
+    missing module. Because loadE2b routes through a mutable specifier, NO
+    bundler ever inlines the SDK — the runtime's own module resolution is the
+    only truth — so the probe must test USABILITY, not importability: ask
+    Node's require.resolve first (authoritative even inside a server bundle,
+    where the emulated `import.meta` carries no `resolve` — Turbopack's shim
+    made the old "no resolve ⇒ bundler inlined it ⇒ available" fallback claim
+    e2b on hosts without the SDK, flipping the venue ladder away from the
+    Cloud sandbox: 0.4.4 defect C), then real `import.meta.resolve` (pure-ESM
+    Node without process.getBuiltinModule), and read an unverifiable runtime
+    as NOT installed — a dynamic import of the bare specifier would fail there
+    anyway. The specifier parameter exists for tests. */
+export const e2bInstalled = (specifier: string = E2B_SPECIFIER): boolean => {
+  const nodeResolves = nodeResolveProbe(specifier);
+  if (nodeResolves !== undefined) return nodeResolves;
+  if (typeof import.meta.resolve === "function") {
+    try {
+      import.meta.resolve(specifier);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
+
+/** require.resolve probe via process.getBuiltinModule (Node ≥20.16) — no
+    static node:module import, so Worker/edge bundles of this module stay
+    clean. Returns undefined when this runtime has no Node resolver to ask. */
+const nodeResolveProbe = (specifier: string): boolean | undefined => {
+  const proc = (globalThis as {
+    process?: { getBuiltinModule?: (id: string) => unknown; cwd?: () => string };
+  }).process;
+  if (typeof proc?.getBuiltinModule !== "function") return undefined;
+  let createRequire: ((from: string) => { resolve: (id: string) => string }) | undefined;
   try {
-    import.meta.resolve("e2b");
+    createRequire = (proc.getBuiltinModule("node:module") as { createRequire?: typeof createRequire } | undefined)?.createRequire;
+  } catch {
+    return undefined;
+  }
+  if (typeof createRequire !== "function") return undefined;
+  // Resolve from where the runtime import itself resolves: this module's URL
+  // (bundlers rewrite import.meta.url to the original or bundled file path —
+  // both walk up to the host's node_modules), falling back to the process cwd.
+  const base = typeof import.meta.url === "string" && import.meta.url.startsWith("file:")
+    ? import.meta.url
+    : `${proc.cwd?.() ?? ""}/__vendo-e2b-probe__.js`;
+  try {
+    createRequire(base).resolve(specifier);
     return true;
   } catch {
     return false;
+  }
+};
+
+/** Routed through a mutable binding so NO bundler statically resolves the
+    optional SDK: the webpack/turbopack ignore comments below are webpack
+    dialect, and esbuild (Wrangler, Bun) ignores them and hard-fails the build
+    on a literal `import("e2b")` when the SDK isn't installed (field case:
+    vendo-on-Cloudflare-Workers). A `let` defeats esbuild constant folding. */
+let E2B_SPECIFIER = "e2b";
+
+type E2BModule = typeof import("e2b");
+
+const loadE2b = async (): Promise<E2BModule> => {
+  try {
+    return await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ E2B_SPECIFIER) as E2BModule;
+  } catch (error) {
+    throw new VendoError(
+      "sandbox-unavailable",
+      "the optional `e2b` SDK is not installed in this deployment; install `e2b` (and set E2B_API_KEY) to use the E2B sandbox adapter, or leave the sandbox seam to Vendo Cloud / a custom adapter",
+      { loadError: safeErrorMessage(error) },
+    );
   }
 };
 
@@ -266,7 +329,7 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
     async create(spec: E2BCreateSpec) {
       // Optional SDK: keep it a runtime import so hosts without e2b installed
       // don't fail Next's (webpack/Turbopack) bundling of the vendo route.
-      const { ALL_TRAFFIC, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
+      const { ALL_TRAFFIC, Sandbox } = await loadE2b();
       const allowedDomains = spec.allowedDomains;
       const createOptions = {
         ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
@@ -284,7 +347,7 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
       // Lane E — a wake enforces the CURRENT egress policy when the caller
       // passes one; the snapshot-time allowlist applies only to a bare resume.
       const allowedDomains = policy === undefined ? state.allowedDomains : policy.allowedDomains;
-      const { ALL_TRAFFIC, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
+      const { ALL_TRAFFIC, Sandbox } = await loadE2b();
       return wrap(await Sandbox.create(state.snapshotId, {
         ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
         timeoutMs,
@@ -293,7 +356,7 @@ export const e2bSandbox = (options: E2BSandboxOptions = {}): SandboxAdapter => {
     },
     async destroy(snapshotRef) {
       const state = decodeSnapshotRef(snapshotRef);
-      const { NotFoundError, Sandbox } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "e2b");
+      const { NotFoundError, Sandbox } = await loadE2b();
       const apiOptions = options.apiKey === undefined ? {} : { apiKey: options.apiKey };
       // Best-effort reap of the sandbox the sleep flow left paused behind this
       // ref (recorded by v2 refs; absent from retired v1 refs). It is usually

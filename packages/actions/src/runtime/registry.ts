@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { readOptionalVendoJson } from "#actions/host-files";
 import {
   VendoError,
   descriptorHash,
@@ -36,6 +35,7 @@ import {
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
 import { searchToolDescriptors, tokenize, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
+import { defaultFetch } from "@vendoai/core";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
@@ -165,34 +165,6 @@ function mergeOverride<T extends ToolDescriptor>(descriptor: T, override?: ToolO
   };
 }
 
-async function readOptionalJson<T>(path: string, parse: (value: unknown) => T): Promise<T | undefined> {
-  let source: string;
-  try {
-    source = await readFile(path, "utf8");
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw new VendoError("validation", `Could not read ${path}`, {
-      cause: cause instanceof Error ? cause.message : String(cause),
-    });
-  }
-
-  let value: unknown;
-  try {
-    value = JSON.parse(source);
-  } catch (cause) {
-    throw new VendoError("validation", `Malformed JSON in ${path}`, {
-      cause: cause instanceof Error ? cause.message : String(cause),
-    });
-  }
-
-  try {
-    return parse(value);
-  } catch (cause) {
-    throw new VendoError("validation", `Invalid Vendo actions file ${path}`, {
-      cause: cause instanceof Error ? cause.message : String(cause),
-    });
-  }
-}
 
 function appendQuery(url: URL, key: string, value: unknown): void {
   const values = Array.isArray(value) ? value : [value];
@@ -655,7 +627,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
 
   const outcome = await (async (): Promise<ToolOutcome> => {
     try {
-      const request = config.fetch ?? globalThis.fetch;
+      const request = config.fetch ?? defaultFetch;
       const response = await request(url, {
         method,
         headers,
@@ -713,6 +685,24 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     }
   }
 
+  // The product's core promise, warned at the seam that knows: an agent with
+  // zero live host tools serves users it cannot help (field case: an
+  // extraction stripped to tools: [] shipped a silently useless agent).
+  let zeroLiveWarned = false;
+  const warnZeroLiveTools = (host: LoadedHost): LoadedHost => {
+    if (zeroLiveWarned) return host;
+    const live = host.tools.filter((tool) => !(host.overrides.tools[tool.name]?.disabled ?? tool.disabled ?? false));
+    if (live.length === 0) {
+      zeroLiveWarned = true;
+      console.warn(
+        "[vendo] zero live host tools — every extracted tool is absent, disabled, or excluded, so the agent cannot "
+        + "act on this product's API. Review .vendo/tools.json and the audience exclusions in .vendo/overrides.json, "
+        + "or re-run `vendo init` extraction. (Connector-only deployments can ignore this.)",
+      );
+    }
+    return host;
+  };
+
   function loadHost(): Promise<LoadedHost> {
     if (!hostPromise) hostPromise = (async () => {
       const emptyOverrides: OverridesFile = { format: "vendo/overrides@1", tools: {} };
@@ -727,12 +717,10 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
           ...(configuredCapabilities === undefined ? {} : { capabilities: configuredCapabilities }),
         };
       }
-      // `dir` may be the host root (we look inside its .vendo/) or the .vendo directory itself.
-      const vendoDir = basename(resolve(config.dir)) === ".vendo" ? config.dir : join(config.dir, ".vendo");
       const [toolsFile, overrides, capabilitiesFile] = await Promise.all([
-        readOptionalJson(join(vendoDir, "tools.json"), (value) => toolsFileSchema.parse(value)),
-        readOptionalJson(join(vendoDir, "overrides.json"), (value) => overridesFileSchema.parse(value)),
-        readOptionalJson(join(vendoDir, "capabilities.json"), (value) => capabilitiesFileSchema.parse(value)),
+        readOptionalVendoJson(config.dir, "tools.json", (value) => toolsFileSchema.parse(value)),
+        readOptionalVendoJson(config.dir, "overrides.json", (value) => overridesFileSchema.parse(value)),
+        readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value)),
       ]);
       const capabilities = configuredCapabilities ?? capabilitiesFile;
       return {
@@ -741,7 +729,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         ...(capabilities === undefined ? {} : { capabilities }),
       };
     })();
-    return hostPromise;
+    return hostPromise.then(warnZeroLiveTools);
   }
 
   function cachedDescriptors(source: Connector | ToolRegistry): Promise<ToolDescriptor[]> {

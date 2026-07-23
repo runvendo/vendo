@@ -22,7 +22,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { vendoSync } from "@vendoai/actions";
+import { vendoSync } from "@vendoai/actions/sync";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ADA,
