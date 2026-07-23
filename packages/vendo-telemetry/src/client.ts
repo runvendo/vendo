@@ -91,6 +91,17 @@ export function createTelemetry(deps: TelemetryDeps): Telemetry {
   const cloudMarkers = cloudActive
     ? { cloud: true, cloudKeyHash: createHash("sha256").update(cloudKey as string).digest("hex") }
     : {};
+  // Internal lane: VENDO_INTERNAL=1 tags events instead of dropping them, so
+  // internal harnesses (cert campaigns, eval sandboxes) that intentionally
+  // exercise the real telemetry path stay verifiable end-to-end while
+  // analytics filters them out on `internal = true`. Same truthy values as
+  // consent.ts. Deliberately NOT a consent input — CI / DO_NOT_TRACK /
+  // VENDO_TELEMETRY_DISABLED semantics are unchanged, and this marker is
+  // producer-set like the cloud markers so callers can never spoof it.
+  const internalMarker =
+    deps.env.VENDO_INTERNAL === "1" || deps.env.VENDO_INTERNAL === "true"
+      ? { internal: true }
+      : {};
   // Filesystem-backed props are computed once per client, never per event.
   // Guarded so the never-throw contract holds at the API surface even if
   // cwd resolution or the filesystem probes fail in an unexpected way.
@@ -111,13 +122,15 @@ export function createTelemetry(deps: TelemetryDeps): Telemetry {
         });
         if (!consent.allowed) return;
 
-        // Producer-set cloud markers spread last so a caller-passed `cloud`
-        // or `cloudKeyHash` (already filtered out above) can never win.
+        // Producer-set markers spread last so a caller-passed `cloud`,
+        // `cloudKeyHash`, or `internal` (already filtered out above) can
+        // never win.
         const properties = {
           ...baseProps(deps.version),
           ...project,
           ...filterToAllowlist(event, props, cloudActive),
           ...cloudMarkers,
+          ...internalMarker,
         };
         const body = JSON.stringify({
           api_key: deps.posthogKey,

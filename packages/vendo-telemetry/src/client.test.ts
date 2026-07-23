@@ -255,3 +255,53 @@ describe("cloud lane (VENDO_API_KEY)", () => {
     expect("servedApps" in props).toBe(false);
   });
 });
+
+describe("internal lane (VENDO_INTERNAL)", () => {
+  it.each([["1"], ["true"]])("marks every event with internal: true when VENDO_INTERNAL=%s", async (value) => {
+    const deps = makeDeps({ env: { VENDO_INTERNAL: value } });
+    const t = createTelemetry(deps);
+    await t.track("agent_run", {});
+    expect(sentProps(deps).internal).toBe(true);
+  });
+
+  it.each([
+    ["absent", undefined],
+    ["empty", ""],
+    ["zero", "0"],
+    ["false", "false"],
+    ["arbitrary text", "yes"],
+  ])("omits the internal key when VENDO_INTERNAL is %s", async (_label, value) => {
+    const deps = makeDeps({ env: { VENDO_INTERNAL: value } });
+    const t = createTelemetry(deps);
+    await t.track("agent_run", {});
+    expect("internal" in sentProps(deps)).toBe(false);
+  });
+
+  it("callers cannot spoof internal", async () => {
+    // Flag unset: the caller-passed marker is stripped outright.
+    const external = makeDeps();
+    await createTelemetry(external).track("agent_run", { internal: true } as never);
+    expect("internal" in sentProps(external)).toBe(false);
+
+    // Flag set: the producer-set value wins over a caller-passed one.
+    const internal = makeDeps({ env: { VENDO_INTERNAL: "1" } });
+    await createTelemetry(internal).track("agent_run", { internal: false } as never);
+    expect(sentProps(internal).internal).toBe(true);
+  });
+
+  it("does not weaken consent: opt-outs still send nothing with the flag set", async () => {
+    const deps = makeDeps({ env: { VENDO_INTERNAL: "1", DO_NOT_TRACK: "1" } });
+    const t = createTelemetry(deps);
+    await t.track("agent_run", {});
+    expect(deps.fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("composes with the cloud lane markers", async () => {
+    const deps = makeDeps({ env: { VENDO_INTERNAL: "1", VENDO_API_KEY: CLOUD_KEY } });
+    const t = createTelemetry(deps);
+    await t.track("agent_run", {});
+    const props = sentProps(deps);
+    expect(props.internal).toBe(true);
+    expect(props.cloud).toBe(true);
+  });
+});

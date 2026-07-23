@@ -16,7 +16,7 @@
     "@vendoai/ui": "workspace:*",
     "@vendoai/vendo": "workspace:*",
     "ai": "6.0.28",
-    "next": "16.2.9",
+    "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "zod": "^3.25.0"

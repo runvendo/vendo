@@ -85,6 +85,10 @@ Any one of these disables product telemetry:
 
 Set `"optedOut": false` in `~/.vendo/telemetry.json` to clear the local opt-out flag. Scarf also honors `DO_NOT_TRACK`.
 
+## Internal Runs (VENDO_INTERNAL)
+
+`VENDO_INTERNAL=1` (or `true`) tags every event with `internal: true` instead of disabling telemetry. It exists for Vendo's own harnesses — certification campaigns, install evals, sandbox benches — that intentionally exercise the real telemetry path end-to-end: the events still flow (so the pipeline stays verifiable) but analytics excludes them from product metrics by filtering on the `internal` property. The marker is producer-set like the cloud markers, so event callers cannot spoof or clear it. It is not a consent mechanism and does not weaken any opt-out above: `CI`, `DO_NOT_TRACK`, and `VENDO_TELEMETRY_DISABLED` still send nothing regardless of `VENDO_INTERNAL`.
+
 ## Where Data Goes
 
 Product events are sent to PostHog US Cloud using a write-only project key. Network calls are fire-and-forget, use a short timeout, and failures are swallowed so telemetry cannot break builds or dev servers.
