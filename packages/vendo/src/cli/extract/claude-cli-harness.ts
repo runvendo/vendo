@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { composeGatewayFuel, hasOwnAnthropicEnvOverride, type GatewayFuelOverlay } from "./gateway-fuel.js";
-import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
+import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } from "./harness.js";
 
 /**
  * Fallback extraction harness: the `claude` CLI already on the dev's PATH,
@@ -129,7 +129,7 @@ export function claudeCliHarness(options: ClaudeCliHarnessOptions = {}): Extract
       return null;
     },
     async run(input: ExtractionRunInput): Promise<string> {
-      const model = input.env["VENDO_EXTRACTION_MODEL"];
+      const model = extractionModelPin(input.env);
       const args = [
         "-p", input.instructions,
         "--allowedTools", ...ALLOWED_TOOLS,

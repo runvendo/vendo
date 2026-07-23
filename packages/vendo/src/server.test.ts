@@ -808,11 +808,26 @@ describe("09 §3 public wire", () => {
     // An explicitly passed model wins over every env credential.
     expect(await modelVenue({ model: {} as LanguageModel })).toBe("custom");
 
-    // Otherwise the devModel ladder composes — with or without any key set
+    // Otherwise the vendoModel ladder composes — with or without any key set
     // (rung resolution is lazy; the honest failure happens on first call).
     expect(await modelVenue({})).toBe("ladder");
     vi.stubEnv("VENDO_API_KEY", "");
     expect(await modelVenue({})).toBe("ladder");
+
+    // Models block (models spec 2026-07-22): an explicit LanguageModel object
+    // wins as-is; a string resolves through the ladder; models.agent
+    // supersedes the deprecated top-level `model` (so a string there flips
+    // the venue back to "ladder" even with an object on the alias).
+    expect(await modelVenue({ models: { agent: {} as LanguageModel } })).toBe("custom");
+    expect(await modelVenue({ models: { agent: "claude-opus-4-8" } })).toBe("ladder");
+    expect(await modelVenue({ model: {} as LanguageModel, models: { agent: "claude-opus-4-8" } })).toBe("ladder");
+
+    // Slot values must be model-name strings or LanguageModel objects.
+    expect(() => createVendo({
+      principal: vi.fn(async () => principal),
+      store,
+      models: { agent: "   " },
+    })).toThrow(VendoError);
   });
 
   it("selects the store with the adapter-rule precedence", async () => {

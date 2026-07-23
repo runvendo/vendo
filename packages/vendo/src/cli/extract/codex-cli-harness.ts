@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
+import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } from "./harness.js";
 
 /**
  * Fallback extraction harness: the `codex` CLI already on the dev's PATH,
@@ -162,7 +162,7 @@ export function codexCliHarness(options: CodexCliHarnessOptions = {}): Extractio
       return null;
     },
     async run(input: ExtractionRunInput): Promise<string> {
-      const model = input.env["VENDO_EXTRACTION_MODEL"];
+      const model = extractionModelPin(input.env);
       const args = [
         "exec",
         "--sandbox", "read-only",

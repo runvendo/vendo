@@ -235,7 +235,7 @@ describe("resolveRefineModel", () => {
       },
     });
     expect(created).toEqual([{ apiKey: "vnd_refine_key", baseURL: "https://console.vendo.run/api/v1" }]);
-    expect((model as { modelId: string }).modelId).toBe("vendo-default");
+    expect((model as { modelId: string }).modelId).toBe("vendo");
   });
 
   it("a provider env key still outranks VENDO_API_KEY on the ladder", async () => {

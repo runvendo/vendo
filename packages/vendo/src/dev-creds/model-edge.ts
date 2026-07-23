@@ -15,14 +15,14 @@
  *  portability gate bundles it. */
 import type { LanguageModel } from "ai";
 
-import type { DevModelOptions } from "./model.js";
+import type { DevModelOptions, VendoModelOptions, VendoModelSlot } from "./model.js";
 
-export type { DevModelOptions };
+export type { DevModelOptions, VendoModelOptions, VendoModelSlot };
 
 const EDGE_MESSAGE =
-  "the dev model ladder needs Node (it resolves the host's provider install and dev credentials from disk); "
+  "the vendo model ladder needs Node (it resolves the host's provider install and dev credentials from disk); "
   + "on this runtime pass `model:` to createVendo explicitly — with a Vendo Cloud key that is the stock Anthropic "
-  + "provider pointed at the console gateway: createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CLOUD_URL ?? \"https://console.vendo.run\"}/api/v1` })(\"vendo-default\")";
+  + "provider pointed at the console gateway: createAnthropic({ apiKey: VENDO_API_KEY, baseURL: `${VENDO_CLOUD_URL ?? \"https://console.vendo.run\"}/api/v1` })(\"vendo\")";
 
 interface LanguageModelV3Like {
   specificationVersion: "v3";
@@ -33,9 +33,7 @@ interface LanguageModelV3Like {
   doStream(options: unknown): Promise<unknown>;
 }
 
-/** Same seam as the Node build; announces its unavailability once on first
- *  use through the server log, like the Node ladder's unavailable rung. */
-export function devModel(_options: DevModelOptions = {}): LanguageModel {
+function refusingModel(provider: string, modelId: string): LanguageModel {
   let announced = false;
   const refuse = (): never => {
     if (!announced) {
@@ -46,11 +44,27 @@ export function devModel(_options: DevModelOptions = {}): LanguageModel {
   };
   const model: LanguageModelV3Like = {
     specificationVersion: "v3",
-    provider: "vendo-dev",
-    modelId: "dev-env",
+    provider,
+    modelId,
     supportedUrls: {},
     doGenerate: () => Promise.resolve().then(refuse),
     doStream: () => Promise.resolve().then(refuse),
   };
   return model as unknown as LanguageModel;
 }
+
+/** Same seam as the Node build; announces its unavailability once on first
+ *  use through the server log, like the Node ladder's unavailable rung. */
+export function vendoModel(name?: string, _options: VendoModelOptions = {}): LanguageModel {
+  return refusingModel("vendo", name ?? "vendo-env");
+}
+
+/** @deprecated Renamed `vendoModel()` (models spec 2026-07-22). */
+export function devModel(_options: DevModelOptions = {}): LanguageModel {
+  return refusingModel("vendo-dev", "dev-env");
+}
+
+/** Export parity with the Node build (the server entry imports it from
+ *  "#dev-creds/model"). The edge ladder never resolves, so there is nothing
+ *  to configure — a deliberate no-op. */
+export function configureVendoModelSlots(_models: { judge?: string | LanguageModel } | undefined): void {}

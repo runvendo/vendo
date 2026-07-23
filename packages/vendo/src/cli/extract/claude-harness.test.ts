@@ -44,6 +44,28 @@ describe("claudeHarness", () => {
     expect(progress).toEqual(["read app/api/invoices/route.ts"]);
   });
 
+  it("pins the SDK model via VENDO_MODEL_EXTRACT, with VENDO_EXTRACTION_MODEL as the deprecated fallback", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const harness = claudeHarness({
+      loadSdk: async () => ({
+        query: (input: { options?: Record<string, unknown> }) => {
+          captured = input.options;
+          return (async function* () { yield { type: "result", result: "ok" }; })();
+        },
+      }) as unknown as Awaited<ReturnType<NonNullable<Parameters<typeof claudeHarness>[0]["loadSdk"]>>>,
+    });
+    await harness.run({
+      root: "/x",
+      env: { VENDO_MODEL_EXTRACT: "vendo-extract", VENDO_EXTRACTION_MODEL: "old-model" },
+      instructions: "go",
+    });
+    expect(captured?.["model"]).toBe("vendo-extract");
+    await harness.run({ root: "/x", env: { VENDO_EXTRACTION_MODEL: "old-model" }, instructions: "go" });
+    expect(captured?.["model"]).toBe("old-model");
+    await harness.run({ root: "/x", env: {}, instructions: "go" });
+    expect(captured?.["model"]).toBeUndefined();
+  });
+
   it("falls back to concatenated assistant text when no result message arrives", async () => {
     const harness = claudeHarness({
       loadSdk: async () => SDK([
