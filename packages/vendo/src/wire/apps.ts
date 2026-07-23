@@ -1,19 +1,50 @@
 import { VendoError, type Json } from "@vendoai/core";
-import { appStore, type VendoStore } from "@vendoai/store";
+import type { VendoStore } from "@vendoai/store";
 import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
 
-/** Unscoped existence probe behind the ?pending=1 disambiguation: does ANY
-    principal own a record with this id? Owner-scoped open() answers not-found
-    for both "still building" and "exists under someone else", and masking the
-    latter as pending is the infinite skeleton of 0.4.1 E2E cert B4 (wire
-    principal ≠ chat principal). No document content leaves this check. A
-    store that can't answer (hosted wire-door stores have no local db handle)
-    keeps the pending window — today's behavior. */
-async function appRecordExists(store: VendoStore, appId: string): Promise<boolean> {
+/** What the ?pending=1 disambiguation learned about a record open() refused
+    to serve this caller. */
+interface UnownedAppProbe {
+  exists: boolean;
+  /** The server-written terminal marker (#532), when the record carries one. */
+  buildFailed?: { reason: string; retryable?: boolean };
+}
+
+/** Unscoped probe behind the ?pending=1 disambiguation: does ANY principal
+    own a record with this id, and did its build terminally fail? Owner-scoped
+    open() answers not-found for "still building", "exists under someone
+    else", AND "terminally failed under another subject" alike — and masking
+    the latter two as pending is the infinite skeleton (0.4.1 E2E cert B4;
+    0.4.6 cert defect D2).
+
+    The read goes through the ADAPTER interface (store.records), never
+    appStore(): appStore speaks raw SQL over a local db handle, which a
+    hosted wire-door store doesn't have — through it this probe answered
+    false on every Cloud-hosted-store deployment, so every owner-scoped
+    not-found masked to {kind:"pending"} and the #532 terminal records never
+    reached the embed (defect D2). The only document content that leaves this
+    check is the buildFailed marker, which is server-written by construction
+    (runtime.create strips any model-emitted buildFailed): canned reasons,
+    never user content. A store that still can't answer keeps the pending
+    window. */
+async function probeUnownedAppRecord(store: VendoStore, appId: string): Promise<UnownedAppProbe> {
   try {
-    return (await appStore(store).get(appId)) !== null;
+    const record = await store.records("vendo_apps").get(appId);
+    if (record === null) return { exists: false };
+    const doc = (record.data as { doc?: { buildFailed?: { reason?: unknown; retryable?: unknown } } } | null)?.doc;
+    const failed = doc?.buildFailed;
+    if (typeof failed?.reason === "string") {
+      return {
+        exists: true,
+        buildFailed: {
+          reason: failed.reason,
+          ...(typeof failed.retryable === "boolean" ? { retryable: failed.retryable } : {}),
+        },
+      };
+    }
+    return { exists: true };
   } catch {
-    return false;
+    return { exists: false };
   }
 }
 
@@ -97,7 +128,18 @@ export const appRoutes: RouteEntry[] = [
           return json(await deps.apps.open(appId, ctx));
         } catch (reason) {
           if (reason instanceof VendoError && reason.code === "not-found") {
-            if (await appRecordExists(deps.store, appId)) {
+            const probe = await probeUnownedAppRecord(deps.store, appId);
+            // A terminal build failure is terminal for EVERY caller: pass the
+            // server-written reason through instead of masking it as a build
+            // still in progress (0.4.6 cert defect D2).
+            if (probe.buildFailed !== undefined) {
+              return json({
+                kind: "failed",
+                reason: probe.buildFailed.reason,
+                ...(probe.buildFailed.retryable === undefined ? {} : { retryable: probe.buildFailed.retryable }),
+              });
+            }
+            if (probe.exists) {
               return json({
                 kind: "failed",
                 reason: "this app exists but is not visible to this surface's caller — "
