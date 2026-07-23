@@ -621,7 +621,7 @@ const strictToolCall = async (
   }
 };
 
-const DISCLAIMER_TEXT = "This part of the request isn't available on this host.";
+export const DISCLAIMER_TEXT = "This part of the request isn't available on this host.";
 
 const disclaimNode = (tree: TreeV2, nodeId: string): void => {
   const node = tree.nodes.find((candidate) => candidate.id === nodeId);
@@ -630,6 +630,54 @@ const disclaimNode = (tree: TreeV2, nodeId: string): void => {
   node.source = "prewired";
   node.props = { text: DISCLAIMER_TEXT };
   delete node.children;
+};
+
+/** Any `$path`/`$state` binding reachable in a props tree. */
+const hasDeepBinding = (container: Record<string, unknown> | unknown[]): boolean => {
+  const values = Array.isArray(container) ? container : Object.values(container);
+  for (const value of values) {
+    if (isPathBinding(value) || isStateBinding(value)) return true;
+    if (isRecord(value) || Array.isArray(value)) {
+      if (hasDeepBinding(value as Record<string, unknown>)) return true;
+    }
+  }
+  return false;
+};
+
+/** 0.4.5 E2E cert (defect D) — a "successful" build whose every substantive
+ *  region resolved to the disclaimer above is indistinguishable from a dead
+ *  build in the host chat: the record persists, no failure is recorded, and
+ *  the embed renders an app that only says "not available". Detect that
+ *  degenerate shape so the runtime can fail the build LOUDLY instead.
+ *
+ *  A tree is disclaimer-only when at least one disclaimer landed and no
+ *  reachable node carries real capability: no generated island, no host
+ *  catalog component, no data binding, no action binding. Static copy alone
+ *  (headings around the disclaimers) does not rescue it — that is exactly the
+ *  shape the cert screenshots show. A tree with NO disclaimers is never
+ *  degenerate here, whatever else it lacks. */
+export const isDisclaimerOnlyTree = (tree: TreeV2): boolean => {
+  const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
+  const seen = new Set<string>();
+  const pending = [tree.root];
+  let disclaimers = 0;
+  while (pending.length > 0) {
+    const id = pending.pop();
+    if (id === undefined || seen.has(id)) continue;
+    seen.add(id);
+    const node = nodes.get(id);
+    if (node === undefined) continue;
+    pending.push(...(node.children ?? []));
+    if (node.source === "generated" || node.source === "host") return false;
+    if (node.component === "Text" && node.props?.["text"] === DISCLAIMER_TEXT) {
+      disclaimers += 1;
+      continue;
+    }
+    if (node.props === undefined) continue;
+    if (actionBindingsInProps(node.props).length > 0) return false;
+    if (hasDeepBinding(node.props)) return false;
+  }
+  return disclaimers > 0;
 };
 
 /** Deletes the value at the walk position where `predicate` matches, deep in

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { VendoAppRef, VendoApprovalRef } from "@vendoai/core";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   VendoAppEmbed,
   VendoApprovalEmbed,
@@ -208,6 +208,40 @@ describe("existing-agents embeds", () => {
         },
       });
       await waitFor(() => expect(screen.getByText("Late app surface")).toBeDefined(), { timeout: 5000 });
+    });
+
+    it("resolves the failed vocabulary at the deadline even when every poll HANGS (0.4.5 defect D)", async () => {
+      // The wire client has no fetch timeout, and the poll loop only checked
+      // the deadline when a request settled — a hung open() left the building
+      // beat spinning past any deadline (byo-ai-sdk cert: 9+ minutes). The
+      // absolute deadline timer depends on nothing but the clock.
+      vi.useFakeTimers();
+      try {
+        const hung: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_hung", title: "Hung app" };
+        const hangingClient: VendoClient = {
+          ...client,
+          apps: {
+            ...client.apps,
+            open: (() => new Promise<never>(() => undefined)) as VendoClient["apps"]["open"],
+          },
+        };
+        render(
+          <VendoProvider client={hangingClient}>
+            <VendoAppEmbed refValue={hung} />
+          </VendoProvider>,
+        );
+        expect(screen.getByText(/Building/)).toBeDefined();
+        // Well past APP_BUILD_DEADLINE_MS (5 min) — no poll ever settles.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5 * 60_000 + 2_000);
+        });
+        expect(screen.getByText(/couldn't finish/i)).toBeDefined();
+        expect(screen.getByText("the build never finished")).toBeDefined();
+        // Terminal — the skeleton is gone.
+        expect(screen.queryByRole("status")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

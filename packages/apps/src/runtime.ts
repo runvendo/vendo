@@ -71,6 +71,7 @@ import {
   type BoxEditResult,
 } from "./box-agent.js";
 import { parseVendoManifest } from "./manifest.js";
+import { isDisclaimerOnlyTree } from "./pipeline.js";
 import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
@@ -285,6 +286,36 @@ const fallbackAppName = (prompt: string): string => {
   return collapsed.length > 60 ? collapsed.slice(0, 60) : collapsed;
 };
 
+/** 0.4.5 E2E cert (defect D) — the honest reason for a build whose every
+ *  region was disclaimed away (see isDisclaimerOnlyTree): persisted verbatim
+ *  on the failed record and carried on the thrown error, like the dev-model's
+ *  unavailable-credential lines. Non-retryable — the same prompt hits the
+ *  same tool gap. */
+export const HOST_CAPABILITY_MISS_REASON =
+  "nothing in this request could be built with this host's tools — every part needed data or "
+  + "actions no registered tool provides, so the app would only show \"not available\" notices. "
+  + "Ask for something the host's tools can serve, or register a tool that covers this request.";
+
+/** 0.4.5 E2E cert (defect D) — the terminal record the build watchdog writes
+ *  when a create neither persisted an app nor a failure inside its window:
+ *  the one class the in-band catch cannot cover (a build task that hangs or
+ *  dies without ever settling). */
+const BUILD_WATCHDOG_REASON =
+  "the build never finished — the server-side build task stalled or died without reporting a "
+  + "failure. Retry the request; if this repeats, check the host server log.";
+
+const BUILD_WATCHDOG_MS = 4 * 60_000;
+
+/** Test seam and operator escape hatch, mirroring turn-liveness: the window a
+ *  create has to persist SOMETHING (app or failure) before the watchdog writes
+ *  the terminal failed record. Guarded access — this module also runs on
+ *  edge/Worker targets with no `process` global. */
+const buildWatchdogMs = (): number => {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+  const configured = Number(env?.["VENDO_APP_BUILD_WATCHDOG_MS"]);
+  return Number.isFinite(configured) && configured > 0 ? configured : BUILD_WATCHDOG_MS;
+};
+
 const QUOTA_SIGNAL = /quota|insufficient|payment|billing|\b402\b/i;
 const TIMEOUT_SIGNAL = /time?d?\s*out|timeout|abort/i;
 /** The dev-model's own no-usable-credential lines (missing provider package /
@@ -331,6 +362,11 @@ export const buildFailureReason = (
     .map((candidate) => candidate.replace(/^model generation failed: /, ""))
     .find((candidate) => MODEL_UNAVAILABLE_SIGNAL.test(candidate));
   if (unavailable !== undefined) return { reason: unavailable, retryable: false };
+  // The disclaimer-only degenerate build (defect D): Vendo-written like the
+  // dev-model lines above, so the full actionable reason surfaces verbatim.
+  if (candidates.some((candidate) => candidate.startsWith(HOST_CAPABILITY_MISS_REASON.slice(0, 40)))) {
+    return { reason: HOST_CAPABILITY_MISS_REASON, retryable: false };
+  }
   const text = candidates.join(" ");
   if (QUOTA_SIGNAL.test(text)) return { reason: "quota exhausted", retryable: false };
   if (TIMEOUT_SIGNAL.test(text)) return { reason: "timed out", retryable: true };
@@ -1628,6 +1664,29 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
+      // 0.4.5 E2E cert (defect D) — the build's dead-man switch. The catch
+      // below persists a terminal failure when the build turn THROWS, but a
+      // build task that hangs (a provider stream that never settles) or dies
+      // with its promise chain severed by the host runtime settles nothing:
+      // the embed polls {kind:"pending"} forever. A timer is independent of
+      // the promise chain, so it fires either way; if by then NOTHING was
+      // persisted for this id, it writes the terminal failed record itself so
+      // open() resolves the embed with a reason. Any persist (success or the
+      // catch) clears it; a late success after a fired watchdog overwrites
+      // the failed record — self-healing, never the reverse.
+      const watchdog = setTimeout(() => {
+        void (async () => {
+          if (await apps.get(appId) !== null) return;
+          await apps.put(appRecordInput({
+            format: "vendo/app@1",
+            id: appId,
+            name: fallbackAppName(input.prompt),
+            buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString() },
+          }, ctx.principal.subject));
+          console.error(`[vendo] app build watchdog (${appId}): no app record and no failure landed within ${buildWatchdogMs()}ms — persisted a terminal failed record so the embed resolves instead of polling forever.`);
+        })().catch(() => undefined);
+      }, buildWatchdogMs());
+      (watchdog as { unref?: () => void }).unref?.();
       const emit = (payload: TreeV2): void => {
         // 06-apps §§8–9 — the venue verdict and drift report are
         // server-authoritative and a model-written tree must never smuggle
@@ -1665,6 +1724,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             queryResolver?.update(latestTree);
           }),
         );
+        // 0.4.5 E2E cert (defect D) — a build whose every substantive region
+        // was disclaimed away "succeeds" into an app that only says "not
+        // available": no failure record, no log line, and a host chat that
+        // reads as a build that never finished. Fail it LOUDLY through the
+        // same terminal path as a thrown build turn.
+        if (generated.tree?.formatVersion === VENDO_TREE_FORMAT_V2 && isDisclaimerOnlyTree(generated.tree as unknown as TreeV2)) {
+          throw new VendoError("validation", HOST_CAPABILITY_MISS_REASON);
+        }
       } catch (error) {
         // The build turn threw (model error, quota, timeout). `vendo_create_app`
         // already returned an app-ref the instant the FIRST partial streamed, so
@@ -1679,6 +1746,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           name: fallbackAppName(input.prompt),
           buildFailed: { reason, retryable, at: new Date().toISOString() },
         }, ctx.principal.subject)).catch(() => undefined);
+        clearTimeout(watchdog);
         // The operator's terminal gets the un-canned detail (the engine folds
         // provider errors into the VendoError's issue list) — a silent failed
         // build was the 0.4.x E2E's hardest defect to self-diagnose.
@@ -1721,6 +1789,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
       }
       await apps.put(appRecordInput(app, ctx.principal.subject));
+      clearTimeout(watchdog);
       await reportLifecycle("create", app.id, ctx);
       if (finalTree !== undefined) emit(finalTree);
       // execution-v2 Wave 9 — escalate on create when the prompt needs server

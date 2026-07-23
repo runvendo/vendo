@@ -1,8 +1,10 @@
 import type { LanguageModel } from "ai";
-import type { RunContext, ToolRegistry } from "@vendoai/core";
+import type { RunContext, ToolRegistry, TreeV2 } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { buildFailureReason, createApps } from "./index.js";
+import { DISCLAIMER_TEXT, isDisclaimerOnlyTree } from "./pipeline.js";
+import { HOST_CAPABILITY_MISS_REASON } from "./runtime.js";
 import { guardFixture, memoryStore, scriptedLanguageModel } from "./testing/index.js";
 
 // Incident (runvendo/vendo#492): vendo_create_app returns fast with a
@@ -154,7 +156,162 @@ describe("build-failure lifecycle (#492)", () => {
   });
 });
 
+// 0.4.5 E2E cert (defect D, byo-ai-sdk host): a create whose every region was
+// disclaimed away by repair "succeeded" into an app that only said "not
+// available" — no failure record, no log, and a host chat that read as a
+// build hanging forever. And a build task that never SETTLES (hung provider
+// stream, promise chain severed by the host runtime) persisted nothing at
+// all, so the embed polled {kind:"pending"} past every deadline.
+describe("defect D — silent degenerate/hung builds fail loudly", () => {
+  const disclaimerMarkup =
+    `<App name="Hello stat"><Surface><Text text="${DISCLAIMER_TEXT}"/></Surface></App>`;
+
+  it("fails a disclaimer-only build terminally: record persisted, open() answers the host-capability reason, create() throws it", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { runtime, store } = setup(scriptedLanguageModel(disclaimerMarkup));
+      const ctx = context("user_ada");
+      const rejection = await runtime.create({ prompt: "one stat tile that says hello" }, ctx)
+        .then(() => undefined, (error: unknown) => error);
+      expect(rejection).toBeInstanceOf(VendoError);
+      expect((rejection as VendoError).message).toBe(`app build failed: ${HOST_CAPABILITY_MISS_REASON}`);
+      const rows = await store.records("vendo_apps").list({});
+      expect(rows.records).toHaveLength(1);
+      const surface = await runtime.open(rows.records[0]!.id, ctx);
+      expect(surface).toEqual({ kind: "failed", reason: HOST_CAPABILITY_MISS_REASON, retryable: false });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("app build failed"));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("the watchdog persists a terminal failed record for a build that neither completes nor throws", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    process.env["VENDO_APP_BUILD_WATCHDOG_MS"] = "60";
+    try {
+      // A model stream that never settles: the build turn hangs forever, the
+      // create catch never runs, and without the watchdog nothing would ever
+      // be persisted for the minted app id.
+      const { runtime, store } = setup(scriptedLanguageModel(() => new Promise<never>(() => undefined)));
+      void runtime.create({ prompt: "Dashboard" }, context("user_ada")).catch(() => undefined);
+      await vi.waitFor(async () => {
+        const rows = await store.records("vendo_apps").list({});
+        expect(rows.records).toHaveLength(1);
+        expect(rows.records[0]?.data).toMatchObject({
+          subject: "user_ada",
+          doc: { buildFailed: { retryable: true } },
+        });
+      }, { timeout: 3_000 });
+      const rows = await store.records("vendo_apps").list({});
+      const surface = await runtime.open(rows.records[0]!.id, context("user_ada"));
+      expect(surface).toMatchObject({ kind: "failed", retryable: true });
+      expect((surface as { reason: string }).reason).toContain("never finished");
+    } finally {
+      delete process.env["VENDO_APP_BUILD_WATCHDOG_MS"];
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("a late success after the watchdog fired overwrites the failed record (self-healing, never the reverse)", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    process.env["VENDO_APP_BUILD_WATCHDOG_MS"] = "40";
+    try {
+      let releaseBuild!: () => void;
+      const gate = new Promise<void>((resolve) => { releaseBuild = resolve; });
+      const { runtime, store } = setup(scriptedLanguageModel(async () => {
+        await gate;
+        return `<App name="Late board"><Text text="Late board"/></App>`;
+      }));
+      const ctx = context("user_ada");
+      const pendingCreate = runtime.create({ prompt: "Late board" }, ctx);
+      // Watchdog fires first: the terminal failed record lands.
+      await vi.waitFor(async () => {
+        const rows = await store.records("vendo_apps").list({});
+        expect(rows.records[0]?.data).toMatchObject({ doc: { buildFailed: { retryable: true } } });
+      }, { timeout: 3_000 });
+      // The hung build then completes after all: the real document replaces it.
+      releaseBuild();
+      const app = await pendingCreate;
+      const surface = await runtime.open(app.id, ctx);
+      expect(surface).toMatchObject({ kind: "tree" });
+    } finally {
+      delete process.env["VENDO_APP_BUILD_WATCHDOG_MS"];
+      errorSpy.mockRestore();
+    }
+  });
+});
+
+describe("isDisclaimerOnlyTree", () => {
+  const tree = (nodes: TreeV2["nodes"]): TreeV2 => ({
+    formatVersion: "vendo-genui/v2",
+    root: "root",
+    nodes: [{ id: "root", component: "Stack", source: "prewired", children: nodes.map((node) => node.id) }, ...nodes],
+  } as TreeV2);
+  const disclaimer = (id: string): TreeV2["nodes"][number] =>
+    ({ id, component: "Text", source: "prewired", props: { text: DISCLAIMER_TEXT } }) as TreeV2["nodes"][number];
+
+  it("flags the pure disclaimer tree (the cert's persisted shape)", () => {
+    expect(isDisclaimerOnlyTree(tree([disclaimer("text-1")]))).toBe(true);
+  });
+
+  it("static copy around the disclaimers does not rescue it (the cloud-rung cert shape: heading + disclaimer)", () => {
+    expect(isDisclaimerOnlyTree(tree([
+      { id: "heading-1", component: "Text", source: "prewired", props: { text: "Dashboard", variant: "heading" } } as TreeV2["nodes"][number],
+      disclaimer("text-1"),
+    ]))).toBe(true);
+  });
+
+  it("a data binding beside a disclaimer is real content — not degenerate", () => {
+    expect(isDisclaimerOnlyTree(tree([
+      disclaimer("text-1"),
+      { id: "stat-1", component: "Stat", source: "prewired", props: { label: "Total", value: { $path: "/totals/sum" } } } as TreeV2["nodes"][number],
+    ]))).toBe(false);
+  });
+
+  it("an action binding beside a disclaimer is real content — not degenerate", () => {
+    expect(isDisclaimerOnlyTree(tree([
+      disclaimer("text-1"),
+      { id: "button-1", component: "Button", source: "prewired", props: { label: "Refresh", onClick: { action: "host_refresh" } } } as TreeV2["nodes"][number],
+    ]))).toBe(false);
+  });
+
+  it("a generated island or host component beside a disclaimer is real content — not degenerate", () => {
+    expect(isDisclaimerOnlyTree(tree([
+      disclaimer("text-1"),
+      { id: "appshell-1", component: "AppShell", source: "generated" } as TreeV2["nodes"][number],
+    ]))).toBe(false);
+    expect(isDisclaimerOnlyTree(tree([
+      disclaimer("text-1"),
+      { id: "chart-1", component: "RevenueChart", source: "host" } as TreeV2["nodes"][number],
+    ]))).toBe(false);
+  });
+
+  it("a tree with no disclaimers is never degenerate, whatever else it lacks", () => {
+    expect(isDisclaimerOnlyTree(tree([
+      { id: "text-1", component: "Text", source: "prewired", props: { text: "hello" } } as TreeV2["nodes"][number],
+    ]))).toBe(false);
+  });
+
+  it("ignores unreachable disclaimer nodes (pruned subtrees)", () => {
+    const detached: TreeV2 = {
+      formatVersion: "vendo-genui/v2",
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["text-1"] },
+        { id: "text-1", component: "Text", source: "prewired", props: { text: "hello" } },
+        { id: "orphan-1", component: "Text", source: "prewired", props: { text: DISCLAIMER_TEXT } },
+      ],
+    } as TreeV2;
+    expect(isDisclaimerOnlyTree(detached)).toBe(false);
+  });
+});
+
 describe("buildFailureReason", () => {
+  it("passes the host-capability miss reason through verbatim, non-retryable (defect D)", () => {
+    expect(buildFailureReason(new VendoError("validation", HOST_CAPABILITY_MISS_REASON)))
+      .toEqual({ reason: HOST_CAPABILITY_MISS_REASON, retryable: false });
+  });
+
   it("maps an aborted turn to a retryable timeout", () => {
     const aborted = Object.assign(new Error("aborted"), { name: "AbortError" });
     expect(buildFailureReason(aborted)).toEqual({ reason: "timed out", retryable: true });
