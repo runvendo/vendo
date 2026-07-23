@@ -43,5 +43,10 @@ overrides:
   # sharp/libvips GHSA-f88m-g3jw-g9cj — both reach us only via examples/demos.
   "fast-uri": ">=3.1.4"
   "sharp": ">=0.35.0"
+  # 2026-07-23 advisories: Auth.js fail-open + email-normalizer criticals
+  # (via demo-bank), Next.js App Router middleware-bypass + DoS highs
+  # (examples/demos/fixtures).
+  "next-auth": ">=5.0.0-beta.32"
+  "next": ">=16.2.11"
   "@types/react-dom": "^19.2.0"
   "postcss@<8.5.10": ">=8.5.10"
