@@ -194,4 +194,9 @@ describe("agentEnv", () => {
     expect(env["PATH"]).toBe("/bin");
     expect(env["ANTHROPIC_API_KEY"]).toBe("sk-ant-y");
   });
+
+  it("sets VENDO_INTERNAL=1 so the agent's real init telemetry is tagged, not counted as user traffic", () => {
+    const env = agentEnv({ PATH: "/bin" });
+    expect(env["VENDO_INTERNAL"]).toBe("1");
+  });
 });
