@@ -614,7 +614,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   note("Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.");
 
   // One real model turn through the wired route (design §5). Exit 0 == a user
-  // would have gotten an answer. Reuses the resolver + devModel: the running
+  // would have gotten an answer. Reuses the resolver + vendoModel: the running
   // dev server serves the turn over the same credential doctor reports.
   let liveTurn: LiveTurnResult;
   if (liveComposition) {

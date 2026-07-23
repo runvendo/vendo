@@ -1188,7 +1188,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // model). Explicit VENDO_INFERENCE_URL/KEY win; otherwise the BYO Anthropic
   // key rides api.anthropic.com; otherwise VENDO_API_KEY rides the console's
   // Anthropic-compatible model gateway — the same key that provisions the
-  // Cloud machine funds its model (chat inference already does, via devModel's
+  // Cloud machine funds its model (chat inference already does, via vendoModel's
   // vendo-cloud rung; a machine without this rung fails every in-box task).
   const boxInference = (): { url: string; key: string; model?: string } | undefined => {
     const url = environment("VENDO_INFERENCE_URL");
