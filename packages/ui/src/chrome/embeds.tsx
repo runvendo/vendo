@@ -33,6 +33,23 @@ import { LONG_TEXT_CAP, truncateHead } from "./truncate.js";
  *  instead of an eternal beat. */
 const APP_POLL_MS = 1200;
 const APP_BUILD_DEADLINE_MS = 5 * 60_000;
+/** 0.4.5 E2E cert (defect D) — the wire client has no fetch timeout, so one
+ *  hung open() used to freeze the self-scheduling poll (and with it the
+ *  deadline check) forever. Each poll races this cap; a timed-out poll keeps
+ *  the ordinary retry cadence. */
+const APP_OPEN_TIMEOUT_MS = 15_000;
+
+/** Settle `work` within `ms` or reject — the poll loop's hang guard. The
+ *  underlying fetch is not aborted (the wire client takes no signal); the
+ *  loop simply stops waiting on it. */
+const withPollTimeout = <T,>(work: Promise<T>, ms: number): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`the build-status poll did not answer within ${Math.round(ms / 1000)}s`)), ms);
+    work.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (reason: unknown) => { clearTimeout(timer); reject(asError(reason)); },
+    );
+  });
 /** Pending approvals re-poll so a decision made anywhere (this card, the
  *  workspace queue, another tab) resolves this embed in place. */
 const APPROVAL_POLL_MS = 2500;
@@ -206,7 +223,26 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     setFailed(undefined);
     const startedAt = Date.now();
     let cancelled = false;
+    let done = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const resolveFailed = (failure: { reason: string; retryable?: boolean }): void => {
+      done = true;
+      setFailed(failure);
+    };
+    const resolveSurface = (next: OpenSurface): void => {
+      done = true;
+      setSurface(next);
+    };
+    // 0.4.5 E2E cert (defect D) — the ABSOLUTE deadline. The poll below only
+    // checks elapsed time when a wire request SETTLES, so a request that
+    // hangs (or a wire that stops answering) used to leave the building beat
+    // spinning past any deadline. This timer depends on nothing but the
+    // clock: whatever the polls are doing, the beat resolves to the failed
+    // vocabulary at the deadline.
+    const deadlineTimer = setTimeout(() => {
+      if (cancelled || done) return;
+      resolveFailed({ reason: "the build never finished" });
+    }, APP_BUILD_DEADLINE_MS);
     // Self-scheduling poll (useResource's pacing rule): the next attempt is
     // armed only after the current one settles. `vendo_create_app` returns
     // fast and the build streams server-side, so until there is an app to
@@ -217,30 +253,30 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     // beat into the failed vocabulary.
     const attempt = async () => {
       try {
-        const next = await client.apps.open(appId, { pending: true });
-        if (cancelled) return;
+        const next = await withPollTimeout(client.apps.open(appId, { pending: true }), APP_OPEN_TIMEOUT_MS);
+        if (cancelled || done) return;
         // A terminal build failure resolves the embed PROMPTLY with its
         // reason — the same in-place resolution a denied/expired approval
         // gets — never a wait for the client build deadline.
         if (next.kind === "failed") {
-          setFailed({
+          resolveFailed({
             reason: next.reason,
             ...(next.retryable === undefined ? {} : { retryable: next.retryable }),
           });
           return;
         }
         if (next.kind !== "pending") {
-          setSurface(next);
+          resolveSurface(next);
           return;
         }
         if (Date.now() - startedAt >= APP_BUILD_DEADLINE_MS) {
-          setFailed({ reason: "the build never finished" });
+          resolveFailed({ reason: "the build never finished" });
           return;
         }
       } catch (reason) {
-        if (cancelled) return;
+        if (cancelled || done) return;
         if (Date.now() - startedAt >= APP_BUILD_DEADLINE_MS) {
-          setFailed({ reason: asError(reason).message });
+          resolveFailed({ reason: asError(reason).message });
           return;
         }
       }
@@ -249,6 +285,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     void attempt();
     return () => {
       cancelled = true;
+      clearTimeout(deadlineTimer);
       if (timer !== undefined) clearTimeout(timer);
     };
   }, [client, appId]);
