@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import type { UIMessage } from "ai";
 import { VendoProvider } from "../../src/index.js";
@@ -28,11 +28,19 @@ function viewPart(streaming: boolean): UIMessage["parts"][number] {
   } as unknown as UIMessage["parts"][number];
 }
 
-function renderPart(part: UIMessage["parts"][number]) {
+function renderPart(part: UIMessage["parts"][number], restored = false) {
   return render(
     <VendoProvider>
-      <ThreadPart part={part} partKey="p0" role="assistant" restored={false} risks={new Map()} />
+      <ThreadPart part={part} partKey="p0" role="assistant" restored={restored} risks={new Map()} />
     </VendoProvider>,
+  );
+}
+
+function partTree(part: UIMessage["parts"][number], restored = false) {
+  return (
+    <VendoProvider>
+      <ThreadPart part={part} partKey="p0" role="assistant" restored={restored} risks={new Map()} />
+    </VendoProvider>
   );
 }
 
@@ -61,5 +69,31 @@ describe("appcard boot bar (pick C)", () => {
     expect(CHROME_CSS).toContain("fl-boot-sweep");
     expect(CHROME_CSS).toContain(".fl-boot-labels");
     expect(CHROME_CSS).toContain(".fl-reveal-fill");
+  });
+});
+
+describe("appcard presents from the top (empty-states batch)", () => {
+  it("scrolls the card's top into view once when a live build settles", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const { rerender } = renderPart(viewPart(true));
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    rerender(partTree(viewPart(false)));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
+    // Settling is one presentation, not a scroll subscription.
+    rerender(partTree(viewPart(false)));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("never scrolls for restored history — the reader owns their position", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    renderPart(viewPart(false), true);
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("gives the scrolled card breathing room in the stylesheet", () => {
+    expect(CHROME_CSS).toContain("scroll-margin-top");
   });
 });

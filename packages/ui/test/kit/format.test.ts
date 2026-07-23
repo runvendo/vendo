@@ -1,11 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyFormat,
   formatDateTime,
   formatMoney,
   formatNum,
   formatPercent,
   isRenderableNumber,
 } from "../../src/kit/format.js";
+
+describe("applyFormat text tier", () => {
+  it("treats an empty/whitespace string as unrenderable — components show the placeholder, never a bare label", () => {
+    expect(applyFormat("", "text")).toBeNull();
+    expect(applyFormat("   ", "text")).toBeNull();
+    expect(applyFormat(null, "text")).toBeNull();
+    expect(applyFormat(undefined, "text")).toBeNull();
+  });
+
+  it("passes real text (and stringy falsish values) through", () => {
+    expect(applyFormat("First Bank", "text")).toBe("First Bank");
+    expect(applyFormat(0, "text")).toBe("0");
+    expect(applyFormat(false, "text")).toBe("false");
+  });
+});
 
 describe("formatMoney (takes integer cents)", () => {
   it("formats cents as currency, dividing by 100", () => {

@@ -237,6 +237,63 @@ describe("generation engine through createApps", () => {
     );
   });
 
+  // Empty-states batch — the first-run generation spec: empty host data
+  // still gets the requested component (Kit empty states render), the
+  // no-data explanation is ONE consolidated "About this view" note (never
+  // per-tile prose), the name is a display title, and a static ask rides
+  // the island path. Both create contracts must teach all four.
+  describe("empty-states batch (first-run generation spec)", () => {
+    it("teaches the empty-data, About-this-view, display-title, and static-island rules in both create contracts", async () => {
+      const prompts: string[] = [];
+      const make = (promptRewrite: boolean) => createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools,
+        catalog,
+        model: scriptedLanguageModel((call) => {
+          prompts.push(promptText(call));
+          return validCreate();
+        }),
+        pipeline: { promptRewrite },
+      });
+
+      await make(false).create({ prompt: "Dashboard" }, ctx);
+      await make(true).create({ prompt: "Dashboard" }, ctx);
+
+      for (const prompt of prompts) {
+        expect(prompt).toContain('<Callout title="About this view">');
+        expect(prompt).toContain("Never omit a requested component");
+        expect(prompt).toContain("at most 40 characters");
+        expect(prompt).toContain("echoed back");
+        expect(prompt).toContain("needs no host data");
+      }
+      expect(prompts[0]).toContain("EMPTY DATA IS NOT MISSING DATA");
+      expect(prompts[1]).toContain("Empty is not missing");
+    });
+
+    it("routes an ask-echo name to repair and lands the short display title", async () => {
+      const echoed = "Create a chat dashboard that displays the user's chats with a donut chart";
+      const prompts: string[] = [];
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools,
+        catalog,
+        model: scriptedLanguageModel((call) => {
+          prompts.push(promptText(call));
+          return validCreate(prompts.length === 1 ? echoed.replaceAll('"', "'") : "Chat dashboard");
+        }),
+        pipeline: { structuredRepair: false },
+      });
+
+      const app = await runtime.create({ prompt: echoed }, ctx);
+
+      expect(app.name).toBe("Chat dashboard");
+      expect(prompts).toHaveLength(2);
+      expect(prompts[1]).toContain("REPAIR_THESE_ISSUES");
+      expect(prompts[1]).toContain("display title");
+    });
+  });
 
   it("reports wrong-typed host props as catalog issues", async () => {
     const wrongProps = '<App name="Broken metric"><MetricCard label="Revenue" value={42}/></App>';

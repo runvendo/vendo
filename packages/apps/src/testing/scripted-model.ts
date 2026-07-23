@@ -121,7 +121,8 @@ const markedValue = (text: string, marker: string): string => {
   const start = text.lastIndexOf(marker);
   if (start === -1) return "Untitled app";
   const value = text.slice(start + marker.length).split("\n")[0]?.trim() ?? "";
-  return value.slice(0, 60) || "Untitled app";
+  // Within the create validator's APP_NAME_MAX_CHARS display-title cap.
+  return value.slice(0, 40) || "Untitled app";
 };
 
 /** Compatibility fixture for lifecycle/execution suites that only need valid generation. */

@@ -111,7 +111,9 @@ describe("apps lifecycle", () => {
 
     const { runtime } = setup();
     const app = await runtime.create({ prompt: `  ${"x".repeat(80)}  ` }, context("user_ada"));
-    expect(app.name).toHaveLength(60);
+    // Empty-states batch — the name is a display title capped by the create
+    // validator (APP_NAME_MAX_CHARS), never the ask echoed back at length.
+    expect(app.name).toHaveLength(40);
   });
 
   it("forks a fresh validated document without copying history or app data", async () => {

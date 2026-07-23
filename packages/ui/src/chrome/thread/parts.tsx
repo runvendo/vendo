@@ -1,6 +1,6 @@
 import type { ApprovalRequest, Json, RiskLabel, VendoBuildFailedPart, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useVendoContext } from "../../context.js";
 import { useMobileTakeover } from "../../hooks/use-mobile-takeover.js";
 import { PayloadView } from "../../tree/renderer.js";
@@ -56,7 +56,6 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
   count?: number;
   risks: Map<string, RiskLabel>;
 }) {
-  const { client, components, onPin } = useVendoContext();
   if (part.type === "text") {
     if (role === "user") return <UserText text={part.text} restored={restored} />;
     // ENG-217 — lone caret while the streamed turn is still empty (stable
@@ -116,55 +115,82 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks }: 
       pinDrift: _serverOnly,
       ...payload
     } = data.payload as typeof data.payload & { inClient?: unknown; pinDrift?: unknown };
-    const streaming = (payload as { streaming?: boolean }).streaming === true;
-    const appId = data.appId;
-    return (
-      // The generated view lives inside a clear app boundary — a titled
-      // frame — so it reads as a distinct piece of software, not loose
-      // content bleeding into the surrounding chat text.
-      <div className="fl-uihost fl-appcard" key={`${partKey}-${appId}`}>
-        {/* Pick C (ui-lane-renderer): the bar narrates forming → live. The
-            data-state contract ("building" | "ready") is shared with the
-            thread lane; the label pair stays mounted so the swap crossfades. */}
-        <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"}>
-          <span className="fl-appcard-dot" aria-hidden="true" />
-          <span className="fl-boot-labels fl-appcard-name">
-            {/* Both labels stay mounted for the renderer lane's crossfade;
-                aria-hidden tracks data-state so screen readers hear only the
-                ACTIVE one (AI-review catch — the CSS-faded label was still
-                announced, including a stale "Building…" after ready). */}
-            <span className="fl-boot-building" aria-hidden={!streaming}>Building your view…</span>
-            <span className="fl-boot-ready" aria-hidden={streaming}>{appTitle(payload) ?? "Your app"}</span>
-          </span>
-          {/* Lane pick C5 (5A+5D) — the pin lives ON the bar (visible only once
-              the view is ready), replacing the old full-width footer row. The
-              renderer lane's data-state/label/hairline markup above is the
-              shared contract and stays untouched. */}
-          {!streaming && onPin ? (
-            <button
-              type="button"
-              className="fl-barpin"
-              onClick={() => onPin({ appId, payload })}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
-              </svg>
-              Pin to dashboard
-            </button>
-          ) : null}
-          <span className="fl-boot-hairline" aria-hidden="true" />
-        </div>
-        <div className="fl-appcard-body">
-          <PayloadView
-            payload={payload}
-            components={components}
-            onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
-          />
-        </div>
-      </div>
-    );
+    return <GeneratedViewCard key={`${partKey}-${data.appId}`} appId={data.appId} payload={payload} restored={restored} />;
   }
   return null;
+}
+
+/** The in-thread generated-view boundary. When a LIVE build settles
+    (streaming flips off), the card scrolls its own top into view once:
+    stick-to-bottom otherwise leaves the reader parked at the bottom of a
+    tall app, mid-document with the title off-screen (the empty-states-batch
+    screenshots). That scroll lands above the bottom slack, so the stick
+    releases by design and later content raises the jump-to-latest bar
+    instead of yanking. Restored history never scrolls. */
+function GeneratedViewCard({ appId, payload, restored }: {
+  appId: string;
+  payload: NonNullable<Partial<VendoViewPart>["payload"]>;
+  restored: boolean;
+}) {
+  const { client, components, onPin } = useVendoContext();
+  const streaming = (payload as { streaming?: boolean }).streaming === true;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const presented = useRef(false);
+  useEffect(() => {
+    if (streaming || presented.current) return;
+    presented.current = true;
+    if (restored) return;
+    const card = cardRef.current;
+    // jsdom leaves scrollIntoView undefined; browsers always have it.
+    if (card && typeof card.scrollIntoView === "function") {
+      card.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+  }, [streaming, restored]);
+  return (
+    // The generated view lives inside a clear app boundary — a titled
+    // frame — so it reads as a distinct piece of software, not loose
+    // content bleeding into the surrounding chat text.
+    <div ref={cardRef} className="fl-uihost fl-appcard">
+      {/* Pick C (ui-lane-renderer): the bar narrates forming → live. The
+          data-state contract ("building" | "ready") is shared with the
+          thread lane; the label pair stays mounted so the swap crossfades. */}
+      <div className="fl-appcard-bar" data-state={streaming ? "building" : "ready"}>
+        <span className="fl-appcard-dot" aria-hidden="true" />
+        <span className="fl-boot-labels fl-appcard-name">
+          {/* Both labels stay mounted for the renderer lane's crossfade;
+              aria-hidden tracks data-state so screen readers hear only the
+              ACTIVE one (AI-review catch — the CSS-faded label was still
+              announced, including a stale "Building…" after ready). */}
+          <span className="fl-boot-building" aria-hidden={!streaming}>Building your view…</span>
+          <span className="fl-boot-ready" aria-hidden={streaming}>{appTitle(payload) ?? "Your app"}</span>
+        </span>
+        {/* Lane pick C5 (5A+5D) — the pin lives ON the bar (visible only once
+            the view is ready), replacing the old full-width footer row. The
+            renderer lane's data-state/label/hairline markup above is the
+            shared contract and stays untouched. */}
+        {!streaming && onPin ? (
+          <button
+            type="button"
+            className="fl-barpin"
+            onClick={() => onPin({ appId, payload })}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+            </svg>
+            Pin to dashboard
+          </button>
+        ) : null}
+        <span className="fl-boot-hairline" aria-hidden="true" />
+      </div>
+      <div className="fl-appcard-body">
+        <PayloadView
+          payload={payload}
+          components={components}
+          onAction={({ action, payload: actionPayload }) => client.apps.call(appId, action, actionPayload ?? {})}
+        />
+      </div>
+    </div>
+  );
 }
 
 type ToolPart = Extract<UIMessage["parts"][number], { toolCallId: string }>;

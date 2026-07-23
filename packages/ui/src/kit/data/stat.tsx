@@ -14,9 +14,21 @@ export interface StatProps {
   tone?: "default" | "accent" | "danger";
 }
 
+/** A KPI value is a number or a short phrase, never prose: past this length
+ *  the tile clips and overlaps its neighbors (the fresh-install screenshots),
+ *  so longer text renders truncated with the full text in the tooltip. */
+const STAT_VALUE_MAX_CHARS = 40;
+
 export function Stat({ label, value, format = "text", trend, tone = "default" }: StatProps) {
   const emphasis = tone === "accent" ? t.accent : tone === "danger" ? t.danger : t.text;
   const formatted = applyFormat(value, format);
+  const empty = formatted === null;
+  const overflow = !empty && formatted.length > STAT_VALUE_MAX_CHARS;
+  const display = empty
+    ? "—"
+    : overflow
+      ? `${formatted.slice(0, STAT_VALUE_MAX_CHARS - 1).trimEnd()}…`
+      : formatted;
   return (
     <article
       data-kit="Stat"
@@ -36,8 +48,9 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
     >
       <span style={{ color: t.muted, fontSize: "0.82em", fontWeight: 650 }}>{label}</span>
       <strong
+        {...(empty ? { "data-empty": "", title: "No data yet" } : overflow ? { title: formatted } : {})}
         style={{
-          color: emphasis,
+          color: empty ? t.muted : emphasis,
           fontFamily: t.headingFamily,
           fontSize: "calc(var(--vendo-font-size, 15px) * 1.65)",
           fontWeight: 700,
@@ -46,7 +59,7 @@ export function Stat({ label, value, format = "text", trend, tone = "default" }:
           fontVariantNumeric: "tabular-nums",
         }}
       >
-        {formatted ?? "—"}
+        {display}
       </strong>
       {trend ? (
         <span style={{ color: t.muted, fontSize: "0.8em", lineHeight: 1.35 }}>{trend}</span>
