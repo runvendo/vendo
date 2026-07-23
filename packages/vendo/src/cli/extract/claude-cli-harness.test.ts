@@ -95,6 +95,14 @@ describe("claudeCliHarness", () => {
 
     await harness.run({ root: "/x", env: { VENDO_EXTRACTION_MODEL: "claude-fable-5" }, instructions: "go" });
     expect(capturedArgs.slice(-2)).toEqual(["--model", "claude-fable-5"]);
+
+    // VENDO_MODEL_EXTRACT (models spec 2026-07-22) outranks the deprecated var.
+    await harness.run({
+      root: "/x",
+      env: { VENDO_MODEL_EXTRACT: "vendo-extract", VENDO_EXTRACTION_MODEL: "claude-fable-5" },
+      instructions: "go",
+    });
+    expect(capturedArgs.slice(-2)).toEqual(["--model", "vendo-extract"]);
   });
 
   it("returns stdout on success", async () => {
