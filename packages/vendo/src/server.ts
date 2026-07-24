@@ -124,6 +124,7 @@ import { HostedSessionDoorsMissingError, hostedStore, type HostedStore } from ".
 // own options instead of relying on the VENDO_API_KEY default.
 export { hostedStore, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";
 import { createRuntimeCapture } from "./runtime-capture.js";
+import { createPersonaTools } from "./persona/index.js";
 import {
   BASE_PATH,
   VERSION,
@@ -1308,6 +1309,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   });
   resolveAppToolRisk = apps.agentToolRisk;
   actions.add(apps.agentTools());
+  // Persona layer: two guard-bound, subject-scoped tools (load + remember)
+  // folded into the same registry apps rides. They inherit the guard binding
+  // above (boundTools re-reads descriptors per call), so persona reads and
+  // writes are policed and audited like every other tool, with no separate path.
+  actions.add(createPersonaTools(store));
   const missSurface = actions.descriptors()
     .then(capabilitySurfaceSnapshot)
     .catch(() => capabilitySurfaceSnapshot([]));
