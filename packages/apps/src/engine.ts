@@ -751,9 +751,18 @@ const normalizeIslandSource = (source: string): string => {
  *  "invalid utf-8 sequence" on esbuild's platform binary; with them, the
  *  same host builds clean with esbuild left OUT of `serverExternalPackages`
  *  entirely (corpus-triage Task 10). */
+/** Routed through a mutable binding so NO bundler statically resolves the
+    optional validator: the ignore comments above only speak webpack dialect,
+    and Wrangler (esbuild-the-bundler) inlined esbuild-the-package into Worker
+    bundles, where its lib/main.js dies on `__filename` the moment the
+    transform runs — misread below as "invalid TSX", failing EVERY island and
+    therefore every app build on Workers (the 2026-07 field report's
+    apps-create death; same class as the e2b import). */
+let ESBUILD_SPECIFIER = "esbuild";
+
 const esbuildTransform = (async () => {
   try {
-    const esbuild = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "esbuild");
+    const esbuild = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ ESBUILD_SPECIFIER) as { transformSync: (source: string, options: { loader: string }) => unknown };
     return (source: string) => void esbuild.transformSync(source, { loader: "tsx" });
   } catch {
     return undefined;
@@ -821,7 +830,7 @@ const prepareIslands = async (
     ...RESERVED_COMPONENT_NAMES,
     ...KIT_WIRE_COMPONENT_NAMES,
   ]);
-  const transform = await esbuildTransform;
+  let transform = await esbuildTransform;
   for (const [name, rawSource] of Object.entries(rawComponents)) {
     if (unreachableIslandNames.has(name)) {
       issues.push(`island "${name}" would never render — component names resolve host catalog → built-ins (Kit/prewired) → islands, so "${name}" always resolves to the built-in/host component instead. Rename the island to a distinct PascalCase name.`);
@@ -875,7 +884,17 @@ const prepareIslands = async (
     try {
       transform(source);
     } catch (error) {
-      issues.push(`island "${name}" is not valid TSX: ${error instanceof Error ? error.message.split("\n")[0] : "syntax error"}`);
+      // Only a real syntax verdict may fail the island: esbuild transform
+      // errors carry an `errors` array. Anything else means the VALIDATOR
+      // broke (a runtime without its native binary, an inlined bundle
+      // resolving __filename) — best-effort validation degrades to none
+      // instead of failing every island in the build.
+      if (typeof error === "object" && error !== null && Array.isArray((error as { errors?: unknown }).errors)) {
+        issues.push(`island "${name}" is not valid TSX: ${error instanceof Error ? error.message.split("\n")[0] : "syntax error"}`);
+      } else {
+        console.warn(`[vendo] island TSX validation unavailable on this runtime (${error instanceof Error ? error.message.split("\n")[0] : String(error)}); islands ship unvalidated`);
+        transform = undefined;
+      }
     }
   }
   return { components, componentTools, issues };

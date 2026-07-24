@@ -105,7 +105,7 @@ describe("vendo CLI commands", () => {
     expect(error.mock.calls.flat().join("\n")).toContain("--auth must be one of authJs, clerk, supabase, auth0, jwt, none");
 
     expect(await main(["init", root, "--framework", "rails"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--framework must be next or express");
+    expect(error.mock.calls.flat().join("\n")).toContain("--framework must be next, express, or custom");
 
     expect(await main(["init", root, "--cloud-key", "not-a-key"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--cloud-key must be a Vendo Cloud key");

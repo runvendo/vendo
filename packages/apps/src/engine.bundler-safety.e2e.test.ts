@@ -45,8 +45,15 @@ const NAKED_ESBUILD_IMPORT = /import\(\s*["']esbuild["']\s*\)/;
  *  directives immediately precede the specifier, inside the `import(...)`
  *  call. Both are asserted (not just one) because real hosts build with
  *  either bundler depending on their Next.js mode/version. */
+/** 2026-07 Workers field failure: the LITERAL guarded form was still
+ *  hard-resolved by esbuild-the-bundler (Wrangler ignores webpack-dialect
+ *  comments), inlining esbuild-the-package into Worker bundles where its
+ *  __filename reference crashed the island validator and failed every app
+ *  build. The guard is now a MUTABLE SPECIFIER (invisible to every bundler,
+ *  still a plain dynamic import under Node/Vitest) with the magic comments
+ *  kept so webpack/turbopack emit no critical-dependency warning. */
 const GUARDED_ESBUILD_IMPORT =
-  /import\(\s*\/\*\s*webpackIgnore:\s*true\s*\*\/\s*\/\*\s*turbopackIgnore:\s*true\s*\*\/\s*["']esbuild["']\s*\)/;
+  /import\(\s*\/\*\s*webpackIgnore:\s*true\s*\*\/\s*\/\*\s*turbopackIgnore:\s*true\s*\*\/\s*(?:\/\*\s*@vite-ignore\s*\*\/\s*)?ESBUILD_SPECIFIER\s*\)/;
 
 function buildDistEngineSource(): string {
   execFileSync("npx", ["tsc", "-p", "tsconfig.json"], { cwd: PACKAGE_DIR, stdio: "pipe" });

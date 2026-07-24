@@ -78,7 +78,7 @@ const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "
 /** Agent-install-dx: every init wizard question has a value-flag answer; a
     bad value fails as loudly as an unknown flag, with the valid choices. */
 const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
-const INIT_FRAMEWORK_VALUES = ["next", "express"];
+const INIT_FRAMEWORK_VALUES = ["next", "express", "custom"];
 const INIT_ENGINE_VALUES = ["claude", "codex", "npx"];
 const EXTRACT_FLAGS = new Set(["--force"]);
 const EXTRACT_VALUE_OPTIONS = ["--apply"];
@@ -184,7 +184,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     const framework = option(args, "--framework");
     if (framework !== undefined && !INIT_FRAMEWORK_VALUES.includes(framework)) {
-      problems.push("--framework must be next or express (example: vendo init --framework next)");
+      problems.push("--framework must be next, express, or custom (example: vendo init --framework custom for a Cloudflare Worker / Bun / Deno host)");
     }
     const cloudKey = option(args, "--cloud-key");
     if (cloudKey !== undefined && !isVendoKey(cloudKey)) {
