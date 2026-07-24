@@ -27,6 +27,9 @@ describe("memoryKnowledgeAdapter", () => {
     expect(defaultHits).toHaveLength(0);
     const internalHits = (await adapter.search({ text: "chargeback" }, { ...ctx, includeInternal: true })).hits;
     expect(internalHits.map((hit) => hit.ref.docId)).toEqual(["doc_int"]);
+    expect(await adapter.fetch?.({ docId: "doc_int" }, ctx)).toBeNull();
+    const fetchedInternal = await adapter.fetch?.({ docId: "doc_int" }, { ...ctx, includeInternal: true });
+    expect(fetchedInternal?.text).toContain("escalation contacts");
   });
 
   it("round-trips upsert → search → fetch → remove", async () => {
