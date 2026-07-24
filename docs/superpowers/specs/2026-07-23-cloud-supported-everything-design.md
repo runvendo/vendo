@@ -100,9 +100,12 @@ are flagged loudly. The archived contracts get an amendment note.
 ## Hosted config service (console)
 
 - One config document per project; document keys mirror the surface names.
-- `config_versions` immutable snapshots plus two pointers: draft and
-  published. Publish flips the pointer; rollback points published at a prior
-  version.
+- One mutable working draft plus immutable releases. A release snapshots the
+  whole config atomically (all surfaces together, like a commit), because
+  surfaces interact and the playground tests the combination: what you tested
+  is exactly what ships. Publish creates a release and flips the published
+  pointer; rollback points it at a prior release. Diffs between releases are
+  computed for display. Per-surface last-edited metadata lives in the draft.
 - Runtime read: key-authed `GET /api/v1/config` returning the published
   version with an ETag. OSS fetches at compose and re-fetches on a short TTL;
   a version flip invalidates the memoized actions registry so overrides
@@ -112,12 +115,22 @@ are flagged loudly. The archived contracts get an amendment note.
 
 ## Console editor
 
-A per-project Agent section: markdown editors for design rules and brief,
-schema-validated editors for theme and policy, and an overrides editor
-(risk labels, enablement, descriptions, semantics corrections, domains,
-compounds, briefs) rendered against the catalog mirror and linked from the
-Gaps dashboard. Draft banner, version history with notes, one-click rollback.
-Each surface is labeled with its effect class.
+A per-project Agent section, deliberately simple in v1 (Yousef's call):
+
+- Prose surfaces (brief, design rules) use one Notion-style rich text editor
+  (TipTap-class) that round-trips to markdown, so `vendo pull` ejects normal
+  files and git diffs stay clean. Raw-markdown mode behind a toggle.
+- Structured surfaces (theme, policy, overrides) use schema-validated JSON
+  editors in v1. Overrides editing is linked from the Gaps dashboard.
+- Draft banner, release history with notes, one-click rollback. Each surface
+  is labeled with its effect class. The editor links to the playground for
+  testing the draft (separate tab in v1).
+
+Deferred editor upgrades (explicitly later, same draft mechanism underneath):
+visual theme controls, policy rules matrix and policy simulator, design rules
+as discrete rule cards, the overrides catalog table rendered from the mirror,
+an embedded playground preview pane in the editor, and chat-assisted config
+editing.
 
 ## Playground
 
