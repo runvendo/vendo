@@ -16,9 +16,12 @@ export interface KnowledgeConformanceOptions {
       always tested, optional ones only when declared, `public-only` skips the
       internal-tier cases (knowledge design v2 R2). */
   posture: KnowledgePosture;
-  /** Docs the visibility/round-trip cases key on. Write-posture adapters get
-      them upserted by the suite; read-only adapters must come pre-seeded with
-      equivalent content. */
+  /** Docs the retrieval/visibility/round-trip cases key on. Write-posture
+      adapters get them upserted by the suite; read-only adapters MUST come
+      pre-seeded with these docs (the module's default seed docs when omitted —
+      pass explicit seedDocs for a read-only adapter, since you control its
+      contents). The suite makes positive retrieval assertions against the
+      public seed in EVERY posture: an empty search is non-conformant. */
   seedDocs?: { public: KnowledgeDoc; internal: KnowledgeDoc };
 }
 
@@ -94,6 +97,7 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
         await adapter.search({ text: seed.public.title, limit: 1 }, ctx),
         "search result is invalid",
       );
+      assert(result.hits.length >= 1, "search returned no hits for the pre-seeded public doc — retrieval is required in every posture");
       assert(result.hits.length <= 1, "search ignored the limit");
     }),
 
@@ -119,7 +123,6 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
         assert(result.hits.every((hit) => hit.visibility === "public"), "internal content leaked into a default-context search");
       }),
       adapterCase("R5 — includeInternal surfaces internal content for trusted callers", async (adapter) => {
-        if (!opts.posture.write && opts.seedDocs === undefined) return;
         const result = await adapter.search({ text: seed.internal.title }, { ...ctx, includeInternal: true });
         assert(result.hits.some((hit) => hit.visibility === "internal"), "includeInternal did not surface the seeded internal doc");
       }),
@@ -129,11 +132,10 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
   if (opts.posture.fetch) {
     cases.push(adapterCase("R3 — fetch resolves a searched ref and nulls an unknown one", async (adapter) => {
       const hits = (await adapter.search({ text: seed.public.title }, ctx)).hits;
-      if (hits.length > 0) {
-        const fetched = await adapter.fetch?.(hits[0]!.ref, ctx);
-        assert(fetched !== null && fetched !== undefined, "fetch returned null for a ref search just produced");
-        assertParses(knowledgeFetchResultSchema, fetched, "fetch result is invalid");
-      }
+      assert(hits.length > 0, "search returned no hits for the pre-seeded public doc — fetch cannot be exercised");
+      const fetched = await adapter.fetch?.(hits[0]!.ref, ctx);
+      assert(fetched !== null && fetched !== undefined, "fetch returned null for a ref search just produced");
+      assertParses(knowledgeFetchResultSchema, fetched, "fetch result is invalid");
       assert(await adapter.fetch?.({ docId: "doc_conformance_absent" }, ctx) === null, "fetch of an unknown ref did not return null");
     }));
   }
