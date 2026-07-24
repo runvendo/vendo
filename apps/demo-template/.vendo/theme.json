@@ -1,0 +1,23 @@
+{
+  "colors": {
+    "background": "#FBFBFA",
+    "surface": "#FFFFFF",
+    "text": "#111111",
+    "muted": "#908C85",
+    "accent": "#111111",
+    "accentText": "#FFFFFF",
+    "danger": "#B42318",
+    "border": "#ECEBE8"
+  },
+  "typography": {
+    "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+    "baseSize": "15px"
+  },
+  "radius": {
+    "small": "6px",
+    "medium": "12px",
+    "large": "16px"
+  },
+  "density": "comfortable",
+  "motion": "full"
+}

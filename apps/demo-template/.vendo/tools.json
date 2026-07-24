@@ -1,0 +1,43 @@
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "host_archiveItem",
+      "description": "Archive one item by id. This mutates the item: its status becomes archived.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Item id, e.g. item_001"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "destructive",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "archiveItem",
+        "method": "POST",
+        "path": "/api/items/{id}/archive"
+      }
+    },
+    {
+      "name": "host_listItems",
+      "description": "List the demo items with status and amount.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listItems",
+        "method": "GET",
+        "path": "/api/items"
+      }
+    }
+  ]
+}

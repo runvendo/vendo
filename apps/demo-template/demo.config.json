@@ -1,0 +1,29 @@
+{
+  "id": "template-sample",
+  "prospect": "Template Sample",
+  "ctaUrl": "https://cal.com/yousefhelal",
+  "beats": [
+    {
+      "key": "generate-ui",
+      "prompt": "Show me a dashboard of my data",
+      "chip": "Dashboard of my data",
+      "expectsView": true
+    },
+    {
+      "key": "take-action",
+      "prompt": "Archive the item named Bravo",
+      "chip": "Archive an item, with approval",
+      "expectsApproval": true
+    },
+    {
+      "key": "save-app",
+      "prompt": "Save this dashboard as a reusable app",
+      "chip": "Save this as an app"
+    }
+  ],
+  "caps": {
+    "maxTurns": 20,
+    "maxSpendUsd": 5
+  },
+  "expiresAt": "2099-01-01T00:00:00Z"
+}

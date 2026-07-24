@@ -17,12 +17,22 @@ export interface CaptureOverlayApi {
   setPhase(phase: string): void;
   watchContinuity(): void;
   snapshot(): CaptureOverlaySnapshot;
+  /** Stops this overlay's interval/observer/listener; reinstall calls it so
+   * sequential beats never stack tickers. */
+  dispose(): void;
 }
 
 export function remixCompletionPhase(blankSamples: number): string {
   return blankSamples === 0
     ? "REMIX COMPLETE · IFRAME STAYED VISIBLE"
     : `REMIX COMPLETE · ${blankSamples} BLANK SAMPLES`;
+}
+
+/** demo-beats: shown once a beat's turn settles, so the recording never ends
+ * on a stale GENERATING label; consent approvals are part of the proof. */
+export function demoBeatCompletionPhase(approvals: number): string {
+  if (approvals === 0) return "BEAT COMPLETE";
+  return `BEAT COMPLETE · ${approvals} CONSENT${approvals === 1 ? "" : "S"} APPROVED`;
 }
 
 declare global {
@@ -39,6 +49,7 @@ declare global {
 export function installCaptureOverlayInPage(options: CaptureOverlayOptions): void {
   const doc = document;
   const view = doc.defaultView ?? window;
+  view.__vendoDemoCapture?.dispose?.();
   doc.querySelector("[data-demo-capture-overlay]")?.remove();
 
   const overlay = doc.createElement("aside");
@@ -88,6 +99,13 @@ export function installCaptureOverlayInPage(options: CaptureOverlayOptions): voi
   overlay.append(title, timer, phase, paint, usable, bars, continuity);
   doc.body.append(overlay);
 
+  // Generated nodes already on screen when the overlay is (re)installed belong
+  // to an earlier beat (demo-beats keeps one continuous thread), so first
+  // paint must come from a genuinely new element — node ids recur across
+  // views, hence element identity. Empty for the single-beat captures, whose
+  // thread is cleared before the overlay is installed.
+  const preexisting = new WeakSet<Element>([...doc.querySelectorAll("[data-vendo-node-id]")]);
+
   let armed = true;
   let startedAt: number | undefined;
   let firstPaintMs: number | undefined;
@@ -127,7 +145,7 @@ export function installCaptureOverlayInPage(options: CaptureOverlayOptions): voi
   const inspect = () => {
     if (startedAt === undefined) return;
     const nodes = [...doc.querySelectorAll<HTMLElement>("[data-vendo-node-id]")];
-    if (firstPaintMs === undefined && nodes.some(visible)) {
+    if (firstPaintMs === undefined && nodes.some((node) => !preexisting.has(node) && visible(node))) {
       firstPaintMs = elapsed();
       phase.textContent = "FIRST GENERATED PAINT";
       phase.style.color = firstPaintMs < 1_000 ? "#86efac" : "#fca5a5";
@@ -150,17 +168,19 @@ export function installCaptureOverlayInPage(options: CaptureOverlayOptions): voi
     render();
   };
 
-  doc.addEventListener("submit", (event) => {
+  const onSubmit = (event: Event) => {
     const form = event.target;
     if (form instanceof view.HTMLFormElement && form.getAttribute("aria-label") === "Message composer") start();
-  }, true);
-  new view.MutationObserver((records) => {
+  };
+  doc.addEventListener("submit", onSubmit, true);
+  const observer = new view.MutationObserver((records) => {
     // Updating the stopwatch itself is also a DOM mutation. Ignore those
     // records so the proof overlay cannot create a MutationObserver feedback
     // loop while the host UI is idle.
     if (records.some((record) => !overlay.contains(record.target))) inspect();
-  }).observe(doc.body, { childList: true, subtree: true, attributes: true });
-  view.setInterval(() => {
+  });
+  observer.observe(doc.body, { childList: true, subtree: true, attributes: true });
+  const ticker = view.setInterval(() => {
     inspect();
     render();
   }, 50);
@@ -187,6 +207,11 @@ export function installCaptureOverlayInPage(options: CaptureOverlayOptions): voi
         blankSamples,
         continuityWatching,
       };
+    },
+    dispose() {
+      observer.disconnect();
+      view.clearInterval(ticker);
+      doc.removeEventListener("submit", onSubmit, true);
     },
   };
 }
