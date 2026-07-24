@@ -1,14 +1,20 @@
 ---
 title: "Quickstart: AI SDK"
 sidebarTitle: "Quickstart: AI SDK"
-description: "Give an existing AI SDK chatbot guarded host actions, generated UI, and approvals: vendo init, one tools spread, one embed component."
+description: "Add Vendo to an existing AI SDK chatbot in three steps: vendo init, one tools spread, one embed component."
+icon: "/images/logos/vercel.svg"
 ---
 
 import { AgentPrompt } from "/snippets/agent-prompt.jsx"
 
-Keep your `useChat` + `streamText` loop, your model, and your chat UI. Three
-steps add Vendo to it: run `vendo init`, spread the tool pack into
-`streamText`, and render tool outputs with one component.
+Keep your Vercel AI SDK chatbot as it is. Three steps add Vendo: your agent
+builds micro-apps right in the chat, runs your host actions guarded, and
+parks risky calls for approval.
+
+<AgentPrompt
+  lead="Paste this prompt instead of following the steps by hand."
+  prompt={"Add Vendo to this repo's existing AI SDK agent. Read https://docs.vendo.run/existing-agents/ai-sdk.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-ai-sdk to support the project."}
+/>
 
 ## 1. Install and init
 
@@ -17,38 +23,23 @@ npm install @vendoai/vendo
 npx vendo init
 ```
 
-<AgentPrompt
-  lead="Paste this prompt instead of following the steps by hand."
-  prompt={"Add Vendo to this repo's existing AI SDK agent. Read https://docs.vendo.run/existing-agents/ai-sdk.md and follow it exactly. Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-ai-sdk to support the project."}
-/>
-
-Init scaffolds the wire route (`app/api/vendo/[...vendo]/route.ts`), extracts
-your host actions into agent tools, and captures your theme
-([what init writes](/connect/vendo-init)). The wire route serves generated
-apps and approvals to the embeds; your own chat route stays the loop.
-
-Your chat route needs the same `vendo` instance the wire route uses. Init
-writes the whole `createVendo` composition inline in the generated route, so
-lift it into a shared module both import. Copy the call out of YOUR generated
-route verbatim — the exact keys mirror what init found in your repo: an auth
-preset or a `principal` line, `catalog`, and a `serverActions` map only when
-init detected `"use server"` actions. Lifted, it looks like:
+Init scaffolds the wire route, turns your host actions into agent tools, and
+captures your theme ([what init writes](/connect/vendo-init)). Lift the
+`createVendo` call init wrote into a shared module, so your chat route can
+use the same instance:
 
 ```ts
-// lib/vendo.ts — the composition init wrote into the wire route,
-// moved so your loop can import it too
+// lib/vendo.ts — the call init wrote, moved out of the wire route
 import { createVendo } from "@vendoai/vendo/server";
-import { registry } from "@/vendo/registry";
 
 export const vendo = createVendo({
-  // Who the wire's callers act as — init's line. It must resolve the SAME
-  // subject your chat route passes (step 2) — a mismatch makes every app
-  // and approval invisible to the embeds (infinite skeleton).
-  principal: async () => ({ kind: "user" as const, subject: "demo-user" }),
-  catalog: registry, // the component registry init generated
-  policy: {},        // .vendo/policy.json: destructive asks, reads run
+  // …the options init wrote (catalog, policy, …)
+  principal, // who your callers act as — from your auth
 });
 ```
+
+`principal` comes from your auth
+([presets for Auth.js, Supabase, Clerk, Auth0](/connect/act-as-presets)).
 
 ```ts
 // app/api/vendo/[...vendo]/route.ts — now just the handler
@@ -58,64 +49,37 @@ import { vendo } from "@/lib/vendo";
 export const { GET, POST, PUT, PATCH, DELETE } = nextVendoHandler(vendo);
 ```
 
-The route needs no `runtime` or `dynamic` exports: Node is the default
-runtime, route handlers are dynamic by default, and on a Next 16 app with
-`cacheComponents: true` an `export const dynamic` line is a build error.
-
-One Next.js config line keeps Vendo's native and wasm dependencies out of
-the bundler:
+One `next.config.ts` line keeps Vendo's native dependencies out of the
+bundler:
 
 ```ts
-// next.config.ts
 const nextConfig = { serverExternalPackages: ["esbuild", "@electric-sql/pglite"] };
 ```
 
 ## 2. Spread the pack
 
-One spread in your chat route:
-
 ```ts
-// app/api/chat/route.ts
-import { anthropic } from "@ai-sdk/anthropic";
-import { convertToModelMessages, stepCountIs, streamText, UIMessage } from "ai";
+// app/api/chat/route.ts — your existing route, one spread
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
 import { vendo } from "@/lib/vendo";
 
-export async function POST(req: Request) {
-  const { messages }: { messages: UIMessage[] } = await req.json();
-  // Resolve the caller from your own session — never trust the client.
-  const principal = { kind: "user", subject: "demo-user" } as const;
-
-  const result = streamText({
-    model: anthropic("claude-sonnet-4-6"),
-    messages: await convertToModelMessages(messages),
-    stopWhen: stepCountIs(5),
-    tools: { ...(await vendoTools(vendo, { principal })) },
-  });
-
-  return result.toUIMessageStreamResponse();
-}
+const result = streamText({
+  model,
+  messages,
+  tools: { ...yourTools, ...(await vendoTools(vendo, { principal })) },
+});
 ```
 
-The pack adds one guarded `vendo_<action>` tool per host action, plus
-`vendo_create_app` (generated UI in your chat) and `vendo_delegate` (hand
-Vendo's agent a whole task). It is built per request because tool execution
-needs a principal-scoped context.
-
-The principal you pass here and the one your shared composition's
-`principal` resolves (step 1) must name the SAME caller. Apps and approvals
-are principal-scoped: the chat turn creates them as this subject, and the
-embeds fetch them through the wire route as whatever its `principal`
-resolves. If the two disagree, everything the agent creates is invisible to
-the embeds — the app embed polls "pending" forever. Resolve both from the
-same session.
+That one spread gives your agent a guarded `vendo_<action>` tool per host
+action, `vendo_create_app` (micro-apps in your chat), and `vendo_delegate`.
+`principal` is the same caller your auth resolves in `lib/vendo.ts`
+([why](/existing-agents/configuration#one-principal-two-places)).
 
 ## 3. Render the embeds
 
 Wrap the chat once in `VendoProvider` and hand finished tool outputs to
-`<VendoToolResult>`: it renders the live app embed for a generated app, the
-approval card for a parked call, and nothing for plain data. In `useChat`,
-`vendo_*` tools stream as `dynamic-tool` message parts:
+`<VendoToolResult>`. In `useChat`, `vendo_*` tools stream as `dynamic-tool`
+message parts:
 
 ```tsx
 // app/page.tsx — inside your existing message-parts loop
@@ -127,51 +91,24 @@ case "dynamic-tool":
 
 ## Try it
 
-<Warning>
-  Two models are in play, on two separate credentials. Your agent's OWN loop
-  keeps its own key (here `ANTHROPIC_API_KEY` for `claude-sonnet-4-6`) — no
-  Vendo key replaces it. Vendo's internal turns (app builds, the delegate)
-  resolve their model through the
-  [dev-mode credential ladder](/connect/dev-mode), where an explicit provider
-  key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-  `GOOGLE_GENERATIVE_AI_API_KEY`) always beats `VENDO_API_KEY` — explicit
-  keys win over implicit ones. With a provider key in the environment for
-  your loop, Vendo's builds ride that key too, NOT your Cloud key; to force
-  builds through the Vendo Cloud gateway, set
-  `VENDO_DEV_CREDENTIAL=vendo-cloud` (the gateway rides the stock
-  `@ai-sdk/anthropic` provider, so that package must be installed). No
-  `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
-  straight into `.env.local`. If your loop's model has no key on this
-  machine, either set one or point your `model` at `devModel()` from
-  `@vendoai/vendo/server` to ride the same ladder. The done-criterion is a
-  REAL chat turn that renders a Vendo tool output — run ask 2 yourself
-  before calling the install done; doctor cannot check your loop's model.
-</Warning>
-
-One thread, three asks:
-
-1. **"What's the weather in Paris?"** A guarded read: the guard runs it,
-   audits it, and returns plain data your model narrates.
+1. **"What's the weather in Paris?"** — a guarded read; your model narrates
+   the result.
 2. **"Make me a dashboard comparing the weather in Paris, London and
-   Tokyo."** `vendo_create_app` returns an app ref immediately and the app
-   builds live inline in the chat.
-3. **A guarded call from your own catalog.** Open `.vendo/tools.json`, pick
-   a tool init labeled `destructive` (or one marked critical in
-   `.vendo/overrides.json`), and ask for it in plain language. The call
-   parks on the generated policy (destructive asks, reads run) and renders
-   as an approval card; Approve executes it in place, Deny resolves it to
-   "declined". (The [full example](#the-full-example) parks
-   `vendo_send_trip_report` on "Email that trip report to boss@example.com"
-   — but a stock starter has no email action, so ask for one that actually
-   exists in YOUR extracted list.)
+   Tokyo."** — a micro-app builds live, inline in your chat.
+3. **Ask for a destructive action** from `.vendo/tools.json` in plain
+   language — it parks as an approval card; Approve runs it in place.
+
+Your loop keeps its own model key; Vendo's app builds resolve theirs through
+the [dev-mode credential ladder](/connect/dev-mode). No key? `npx vendo
+login` mints a free one. Details and knobs:
+[Configuration](/existing-agents/configuration).
 
 ## The full example
 
 [`examples/ai-sdk-agent`](https://github.com/runvendo/vendo/tree/main/examples/ai-sdk-agent)
 is the unmodified
 [AI SDK Next.js quickstart chatbot](https://ai-sdk.dev/docs/getting-started/nextjs-app-router)
-plus exactly this diff, every added line inside `--- vendo` comment fences,
-with a keyless fixture e2e (`pnpm test`). The concepts behind the pack
-(approval parking, the envelope contract, the two-model split) live in
-[the overview](/existing-agents) and
+plus the full, working version of this diff, with a keyless fixture e2e
+(`pnpm test`). Concepts
+live in [the overview](/existing-agents) and
 [Embeds and envelopes](/existing-agents/embeds).

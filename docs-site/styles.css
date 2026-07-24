@@ -21,6 +21,13 @@ kbd {
   font-family: "Geist Mono", ui-monospace, monospace;
 }
 
+/* Framework logos (existing-agents cards + sidebar) ship as solid-ink SVGs
+   rendered via <img>, which cannot follow the theme; flip them in dark mode. */
+html.dark img[src$="/images/logos/vercel.svg"],
+html.dark img[src$="/images/logos/mastra.svg"] {
+  filter: invert(1);
+}
+
 .card {
   box-shadow:
     0 1px 2px rgba(20, 15, 40, 0.04),

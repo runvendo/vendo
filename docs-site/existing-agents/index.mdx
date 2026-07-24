@@ -1,28 +1,28 @@
 ---
 title: "Overview and tool pack"
 sidebarTitle: "Overview"
-description: "Keep your AI SDK or Mastra agent and add Vendo's guarded tools, generated UI, and approvals to its loop through one in-process tool pack."
+description: "Keep your Vercel AI SDK or Mastra agent and add Vendo's guarded tools, micro-apps, and approvals to its loop through one in-process tool pack."
 ---
 
 import { AgentPrompt } from "/snippets/agent-prompt.jsx"
 
 You already have an agent: its own loop, its own model, its own chat UI.
 Vendo does not replace any of it. One tool pack, spread into your agent's
-tools, adds guarded host actions, generated UI, and approvals to the loop
+tools, adds guarded host actions, micro-apps, and approvals to the loop
 you already run. Start with your framework's quickstart:
 
 <CardGroup cols={2}>
-  <Card title="Quickstart: AI SDK" href="/existing-agents/ai-sdk">
+  <Card title="Quickstart: AI SDK" icon="/images/logos/vercel.svg" href="/existing-agents/ai-sdk">
     `vendo init`, one spread into `streamText`, one embed component.
   </Card>
-  <Card title="Quickstart: Mastra" href="/existing-agents/mastra">
+  <Card title="Quickstart: Mastra" icon="/images/logos/mastra.svg" href="/existing-agents/mastra">
     The same three steps in Mastra's `Agent({ tools })` shape.
   </Card>
 </CardGroup>
 
 <AgentPrompt
   lead="Not sure which? Paste this and your coding agent picks the right walkthrough."
-  prompt={"This repo already has its own agent. Add Vendo's guarded tools, generated UI, and approvals to it. Read https://docs.vendo.run/existing-agents.md and follow the walkthrough for my framework (AI SDK or Mastra). Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-byo to support the project."}
+  prompt={"This repo already has its own agent. Add Vendo's guarded tools, micro-apps, and approvals to it. Read https://docs.vendo.run/existing-agents.md and follow the walkthrough for my framework (AI SDK or Mastra). Ask me before creating any account or key. You're done when `vendo doctor --json` reports all green and my chat renders Vendo tool outputs. Then ask me whether I'd like to star it via https://vendo.run/star?src=docs-byo to support the project."}
 />
 
 The pack adds three things:
@@ -31,9 +31,9 @@ The pack adds three things:
    every call routed through policy, approval, and audit. The pack wraps the
    same guard-bound registry Vendo's own loop uses, so no tool reachable from
    your loop has an unguarded route.
-2. **Generated UI in your chat.** A `vendo_create_app` tool builds live,
-   interactive apps that render inline in your own chat surface via embed
-   components.
+2. **Micro-apps in your chat.** A `vendo_create_app` tool builds live,
+   interactive micro-apps that render inline in your own chat surface via
+   embed components.
 3. **Vendo as a delegate.** A `vendo_delegate` tool hands Vendo's agent a
    whole task and returns the run report.
 
@@ -77,7 +77,7 @@ built-ins are already prefixed:
 | Tool | What it does |
 | --- | --- |
 | `vendo_<your action>` | one per registered host action, guard-wrapped per call |
-| `vendo_create_app` | generates UI; returns fast with an app ref while the build streams over the wire, so your loop never blocks on generation |
+| `vendo_create_app` | builds a micro-app; returns fast with an app ref while the build streams over the wire, so your loop never blocks on generation |
 | `vendo_delegate` | hands Vendo's own agent a whole task via the runner seam; returns `{ status, summary, refs }` |
 
 `include` and `exclude` filter the pack by final (namespaced) tool name,

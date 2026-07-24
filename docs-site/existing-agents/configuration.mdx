@@ -1,0 +1,83 @@
+---
+title: "Configuration"
+sidebarTitle: "Configuration"
+description: "The fine print behind the AI SDK and Mastra quickstarts: the shared composition, principals, credentials, and framework-specific notes."
+---
+
+Everything the [quickstarts](/existing-agents) keep short, in full. Nothing
+here is needed for a first successful run; come back when you customize.
+
+## The shared composition
+
+`vendo init` writes the whole `createVendo` composition inline in the
+generated wire route. The quickstarts lift it into a shared module so your
+chat route and the wire route use the same instance. Copy the call out of
+YOUR generated route verbatim — the exact keys mirror what init found in
+your repo:
+
+- an auth preset or a `principal` line,
+- `catalog` (the component registry init generated),
+- a `serverActions` map, only when init detected `"use server"` actions,
+- `policy: {}` reads `.vendo/policy.json`: destructive asks, reads run.
+
+## One principal, two places
+
+Apps and approvals are principal-scoped. The chat turn creates them as the
+principal your loop passes (`vendoTools(vendo, { principal })` on AI SDK,
+the `RequestContext` entry on Mastra), and the embeds fetch them through the
+wire route as whatever its composition's `principal` resolves. **If the two
+disagree, everything the agent creates is invisible to the embeds** — the
+app embed polls "pending" forever while the agent claims the micro-app is
+ready. Resolve both from the same session (or the same shared constant, as
+the full examples do), and never trust a client-supplied principal.
+
+## Two models, two credentials
+
+Your agent's own loop keeps its own model and key — no Vendo key replaces
+it. Vendo's internal turns (micro-app builds, the delegate) resolve their
+model through the [dev-mode credential ladder](/connect/dev-mode), where an
+explicit provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`GOOGLE_GENERATIVE_AI_API_KEY`) always beats `VENDO_API_KEY`:
+
+- With a provider key in the environment for your loop, Vendo's builds ride
+  that key too, NOT your Cloud key. On an OpenAI key, the default build
+  model can be noticeably slower than the Cloud aliases.
+- To force builds through the Vendo Cloud gateway, set
+  `VENDO_DEV_CREDENTIAL=vendo-cloud`. The gateway rides the stock
+  `@ai-sdk/anthropic` provider, so that package must be installed.
+- No `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
+  straight into `.env.local`.
+- If your loop's model has no key on this machine, either set one or point
+  your `model` at `devModel()` from `@vendoai/vendo/server` to ride the
+  same ladder.
+
+The done-criterion for an install is a REAL chat turn that renders a Vendo
+tool output — `vendo doctor` cannot check your loop's model.
+
+## Next.js notes
+
+- The wire route needs no `runtime` or `dynamic` exports: Node is the
+  default runtime and route handlers are dynamic by default. On a Next 16
+  app with `cacheComponents: true`, an `export const dynamic` line is a
+  build error.
+- `serverExternalPackages: ["esbuild", "@electric-sql/pglite"]` keeps
+  Vendo's native and wasm dependencies out of the bundler.
+
+## Mastra notes
+
+- A Mastra agent definition is static (one definition serves every user),
+  so the pack takes no principal; the caller resolves per call from the
+  `RequestContext`. A `vendo_*` call without one fails closed.
+- `await vendo.store.ensureSchema()` in the chat route lets guarded tools
+  run before any wire request has warmed the store.
+- Multi-turn tool use with GPT-5 reasoning models currently fails on
+  history replay — pin `openai/gpt-4.1-mini`
+  ([mastra-ai/mastra#9005](https://github.com/mastra-ai/mastra/issues/9005)).
+
+## Filtering the pack
+
+`include` and `exclude` filter the pack by final (namespaced) tool name,
+exact match. `include` unset means the whole pack; `exclude` wins over
+`include`. See [the overview](/existing-agents#the-tool-pack) for the pack's
+contents and [Embeds and envelopes](/existing-agents/embeds) for the
+envelope contract.
