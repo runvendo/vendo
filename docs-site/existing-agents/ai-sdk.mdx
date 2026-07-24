@@ -31,14 +31,15 @@ use the same instance:
 ```ts
 // lib/vendo.ts — the call init wrote, moved out of the wire route
 import { createVendo } from "@vendoai/vendo/server";
-import { registry } from "@/vendo/registry";
 
 export const vendo = createVendo({
-  principal: async () => ({ kind: "user" as const, subject: "demo-user" }),
-  catalog: registry,
-  policy: {},
+  // …the options init wrote (catalog, policy, …)
+  principal, // who your callers act as — from your auth
 });
 ```
+
+`principal` comes from your auth
+([presets for Auth.js, Supabase, Clerk, Auth0](/connect/act-as-presets)).
 
 ```ts
 // app/api/vendo/[...vendo]/route.ts — now just the handler
@@ -58,30 +59,20 @@ const nextConfig = { serverExternalPackages: ["esbuild", "@electric-sql/pglite"]
 ## 2. Spread the pack
 
 ```ts
-// app/api/chat/route.ts
-import { anthropic } from "@ai-sdk/anthropic";
-import { convertToModelMessages, stepCountIs, streamText, UIMessage } from "ai";
+// app/api/chat/route.ts — your existing route, one spread
 import { vendoTools } from "@vendoai/vendo/ai-sdk";
 import { vendo } from "@/lib/vendo";
 
-export async function POST(req: Request) {
-  const { messages }: { messages: UIMessage[] } = await req.json();
-  const principal = { kind: "user", subject: "demo-user" } as const;
-
-  const result = streamText({
-    model: anthropic("claude-sonnet-4-6"),
-    messages: await convertToModelMessages(messages),
-    stopWhen: stepCountIs(5),
-    tools: { ...(await vendoTools(vendo, { principal })) },
-  });
-
-  return result.toUIMessageStreamResponse();
-}
+const result = streamText({
+  model,
+  messages,
+  tools: { ...yourTools, ...(await vendoTools(vendo, { principal })) },
+});
 ```
 
 That one spread gives your agent a guarded `vendo_<action>` tool per host
 action, `vendo_create_app` (micro-apps in your chat), and `vendo_delegate`.
-Use the same principal here and in `lib/vendo.ts`
+`principal` is the same caller your auth resolves in `lib/vendo.ts`
 ([why](/existing-agents/configuration#one-principal-two-places)).
 
 ## 3. Render the embeds
@@ -117,6 +108,7 @@ login` mints a free one. Details and knobs:
 [`examples/ai-sdk-agent`](https://github.com/runvendo/vendo/tree/main/examples/ai-sdk-agent)
 is the unmodified
 [AI SDK Next.js quickstart chatbot](https://ai-sdk.dev/docs/getting-started/nextjs-app-router)
-plus exactly this diff, with a keyless fixture e2e (`pnpm test`). Concepts
+plus the full, working version of this diff, with a keyless fixture e2e
+(`pnpm test`). Concepts
 live in [the overview](/existing-agents) and
 [Embeds and envelopes](/existing-agents/embeds).

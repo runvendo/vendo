@@ -30,14 +30,15 @@ the same instance:
 ```ts
 // src/lib/vendo.ts — the call init wrote, moved out of the wire route
 import { createVendo } from "@vendoai/vendo/server";
-import { registry } from "@/vendo/registry";
 
 export const vendo = createVendo({
-  principal: async () => ({ kind: "user" as const, subject: "demo-user" }),
-  catalog: registry,
-  policy: {},
+  // …the options init wrote (catalog, policy, …)
+  principal, // who your callers act as — from your auth
 });
 ```
+
+`principal` comes from your auth
+([presets for Auth.js, Supabase, Clerk, Auth0](/connect/act-as-presets)).
 
 ```ts
 // src/app/api/vendo/[...vendo]/route.ts — now just the handler
@@ -53,51 +54,34 @@ The agent definition gains the pack next to its own tools
 (`vendoMastraTools` returns a Promise, hence the tools-as-function form):
 
 ```ts
-// src/mastra/agents/weather-agent.ts
-import { Agent } from '@mastra/core/agent';
+// src/mastra/agents/your-agent.ts — one spread
 import { vendoMastraTools } from '@vendoai/vendo/mastra';
 import { vendo } from '../../lib/vendo';
-import { weatherTool } from '../tools/weather-tool';
 
-export const weatherAgent = new Agent({
-  id: 'weather-agent',
-  name: 'Weather Agent',
-  instructions: `…your instructions, plus a short note about the vendo_* tools…`,
-  model: 'openai/gpt-4.1-mini',
-  tools: async () => ({ weatherTool, ...(await vendoMastraTools(vendo)) }),
+export const yourAgent = new Agent({
+  // …your agent as it is
+  tools: async () => ({ ...yourTools, ...(await vendoMastraTools(vendo)) }),
 });
 ```
 
-Then set the caller's principal on the `RequestContext` in your chat route
-— a `vendo_*` call without one fails closed:
+Then set the caller's principal on the `RequestContext` in your chat route —
+a `vendo_*` call without one fails closed:
 
 ```ts
-// src/app/api/chat/route.ts — Mastra's own Next.js guide route, two additions
-import { handleChatStream } from '@mastra/ai-sdk';
+// src/app/api/chat/route.ts — two additions to your existing route
 import { RequestContext } from '@mastra/core/request-context';
-import { createUIMessageStreamResponse } from 'ai';
-import { mastra } from '@/mastra';
 import { VENDO_PRINCIPAL_KEY } from '@vendoai/vendo/mastra';
-import { vendo } from '@/lib/vendo';
 
-export async function POST(req: Request) {
-  const params = await req.json();
+const requestContext = new RequestContext();
+requestContext.set(VENDO_PRINCIPAL_KEY, principal); // same caller as your wire route
 
-  await vendo.store.ensureSchema();
-  const requestContext = new RequestContext();
-  requestContext.set(VENDO_PRINCIPAL_KEY, { kind: 'user', subject: 'demo-user' });
-
-  const stream = await handleChatStream({
-    version: 'v6',
-    mastra,
-    agentId: 'weather-agent',
-    params: { ...params, requestContext },
-  });
-  return createUIMessageStreamResponse({ stream });
-}
+const stream = await handleChatStream({
+  // …your existing call
+  params: { ...params, requestContext },
+});
 ```
 
-Use the same principal here and in `src/lib/vendo.ts`
+`principal` is the same caller your auth resolves in `src/lib/vendo.ts`
 ([why](/existing-agents/configuration#one-principal-two-places)).
 
 ## 3. Render the embeds
@@ -136,7 +120,8 @@ GPT-5 model pin): [Configuration](/existing-agents/configuration).
 
 [`examples/mastra-agent`](https://github.com/runvendo/vendo/tree/main/examples/mastra-agent)
 is the unmodified [`create-mastra`](https://mastra.ai/docs) weather starter,
-fronted with Next.js per Mastra's own guide, plus exactly this diff (~60
-lines), with a keyless fixture e2e (`pnpm test`). Concepts live in
+fronted with Next.js per Mastra's own guide, plus the full, working version
+of this diff (~60 lines), with a keyless fixture e2e (`pnpm test`). Concepts
+live in
 [the overview](/existing-agents) and
 [Embeds and envelopes](/existing-agents/embeds).
