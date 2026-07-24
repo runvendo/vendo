@@ -15,6 +15,7 @@ export * from "./ids.js";
 export * from "./island-ambient.js";
 export * from "./jail-modules.js";
 export * from "./jcs.js";
+export * from "./knowledge.js";
 export * from "./kit/index.js";
 export * from "./principal.js";
 export * from "./reshape.js";
