@@ -581,6 +581,7 @@ describe("amended public export surface — root utilities and /conformance inve
       "actAsConformance",
       "agentRunnerConformance",
       "guardConformance",
+      "knowledgeAdapterConformance",
       "memoryKnowledgeAdapter",
       "memoryStoreAdapter",
       "runConformance",
