@@ -66,5 +66,8 @@ export function devModel(_options: DevModelOptions = {}): LanguageModel {
 
 /** Export parity with the Node build (the server entry imports it from
  *  "#dev-creds/model"). The edge ladder never resolves, so there is nothing
- *  to configure — a deliberate no-op. */
-export function configureVendoModelSlots(_models: { judge?: string | LanguageModel } | undefined): void {}
+ *  to bind — a deliberate no-op. */
+export function bindVendoModelSlots(
+  _model: unknown,
+  _models: { judge?: string | LanguageModel } | undefined,
+): void {}

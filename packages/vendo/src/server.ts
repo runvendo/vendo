@@ -86,7 +86,7 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
-import { configureVendoModelSlots } from "#dev-creds/model";
+import { bindVendoModelSlots } from "#dev-creds/model";
 // Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
 // entry: the lazily-resolving env ladder createVendo composes when the host
 // passes none, exported for host code too (judge wiring, host features). No
@@ -1051,9 +1051,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // blocks consume, plus the composed paint knob (family fast pick when the
   // agent slot rides the ladder; the deprecated paint.model otherwise).
   const inference = resolveModels(config);
-  // models.judge feeds host-wired vendoModel("vendo-judge") instances (v1
-  // plumbing, see configureVendoModelSlots) — there is NO judge default.
-  configureVendoModelSlots(config.models);
+  // models.judge feeds the judge the host wired from vendoModel("vendo-judge"):
+  // the model rides Judge.model, and composition binds THIS instance's config
+  // onto exactly that model (bindVendoModelSlots — per createVendo instance,
+  // no process-level registry). A custom judge without a model, or a judge
+  // built on a BYO model object, is untouched — and there is NO judge default.
+  bindVendoModelSlots(config.judge?.model, config.models);
   // cse lane 3 — the Cloud hosted-config adapter, selected at THIS composition
   // seam from VENDO_API_KEY (adapter rule: the surfaces themselves never read
   // the key; cloudKeyOptions lives only here). Constructing it is PURE (closures
