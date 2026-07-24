@@ -48,8 +48,10 @@ describe("memoryKnowledgeAdapter", () => {
     const adapter = memoryKnowledgeAdapter({ docs: [publicDoc, internalDoc] });
     const kindHits = (await adapter.search({ text: "chargeback", kinds: ["docs"] }, { ...ctx, includeInternal: true })).hits;
     expect(kindHits).toHaveLength(0);
+    const glossaryHits = (await adapter.search({ text: "chargeback", kinds: ["glossary"] }, { ...ctx, includeInternal: true })).hits;
+    expect(glossaryHits.map((hit) => hit.ref.docId)).toEqual(["doc_int"]);
     const limited = (await adapter.search({ text: "e", limit: 1 }, { ...ctx, includeInternal: true })).hits;
-    expect(limited.length).toBeLessThanOrEqual(1);
+    expect(limited).toHaveLength(1);
     const status = await adapter.status();
     expect(status.docs).toBe(2);
     expect(status.byKind).toMatchObject({ docs: 1, glossary: 1 });

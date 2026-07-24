@@ -80,7 +80,9 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
   const cases: ConformanceCase[] = [
     adapterCase("R2 — declared posture is schema-valid and matches the adapter surface", async (adapter) => {
       assertParses(knowledgePostureSchema, adapter.posture, "posture is invalid");
-      assert(JSON.stringify(adapter.posture) === JSON.stringify(opts.posture), "adapter posture differs from the declared posture");
+      assert(adapter.posture.fetch === opts.posture.fetch, "adapter posture.fetch differs from the declared posture");
+      assert(adapter.posture.write === opts.posture.write, "adapter posture.write differs from the declared posture");
+      assert(adapter.posture.visibility === opts.posture.visibility, "adapter posture.visibility differs from the declared posture");
       assert((adapter.fetch !== undefined) === opts.posture.fetch, "fetch presence does not match posture.fetch");
       assert((adapter.upsert !== undefined) === opts.posture.write, "upsert presence does not match posture.write");
       assert((adapter.remove !== undefined) === opts.posture.write, "remove presence does not match posture.write");
@@ -89,7 +91,7 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
     adapterCase("R2 — search returns a schema-valid result and respects limit", async (adapter) => {
       const result = assertParses<{ hits: unknown[] }>(
         knowledgeSearchResultSchema,
-        await adapter.search({ text: "conformance", limit: 1 }, ctx),
+        await adapter.search({ text: seed.public.title, limit: 1 }, ctx),
         "search result is invalid",
       );
       assert(result.hits.length <= 1, "search ignored the limit");
@@ -98,7 +100,7 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
     adapterCase("R3 — schema intent answers honestly: unknown terms return zero hits", async (adapter) => {
       const result = assertParses<{ hits: unknown[] }>(
         knowledgeSearchResultSchema,
-        await adapter.search({ text: "zz_conformance_absent_term_zz", intent: "schema" }, ctx),
+        await adapter.search({ text: "zz_absent_term_never_seeded_zz", intent: "schema" }, ctx),
         "schema-intent result is invalid",
       );
       assert(result.hits.length === 0, "schema intent fuzzy-matched an absent term instead of honest not-found");
@@ -113,12 +115,12 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
   if (opts.posture.visibility === "enforced") {
     cases.push(
       adapterCase("R5 — a default context never surfaces internal hits", async (adapter) => {
-        const result = await adapter.search({ text: "conformance" }, ctx);
+        const result = await adapter.search({ text: seed.internal.title }, ctx);
         assert(result.hits.every((hit) => hit.visibility === "public"), "internal content leaked into a default-context search");
       }),
       adapterCase("R5 — includeInternal surfaces internal content for trusted callers", async (adapter) => {
-        if (!opts.posture.write) return;
-        const result = await adapter.search({ text: "chargeback" }, { ...ctx, includeInternal: true });
+        if (!opts.posture.write && opts.seedDocs === undefined) return;
+        const result = await adapter.search({ text: seed.internal.title }, { ...ctx, includeInternal: true });
         assert(result.hits.some((hit) => hit.visibility === "internal"), "includeInternal did not surface the seeded internal doc");
       }),
     );
@@ -126,7 +128,7 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
 
   if (opts.posture.fetch) {
     cases.push(adapterCase("R3 — fetch resolves a searched ref and nulls an unknown one", async (adapter) => {
-      const hits = (await adapter.search({ text: "conformance" }, ctx)).hits;
+      const hits = (await adapter.search({ text: seed.public.title }, ctx)).hits;
       if (hits.length > 0) {
         const fetched = await adapter.fetch?.(hits[0]!.ref, ctx);
         assert(fetched !== null && fetched !== undefined, "fetch returned null for a ref search just produced");

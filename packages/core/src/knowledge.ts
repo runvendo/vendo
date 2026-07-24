@@ -68,7 +68,9 @@ export const knowledgeRefSchema = z.object({
 /** Knowledge design v2 (2026-07-22) R3 — the mode selector. `chat` = fast
     retrieval; `deep` = agentic search (engines without it treat as `chat`);
     `schema` = exact lookup over glossary/api rows — empty hits mean an honest
-    not-found, never a fuzzy fallback. */
+    not-found, never a fuzzy fallback. Intent is orthogonal to `kinds`: it
+    selects the matching mode and never implies a kind filter — callers
+    restrict kinds explicitly. */
 export type KnowledgeIntent = "chat" | "deep" | "schema";
 
 export const knowledgeIntentSchema = z.enum(["chat", "deep", "schema"]) satisfies z.ZodType<KnowledgeIntent>;
@@ -80,7 +82,9 @@ export interface KnowledgeQuery {
   text: string;
   /** Defaults to "chat" when absent. */
   intent?: KnowledgeIntent;
+  /** An empty array matches nothing. */
   kinds?: KnowledgeKind[];
+  /** Absent means an engine-chosen default. */
   limit?: number;
 }
 
@@ -123,6 +127,8 @@ export const knowledgeHitSchema = z.object({
   score: z.number().optional(),
 }).passthrough() satisfies z.ZodType<KnowledgeHit>;
 
+/** Hits are ordered most-relevant-first. `score` is optional and
+    engine-relative — never comparable across engines. */
 export interface KnowledgeSearchResult {
   hits: KnowledgeHit[];
 }
@@ -178,15 +184,22 @@ export const knowledgePostureSchema = z.object({
 
 /** Knowledge design v2 (2026-07-22) R2 — the seam all three engines (local,
     cloud, BYO HTTP template) implement. Optional members are present exactly
-    when the posture declares them (conformance-tested, not promised). */
+    when the posture declares them (conformance-tested, not promised).
+    Adapters may assume inputs are schema-valid; the wire/tool layer owns
+    validation. */
 export interface KnowledgeAdapter {
   posture: KnowledgePosture;
   search(query: KnowledgeQuery, ctx: KnowledgeContext): Promise<KnowledgeSearchResult>;
-  /** Present iff `posture.fetch`. Null for an unknown ref. */
+  /** Present iff `posture.fetch`. Internal-visibility docs behave as unknown
+      (`null`) unless `ctx.includeInternal` — a ref is not a capability. The
+      returned `ref` identifies what was actually fetched; `chunkId` may be
+      omitted when the whole document is returned. */
   fetch?(ref: KnowledgeRef, ctx: KnowledgeContext): Promise<KnowledgeFetchResult | null>;
-  /** Present iff `posture.write`. Document-level; engines own chunking. */
+  /** Present iff `posture.write`. Document-level; engines own chunking.
+      Resolves only once the documents are searchable — engines with
+      asynchronous indexing must await searchability before resolving. */
   upsert?(docs: KnowledgeDoc[]): Promise<void>;
-  /** Present iff `posture.write`. */
+  /** Present iff `posture.write`. Unknown ids resolve as no-ops. */
   remove?(docIds: string[]): Promise<void>;
   status(): Promise<KnowledgeStatus>;
 }
