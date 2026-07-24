@@ -49,4 +49,25 @@ describe("KnowledgeAdapter conformance kit against the memory stub", () => {
     expect(report.ok).toBe(false);
     expect(report.failures.map((failure) => failure.name).join("\n")).toContain("search");
   });
+
+  it("a search that returns only unrelated hits fails conformance", async () => {
+    const junkAdapter: KnowledgeAdapter = {
+      posture: { fetch: false, write: false, visibility: "public-only" },
+      async search(query) {
+        if (query.text.startsWith("zz_")) return { hits: [] };
+        return {
+          hits: [{ ref: { docId: "doc_unrelated" }, snippet: "unrelated", kind: "docs", visibility: "public" }],
+        };
+      },
+      async status() {
+        return { docs: 1 };
+      },
+    };
+    const report = await runConformance(knowledgeAdapterConformance({
+      makeAdapter: async () => ({ adapter: junkAdapter }),
+      posture: { fetch: false, write: false, visibility: "public-only" },
+    }));
+    expect(report.ok).toBe(false);
+    expect(report.failures.map((failure) => failure.name).join("\n")).toContain("search");
+  });
 });

@@ -91,14 +91,15 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
       assert((adapter.remove !== undefined) === opts.posture.write, "remove presence does not match posture.write");
     }),
 
-    adapterCase("R2 — search returns a schema-valid result and respects limit", async (adapter) => {
-      const result = assertParses<{ hits: unknown[] }>(
-        knowledgeSearchResultSchema,
-        await adapter.search({ text: seed.public.title, limit: 1 }, ctx),
-        "search result is invalid",
+    adapterCase("R2 — search retrieves the pre-seeded public doc and respects limit", async (adapter) => {
+      const result = await adapter.search({ text: seed.public.title }, ctx);
+      assertParses(knowledgeSearchResultSchema, result, "search result is invalid");
+      assert(
+        result.hits.some((hit) => hit.ref.docId === seed.public.id),
+        "search did not retrieve the pre-seeded public doc by id — retrieval is required in every posture",
       );
-      assert(result.hits.length >= 1, "search returned no hits for the pre-seeded public doc — retrieval is required in every posture");
-      assert(result.hits.length <= 1, "search ignored the limit");
+      const limited = await adapter.search({ text: seed.public.title, limit: 1 }, ctx);
+      assert(limited.hits.length === 1, "limit: 1 did not truncate to exactly one hit");
     }),
 
     adapterCase("R3 — schema intent answers honestly: unknown terms return zero hits", async (adapter) => {
@@ -124,7 +125,10 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
       }),
       adapterCase("R5 — includeInternal surfaces internal content for trusted callers", async (adapter) => {
         const result = await adapter.search({ text: seed.internal.title }, { ...ctx, includeInternal: true });
-        assert(result.hits.some((hit) => hit.visibility === "internal"), "includeInternal did not surface the seeded internal doc");
+        assert(
+          result.hits.some((hit) => hit.ref.docId === seed.internal.id && hit.visibility === "internal"),
+          "includeInternal did not surface the seeded internal doc",
+        );
       }),
     );
   }
@@ -132,8 +136,9 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
   if (opts.posture.fetch) {
     cases.push(adapterCase("R3 — fetch resolves a searched ref and nulls an unknown one", async (adapter) => {
       const hits = (await adapter.search({ text: seed.public.title }, ctx)).hits;
-      assert(hits.length > 0, "search returned no hits for the pre-seeded public doc — fetch cannot be exercised");
-      const fetched = await adapter.fetch?.(hits[0]!.ref, ctx);
+      const seedHit = hits.find((hit) => hit.ref.docId === seed.public.id);
+      assert(seedHit !== undefined, "search did not retrieve the pre-seeded public doc — fetch cannot be exercised");
+      const fetched = await adapter.fetch?.(seedHit.ref, ctx);
       assert(fetched !== null && fetched !== undefined, "fetch returned null for a ref search just produced");
       assertParses(knowledgeFetchResultSchema, fetched, "fetch result is invalid");
       assert(await adapter.fetch?.({ docId: "doc_conformance_absent" }, ctx) === null, "fetch of an unknown ref did not return null");
