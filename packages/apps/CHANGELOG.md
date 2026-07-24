@@ -1,5 +1,19 @@
 # @vendoai/apps
 
+## 0.4.8
+
+### Patch Changes
+
+- 9f01a92: Two fixes from the first full init→app-generated e2e on real workerd:
+  the island TSX validator's esbuild import is now bundler-blind (Wrangler
+  inlined the Node-only package into Worker bundles, where its \_\_filename
+  crash was misread as "invalid TSX" and failed EVERY app build — the field
+  report's apps-create death), and a validator that crashes at runtime now
+  degrades to no validation instead of failing every island. The CLI also
+  accepts `--framework custom` (the flag whitelist had missed it; only the
+  programmatic path worked).
+  - @vendoai/core@0.4.8
+
 ## 0.4.7
 
 ### Patch Changes
