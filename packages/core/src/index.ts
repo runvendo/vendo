@@ -13,6 +13,7 @@ export * from "./heartbeat.js";
 export * from "./host-seams.js";
 export * from "./ids.js";
 export * from "./island-ambient.js";
+export * from "./island-derived-values.js";
 export * from "./jail-modules.js";
 export * from "./jcs.js";
 export * from "./kit/index.js";
