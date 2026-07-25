@@ -85,6 +85,47 @@ describe("selectConfigSurface", () => {
   });
 });
 
+describe("two-path resolution (cse lane 3 proof)", () => {
+  // One host, one interface: surface A is file-owned, surface B is cloud-owned,
+  // and both resolve correctly through the same seam. The cloud doc is shaped
+  // exactly like the config-wire published fixture.
+  const published = {
+    "design-rules.md": "# Design rules\n\nUse the violet brand tokens; never invent new hues.",
+    "brief.md": "Maple is a retail bank; the agent acts as the signed-in member.",
+    "theme.json": '{"accent":"#5B21B6","radius":"12px"}',
+    "policy.json": '{"toolBudget":20}',
+    "overrides.json": "{}",
+  };
+
+  it("resolves an A-file-owned surface from disk and a B-cloud-owned surface from the published doc", () => {
+    // Surface A (brief) lives on local disk; surface B (design-rules) does not,
+    // so it falls through to the published cloud value.
+    const readFile = (name: string): string | undefined =>
+      name === "brief.md" ? "on-disk brief" : undefined;
+    const cloud = stubCloud(published);
+
+    expect(selectConfigSurface("brief.md", { readFile, cloud }))
+      .toEqual({ value: "on-disk brief", owner: "file" });
+    expect(selectConfigSurface("design-rules.md", { readFile, cloud }))
+      .toEqual({ value: published["design-rules.md"], owner: "cloud" });
+  });
+
+  it("a published-version flip changes the cloud-owned surface on the NEXT resolution (no recomposition)", () => {
+    // The design-rules thunk re-runs selectConfigSurface each generation, so a
+    // snapshot whose backing doc flips is observed without recomposing.
+    let doc: CloudConfigResult["config"] = { "design-rules.md": "v1 rules" };
+    const cloud: CloudConfig = {
+      fetch: async () => ({ version: "rel_1", config: doc }),
+      snapshot: () => ({ version: "rel_1", config: doc }),
+    };
+    const resolve = () => selectConfigSurface("design-rules.md", { readFile: () => undefined, cloud }).value;
+
+    expect(resolve()).toBe("v1 rules");
+    doc = { "design-rules.md": "v2 rules" };
+    expect(resolve()).toBe("v2 rules");
+  });
+});
+
 describe("isConfigSurface", () => {
   it("recognizes the five known surfaces and rejects the rest", () => {
     for (const name of CONFIG_SURFACES) expect(isConfigSurface(name)).toBe(true);
