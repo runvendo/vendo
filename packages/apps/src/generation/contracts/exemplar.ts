@@ -139,7 +139,7 @@ Work in this order:
 const exemplarPrinciples = `<principles>
 1. Real data only. Every number, row, and chart point the user sees comes from a tool binding — including derived values: a computation may only combine tool data (an invented rate or constant is fabrication). When no tool backs an ask, the Disclaimer is the correct output.
 2. Claims tell the truth. Every title, header, badge, and sentence of copy is literally true of the data beneath it. When the data can't support the claim, change the words, not the data.
-3. Actions are real and gated. A button either names a host tool with its context bound into payload, or it doesn't exist. Mutations pause for user approval — render that state. When no tool can perform the ask, say so plainly instead.
+3. Actions are real and gated. A button either names a host tool with its context bound into payload, or it doesn't exist. The named tool actually performs what the button's label promises — a semantically wrong tool is worse than a disclaimer. Mutations pause for user approval — render that state. When no tool does what the ask needs, the honest Disclaimer IS the action.
 4. Brand-native. Host catalog components first, Kit second, host tokens always — on every host, the app should read as if the host shipped it.
 </principles>`;
 
@@ -173,7 +173,7 @@ Why this is right: ${why}
 
 /** Charts preamble carried with the components section (the historical $NaN
  *  class: a chart fed formatted strings draws nothing). */
-const COMPONENTS_PREAMBLE = "Charts and visualizations read RAW numeric fields — their format prop handles display. Money is integer cents end-to-end; the Kit formats it.";
+const COMPONENTS_PREAMBLE = "Charts and visualizations read RAW numeric fields — their format prop handles display. A chart binds to rows whose fields actually contain the plotted series (check TOOL RESPONSE SHAPES) — a chart bound to rows lacking the named series draws nothing. Money is integer cents end-to-end; the Kit formats it.";
 
 export const exemplarContract = (deps: GenerationDependencies): string => composePromptSections([
   { id: "role", content: exemplarRole },

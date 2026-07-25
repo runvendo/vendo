@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { cloudKeyFetch, resolveCloudBaseUrl } from "./cloud-key-fetch.js";
 
@@ -48,11 +48,23 @@ describe("cloudKeyFetch", () => {
       .rejects.toThrow(/402/);
   });
 
-  it("keeps the module free of node builtins and CLI imports", async () => {
+  it("refuses an empty key instead of falling back to VENDO_API_KEY (adapter rule: the seam passes the key)", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    await expect(cloudKeyFetch("/api/v1/misses", {
+      apiKey: "",
+      env: { VENDO_API_KEY: "vnd_env_fallback" },
+      fetchImpl,
+      body: {},
+    })).rejects.toThrow(/without a key/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("keeps the module free of node builtins, CLI imports, and any VENDO_API_KEY read", async () => {
     const { readFile } = await import("node:fs/promises");
     const source = await readFile(new URL("./cloud-key-fetch.ts", import.meta.url), "utf8");
     expect(source).not.toMatch(/from "node:/);
     expect(source).not.toMatch(/\.\/cli\//);
     expect(source).not.toMatch(/process\.env[^?]/);
+    expect(source).not.toMatch(/VENDO_API_KEY/);
   });
 });
