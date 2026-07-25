@@ -291,6 +291,20 @@ if (command === "setup") {
     }
   });
   reportErrors(rest[1]);
+} else if (command === "hostjson") {
+  // Ground truth for honest judging: fetch the HOST's own REST API as the
+  // logged-in user (e.g. /api/accounts) and dump it as run evidence.
+  const [path, label] = rest;
+  await withPage(async (page) => {
+    await gotoApps(page);
+    const result = await page.evaluate(async (p) => {
+      const response = await fetch(p, { credentials: "include" });
+      let json; try { json = await response.json(); } catch { json = null; }
+      return { status: response.status, json };
+    }, path);
+    if (label) writeFileSync(join(SHOTS, `${label}.json`), JSON.stringify(result.json, null, 2));
+    console.log(JSON.stringify(result, null, 2).slice(0, 6000));
+  });
 } else if (command === "getjson") {
   const [path, label] = rest;
   await withPage(async (page) => {
