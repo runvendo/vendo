@@ -248,6 +248,11 @@ into `createVendo`.
 
 ### Routes
 
+Route scanning reads Next.js route conventions: App Router `route.ts`
+handlers and `pages/api` files. Hosts on Express, Fastify, or Hono get route
+tools from an OpenAPI spec, a tRPC router, or a GraphQL schema today — plain
+routes on those frameworks are not yet scanned.
+
 ```json
 {
   "format": "vendo/tools@1",
