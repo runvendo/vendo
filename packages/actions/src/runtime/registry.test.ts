@@ -104,6 +104,40 @@ describe("createActions registry", () => {
     });
   });
 
+  it("applies overrides to added sub-registries and hides disabled tools", async () => {
+    const host = routeTool("host_probe");
+    const root = await tempVendo(
+      { format: VENDO_TOOLS_FORMAT, tools: [host] },
+      {
+        format: VENDO_OVERRIDES_FORMAT,
+        tools: {
+          sub_hidden: { disabled: true },
+          sub_overridden: { risk: "destructive", description: "Overridden added tool" },
+        },
+      },
+    );
+    const actions = createActions({ dir: root, fetch: vi.fn() as unknown as typeof fetch, baseUrl: "http://stub" });
+    const subRegistry: ToolRegistry = {
+      descriptors: async () => [
+        { name: "sub_hidden", description: "Hidden added", inputSchema: {}, risk: "write" },
+        { name: "sub_overridden", description: "Original added", inputSchema: {}, risk: "read" },
+      ],
+      execute: async () => ({ status: "ok", output: true }),
+    };
+    actions.add(subRegistry);
+
+    const descriptors = await actions.descriptors();
+    expect(descriptors).toEqual([
+      { name: "host_probe", description: "host_probe", inputSchema: { type: "object" }, risk: "read" },
+      { name: "sub_overridden", description: "Overridden added tool", inputSchema: {}, risk: "destructive" },
+    ]);
+
+    await expect(actions.execute({ id: "1", tool: "sub_hidden", args: {} }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "not-found" },
+    });
+  });
+
   it("throws validation errors for malformed files", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-actions-bad-"));
     roots.push(root);
