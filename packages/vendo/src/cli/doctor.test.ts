@@ -1014,6 +1014,14 @@ describe("vendo doctor error codes + fix_refs", () => {
     }
   });
 
+  it("reports per-surface ownership with the overrides enablement caveat (#557)", async () => {
+    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
+    const ownership = report.checks.find((check) => check.id === "config/ownership");
+    expect(ownership).toBeDefined();
+    expect(ownership!.message).toContain("#557");
+    expect(ownership!.message.toLowerCase()).toContain("enablement");
+  });
+
   // #478 short-term — npm installs the ai@7 peer conflict without failing, the
   // static checks all pass, and then every internal turn throws
   // AI_InvalidPromptError (v7 removed system-role messages). Doctor reads the

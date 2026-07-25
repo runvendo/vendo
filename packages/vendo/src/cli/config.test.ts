@@ -66,6 +66,16 @@ describe("vendo config status", () => {
     expect(joined.toLowerCase()).toContain("explicit");
   });
 
+  it("prints the overrides enablement caveat (#557)", async () => {
+    const dir = await tempProject();
+    const fetcher: CloudFetcher = vi.fn(async () => ({ version: null, config: null }));
+    const cap = capture();
+    await runConfig(["status"], { targetDir: dir, fetcher, output: cap.output, env: { VENDO_API_KEY: "vnd_key" } });
+    const joined = cap.lines.join("\n");
+    expect(joined).toContain("#557");
+    expect(joined.toLowerCase()).toContain("enablement");
+  });
+
   it("still reports file ownership when there is no key (cloud column unknown)", async () => {
     const dir = await tempProject({ "brief.md": "b" });
     const fetcher: CloudFetcher = vi.fn(async () => {
@@ -147,6 +157,25 @@ describe("vendo config push", () => {
     });
     expect(code).toBe(0);
     expect(await readFile(join(dir, ".vendo", "policy.json"), "utf8")).toBe("{}");
+  });
+
+  it("prints the enablement caveat when pushing overrides, but not for other surfaces (#557)", async () => {
+    const fetcher: CloudFetcher = vi.fn(async (path, options) =>
+      (options?.method ?? "GET") === "GET" ? { draft: {} } : { draft: (options!.body as { draft: unknown }).draft });
+    // overrides.json → caveat present
+    const over = capture();
+    await runConfig(["push", "overrides.json", "--project", "p", "--yes"], {
+      targetDir: await tempProject({ "overrides.json": "{}" }),
+      fetcher, output: over.output, env: {},
+    });
+    expect(over.lines.join("\n")).toContain("#557");
+    // design-rules.md → no caveat
+    const rules = capture();
+    await runConfig(["push", "design-rules.md", "--project", "p", "--yes"], {
+      targetDir: await tempProject({ "design-rules.md": "# rules" }),
+      fetcher, output: rules.output, env: {},
+    });
+    expect(rules.lines.join("\n")).not.toContain("#557");
   });
 
   it("errors on an unknown surface", async () => {
