@@ -24,10 +24,14 @@
  * The worker gives two guarantees an in-process render cannot:
  *   - a hard per-island timeout (worker.terminate preempts infinite loops),
  *   - no globals leaked into the host server process.
- * Environment failures (react/jsdom unresolvable, worker "ready" never
- * arrives) skip the gate silently — the esbuild lazy-load precedent — so a
- * bundler that cannot reach the modules degrades to today's behavior instead
- * of failing creates.
+ * Environment failures (react/jsdom unresolvable or unloadable, worker "ready"
+ * never arrives) skip the gate silently — the esbuild lazy-load precedent — so
+ * a bundler that cannot reach the modules degrades to today's behavior instead
+ * of failing creates. "Unresolvable" includes a resolver that SUCCEEDS with a
+ * synthetic specifier (Turbopack hands back `[externals]/jsdom [external] …`):
+ * the paths are checked against the filesystem, and anything the worker still
+ * cannot load before it posts "ready" comes back as an environment failure
+ * rather than an island render error.
  */
 import {
   ISLAND_AMBIENT_KIT_NAMES,
@@ -92,10 +96,22 @@ const renderIssue = (island: string, message: string): string => {
 // Worker source (CJS eval worker). Embedded as a string so no worker FILE has
 // to survive a host bundler; module paths are resolved on the main thread and
 // passed in. No backticks/template literals in here — it is itself a literal.
+//
+// Exported for the regression test that drives it with an unloadable module
+// path directly — the only way to prove the pre-"ready" failure comes back as
+// an environment skip rather than a fabricated island crash.
 // ---------------------------------------------------------------------------
-const WORKER_SOURCE = String.raw`
+export const WORKER_SOURCE = String.raw`
 const { parentPort, workerData } = require("node:worker_threads");
 const finish = (errors) => { try { parentPort.postMessage({ type: "result", errors }); } catch {} };
+// Everything before the "ready" post is environment (jsdom/react loading), not
+// island code. A failure there must reach the main thread as an ENVIRONMENT
+// failure so the gate skips — the worker "error"/"exit" handlers already make
+// that distinction, but a throw inside this async IIFE is caught below and
+// would otherwise be posted as a per-island render error and routed to repair,
+// which cannot fix a module that will not load.
+let ready = false;
+const finishEnvironment = () => { try { parentPort.postMessage({ type: "environment" }); } catch {} };
 (async () => {
   const errors = [];
   const seen = new Set();
@@ -118,6 +134,7 @@ const finish = (errors) => { try { parentPort.postMessage({ type: "result", erro
   const React = require(workerData.paths.react);
   const { createRoot } = require(workerData.paths.reactDomClient);
   const { createPortal, flushSync } = require(workerData.paths.reactDom);
+  ready = true;
   parentPort.postMessage({ type: "ready" });
 
   // Ambient scope: real React/hooks, pass-through Kit, string fmt, tool stub.
@@ -187,7 +204,10 @@ const finish = (errors) => { try { parentPort.postMessage({ type: "result", erro
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   finish(errors);
-})().catch((error) => finish([error instanceof Error ? error.message : String(error)]));
+})().catch((error) => {
+  if (!ready) return finishEnvironment();
+  finish([error instanceof Error ? error.message : String(error)]);
+});
 `;
 
 interface WorkerModules {
@@ -201,6 +221,7 @@ const workerModules = (async (): Promise<WorkerModules | undefined> => {
   try {
     const { Worker } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "node:worker_threads");
     const { createRequire } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "node:module");
+    const { existsSync } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "node:fs");
     const resolvers: Array<() => NodeJS.Require> = [
       () => createRequire(import.meta.url),
       () => createRequire(`${process.cwd()}/package.json`),
@@ -208,15 +229,20 @@ const workerModules = (async (): Promise<WorkerModules | undefined> => {
     for (const make of resolvers) {
       try {
         const require_ = make();
-        return {
-          Worker,
-          paths: {
-            react: require_.resolve("react"),
-            reactDom: require_.resolve("react-dom"),
-            reactDomClient: require_.resolve("react-dom/client"),
-            jsdom: require_.resolve("jsdom"),
-          },
+        const paths = {
+          react: require_.resolve("react"),
+          reactDom: require_.resolve("react-dom"),
+          reactDomClient: require_.resolve("react-dom/client"),
+          jsdom: require_.resolve("jsdom"),
         };
+        // A bundler's require.resolve can SUCCEED and hand back a synthetic
+        // specifier instead of a file — Turbopack answers
+        // `[externals]/jsdom [external] (jsdom, cjs, …)`. The worker's plain
+        // `require` cannot load that, so accepting it turns a skippable
+        // environment gap into a per-island "your component crashed" issue.
+        // Demand real files, and let the next resolver (real Node resolution
+        // from cwd) have its turn.
+        if (Object.values(paths).every((path) => existsSync(path))) return { Worker, paths };
       } catch {
         continue;
       }
@@ -282,6 +308,13 @@ const renderOne = async (
       let ready = false;
       let timer = setTimeout(() => resolve([]), startupTimeoutMs); // env too slow → skip, not an island fault
       worker.on("message", (message: { type: string; errors?: string[] }) => {
+        if (message.type === "environment") {
+          // The worker could not load jsdom/react — the gate cannot run here.
+          // Skip, exactly as an unresolvable module does; never an island fault.
+          clearTimeout(timer);
+          resolve([]);
+          return;
+        }
         if (message.type === "ready") {
           ready = true;
           clearTimeout(timer);
