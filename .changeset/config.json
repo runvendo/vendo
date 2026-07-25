@@ -13,6 +13,7 @@
       "@vendoai/automations",
       "@vendoai/ui",
       "@vendoai/mcp",
+      "@vendoai/knowledge",
       "@vendoai/vendo",
       "vendoai"
     ]
