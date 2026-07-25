@@ -19,7 +19,7 @@ import {
 import { readOptional } from "../shared.js";
 import type { ExtractionDraft } from "../extract/harness.js";
 import type { ExtractionHarness } from "../extract/harness.js";
-import { computeEnrichmentDiff, type ComputeDiffOptions, type EnrichmentDiff } from "./diff.js";
+import { computeEnrichmentDiff, OBJECT_ID, type ComputeDiffOptions, type EnrichmentDiff } from "./diff.js";
 import {
   resolveEnrichmentEngine,
   runEnrichment,
@@ -53,8 +53,12 @@ export async function readPreviousToolsState(vendoDir: string): Promise<Previous
     const parsed: unknown = JSON.parse(raw);
     if ((parsed as { format?: unknown }).format !== VENDO_TOOLS_FORMAT_V3) return null;
     const file = toolsFileV3Schema.parse(parsed);
+    // Belt-and-suspenders: never carry a non-object-id watermark past the
+    // read boundary (defence in depth with computeEnrichmentDiff's OBJECT_ID
+    // guard). A tampered value is dropped, degrading to full mode.
+    const watermark = file.watermark !== undefined && OBJECT_ID.test(file.watermark) ? file.watermark : undefined;
     return {
-      ...(file.watermark === undefined ? {} : { watermark: file.watermark }),
+      ...(watermark === undefined ? {} : { watermark }),
       srcHashes: new Map(file.tools.map((tool) => [tool.name, tool.srcHash])),
       enriched: new Set(file.tools.filter((tool) => tool.enriched === true).map((tool) => tool.name)),
     };
@@ -100,6 +104,16 @@ async function writeToolsFile(vendoDir: string, file: ToolsFileV3, watermark: st
 const listed = (names: string[], limit = 10): string =>
   names.length <= limit ? names.join(", ") : `${names.slice(0, limit).join(", ")} +${names.length - limit} more`;
 
+/** Strip terminal control characters (C0 except tab, DEL, C1) from any
+ *  model-ORIGINATED text before it reaches the operator's terminal. Hostile
+ *  repo content can steer the model into ANSI/OSC escapes that would spoof
+ *  the very narrative the dev reviews under apply-then-show. Tool-name and
+ *  enum lines (clamp refusals, counts) are already pattern-constrained and
+ *  stay verbatim. */
+// eslint-disable-next-line no-control-regex -- deliberately matching control chars to strip them
+const CONTROL_CHARS = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
+const sanitize = (line: string): string => line.replace(CONTROL_CHARS, "");
+
 /** The sectioned change narrative (deliverable: new / changed / restricted-by-
  *  clamp / unenriched-stale), followed by the model's own prose. */
 export function buildEnrichmentNarrative(input: {
@@ -128,9 +142,12 @@ export function buildEnrichmentNarrative(input: {
     ];
     lines.push(`  unenriched / stale (${outcome.stale.length + neverEnriched.length}): ${parts.join(" · ")}`);
   }
-  for (const note of outcome.notes) lines.push(`  ${note}`);
+  // Model-originated lines (engine notes may echo harness/error strings; the
+  // narrative is free-form prose) are sanitized; the constrained lines above
+  // are left verbatim.
+  for (const note of outcome.notes) lines.push(`  ${sanitize(note)}`);
   if (outcome.modelNarrative.length > 0) {
-    for (const line of outcome.modelNarrative.split("\n")) lines.push(`  ${line}`);
+    for (const line of outcome.modelNarrative.split("\n")) lines.push(`  ${sanitize(line)}`);
   }
   return lines;
 }
@@ -254,7 +271,7 @@ export async function runSyncEnrichment(options: SyncEnrichmentOptions): Promise
   if (!result.ok) {
     // Unparseable model output must never corrupt the file: warn + skip, the
     // structural sync stands, and the untouched watermark retries next run.
-    options.warn(`warning: enrichment output unparseable — skipped, structural sync stands (${result.error})`);
+    options.warn(`warning: enrichment output unparseable — skipped, structural sync stands (${sanitize(result.error)})`);
     return { status: "skipped" };
   }
 

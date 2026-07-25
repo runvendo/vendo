@@ -24,6 +24,15 @@ export const DIFF_PATCH_LIMIT_BYTES = 200_000;
 
 export type FullReason = "forced" | "no-watermark" | "not-a-repo" | "watermark-unresolvable" | "oversized";
 
+/** A git object id: 7–64 lowercase hex. The watermark is interpolated as a
+ *  git argument BEFORE the `--` separator, so anything that is not a bare
+ *  object id (a leading-dash option like `--output=…`, a ref name, a
+ *  space-separated pair) must never reach `git` — a hostile or hand-edited
+ *  `.vendo/tools.json` watermark would otherwise inject git flags. This runs
+ *  on every sync, keyless included, and the corpus harness syncs untrusted
+ *  third-party repos, so it is the load-bearing guard, not the schema. */
+export const OBJECT_ID = /^[0-9a-f]{7,64}$/;
+
 export type EnrichmentDiff =
   | { mode: "full"; reason: FullReason }
   | { mode: "diff"; files: string[]; patch: string };
@@ -53,6 +62,10 @@ export interface ComputeDiffOptions {
 export async function computeEnrichmentDiff(options: ComputeDiffOptions): Promise<EnrichmentDiff> {
   if (options.full === true) return { mode: "full", reason: "forced" };
   if (options.watermark === undefined) return { mode: "full", reason: "no-watermark" };
+  // Reject a non-object-id watermark BEFORE any git call (argument-injection
+  // guard — see OBJECT_ID). A tampered watermark degrades to full mode, which
+  // re-enriches everything and cannot mislead an incremental diff anyway.
+  if (!OBJECT_ID.test(options.watermark)) return { mode: "full", reason: "watermark-unresolvable" };
   const exec = options.exec ?? execGit;
 
   const inside = await exec(["rev-parse", "--is-inside-work-tree"], options.root);

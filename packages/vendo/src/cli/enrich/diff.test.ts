@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { promisify } from "node:util";
@@ -90,6 +90,28 @@ describe("computeEnrichmentDiff", () => {
     }
     await commit(root, "many");
     expect(await computeEnrichmentDiff({ root, watermark })).toEqual({ mode: "full", reason: "oversized" });
+  });
+
+  it("rejects a non-object-id watermark BEFORE any git call — a hostile tools.json cannot inject git arguments", async () => {
+    const root = await gitRepo();
+    await write(root, "a.ts", "export {}\n");
+    await commit(root, "one");
+
+    // The classic: a watermark crafted as a git option. Unvalidated, git
+    // would honor --output and truncate/create an arbitrary file.
+    const target = join(root, "pwned.txt");
+    const diff = await computeEnrichmentDiff({ root, watermark: `--output=${target}` });
+    expect(diff).toEqual({ mode: "full", reason: "watermark-unresolvable" });
+    await expect(readFile(target, "utf8")).rejects.toThrow(); // never created
+
+    // other non-object-id shapes degrade the same way, without reaching git
+    const execGit = async (): Promise<{ code: number; stdout: string }> => {
+      throw new Error("git must not be invoked with an invalid watermark");
+    };
+    for (const watermark of ["-Upwn", "HEAD", "main", "0123ABCDEF", "0123456789abcdef 0123"]) {
+      expect(await computeEnrichmentDiff({ root, watermark, exec: execGit }))
+        .toEqual({ mode: "full", reason: "watermark-unresolvable" });
+    }
   });
 
   it("falls back to full mode on an oversized patch", async () => {

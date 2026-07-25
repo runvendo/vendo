@@ -207,6 +207,15 @@ export async function runEnrichment(input: EnrichmentRunInput): Promise<Enrichme
   // mentioned is exactly the silent-staleness failure mode — one targeted
   // single-tool re-read each; still unmentioned → stale-unenriched (marker
   // stripped so the next keyed sync picks it up again).
+  //
+  // Known limitation: `candidates.changed` compares the CURRENT srcHash to
+  // the previous file's. Intervening KEYLESS syncs rewrite srcHash without
+  // advancing the watermark, so an edit made during a keyless window is no
+  // longer "changed" relative to the last sync by the time a keyed sync runs
+  // — the deterministic tripwire will not force a re-read for it. It is still
+  // covered: the watermark diff spans the whole keyless window and surfaces
+  // that edit to the model in the main pass; only the silent-staleness NET
+  // (the belt-and-suspenders re-read) does not fire for it.
   const stale: string[] = [];
   const unaccounted = input.candidates.changed.filter((name) => !applied.has(name) && byName.has(name));
   for (const [index, name] of unaccounted.entries()) {

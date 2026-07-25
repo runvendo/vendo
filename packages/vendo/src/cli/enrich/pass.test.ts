@@ -188,6 +188,31 @@ describe("runSyncEnrichment", () => {
     expect(narrative).toContain("one handler now also logs");
   });
 
+  it("strips terminal control chars from the model-originated narrative (anti-spoof)", async () => {
+    const fixture = await host([tool("host_a")]);
+    const channel = output();
+    const ESC = String.fromCharCode(0x1b);
+    const BEL = String.fromCharCode(0x07);
+    const NUL = String.fromCharCode(0x00);
+    // an escape-laden narrative a hostile repo could steer the model into:
+    // ANSI erase + cursor-up, an OSC title write, a bell, a NUL.
+    const evil = `safe line${ESC}[2K${ESC}[1Areal-looking spoof${BEL}${ESC}]0;PWNED${BEL}${NUL}done`;
+    const result = await runSyncEnrichment(baseOptions(fixture, channel, {
+      harness: scripted([reply({
+        tools: [{ name: "host_a", description: "Fine." }],
+        narrative: evil,
+      })]),
+      previous: null,
+    }));
+    expect(result.status).toBe("enriched");
+    const joined = channel.notes.join("\n");
+    // no ESC / BEL / NUL / other C0/C1 survive to the terminal
+    // eslint-disable-next-line no-control-regex -- asserting control chars are gone
+    expect(joined).not.toMatch(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/);
+    // the visible text is preserved, only the control bytes removed
+    expect(joined).toContain("safe line[2K[1Areal-looking spoof]0;PWNEDdone");
+  });
+
   it("counts clamp restrictions in the narrative", async () => {
     const fixture = await host([tool("host_locked", { risk: "destructive", disabled: true, enriched: true })]);
     const channel = output();
