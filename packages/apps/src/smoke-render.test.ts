@@ -162,6 +162,42 @@ export default function Sender() {
     expect(issues).toEqual([]);
   }, 30_000);
 
+  it("fails an island that terminates the worker before the render completes", async () => {
+    const source = `
+export default function Quitter() {
+  process.exit(0);
+  return <Text text="never" />;
+}
+`;
+    const issues = await smokeRenderIslands({
+      components: { Quitter: source },
+      componentTools: { Quitter: [] },
+      tools,
+    });
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain('island "Quitter"');
+    expect(issues[0]).toContain("exited before the component finished rendering");
+  }, 30_000);
+
+  it("passes an island using ReactDOM portals and fmt.format — names the real jail scope provides", async () => {
+    const source = `
+export default function PortalNote() {
+  return (
+    <Surface>
+      <Text text={fmt.format(123456, "money")} />
+      {ReactDOM.createPortal(<Text text="floating" />, document.body)}
+    </Surface>
+  );
+}
+`;
+    const issues = await smokeRenderIslands({
+      components: { PortalNote: source },
+      componentTools: { PortalNote: [] },
+      tools,
+    });
+    expect(issues).toEqual([]);
+  }, 30_000);
+
   it("terminates an infinite render loop within the render budget", async () => {
     const source = `
 export default function Spinner() {

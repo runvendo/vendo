@@ -118,10 +118,13 @@ const finish = (errors) => { try { parentPort.postMessage({ type: "result", erro
   globalThis.navigator = dom.window.navigator;
   const React = require(workerData.paths.react);
   const { createRoot } = require(workerData.paths.reactDomClient);
+  const { createPortal, flushSync } = require(workerData.paths.reactDom);
   parentPort.postMessage({ type: "ready" });
 
   // Ambient scope: real React/hooks, pass-through Kit, string fmt, tool stub.
-  const scope = { React, ReactDOM: {}, Fragment: React.Fragment };
+  // ReactDOM mirrors the real jail scope (runtime-entry.tsx AMBIENT_SCOPE) so
+  // a legitimate portal/flushSync island never false-positives here.
+  const scope = { React, ReactDOM: { createPortal, flushSync }, Fragment: React.Fragment };
   for (const name of workerData.reactNames) {
     if (scope[name] === undefined && typeof React[name] === "function") scope[name] = React[name];
   }
@@ -130,8 +133,10 @@ const finish = (errors) => { try { parentPort.postMessage({ type: "result", erro
     Kit.displayName = name;
     scope[name] = Kit;
   }
+  // Same members as the real jail fmt (money/percent/num/dateTime/format) —
+  // no extras, so an island using a name production lacks still crashes here.
   const asText = (value) => (value === null || value === undefined ? "" : String(value));
-  scope.fmt = { money: asText, dateTime: asText, percent: asText, num: asText, date: asText, time: asText };
+  scope.fmt = { money: asText, percent: asText, num: asText, dateTime: asText, format: asText };
   const toolStub = (path) => new Proxy(function () {}, {
     get: (_target, key) => (typeof key === "string" ? toolStub(path.concat(key)) : undefined),
     apply: () => {
@@ -187,7 +192,7 @@ const finish = (errors) => { try { parentPort.postMessage({ type: "result", erro
 `;
 
 interface WorkerModules {
-  paths: { react: string; reactDomClient: string; jsdom: string };
+  paths: { react: string; reactDom: string; reactDomClient: string; jsdom: string };
   Worker: typeof import("node:worker_threads").Worker;
 }
 
@@ -208,6 +213,7 @@ const workerModules = (async (): Promise<WorkerModules | undefined> => {
           Worker,
           paths: {
             react: require_.resolve("react"),
+            reactDom: require_.resolve("react-dom"),
             reactDomClient: require_.resolve("react-dom/client"),
             jsdom: require_.resolve("jsdom"),
           },
@@ -290,7 +296,14 @@ const renderOne = async (
       });
       worker.on("exit", () => {
         clearTimeout(timer);
-        resolve([]);
+        // Reaching here with the promise unsettled means the worker died
+        // before posting a result. After ready that is the island's doing
+        // (e.g. process.exit during render) — a render failure, not a skip.
+        // Before ready it is the environment's — skip. A resolve after the
+        // result/timeout already settled is a no-op.
+        resolve(ready
+          ? [`island "${island}" crashed in the smoke render: the render process exited before the component finished rendering — an island must not call process.exit or otherwise terminate its environment; return normally and let React render.`]
+          : []);
       });
     });
   } finally {
