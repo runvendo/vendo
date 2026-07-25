@@ -1065,6 +1065,59 @@ describe("format v3 host files (cse lane 1)", () => {
     }
   });
 
+  // 1a review follow-up: a half-migrated dir (exactly one of the pair is v3)
+  // must warn loudly AND still ingest capabilities.json compounds/briefs
+  // through the legacy fold — never silently drop authored work.
+  it("half-migrated dir (tools@3 + overrides@1): warns and still ingests capabilities.json", async () => {
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
+    try {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
+        { format: VENDO_OVERRIDES_FORMAT, tools: { host_probe: { description: "Overridden host" } } },
+      );
+      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
+        format: "vendo/capabilities@1",
+        tools: [compound("host_probe_flow", "host_probe")],
+        briefs: [{ name: "probe", text: "call host_probe first" }],
+      }));
+      const actions = createActions({ dir: root });
+      await expect(actions.descriptors()).resolves.toEqual([
+        { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "read" },
+        { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "read" },
+      ]);
+      await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first" }]);
+      expect(warned.some((line) => line.includes("half-migrated"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("half-migrated dir (tools@1 + overrides@3): warns and still ingests capabilities.json", async () => {
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
+    try {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_probe")] },
+        { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_probe: { description: "Overridden host" } } },
+      );
+      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
+        format: "vendo/capabilities@1",
+        tools: [compound("host_probe_flow", "host_probe")],
+        briefs: [{ name: "probe", text: "call host_probe first" }],
+      }));
+      const actions = createActions({ dir: root });
+      await expect(actions.descriptors()).resolves.toEqual([
+        { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "read" },
+        { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "read" },
+      ]);
+      await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first" }]);
+      expect(warned.some((line) => line.includes("half-migrated"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("a v3 dir never reads the retired capabilities.json", async () => {
     const root = await tempVendo(
       { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },

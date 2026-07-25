@@ -746,17 +746,31 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const overridesV3 = overridesFile !== undefined && overridesFile.format === VENDO_OVERRIDES_FORMAT_V3 ? overridesFile : undefined;
       const toolsV1 = toolsFile !== undefined && toolsFile.format !== VENDO_TOOLS_FORMAT_V3 ? toolsFile : undefined;
       const overridesV1 = overridesFile !== undefined && overridesFile.format !== VENDO_OVERRIDES_FORMAT_V3 ? overridesFile : undefined;
-      // The retired capabilities.json is read ONLY on the legacy path — a v3
-      // dir never touches it (its compounds/briefs were ingested at rewrite).
-      const capabilitiesFile = toolsV3 === undefined && overridesV3 === undefined
-        ? await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value))
-        : undefined;
+      // The retired capabilities.json is read whenever ANY half of the pair is
+      // still legacy — only a fully-v3 dir never touches it (its compounds and
+      // briefs were ingested at rewrite). A half-migrated dir must keep
+      // ingesting it through the legacy fold rather than silently dropping
+      // authored compounds/briefs (1a review follow-up).
+      const fullyV3 = toolsV3 !== undefined && overridesV3 !== undefined;
+      const capabilitiesFile = fullyV3
+        ? undefined
+        : await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value));
       const legacy: LegacyVendoFiles = {
         ...(toolsV1 === undefined ? {} : { tools: toolsV1 }),
         ...(overridesV1 === undefined ? {} : { overrides: overridesV1 }),
         ...(capabilitiesFile === undefined ? {} : { capabilities: capabilitiesFile }),
       };
-      if (Object.keys(legacy).length > 0) {
+      const mixed = (toolsV3 === undefined) !== (overridesV3 === undefined)
+        && toolsFile !== undefined && overridesFile !== undefined;
+      if (mixed) {
+        console.warn(
+          "[vendo] .vendo is half-migrated: exactly one of tools.json/overrides.json is in the v3 format "
+          + `(tools.json is ${toolsFile.format}, overrides.json is ${overridesFile.format}). Legacy content — `
+          + "including any capabilities.json compounds/briefs — is still ingested in-memory this run, but this "
+          + "state usually means a sync or migration was interrupted. Run `vendo sync` to rewrite .vendo/ as the "
+          + "v3 pair.",
+        );
+      } else if (Object.keys(legacy).length > 0) {
         console.warn(
           "[vendo] .vendo uses the legacy v1 file layout (tools@1 / overrides@1 / capabilities.json) — migrated "
           + "in-memory this run. Run `vendo sync` to rewrite .vendo/ in the v3 two-file format.",
@@ -768,8 +782,10 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       return {
         tools: configuredTools ?? tools.tools,
         overrides,
-        compounds: configuredCapabilities?.tools ?? overrides.compounds ?? [],
-        briefs: configuredCapabilities?.briefs ?? overrides.briefs ?? [],
+        // A v3 overrides.json without compounds/briefs falls back to the fold,
+        // so a half-migrated dir's capabilities.json is never dropped.
+        compounds: configuredCapabilities?.tools ?? overrides.compounds ?? migrated.overrides.compounds ?? [],
+        briefs: configuredCapabilities?.briefs ?? overrides.briefs ?? migrated.overrides.briefs ?? [],
       };
     })();
     return hostPromise.then(warnZeroLiveTools);
