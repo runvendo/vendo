@@ -42,6 +42,31 @@ describe("liveModelTurn", () => {
     expect(result.error).toContain("no reply text");
   });
 
+  it("surfaces the agent's safe error frame verbatim — the meter-exhausted refusal reads like the banner", async () => {
+    const refusal =
+      "Vendo: Vendo Cloud paused AI tokens — the allowance for this billing period is used up "
+      + "(1,204,000 of 1,000,000 used; resets 2026-08-01). "
+      + "Upgrade your plan (https://console.vendo.run/billing) "
+      + "or bring your own infrastructure (https://docs.vendo.run/byo). (cloud-required)";
+    const fetchImpl = vi.fn(async () => sseResponse([
+      `data: ${JSON.stringify({ type: "error", errorText: refusal })}\n\n`,
+      "data: [DONE]\n\n",
+    ])) as unknown as typeof fetch;
+    const result = await liveModelTurn({ base: "http://x/api/vendo", fetchImpl, env });
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe(refusal.slice("Vendo: ".length));
+  });
+
+  it("keeps the generic line for a non-Vendo error frame (raw errorText never surfaces)", async () => {
+    const fetchImpl = vi.fn(async () => sseResponse([
+      'data: {"type":"error","errorText":"ECONNRESET at https://provider.internal/key=sk-123"}\n\n',
+      "data: [DONE]\n\n",
+    ])) as unknown as typeof fetch;
+    const result = await liveModelTurn({ base: "http://x/api/vendo", fetchImpl, env });
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("the turn returned an error frame");
+  });
+
   it("fails on a non-ok response", async () => {
     const fetchImpl = vi.fn(async () => new Response("no", { status: 503 })) as unknown as typeof fetch;
     const result = await liveModelTurn({ base: "http://x/api/vendo", fetchImpl, env });

@@ -118,12 +118,19 @@ async function readTurnStream(
       buffer = buffer.slice(frameEnd + 2);
       if (!frame.startsWith("data: ") || frame === "data: [DONE]") continue;
       try {
-        const part = JSON.parse(frame.slice("data: ".length)) as { type?: string; delta?: string };
+        const part = JSON.parse(frame.slice("data: ".length)) as { type?: string; delta?: string; errorText?: unknown };
         if (part.type === "text-delta" && typeof part.delta === "string") {
           text += part.delta;
           onDelta?.(part.delta);
         } else if (part.type === "error") {
-          error = "the turn returned an error frame";
+          // A "Vendo: "-prefixed errorText is the agent's OWN safe error
+          // (wireErrorMessage) — e.g. the pricing-v3 meter-exhausted refusal
+          // sentence — so doctor prints it verbatim, same as the thread
+          // banner. Anything else keeps the generic line (ENG-214 posture);
+          // no new probes, this is the existing live-turn check.
+          error = typeof part.errorText === "string" && part.errorText.startsWith("Vendo: ")
+            ? part.errorText.slice("Vendo: ".length)
+            : "the turn returned an error frame";
         }
       } catch {
         // skip malformed frame

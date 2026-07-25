@@ -55,6 +55,32 @@ describe("cloud client", () => {
     }));
   });
 
+  it("prints a meter-exhausted 402 as the one crafted refusal sentence (pricing v3 §5)", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(Response.json({
+      error: { code: "meter-exhausted", message: "meter exhausted" },
+      meter: "automation_runs",
+      used: 1_050,
+      limit: 1_000,
+      resets_at: "2026-08-01T00:00:00.000Z",
+      reason: "allowance",
+      exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
+    }, { status: 402 }));
+
+    await expect(cloudFetch("/api/v1/apps/share", {
+      auth: "key",
+      apiKey: "vnd_test",
+      fetchImpl,
+    })).rejects.toMatchObject<Partial<CloudError>>({
+      name: "CloudError",
+      code: "meter-exhausted",
+      message: "Vendo Cloud paused automation runs — the allowance for this billing period is used up "
+        + "(1,050 of 1,000 used; resets 2026-08-01). "
+        + "Upgrade your plan (https://console.vendo.run/billing) "
+        + "or bring your own infrastructure (https://docs.vendo.run/byo).",
+      status: 402,
+    });
+  });
+
   it("attaches the deployment-identity headers to every key-authed request", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(Response.json({ ok: true }));
 
