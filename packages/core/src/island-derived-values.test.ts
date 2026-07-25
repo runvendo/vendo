@@ -102,6 +102,27 @@ export default function MultiConverter() {
     expect(violations[0]).toContain("a constant feeding displayed math is invented data (law 1)");
   });
 
+  it("flags derived math that reaches render through a state setter", () => {
+    const source = `
+export default function Converter() {
+  const RATE = 1.08;
+  const [total, setTotal] = useState(0);
+  const [eur, setEur] = useState(0);
+  useEffect(() => {
+    tools.host_getBalance({}).then((res) => {
+      setTotal(res.total_cents ?? 0);
+      const eurCents = (res.total_cents ?? 0) * RATE;
+      setEur(eurCents);
+    });
+  }, []);
+  return <Stat label="EUR" value={fmt.money(eur)} />;
+}
+`;
+    const violations = islandDerivedValueViolations(source);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain("RATE = 1.08");
+  });
+
   it("flags props-derived data multiplied by a hand-typed constant into render", () => {
     const source = `
 export default function Projection({ monthlyCents }) {

@@ -204,6 +204,36 @@ const propsParamNames = (code: string): string[] => {
   return names;
 };
 
+interface StatePair {
+  value: string;
+  setter: string;
+}
+
+/** Every `const [value, setValue] = useState(…)` pair. */
+const useStatePairs = (code: string): StatePair[] => {
+  const pairs: StatePair[] = [];
+  for (const match of code.matchAll(/\b(?:const|let|var)\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)\s*\]\s*=\s*(?:React\s*\.\s*)?useState\b/g)) {
+    pairs.push({ value: match[1] as string, setter: match[2] as string });
+  }
+  return pairs;
+};
+
+/** One fixpoint step: state values whose setter is ever called with an
+ *  argument referencing a marked name get marked themselves. */
+const propagateThroughSetters = (code: string, statePairs: readonly StatePair[], marked: Set<string>): void => {
+  for (const pair of statePairs) {
+    if (marked.has(pair.value)) continue;
+    for (const call of code.matchAll(new RegExp(`\\b${pair.setter}\\s*\\(`, "g"))) {
+      const open = call.index + call[0].length - 1;
+      const argsEnd = matchForward(code, open);
+      if (referencesTainted(code, code.slice(open + 1, argsEnd), open + 1, marked)) {
+        marked.add(pair.value);
+        break;
+      }
+    }
+  }
+};
+
 /** Tool/props-derived identifiers, propagated to a fixpoint through plain
  *  declarations, useState setters, and iteration-callback parameters. */
 const taintedIdentifiers = (code: string): Set<string> => {
@@ -218,10 +248,7 @@ const taintedIdentifiers = (code: string): Set<string> => {
   for (const match of code.matchAll(/\btools\s*\.[\w$.]+\s*\([^()]*\)\s*\.\s*then\s*\(\s*(?:async\s*)?\(?([^)=]*)\)?\s*=>/g)) {
     for (const name of (match[1] ?? "").match(IDENTIFIER) ?? []) tainted.add(name);
   }
-  const useStatePairs: Array<{ value: string; setter: string }> = [];
-  for (const match of code.matchAll(/\b(?:const|let|var)\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)\s*\]\s*=\s*(?:React\s*\.\s*)?useState\b/g)) {
-    useStatePairs.push({ value: match[1] as string, setter: match[2] as string });
-  }
+  const statePairs = useStatePairs(code);
   const declarationList = declarations(code);
   for (let pass = 0; pass < 10; pass += 1) {
     const sizeBefore = tainted.size;
@@ -233,17 +260,7 @@ const taintedIdentifiers = (code: string): Set<string> => {
       }
     }
     // useState values whose setter is ever called with tainted data.
-    for (const pair of useStatePairs) {
-      if (tainted.has(pair.value)) continue;
-      for (const call of code.matchAll(new RegExp(`\\b${pair.setter}\\s*\\(`, "g"))) {
-        const open = call.index + call[0].length - 1;
-        const argsEnd = matchForward(code, open);
-        if (referencesTainted(code, code.slice(open + 1, argsEnd), open + 1, tainted)) {
-          tainted.add(pair.value);
-          break;
-        }
-      }
-    }
+    propagateThroughSetters(code, statePairs, tainted);
     // Iteration-callback params over tainted collections
     // (`accounts.map((account) => …)` taints `account`).
     for (const match of code.matchAll(/\b([A-Za-z_$][\w$]*)(?:\.[\w$]+|\([^()]*\))*\s*\.\s*(?:map|flatMap|filter|forEach|reduce|reduceRight|find|findLast|some|every|sort|toSorted|slice)\s*\(\s*(?:async\s*)?(?:\(([^)]*)\)|([A-Za-z_$][\w$]*))\s*=>/g)) {
@@ -294,6 +311,7 @@ const reachesRender = (
   code: string,
   seeds: readonly string[],
   declarationList: readonly Declaration[],
+  statePairs: readonly StatePair[],
   display: readonly Span[],
 ): boolean => {
   const carriers = new Set(seeds);
@@ -305,6 +323,8 @@ const reachesRender = (
         for (const name of declaration.names) carriers.add(name);
       }
     }
+    // Derived values stored via a state setter render through the state value.
+    propagateThroughSetters(code, statePairs, carriers);
     if (carriers.size === sizeBefore) break;
   }
   for (const match of code.matchAll(IDENTIFIER)) {
@@ -325,6 +345,7 @@ export function islandDerivedValueViolations(source: string): string[] {
   const exempt = [...styleSpans(code), ...timerSpans(code), ...indexSpans(code)];
   const display = [...renderSpans(code), ...fmtSpans(code)];
   const declarationList = declarations(code);
+  const statePairs = useStatePairs(code);
   const tainted = taintedIdentifiers(code);
   if (tainted.size === 0) return [];
 
@@ -400,7 +421,7 @@ export function islandDerivedValueViolations(source: string): string[] {
     // …and the result must flow into rendered output.
     const target = assignmentTarget(declarationList, start);
     const rendered = target !== undefined
-      ? reachesRender(code, target.names, declarationList, display)
+      ? reachesRender(code, target.names, declarationList, statePairs, display)
       : inSpans(display, start);
     if (!rendered) return;
     flag(key, described);
