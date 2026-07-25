@@ -449,13 +449,19 @@ function uniqueNameFallback(binding: PrimitiveToolBinding): string {
   return binding.method;
 }
 
-export function withUniqueNames(tools: ExtractedTool[]): ExtractedTool[] {
+export function withUniqueNames<T extends ExtractedTool>(tools: T[]): T[] {
   const used = new Set<string>();
   return tools.map((tool) => ({
     ...tool,
     name: allocateToolName(tool.name, uniqueNameFallback(tool.binding), used),
   }));
 }
+
+/** A build-time extraction entry plus the root-relative posix path of the
+ *  source file it was extracted from, when the extractor has it in hand.
+ *  Internal to sync: the path never reaches `.vendo/tools.json` — it becomes
+ *  the tool's `srcHash` (content hash) in the v3 write. */
+export type SourcedExtractedTool = ExtractedTool & { srcPath?: string };
 
 const DESTRUCTIVE_WORDS = new Set([
   "delete", "remove", "destroy", "cancel", "close", "reset", "revoke", "purge", "wipe", "archive",

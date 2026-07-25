@@ -13,6 +13,7 @@ import {
   visitNodes,
   walk,
   type ParsedModule,
+  type SourcedExtractedTool,
 } from "./common.js";
 import { createRouteScanState, inferRouteInput, type RouteInputResult } from "./route-schema.js";
 
@@ -34,7 +35,7 @@ interface ReExportTarget {
 }
 
 export interface RouteScanResult {
-  tools: ExtractedTool[];
+  tools: SourcedExtractedTool[];
   warnings: string[];
 }
 
@@ -612,10 +613,12 @@ function preferredRoutes(routes: RouteSource[]): RouteSource[] {
 export async function scanRoutes(root: string): Promise<RouteScanResult> {
   const routes = preferredRoutes(await routeSources(root));
   const warnings: string[] = [];
-  const tools: ExtractedTool[] = [];
+  const tools: SourcedExtractedTool[] = [];
   const usedNames = new Set<string>();
   const scanState = createRouteScanState(root, routes.map((route) => route.file));
   for (const route of routes) {
+    // The route module is the tool's known source file (v3 srcHash input).
+    const srcPath = path.relative(root, route.file).split(path.sep).join("/");
     const methods = await verbsFromSource(route.file, route.source, route, root, new Set(), 0, false);
     if (methods.size === 0) {
       const reason = route.kind === "pages"
@@ -630,6 +633,7 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
         disabled: true,
         note: `${reason}; enable only after review; overrides.json can flip disabled/risk`,
         binding: { kind: "route", method: "POST", path: route.urlPath, argsIn: "body" },
+        srcPath,
       });
       warnings.push(`route ${route.urlPath} could not be classified: ${reason}`);
       continue;
@@ -653,6 +657,7 @@ export async function scanRoutes(root: string): Promise<RouteScanResult> {
           path: route.urlPath,
           argsIn,
         },
+        srcPath,
       });
     }
   }

@@ -30,6 +30,25 @@ async function methodsFor(root: string, urlPath: string): Promise<string[]> {
     .sort();
 }
 
+/** The byte-identical baselines below pin the TOOL shape; the route module's
+ *  `srcPath` (v3 srcHash input) is asserted in its own test and stripped here. */
+async function scannedTools(root: string): Promise<{ tools: Array<Record<string, unknown>>; warnings: string[] }> {
+  const { tools, warnings } = await scanRoutes(root);
+  return { tools: tools.map(({ srcPath: _srcPath, ...tool }) => tool), warnings };
+}
+
+describe("route source attribution", () => {
+  it("attaches each tool's route module as srcPath (root-relative posix), including unclassified routes", async () => {
+    const root = await temporaryRoot();
+    await write(root, "app/api/items/route.ts", "export function GET() { return new Response(); }\n");
+    await write(root, "src/pages/api/opaque.ts", "export const handler = () => null;\n");
+    const { tools } = await scanRoutes(root);
+    const byName = new Map(tools.map((tool) => [tool.name, tool]));
+    expect(byName.get("host_items_list")?.srcPath).toBe("app/api/items/route.ts");
+    expect(byName.get("host_opaque_unclassified")?.srcPath).toBe("src/pages/api/opaque.ts");
+  });
+});
+
 // Path-params-only input schema, the shape every route-bound tool carries
 // until a collector (route-schema.ts, PR 2) recognizes something richer.
 function blankInput(properties: Record<string, unknown> = {}): Record<string, unknown> {
@@ -55,7 +74,7 @@ describe("app route verb evidence", () => {
 
     // Byte-identical baseline (no-regression net for the whole route-schema
     // inference PR — harvested from today's scanRoutes output).
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_fn_list", description: "GET /api/fn", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "GET", path: "/api/fn", argsIn: "query" } },
@@ -79,7 +98,7 @@ describe("app route verb evidence", () => {
     );
     expect(await methodsFor(root, "/api/aliased")).toEqual(["PATCH"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_aliased_update", description: "PATCH /api/aliased", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "PATCH", path: "/api/aliased", argsIn: "body" } },
@@ -100,7 +119,7 @@ describe("app route verb evidence", () => {
     expect(await methodsFor(root, "/api/named")).toEqual(["DELETE", "GET"]);
     expect(await methodsFor(root, "/api/star")).toEqual(["DELETE", "GET"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_named_list", description: "GET /api/named", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "GET", path: "/api/named", argsIn: "query" } },
@@ -125,7 +144,7 @@ describe("app route verb evidence", () => {
     );
     expect(await methodsFor(root, "/api/mixed")).toEqual(["GET", "POST"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_mixed_list", description: "GET /api/mixed", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "GET", path: "/api/mixed", argsIn: "query" } },
@@ -145,7 +164,7 @@ describe("app route verb evidence", () => {
     );
     expect(await methodsFor(root, "/api/noise")).toEqual(["PUT"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_noise_update", description: "PUT /api/noise", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "PUT", path: "/api/noise", argsIn: "body" } },
@@ -163,7 +182,7 @@ describe("app route verb evidence", () => {
     );
     expect(await methodsFor(root, "/api/keyed")).toEqual(["GET", "POST"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_keyed_list", description: "GET /api/keyed", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "GET", path: "/api/keyed", argsIn: "query" } },
@@ -192,7 +211,7 @@ describe("app route verb evidence", () => {
     expect(await methodsFor(root, "/api/things/{id}")).toEqual(["PUT"]);
     expect(await methodsFor(root, "/api/blob/{rest}")).toEqual(["GET", "POST", "PUT"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_blob_get", description: "GET /api/blob/{rest}", inputSchema: blankInput({ rest: { type: "string" } }), risk: "write",
           binding: { kind: "route", method: "GET", path: "/api/blob/{rest}", argsIn: "query" } },
@@ -241,7 +260,7 @@ describe("pages route verb evidence", () => {
     expect(await methodsFor(root, "/api/allow-array")).toEqual(["GET", "POST"]);
     expect(await methodsFor(root, "/api/allow-string")).toEqual(["GET", "PATCH"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_allow_array_list", description: "GET /api/allow-array", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "GET", path: "/api/allow-array", argsIn: "query" } },
@@ -380,7 +399,7 @@ describe("pages route verb evidence", () => {
     );
     expect(await methodsFor(root, "/api/auth/{nextauth}")).toEqual(["GET", "POST"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_auth_get", description: "GET /api/auth/{nextauth}", inputSchema: blankInput({ nextauth: { type: "string" } }), risk: "write",
           binding: { kind: "route", method: "GET", path: "/api/auth/{nextauth}", argsIn: "query" } },
@@ -405,7 +424,7 @@ describe("pages route verb evidence", () => {
     );
     expect(await methodsFor(root, "/api/delegate")).toEqual(["POST"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_delegate_create", description: "POST /api/delegate", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "POST", path: "/api/delegate", argsIn: "body" } },
@@ -424,7 +443,7 @@ describe("pages route verb evidence", () => {
     await write(root, "pages/api/re-exported.ts", "import impl from \"../../lib/impl\";\nexport default impl;\n");
     expect(await methodsFor(root, "/api/re-exported")).toEqual(["DELETE"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_re_exported_delete", description: "DELETE /api/re-exported", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "DELETE", path: "/api/re-exported", argsIn: "query" } },
@@ -461,7 +480,7 @@ describe("pages route verb evidence", () => {
     expect(await methodsFor(root, "/api/stripe/webhook")).toEqual(["POST"]);
     expect(await methodsFor(root, "/api/raw")).toEqual(["POST"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_raw_create", description: "POST /api/raw", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "POST", path: "/api/raw", argsIn: "body" } },
@@ -519,7 +538,7 @@ describe("pages route verb evidence", () => {
     expect(await methodsFor(root, "/api/health")).toEqual(["GET"]);
     expect(await methodsFor(root, "/api/teams/{teamId}/documents/status")).toEqual(["GET"]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [
         { name: "host_health_list", description: "GET /api/health", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "GET", path: "/api/health", argsIn: "query" } },
@@ -543,7 +562,7 @@ describe("pages route verb evidence", () => {
     })]);
     expect(warnings).toEqual([expect.stringContaining("/api/opaque")]);
 
-    expect(await scanRoutes(root)).toEqual({
+    expect(await scannedTools(root)).toEqual({
       tools: [{
         name: "host_opaque_unclassified",
         description: "Route /api/opaque could not be classified",

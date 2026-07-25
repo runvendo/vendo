@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { ExtractedTool } from "../formats.js";
+import type { SourcedExtractedTool } from "./common.js";
 import { detectGraphql, extractGraphql, graphqlEndpoints } from "./graphql.js";
 import { extractOpenApi } from "./openapi.js";
 import { scanRoutes } from "./route-scan.js";
@@ -8,7 +8,7 @@ import { detectServerActions, extractServerActions } from "./server-actions.js";
 import { detectTrpc, extractTrpc, trpcMounts } from "./trpc.js";
 
 export interface ExtractorResult {
-  tools: ExtractedTool[];
+  tools: SourcedExtractedTool[];
   warnings: string[];
 }
 
@@ -46,7 +46,10 @@ const openApiExtractor: Extractor = {
   },
   async extract(root) {
     const specPath = await firstOpenApiSpec(root);
-    return { tools: specPath ? await extractOpenApi(specPath) : [], warnings: [] };
+    if (!specPath) return { tools: [], warnings: [] };
+    // The spec is every OpenAPI tool's known source file (v3 srcHash input).
+    const srcPath = path.relative(root, specPath).split(path.sep).join("/");
+    return { tools: (await extractOpenApi(specPath)).map((tool) => ({ ...tool, srcPath })), warnings: [] };
   },
 };
 
@@ -88,7 +91,7 @@ export const extractorRegistrations: readonly Extractor[] = [
  * HTTP route; when the trpc/graphql extractors produced real operation tools
  * for that mount, the shadowing route tools are dropped. No trpc/graphql
  * tools → no filtering (unchanged behavior for every other host). */
-function withoutShadowedRoutes(tools: ExtractedTool[]): ExtractedTool[] {
+function withoutShadowedRoutes(tools: SourcedExtractedTool[]): SourcedExtractedTool[] {
   const mounts = [...trpcMounts(tools), ...graphqlEndpoints(tools)];
   if (mounts.length === 0) return tools;
   return tools.filter((tool) => {
@@ -102,7 +105,7 @@ export async function runExtractors(
   root: string,
   registrations: readonly Extractor[] = extractorRegistrations,
 ): Promise<ExtractorResult> {
-  const tools: ExtractedTool[] = [];
+  const tools: SourcedExtractedTool[] = [];
   const warnings: string[] = [];
   for (const extractor of registrations) {
     if (!await extractor.detect(root)) continue;
