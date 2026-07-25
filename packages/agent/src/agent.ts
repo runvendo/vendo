@@ -488,7 +488,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           if (window !== undefined && thread.messages.length > window) {
             const sliced = thread.messages.slice(-window);
             const firstUserIndex = sliced.findIndex((msg) => msg.role === "user");
-            history = firstUserIndex !== -1 ? sliced.slice(firstUserIndex) : sliced;
+            history = firstUserIndex !== -1 ? sliced.slice(firstUserIndex) : thread.messages;
           }
           const converted = (await convertToModelMessages(providerHistory(history)))
             .filter((message) => message.content.length > 0);
