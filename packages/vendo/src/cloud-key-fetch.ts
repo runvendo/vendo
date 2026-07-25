@@ -24,20 +24,23 @@ export function resolveCloudBaseUrl(options: CloudUrlOptions = {}): string {
 }
 
 export interface CloudKeyFetchOptions extends CloudUrlOptions {
-  apiKey?: string;
+  /** The key is always seam-supplied (adapter rule): callers pass it
+   *  explicitly — this module never falls back to the environment for it. */
+  apiKey: string;
   method?: string;
   body?: unknown;
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
 }
 
-/** POST/GET a console API path with VENDO_API_KEY bearer auth. The console's
- *  shared auth middleware upserts deployment inventory and meters usage from
- *  the identity headers on real service calls (deployment-identity.ts). */
-export async function cloudKeyFetch<T = unknown>(path: string, options: CloudKeyFetchOptions = {}): Promise<T> {
-  const token = options.apiKey ?? (options.env ?? processEnv()).VENDO_API_KEY;
-  if (token === undefined || token === "") {
-    throw new Error("Vendo Cloud key call without a key: pass apiKey or set VENDO_API_KEY");
+/** POST/GET a console API path with seam-supplied bearer key auth. The
+ *  console's shared auth middleware upserts deployment inventory and meters
+ *  usage from the identity headers on real service calls
+ *  (deployment-identity.ts). */
+export async function cloudKeyFetch<T = unknown>(path: string, options: CloudKeyFetchOptions): Promise<T> {
+  const token = options.apiKey;
+  if (token === "") {
+    throw new Error("Vendo Cloud key call without a key: the composition seam must pass a non-empty apiKey");
   }
   const headers: Record<string, string> = {
     accept: "application/json",

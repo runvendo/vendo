@@ -1344,7 +1344,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const missSurface = actions.descriptors()
     .then(capabilitySurfaceSnapshot)
     .catch(() => capabilitySurfaceSnapshot([]));
-  const missCapture = createCapabilityMissCapture({ surface: missSurface });
+  // ADAPTER RULE, miss-upload seam: capability-misses.ts never reads the
+  // environment for its Cloud uploader — VENDO_API_KEY fills the slot HERE,
+  // like the share/publish seam above; unfilled, misses stay local-only.
+  const missCloud = cloudKeyOptions();
+  const missCapture = createCapabilityMissCapture({
+    surface: missSurface,
+    ...(missCloud === undefined ? {} : { cloud: missCloud }),
+  });
   // AGENT-1/2 — 03 §3: the host product brief (init writes .vendo/brief.md)
   // and the catalog+theme summary feed the system prompt; prompt.ts places
   // them (brief = Product section; summary only where trees render).
