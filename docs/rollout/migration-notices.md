@@ -1,3 +1,5 @@
+> **GRANDFATHER NOTE (2026-07-24, supersedes any demotion implication below): existing orgs — however they signed up — keep FULL Free caps; the GitHub/Google signup gate and reduced lane ($1 credit / 50 sandbox min / 0.25 GB storage / 0.25 GB knowledge / 25 runs / 5 connections) apply to orgs created AFTER the enforcement flip only. Voice-pass email A accordingly.**
+
 # Pricing Rollout — Migration Notices
 
 **Status: DRAFT — Yousef voice-passes and sends every one of these. Nothing here goes out as-is.**
