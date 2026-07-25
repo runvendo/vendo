@@ -117,7 +117,7 @@ for (const backend of backends()) {
       expect(new Set(seen).size).toBe(ids.length);
     });
 
-    for (const collection of ["vendo_mcp_clients", "vendo_mcp_grants"] as const) {
+    for (const collection of ["vendo_mcp_clients", "vendo_mcp_grants", "vendo_knowledge_docs", "vendo_knowledge_chunks"] as const) {
       it(`round-trips ${collection} through its dedicated generic table`, async () => {
         const records = made.store.records(collection);
         const id = `${collection}_roundtrip`;

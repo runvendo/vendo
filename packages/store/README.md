@@ -31,10 +31,13 @@ For production, pass a Postgres connection string explicitly, for example `creat
 | `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | door-owned MCP client state |
 | `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | door-owned MCP grant state |
 | `vendo_sessions` | `subject, touched_at` | ephemeral (anonymous) session registry: last-activity touch per session, read by the TTL sweep |
+| `vendo_knowledge_docs` | `id, data, refs, created_at, updated_at` | knowledge corpus documents (built-in local engine) |
+| `vendo_knowledge_chunks` | `id, data, refs, created_at, updated_at` | knowledge corpus chunks (built-in local engine index) |
 
 App storage uses `app:<appId>:<name>` by convention. App-scoped record and blob WRITES require an existing `vendo_apps` row and fail closed with `not-found` ("session may have expired") when there is none — the app never existed, or its ephemeral session was swept; reads on a missing app return empty. Except for the reserved names below, collection names remain opaque and use `vendo_records`; non-`app:`-prefixed collections and namespaces have no principal linkage.
 
-Generic record collections and the two door-owned tables expose the optional
+Generic record collections and the dedicated door-owned and knowledge tables
+expose the optional
 `RecordStore.claim` capability: one database statement compares the current
 `data` and `refs`, then replaces or deletes the row. Exactly one concurrent
 claimant receives `true`.
@@ -55,8 +58,10 @@ Blocks receive core's plain `StoreAdapter`, so these exact `records()` collectio
 | `vendo_apps` | app id | `{ subject, enabled, doc }` | `subject` | table `created_at` / `updated_at` |
 | `vendo_mcp_clients` | client id | block-internal JSON | caller-supplied, arbitrary keys | table `created_at` / `updated_at` |
 | `vendo_mcp_grants` | grant id | block-internal JSON | caller-supplied, arbitrary keys | table `created_at` / `updated_at` |
+| `vendo_knowledge_docs` | doc id | knowledge-engine JSON | caller-supplied, arbitrary keys | table `created_at` / `updated_at` |
+| `vendo_knowledge_chunks` | chunk id | knowledge-engine JSON | caller-supplied, arbitrary keys | table `created_at` / `updated_at` |
 
-Typed reserved writes validate their data, require embedded ids to match the record id, and upsert the typed row — with two enforced exceptions. `vendo_audit` is append-only: `put` on an existing id and `delete` are both refused; audit rows are erased only through the erase API below. `vendo_apps`, `vendo_grants`, and `vendo_threads` refuse cross-subject flips atomically: a put whose id already belongs to another subject fails with a conflict. The data is authoritative: caller-supplied `refs` are ignored on write and synthesized from typed columns on read. Their routed `list({ refs })` accepts only the refs shown above. The two door-owned collections use generic record semantics in dedicated tables: the store does not validate their block-internal payloads, and refs filters accept arbitrary keys. Generic and routed record lists are uniformly newest-first by `(createdAt, id)`.
+Typed reserved writes validate their data, require embedded ids to match the record id, and upsert the typed row — with two enforced exceptions. `vendo_audit` is append-only: `put` on an existing id and `delete` are both refused; audit rows are erased only through the erase API below. `vendo_apps`, `vendo_grants`, and `vendo_threads` refuse cross-subject flips atomically: a put whose id already belongs to another subject fails with a conflict. The data is authoritative: caller-supplied `refs` are ignored on write and synthesized from typed columns on read. Their routed `list({ refs })` accepts only the refs shown above. The door-owned and knowledge collections use generic record semantics in dedicated tables: the store does not validate their payloads, and refs filters accept arbitrary keys. Generic and routed record lists are uniformly newest-first by `(createdAt, id)`.
 
 Ephemeral principals take the SAME path as everyone else: their rows are ordinary disk rows under their subject. What makes a session ephemeral is its registration (`registerEphemeralSubject`); see the lifecycle section below.
 
@@ -78,4 +83,4 @@ Because the registry is a table in the same database, sessions survive restarts 
 
 ## Retention and erasure
 
-`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure and `byApp(appId)` — cascading the matching rows across all 14 tables (ephemeral subjects included — their rows are ordinary disk rows) and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.
+`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure and `byApp(appId)` — cascading the matching rows across all 16 tables (ephemeral subjects included — their rows are ordinary disk rows) and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.
