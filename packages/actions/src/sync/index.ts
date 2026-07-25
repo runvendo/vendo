@@ -236,12 +236,15 @@ function compareTools(previous: ExtractedTool[], next: ExtractedTool[]): Pick<Sy
   return { tools: { added, removed, changed }, breaking };
 }
 
-/** `sha256:<hex>` of one extraction source file; undefined when unreadable. */
+/** `sha256:<hex>` of one extraction source file; undefined when unreadable.
+ *  Line endings normalize to LF before hashing so a CRLF checkout (Windows
+ *  autocrlf) and an LF checkout of the same source agree on the hash —
+ *  committed tools.json must not churn across platforms. */
 async function sourceHash(root: string, srcPath: string, cache: Map<string, string | undefined>): Promise<string | undefined> {
   if (!cache.has(srcPath)) {
     try {
-      const bytes = await fs.readFile(path.resolve(root, srcPath));
-      cache.set(srcPath, `sha256:${createHash("sha256").update(bytes).digest("hex")}`);
+      const text = await fs.readFile(path.resolve(root, srcPath), "utf8");
+      cache.set(srcPath, `sha256:${createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex")}`);
     } catch {
       cache.set(srcPath, undefined);
     }
@@ -407,11 +410,14 @@ export async function vendoSync(options: {
   const described = withGeneratedDescriptions(unionExtracted(extraction.tools));
   // Machine layer carry-over: per-tool inferred semantics persist across syncs
   // (inference runs once — the CLI's dev-server pass fills gaps), and the
-  // domain manifest is derived from tool names on FIRST sync only.
-  const semanticsByName = new Map<string, ToolSemantics>();
+  // domain manifest is derived from tool names on FIRST sync only. A carried
+  // entry is keyed by name AND binding identity: a same-named tool whose
+  // binding changed serves a different response, so its stale shape hints
+  // drop and the next dev-server pass re-infers.
+  const semanticsByName = new Map<string, { semantics: ToolSemantics; identity: string }>();
   for (const tool of previousTools) {
     const semantics = (tool as ExtractedToolV3).semantics;
-    if (semantics !== undefined) semanticsByName.set(tool.name, semantics);
+    if (semantics !== undefined) semanticsByName.set(tool.name, { semantics, identity: bindingIdentity(tool.binding) });
   }
   const hashCache = new Map<string, string | undefined>();
   const tools: ExtractedToolV3[] = [];
@@ -421,7 +427,10 @@ export async function vendoSync(options: {
     // otherwise, never traced.
     const source = srcPath ?? (tool.binding.kind === "server-action" ? tool.binding.module : undefined);
     const srcHash = source === undefined ? undefined : await sourceHash(root, source, hashCache);
-    const semantics = semanticsByName.get(tool.name);
+    const carried = semanticsByName.get(tool.name);
+    const semantics = carried !== undefined && carried.identity === bindingIdentity(tool.binding)
+      ? carried.semantics
+      : undefined;
     tools.push({
       ...tool,
       ...(srcHash === undefined ? {} : { srcHash }),

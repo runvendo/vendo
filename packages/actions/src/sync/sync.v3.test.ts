@@ -198,6 +198,50 @@ describe("vendo sync writes vendo/tools@3", () => {
     expect(next.domains).toEqual({ has: ["invoices"], hasNot: ["crypto"] });
   });
 
+  it("drops carried semantics when a same-named tool's binding changed; an unchanged binding still carries", async () => {
+    const { root, out } = await temporaryHost();
+    await writeHostFile(root, "openapi.json", SPEC);
+    await vendoSync({ root, out });
+
+    const file = await readJson(path.join(out, "tools.json"));
+    for (const tool of file.tools) {
+      tool.semantics = { "data.amountCents": { kind: "money", unit: "cents" } };
+    }
+    await fs.writeFile(path.join(out, "tools.json"), `${JSON.stringify(file, null, 2)}\n`, "utf8");
+
+    // listInvoices keeps its binding; createInvoice keeps its NAME but moves
+    // to a different path — its response-shape hints are stale and must drop.
+    await writeHostFile(root, "openapi.json", `${JSON.stringify({
+      openapi: "3.1.0",
+      info: { title: "test", version: "1" },
+      paths: {
+        "/api/invoices": { get: operation("listInvoices") },
+        "/api/billing/invoices": { post: operation("createInvoice") },
+      },
+    }, null, 2)}\n`);
+    await vendoSync({ root, out });
+    const next = await readJson(path.join(out, "tools.json"));
+    const byName = new Map<string, any>(next.tools.map((tool: any) => [tool.name, tool]));
+    expect(byName.get("host_listInvoices")?.semantics).toEqual({ "data.amountCents": { kind: "money", unit: "cents" } });
+    expect(byName.get("host_createInvoice")?.semantics).toBeUndefined();
+  });
+
+  it("normalizes CRLF to LF before hashing srcHash — cross-platform checkouts agree on the bytes", async () => {
+    const lfHost = await temporaryHost();
+    const route = "export function GET() {\n  return Response.json([]);\n}\n";
+    await writeHostFile(lfHost.root, "app/api/items/route.ts", route);
+    await vendoSync(lfHost);
+    const lfTool = (await readJson(path.join(lfHost.out, "tools.json"))).tools[0];
+
+    const crlfHost = await temporaryHost();
+    await writeHostFile(crlfHost.root, "app/api/items/route.ts", route.replace(/\n/g, "\r\n"));
+    await vendoSync(crlfHost);
+    const crlfTool = (await readJson(path.join(crlfHost.out, "tools.json"))).tools[0];
+
+    expect(lfTool.srcHash).toBe(sha256(route));
+    expect(crlfTool.srcHash).toBe(lfTool.srcHash);
+  });
+
   it("rejects a malformed capabilities.json loudly — its authored compounds/briefs must never silently drop", async () => {
     const { root, out } = await temporaryHost();
     await writeHostFile(root, "openapi.json", SPEC);
