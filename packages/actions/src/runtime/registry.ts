@@ -151,6 +151,14 @@ const STRIPPED_HEADERS = new Set([
   "upgrade",
 ]);
 
+/** Name-keyed union: primary entries win; secondary contributes only the
+ *  names primary lacks (registry load of compounds/briefs across the pair
+ *  plus a stranded capabilities.json). */
+function unionByName<T extends { name: string }>(primary: readonly T[], secondary: readonly T[]): T[] {
+  const names = new Set(primary.map((entry) => entry.name));
+  return [...primary, ...secondary.filter((entry) => !names.has(entry.name))];
+}
+
 function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
   return {
     name: tool.name,
@@ -746,15 +754,14 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const overridesV3 = overridesFile !== undefined && overridesFile.format === VENDO_OVERRIDES_FORMAT_V3 ? overridesFile : undefined;
       const toolsV1 = toolsFile !== undefined && toolsFile.format !== VENDO_TOOLS_FORMAT_V3 ? toolsFile : undefined;
       const overridesV1 = overridesFile !== undefined && overridesFile.format !== VENDO_OVERRIDES_FORMAT_V3 ? overridesFile : undefined;
-      // The retired capabilities.json is read whenever ANY half of the pair is
-      // still legacy — only a fully-v3 dir never touches it (its compounds and
-      // briefs were ingested at rewrite). A half-migrated dir must keep
-      // ingesting it through the legacy fold rather than silently dropping
-      // authored compounds/briefs (1a review follow-up).
+      // The retired capabilities.json is read whenever it EXISTS on disk —
+      // including beside a fully-v3 pair (an interrupted or hand-rolled
+      // migration leaves it stranded there). Its compounds/briefs always
+      // ingest through the legacy fold rather than silently dropping authored
+      // work; overrides.json-carried entries win by name (the sync path's
+      // conflicted-state posture), the file's unique entries are added.
       const fullyV3 = toolsV3 !== undefined && overridesV3 !== undefined;
-      const capabilitiesFile = fullyV3
-        ? undefined
-        : await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value));
+      const capabilitiesFile = await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value));
       const legacy: LegacyVendoFiles = {
         ...(toolsV1 === undefined ? {} : { tools: toolsV1 }),
         ...(overridesV1 === undefined ? {} : { overrides: overridesV1 }),
@@ -770,6 +777,13 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
           + "state usually means a sync or migration was interrupted. Run `vendo sync` to rewrite .vendo/ as the "
           + "v3 pair.",
         );
+      } else if (fullyV3 && capabilitiesFile !== undefined) {
+        console.warn(
+          "[vendo] .vendo is half-migrated: the retired capabilities.json is still on disk next to the v3 pair. "
+          + "Its compounds/briefs were ingested in-memory this run — overrides.json entries win by name, the "
+          + "file's unique entries were added. Run `vendo sync` to fold and retire it (a conflicted file is left "
+          + "for review).",
+        );
       } else if (Object.keys(legacy).length > 0) {
         console.warn(
           "[vendo] .vendo uses the legacy v1 file layout (tools@1 / overrides@1 / capabilities.json) — migrated "
@@ -782,10 +796,14 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       return {
         tools: configuredTools ?? tools.tools,
         overrides,
-        // A v3 overrides.json without compounds/briefs falls back to the fold,
-        // so a half-migrated dir's capabilities.json is never dropped.
-        compounds: configuredCapabilities?.tools ?? overrides.compounds ?? migrated.overrides.compounds ?? [],
-        briefs: configuredCapabilities?.briefs ?? overrides.briefs ?? migrated.overrides.briefs ?? [],
+        // The name-keyed union keeps a stranded capabilities.json's entries
+        // alive in every layout: overrides.json compounds/briefs win by name,
+        // the fold contributes only names overrides.json lacks. (On the pure
+        // legacy path the fold IS the overrides, so the union is identity.)
+        compounds: configuredCapabilities?.tools
+          ?? unionByName(overrides.compounds ?? [], migrated.overrides.compounds ?? []),
+        briefs: configuredCapabilities?.briefs
+          ?? unionByName(overrides.briefs ?? [], migrated.overrides.briefs ?? []),
       };
     })();
     return hostPromise.then(warnZeroLiveTools);

@@ -1118,16 +1118,74 @@ describe("format v3 host files (cse lane 1)", () => {
     }
   });
 
-  it("a v3 dir never reads the retired capabilities.json", async () => {
+  // Quality review item 1: a stray capabilities.json beside a FULLY-v3 pair
+  // must not be silently dropped — ingest through the fold with a loud warn.
+  it("a leftover capabilities.json beside a fully-v3 pair is ingested with a half-migrated warning", async () => {
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
+    try {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
+        { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} },
+      );
+      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
+        format: "vendo/capabilities@1",
+        tools: [compound("host_probe_flow", "host_probe")],
+        briefs: [{ name: "probe", text: "call host_probe first" }],
+      }));
+      const actions = createActions({ dir: root });
+      await expect(actions.descriptors()).resolves.toEqual([
+        { name: "host_probe", description: "host_probe", inputSchema: { type: "object" }, risk: "read" },
+        { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "read" },
+      ]);
+      await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first" }]);
+      expect(warned.some((line) => line.includes("half-migrated") && line.includes("capabilities.json"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("conflicted leftover: overrides@3-carried compounds win by name, the file's uniques are ingested", async () => {
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
+    try {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
+        {
+          format: VENDO_OVERRIDES_FORMAT_V3,
+          tools: {},
+          compounds: [compound("host_probe_flow", "host_probe", { description: "authored v3 flow" })],
+        },
+      );
+      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
+        format: "vendo/capabilities@1",
+        tools: [
+          compound("host_probe_flow", "host_probe", { description: "stale duplicate" }),
+          compound("host_unique_flow", "host_probe"),
+        ],
+      }));
+      const actions = createActions({ dir: root });
+      const descriptors = await actions.descriptors();
+      // the overrides.json copy of the shared name wins…
+      expect(descriptors).toContainEqual(
+        { name: "host_probe_flow", description: "authored v3 flow", inputSchema: { type: "object" }, risk: "read" },
+      );
+      // …and the file's unique entry is not dropped
+      expect(descriptors.map((descriptor) => descriptor.name)).toContain("host_unique_flow");
+      expect(warned.some((line) => line.includes("half-migrated"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("a malformed leftover capabilities.json beside a v3 pair fails loud, like every authored file", async () => {
     const root = await tempVendo(
       { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
       { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} },
     );
-    // Malformed on purpose: reading it would throw, so resolving proves it is ignored.
     await writeFile(join(root, ".vendo", "capabilities.json"), "{ not json");
-    const actions = createActions({ dir: root });
-    await expect(actions.descriptors()).resolves.toEqual([
-      { name: "host_probe", description: "host_probe", inputSchema: { type: "object" }, risk: "read" },
-    ]);
+    await expect(createActions({ dir: root }).descriptors()).rejects.toMatchObject({
+      name: "VendoError",
+    });
   });
 });
