@@ -11,7 +11,7 @@ import {
   TREE_MAX_TOTAL_COMPONENT_BYTES,
 } from "@vendoai/core";
 import type { GenerationDependencies } from "../engine.js";
-import { wireContractV4 } from "./exemplar.js";
+import { exemplarContract } from "./exemplar.js";
 import {
   APP_NAME_MAX_CHARS,
   componentsPromptSection,
@@ -53,7 +53,7 @@ export const wireContract = (deps: GenerationDependencies): string =>
   composePromptSections(wireContractSections(deps));
 
 /** Contract selection for the create lanes (full, paint, section): the
- *  exemplar-led rewrite rides pipeline.promptRewrite while the A/B against
+ *  exemplar-led rewrite rides pipeline.exemplarContract while the A/B against
  *  wireContract is measured. */
 export const createContract = (deps: GenerationDependencies): string =>
-  deps.pipeline?.promptRewrite === true ? wireContractV4(deps) : wireContract(deps);
+  deps.pipeline?.exemplarContract === true ? exemplarContract(deps) : wireContract(deps);

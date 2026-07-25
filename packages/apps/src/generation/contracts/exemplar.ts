@@ -3,7 +3,7 @@
  * stated once, three worked exemplars spanning archetypes (a worklist, an
  * action flow with an impossible half, a detail page). Rules a validator
  * catches are deliberately absent: the repair loop re-teaches them with the
- * violation message when broken. Opt-in via pipeline.promptRewrite while the
+ * violation message when broken. Opt-in via pipeline.exemplarContract while the
  * A/B against the production contract runs on dev prompts.
  */
 import {
@@ -25,7 +25,7 @@ import {
 /** The fictional host used by the exemplars. Exported so the exemplar-validity
  *  test compiles every exemplar against these exact tools — a broken example
  *  teaches broken apps, so the examples are pinned by test. */
-export const V4_EXEMPLAR_TOOLS: HostToolInfo[] = [
+export const EXEMPLAR_HOST_TOOLS: HostToolInfo[] = [
   {
     name: "acme_getReceivables", description: "Receivables summary.", risk: "read",
     inputSchema: { type: "object", properties: {} },
@@ -44,7 +44,7 @@ export const V4_EXEMPLAR_TOOLS: HostToolInfo[] = [
   },
 ];
 
-export const V4_EXEMPLARS: ReadonlyArray<{ title: string; request: string; wire: string; why: string }> = [{
+export const CONTRACT_EXEMPLARS: ReadonlyArray<{ title: string; request: string; wire: string; why: string }> = [{
   title: "A worklist",
   request: "which invoices are overdue and let me chase them",
   wire: `<App name="Overdue invoices">
@@ -118,11 +118,11 @@ export default function PayInvoicePanel() {
   why: "A detail page, not a dashboard: identity first (name + live status), the facts row, then the record's contents. Dot-numeric segments address the newest item; the identical call is written identically everywhere, so it is one fetch.",
 }];
 
-const v4Role = `<role>
+const exemplarRole = `<role>
 You are the Vendo app generation engine, embedded in the host product. From one user request you compose a small, trustworthy, beautiful app out of this host's own data and actions. Emit exactly one <App name="..."> element in vendo-genui/v2 wire markup — no prose, no fences, no JSON, no comments.
 </role>`;
 
-const v4GreatApps = `<building_great_apps>
+const exemplarGreatApps = `<building_great_apps>
 Work in this order:
 1. Find the hero. Every ask has one thing the user came for — a number to check, a list to work through, a form to submit, a question to answer. Put it first and make it unmistakably the most important thing on screen.
 2. Pick the shape that serves the ask: a dashboard answers "how are things?"; a worklist serves "what do I act on?"; a detail page serves "tell me about X"; a form or flow serves "do this for me"; a board or timeline serves "how is this progressing?"; a report serves "brief me". Not every ask is a dashboard — a message-composer's hero is the compose box.
@@ -136,14 +136,14 @@ Work in this order:
 10. Wear the host's brand. Reach for the host catalog components first, the Kit second, and follow the host design rules below. The bar: the app looks like the host shipped it.
 </building_great_apps>`;
 
-const v4Principles = `<principles>
+const exemplarPrinciples = `<principles>
 1. Real data only. Every number, row, and chart point the user sees comes from a tool binding — including derived values: a computation may only combine tool data (an invented rate or constant is fabrication). When no tool backs an ask, the Disclaimer is the correct output.
 2. Claims tell the truth. Every title, header, badge, and sentence of copy is literally true of the data beneath it. When the data can't support the claim, change the words, not the data.
 3. Actions are real and gated. A button either names a host tool with its context bound into payload, or it doesn't exist. Mutations pause for user approval — render that state. When no tool can perform the ask, say so plainly instead.
 4. Brand-native. Host catalog components first, Kit second, host tokens always — on every host, the app should read as if the host shipped it.
 </principles>`;
 
-const v4Grammar = (): string => `<wire_grammar>
+const exemplarGrammar = (): string => `<wire_grammar>
 - One <App name="..."> contains the whole app. name is the app's display title — at most ${APP_NAME_MAX_CHARS} characters, human and specific ("Overdue invoices"), never the ask echoed back. Positional nesting expresses the tree; the compiler mints ids — never write id attributes.
 - Data binds inline: rows={host_listInvoices({limit:20}).data} — an exact HOST TOOLS name, a literal args object ({} when none), then a field path. The identical call+args expression is ONE fetch — reuse it for the same data. <Query id="name" tool="..." input={{...}}/> declarations (bound as {name.field.path}) also work.
 - The field path goes through the tool's response envelope exactly as TOOL RESPONSE SHAPES declares it — when a shape shows {data: {...}}, the path is host_getClient({id:"..."}).data.name, never a guessed top-level field.
@@ -159,10 +159,10 @@ const v4Grammar = (): string => `<wire_grammar>
 - Limits: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} islands, ${TREE_MAX_COMPONENT_SOURCE_BYTES} bytes per island.
 </wire_grammar>`;
 
-const v4Examples = (): string => `<examples>
+const exemplarExamples = (): string => `<examples>
 Three complete apps for a FICTIONAL billing host. Its acme_* tools are NOT available to you — bind only the HOST TOOLS listed above. Study the shape, not the tools.
 
-${V4_EXEMPLARS.map(({ title, request, wire, why }) => `<example>
+${CONTRACT_EXEMPLARS.map(({ title, request, wire, why }) => `<example>
 ${title}. Request: "${request}"
 
 ${wire}
@@ -173,14 +173,14 @@ Why this is right: ${why}
 
 /** Charts preamble carried with the components section (the historical $NaN
  *  class: a chart fed formatted strings draws nothing). */
-const V4_COMPONENTS_PREAMBLE = "Charts and visualizations read RAW numeric fields — their format prop handles display. Money is integer cents end-to-end; the Kit formats it.";
+const COMPONENTS_PREAMBLE = "Charts and visualizations read RAW numeric fields — their format prop handles display. Money is integer cents end-to-end; the Kit formats it.";
 
-export const wireContractV4 = (deps: GenerationDependencies): string => composePromptSections([
-  { id: "role", content: v4Role },
-  { id: "tree-contract", content: v4GreatApps },
-  { id: "tree-contract", content: v4Grammar() },
-  { id: "tree-contract", content: v4Principles },
-  { id: "prewired-props", content: `<components>\n${V4_COMPONENTS_PREAMBLE}\n\n${componentsPromptSection()}\n</components>` },
+export const exemplarContract = (deps: GenerationDependencies): string => composePromptSections([
+  { id: "role", content: exemplarRole },
+  { id: "tree-contract", content: exemplarGreatApps },
+  { id: "tree-contract", content: exemplarGrammar() },
+  { id: "tree-contract", content: exemplarPrinciples },
+  { id: "prewired-props", content: `<components>\n${COMPONENTS_PREAMBLE}\n\n${componentsPromptSection()}\n</components>` },
   {
     id: "catalog",
     content: `<host>\n${composePromptSections([
@@ -190,5 +190,5 @@ export const wireContractV4 = (deps: GenerationDependencies): string => composeP
         || (deps.pinBaselines !== undefined && deps.pinBaselines.length > 0 && id === "remixable-slots")),
     ])}\n</host>`,
   },
-  { id: "prewired-props", content: v4Examples() },
+  { id: "prewired-props", content: exemplarExamples() },
 ]);

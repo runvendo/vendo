@@ -79,7 +79,7 @@ export interface PipelineConfig {
   /** The exemplar-led create contract (single-voice sections, principles
    *  stated once, worked exemplars; scar-tissue rules retired to validators +
    *  repair). Opt-in while the A/B against the current contract is measured. */
-  promptRewrite?: boolean;
+  exemplarContract?: boolean;
   /** The smoke-render gate: every island renders once in a headless DOM
    *  (dedicated worker + jsdom, ambient scope stubbed) inside create
    *  validation; a crash routes to repair like any issue. On by default;

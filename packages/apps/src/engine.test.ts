@@ -19,7 +19,7 @@ import {
   scriptedLanguageModel,
   type ScriptedModelCall,
 } from "./testing/index.js";
-import { instructionRequiresServedApp, instructionRequiresServer, modelEngine, V4_EXEMPLARS, V4_EXEMPLAR_TOOLS } from "./engine.js";
+import { instructionRequiresServedApp, instructionRequiresServer, modelEngine, CONTRACT_EXEMPLARS, EXEMPLAR_HOST_TOOLS } from "./engine.js";
 import { fakeBoxSandbox } from "./testing/fake-box.js";
 
 const ctx: RunContext = {
@@ -256,10 +256,10 @@ describe("generation engine through createApps", () => {
     });
   });
 
-  describe("v4 create contract (pipeline.promptRewrite)", () => {
+  describe("exemplar create contract (pipeline.exemplarContract)", () => {
     it("selects the rewritten contract only under the flag", async () => {
       const prompts: string[] = [];
-      const make = (promptRewrite: boolean) => createApps({
+      const make = (exemplarContract: boolean) => createApps({
         store: memoryStore(),
         guard: guardFixture(),
         tools,
@@ -268,7 +268,7 @@ describe("generation engine through createApps", () => {
           prompts.push(promptText(call));
           return validCreate();
         }),
-        pipeline: { promptRewrite },
+        pipeline: { exemplarContract },
       });
 
       await make(true).create({ prompt: "Dashboard" }, ctx);
@@ -284,14 +284,14 @@ describe("generation engine through createApps", () => {
 
     // A broken example teaches broken apps: every exemplar must survive the
     // REAL create path (compile + full validation) against its fictional host.
-    it.each(V4_EXEMPLARS.map((exemplar) => [exemplar.title, exemplar] as const))(
+    it.each(CONTRACT_EXEMPLARS.map((exemplar) => [exemplar.title, exemplar] as const))(
       "exemplar %s compiles and validates",
       async (_title, exemplar) => {
         const withTools = createApps({
           store: memoryStore(),
           guard: guardFixture(),
           tools: {
-            async descriptors() { return V4_EXEMPLAR_TOOLS.map((tool) => ({ ...tool })); },
+            async descriptors() { return EXEMPLAR_HOST_TOOLS.map((tool) => ({ ...tool })); },
             async execute() { return { status: "error", error: { code: "not-found", message: "fictional" } }; },
           },
           catalog: [],
@@ -313,7 +313,7 @@ describe("generation engine through createApps", () => {
   describe("empty-states batch (first-run generation spec)", () => {
     it("teaches the empty-data, About-this-view, display-title, and static-island rules in both create contracts", async () => {
       const prompts: string[] = [];
-      const make = (promptRewrite: boolean) => createApps({
+      const make = (exemplarContract: boolean) => createApps({
         store: memoryStore(),
         guard: guardFixture(),
         tools,
@@ -322,7 +322,7 @@ describe("generation engine through createApps", () => {
           prompts.push(promptText(call));
           return validCreate();
         }),
-        pipeline: { promptRewrite },
+        pipeline: { exemplarContract },
       });
 
       await make(false).create({ prompt: "Dashboard" }, ctx);

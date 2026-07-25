@@ -6,4 +6,4 @@
  */
 export * from "./generation/engine.js";
 export { APP_NAME_MAX_CHARS } from "./generation/contracts/sections.js";
-export { V4_EXEMPLARS, V4_EXEMPLAR_TOOLS, wireContractV4 } from "./generation/contracts/exemplar.js";
+export { CONTRACT_EXEMPLARS, EXEMPLAR_HOST_TOOLS, exemplarContract } from "./generation/contracts/exemplar.js";
