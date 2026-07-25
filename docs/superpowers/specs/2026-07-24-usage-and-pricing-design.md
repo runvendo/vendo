@@ -121,7 +121,7 @@ Meter units are never redefined. Rate or credit changes: existing subscribers ke
 
 ## 10. Open items before the pricing page ships
 
-- Validate every allowance/overage number against real COGS + usage data (meter rates in §2–3 are structural placeholders).
+- ~~Validate every allowance/overage number against real COGS~~ **done 2026-07-24** (`docs/pricing/cogs-validation.md`): AI/sandbox/runs/connections rates confirmed; **two open decisions** — (a) storage $0.25/GB-mo is underwater on all-Neon backing (Neon $0.35): either move file bytes to R2 (keeps $0.25) or raise to $0.45; (b) knowledge $0.35 is ~breakeven: raise to $0.60, or $0.50 with a quantized-vector stack. Plus: trim Pro connection allowance 300→150 (Pro at full allowances ≈ $32 COGS vs $25 target). Remaining data gap = calls-per-connection distribution (needs live traffic).
 - Sizing of free-quota abuse exposure (Free-tier per-file caps, decay policy for idle Free orgs).
 - Exact graduated-rate breakpoints.
 - Stripe implementation scoping across `vendo` + `vendo-web` (meters exist partially: gateway dual-metering shipped; Stripe overage forwarding for llm_tokens was already flagged as remaining work in the cloud program).
