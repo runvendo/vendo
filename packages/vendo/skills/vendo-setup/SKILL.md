@@ -62,8 +62,8 @@ fetch it when you need more detail than this skill carries.
    ```
 
    Never invent a key; ask the user for one if none is set. Any AI SDK
-   provider works — point `vendo refine --model-import` at the host's own
-   model module when one exists.
+   provider works — pass the host's own model into
+   `createVendo({ model })` when one exists.
 
 5. Verify. Start the dev server, then:
 
