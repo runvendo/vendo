@@ -307,11 +307,14 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
     }
   }
 
+  // A malformed semantics.json is warned about and left in place (never a
+  // migration trigger on its own — that would re-announce on every sync).
+  const semanticsRetires = semantics.present && (semantics.parsed !== null || toolsV3 !== undefined);
   const legacyPieces = [
     ...(toolsV1 !== undefined ? ["tools.json (vendo/tools@1)"] : []),
     ...(overridesV1 !== undefined ? ["overrides.json (vendo/overrides@1)"] : []),
     ...(capabilities !== null ? ["capabilities.json"] : []),
-    ...(semantics.present ? ["semantics.json"] : []),
+    ...(semanticsRetires ? ["semantics.json"] : []),
   ];
   const state: VendoDirState = {
     previousTools: toolsV3?.tools ?? migrated.tools.tools,
@@ -324,9 +327,9 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
 
   const deletions = [
     ...(capabilities !== null ? [capabilitiesPath] : []),
-    // A malformed semantics.json stays on disk (warned above); a parsed or
-    // stale one is retired — its content lives in tools.json now.
-    ...(semantics.present && (semantics.parsed !== null || toolsV3 !== undefined) ? [semanticsPath] : []),
+    // A parsed or stale semantics.json is retired — its content lives in
+    // tools.json now (a malformed one stayed on disk, warned above).
+    ...(semanticsRetires ? [semanticsPath] : []),
   ];
   const summary =
     `Migrated .vendo/ (legacy ${legacyPieces.join(", ")}) to the v3 two-file layout: `
