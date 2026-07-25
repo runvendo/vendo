@@ -1,6 +1,6 @@
 /**
- * corpus-triage Task 10 — engine.ts's island syntax check lazy-loads esbuild
- * (a native-binary package). A bundler (webpack, or Next's Turbopack) that
+ * The island syntax check (generation/validation/islands.ts) lazy-loads
+ * esbuild (a native-binary package). A bundler (webpack, or Next's Turbopack) that
  * sees a literal `import("esbuild")` in a module it's bundling walks INTO
  * esbuild's own package to build its module graph — regardless of whether
  * the import ever executes — and esbuild's lib/main.js resolves its native
@@ -55,24 +55,24 @@ const NAKED_ESBUILD_IMPORT = /import\(\s*["']esbuild["']\s*\)/;
 const GUARDED_ESBUILD_IMPORT =
   /import\(\s*\/\*\s*webpackIgnore:\s*true\s*\*\/\s*\/\*\s*turbopackIgnore:\s*true\s*\*\/\s*(?:\/\*\s*@vite-ignore\s*\*\/\s*)?ESBUILD_SPECIFIER\s*\)/;
 
-function buildDistEngineSource(): string {
+function buildDistIslandsSource(): string {
   execFileSync("npx", ["tsc", "-p", "tsconfig.json"], { cwd: PACKAGE_DIR, stdio: "pipe" });
-  return readFileSync(join(PACKAGE_DIR, "dist", "engine.js"), "utf8");
+  return readFileSync(join(PACKAGE_DIR, "dist", "generation", "validation", "islands.js"), "utf8");
 }
 
-describe("engine.ts esbuild import — bundler-style reachability (built dist)", () => {
+describe("islands.ts esbuild import — bundler-style reachability (built dist)", () => {
   it("the compiled dist never carries a naked, bundler-resolvable esbuild specifier", () => {
-    const compiled = buildDistEngineSource();
+    const compiled = buildDistIslandsSource();
     expect(NAKED_ESBUILD_IMPORT.test(compiled)).toBe(false);
   });
 
   it("the compiled dist keeps the webpackIgnore + turbopackIgnore guarded form (tsc preserves comments; this is the actual proof, not just source)", () => {
-    const compiled = buildDistEngineSource();
+    const compiled = buildDistIslandsSource();
     expect(GUARDED_ESBUILD_IMPORT.test(compiled)).toBe(true);
   });
 
   it("sanity: the source itself carries the same guarded form (what a reviewer edits matches what ships)", () => {
-    const source = readFileSync(join(PACKAGE_DIR, "src", "engine.ts"), "utf8");
+    const source = readFileSync(join(PACKAGE_DIR, "src", "generation", "validation", "islands.ts"), "utf8");
     expect(NAKED_ESBUILD_IMPORT.test(source)).toBe(false);
     expect(GUARDED_ESBUILD_IMPORT.test(source)).toBe(true);
   });
