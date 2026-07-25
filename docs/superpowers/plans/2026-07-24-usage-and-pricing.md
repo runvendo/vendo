@@ -8,7 +8,7 @@
 
 - `vendo-web` branch `console-metering-and-model-ids` (in flight) already has: project-scoped usage-event ingestion (`lib/usage-ingestion.ts`, `lib/metering/`), the broker meter outbox with project/api-key attribution, per-project storage gauges, and loud gateway model-id validation. This plan **builds on that branch's work; nothing here duplicates it.**
 - Gateway dual-metering of `llm_tokens` shipped in the cloud program; Stripe overage forwarding was explicitly left undone.
-- **No Stripe code exists anywhere in `vendo-web`.** Billing is greenfield.
+- **No Stripe code exists in `vendo-web`, but the Stripe account is live and test mode has scaffolding** (audited via CLI 2026-07-24): `vendo_pro`/`vendo_teams` products, billing meters `storage_gb`/`runs`/`sandbox_minutes`, metered overage prices with per-tier lookup keys. Phase 3 reconciles this to the canon rather than starting blank: add `knowledge_gb` + `active_connections` + AI netting, and replace the per-tier price objects with one uniform price per meter (per the uniform-rates decision).
 - No service door enforces allowances today (the 247K-over Free org incident).
 - OSS (`vendo`) already has safe stream-error surfacing to the thread banner and terminal-failure turn-ending — the natural rails for meter-exhausted errors.
 
