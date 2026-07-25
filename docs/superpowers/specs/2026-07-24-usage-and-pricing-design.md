@@ -27,7 +27,7 @@ Free $0 / Pro $49/mo / Teams $499/mo / Enterprise custom. The Pro→Teams line i
 | | Free | Pro $49 | Teams $499 | Enterprise |
 |---|---|---|---|---|
 | **Persona** | Dev evaluating; zero config, never talks to us | Indie/startup live in production | B2B company; org structure, governance | Regulated ICP; buys risk transfer + control, or arrives via scale |
-| **Multi-party surfaces** | None | Snapshot share links, live collab apps, publishing; basic console (usage, keys, deployments) | + Org layer (overlay, org principals, registry + promotion, pinning/host-adoption); full governance console (guard hot-edit, batch approvals, session replay, org activity, insights); SAML SSO (no SSO tax) | + SCIM, custom RBAC, multi-org/subsidiaries |
+| **Multi-party surfaces** | None | Snapshot share links, live collab apps, publishing; basic console (usage, keys, deployments) | + Org layer (overlay, org principals, registry + promotion, pinning/host-adoption); full governance console (guard hot-edit, batch approvals, session replay, org activity, insights) | + SAML SSO, SCIM, custom RBAC, multi-org/subsidiaries |
 | **AI credit (managed inference)** | $5/mo, hard stop | $10/mo, then passthrough +15% | $50/mo, then passthrough +15% | Committed rates |
 | **Sandbox minutes** | 200, hard cap | 2,000 incl., then $0.01/min | 10,000 incl., then $0.01/min | Committed |
 | **Storage — files & app data (GB-mo)** | 1 GB, hard cap | 20 GB incl., then $0.25/GB-mo | 100 GB incl., then $0.25/GB-mo | Committed |
@@ -86,6 +86,7 @@ Stripe subscription + six metered prices + billing thresholds + one opt-in toggl
 - **Spend cap (their control)** sits on top, per §5.
 - **Failed payment:** Stripe dunning → 7–14 day grace with warnings → meters flip to hard-stop; no new debt accrues past the flip.
 - **Annual self-serve:** offered at ~2 months free.
+- **Usage bundles (Pro/Teams add-on):** an optional recurring monthly commitment — pay $X/mo (self-serve picker, $100 minimum), receive **$X × 1.10 of usage credit** drawn across all six meters at list rates (bonus framing, not per-meter discounts: margins stay computable, no asterisks, graduated rates still apply at list). Draw order: included allowances → bundle credit → metered overage. Unused bundle credit rolls over one month, then expires. Cancel anytime. Deeper discounts (20–30%) remain enterprise-commit territory, where they carry the platform fee.
 - **Graduated meter rates on all tiers:** per-unit prices step down automatically at volume breakpoints (e.g. runs $3/1k → $2/1k past 50k/mo; storage $0.25 → $0.15/GB past 500 GB; AI margin +15% → +12% → +10% at spend tiers, funded by our own provider volume discounts). High-usage customers feel scale economics without a sales conversation and may stay on Teams forever.
 
 ## 7. Change policy (trust)
@@ -115,8 +116,8 @@ Meter units are never redefined. Rate or credit changes: existing subscribers ke
 
 ## 9. Deferred (explicitly not in v1)
 
-- **Usage bundles** (recurring "commit to $X/mo usage for 10–15% off, overflow metered") — purely additive later; adds SKU/rollover complexity now.
 - Marketplace/registry monetization; multi-region self-serve; per-region pricing.
+- Additional `vendo/*` model tiers beyond the single `vendo/auto` alias.
 
 ## 10. Open items before the pricing page ships
 
