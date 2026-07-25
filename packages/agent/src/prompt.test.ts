@@ -26,6 +26,25 @@ describe("assembleSystemPrompt", () => {
     expect(prompt.indexOf("Directions")).toBeLessThan(prompt.indexOf("Prefer concise answers."));
   });
 
+  it("resolves a product PROVIDER per call, so a cloud-backed brief is LIVE (cse lane 3)", async () => {
+    const guard = testGuard({}, []);
+    // (a) unset provider (returns undefined) = today's no-Product behavior.
+    expect(await assembleSystemPrompt(guard, ctx(), { product: () => undefined }))
+      .not.toContain("Product");
+    // (b) an explicit string still folds in unchanged.
+    expect(await assembleSystemPrompt(guard, ctx(), { product: "Maple, a neobank" }))
+      .toContain("Product\nMaple, a neobank");
+    // (c) a provider is re-read per call — a value change is reflected on the
+    // NEXT turn with no recomposition (the live-brief contract).
+    let brief = "Maple v1";
+    const system = { product: () => brief };
+    expect(await assembleSystemPrompt(guard, ctx(), system)).toContain("Product\nMaple v1");
+    brief = "Maple v2";
+    expect(await assembleSystemPrompt(guard, ctx(), system)).toContain("Product\nMaple v2");
+    // A blank provider result is dropped like a blank string.
+    expect(await assembleSystemPrompt(guard, ctx(), { product: () => "   " })).not.toContain("Product");
+  });
+
   it("trims directions and drops blank ones; omits a whitespace-only product", async () => {
     const guard = testGuard({}, ["  Trim me  ", "   ", ""]);
     const prompt = await assembleSystemPrompt(guard, ctx(), { product: "   " });
