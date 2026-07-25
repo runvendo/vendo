@@ -46,7 +46,7 @@ import { defaultFetch } from "@vendoai/core";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
-  /** Capability briefs carried by `.vendo/capabilities.json` (04 §1). Validated and exposed; consumed by later milestones. */
+  /** Capability briefs carried by `.vendo/overrides.json` (04 §1; legacy capabilities.json migrates in). Validated and exposed; consumed by later milestones. */
   briefs(): Promise<CapabilityBrief[]>;
   /**
    * Runtime tool search (ENG-252): rank the merged, enabled tool surface against
