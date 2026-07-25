@@ -189,6 +189,13 @@ describe("toolsFileV3Schema", () => {
     expect((parsed as Record<string, unknown>).generatedBy).toBe("vendo sync");
   });
 
+  it("keeps unknown keys inside the generated domains manifest too (the authored copy stays strict)", () => {
+    const parsed = toolsFileV3Schema.parse(toolsFileV3({
+      domains: { has: ["invoices"], hasNot: [], derivedFrom: "tool-names" },
+    }));
+    expect((parsed.domains as Record<string, unknown>).derivedFrom).toBe("tool-names");
+  });
+
   it("stays deterministic: rejects compound bindings, pointing at overrides.json", () => {
     const result = toolsFileV3Schema.safeParse(toolsFileV3({ tools: [compoundTool()] }));
     expect(result.success).toBe(false);
