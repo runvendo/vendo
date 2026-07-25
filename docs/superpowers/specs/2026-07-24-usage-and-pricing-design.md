@@ -33,7 +33,7 @@ Free $0 / Pro $49/mo / Teams $499/mo / Enterprise custom. The Pro→Teams line i
 | **Storage — files & app data (GB-mo)** | 1 GB, hard cap | 20 GB incl., then $0.25/GB-mo | 100 GB incl., then $0.25/GB-mo | Committed |
 | **Knowledge base (GB-mo)** | 1 GB, hard cap | 10 GB incl., then $0.60/GB-mo | 50 GB incl., then $0.60/GB-mo | Committed |
 | **Automation runs** | 100/mo, hard cap | 3,000/mo incl., then $3/1k | 30,000/mo incl., then $3/1k | Committed |
-| **Active connections** | 20, hard cap | 300 incl., then ~$0.30/conn-mo | 2,000 incl., then ~$0.30/conn-mo | Committed |
+| **Active connections** | 20, hard cap | 150 incl., then ~$0.30/conn-mo | 2,000 incl., then ~$0.30/conn-mo | Committed |
 | **Threads, memory, audit logs** | Free — 7-day retention | Free — 90-day retention | Free — unlimited threads; 1-yr audit retention | Free — custom / compliance-grade retention |
 | **Support** | Community | Email | Priority | Named SE, private channel, SLA |
 
@@ -72,7 +72,7 @@ $5 Free / $10 Pro / $50 Teams per month. Dollar-denominated, no rollover, netted
 
 Enforcement is server-side at service-call time — gateway, sandbox, store, broker, automation scheduler each check `valid key + meter not exhausted` before doing work. No client-side checks. ~5% internal tolerance absorbs async metering lag.
 
-- **Free: hard stop** at 100% of any cap, with a developer-readable error naming the reset date and the two exits (upgrade / BYO). Warning email at 80%. No card, ever.
+- **Free: hard stop** at 100% of any cap, with a developer-readable error naming the reset date and the two exits (upgrade / BYO). Warning email at 80%. No card, ever. **Signup gate (locked 2026-07-24):** full Free caps require GitHub/Google sign-in (account-age heuristic, the Railway model); email-only signups get a reduced lane (~$1 AI credit, 50 sandbox minutes) until they link one. Idle decay per `docs/pricing/free-abuse-sizing.md` (warn d14 → pause d21 → delete after 90 days paused).
 - **Pro/Teams: overage requires explicit opt-in** (toggle default **off** on Pro, **on** on Teams). Toggle off → Free-style hard stop at allowance with an enable prompt showing the rates. Toggle on → silent metered accrual under a **customer spend cap** (default on at 2× plan price, one-click adjustable); at cap, hard-stop behavior. Notifications at 50/80/100% of allowances and cap.
 - **Degrade asymmetry:** inference/sandbox/storage/knowledge stop instantly at a cap; automations and connections fail *loudly* (run marked "blocked by spend cap" in console + owner email) — never silently unfired.
 - **Enterprise never hard-stops.** Overage is a true-up invoice line, not a service gate; protection is contractual.
@@ -121,7 +121,7 @@ Meter units are never redefined. Rate or credit changes: existing subscribers ke
 
 ## 10. Open items before the pricing page ships
 
-- ~~Validate every allowance/overage number against real COGS~~ **done 2026-07-24** (`docs/pricing/cogs-validation.md`); both rate decisions **resolved by Yousef same day**: files-in-R2 architecture locked (storage stays $0.25), knowledge raised to $0.60. Still open: whether to trim Pro's connection allowance 300→150 (recommended if live data shows Pro COGS above the ~$25 target even post-R2); calls-per-connection distribution (needs live traffic).
+- ~~Validate every allowance/overage number against real COGS~~ **done 2026-07-24** (`docs/pricing/cogs-validation.md`); both rate decisions **resolved by Yousef same day**: files-in-R2 architecture locked (storage stays $0.25), knowledge raised to $0.60. Pro connections trimmed 300→150 (Yousef, 2026-07-24 — launch conservative; raising later is a gift, cutting is a change-policy event). Still open: calls-per-connection distribution (needs live traffic); Composio repricing 2026-08-15.
 - Sizing of free-quota abuse exposure (Free-tier per-file caps, decay policy for idle Free orgs).
 - Exact graduated-rate breakpoints.
 - Stripe implementation scoping across `vendo` + `vendo-web` (meters exist partially: gateway dual-metering shipped; Stripe overage forwarding for llm_tokens was already flagged as remaining work in the cloud program).

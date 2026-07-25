@@ -128,7 +128,7 @@ Rung 2 lists at **Band 1 (effective floor $30k: $15k platform fee + $15k minimum
 4. **K8s vs compose mandate** — which platform do they actually run? Determines packaging target and runbook shape. Must be pinned before signing.
 5. **Inference route** — direct Anthropic egress or their Bedrock/Azure? Affects gateway config and their security review.
 6. **Usage-report cadence and transport** — how often do meter counts report home, and does their security team need to approve the payload schema?
-7. **Reconciling the list-price figures** — the original assessment quoted $75k+ for Rung 2; the pricing design derives $60k+ (Band 1 floor + $30k add-on). Which number goes on the order form?
+7. ~~Reconciling the list-price figures~~ **RESOLVED (Yousef, 2026-07-24): $60k — the band math — goes on the order form.** Defensible arithmetic the customer can verify against the published structure; the discount line shows −$45k.
 8. **One-time implementation fee** — is the ~$10–25k professional-services onboarding fee attainable in this deal?
 9. **Operational telemetry scope** — beyond mandatory meter counts, what error/version telemetry will they accept?
 10. **Supabase self-hosted ownership** — confirming their team operates the self-hosted Supabase stack (auth is on the critical path; it should sit with whoever owns their Postgres).

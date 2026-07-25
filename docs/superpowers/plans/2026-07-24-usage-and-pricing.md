@@ -93,4 +93,4 @@ The "meters aren't real" fix. Ship dark first, then flip.
 
 - **Double-billing seams:** credits netting + bundle draw + Stripe meter events must be one pipeline stage with property tests, not three ad-hoc adjustments.
 - **Enforcement flip:** dark-launch comparison is mandatory; flipping enforcement on real orgs without it risks cutting off paying customers on counter bugs.
-- **Branch coordination:** Phases 1–2 land on/after `console-metering-and-model-ids`; agree merge order with that lane before starting.
+- **Branch coordination (resolved 2026-07-24):** `console-metering-and-model-ids` lands on main first; `pricing-p1-meter-canon` then rebases onto main and PRs. Pricing phases queue behind the metering lane.
