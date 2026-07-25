@@ -786,11 +786,18 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       for (let index = 0; index < added.length; index += 1) {
         const registry = added[index]!;
         for (let descriptorIndex = 0; descriptorIndex < registryLists[index]!.length; descriptorIndex += 1) {
-          const descriptor = parseToolDescriptor(
+          const rawDescriptor = parseToolDescriptor(
             registryLists[index]![descriptorIndex],
             `added registry[${index}][${descriptorIndex}]`,
           );
-          register(descriptor.name, "added registry", { kind: "registry", descriptor, registry });
+          const merged = mergeOverride(rawDescriptor, host.overrides.tools[rawDescriptor.name]);
+          const { disabled: _disabled, ...descriptor } = merged;
+          register(
+            descriptor.name,
+            "added registry",
+            merged.disabled === true ? undefined : { kind: "registry", descriptor, registry },
+          );
+          primitives.set(descriptor.name, { risk: merged.risk, disabled: merged.disabled === true });
         }
       }
 
