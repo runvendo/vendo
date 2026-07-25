@@ -113,6 +113,12 @@ import { cloudSandbox } from "./sandbox.js";
 // its own options instead of relying on the VENDO_API_KEY default.
 export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
 import { cloudApps } from "./cloud-apps.js";
+import { chainSecrets, cloudSecrets } from "./cloud-secrets.js";
+// The Cloud secrets provider and its chaining helper ride the server surface
+// like the other Cloud adapters: a host can compose them explicitly via
+// createVendo({ secrets: chainSecrets(envSecrets(), cloudSecrets({...})) })
+// instead of relying on the VENDO_API_KEY default (selectSecrets below).
+export { chainSecrets, cloudSecrets, type CloudSecretsOptions } from "./cloud-secrets.js";
 import { cloudTools } from "./cloud-tools.js";
 // The Cloud tools adapter (the execution half of the zero-key Composio seam)
 // rides the server surface the same way: pass it explicitly via
@@ -656,6 +662,28 @@ function selectStore(configured: VendoStore | undefined, touchDebounceMs: number
   return { store: local, sessions: localSessionOps(local) };
 }
 
+/** ADAPTER RULE, secrets seam (cloned from selectConnections): generated-app
+    env building and the apps block's redaction consume one SecretsProvider;
+    which implementation composes is decided HERE. Precedence, top to bottom:
+      1. an explicitly passed provider always wins (BYO — the host's own vault
+         indirection via createVendo({ secrets }));
+      2. the process environment stays first even with a key — a defined,
+         non-empty env value wins (the hard BYO rule: setting a Vendo key
+         never shadows a secret the operator already ships in the env) — and
+         VENDO_API_KEY chains the Cloud secrets provider behind it for the
+         names the environment leaves unset (VENDO_CLOUD_URL overrides the
+         console base URL);
+      3. keyless, the envSecrets default alone (unchanged behavior).
+    The providers themselves never read VENDO_API_KEY; a Cloud lookup failure
+    propagates from the chain (chainSecrets) — redaction already tolerates
+    provider failures at its own layer. */
+function selectSecrets(configured: SecretsProvider | undefined): SecretsProvider {
+  if (configured !== undefined) return configured;
+  const cloud = cloudKeyOptions();
+  if (cloud === undefined) return envSecrets();
+  return chainSecrets(envSecrets(), cloudSecrets(cloud));
+}
+
 function isJsonRequest(request: Request): boolean {
   return request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
     === "application/json";
@@ -974,6 +1002,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ),
   );
   const sandbox = selectSandbox(config.sandbox);
+  // Secrets, selected by the adapter rule at this composition seam
+  // (selectSecrets above): explicit provider → env chained over the
+  // VENDO_API_KEY Cloud provider → env alone. Consumed by machine env
+  // building and the apps block (redaction) below.
+  const secrets = selectSecrets(config.secrets);
   // Inference, selected by the adapter rule at this composition seam
   // (selectModel above) — the one model the agent and apps blocks consume.
   const inference = selectModel(config.model);
@@ -1225,7 +1258,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     const inferenceEndpoint = boxInference();
     const built = await buildEnv(app, {
       granted: grants?.grantedSecrets ?? new Set<string>(),
-      secrets: config.secrets ?? envSecrets(),
+      secrets,
       storeUrl: boxBase,
       hostUrl: boxBase,
       appToken: await appTokens.mint(app.id, subject),
@@ -1289,7 +1322,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     ...(semanticsFile === undefined ? {} : { semantics: semanticsFile.tools, domains: semanticsFile.domains }),
-    secrets: config.secrets ?? envSecrets(),
+    secrets,
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)
     // and Lane C's env assembly. The box template (Node + the in-box agent
