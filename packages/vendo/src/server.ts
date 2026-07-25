@@ -1244,10 +1244,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // from the merged .vendo pair (generated tools.json overlaid by overrides.json;
   // a legacy dir's semantics.json ingested in-memory until `vendo sync`). The
   // OVERRIDES surface resolves file → cloud; tools.json/semantics.json stay
-  // local generation inputs (not cloud surfaces). Memoized BOOT-ONCE and read
-  // through provider thunks by the apps block, so a cold snapshot never blocks
-  // compose. Malformed → loud + absent, same stance as catalog.json.
-  const hostSemanticsProvider = memoizeOnce(() => {
+  // local generation inputs (not cloud surfaces). Resolved LIVE per generation
+  // (NOT memoized) — the apps block's own "re-read per generation" contract:
+  // memoizing would lock a local-only merge on a cold cloud snapshot (whenever a
+  // local tools.json makes the first merge defined) and drop cloud-owned
+  // overrides for the process lifetime (#557 review). A tools.json read +
+  // JSON.parse per generation is negligible against generation cost. Malformed
+  // → loud + absent, same stance as catalog.json.
+  const hostSemanticsProvider = (): ReturnType<typeof mergedSemanticsAndDomains> => {
     const parsedFile = (name: string): unknown => {
       const raw = dotVendoFile(name, surfaceRoot);
       return raw === undefined ? undefined : JSON.parse(raw) as unknown;
@@ -1263,7 +1267,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       console.error(`[vendo] Failed to load .vendo tool semantics: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate .vendo/tools.json.`);
       return undefined;
     }
-  });
+  };
   const catalog = mergeRuntimeCatalog(
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
     normalizeCatalogConfig(config.catalog),
