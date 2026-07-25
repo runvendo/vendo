@@ -22,7 +22,7 @@ Commands:
   doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
 
 Advanced:
-  sync [dir]      Re-extract tools and baselines (init hooks this into predev/prebuild; --strict is the CI gate)
+  sync [dir]      Re-extract tools and baselines, then AI-enrich entries the code diff affected (keyless: structural only; --strict is the CI gate)
   eject <surface> [dir]  Copy a shipped chrome surface's presentation source into your repo (--list to see surfaces)
   extract [dir]   Apply a coding agent's extraction draft through the deterministic guards (--apply <draft.json>)
   playground      Render every Vendo surface against scripted data in the browser — no model key needed
@@ -40,11 +40,14 @@ Options:
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
-  --engine <name>            Init only: pin the AI-polish engine (claude, codex, npx) instead of first-available
+  --engine <name>            Init/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
   --url <url>                Doctor/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
+  --review                   Sync only: show the AI enrichment narrative and confirm before writing
+  --full                     Sync only: force full re-enrichment instead of the watermark diff
+  --no-watermark             Sync only: workspace-internal sync — no watermark bookkeeping, no AI enrichment
   --port <port>              Playground only: listen on a fixed port (default: any free port)
   --no-open                  Playground only: print the URL without opening the browser
   --json                     Sync/doctor: print one machine-readable report object
@@ -80,8 +83,8 @@ const EXTRACT_FLAGS = new Set(["--force"]);
 const EXTRACT_VALUE_OPTIONS = ["--apply"];
 const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
 const DOCTOR_VALUE_OPTIONS = ["--url"];
-const SYNC_FLAGS = new Set(["--strict", "--json", "--report"]);
-const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url"];
+const SYNC_FLAGS = new Set(["--strict", "--json", "--report", "--review", "--full", "--no-watermark"]);
+const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url", "--engine"];
 const LOGIN_VALUE_OPTIONS = ["--api-url", "--wait"];
 
 /** ENG-335: options the CLI does not recognize — or value options missing
@@ -138,7 +141,7 @@ function playgroundOptionErrors(args: string[]): { errors: string[]; port?: numb
 function target(args: string[]): string {
   const optionValues = new Set<string>();
   for (const name of ["--url", "--key", "--api-url", "--apply",
-    "--auth", "--framework", "--cloud-key", "--theme"]) {
+    "--auth", "--framework", "--cloud-key", "--theme", "--engine"]) {
     for (let index = 0; index < args.length; index += 1) {
       if (args[index] === name && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
     }
@@ -272,6 +275,13 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "sync") {
     const problems = optionErrors(args, SYNC_FLAGS, SYNC_VALUE_OPTIONS);
+    const engine = option(args, "--engine");
+    if (engine !== undefined && !INIT_ENGINE_VALUES.includes(engine)) {
+      problems.push(`--engine must be one of ${INIT_ENGINE_VALUES.join(", ")} (example: vendo sync --engine codex)`);
+    }
+    if (args.includes("--review") && args.includes("--json")) {
+      problems.push("--review is interactive and cannot combine with --json");
+    }
     if (problems.length > 0) {
       console.error(`vendo sync: ${problems.join("; ")}\n\n${HELP}`);
       return 1;
@@ -284,6 +294,10 @@ export async function main(argv: string[]): Promise<number> {
       report: args.includes("--report"),
       apiKey: option(args, "--key"),
       apiUrl: option(args, "--api-url"),
+      review: args.includes("--review"),
+      full: args.includes("--full"),
+      noWatermark: args.includes("--no-watermark"),
+      ...(engine === undefined ? {} : { engine }),
     });
   }
   console.error(`Unknown command: ${command}\n\n${HELP}`);
