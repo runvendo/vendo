@@ -7,7 +7,7 @@ import { appFixture, approvalFixture, auditFixture, grantFixture } from "./fixtu
 import { appStore, grantStore, registerEphemeralSubject } from "./index.js";
 
 // 02-store §5: "A store-level erase API ... erases by subject (full erasure)
-// or by app, cascading the matching data across all 14 tables, and is
+// or by app, cascading the matching data across all 16 tables, and is
 // exposed on the umbrella. It is the only sanctioned deletion path for audit
 // rows."
 
@@ -116,6 +116,8 @@ for (const backend of backends()) {
         vendo_mcp_clients: 0,
         vendo_mcp_grants: 1,
         vendo_sessions: 0, // durable subject — never registered as a session
+        vendo_knowledge_docs: 0, // no knowledge corpus seeded for this subject
+        vendo_knowledge_chunks: 0,
       });
 
       // Gone through the doors...

@@ -78,4 +78,4 @@ Because the registry is a table in the same database, sessions survive restarts 
 
 ## Retention and erasure
 
-`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure and `byApp(appId)` — cascading the matching rows across all 14 tables (ephemeral subjects included — their rows are ordinary disk rows) and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.
+`eraseStore(store)` is the store-level erase API — `bySubject(subject)` for full erasure and `byApp(appId)` — cascading the matching rows across all 16 tables (ephemeral subjects included — their rows are ordinary disk rows) and returning per-table deleted counts. It is the only sanctioned deletion path for `vendo_audit` rows. It is also re-exported from `@vendoai/vendo/server`. Host SQL remains available for everything else.
