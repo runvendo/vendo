@@ -2,6 +2,8 @@ import {
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_APPS_CREATE_TOOL,
   VendoError,
+  formatMeterExhausted,
+  meterExhaustedFromError,
   toVendoWirePart,
   type AgentRunner,
   type ApprovalId,
@@ -369,6 +371,17 @@ function wireErrorMessage(error: unknown): string {
   if (vendoShaped) {
     const { message, code } = error as { message: string; code: string };
     return `Vendo: ${message} (${code})`;
+  }
+  // Pricing v3 (spec §5): the Cloud model gateway's meter refusal reaches this
+  // gate as a provider APICallError (statusCode 402, the structured refusal as
+  // its response body), never as a VendoError. Only OUR formatter's sentence —
+  // meter, figures, reset date, the two exits, all from the parsed structured
+  // fields — travels; the raw body/provider internals still never do, so the
+  // ENG-214 policy holds. The refusal body is the only source of truth (no
+  // client-side entitlement checks); any other 402 stays the generic string.
+  const refusal = meterExhaustedFromError(error);
+  if (refusal !== undefined) {
+    return `Vendo: ${formatMeterExhausted(refusal)} (cloud-required)`;
   }
   return "An error occurred while generating the response.";
 }
