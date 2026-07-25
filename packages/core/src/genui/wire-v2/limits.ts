@@ -12,7 +12,7 @@
 
 // CORE-6: the contract pins the byte caps in kilobytes, so island sources
 // are measured with component-map.ts's shared UTF-8 byte counter.
-import { utf8ByteLength } from "../component-map.js";
+import { utf8ByteLength } from "../../component-map.js";
 import {
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,

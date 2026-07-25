@@ -69,10 +69,15 @@ export interface MergedHostSemantics {
 
 const unionDomains = (generated?: DomainManifest, authored?: DomainManifest): DomainManifest | undefined => {
   if (generated === undefined && authored === undefined) return undefined;
-  return {
-    has: [...new Set([...(generated?.has ?? []), ...(authored?.has ?? [])])],
-    hasNot: [...new Set([...(generated?.hasNot ?? []), ...(authored?.hasNot ?? [])])],
-  };
+  const has = new Set([...(generated?.has ?? []), ...(authored?.has ?? [])]);
+  const hasNot = new Set([...(generated?.hasNot ?? []), ...(authored?.hasNot ?? [])]);
+  // Authored wins on a direct contradiction: a human/agent classification in
+  // overrides.json overrides the opposite auto-derived one, so generation never
+  // receives a domain as both HAS and has-NO (which would make it disclaim
+  // available data or invent absent data).
+  for (const domain of authored?.has ?? []) hasNot.delete(domain);
+  for (const domain of authored?.hasNot ?? []) has.delete(domain);
+  return { has: [...has], hasNot: [...hasNot] };
 };
 
 /**
