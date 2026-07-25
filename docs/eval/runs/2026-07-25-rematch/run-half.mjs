@@ -43,7 +43,10 @@ let currentArm = null;
 let logFile = null;
 
 function killPort() {
-  try { execSync(`lsof -ti tcp:${PORT} | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: "/bin/zsh" }); } catch {}
+  // LISTEN sockets only: a plain `lsof -ti tcp:PORT` also lists CLIENTS with
+  // pooled keep-alive connections — including this runner (waitReady fetches)
+  // — and kill -9'ing the list killed the runner itself on the first switch.
+  try { execSync(`lsof -ti tcp:${PORT} -sTCP:LISTEN | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: "/bin/zsh" }); } catch {}
 }
 
 async function waitReady(timeoutMs = 60_000) {
@@ -109,7 +112,7 @@ for (const id of ids) {
     markerLine(`create ${id} arm ${arm} end`);
     const appId = /appId: (\S+)/.exec(out)?.[1] ?? "UNKNOWN";
     const name = /name: (.*)/.exec(out)?.[1] ?? "?";
-    const timing = /timing: (\S+)/.exec(out)?.[1] ?? "?";
+    const timing = /timing: ([\d.]+)/.exec(out)?.[1] ?? "?";
     const consoleErrors = /console-errors: (\d+)/.exec(out)?.[1] ?? "?";
     appendFileSync(TSV, `${id}\t${arm}\t${appId}\t${name}\t${timing}\t${consoleErrors}\t${logFile}\n`);
     console.log(`[runner] ${key}: app=${appId} timing=${timing}s errors=${consoleErrors}`);
