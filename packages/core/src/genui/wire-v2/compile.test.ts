@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validateAppDocument } from "../app-document.js";
-import { componentMapError } from "../component-map.js";
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2 } from "../formats.js";
+import { validateAppDocument } from "../../app-document.js";
+import { componentMapError } from "../../component-map.js";
+import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2 } from "../../formats.js";
 import {
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,

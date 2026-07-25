@@ -188,6 +188,27 @@ describe("mergedSemanticsAndDomains", () => {
     expect(merged?.domains).toEqual({ has: ["invoices", "clients"], hasNot: ["payroll"] });
   });
 
+  it("lets an authored domain classification win over the opposite generated one (no HAS+has-NO contradiction)", () => {
+    const merged = mergedSemanticsAndDomains({
+      tools: {
+        format: VENDO_TOOLS_FORMAT_V3,
+        tools: [],
+        domains: { has: ["payroll", "invoices"], hasNot: ["inventory"] },
+      },
+      overrides: {
+        format: VENDO_OVERRIDES_FORMAT_V3,
+        tools: {},
+        // The host corrects a bad auto-derivation: payroll is NOT covered,
+        // inventory IS. Neither may appear on both sides after the merge.
+        domains: { has: ["inventory"], hasNot: ["payroll"] },
+      },
+    });
+    expect(merged?.domains?.has).toEqual(expect.arrayContaining(["invoices", "inventory"]));
+    expect(merged?.domains?.has).not.toContain("payroll");
+    expect(merged?.domains?.hasNot).toEqual(["payroll"]);
+    expect(merged?.domains?.hasNot).not.toContain("inventory");
+  });
+
   it("ignores a stale semantics.json once tools.json is v3, and returns undefined when nothing applies", () => {
     const staleOnly = mergedSemanticsAndDomains({
       tools: { format: VENDO_TOOLS_FORMAT_V3, tools: [] },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { componentMapError } from "../component-map.js";
+import { componentMapError } from "../../component-map.js";
 import { validateTreeV2 } from "../tree-v2.js";
 import { compileWireV2 } from "./compile.js";
 

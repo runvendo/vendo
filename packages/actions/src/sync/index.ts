@@ -409,7 +409,6 @@ export async function vendoSync(options: {
         "utf8",
       );
     }
-    for (const file of migration.deletions) await fs.rm(file, { force: true });
   }
 
   const extraction = await runExtractors(root);
@@ -484,6 +483,13 @@ export async function vendoSync(options: {
   const comparison = compareTools(mergedPrevious, mergedNext);
 
   await writeIfChanged(toolsPath, `${JSON.stringify(extracted, null, 2)}\n`);
+  // Retire the legacy capabilities.json/semantics.json pair only after the new
+  // tools.json is durably written — a mid-migration extraction failure above
+  // would otherwise delete the old semantics before the folded replacement
+  // exists on disk, losing inferred semantics/domains (Greptile P1 #552).
+  if (migration !== undefined) {
+    for (const file of migration.deletions) await fs.rm(file, { force: true });
+  }
   const catalogScan = await scanComponentCatalog(root);
   warnings.push(...catalogScan.warnings);
   await writeCatalog(out, catalogScan.entries);
