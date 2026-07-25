@@ -228,10 +228,16 @@ const workerModules = (async (): Promise<WorkerModules | undefined> => {
   }
 })();
 
-/** esbuild, lazily and bundler-safely (same pattern + rationale as engine.ts). */
+/** esbuild, lazily and bundler-safely (same pattern + rationale as engine.ts):
+ *  routed through a mutable binding so NO bundler statically resolves the
+ *  optional compiler — Wrangler ignores the webpack-dialect comments and would
+ *  inline esbuild's Node-only lib/main.js into Worker bundles (the portability
+ *  gate's island-validator field failure). Unavailable → the gate skips. */
+let ESBUILD_SPECIFIER = "esbuild";
+
 const esbuildCompile = (async () => {
   try {
-    const esbuild = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "esbuild");
+    const esbuild = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ /* @vite-ignore */ ESBUILD_SPECIFIER) as typeof import("esbuild");
     return (source: string): string =>
       esbuild.transformSync(source, { loader: "tsx", format: "cjs", target: "es2020" }).code;
   } catch {
