@@ -68,8 +68,9 @@ import {
  *
  * Removed by design: the interview, per-diff y/N approvals, the lib/ai.ts
  * scaffold (createVendo's `model` is optional now), remix offers, the
- * encryption-key step, the refine offer, and the finale ceremony (doctor owns
- * verification and the live turn).
+ * encryption-key step, the refine offer (the `vendo refine` command itself is
+ * gone — format v3 replaces it with the enrichment pass), and the finale
+ * ceremony (doctor owns verification and the live turn).
  */
 
 const DEFAULT_RADIUS = { small: "4px", large: "12px" } as const;
@@ -1103,7 +1104,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     await writeIfMissing(
       join(root, ".vendo", "overrides.json"),
       `${JSON.stringify({
-        format: "vendo/overrides@1",
+        format: "vendo/overrides@3",
         tools: {},
         remix: { ignoreSlots: [] },
       }, null, 2)}\n`,
@@ -1154,6 +1155,8 @@ export async function runInit(options: InitOptions): Promise<number> {
     wiringMs += Date.now() - scanStarted;
     pretty?.stopSpin();
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
+    // Re-init on a legacy .vendo dir: the sync engine's one-time v3 rewrite.
+    if (report.migrated !== undefined) output.log(report.migrated);
 
     let toolCount = 0;
     let routeCount = 0;

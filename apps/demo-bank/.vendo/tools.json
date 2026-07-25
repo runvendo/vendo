@@ -1,5 +1,5 @@
 {
-  "format": "vendo/tools@1",
+  "format": "vendo/tools@3",
   "tools": [
     {
       "name": "host_auth_create",
@@ -22,7 +22,8 @@
         "method": "POST",
         "path": "/api/auth/{nextauth}",
         "argsIn": "body"
-      }
+      },
+      "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
     },
     {
       "name": "host_auth_get",
@@ -45,7 +46,8 @@
         "method": "GET",
         "path": "/api/auth/{nextauth}",
         "argsIn": "query"
-      }
+      },
+      "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
     },
     {
       "name": "host_createOrder",
@@ -93,7 +95,8 @@
         "operationId": "createOrder",
         "method": "POST",
         "path": "/api/orders"
-      }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_demo_reset_create",
@@ -109,7 +112,8 @@
         "method": "POST",
         "path": "/api/demo/reset",
         "argsIn": "body"
-      }
+      },
+      "srcHash": "sha256:24b40184bde32ce2a7ccc8b091d6fa07dcf160e76c9ba8a32464660c775434f5"
     },
     {
       "name": "host_getAccount",
@@ -132,7 +136,8 @@
         "operationId": "getAccount",
         "method": "GET",
         "path": "/api/accounts/{id}"
-      }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_getBudgets",
@@ -147,7 +152,21 @@
         "operationId": "getBudgets",
         "method": "GET",
         "path": "/api/insights/budgets"
-      }
+      },
+      "semantics": {
+        "data.category": {
+          "kind": "enum",
+          "labels": {
+            "coffee": "Coffee",
+            "dining": "Dining",
+            "groceries": "Groceries",
+            "shopping": "Shopping",
+            "subscriptions": "Subscriptions",
+            "transport": "Transport"
+          }
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_getCashflowInsights",
@@ -162,7 +181,8 @@
         "operationId": "getCashflowInsights",
         "method": "GET",
         "path": "/api/insights/cashflow"
-      }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_getProfile",
@@ -177,7 +197,8 @@
         "operationId": "getProfile",
         "method": "GET",
         "path": "/api/profile"
-      }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_getRecurringInsights",
@@ -192,7 +213,28 @@
         "operationId": "getRecurringInsights",
         "method": "GET",
         "path": "/api/insights/recurring"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        },
+        "data.amount": {
+          "kind": "money",
+          "unit": "cents"
+        },
+        "data.category": {
+          "kind": "enum",
+          "labels": {
+            "housing": "Housing",
+            "subscriptions": "Subscriptions"
+          }
+        },
+        "data.nextDate": {
+          "kind": "date",
+          "format": "iso"
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_getSpendingInsights",
@@ -207,7 +249,26 @@
         "operationId": "getSpendingInsights",
         "method": "GET",
         "path": "/api/insights/spending"
-      }
+      },
+      "semantics": {
+        "data.category": {
+          "kind": "enum",
+          "labels": {
+            "coffee": "Coffee",
+            "dining": "Dining",
+            "groceries": "Groceries",
+            "housing": "Housing",
+            "shopping": "Shopping",
+            "subscriptions": "Subscriptions",
+            "transport": "Transport"
+          }
+        },
+        "data.amount": {
+          "kind": "money",
+          "unit": "cents"
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_getTransaction",
@@ -229,7 +290,8 @@
         "operationId": "getTransaction",
         "method": "GET",
         "path": "/api/transactions/{id}"
-      }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_listAccounts",
@@ -244,7 +306,26 @@
         "operationId": "listAccounts",
         "method": "GET",
         "path": "/api/accounts"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        },
+        "data.kind": {
+          "kind": "enum",
+          "labels": {
+            "checking": "Checking",
+            "credit": "Credit",
+            "investing": "Investing",
+            "savings": "Savings"
+          }
+        },
+        "data.balance": {
+          "kind": "money",
+          "unit": "cents"
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_listAccountTransactions",
@@ -267,7 +348,8 @@
         "operationId": "listAccountTransactions",
         "method": "GET",
         "path": "/api/accounts/{id}/transactions"
-      }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_listCards",
@@ -282,7 +364,28 @@
         "operationId": "listCards",
         "method": "GET",
         "path": "/api/cards"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        },
+        "data.accountId": {
+          "kind": "id",
+          "entity": "account"
+        },
+        "data.type": {
+          "kind": "enum",
+          "labels": {
+            "physical": "Physical",
+            "virtual": "Virtual"
+          }
+        },
+        "data.spendLimit": {
+          "kind": "money",
+          "unit": "cents"
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_listCardTransactions",
@@ -305,7 +408,8 @@
         "operationId": "listCardTransactions",
         "method": "GET",
         "path": "/api/cards/{id}/transactions"
-      }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_listGoals",
@@ -320,7 +424,13 @@
         "operationId": "listGoals",
         "method": "GET",
         "path": "/api/goals"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_listNotifications",
@@ -335,7 +445,26 @@
         "operationId": "listNotifications",
         "method": "GET",
         "path": "/api/notifications"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        },
+        "data.kind": {
+          "kind": "enum",
+          "labels": {
+            "alert": "Alert",
+            "card": "Card",
+            "deposit": "Deposit",
+            "security": "Security"
+          }
+        },
+        "data.at": {
+          "kind": "date",
+          "format": "iso"
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_listPayees",
@@ -350,7 +479,20 @@
         "operationId": "listPayees",
         "method": "GET",
         "path": "/api/payees"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        },
+        "data.kind": {
+          "kind": "enum",
+          "labels": {
+            "biller": "Biller",
+            "person": "Person"
+          }
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_listScheduledPayments",
@@ -365,7 +507,25 @@
         "operationId": "listScheduledPayments",
         "method": "GET",
         "path": "/api/payments/scheduled"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        },
+        "data.payeeId": {
+          "kind": "id",
+          "entity": "payee"
+        },
+        "data.amount": {
+          "kind": "money",
+          "unit": "cents"
+        },
+        "data.nextDate": {
+          "kind": "date",
+          "format": "iso"
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_listTransactions",
@@ -422,7 +582,62 @@
         "operationId": "listTransactions",
         "method": "GET",
         "path": "/api/transactions"
-      }
+      },
+      "semantics": {
+        "data.data.id": {
+          "kind": "id"
+        },
+        "data.data.statusTimeline.state": {
+          "kind": "enum",
+          "labels": {
+            "Authorized": "Authorized",
+            "Posted": "Posted"
+          }
+        },
+        "data.data.statusTimeline.at": {
+          "kind": "date",
+          "format": "iso"
+        },
+        "data.data.accountId": {
+          "kind": "id",
+          "entity": "account"
+        },
+        "data.data.cardId": {
+          "kind": "id",
+          "entity": "card"
+        },
+        "data.data.amount": {
+          "kind": "money",
+          "unit": "cents"
+        },
+        "data.data.timestamp": {
+          "kind": "date",
+          "format": "iso"
+        },
+        "data.data.category": {
+          "kind": "enum",
+          "labels": {
+            "coffee": "Coffee",
+            "dining": "Dining",
+            "groceries": "Groceries",
+            "shopping": "Shopping",
+            "subscriptions": "Subscriptions",
+            "transport": "Transport"
+          }
+        },
+        "data.data.status": {
+          "kind": "enum",
+          "labels": {
+            "authorized": "Authorized",
+            "posted": "Posted"
+          }
+        },
+        "data.data.recurringId": {
+          "kind": "id",
+          "entity": "recurring"
+        }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_transferMoney",
@@ -455,7 +670,8 @@
         "operationId": "transferMoney",
         "method": "POST",
         "path": "/api/transfers"
-      }
+      },
+      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
       "name": "host_voice_create",
@@ -471,7 +687,38 @@
         "method": "POST",
         "path": "/api/voice",
         "argsIn": "body"
-      }
+      },
+      "srcHash": "sha256:3aaabc0c7dcfc4f4b4c835307f88a4c6660a2ce5ff3665dd457b1d701b55dfeb"
     }
-  ]
+  ],
+  "watermark": "106c05751f01bbcbf9f9dc479f93792e97d56cf0",
+  "domains": {
+    "has": [
+      "accounts",
+      "transactions (account + card)",
+      "cards",
+      "budgets",
+      "spending insights",
+      "cashflow insights",
+      "recurring insights",
+      "goals",
+      "notifications",
+      "payees",
+      "scheduled payments",
+      "money transfers",
+      "profile",
+      "merch orders"
+    ],
+    "hasNot": [
+      "payroll",
+      "crypto",
+      "loans",
+      "mortgages",
+      "investments or brokerage",
+      "credit score",
+      "taxes",
+      "insurance",
+      "invoices"
+    ]
+  }
 }

@@ -139,7 +139,6 @@ export type CommandName =
   | "theme"
   | "eject"
   | "playground"
-  | "refine"
   | "sync"
   | "cloud-init"
   | "mcp";

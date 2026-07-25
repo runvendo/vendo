@@ -68,7 +68,7 @@ export const generatedToolDescription = (tool: ExtractedTool): string => {
 
 /** Fill EMPTY descriptions across an extraction; host-authored text and
  *  overrides always win (overrides merge later and replace whatever is here). */
-export const withGeneratedDescriptions = (tools: ExtractedTool[]): ExtractedTool[] =>
+export const withGeneratedDescriptions = <T extends ExtractedTool>(tools: T[]): T[] =>
   tools.map((tool) => tool.description.trim().length > 0
     ? tool
     : { ...tool, description: generatedToolDescription(tool) });

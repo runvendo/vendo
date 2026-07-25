@@ -33,8 +33,20 @@ describe("vendo CLI commands", () => {
     // The interview flags are gone with the interview.
     expect(help).not.toContain("--brief <text>");
     expect(help).not.toContain("Init/refine: module exporting");
+    // vendo refine is gone (format v3: the AI layer moves to the
+    // watermark-diff enrichment pass; misses capture/upload stays).
+    expect(help).not.toContain("refine");
+    expect(help).not.toContain("--model-import");
+    expect(help).not.toContain("--ask");
 
     log.mockRestore();
+  });
+
+  it("vendo refine is no longer a command: standard unknown-command error", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await main(["refine"])).toBe(1);
+    expect(error.mock.calls.flat().join("\n")).toContain("Unknown command: refine");
+    error.mockRestore();
   });
 
   it("exposes init, doctor, and sync only", async () => {
@@ -179,11 +191,11 @@ describe("vendo CLI commands", () => {
     error.mockRestore();
   });
 
-  // ENG-335 applies to every command: doctor, refine, and sync must fail
-  // loudly on unknown options too, and a flag-like next token is a missing
-  // value, not a value — otherwise `vendo sync --key --report` pushes to
-  // Vendo Cloud authenticated as the literal bearer key "--report".
-  it("doctor/refine/sync reject unknown options and flag-like values (ENG-335)", async () => {
+  // ENG-335 applies to every command: doctor and sync must fail loudly on
+  // unknown options too, and a flag-like next token is a missing value, not a
+  // value — otherwise `vendo sync --key --report` pushes to Vendo Cloud
+  // authenticated as the literal bearer key "--report".
+  it("doctor/sync reject unknown options and flag-like values (ENG-335)", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const root = await mkdtemp(join(tmpdir(), "vendo-cli-guarded-"));
     cleanup.push(root);
@@ -194,13 +206,8 @@ describe("vendo CLI commands", () => {
     expect(await main(["doctor", root, "--url", "--json"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("--url requires a value");
 
-    expect(await main(["refine", root, "--model-import", "--yes"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--model-import requires a value");
-
     expect(await main(["doctor", root, "--jsn"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --jsn");
-    expect(await main(["refine", root, "--dry-run"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --dry-run");
     expect(await main(["sync", root, "--strictt"])).toBe(1);
     expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --strictt");
 

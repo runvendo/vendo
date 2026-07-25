@@ -13,7 +13,7 @@ import {
 import { installedAiVersion } from "./dep-versions.js";
 import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
-import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
+import { overridesFileSchema, overridesFileV3Schema, toolsFileSchema, toolsFileV3Schema, vendoFileVersion } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
@@ -263,11 +263,17 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const overridesRaw = await readOptional(join(root, ".vendo", "overrides.json"));
   if (toolsRaw !== null) {
     try {
-      const toolsFile = toolsFileSchema.parse(JSON.parse(toolsRaw));
+      const toolsParsed: unknown = JSON.parse(toolsRaw);
+      const toolsFile = vendoFileVersion(toolsParsed) === 1
+        ? toolsFileSchema.parse(toolsParsed)
+        : toolsFileV3Schema.parse(toolsParsed);
       let overridesTools: Record<string, { disabled?: boolean }> = {};
       if (overridesRaw !== null) {
         try {
-          overridesTools = overridesFileSchema.parse(JSON.parse(overridesRaw)).tools;
+          const overridesParsed: unknown = JSON.parse(overridesRaw);
+          overridesTools = (vendoFileVersion(overridesParsed) === 1
+            ? overridesFileSchema.parse(overridesParsed)
+            : overridesFileV3Schema.parse(overridesParsed)).tools;
         } catch {
           // Malformed overrides are their own (pre-existing) failure surface.
         }
@@ -281,7 +287,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         pass("tools/live-surface", `${live.length} live host tool${live.length === 1 ? "" : "s"}`);
       }
     } catch {
-      // Not the vendo/tools@1 shape (e.g. a placeholder {}) — the config
+      // Not a vendo/tools@1 or @3 shape (e.g. a placeholder {}) — the config
       // checks above already govern presence; nothing to grade here.
     }
   }

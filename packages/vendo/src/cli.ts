@@ -9,7 +9,6 @@ import { runExtractApply } from "./cli/extract/apply.js";
 import { runInit, type InitOptions } from "./cli/init.js";
 import { runMcp } from "./cli/mcp/index.js";
 import { runPlayground } from "./cli/playground.js";
-import { runRefineCommand } from "./cli/refine.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
 
@@ -26,7 +25,6 @@ Advanced:
   sync [dir]      Re-extract tools and baselines (init hooks this into predev/prebuild; --strict is the CI gate)
   eject <surface> [dir]  Copy a shipped chrome surface's presentation source into your repo (--list to see surfaces)
   extract [dir]   Apply a coding agent's extraction draft through the deterministic guards (--apply <draft.json>)
-  refine [dir]    Propose compound capabilities, risk corrections, and brief updates as reviewable diffs
   playground      Render every Vendo surface against scripted data in the browser — no model key needed
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API
@@ -34,7 +32,7 @@ Advanced:
 Options:
   --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations, the aiPolish delegation contract
   --apply <draft.json>       Extract only: draft file an external agent produced from the plan's aiPolish contract
-  --yes                      Init: skip the cloud-login offer; refine: approve displayed diffs; doctor: auto-start the dev server
+  --yes                      Init: skip the cloud-login offer; doctor: auto-start the dev server
   --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
   --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
   --framework <name>         Init only: override framework detection (next, express) — required non-interactively when detection fails
@@ -45,9 +43,7 @@ Options:
   --engine <name>            Init only: pin the AI-polish engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
-  --model-import <specifier> Refine only: module exporting the host's ai-SDK model
-  --ask <text>               Refine only: interview answer (repeatable) for non-interactive runs
-  --url <url>                Doctor/refine/server-json: mounted wire base or public MCP URL
+  --url <url>                Doctor/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
   --port <port>              Playground only: listen on a fixed port (default: any free port)
   --no-open                  Playground only: print the URL without opening the browser
@@ -84,8 +80,6 @@ const EXTRACT_FLAGS = new Set(["--force"]);
 const EXTRACT_VALUE_OPTIONS = ["--apply"];
 const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
 const DOCTOR_VALUE_OPTIONS = ["--url"];
-const REFINE_FLAGS = new Set(["--yes"]);
-const REFINE_VALUE_OPTIONS = ["--url", "--model-import", "--ask"];
 const SYNC_FLAGS = new Set(["--strict", "--json", "--report"]);
 const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url"];
 const LOGIN_VALUE_OPTIONS = ["--api-url", "--wait"];
@@ -143,7 +137,7 @@ function playgroundOptionErrors(args: string[]): { errors: string[]; port?: numb
 
 function target(args: string[]): string {
   const optionValues = new Set<string>();
-  for (const name of ["--model-import", "--url", "--key", "--api-url", "--ask", "--apply",
+  for (const name of ["--url", "--key", "--api-url", "--apply",
     "--auth", "--framework", "--cloud-key", "--theme"]) {
     for (let index = 0; index < args.length; index += 1) {
       if (args[index] === name && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
@@ -265,20 +259,6 @@ export async function main(argv: string[]): Promise<number> {
       targetDir: target(args),
       url: option(args, "--url"),
       json: args.includes("--json"),
-      yes: args.includes("--yes"),
-    });
-  }
-  if (command === "refine") {
-    const problems = optionErrors(args, REFINE_FLAGS, REFINE_VALUE_OPTIONS);
-    if (problems.length > 0) {
-      console.error(`vendo refine: ${problems.join("; ")}\n\n${HELP}`);
-      return 1;
-    }
-    return runRefineCommand({
-      targetDir: target(args),
-      url: option(args, "--url"),
-      modelImport: option(args, "--model-import"),
-      asks: options(args, "--ask"),
       yes: args.includes("--yes"),
     });
   }

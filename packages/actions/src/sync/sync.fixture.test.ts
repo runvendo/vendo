@@ -23,7 +23,7 @@ describe("vendoSync host fixture", () => {
     const toolsFile = JSON.parse(firstBytes) as { format: string; tools: Array<Record<string, any>> };
     const byName = new Map(toolsFile.tools.map((tool) => [tool.name, tool]));
 
-    expect(toolsFile.format).toBe("vendo/tools@1");
+    expect(toolsFile.format).toBe("vendo/tools@3");
     expect(Object.fromEntries([
       "host_listInvoices",
       "host_createInvoice",

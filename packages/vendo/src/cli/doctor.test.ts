@@ -312,6 +312,31 @@ describe("vendo doctor", () => {
     expect(messages.errors).toEqual([]);
   });
 
+  it("grades the live-surface check on a v3 tools.json + v3 overrides.json too", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [{
+        name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+        srcHash: "sha256:abc",
+      }],
+      domains: { has: ["invoices"], hasNot: [] },
+    }));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
+      format: "vendo/overrides@3",
+      tools: { host_invoices_list: { disabled: true } },
+    }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toMatch(/zero live host tools/i);
+  });
+
   it("checks wiring and performs one live status round-trip", async () => {
     const fetchImpl = successfulProbeFetch();
     expect(await doctor({

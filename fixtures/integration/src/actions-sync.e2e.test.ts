@@ -77,7 +77,7 @@ describe("J8: OpenAPI sync produces tools.json whose tools are callable over the
       format: string;
       tools: SyncedTool[];
     };
-    expect(toolsFile.format).toBe("vendo/tools@1");
+    expect(toolsFile.format).toBe("vendo/tools@3");
     const byName = new Map(toolsFile.tools.map((tool) => [tool.name, tool]));
 
     // The read + write invoice tools were extracted straight from the spec.

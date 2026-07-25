@@ -16,6 +16,14 @@ import {
   type StagedExtractionResult,
   type StaticTool,
 } from "./stages.js";
+import {
+  VENDO_OVERRIDES_FORMAT_V3,
+  migrateLegacyVendoDir,
+  overridesFileSchema,
+  overridesFileV3Schema,
+  vendoFileVersion,
+  type OverridesFileV3,
+} from "@vendoai/actions";
 import { readOptional, writeText, type Output } from "../shared.js";
 
 export { composeInstructions } from "./stages.js";
@@ -43,17 +51,6 @@ export { composeInstructions } from "./stages.js";
 
 const RISK_ORDER = { read: 0, write: 1, destructive: 2 } as const;
 
-const overridesSchema = z.object({
-  format: z.literal("vendo/overrides@1"),
-  tools: z.record(z.object({
-    risk: z.enum(["read", "write", "destructive"]).optional(),
-    critical: z.boolean().optional(),
-    disabled: z.boolean().optional(),
-    description: z.string().optional(),
-  }).passthrough()),
-}).passthrough();
-type Overrides = z.infer<typeof overridesSchema>;
-
 export interface AppliedSummary {
   described: number;
   riskRaised: number;
@@ -79,9 +76,18 @@ export async function applyDraft(input: {
   const byName = new Map(input.tools.map((tool) => [tool.name, tool]));
   const overridesPath = join(input.root, ".vendo", "overrides.json");
   const raw = await readOptional(overridesPath);
-  const overrides: Overrides = raw === null
-    ? { format: "vendo/overrides@1", tools: {} }
-    : overridesSchema.parse(JSON.parse(raw));
+  // Format v3, strict on purpose: a typo in the authored file must fail loudly
+  // here rather than be silently dropped by a permissive parse. A legacy v1
+  // file (extract --apply before the first v3 sync) folds in-memory and the
+  // write below lands in the v3 format.
+  const overrides: OverridesFileV3 = raw === null
+    ? { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} }
+    : ((): OverridesFileV3 => {
+        const parsed: unknown = JSON.parse(raw);
+        return vendoFileVersion(parsed) === 1
+          ? migrateLegacyVendoDir({ overrides: overridesFileSchema.parse(parsed) }).overrides
+          : overridesFileV3Schema.parse(parsed);
+      })();
 
   const summary: AppliedSummary = {
     described: 0, riskRaised: 0, critical: 0, woken: 0, excluded: 0, enabledAfter: 0,
@@ -154,7 +160,9 @@ export async function applyDraft(input: {
     return (override.disabled ?? tool.disabled ?? false) !== true;
   }).length;
 
-  await writeText(overridesPath, `${JSON.stringify(overrides, null, 2)}\n`);
+  // The write is validated against the strict overrides@3 schema: a malformed
+  // write is a bug and must fail loud, never land on disk.
+  await writeText(overridesPath, `${JSON.stringify(overridesFileV3Schema.parse(overrides), null, 2)}\n`);
 
   const briefPath = join(input.root, ".vendo", "brief.md");
   const currentBrief = ((await readOptional(briefPath)) ?? "").trim();

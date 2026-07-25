@@ -167,6 +167,64 @@ describe("law 1 — data-classed props must be bindings", () => {
   });
 });
 
+describe("law 1 in islands — constants feeding displayed math (the M12 class)", () => {
+  const fabricated = `<App name="FX"><Island name="CurrencyView">
+export default function CurrencyView() {
+  const RATE = 0.92;
+  const [total, setTotal] = useState(0);
+  useEffect(() => { tools.host_metric({}).then((res) => setTotal(res.totalCents ?? 0)); }, []);
+  return <Stat label="EUR" value={fmt.money(total * RATE)} />;
+}
+</Island><CurrencyView/></App>`;
+  const honest = `<App name="FX"><Island name="CurrencyView">
+export default function CurrencyView() {
+  const [total, setTotal] = useState(0);
+  useEffect(() => { tools.host_metric({}).then((res) => setTotal(res.totalCents ?? 0)); }, []);
+  return <Stack><Stat label="USD total" value={fmt.money(total)} /><Disclaimer reason="No live FX rate is available on this host, so converted values can't be shown." /></Stack>;
+}
+</Island><CurrencyView/></App>`;
+
+  it("rejects an island computing displayed values from a hand-typed constant and routes it to repair", async () => {
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? fabricated : honest;
+    });
+    const document = await modelEngine.create(
+      { prompt: "a currency converter for my balances" },
+      deps(model, { pipeline: { structuredRepair: false } }),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("RATE = 0.92");
+    expect(prompts[1]).toContain("a constant feeding displayed math is invented data (law 1)");
+    expect(prompts[1]).toContain("Disclaimer");
+    expect(document.components?.CurrencyView).toContain("Disclaimer");
+  });
+
+  it("keeps style math and percent scaling in islands free — one call, no repair", async () => {
+    const styled = `<App name="Bars"><Island name="SpendBars">
+export default function SpendBars(props) {
+  const BAR = 8;
+  const rows = props.rows ?? [];
+  const max = rows.reduce((m, r) => Math.max(m, r.amountCents), 0) || 1;
+  return <Stack>{rows.map((r) => (
+    <div key={r.id} style={{ width: (r.amountCents / max) * 240, padding: BAR * 2 }}>
+      <Percent value={(r.amountCents / max) * 100} />
+    </div>
+  ))}</Stack>;
+}
+</Island><Query id="metric" tool="host_metric"/><SpendBars rows={metric.rows}/></App>`;
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return styled;
+    });
+    const document = await modelEngine.create({ prompt: "spending bars" }, deps(model));
+    expect(calls).toBe(1);
+    expect(document.components?.SpendBars).toContain("BAR * 2");
+  });
+});
+
 describe("law 2 — actions ground in the real tool surface", () => {
   it("rejects an action naming a tool absent from the registry", async () => {
     const invented = '<App name="Act"><Query id="metric" tool="host_metric"/><DataTable rows={metric.rows}/><Button label="Send reminder" onClick="host_invented"/></App>';

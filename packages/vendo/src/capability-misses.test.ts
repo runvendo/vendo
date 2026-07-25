@@ -89,7 +89,7 @@ describe("capability-miss Cloud upload", () => {
     expect(capture.hostId).toBe("telemetry-installation-id");
   });
 
-  it("keeps local capture but sends nothing without a key", async () => {
+  it("keeps local capture but sends nothing without a Cloud slot", async () => {
     const append = vi.fn(async () => {});
     const fetchImpl = vi.fn<typeof fetch>();
     const noKey = createCapabilityMissCapture({
@@ -107,12 +107,53 @@ describe("capability-miss Cloud upload", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("never reads VENDO_API_KEY from the environment — the Cloud slot fills only at the composition seam (adapter rule)", async () => {
+    const append = vi.fn(async () => {});
+    const fetchImpl = vi.fn<typeof fetch>();
+    const envKeyed = createCapabilityMissCapture({
+      env: { VENDO_API_KEY: "vnd_env_only" },
+      surface: Promise.resolve(surface),
+      append,
+      fetchImpl,
+      telemetryConfig: { anonymousId: "host_env_key", optedOut: false },
+    });
+
+    envKeyed.record(event("mis_env_key"));
+    await envKeyed.flush();
+
+    expect(append).toHaveBeenCalledOnce();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("never reads VENDO_CLOUD_URL from the environment — the seam passes baseUrl (adapter rule)", async () => {
+    const requests: string[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      requests.push(String(input));
+      return Response.json({ accepted: 1, duplicates: 0 }, { status: 202 });
+    });
+    const capture = createCapabilityMissCapture({
+      env: { VENDO_CLOUD_URL: "https://sneaky.env.test" },
+      cloud: { apiKey: "vnd_test" },
+      surface: Promise.resolve(surface),
+      append: async () => {},
+      fetchImpl,
+      telemetryConfig: { anonymousId: "host_env_url", optedOut: false },
+      batchDelayMs: 60_000,
+    });
+
+    capture.record(event("mis_env_url"));
+    await capture.flush();
+
+    expect(requests).toEqual(["https://console.vendo.run/api/v1/misses"]);
+  });
+
   it("uploads despite the persisted product-telemetry opt-out (contract: key + envOptOut only)", async () => {
     const append = vi.fn(async () => {});
     const fetchImpl = vi.fn(async () =>
       Response.json({ accepted: 1, duplicates: 0 }, { status: 202 }));
     const optedOut = createCapabilityMissCapture({
-      env: { VENDO_API_KEY: "vnd_test", NODE_ENV: "development" },
+      env: { NODE_ENV: "development" },
+      cloud: { apiKey: "vnd_test" },
       surface: Promise.resolve(surface),
       append,
       fetchImpl,
@@ -134,7 +175,8 @@ describe("capability-miss Cloud upload", () => {
     const append = vi.fn(async () => {});
     const fetchImpl = vi.fn<typeof fetch>();
     const capture = createCapabilityMissCapture({
-      env: { VENDO_API_KEY: "vnd_test", ...optOut },
+      env: { ...optOut },
+      cloud: { apiKey: "vnd_test" },
       surface: Promise.resolve(surface),
       append,
       fetchImpl,
@@ -153,7 +195,8 @@ describe("capability-miss Cloud upload", () => {
     const fetchImpl = vi.fn(async () =>
       Response.json({ accepted: 1, duplicates: 0 }, { status: 202 }));
     const capture = createCapabilityMissCapture({
-      env: { VENDO_API_KEY: "vnd_test", NODE_ENV: "production" },
+      env: { NODE_ENV: "production" },
+      cloud: { apiKey: "vnd_test" },
       telemetryConfig: { anonymousId: "host_production", optedOut: false },
       surface: Promise.resolve(surface),
       append,
@@ -174,11 +217,8 @@ describe("capability-miss Cloud upload", () => {
       return Response.json({ accepted: 3, duplicates: 0 }, { status: 202 });
     });
     const capture = createCapabilityMissCapture({
-      env: {
-        VENDO_API_KEY: "vnd_test_key",
-        VENDO_CLOUD_URL: "https://cloud.example.test/",
-        NODE_ENV: "development",
-      },
+      env: { NODE_ENV: "development" },
+      cloud: { apiKey: "vnd_test_key", baseUrl: "https://cloud.example.test/" },
       surface: Promise.resolve(surface),
       append: async () => {},
       fetchImpl,
@@ -210,7 +250,8 @@ describe("capability-miss Cloud upload", () => {
       .mockResolvedValueOnce(Response.json({ accepted: 1, duplicates: 0 }, { status: 202 }));
     const append = vi.fn(async () => {});
     const capture = createCapabilityMissCapture({
-      env: { VENDO_API_KEY: "vnd_test_key", NODE_ENV: "development" },
+      env: { NODE_ENV: "development" },
+      cloud: { apiKey: "vnd_test_key" },
       surface: Promise.resolve(surface),
       append,
       fetchImpl,
@@ -232,7 +273,8 @@ describe("capability-miss Cloud upload", () => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
     }));
     const capture = createCapabilityMissCapture({
-      env: { VENDO_API_KEY: "vnd_test_key", NODE_ENV: "test" },
+      env: { NODE_ENV: "test" },
+      cloud: { apiKey: "vnd_test_key" },
       telemetryConfig: { anonymousId: "host_timeout", optedOut: false },
       surface: Promise.resolve(surface),
       append,

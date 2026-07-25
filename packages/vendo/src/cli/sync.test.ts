@@ -76,6 +76,18 @@ describe("vendo sync", () => {
     expect(messages.logs).toContain("impact: host_y no saved references");
   });
 
+  it("prints the engine's one-time legacy migration summary", async () => {
+    const messages = captureOutput();
+    const summary = "Migrated .vendo/ (legacy tools.json (vendo/tools@1)) to the v3 two-file layout: …";
+    await runSync({
+      targetDir: ".",
+      output: messages.output,
+      fetchImpl: (async () => { throw new Error("offline"); }) as typeof fetch,
+      sync: async () => ({ ...report(), migrated: summary }),
+    });
+    expect(messages.logs).toContain(summary);
+  });
+
   it("falls back when impact is unreachable and keeps strict exit two", async () => {
     const messages = captureOutput();
     const fetchImpl = vi.fn(async () => { throw new Error("offline"); }) as typeof fetch;
