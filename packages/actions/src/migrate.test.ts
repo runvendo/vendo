@@ -9,7 +9,7 @@ import {
   type OverridesFile,
   type ToolsFile,
 } from "./formats.js";
-import { migrateLegacyVendoDir } from "./migrate.js";
+import { mergedSemanticsAndDomains, migrateLegacyVendoDir } from "./migrate.js";
 
 // Realistic legacy fixtures, shaped by the v1 schemas the migration reads.
 
@@ -130,5 +130,74 @@ describe("migrateLegacyVendoDir", () => {
     });
     expect(migrated.overrides.compounds).toBeUndefined();
     expect(migrated.overrides.briefs).toBeUndefined();
+  });
+});
+
+describe("mergedSemanticsAndDomains", () => {
+  it("overlays override semantics field-by-field and unions domains over a v3 pair", () => {
+    const merged = mergedSemanticsAndDomains({
+      tools: {
+        format: VENDO_TOOLS_FORMAT_V3,
+        domains: { has: ["invoices"], hasNot: ["payroll"] },
+        tools: [{
+          name: "host_invoices_list",
+          description: "List invoices",
+          inputSchema: { type: "object" },
+          risk: "read",
+          binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+          semantics: {
+            "data.amountCents": { kind: "money", unit: "cents" },
+            "data.dueAt": { kind: "date", format: "iso" },
+          },
+        }],
+      },
+      overrides: {
+        format: VENDO_OVERRIDES_FORMAT_V3,
+        tools: {
+          host_invoices_list: {
+            semantics: {
+              "data.amountCents": { kind: "money", unit: "cents", currency: "USD" },
+              "data.progress": { kind: "percent", scale: "ratio" },
+            },
+          },
+        },
+        domains: { has: ["invoices", "projects"], hasNot: ["inventory"] },
+      },
+    });
+    expect(merged?.semantics).toEqual({
+      host_invoices_list: {
+        "data.amountCents": { kind: "money", unit: "cents", currency: "USD" },
+        "data.dueAt": { kind: "date", format: "iso" },
+        "data.progress": { kind: "percent", scale: "ratio" },
+      },
+    });
+    expect(merged?.domains).toEqual({ has: ["invoices", "projects"], hasNot: ["payroll", "inventory"] });
+  });
+
+  it("serves a legacy dir: semantics.json map + domains, with v1 override annotations on top", () => {
+    const merged = mergedSemanticsAndDomains({
+      tools: legacyTools,
+      overrides: legacyOverrides,
+      semantics: legacySemantics,
+    });
+    expect(merged?.semantics?.host_invoices_list).toEqual({
+      "data.amountCents": { kind: "money", unit: "cents" },
+      "data.dueAt": { kind: "date", format: "iso" },
+      "data.total": { kind: "money", unit: "dollars" },
+    });
+    expect(merged?.domains).toEqual({ has: ["invoices", "clients"], hasNot: ["payroll"] });
+  });
+
+  it("ignores a stale semantics.json once tools.json is v3, and returns undefined when nothing applies", () => {
+    const staleOnly = mergedSemanticsAndDomains({
+      tools: { format: VENDO_TOOLS_FORMAT_V3, tools: [] },
+      semantics: legacySemantics,
+    });
+    expect(staleOnly).toBeUndefined();
+    expect(mergedSemanticsAndDomains({})).toBeUndefined();
+  });
+
+  it("throws loudly on a malformed file", () => {
+    expect(() => mergedSemanticsAndDomains({ tools: { format: "vendo/tools@3", tools: [{ nope: true }] } })).toThrow();
   });
 });
