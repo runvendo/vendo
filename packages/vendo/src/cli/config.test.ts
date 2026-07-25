@@ -264,3 +264,84 @@ describe("vendo config pull", () => {
     expect(cap.errors.join("\n")).toMatch(/unknown surface/i);
   });
 });
+
+// A bare `--project X` (and --org/--key/--api-url) must never have its VALUE
+// read as the surface or the target dir, in EITHER order (Devin/Greptile P2 —
+// same class as cli.ts's --engine target() fix). These exercise the positional
+// path (no options.targetDir), so the dir comes from the args.
+describe("vendo config positional parsing (value-flag orderings)", () => {
+  function pushFetcher(calls: Array<{ path: string; method: string; body: unknown }>): CloudFetcher {
+    return vi.fn(async (path: string, options?: { method?: string; body?: unknown }) => {
+      calls.push({ path, method: options?.method ?? "GET", body: options?.body });
+      if (path.endsWith("/config") && (options?.method ?? "GET") === "GET") return { draft: {} };
+      if (path.endsWith("/config") && options?.method === "PUT") {
+        return { draft: (options.body as { draft: unknown }).draft };
+      }
+      throw new Error(`unexpected ${path} ${options?.method}`);
+    }) as unknown as CloudFetcher;
+  }
+
+  it("push resolves surface+dir with the value-flag BEFORE the surface", async () => {
+    const dir = await tempProject({ "design-rules.md": "# local" });
+    const calls: Array<{ path: string; method: string; body: unknown }> = [];
+    const cap = capture();
+    const code = await runConfig(["push", "--project", "proj_1", "design-rules.md", dir], {
+      fetcher: pushFetcher(calls),
+      output: cap.output,
+      confirm: async () => false, // keep the local file
+      env: {},
+    });
+    expect(code).toBe(0);
+    const put = calls.find((c) => c.method === "PUT");
+    expect(put?.path).toBe("/api/v1/projects/proj_1/config");
+    expect(put?.body).toEqual({ draft: { "design-rules.md": "# local" } });
+  });
+
+  it("push resolves surface+dir with the value-flag AFTER the surface and dir", async () => {
+    const dir = await tempProject({ "design-rules.md": "# local" });
+    const calls: Array<{ path: string; method: string; body: unknown }> = [];
+    const cap = capture();
+    const code = await runConfig(["push", "design-rules.md", dir, "--project", "proj_1"], {
+      fetcher: pushFetcher(calls),
+      output: cap.output,
+      confirm: async () => false,
+      env: {},
+    });
+    expect(code).toBe(0);
+    const put = calls.find((c) => c.method === "PUT");
+    expect(put?.path).toBe("/api/v1/projects/proj_1/config");
+    expect(put?.body).toEqual({ draft: { "design-rules.md": "# local" } });
+  });
+
+  it("push still reports an unknown surface when a value-flag precedes it", async () => {
+    const cap = capture();
+    const code = await runConfig(["push", "--project", "proj_1", "not-a-surface"], {
+      fetcher: vi.fn(async () => {
+        throw new Error("must not fetch");
+      }) as unknown as CloudFetcher,
+      output: cap.output,
+      env: {},
+    });
+    expect(code).toBe(1);
+    expect(cap.errors.join("\n")).toMatch(/unknown surface/i);
+  });
+
+  it("status resolves its dir positional in either order, never reading the --project value as the dir", async () => {
+    const dir = await tempProject({ "brief.md": "on disk" });
+    for (const args of [
+      ["status", "--project", "X", dir],
+      ["status", dir, "--project", "X"],
+    ]) {
+      const cap = capture();
+      const code = await runConfig(args, {
+        fetcher: vi.fn(async () => ({ version: null, config: null })) as unknown as CloudFetcher,
+        output: cap.output,
+        env: { VENDO_API_KEY: "vnd_key" },
+      });
+      expect(code).toBe(0);
+      // brief.md is on disk in `dir` → "file". Had the dir resolved to "X" or
+      // cwd, this would read "unset".
+      expect(cap.lines.join("\n")).toMatch(/brief\.md\s+file/);
+    }
+  });
+});

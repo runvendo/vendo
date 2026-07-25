@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { CONFIG_SURFACES, isConfigSurface, OVERRIDES_ENABLEMENT_CAVEAT, type ConfigSurfaceName } from "../config-surface.js";
-import { option } from "./cloud/args.js";
+import { option, positionals } from "./cloud/args.js";
 import type { CloudFetchOptions } from "./cloud/client.js";
 import {
   commandContext,
@@ -62,8 +62,16 @@ function vendoPath(targetDir: string, surface: ConfigSurfaceName): string {
   return join(targetDir, ".vendo", surface);
 }
 
+/** Value-taking flags whose VALUE must never be read as the surface or dir.
+ *  A bare `--project X` leaks `X` into a naive non-`--` scan, so the surface or
+ *  target dir is silently wrong (Devin/Greptile P2 — the same class as cli.ts's
+ *  --engine target() fix). `positionals()` strips each `<opt> <value>` pair,
+ *  which fixes BOTH orderings (`push <surface> --project X` and
+ *  `push --project X <surface>`). Boolean flags (--draft, --yes) take no value. */
+const CONFIG_VALUE_OPTIONS = ["--project", "--org", "--key", "--api-url", "--token"];
+
 function surfaceArg(args: string[]): { surface?: ConfigSurfaceName; error?: string } {
-  const positional = args.find((value) => !value.startsWith("--"));
+  const positional = positionals(args, CONFIG_VALUE_OPTIONS)[0];
   if (positional === undefined) return { error: "a surface is required" };
   if (!isConfigSurface(positional)) {
     return { error: `unknown surface ${JSON.stringify(positional)}. Known surfaces: ${CONFIG_SURFACES.join(", ")}` };
@@ -71,12 +79,14 @@ function surfaceArg(args: string[]): { surface?: ConfigSurfaceName; error?: stri
   return { surface: positional };
 }
 
-/** The positional after the surface, if any, is the project dir. */
-function targetDir(args: string[], options: ConfigCommandOptions): string {
+/** The project dir positional. push/pull consume a leading surface positional,
+ *  so their dir is positionals[1]; status has no surface, so its dir is
+ *  positionals[0]. Either way, value-flag values are stripped first so a bare
+ *  `--project X` is never read as the dir. */
+function targetDir(args: string[], options: ConfigCommandOptions, afterSurface: boolean): string {
   if (options.targetDir !== undefined) return options.targetDir;
-  const positionals = args.filter((value) => !value.startsWith("--"));
-  // positionals[0] is the surface for push/pull; the dir is the next one.
-  return positionals[1] ?? process.cwd();
+  const pos = positionals(args, CONFIG_VALUE_OPTIONS);
+  return (afterSurface ? pos[1] : pos[0]) ?? process.cwd();
 }
 
 function keyOptions(args: string[], options: ConfigCommandOptions): CloudFetchOptions {
@@ -104,7 +114,7 @@ async function runStatus(args: string[], context: {
   options: ConfigCommandOptions;
 }): Promise<number> {
   const { fetcher, output, options } = context;
-  const dir = targetDir(args, options);
+  const dir = targetDir(args, options, false); // status takes no surface
   // The published cloud doc (key-authed). A missing key / unreachable console
   // leaves cloud presence UNKNOWN rather than falsely reporting "unset".
   let published: Record<string, string> | null | undefined;
@@ -143,7 +153,7 @@ async function runPush(args: string[], context: {
     output.error(error!);
     return 1;
   }
-  const dir = targetDir(args, options);
+  const dir = targetDir(args, options, true); // dir follows the surface
   const body = await readOptional(vendoPath(dir, surface));
   if (body === null) {
     output.error(`no ${join(".vendo", surface)} to push (nothing local to make cloud the source of)`);
@@ -184,7 +194,7 @@ async function runPull(args: string[], context: {
     output.error(error!);
     return 1;
   }
-  const dir = targetDir(args, options);
+  const dir = targetDir(args, options, true); // dir follows the surface
   const wantDraft = args.includes("--draft");
   let value: string | undefined;
   if (wantDraft) {
