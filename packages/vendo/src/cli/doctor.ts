@@ -15,6 +15,7 @@ import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { overridesFileSchema, overridesFileV3Schema, toolsFileSchema, toolsFileV3Schema, vendoFileVersion } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
+import { CONFIG_SURFACES } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
 import { askYesNo, CLI_VERSION, consoleOutput, exists, normalizeDotEnvValue, readOptional, toolingTelemetry, type Output } from "./shared.js";
@@ -252,6 +253,16 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     else fail(`config/${file}`, "E-CFG-001", `missing .vendo/${file}`);
   }
   if (!await exists(join(root, ".vendo", "data", ".gitignore"))) warn("config/data-gitignore", "E-CFG-002", ".vendo/data/.gitignore is missing");
+
+  // cse lane 3 — per-surface OWNERSHIP: for each cloud-resolvable content
+  // surface, is the local file the source of truth, or is it resolved at
+  // runtime (from hosted config when VENDO_API_KEY is set, else unset)? Local
+  // only (no console call) — `vendo config status` does the cloud-aware view.
+  // A programmatic `explicit` override in createVendo is not observable here.
+  const surfaceOwners = await Promise.all(
+    CONFIG_SURFACES.map(async (surface) => `${surface}=${(await exists(join(root, ".vendo", surface))) ? "file" : "runtime"}`),
+  );
+  pass("config/ownership", `surface ownership (file = local source of truth; runtime = resolved from hosted config or unset): ${surfaceOwners.join(", ")}`);
 
   // The core promise, statically checkable: does the agent have any HOST
   // tool it may actually call? All-disabled is an explicit misconfiguration
