@@ -797,7 +797,6 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
             "added registry",
             merged.disabled === true ? undefined : { kind: "registry", descriptor, registry },
           );
-          primitives.set(descriptor.name, { risk: merged.risk, disabled: merged.disabled === true });
         }
       }
 
