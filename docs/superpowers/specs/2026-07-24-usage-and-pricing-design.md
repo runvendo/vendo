@@ -28,33 +28,38 @@ Free $0 / Pro $49/mo / Teams $499/mo / Enterprise custom. The Pro→Teams line i
 |---|---|---|---|---|
 | **Persona** | Dev evaluating; zero config, never talks to us | Indie/startup live in production | B2B company; org structure, governance | Regulated ICP; buys risk transfer + control, or arrives via scale |
 | **Multi-party surfaces** | None | Snapshot share links, live collab apps, publishing; basic console (usage, keys, deployments) | + Org layer (overlay, org principals, registry + promotion, pinning/host-adoption); full governance console (guard hot-edit, batch approvals, session replay, org activity, insights); SAML SSO (no SSO tax) | + SCIM, custom RBAC, multi-org/subsidiaries |
-| **AI credit (managed inference)** | $5/mo, hard stop | $10/mo, then passthrough +15% | $50/mo, then passthrough +10% | Committed rates |
-| **Sandbox minutes** | 200, hard cap | 2,000 incl., then $0.01/min | 10,000 incl., cheaper overage | Committed |
-| **Storage GB-mo (data + knowledge + threads + memory)** | 1 GB, hard cap | 20 GB incl., then $0.25/GB-mo | 100 GB incl., cheaper overage | Committed |
-| **Automation runs** | 100/mo, hard cap | 3,000/mo incl., then $3/1k | 30,000/mo incl., cheaper overage | Committed |
-| **Active connections** | 20, hard cap | 300 incl., then ~$0.30/conn-mo | 2,000 incl., cheaper overage | Committed |
-| **Thread/session retention** | 7 days | 90 days | Unlimited; 1-yr audit-log retention | Custom / compliance-grade |
+| **AI credit (managed inference)** | $5/mo, hard stop | $10/mo, then passthrough +15% | $50/mo, then passthrough +15% | Committed rates |
+| **Sandbox minutes** | 200, hard cap | 2,000 incl., then $0.01/min | 10,000 incl., then $0.01/min | Committed |
+| **Storage — files & app data (GB-mo)** | 1 GB, hard cap | 20 GB incl., then $0.25/GB-mo | 100 GB incl., then $0.25/GB-mo | Committed |
+| **Knowledge base (GB-mo)** | 1 GB, hard cap | 10 GB incl., then $0.35/GB-mo | 50 GB incl., then $0.35/GB-mo | Committed |
+| **Automation runs** | 100/mo, hard cap | 3,000/mo incl., then $3/1k | 30,000/mo incl., then $3/1k | Committed |
+| **Active connections** | 20, hard cap | 300 incl., then ~$0.30/conn-mo | 2,000 incl., then ~$0.30/conn-mo | Committed |
+| **Threads, memory, audit logs** | Free — 7-day retention | Free — 90-day retention | Free — unlimited threads; 1-yr audit retention | Free — custom / compliance-grade retention |
 | **Support** | Community | Email | Priority | Named SE, private channel, SLA |
 
 All allowance and overage numbers are structural placeholders **pending COGS validation against real usage data** before the pricing page ships. The structure (which meters exist, hard-stop vs overage, ratios between tiers) is the locked part.
 
-## 3. The five meters
+## 3. The six meters
 
-A meter exists only where Cloud carries real marginal COGS *and* a BYO escape hatch exists. Everything else is tier contents, not usage.
+A meter exists only where Cloud carries real marginal COGS *and* a BYO escape hatch exists. Everything else is tier contents, not usage. **Overage rates are identical on Pro and Teams** — one public rate per meter; only volume graduation (§6) lowers it.
 
-1. **Managed AI (tokens)** — provider passthrough +15% (Pro) / +10% (Teams), dual-metered at the gateway. BYO model key → $0. Public rate sheet; "passthrough" must stay verifiable. Never called a "gateway" in marketing — it is *managed inference* (gateways charge 0%; workflow-embedded resale sustains 10–20%: Zed +10%, Cursor ~+20%).
+1. **Managed AI (tokens)** — provider passthrough +15%, dual-metered at the gateway; margin graduates with spend volume (§6), never by tier. BYO model key → $0. Public rate sheet; "passthrough" must stay verifiable. Never called a "gateway" in marketing — it is *managed inference* (gateways charge 0%; workflow-embedded resale sustains 10–20%: Zed +10%, Cursor ~+20%).
 2. **Sandbox minutes** — includes app-build compute. BYO E2B/own sandbox → $0.
-3. **Storage GB-month** — one number covering hosted-store data, threads/sessions, knowledge base (docs + vectors), and memory. Knowledge ingestion (parse/OCR/embed, ~$0.50–5/GB one-time) is absorbed into the recurring GB rate; retrieval is free (rounding error vs. the generation call). Guardrails, not meters: per-file upload cap on Free; pathological OCR-farm cases go to contract terms. BYO Postgres/RAG → $0.
-4. **Automation runs** — a hosted automation execution (scheduled/triggered). **Interactive chat is never a run** (no double-metering a conversation that already pays the AI meter).
-5. **Active connections** — a user × integration pair (Sarah's Gmail = 1, her Slack = a 2nd) that performed ≥1 broker-mediated action in the calendar month. Automation-initiated actions count (real Composio COGS); token refreshes, health checks, connect/disconnect events, and dormant stored credentials do not. Console shows exactly which connections counted and why. Fair-use clause on per-connection call volume backstops the loose calls↔connections correlation (our vendor COGS is per tool call, ~$0.11/1k). BYO Composio key / host-side OAuth → $0.
+3. **Storage GB-month (files & app data)** — uploaded files/attachments, app-owned data records, app documents + versions in the hosted store. BYO Postgres → $0.
+4. **Knowledge base GB-month** — knowledge docs + their vectors, as its own meter and allowance. The rate carries a small premium over plain storage because one-time ingestion (parse/OCR/embed, ~$0.50–5/GB) is absorbed into it; retrieval is free (rounding error vs. the generation call). Guardrails, not meters: per-file upload cap on Free; pathological OCR-farm cases go to contract terms. BYO RAG stack → $0.
+5. **Automation runs** — a hosted automation execution (scheduled/triggered). **Interactive chat is never a run** (no double-metering a conversation that already pays the AI meter).
+6. **Active connections** — a user × integration pair (Sarah's Gmail = 1, her Slack = a 2nd) that performed ≥1 broker-mediated action in the calendar month. Automation-initiated actions count (real Composio COGS); token refreshes, health checks, connect/disconnect events, and dormant stored credentials do not. Console shows exactly which connections counted and why. Fair-use clause on per-connection call volume backstops the loose calls↔connections correlation (our vendor COGS is per tool call, ~$0.11/1k). BYO Composio key / host-side OAuth → $0.
 
-**Mapping rule (locked):** new services must map onto existing meters — knowledge/memory → storage + AI tokens; app builds → sandbox minutes. The meter set stays at five. **The meter unit definitions are permanent** — every 2025–26 repricing disaster (Cursor, Copilot, v0) was a mid-flight unit redefinition; we never redefine, only re-rate with grandfathering (§7).
+**Unmetered (deliberately free):** threads/sessions, agent memory, and audit logs. They're text — even a heavy org is single-digit GB, pennies of COGS — so charging would be friction without revenue. Tiers differentiate on **retention windows** instead (7d / 90d / unlimited / custom), which is the packaging the market already uses for exactly this.
+
+**Mapping rule (locked):** new services must map onto existing meters — memory → free (retention-tiered); embedding/retrieval inference → AI tokens; app builds → sandbox minutes. The meter set stays at six. **The meter unit definitions are permanent** — every 2025–26 repricing disaster (Cursor, Copilot, v0) was a mid-flight unit redefinition; we never redefine, only re-rate with grandfathering (§7).
 
 ## 4. Bundled AI credits
 
 $5 Free / $10 Pro / $50 Teams per month. Dollar-denominated, no rollover, netted on the invoice.
 
 - Sized to the **Supabase pattern** (credit covers the default/eval footprint), not the Cursor pattern (~100% of plan price): ~$0.05/chat turn and ~$1–2/app build on Sonnet-class models → Free ≈ 100 turns (the README demo + tinkering), Pro ≈ 200 turns/mo (the developer building), Teams ≈ 1,000 turns/mo (a team building or tiny pilot).
+- The +15% margin is uniform across self-serve tiers; larger credits are the paid tiers' AI advantage, volume graduation (§6) is the discount path.
 - **Marketing rule:** credits are "enough to build and try it" — never "AI included." They intentionally cannot cover end-user production traffic (100 end-users × 10 turns ≈ $50/mo).
 - The AI meter is an on-ramp, not a profit center: at +15%, margin is thin by design; plan fees and the infra meters are the revenue lines.
 
@@ -64,14 +69,14 @@ Enforcement is server-side at service-call time — gateway, sandbox, store, bro
 
 - **Free: hard stop** at 100% of any cap, with a developer-readable error naming the reset date and the two exits (upgrade / BYO). Warning email at 80%. No card, ever.
 - **Pro/Teams: overage requires explicit opt-in** (toggle default **off** on Pro, **on** on Teams). Toggle off → Free-style hard stop at allowance with an enable prompt showing the rates. Toggle on → silent metered accrual under a **customer spend cap** (default on at 2× plan price, one-click adjustable); at cap, hard-stop behavior. Notifications at 50/80/100% of allowances and cap.
-- **Degrade asymmetry:** inference/sandbox/storage stop instantly at a cap; automations and connections fail *loudly* (run marked "blocked by spend cap" in console + owner email) — never silently unfired.
+- **Degrade asymmetry:** inference/sandbox/storage/knowledge stop instantly at a cap; automations and connections fail *loudly* (run marked "blocked by spend cap" in console + owner email) — never silently unfired.
 - **Enterprise never hard-stops.** Overage is a true-up invoice line, not a service gate; protection is contractual.
 
 ## 6. Billing mechanics
 
-Stripe subscription + five metered prices + billing thresholds + one opt-in toggle. No prepaid wallet, no credit packs.
+Stripe subscription + six metered prices + billing thresholds + one opt-in toggle. No prepaid wallet, no credit packs.
 
-- **Monthly invoice** = plan fee + per-meter overage lines (credits netted), on the subscription card. Line items are the five meters at public rates — the bill self-documents.
+- **Monthly invoice** = plan fee + per-meter overage lines (credits netted), on the subscription card. Line items are the six meters at public rates — the bill self-documents.
 - **Mid-cycle settlement threshold (our exposure control):** when accrued overage crosses max($100, 1× plan price), Stripe invoices and charges immediately; tab resets. Bounds our bad-debt exposure per customer to ~one threshold and surfaces runaway usage to the customer within days, not at month-end.
 - **Spend cap (their control)** sits on top, per §5.
 - **Failed payment:** Stripe dunning → 7–14 day grace with warnings → meters flip to hard-stop; no new debt accrues past the flip.
