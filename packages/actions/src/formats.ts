@@ -8,6 +8,7 @@ import {
   riskLabelSchema,
   stepSchema,
   toolDescriptorSchema,
+  type DomainManifest,
   type FieldSemantic,
   type JsonSchema,
   type Step,
@@ -348,6 +349,106 @@ export const capabilitiesFileSchema = z.object({
   tools: z.array(compoundToolSchema),
   briefs: z.array(capabilityBriefSchema).optional(),
 }).passthrough() satisfies z.ZodType<CapabilitiesFile>;
+
+// ---------------------------------------------------------------------------
+// Format v3 (cse lane 1): `.vendo/` restructured into TWO files split by
+// AUTHOR — `tools.json` (vendo/tools@3) is the machine layer sync regenerates
+// wholesale, `overrides.json` (vendo/overrides@3) is the only human-edited
+// file. capabilities.json and semantics.json retire; their content folds into
+// the pair (see migrate.ts). v1 schemas above stay exported for the migration
+// reader.
+// ---------------------------------------------------------------------------
+
+export const VENDO_TOOLS_FORMAT_V3 = "vendo/tools@3" as const;
+
+export const VENDO_OVERRIDES_FORMAT_V3 = "vendo/overrides@3" as const;
+
+/** One entry of `.vendo/tools.json` (vendo/tools@3): the v1 descriptor +
+ *  binding, plus the machine-layer fields sync now owns — audience provenance,
+ *  sync-inferred field semantics (host corrections live in overrides.json),
+ *  and the handler-source content hash incremental sync diffs against. */
+export type ExtractedToolV3 = ExtractedTool & {
+  audience?: "end-user" | "operator" | "internal";
+  /** Keyed by collapsed dot path into the response (core semantics.ts). */
+  semantics?: Record<string, FieldSemantic>;
+  srcHash?: string;
+};
+
+export const extractedToolV3Schema = toolDescriptorSchema.extend({
+  binding: extractedBindingSchema,
+  disabled: z.boolean().optional(),
+  note: z.string().optional(),
+  audience: z.enum(["end-user", "operator", "internal"]).optional(),
+  semantics: z.record(fieldSemanticSchema).optional(),
+  srcHash: z.string().min(1).optional(),
+}).superRefine((tool, context) => {
+  if ((tool.binding as { kind?: string }).kind === "compound") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["binding"],
+      message: "compound bindings live in .vendo/overrides.json compounds — .vendo/tools.json stays deterministic (04-actions §6)",
+    });
+  }
+}) satisfies z.ZodType<ExtractedToolV3>;
+
+/** `.vendo/tools.json` (vendo/tools@3) — generated, regenerated wholesale by
+ *  `vendo sync`, never hand-edited. `watermark` is the git tree hash of the
+ *  last sync; `domains` is the sync-derived manifest (host additions merge in
+ *  from overrides.json). Passthrough like every generated artifact. */
+export interface ToolsFileV3 {
+  format: typeof VENDO_TOOLS_FORMAT_V3;
+  tools: ExtractedToolV3[];
+  watermark?: string;
+  domains?: DomainManifest;
+}
+
+export const toolsFileV3Schema = z.object({
+  format: z.literal(VENDO_TOOLS_FORMAT_V3),
+  tools: z.array(extractedToolV3Schema),
+  watermark: z.string().min(1).optional(),
+  domains: z.object({ has: z.array(z.string()), hasNot: z.array(z.string()) }).optional(),
+}).passthrough() satisfies z.ZodType<ToolsFileV3>;
+
+/**
+ * `.vendo/overrides.json` (vendo/overrides@3) — the AUTHORED layer, the only
+ * human-edited file: per-tool overrides plus the host-owned `domains`
+ * additions (unioned over the generated manifest), the agent-authored
+ * `compounds` and `briefs` that used to live in capabilities.json, and remix
+ * slot opt-outs. Strict like v1 — a typo must fail loudly — except compounds
+ * and briefs entries, which keep their passthrough (additive) behavior.
+ */
+export interface OverridesFileV3 {
+  format: typeof VENDO_OVERRIDES_FORMAT_V3;
+  tools: Record<string, ToolOverride>;
+  domains?: DomainManifest;
+  compounds?: CompoundTool[];
+  briefs?: CapabilityBrief[];
+  remix?: { ignoreSlots: string[] };
+}
+
+export const overridesFileV3Schema = z.object({
+  format: z.literal(VENDO_OVERRIDES_FORMAT_V3),
+  tools: z.record(toolOverrideSchema),
+  domains: z.object({ has: z.array(z.string()), hasNot: z.array(z.string()) }).strict().optional(),
+  compounds: z.array(compoundToolSchema).optional(),
+  briefs: z.array(capabilityBriefSchema).optional(),
+  remix: z.object({
+    ignoreSlots: z.array(z.string().min(1)),
+  }).strict().optional(),
+}).strict() satisfies z.ZodType<OverridesFileV3>;
+
+/**
+ * Classify a parsed `.vendo/tools.json`/`overrides.json` by its format tag so
+ * loaders know whether to migrate (v1) or parse directly (v3). Unknown tags
+ * return undefined — callers parse with the v3 schema and fail loudly.
+ */
+export function vendoFileVersion(value: unknown): 1 | 3 | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const format = (value as { format?: unknown }).format;
+  if (format === VENDO_TOOLS_FORMAT || format === VENDO_OVERRIDES_FORMAT) return 1;
+  if (format === VENDO_TOOLS_FORMAT_V3 || format === VENDO_OVERRIDES_FORMAT_V3) return 3;
+  return undefined;
+}
 
 /**
  * Remixable component baseline captured by sync (06 §8, written to
