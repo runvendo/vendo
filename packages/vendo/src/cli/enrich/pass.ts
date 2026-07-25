@@ -177,7 +177,9 @@ export async function runSyncEnrichment(options: SyncEnrichmentOptions): Promise
 
   const previous = options.previous;
   const candidates = {
-    added: file.tools.filter((tool) => previous !== null && !previous.srcHashes.has(tool.name)).map((tool) => tool.name),
+    // No previous state = first-ever enrichment: every tool is NEW (the
+    // narrative must say so, not "changed").
+    added: file.tools.filter((tool) => previous === null || !previous.srcHashes.has(tool.name)).map((tool) => tool.name),
     changed: file.tools.filter((tool) => {
       if (previous === null || !previous.srcHashes.has(tool.name)) return false;
       const before = previous.srcHashes.get(tool.name);
@@ -185,6 +187,23 @@ export async function runSyncEnrichment(options: SyncEnrichmentOptions): Promise
     }).map((tool) => tool.name),
     unenriched: file.tools.filter((tool) => tool.enriched !== true).map((tool) => tool.name),
   };
+
+  // The up-to-date check runs BEFORE engine resolution: it is purely local
+  // (git diff + candidate sets), so a fully enriched, unchanged catalog says
+  // "up to date" whether or not a model key is around — and a keyed sync
+  // never probes engine availability just to discover there is no work.
+  const diff = await (options.computeDiff ?? computeEnrichmentDiff)({
+    root: options.root,
+    ...(previous?.watermark === undefined ? {} : { watermark: previous.watermark }),
+    ...(options.full === true ? { full: true } : {}),
+  });
+  if (
+    diff.mode === "diff" && diff.files.length === 0
+    && candidates.added.length === 0 && candidates.changed.length === 0 && candidates.unenriched.length === 0
+  ) {
+    options.note("enrichment: up to date");
+    return { status: "up-to-date" };
+  }
 
   // Engine ladder — explicit harness (adapter rule: an explicitly passed
   // adapter always wins) → explicit pin → BYO env key → VENDO_API_KEY → none.
@@ -209,19 +228,6 @@ export async function runSyncEnrichment(options: SyncEnrichmentOptions): Promise
     }
     harness = resolved.engine.harness;
     credential = resolved.engine.credential;
-  }
-
-  const diff = await (options.computeDiff ?? computeEnrichmentDiff)({
-    root: options.root,
-    ...(previous?.watermark === undefined ? {} : { watermark: previous.watermark }),
-    ...(options.full === true ? { full: true } : {}),
-  });
-  if (
-    diff.mode === "diff" && diff.files.length === 0
-    && candidates.added.length === 0 && candidates.changed.length === 0 && candidates.unenriched.length === 0
-  ) {
-    options.note("enrichment: up to date");
-    return { status: "up-to-date" };
   }
 
   const overrides = await readOverridesContext(options.vendoDir);

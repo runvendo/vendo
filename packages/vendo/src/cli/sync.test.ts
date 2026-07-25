@@ -536,7 +536,16 @@ describe("sync AI enrichment integration (cse lane 1c)", () => {
       output: messages.output,
       fetchImpl: offline,
       sync: async () => report(),
-      enrich: { resolveCredential: async () => ({ rung: "none" }) },
+      enrich: {
+        resolveCredential: async () => ({ rung: "none" }),
+        // proof, not inference: ANY engine touchpoint (even the availability
+        // probe) throws and fails this test outright
+        harnesses: [{
+          id: "forbidden",
+          availability: async () => { throw new Error("keyless sync must never probe an engine"); },
+          run: async () => { throw new Error("keyless sync must never invoke a model"); },
+        }],
+      },
     });
     expect(exit).toBe(0);
     expect(messages.errors.filter((line) => !line.startsWith("warning:"))).toEqual([]);

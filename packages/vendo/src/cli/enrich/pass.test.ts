@@ -58,6 +58,14 @@ const neverHarness: ExtractionHarness = {
   run: async () => { throw new Error("the model must not be called here"); },
 };
 
+/** Keyless proof-harness: ANY invocation — even the availability probe —
+ *  fails the test outright, so "no model call" is enforced, not inferred. */
+const forbiddenHarness: ExtractionHarness = {
+  id: "forbidden",
+  availability: async () => { throw new Error("keyless sync must never probe an engine"); },
+  run: async () => { throw new Error("keyless sync must never invoke a model"); },
+};
+
 function baseOptions(
   fixture: { root: string; vendoDir: string },
   channel: ReturnType<typeof output>,
@@ -96,18 +104,56 @@ describe("readPreviousToolsState", () => {
 });
 
 describe("runSyncEnrichment", () => {
-  it("keyless: structural-only, one calm line, zero errors, file byte-identical", async () => {
+  it("keyless: structural-only, one calm line, zero errors, file byte-identical, and NO model touchpoint", async () => {
     const fixture = await host([tool("host_a"), tool("host_b")]);
     const before = await readFile(fixture.toolsPath, "utf8");
     const channel = output();
     const result = await runSyncEnrichment(baseOptions(fixture, channel, {
       resolveCredential: async () => ({ rung: "none" }),
+      // any engine invocation (even the availability probe) throws
+      harnesses: [forbiddenHarness],
     }));
     expect(result.status).toBe("structural-only");
     expect(channel.notes.join("\n")).toContain("structural-only");
     expect(channel.notes.join("\n")).toContain("2 tools unenriched");
     expect(channel.warns).toEqual([]);
     expect(await readFile(fixture.toolsPath, "utf8")).toBe(before);
+  });
+
+  it("keyless but fully enriched and unchanged: says up to date, not structural-only", async () => {
+    const fixture = await host(
+      [tool("host_a", { enriched: true })],
+      { watermark: "0123456789abcdef0123456789abcdef01234567" },
+    );
+    const before = await readFile(fixture.toolsPath, "utf8");
+    const channel = output();
+    const result = await runSyncEnrichment(baseOptions(fixture, channel, {
+      resolveCredential: async () => ({ rung: "none" }),
+      harnesses: [forbiddenHarness],
+      previous: {
+        watermark: "0123456789abcdef0123456789abcdef01234567",
+        srcHashes: new Map([["host_a", "sha256:host_a"]]),
+        enriched: new Set(["host_a"]),
+      },
+      computeDiff: async () => ({ mode: "diff", files: [], patch: "" }),
+    }));
+    expect(result.status).toBe("up-to-date");
+    expect(channel.notes).toEqual(["enrichment: up to date"]);
+    expect(channel.notes.join("\n")).not.toContain("structural-only");
+    expect(await readFile(fixture.toolsPath, "utf8")).toBe(before);
+  });
+
+  it("first-ever enrichment (no previous state) classifies applied tools as NEW in the narrative", async () => {
+    const fixture = await host([tool("host_a")]);
+    const channel = output();
+    const result = await runSyncEnrichment(baseOptions(fixture, channel, {
+      harness: scripted([reply({ tools: [{ name: "host_a", description: "First pass." }], narrative: "n" })]),
+      previous: null,
+    }));
+    expect(result.status).toBe("enriched");
+    const narrative = channel.notes.join("\n");
+    expect(narrative).toContain("new tools (1): host_a");
+    expect(narrative).not.toContain("changed tools");
   });
 
   it("applies, marks, advances the watermark, and prints a sectioned narrative (apply-then-show)", async () => {
