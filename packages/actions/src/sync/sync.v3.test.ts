@@ -512,4 +512,18 @@ describe("vendo sync migrates a legacy .vendo dir on disk", () => {
     expect(next.tools.find((tool: any) => tool.name === "host_listInvoices").semantics)
       .toEqual({ "data.amountCents": { kind: "money", unit: "dollars" } });
   });
+
+  it("extraction failure mid-migration leaves the legacy pair on disk — no delete before the folded tools.json is durable", async () => {
+    const { root, out } = await legacyHost();
+    // Malformed openapi.json: detect() still sees the file, extract() throws on
+    // JSON.parse, so runExtractors rejects after the migration block ran.
+    await writeHostFile(root, "openapi.json", "{ not json");
+
+    await expect(vendoSync({ root, out })).rejects.toThrow();
+
+    // The retired legacy files must survive: their folded content only lives in
+    // tools.json once writeIfChanged has run, which the throw prevented.
+    expect(await exists(path.join(out, "semantics.json"))).toBe(true);
+    expect(await exists(path.join(out, "capabilities.json"))).toBe(true);
+  });
 });

@@ -5,7 +5,7 @@ import {
   VENDO_TREE_FORMAT_V2,
   validateTreeV2,
   type TreeV2,
-} from "./index.js";
+} from "../index.js";
 
 const minimal = (): Record<string, unknown> => ({
   formatVersion: VENDO_TREE_FORMAT_V2,
