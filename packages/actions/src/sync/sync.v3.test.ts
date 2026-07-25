@@ -198,6 +198,25 @@ describe("vendo sync writes vendo/tools@3", () => {
     expect(next.domains).toEqual({ has: ["invoices"], hasNot: ["crypto"] });
   });
 
+  it("rejects a malformed capabilities.json loudly — its authored compounds/briefs must never silently drop", async () => {
+    const { root, out } = await temporaryHost();
+    await writeHostFile(root, "openapi.json", SPEC);
+    await writeHostFile(out, "capabilities.json", "{ not json");
+    await expect(vendoSync({ root, out })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "validation",
+      message: expect.stringContaining("malformed capabilities file"),
+    });
+
+    const schemaInvalid = await temporaryHost();
+    await writeHostFile(schemaInvalid.root, "openapi.json", SPEC);
+    await writeHostFile(schemaInvalid.out, "capabilities.json", JSON.stringify({ format: "vendo/capabilities@1", tools: [{ nope: true }] }));
+    await expect(vendoSync({ root: schemaInvalid.root, out: schemaInvalid.out })).rejects.toMatchObject({
+      name: "VendoError",
+      code: "validation",
+    });
+  });
+
   it("rejects a malformed v3 overrides.json as loudly as a v1 one", async () => {
     const { root, out } = await temporaryHost();
     await writeHostFile(out, "overrides.json", JSON.stringify({
@@ -315,10 +334,41 @@ describe("vendo sync migrates a legacy .vendo dir on disk", () => {
     // survive for review instead of being deleted (no silent data loss).
     expect(report.warnings.some((warning) => warning.includes("both carry compounds/briefs"))).toBe(true);
     expect(await exists(path.join(out, "capabilities.json"))).toBe(true);
+    // the summary claims only what actually folded (briefs, not compounds)
+    expect(report.migrated).toContain("the briefs that lived in capabilities.json");
+    expect(report.migrated).not.toContain("compounds and briefs that lived");
     const overrides = await readJson(path.join(out, "overrides.json"));
     expect(overrides.compounds.map((tool: any) => tool.name)).toEqual(["host_other_flow"]);
     // the briefs slot had no conflict, so it folded in
     expect(JSON.stringify(overrides.briefs)).toBe(JSON.stringify(LEGACY_CAPABILITIES.briefs));
+  });
+
+  it("a MALFORMED semantics.json next to legacy v1 tools survives with a warning; the rest still migrates", async () => {
+    const { root, out } = await temporaryHost();
+    await writeHostFile(root, "openapi.json", SPEC);
+    await writeHostFile(root, ".vendo/tools.json", `${JSON.stringify(LEGACY_TOOLS, null, 2)}\n`);
+    await writeHostFile(root, ".vendo/semantics.json", "{ not json");
+
+    const report = await vendoSync({ root, out });
+    // the tools@1 layout still migrates and announces itself...
+    expect(report.migrated).toContain("tools.json (vendo/tools@1)");
+    // ...but the unreadable file is never deleted (its content could not be
+    // preserved) and the summary does not claim it was retired
+    expect(await exists(path.join(out, "semantics.json"))).toBe(true);
+    expect(report.migrated).not.toContain("retired");
+    expect(report.warnings.some((warning) => warning.includes("malformed retired file"))).toBe(true);
+  });
+
+  it("a MALFORMED semantics.json next to an already-v3 tools.json survives and announces no migration", async () => {
+    const { root, out } = await temporaryHost();
+    await writeHostFile(root, "openapi.json", SPEC);
+    await vendoSync({ root, out }); // fresh v3 pairless machine file
+    await writeHostFile(root, ".vendo/semantics.json", "{ not json");
+
+    const report = await vendoSync({ root, out });
+    expect(report.migrated).toBeUndefined();
+    expect(await exists(path.join(out, "semantics.json"))).toBe(true);
+    expect(report.warnings.some((warning) => warning.includes("malformed retired file"))).toBe(true);
   });
 
   it("half-migrated dir (semantics.json + tools@3): the stale file is deleted without clobbering v3 semantics", async () => {

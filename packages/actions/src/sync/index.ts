@@ -297,11 +297,15 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
   let overrides = overridesV3
     ?? (overridesV1 !== undefined || capabilities !== null ? migrated.overrides : null);
   let capabilitiesConflict = false;
+  let foldedCompounds = capabilities !== null && overridesV3 === undefined && capabilities.tools.length > 0;
+  let foldedBriefs = capabilities !== null && overridesV3 === undefined && (capabilities.briefs?.length ?? 0) > 0;
   if (capabilities !== null && overridesV3 !== undefined) {
+    foldedCompounds = overridesV3.compounds === undefined && capabilities.tools.length > 0;
+    foldedBriefs = overridesV3.briefs === undefined && (capabilities.briefs?.length ?? 0) > 0;
     overrides = {
       ...overridesV3,
-      ...(overridesV3.compounds === undefined && capabilities.tools.length > 0 ? { compounds: capabilities.tools } : {}),
-      ...(overridesV3.briefs === undefined && (capabilities.briefs?.length ?? 0) > 0 ? { briefs: capabilities.briefs } : {}),
+      ...(foldedCompounds ? { compounds: capabilities.tools } : {}),
+      ...(foldedBriefs ? { briefs: capabilities.briefs } : {}),
     };
     capabilitiesConflict = (overridesV3.compounds !== undefined && capabilities.tools.length > 0)
       || (overridesV3.briefs !== undefined && (capabilities.briefs?.length ?? 0) > 0);
@@ -312,9 +316,13 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
     }
   }
 
-  // A malformed semantics.json is warned about and left in place (never a
-  // migration trigger on its own — that would re-announce on every sync).
-  const semanticsRetires = semantics.present && (semantics.parsed !== null || toolsV3 !== undefined);
+  // A malformed semantics.json is warned about and LEFT IN PLACE whatever its
+  // neighbors look like — deleting a file whose content could not be read
+  // would silently drop possible host edits, and it must never be a migration
+  // trigger on its own (that would re-announce on every sync). Only a file
+  // that parsed retires: folded into tools.json on the legacy path, or stale
+  // (already ingested at the v3 rewrite) next to a v3 tools.json.
+  const semanticsRetires = semantics.parsed !== null;
   const legacyPieces = [
     ...(toolsV1 !== undefined ? ["tools.json (vendo/tools@1)"] : []),
     ...(overridesV1 !== undefined ? ["overrides.json (vendo/overrides@1)"] : []),
@@ -338,12 +346,22 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
     // tools.json now (a malformed one stayed on disk, warned above).
     ...(semanticsRetires ? [semanticsPath] : []),
   ];
+  // The summary describes only what THIS fold actually did. In the conflicted
+  // state (capabilities.json left on disk for review) the dir still holds a
+  // legacy file, so the migration re-announces on every sync alongside the
+  // conflict warning — intentional nagging until the human reconciles.
+  const semanticsFolded = semanticsRetires && toolsV3 === undefined;
+  const foldedFromCapabilities = [
+    ...(foldedCompounds ? ["compounds"] : []),
+    ...(foldedBriefs ? ["briefs"] : []),
+  ];
   const summary =
     `Migrated .vendo/ (legacy ${legacyPieces.join(", ")}) to the v3 two-file layout: `
-    + `tools.json is now ${VENDO_TOOLS_FORMAT_V3} — the machine layer sync regenerates wholesale (extracted tools with `
-    + `inferred field semantics folded in from semantics.json, the domain manifest, per-tool source hashes, and the sync `
-    + `watermark) — and overrides.json is ${VENDO_OVERRIDES_FORMAT_V3}, the only hand-edited file`
-    + `${capabilities !== null ? ", now also carrying the compounds and briefs that lived in capabilities.json" : ""}. `
+    + `tools.json is now ${VENDO_TOOLS_FORMAT_V3} — the machine layer sync regenerates wholesale (extracted tools`
+    + `${semanticsFolded ? " with inferred field semantics folded in from semantics.json" : ""}, the domain manifest, `
+    + `per-tool source hashes, and the sync watermark) — and overrides.json is ${VENDO_OVERRIDES_FORMAT_V3}, the only `
+    + "hand-edited file"
+    + `${foldedFromCapabilities.length > 0 ? `, now also carrying the ${foldedFromCapabilities.join(" and ")} that lived in capabilities.json` : ""}. `
     + `${deletions.length > 0 ? `The retired ${deletions.map((file) => path.basename(file)).join(" and ")} ${deletions.length === 1 ? "was" : "were"} deleted — its content lives in the pair. ` : ""}`
     + "Every authored value (overrides, compounds, briefs, manual semantics corrections) was preserved; "
     + "review with `git diff .vendo` and commit the result.";
