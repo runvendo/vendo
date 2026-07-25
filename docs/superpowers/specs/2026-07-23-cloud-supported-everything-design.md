@@ -158,6 +158,13 @@ and deployment counts. Full semantic impact analysis is out of scope.
 
 ## Hosted secrets
 
+Secrets means exactly one thing: credentials the host developer owns that
+user apps need at runtime (project vault, per-app owner-granted access).
+Per-user credentials are the connections block's job, including API-key
+services via the broker's hosted connect page (wave includes one live
+verification of an API-key toolkit through the dock). Per-user raw keys for
+uncatalogued services are a named non-goal.
+
 `cloudSecrets` implements the existing `SecretsProvider` seam. Resolution:
 explicit provider, then env, then cloud (env wins so local overrides always
 work). Console side: per-project encrypted secrets (same encryption pattern as
