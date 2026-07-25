@@ -1395,10 +1395,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return automationsForArming.enable(appId, armCtx);
     },
     ...(config.paint === undefined ? {} : { paint: config.paint }),
-    // cse lane 3 — theme/semantics/domains flow as PROVIDER thunks resolved per
-    // generation (boot-once via memoizeOnce), so a cloud-owned surface applies
-    // without a compose-time fetch. Each returns undefined when unset, which the
-    // engine treats exactly as an omitted value.
+    // cse lane 3 — theme/semantics/domains flow as PROVIDER thunks so a
+    // cloud-owned surface applies without a compose-time fetch. semantics/domains
+    // resolve live per generation (pick up cloud overrides as the snapshot warms);
+    // theme is boot-once via memoizeOnce (structural, next-load). Each returns
+    // undefined when unset, which the engine treats exactly as an omitted value.
     theme: themeProvider,
     designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
