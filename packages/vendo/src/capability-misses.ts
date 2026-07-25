@@ -28,9 +28,16 @@ type AppendMiss = (event: CapabilityMissEvent) => Promise<void>;
 
 interface CaptureOptions {
   dataDir?: string;
+  /** Telemetry-config + opt-out inputs ONLY (loadConfig/envOptOut); this
+   *  module never reads VENDO_API_KEY or VENDO_CLOUD_URL from it. */
   env?: Record<string, string | undefined>;
   telemetryHome?: string;
   telemetryConfig?: Pick<TelemetryConfig, "anonymousId" | "optedOut">;
+  /** ADAPTER RULE, miss-upload slot: filled by the composition seam
+   *  (createVendo passes cloudKeyOptions() — see server.ts). Unset means
+   *  local capture only; the module itself never reads the environment for
+   *  the key or the console base URL. */
+  cloud?: { apiKey: string; baseUrl?: string };
   surface: Promise<CapabilitySurfaceSnapshot>;
   append?: AppendMiss;
   fetchImpl?: typeof fetch;
@@ -109,8 +116,7 @@ function validUploadResponse(value: unknown): boolean {
 }
 
 function createMissUploader(options: {
-  apiKey: string;
-  env: Record<string, string | undefined>;
+  cloud: { apiKey: string; baseUrl?: string };
   surface: Promise<CapabilitySurfaceSnapshot>;
   fetchImpl?: typeof fetch;
   batchSize: number;
@@ -131,8 +137,12 @@ function createMissUploader(options: {
       try {
         const surface = await options.surface;
         const response = await cloudKeyFetch<{ accepted: number; duplicates: number }>("/api/v1/misses", {
-          apiKey: options.apiKey,
-          env: options.env,
+          apiKey: options.cloud.apiKey,
+          // The seam already resolved VENDO_CLOUD_URL into baseUrl; an empty
+          // env pins resolution to it (or the console default) so no hidden
+          // process-env read survives here (adapter rule).
+          ...(options.cloud.baseUrl === undefined ? {} : { apiUrl: options.cloud.baseUrl }),
+          env: {},
           fetchImpl: options.fetchImpl,
           signal: controller.signal,
           body: { surface, events },
@@ -195,16 +205,15 @@ export function createCapabilityMissCapture(options: CaptureOptions): Capability
   const env = options.env ?? runtimeEnv();
   const telemetryConfig = options.telemetryConfig
     ?? loadConfig(options.telemetryHome, env);
-  const apiKey = env.VENDO_API_KEY?.trim();
   let uploader: MissUploader | undefined;
-  if (apiKey) {
+  if (options.cloud !== undefined) {
     // Contract (01-core §17): upload is gated by the key plus envOptOut only.
     // The persisted telemetry opt-out and the NODE_ENV fail-close are
-    // product-telemetry-only; a non-empty VENDO_API_KEY is the host's opt-in.
+    // product-telemetry-only; a filled Cloud slot (the seam saw a non-empty
+    // VENDO_API_KEY) is the host's opt-in.
     if (!envOptOut(env)) {
       uploader = createMissUploader({
-        apiKey,
-        env,
+        cloud: options.cloud,
         surface: options.surface,
         fetchImpl: options.fetchImpl,
         batchSize: options.batchSize ?? DEFAULT_BATCH_SIZE,
