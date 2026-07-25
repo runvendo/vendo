@@ -334,9 +334,10 @@ export const compoundToolSchema = toolDescriptorSchema.extend({
 }) satisfies z.ZodType<CompoundTool>;
 
 /**
- * `.vendo/capabilities.json` — agent-authored (refine engine), human-reviewed
- * diffs, host-committed (04 §1/§6). Passthrough like `tools.json`: a generated
- * artifact evolves additively, unknown keys must survive.
+ * `.vendo/capabilities.json` — RETIRED in format v3 (compounds/briefs live in
+ * `.vendo/overrides.json` now); this schema remains the migration reader for
+ * legacy dirs. Agent-authored, human-reviewed, host-committed (04 §1/§6).
+ * Passthrough like `tools.json`: unknown keys must survive the fold.
  */
 export interface CapabilitiesFile {
   format: typeof VENDO_CAPABILITIES_FORMAT;
