@@ -7,9 +7,9 @@
  * `{ action }` prop shape (D5).
  */
 
-import { FN_REFERENCE_PATTERN, findInvalidActionReference } from "../fn-references.js";
-import type { Json } from "../ids.js";
-import { TOOL_NAME_PATTERN } from "../tools.js";
+import { FN_REFERENCE_PATTERN, findInvalidActionReference } from "../../fn-references.js";
+import type { Json } from "../../ids.js";
+import { TOOL_NAME_PATTERN } from "../../tools.js";
 import { defineOwn } from "../tree.js";
 import { parseExpression } from "./expression.js";
 import { NAME_START, readName, skipBraceBlock, skipQuotedRun, skipWhitespace } from "./scan.js";
