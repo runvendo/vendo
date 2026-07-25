@@ -1,5 +1,6 @@
 import {
   createActions,
+  mergedSemanticsAndDomains,
   type ActionsRegistry,
   type ActionsRunContext,
   type Connector,
@@ -24,7 +25,6 @@ import {
 import {
   VendoError,
   descriptorHash,
-  semanticsFileSchema,
   vendoThemeSchema,
   type ActAs,
   type AppDocument,
@@ -1145,16 +1145,24 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ? configDesignRules
     : () => dotVendoFile("design-rules.md", designRulesRoot);
   const pinBaselines = dotVendoPinBaselines();
-  // W3 — .vendo/semantics.json (field semantics + domain manifest), written
-  // by `vendo sync`, host-edited, treated as generation fact. Malformed →
-  // loud + absent, same stance as catalog.json.
-  const semanticsFile = (() => {
-    const raw = dotVendoFile("semantics.json");
-    if (raw === undefined) return undefined;
+  // W3, format v3 (cse lane 1) — field semantics + domain manifest now come
+  // from the merged .vendo pair (generated tools.json overlaid by the authored
+  // overrides.json; a legacy dir's semantics.json is ingested in-memory until
+  // `vendo sync` rewrites it). Malformed → loud + absent, same stance as
+  // catalog.json.
+  const hostSemantics = (() => {
+    const parsed = (name: string): unknown => {
+      const raw = dotVendoFile(name);
+      return raw === undefined ? undefined : JSON.parse(raw) as unknown;
+    };
     try {
-      return semanticsFileSchema.parse(JSON.parse(raw));
+      return mergedSemanticsAndDomains({
+        tools: parsed("tools.json"),
+        overrides: parsed("overrides.json"),
+        semantics: parsed("semantics.json"),
+      });
     } catch (error) {
-      console.error(`[vendo] Failed to load .vendo/semantics.json: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate the file.`);
+      console.error(`[vendo] Failed to load .vendo tool semantics: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate .vendo/tools.json.`);
       return undefined;
     }
   })();
@@ -1288,7 +1296,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(theme === undefined ? {} : { theme }),
     designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
-    ...(semanticsFile === undefined ? {} : { semantics: semanticsFile.tools, domains: semanticsFile.domains }),
+    ...(hostSemantics === undefined ? {} : {
+      semantics: hostSemantics.semantics,
+      ...(hostSemantics.domains === undefined ? {} : { domains: hostSemantics.domains }),
+    }),
     secrets: config.secrets ?? envSecrets(),
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)
