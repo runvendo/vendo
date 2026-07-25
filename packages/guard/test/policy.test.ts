@@ -424,6 +424,26 @@ describe("cloud policy fallback (cse lane 3)", () => {
     });
   });
 
+  it("(d) a cold cloud snapshot recovers without a restart: the fallback is re-consulted live, not pinned to its first undefined", async () => {
+    const clean = await temporaryDirectory();
+    process.chdir(clean); // no local file → cloud path
+    let reads = 0;
+    // Cold on the first read (snapshot still warming), real policy thereafter.
+    const fallback = vi.fn(() => (reads++ === 0 ? undefined : cloudBody));
+    const guard = createGuard({ store: createMemoryStore(), policy: {}, policyCloudFallback: fallback });
+    // Cold: nothing yet — but this must NOT pin empty for the process lifetime.
+    await expect(guard.directions(context())).resolves.toEqual([]);
+    // Warm: the published policy now applies (the fallback was re-consulted).
+    await expect(guard.directions(context())).resolves.toEqual(["Cloud: escalate wires."]);
+    const destructive = descriptor("destructive");
+    await expect(guard.check(call(destructive.name), destructive, context())).resolves.toEqual({
+      action: "block",
+      reason: "cloud says no",
+      decidedBy: "rule",
+    });
+    expect(fallback.mock.calls.length).toBeGreaterThan(1);
+  });
+
   it("(b) a local file wins over the cloud fallback (fallback fires strictly AFTER the file)", async () => {
     const file = await policyFile({ format: VENDO_POLICY_FORMAT, directions: ["File wins."] });
     const fallback = vi.fn(() => cloudBody);

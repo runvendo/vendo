@@ -145,16 +145,19 @@ export class PolicyResolver {
 
   async #file(): Promise<PolicyFile | undefined> {
     if (!this.#config) return undefined;
-    this.#filePromise ??= this.#resolveFileOrCloud(this.#config);
-    return this.#filePromise;
-  }
-
-  async #resolveFileOrCloud(config: PolicyConfigObject): Promise<PolicyFile | undefined> {
-    const fromFile = await readPolicyFile(config);
+    // The on-disk read is stable per process — memoize only that. Its loud
+    // posture (an explicit malformed/unreadable file throws) is preserved,
+    // rejection and all, across calls.
+    this.#filePromise ??= readPolicyFile(this.#config);
+    const fromFile = await this.#filePromise;
     if (fromFile !== undefined) return fromFile;
     // File absent (non-explicit) — cse lane 3: fall to a cloud-published
-    // policy.json body when the umbrella supplies one. Parsed/validated with
-    // the same loud posture as the file.
+    // policy.json body when the umbrella supplies one. Consulted LIVE on every
+    // call and never memoized: a cold cloud snapshot yields undefined now and
+    // the real policy once it warms (the snapshot is TTL-cached upstream, so
+    // this stays cheap). Memoizing here would pin the cold undefined for the
+    // process lifetime, so hosted policy would never apply after a cold start.
+    // Parsed/validated with the same loud posture as the file.
     const body = this.#cloudFallback?.();
     return body === undefined ? undefined : parsePolicyFileSource(body, "cloud config policy.json");
   }
