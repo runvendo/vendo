@@ -70,6 +70,7 @@ async function bootArm(arm) {
     NODE_OPTIONS: "--max-old-space-size=3072",
     PORT: String(PORT),
     VENDO_GATE_ARM: arm,
+    VENDO_BASE_URL: `http://localhost:${PORT}`,
   };
   appendFileSync(logFile, `=== boot ${host} arm ${arm} at ${new Date().toISOString()} ===\n`);
   serverProc = spawn("pnpm", ["exec", "next", "start", "-p", String(PORT)], {
