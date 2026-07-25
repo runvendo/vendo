@@ -19,6 +19,24 @@ export const vendo = createVendo({
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
   catalog: cadenceRegistry,
+  // Gate candidate config (rematch gate, 2026-07-25): three measured arms,
+  // selected at boot by VENDO_GATE_ARM — the arm order is randomized PER
+  // PROMPT (committed schedule), so per-arm commits would force a rebuild
+  // between every create; one env-switched seam keeps the diff auditable.
+  //   A (unset) = production defaults: pipeline {}
+  //   B = { endPass: true } — current contract + data-sighted verify
+  //   C = { exemplarContract: true, endPass: true }
+  // Configuration selection, not tuning. REVERTED after the run.
+  apps: {
+    pipeline: process.env.VENDO_GATE_ARM === "C"
+      ? { exemplarContract: true, endPass: true }
+      : process.env.VENDO_GATE_ARM === "B"
+        ? { endPass: true }
+        : {},
+    // Gate observability only — server-log per-stage diagnostics so the run
+    // ledger can report data-verify adoption and repair engagement per prompt.
+    onPipeline: (event) => console.log("[vendo pipeline]", JSON.stringify(event)),
+  },
   policy: { file: ".vendo/policy.json" },
   ...(judge ? { judge } : {}),
   connectors: composioApiKey
