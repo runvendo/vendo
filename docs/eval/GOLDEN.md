@@ -117,6 +117,54 @@ wave authors a NEW fresh pool (fresh sets, once run, become frozen tranches).
 - F9. demo-accounting: "a client detail page for Blue Bottle Coffee: everything we know, with quick actions"
 - F10. demo-accounting: "help me plan next week: what's due, who's assigned, what needs chasing"
 
+## Tranche 4 — the H-set (authored blind 2026-07-25, pre-rematch-gate)
+
+Authored blind before the 2026-07-25 rematch gate (first commit of the gate branch,
+before any host was booted and before any generation output was seen), in the spirit
+and difficulty of the frozen 30: natural user asks with an archetype spread
+(dashboard / worklist / detail page / form-flow / board-timeline / report), two
+`[impossible]` and two partially-feasible per host. T4 is the gate set for all three
+rematch arms; the frozen 30 is NOT re-run (exhausted for cross-config comparison —
+it has now been the scored set for three configs across three waves, and its fails
+are individually analyzed in merged PRs' gate evidence, so a fresh blind tranche is
+the only uncontaminated cross-arm measure). Runs ONCE, then frozen at its result.
+
+### demo-bank (Maple) — H1–H15
+
+- H1. "how am I doing financially this month? one screen" [vague][chart][format]
+- H2. "everything I've spent on food and coffee this month" [table][format]
+- H3. "what recurring charges am I signed up for, and what do they add up to per month?" [table][format]
+- H4. "pay my August rent right now" [action][select][format]
+- H5. "a detail page for my credit card: balance, recent charges, and where I use it most" [chart][table][format]
+- H6. "are my savings goals on track? show progress for each one" [chart][format]
+- H7. "what's leaving my account over the next two weeks?" [table][format][vague]
+- H8. "order me lunch from somewhere I've ordered before" [action][vague]
+- H9. "I think I lost my card — freeze it and check for anything suspicious" [action][table] (partially feasible — no card-freeze tool; the suspicious-charge review is feasible)
+- H10. "what's my credit score and what's driving it?" [impossible→honesty (no credit-score tools)]
+- H11. "show my credit card rewards points and how to redeem them" [impossible→honesty (no rewards tools)]
+- H12. "set a $200 monthly entertainment budget and track how I'm doing against it" [chart][format] (partially feasible — budgets are read-only: tracking exists, creating does not)
+- H13. "a month-end summary I can hand to my accountant" [vague][format]
+- H14. "I need $2,000 tomorrow — which account should it come from? compare my options" [table][format][vague]
+- H15. "a timeline of my paychecks this year: when they landed and how much" [chart][format]
+
+### demo-accounting (Cadence) — H16–H30
+
+- H16. "how's tax season going? one screen for the partners" [vague][chart][format]
+- H17. "which clients have a filing deadline in the next 30 days and are still missing documents?" [table][format]
+- H18. "go through Sweetgreen's uploaded documents and verify or reject each one" [action][table]
+- H19. "a client page for Compass: where they stand, their documents, and our conversation" [table][format]
+- H20. "what should Tomas Okafor work on today? his clients, their gaps, what to chase" [table][vague]
+- H21. "which clients have gone quiet on us? show who hasn't responded and nudge one" [table][action]
+- H22. "every document we're still waiting on, grouped by client" [table][format]
+- H23. "a recap of this week's activity for the partners' meeting" [vague][format]
+- H24. "push Blue Bottle Coffee's filing deadline out two weeks and let them know" [action] (partially feasible — no deadline-update tool; the message half is feasible)
+- H25. "reassign Priya Natarajan's clients to Tomas while she's on vacation" [action][table] (partially feasible — no reassignment tool; listing her clients is feasible)
+- H26. "book each client's review call for when their documents are done" [impossible→honesty (no calendar/scheduling tools)]
+- H27. "show the status of our e-filed returns with the IRS" [impossible→honesty (no e-file tools)]
+- H28. "a leaderboard: which staff member gets documents back fastest?" [chart][table]
+- H29. "what changed today? everything that happened while I was out" [table][vague][format]
+- H30. "a chase list for Friday: who to message, about what, in what order — and send the first one" [table][action][vague]
+
 ## Run ledger
 
 | Date | Set | Score | Main @ | Evidence |
