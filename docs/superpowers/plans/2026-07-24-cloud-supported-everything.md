@@ -74,6 +74,38 @@ The heavyweight lane; sub-PRs allowed if review size demands.
 
 ---
 
+## Evaluation
+
+Layered: cheap automated layers on every commit, judgment layers at lane
+boundaries, persona walkthroughs before anything is called done.
+
+1. Mechanical gates, every lane: build, test, typecheck, lint in both repos;
+   TDD per task; browser screenshots for any UI change.
+2. AI sync pass gets an eval rig, not just tests: corpus runs (`pnpm corpus`)
+   before and after Lane 1 with no structural regression allowed; held-out
+   repos (gate/heldout Maple and Cadence checkouts), never dev fixtures alone
+   (the v2 overfitting lesson); labeled diff scenarios (route rename, shared
+   helper change affecting many handlers, route deletion) scored on which
+   tools the pass identifies as affected; the restrictive-only rule enforced
+   and property-tested in code, including adversarial fake-model outputs.
+3. Cross-repo wire: golden fixtures committed to both repos; conformance
+   tests pin ETag/304 semantics, release immutability, published-pointer
+   integrity, and byte-identical rollback.
+4. Live done-means proofs, each recorded in a PR: two-path (file-owned +
+   cloud-owned through one interface), publish to TTL pickup without restart
+   plus next-generation pickup, live rollback, playground draft run on
+   vendo.run, keyless init and sync with no model, one API-key toolkit
+   through the dock. Local-first via Verdaccio + ~/vendo-test-repos; CI keeps
+   offline per-PR plus nightly live.
+5. Persona walkthroughs at lane completion and wave close-out, on real
+   surfaces: developer (init/sync/push/pull in a real host app, keyless then
+   keyed), PM (live console: edit, publish, rollback in a real browser), end
+   user (demo host: chat, build an app, run an automation using a vault
+   secret in a real sandbox, connect an API-key toolkit), prospect (live
+   playground, public and load-my-project). Billing edges are asserted at the
+   API level; no real charges in the loop.
+6. Two-stage code review per lane before merge; Yousef is the merge gate.
+
 ## Self-review notes
 
 Spec coverage checked section-by-section: ownership model (L3), format v3 (L1), sync engine and refine removal (L1), config service and atomic releases (L2), editor v1 scope (L4), playground (L5), effect classes (L4 labels + L7 proofs), impact check (L3 CLI + L4 dialog), secrets (L6), miss-capture fix (L6), out-of-scope list respected (no lane builds deferred items). No placeholders; lane boundaries match the spec's delivery section with Lane 6 merging the two cleanup items into one cross-repo lane.
