@@ -135,6 +135,16 @@ describe("createActions registry", () => {
       const actions = createActions({ dir: root, overrides: disable("host_b") });
       expect(await liveNames(actions)).toEqual(["host_a"]);
     });
+
+    it("accepts an async provider resolved once through the memoized loadHost", async () => {
+      const root = await tempVendo(toolsV3);
+      // Async provider — the umbrella awaits a first-request cloud fetch here.
+      const provider = vi.fn(async () => disable("host_b"));
+      const actions = createActions({ dir: root, overrides: provider });
+      expect(await liveNames(actions)).toEqual(["host_a"]);
+      await actions.descriptors(); // second call must reuse the memoized host
+      expect(provider).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("throws validation errors for malformed files", async () => {
