@@ -57,6 +57,20 @@ describe("liveModelTurn", () => {
     expect(result.error).toBe(refusal.slice("Vendo: ".length));
   });
 
+  it("strips control characters and caps length before printing a Vendo error frame (terminal hardening)", async () => {
+    const hostile = `Vendo: \u001b[2K\u0007meter refused ${"x".repeat(400)} (cloud-required)`;
+    const fetchImpl = vi.fn(async () => sseResponse([
+      `data: ${JSON.stringify({ type: "error", errorText: hostile })}\n\n`,
+      "data: [DONE]\n\n",
+    ])) as unknown as typeof fetch;
+    const result = await liveModelTurn({ base: "http://x/api/vendo", fetchImpl, env });
+    expect(result.ok).toBe(false);
+    expect(result.error).not.toContain("\u001b");
+    expect(result.error).not.toContain("\u0007");
+    expect(result.error?.startsWith("[2Kmeter refused x")).toBe(true);
+    expect(result.error?.length).toBe(300);
+  });
+
   it("keeps the generic line for a non-Vendo error frame (raw errorText never surfaces)", async () => {
     const fetchImpl = vi.fn(async () => sseResponse([
       'data: {"type":"error","errorText":"ECONNRESET at https://provider.internal/key=sk-123"}\n\n',

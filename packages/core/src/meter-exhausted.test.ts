@@ -46,6 +46,26 @@ describe("parseMeterExhausted", () => {
     expect(parseMeterExhausted(undefined)).toBeUndefined();
   });
 
+  it("re-serializes exit URLs so C0 controls can never reach a terminal (WHATWG percent-encoding)", () => {
+    const parsed = parseMeterExhausted({
+      code: "meter-exhausted",
+      meter: "ai_tokens",
+      exits: { upgrade_url: "https://a.com/\u001b[2Kevil", byo_docs_url: "https://docs.vendo.run/byo" },
+    });
+    expect(parsed?.upgradeUrl).toBe("https://a.com/%1B[2Kevil");
+    expect(formatMeterExhausted(parsed!)).not.toContain("\u001b");
+  });
+
+  it("drops oversized exit URLs entirely — the format degrades to link-less exit naming", () => {
+    const parsed = parseMeterExhausted({
+      code: "meter-exhausted",
+      meter: "ai_tokens",
+      exits: { upgrade_url: `https://console.vendo.run/${"a".repeat(300)}`, byo_docs_url: "https://docs.vendo.run/byo" },
+    });
+    expect(parsed?.upgradeUrl).toBeUndefined();
+    expect(formatMeterExhausted(parsed!)).toContain("Upgrade your plan or bring your own infrastructure (https://docs.vendo.run/byo).");
+  });
+
   it("drops garbled fields instead of rendering them (negative counts, junk urls, non-token meter)", () => {
     const parsed = parseMeterExhausted({
       code: "meter-exhausted",

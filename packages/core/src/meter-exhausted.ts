@@ -50,11 +50,19 @@ const asToken = (value: unknown): string | undefined =>
 const asCount = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 
+/** URLs are the one rendered field without a token grammar, so they get the
+ *  hardest treatment: the WHATWG-serialized href is returned (percent-encoding
+ *  C0 controls — a raw `\x1b[2K` in the body must never reach a terminal), and
+ *  anything longer than 200 chars serialized is dropped entirely (the format
+ *  degrades to link-less exit naming). */
+const MAX_URL_LENGTH = 200;
+
 const asHttpUrl = (value: unknown): string | undefined => {
   if (typeof value !== "string") return undefined;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:" ? value : undefined;
+    if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+    return url.href.length <= MAX_URL_LENGTH ? url.href : undefined;
   } catch {
     return undefined;
   }
@@ -68,9 +76,9 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 /**
  * Recognize the meter-exhausted refusal in a parsed 402 body. Tolerant to the
  * envelope: the stable code and the fields are read from the body root and
- * from its `error` member (the console's enveloped-error twin), fields at the
- * carrying level winning. Anything that isn't the shape → undefined (callers
- * keep their existing 402 mapping).
+ * from its `error` member (the console's enveloped-error twin), the `error`
+ * member winning where both carry a field. Anything that isn't the shape →
+ * undefined (callers keep their existing 402 mapping).
  */
 export function parseMeterExhausted(payload: unknown): MeterExhausted | undefined {
   const root = record(payload);
