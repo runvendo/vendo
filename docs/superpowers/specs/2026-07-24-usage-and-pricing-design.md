@@ -22,7 +22,7 @@ This spec is the source of truth for what each tier contains, what the meters ar
 
 ## 2. Tier ladder
 
-Free $0 / Pro $49/mo / Teams $499/mo / Enterprise custom. The Pro→Teams line is **organizational shape** (collaboration vs. governance), never usage: no meter allowance is tier-locked in a way that forces upgrades — a solo dev with huge usage stays on Pro and pays meters. Enterprise has two doors: organizational (compliance/control) and scale (committed usage becomes cheaper than metered — see §9).
+Free $0 / Pro $49/mo / Teams $499/mo / Enterprise custom. The Pro→Teams line is **organizational shape** (collaboration vs. governance), never usage: no meter allowance is tier-locked in a way that forces upgrades — a solo dev with huge usage stays on Pro and pays meters. Enterprise has two doors: organizational (compliance/control) and scale (committed usage becomes cheaper than metered — see §8).
 
 | | Free | Pro $49 | Teams $499 | Enterprise |
 |---|---|---|---|---|
