@@ -293,6 +293,34 @@ describe("vendo sync migrates a legacy .vendo dir on disk", () => {
     expect(JSON.stringify(overrides.briefs)).toBe(JSON.stringify(LEGACY_CAPABILITIES.briefs));
   });
 
+  it("conflicting compounds (overrides@3 AND capabilities.json): warns and leaves capabilities.json on disk", async () => {
+    const { root, out } = await temporaryHost();
+    await writeHostFile(root, "openapi.json", SPEC);
+    await writeHostFile(root, ".vendo/capabilities.json", `${JSON.stringify(LEGACY_CAPABILITIES, null, 2)}\n`);
+    const authoredCompound = {
+      name: "host_other_flow",
+      description: "Different authored compound",
+      inputSchema: { type: "object" },
+      risk: "read",
+      binding: { kind: "compound", steps: [{ id: "a", tool: "host_listInvoices" }] },
+    };
+    await writeHostFile(root, ".vendo/overrides.json", `${JSON.stringify({
+      format: "vendo/overrides@3",
+      tools: {},
+      compounds: [authoredCompound],
+    }, null, 2)}\n`);
+
+    const report = await vendoSync({ root, out });
+    // entries unique to capabilities.json were NOT folded — so the file must
+    // survive for review instead of being deleted (no silent data loss).
+    expect(report.warnings.some((warning) => warning.includes("both carry compounds/briefs"))).toBe(true);
+    expect(await exists(path.join(out, "capabilities.json"))).toBe(true);
+    const overrides = await readJson(path.join(out, "overrides.json"));
+    expect(overrides.compounds.map((tool: any) => tool.name)).toEqual(["host_other_flow"]);
+    // the briefs slot had no conflict, so it folded in
+    expect(JSON.stringify(overrides.briefs)).toBe(JSON.stringify(LEGACY_CAPABILITIES.briefs));
+  });
+
   it("half-migrated dir (semantics.json + tools@3): the stale file is deleted without clobbering v3 semantics", async () => {
     const { root, out } = await temporaryHost();
     await writeHostFile(root, "openapi.json", SPEC);

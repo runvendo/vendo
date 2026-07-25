@@ -291,18 +291,23 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
 
   // Authored layer: an already-v3 overrides.json wins; a retired
   // capabilities.json folds its compounds/briefs into whichever is current.
-  let overrides = overridesV3 ?? (overridesV1 !== null && overridesV1 !== undefined ? migrated.overrides : null);
-  if (capabilities !== null) {
-    const base: OverridesFileV3 = overrides ?? { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} };
+  // The legacy fold already ingested capabilities.json (compounds/briefs) —
+  // only an ALREADY-v3 overrides.json needs the explicit fold-if-absent, and
+  // only there can a genuine conflict exist (both files carrying entries).
+  let overrides = overridesV3
+    ?? (overridesV1 !== undefined || capabilities !== null ? migrated.overrides : null);
+  let capabilitiesConflict = false;
+  if (capabilities !== null && overridesV3 !== undefined) {
     overrides = {
-      ...base,
-      ...(base.compounds === undefined && capabilities.tools.length > 0 ? { compounds: capabilities.tools } : {}),
-      ...(base.briefs === undefined && (capabilities.briefs?.length ?? 0) > 0 ? { briefs: capabilities.briefs } : {}),
+      ...overridesV3,
+      ...(overridesV3.compounds === undefined && capabilities.tools.length > 0 ? { compounds: capabilities.tools } : {}),
+      ...(overridesV3.briefs === undefined && (capabilities.briefs?.length ?? 0) > 0 ? { briefs: capabilities.briefs } : {}),
     };
-    if ((base.compounds !== undefined && capabilities.tools.length > 0)
-      || (base.briefs !== undefined && (capabilities.briefs?.length ?? 0) > 0)) {
+    capabilitiesConflict = (overridesV3.compounds !== undefined && capabilities.tools.length > 0)
+      || (overridesV3.briefs !== undefined && (capabilities.briefs?.length ?? 0) > 0);
+    if (capabilitiesConflict) {
       warnings.push(
-        `${capabilitiesPath} and overrides.json both carry compounds/briefs — overrides.json wins; entries unique to capabilities.json were not folded, review them before deleting the file`,
+        `${capabilitiesPath} and overrides.json both carry compounds/briefs — overrides.json wins; entries unique to capabilities.json were not folded, so the file was left on disk for review (delete it yourself once reconciled)`,
       );
     }
   }
@@ -326,7 +331,9 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
   if (legacyPieces.length === 0) return state;
 
   const deletions = [
-    ...(capabilities !== null ? [capabilitiesPath] : []),
+    // A conflicted capabilities.json (entries unique to it were not folded)
+    // stays on disk for review — deletion would silently drop authored work.
+    ...(capabilities !== null && !capabilitiesConflict ? [capabilitiesPath] : []),
     // A parsed or stale semantics.json is retired — its content lives in
     // tools.json now (a malformed one stayed on disk, warned above).
     ...(semanticsRetires ? [semanticsPath] : []),
