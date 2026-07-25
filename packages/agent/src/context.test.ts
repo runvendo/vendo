@@ -132,4 +132,41 @@ describe("context engineering", () => {
     expect(model.doStreamCalls).toEqual([]);
     expect(model.doGenerateCalls).toEqual([]);
   });
+
+  it("ensures historyWindow slicing starts on a user message boundary", async () => {
+    const model = scriptedModel([
+      textTurn("Response 1.", "t1"),
+      textTurn("Response 2.", "t2"),
+      textTurn("Response 3.", "t3"),
+    ]);
+    const guard = testGuard({});
+    const agent = createAgent({
+      model,
+      tools: boundRegistry({}, guard),
+      guard,
+      context: { historyWindow: 2 }, // Slices 2 messages, which without alignment would pick an assistant message
+    });
+
+    const threadId = "thr_window_user_align";
+    const res1 = await agent.stream({
+      threadId,
+      message: { id: "u1", role: "user", parts: [{ type: "text", text: "Turn 1" }] },
+      ctx: ctx(),
+    });
+    await readSse(res1);
+
+    const res2 = await agent.stream({
+      threadId,
+      message: { id: "u2", role: "user", parts: [{ type: "text", text: "Turn 2" }] },
+      ctx: ctx(),
+    });
+    await readSse(res2);
+
+    // In turn 2, prompts should start with a user message, not an orphan assistant message
+    const lastPrompt = model.prompts[model.prompts.length - 1];
+    expect(lastPrompt).toBeDefined();
+    // Non-system messages must start with role "user"
+    const nonSystemMessages = (lastPrompt as Array<{ role: string }>).filter((m) => m.role !== "system");
+    expect(nonSystemMessages[0]?.role).toBe("user");
+  });
 });

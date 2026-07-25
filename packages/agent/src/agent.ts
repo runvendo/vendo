@@ -482,10 +482,14 @@ export function createAgent(config: AgentConfig): VendoAgent {
           toolSearch?.attach(tools);
           // History windowing: bound what is re-sent per turn to the last N whole messages.
           // Slicing whole UIMessages keeps each turn's tool-call/result pairing intact.
+          // History must start with a user message so provider model message arrays are valid.
           const window = config.context?.historyWindow;
-          const history = window !== undefined && thread.messages.length > window
-            ? thread.messages.slice(-window)
-            : thread.messages;
+          let history = thread.messages;
+          if (window !== undefined && thread.messages.length > window) {
+            const sliced = thread.messages.slice(-window);
+            const firstUserIndex = sliced.findIndex((msg) => msg.role === "user");
+            history = firstUserIndex !== -1 ? sliced.slice(firstUserIndex) : sliced;
+          }
           const converted = (await convertToModelMessages(providerHistory(history)))
             .filter((message) => message.content.length > 0);
           // Cache the stable history prefix (everything but the final message) alongside the
