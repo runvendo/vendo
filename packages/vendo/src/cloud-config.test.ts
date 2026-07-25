@@ -128,6 +128,24 @@ describe("cloudConfig.fetch", () => {
     }
   });
 
+  it("a 304 with a cold cache fails loud as a plain Error (never an empty surface)", async () => {
+    // We only send If-None-Match once we hold a validator, so a 304 with
+    // nothing cached is the service misbehaving — surface it, don't silently
+    // serve an empty config.
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 304, headers: { etag: ETAG } }));
+    const client = cloudConfig({
+      apiKey: "vnd_key",
+      baseUrl: "https://cloud.test",
+      fetch: fetchImpl as unknown as typeof fetch,
+    });
+    const failure = await client.fetch().then(
+      () => { throw new Error("expected fetch to reject"); },
+      (error: unknown) => error as { code?: string; message: string },
+    );
+    expect(failure.message).toMatch(/304|revalidate/i);
+    expect(failure.code).toBeUndefined();
+  });
+
   it("a console 5xx is a plain Error, never a caller validation error", async () => {
     const fetchImpl = vi.fn(async () => new Response("bad gateway", { status: 502 }));
     const client = cloudConfig({

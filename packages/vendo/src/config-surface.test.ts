@@ -15,7 +15,7 @@ import {
 function stubCloud(config: CloudConfigResult["config"], version: string | null = "rel_1"): CloudConfig {
   return {
     fetch: async () => ({ version, config }),
-    snapshot: () => (config === null && version === null ? { version, config } : { version, config }),
+    snapshot: () => ({ version, config }),
   };
 }
 
