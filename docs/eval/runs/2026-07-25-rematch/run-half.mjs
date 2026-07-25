@@ -19,7 +19,7 @@ if (!["maple", "cadence"].includes(host) || !repoDir || !runDir) {
   process.exit(2);
 }
 
-const PORT = host === "maple" ? 3000 : 3200;
+const PORT = host === "maple" ? 3100 : 3300; // 3000/3200 occupied by another session on this machine
 const APP_DIR = join(repoDir, "apps", host === "maple" ? "demo-bank" : "demo-accounting");
 const DRIVER = join(runDir, "driver.mjs");
 const TSV = join(runDir, `results-${host}.tsv`);

@@ -9,8 +9,8 @@
  *   node driver.mjs create <host> <label> <prompt>
  *   node driver.mjs open <host> <appId> <label>
  *   node driver.mjs getjson <host> <path> [label]
- * hosts: maple (http://localhost:3000, /vendo/apps)
- *        cadence (http://localhost:3200, /vendo/workspace apps tab)
+ * hosts: maple (http://localhost:3100, /vendo/apps)
+ *        cadence (http://localhost:3300, /vendo/workspace apps tab)
  *
  * Evidence per create: <label>.png (full page, post-settle), <label>.aria.yml
  * (accessibility snapshot for value-level judging), timing (Create click →
@@ -41,8 +41,8 @@ mkdirSync(SHOTS, { recursive: true });
 mkdirSync(SCRATCH, { recursive: true });
 
 const HOSTS = {
-  maple: { base: "http://localhost:3000", appsPath: "/vendo/apps" },
-  cadence: { base: "http://localhost:3200", appsPath: "/vendo/workspace" },
+  maple: { base: "http://localhost:3100", appsPath: "/vendo/apps" },
+  cadence: { base: "http://localhost:3300", appsPath: "/vendo/workspace" },
 };
 
 const [, , command, host, ...rest] = process.argv;
