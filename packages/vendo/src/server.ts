@@ -1005,14 +1005,39 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // cse lane 3 — the Cloud hosted-config adapter, selected at THIS composition
   // seam from VENDO_API_KEY (adapter rule: the surfaces themselves never read
   // the key; cloudKeyOptions lives only here). Constructing it is PURE (closures
-  // only, no fetch). It is READ only from lazy call sites — the per-generation
-  // design-rules thunk via selectConfigSurface — never at compose, so createVendo
-  // stays I/O-free at module init. The snapshot warms itself on its first
-  // (cold) read and revalidates in the background thereafter, so a host that
-  // never resolves design-rules makes no config call at all.
+  // only, no fetch). It is READ only from LAZY call sites — the block provider
+  // seams (design-rules/theme/semantics/domains thunks, the brief resolver, the
+  // guard policy fallback, the actions overrides injection) — never at compose,
+  // so createVendo stays I/O-free at module init (portability-gate). The
+  // snapshot warms on its first (cold) read and revalidates in the background,
+  // so a host that resolves no cloud surface makes no config call at all.
   const configCloudOptions = cloudKeyOptions();
   const configCloud: CloudConfig | undefined =
     configCloudOptions === undefined ? undefined : cloudConfig(configCloudOptions);
+  // The .vendo surface reader, bound to the pinned compose-time root so the
+  // LATER lazy reads (per-generation, per-turn) see the same project every
+  // other .vendo input came from (a host that chdirs mid-run).
+  const surfaceRoot = dotVendoRoot();
+  const readSurfaceFile = (name: ConfigSurfaceName): string | undefined =>
+    dotVendoFile(name, surfaceRoot);
+  // Memoize the first DEFINED resolution of a BOOT-ONCE surface (theme,
+  // overrides): the surface locks to its first resolved value and never
+  // hot-reloads, yet a cold cloud snapshot (warming in the background) still
+  // lets a later resolution lock the value in. LIVE surfaces
+  // (design-rules/brief) skip this and re-resolve on every read.
+  const memoizeOnce = <T>(resolve: () => T | undefined): (() => T | undefined) => {
+    let cached: T | undefined;
+    let locked = false;
+    return () => {
+      if (locked) return cached;
+      const value = resolve();
+      if (value !== undefined) {
+        cached = value;
+        locked = true;
+      }
+      return value;
+    };
+  };
   // Construction stays PURE — no I/O, no timers — because the common edge
   // wiring calls createVendo() at module init, where Workers forbids both
   // (Mohamed's field report: "Disallowed operation called within global
@@ -1037,6 +1062,17 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // hook in guard means chat/SSE and the MCP door reach the same decision.
     resolveRisk: (call, _descriptor, ctx) => resolveAppToolRisk?.(call, ctx),
     ...(config.policy === undefined ? {} : { policy: config.policy }),
+    // cse lane 3 — a cloud policy.json body, consulted by the resolver STRICTLY
+    // AFTER the local file and only within its existing opt-in path (decision
+    // 3: no change for hosts that don't configure policy). Returns the cloud
+    // value only when the surface is cloud-owned; a local file is handled by
+    // the guard's own file read.
+    ...(configCloud === undefined ? {} : {
+      policyCloudFallback: (): string | undefined => {
+        const resolved = selectConfigSurface("policy.json", { readFile: readSurfaceFile, cloud: configCloud });
+        return resolved.owner === "cloud" ? resolved.value : undefined;
+      },
+    }),
     ...(config.judge === undefined ? {} : { judge: config.judge }),
   });
   let presentCredentialsWarningEmitted = false;
@@ -1106,6 +1142,17 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
   // defaults the Cloud tools connector for a wholly unset slot.
   const resolvedConnectors = selectConnectors(config.connectors);
+  // cse lane 3 NOTE — cloud overrides do NOT feed the actions registry's tool
+  // ENABLEMENT here. The actions block accepts an `overrides` injection
+  // (additive, tested), but wiring it from cloud requires the resolution to run
+  // on first REQUEST; the registry's first `loadHost` is driven at COMPOSE by
+  // the eager capability-miss surface (`missSurface = actions.descriptors()`
+  // below) and memoized, so injecting a cloud read there would fetch at module
+  // init (Workers global-scope violation) or lock an empty result before the
+  // snapshot warms. Making it correct means deferring that eager compose-time
+  // descriptors() call — an existing-behavior change beyond this seam. Reported
+  // to the coordinator. Cloud overrides DO feed app-generation semantics/domains
+  // (hostSemanticsProvider, resolved lazily per generation) below.
   const actionsConfig: {
     dir: string;
     connectors?: Connector[];
@@ -1174,47 +1221,49 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // The .vendo surface reader, bound to the pinned compose-time root so the
   // LATER per-generation design-rules read sees the same project every other
   // .vendo input came from (a host that chdirs mid-run).
-  const surfaceRoot = dotVendoRoot();
-  const readSurfaceFile = (name: ConfigSurfaceName): string | undefined =>
-    dotVendoFile(name, surfaceRoot);
-  // Theme surface (cse lane 3): programmatic override wins over the local file.
-  // A boot-once STRUCTURAL surface — resolved once here (it feeds app
-  // generation and the system-prompt summary), so it is NOT read from the
-  // cloud snapshot: doing so would fetch at module init (compose-purity). Cloud
-  // resolution of the eager surfaces is deferred; see the lane-3 report.
+  // Theme surface (cse lane 3, boot-once/next-load STRUCTURAL): explicit config
+  // wins; else file → cloud. The compose-time `theme` value (file/explicit only,
+  // no cloud) still feeds the wire and the system-prompt catalog summary — they
+  // read a value at compose. The cloud-aware boot-once PROVIDER feeds app
+  // GENERATION through the apps thunk seam so a console theme publish is honored
+  // on the next-load lock without a compose-time fetch.
   const theme = config.theme ?? parseVendoTheme(readSurfaceFile("theme.json"));
+  const themeProvider: () => VendoTheme | undefined = config.theme !== undefined
+    ? () => config.theme
+    : memoizeOnce(() => parseVendoTheme(selectConfigSurface("theme.json", { readFile: readSurfaceFile, cloud: configCloud }).value));
   // App design rules (spec 2026-07-20 + cse lane 3): explicit config wins;
   // otherwise a PER-GENERATION resolution — local file → cloud published value
   // → unset — so both file edits and a console publish apply to the next
-  // create/edit without a restart. This is the one surface consumed through a
-  // lazy thunk, so it can read the cloud stale-while-revalidate snapshot
-  // without violating createVendo's compose-purity.
+  // create/edit without a restart (LIVE, re-resolved every generation).
   const configDesignRules = config.apps?.designRules?.trim();
   const designRules = configDesignRules
     ? configDesignRules
     : () => selectConfigSurface("design-rules.md", { readFile: readSurfaceFile, cloud: configCloud }).value;
   const pinBaselines = dotVendoPinBaselines();
-  // W3, format v3 (cse lane 1) — field semantics + domain manifest now come
-  // from the merged .vendo pair (generated tools.json overlaid by the authored
-  // overrides.json; a legacy dir's semantics.json is ingested in-memory until
-  // `vendo sync` rewrites it). Malformed → loud + absent, same stance as
-  // catalog.json.
-  const hostSemantics = (() => {
-    const parsed = (name: string): unknown => {
-      const raw = dotVendoFile(name);
+  // W3, format v3 (cse lane 1) + cse lane 3 — field semantics + domain manifest
+  // from the merged .vendo pair (generated tools.json overlaid by overrides.json;
+  // a legacy dir's semantics.json ingested in-memory until `vendo sync`). The
+  // OVERRIDES surface resolves file → cloud; tools.json/semantics.json stay
+  // local generation inputs (not cloud surfaces). Memoized BOOT-ONCE and read
+  // through provider thunks by the apps block, so a cold snapshot never blocks
+  // compose. Malformed → loud + absent, same stance as catalog.json.
+  const hostSemanticsProvider = memoizeOnce(() => {
+    const parsedFile = (name: string): unknown => {
+      const raw = dotVendoFile(name, surfaceRoot);
       return raw === undefined ? undefined : JSON.parse(raw) as unknown;
     };
+    const overridesRaw = selectConfigSurface("overrides.json", { readFile: readSurfaceFile, cloud: configCloud }).value;
     try {
       return mergedSemanticsAndDomains({
-        tools: parsed("tools.json"),
-        overrides: parsed("overrides.json"),
-        semantics: parsed("semantics.json"),
+        tools: parsedFile("tools.json"),
+        overrides: overridesRaw === undefined ? undefined : JSON.parse(overridesRaw) as unknown,
+        semantics: parsedFile("semantics.json"),
       });
     } catch (error) {
       console.error(`[vendo] Failed to load .vendo tool semantics: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate .vendo/tools.json.`);
       return undefined;
     }
-  })();
+  });
   const catalog = mergeRuntimeCatalog(
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
     normalizeCatalogConfig(config.catalog),
@@ -1342,13 +1391,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return automationsForArming.enable(appId, armCtx);
     },
     ...(config.paint === undefined ? {} : { paint: config.paint }),
-    ...(theme === undefined ? {} : { theme }),
+    // cse lane 3 — theme/semantics/domains flow as PROVIDER thunks resolved per
+    // generation (boot-once via memoizeOnce), so a cloud-owned surface applies
+    // without a compose-time fetch. Each returns undefined when unset, which the
+    // engine treats exactly as an omitted value.
+    theme: themeProvider,
     designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
-    ...(hostSemantics === undefined ? {} : {
-      semantics: hostSemantics.semantics,
-      ...(hostSemantics.domains === undefined ? {} : { domains: hostSemantics.domains }),
-    }),
+    semantics: () => hostSemanticsProvider()?.semantics,
+    domains: () => hostSemanticsProvider()?.domains,
     secrets: config.secrets ?? envSecrets(),
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)
@@ -1375,15 +1426,20 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // AGENT-1/2 — 03 §3: the host product brief (init writes .vendo/brief.md)
   // and the catalog+theme summary feed the system prompt; prompt.ts places
   // them (brief = Product section; summary only where trees render).
-  // cse lane 3: a programmatic `brief` wins over the local file. It is baked
-  // into the system prompt once here, so — like theme — it is boot-once and
-  // does NOT read the cloud snapshot (compose-purity); making brief re-resolve
-  // live would need the agent's system prompt to accept a thunk. See report.
-  const brief = selectConfigSurface("brief.md", { explicit: config.brief, readFile: readSurfaceFile }).value?.trim();
+  // cse lane 3 — brief is a prompt-family surface, so it resolves LIVE: with a
+  // key present, product is a RESOLVER (file → cloud) re-read per turn by
+  // assembleSystemPrompt, so a console publish applies to the next turn with no
+  // restart. Without a key, product is the compose-time file/explicit value (no
+  // snapshot read → no I/O at compose). A programmatic `brief` wins over the
+  // file either way.
+  const composeBrief = selectConfigSurface("brief.md", { explicit: config.brief, readFile: readSurfaceFile }).value?.trim() || undefined;
+  const product: string | (() => string | undefined) | undefined = configCloud === undefined
+    ? composeBrief
+    : () => selectConfigSurface("brief.md", { explicit: config.brief, readFile: readSurfaceFile, cloud: configCloud }).value?.trim() || undefined;
   const promptCatalog = catalogThemeSummary(catalog, theme);
-  const system = brief || promptCatalog !== undefined
+  const system = product !== undefined || promptCatalog !== undefined
     ? {
-        ...(brief ? { product: brief } : {}),
+        ...(product === undefined ? {} : { product }),
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
       }
     : undefined;

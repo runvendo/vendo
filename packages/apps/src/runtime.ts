@@ -1077,8 +1077,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // accepted loading state — no v1 cover machinery).
         await requestAppWithBootRetry(machine, { method: "GET", path: "/" }).catch(() => undefined);
         const url = new URL(await machine.url());
-        if (config.theme !== undefined) {
-          url.searchParams.set("vendoTheme", JSON.stringify(config.theme));
+        // Resolve the theme provider (cse lane 3) before serializing it into the
+        // served-app URL — config.theme may now be a value OR a lazy provider.
+        const resolvedTheme = resolveProvider(config.theme);
+        if (resolvedTheme !== undefined) {
+          url.searchParams.set("vendoTheme", JSON.stringify(resolvedTheme));
         }
         return url.toString();
       },
