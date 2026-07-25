@@ -75,6 +75,7 @@ The "meters aren't real" fix. Ship dark first, then flip.
 
 - Org-level enterprise flag: never hard-stop (already honored in Phase 2), committed rate table, commit ledger.
 - Quarterly true-up export (usage beyond commit at committed rates) suitable for manual invoicing — no automation beyond the export in v1.
+- SAML SSO configuration gates on the enterprise flag (spec change: SSO left Teams), alongside SCIM when it exists.
 - Done when: the design-partner org can be flagged, draws down a commit, and the true-up export matches fixtures.
 
 ## Sequencing & dependencies
