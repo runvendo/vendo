@@ -44,10 +44,10 @@ All allowance and overage numbers are structural placeholders **pending COGS val
 A meter exists only where Cloud carries real marginal COGS *and* a BYO escape hatch exists. Everything else is tier contents, not usage. **Overage rates are identical on Pro and Teams** — one public rate per meter; only volume graduation (§6) lowers it.
 
 1. **Managed AI (tokens)** — provider passthrough +15%, dual-metered at the gateway; margin graduates with spend volume (§6), never by tier. BYO model key → $0. Public rate sheet; "passthrough" must stay verifiable. Never called a "gateway" in marketing — it is *managed inference* (gateways charge 0%; workflow-embedded resale sustains 10–20%: Zed +10%, Cursor ~+20%).
-   **Model exposure & router (locked):** two rails on the rate sheet.
-   - **`vendo/auto`** — the default `init` wiring: a fixed, published per-token rate we set; Vendo routes/fails-over/upgrades models underneath freely. Launches priced at Sonnet-passthrough+15% equivalence (no customer-visible price event when the router ships); routing skill grows the margin silently. A future Vendo-trained model is just another routing target — zero pricing change. One alias at launch; `vendo/fast`/`vendo/smart` tiers only if demanded.
-   - **Named models** (`claude-sonnet-5`, …) — passthrough +15%, **never routed, downgraded, or failed-over without explicit opt-in**. Naming = getting exactly that model; this preserves the verifiable-passthrough claim and is the trust valve against router suspicion (the Cursor-Auto lesson).
-   - Principles: sell intent tiers, not model names, as the default surface (names churn; `vendo/auto` never does); the rate sheet is additive (new aliases/models = new rows; the token unit is never redefined); credits and enforcement are dollar-denominated and unchanged by any of this; Auto exists only on the managed path — routing/failover/one-bill is the feature differentiator of managed inference vs BYO.
+   **Model exposure & router (locked; family per `2026-07-22-vendo-models-demo-refresh-design.md` on demo-2):** two rails on the rate sheet.
+   - **The vendo model family** — `vendo` (flagship agent), `vendo-paint` (instant first-frame), `vendo-judge` (guard rulings), `vendo-extract` (init/sync extraction) — job-named hosted models, the Cloud-rung slot defaults. Each is its own rate-sheet row with a **fixed published per-token price we set**, launching at its current underlying model's passthrough+15% equivalence (flagship ≈ Sonnet-class; paint/judge ≈ fast-tier and priced visibly cheap — judge is called constantly and its cheapness is a selling point). The gateway maps names to concrete models server-side; **retuning the mapping never changes a published rate mid-term** (change policy §7 applies) — routing skill grows margin silently, and a future Vendo-trained model is just a routing target, zero pricing event. New family members = new rows; the token unit is never redefined.
+   - **Literal provider models** (`claude-sonnet-5`, … passed verbatim through the gateway) — passthrough +15%, **never routed, downgraded, or failed-over**. Naming = getting exactly that model; this preserves the verifiable-passthrough claim and is the trust valve against router suspicion (the Cursor-Auto lesson).
+   - Principles: the vendo-* names are the default surface (job names never churn; provider names churn quarterly); the rate sheet is additive; credits and enforcement are dollar-denominated and unchanged by any of this; the family exists only on the managed path (BYO rungs never see vendo-* names, per the family spec) — routing/failover/retuning/one-bill is the feature differentiator of managed inference vs BYO.
 
 2. **Sandbox minutes** — includes app-build compute. BYO E2B/own sandbox → $0.
 3. **Storage GB-month (files & app data)** — uploaded files/attachments, app-owned data records, app documents + versions in the hosted store. BYO Postgres → $0.
@@ -117,7 +117,7 @@ Meter units are never redefined. Rate or credit changes: existing subscribers ke
 ## 9. Deferred (explicitly not in v1)
 
 - Marketplace/registry monetization; multi-region self-serve; per-region pricing.
-- Additional `vendo/*` model tiers beyond the single `vendo/auto` alias.
+- Additional vendo-* family members beyond the four defined (each would be a new rate-sheet row).
 
 ## 10. Open items before the pricing page ships
 
