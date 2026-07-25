@@ -1,6 +1,5 @@
 /**
- * v4 wave — the smoke-render gate (spec §The fixes: "execute each island
- * headless before ship").
+ * The smoke-render gate: execute each island headless, once, before ship.
  *
  * Final gate 2026-07-21: the blank-island class is dead, but two crash forms
  * still shipped — C11 (React error #310: useState inside a client .map, the
@@ -35,7 +34,7 @@ import {
   ISLAND_AMBIENT_REACT_NAMES,
   type ShapeType,
 } from "@vendoai/core";
-import type { HostToolInfo } from "./engine.js";
+import type { HostToolInfo } from "../engine.js";
 
 export interface SmokeRenderOptions {
   /** name → island TSX source (post-prepare, canonical). */
@@ -228,7 +227,7 @@ const workerModules = (async (): Promise<WorkerModules | undefined> => {
   }
 })();
 
-/** esbuild, lazily and bundler-safely (same pattern + rationale as engine.ts):
+/** esbuild, lazily and bundler-safely (same pattern + rationale as islands.ts):
  *  routed through a mutable binding so NO bundler statically resolves the
  *  optional compiler — Wrangler ignores the webpack-dialect comments and would
  *  inline esbuild's Node-only lib/main.js into Worker bundles (the portability

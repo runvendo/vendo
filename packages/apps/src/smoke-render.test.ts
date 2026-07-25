@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedCatalog } from "@vendoai/core";
-import { sampleFromShape, smokeRenderIslands } from "./smoke-render.js";
+import { sampleFromShape, smokeRenderIslands } from "./generation/validation/smoke-render.js";
 import { modelEngine } from "./engine.js";
 import { scriptedLanguageModel, type ScriptedModelCall } from "./testing/index.js";
 

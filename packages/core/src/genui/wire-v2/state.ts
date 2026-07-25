@@ -103,4 +103,4 @@ export const mergeIssues = (state: CompileState, issues: readonly WireIssue[]): 
  *  canonicalJson throws on lone surrogates, so ill-formed UTF-16 must never
  *  enter props). Re-exported for the markup layer (attributes.ts, compile.ts,
  *  limits.ts) and the expression layer (expression.ts). */
-export { isWellFormedUtf16 } from "../jcs.js";
+export { isWellFormedUtf16 } from "../../jcs.js";
