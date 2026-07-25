@@ -66,6 +66,9 @@ const LAYERS = {
   // the door (10-mcp): depends on core only; the ui/tree shim arrives as a
   // prebuilt committed artifact (built by packages/ui/scripts), never an import
   "@vendoai/mcp": ["@vendoai/core"],
+  // the product knowledge base (knowledge design v2): engines + ingestion behind
+  // core's KnowledgeAdapter contract; core-only, like the other engine blocks
+  "@vendoai/knowledge": ["@vendoai/core"],
   "@vendoai/automations": ["@vendoai/core", "@vendoai/apps"],
   // the canonical umbrella is the only package allowed to depend on every block
   "@vendoai/vendo": "*",
