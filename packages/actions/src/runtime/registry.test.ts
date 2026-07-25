@@ -18,7 +18,12 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
-import type { ExtractedTool } from "../formats.js";
+import {
+  VENDO_OVERRIDES_FORMAT_V3,
+  VENDO_TOOLS_FORMAT_V3,
+  type ExtractedTool,
+  type ExtractedToolV3,
+} from "../formats.js";
 import { createActions, type ActionsRunContext } from "./registry.js";
 
 const ctx: RunContext = {
@@ -36,7 +41,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-function routeTool(name: string, extras: Partial<ExtractedTool> = {}): ExtractedTool {
+function routeTool(name: string, extras: Partial<ExtractedToolV3> = {}): ExtractedTool {
   return {
     name,
     description: name,
@@ -949,5 +954,127 @@ describe("zero-live-host-tools boot warning", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("format v3 host files (cse lane 1)", () => {
+  const compound = (name: string, stepTool: string, extras: Record<string, unknown> = {}): Record<string, unknown> => ({
+    name,
+    description: `${name} flow`,
+    inputSchema: { type: "object" },
+    risk: "read",
+    binding: { kind: "compound", steps: [{ id: "a", tool: stepTool }] },
+    ...extras,
+  });
+
+  it("loads the v3 pair: overrides beat tools, compounds and briefs come from overrides.json", async () => {
+    const root = await tempVendo(
+      {
+        format: VENDO_TOOLS_FORMAT_V3,
+        watermark: "3d1f2ab90c7e5f6a8b4d0e1c2a3b4c5d6e7f8091",
+        domains: { has: ["things"], hasNot: [] },
+        tools: [routeTool("host_probe", {
+          audience: "end-user",
+          semantics: { "data.amountCents": { kind: "money", unit: "cents" } },
+          srcHash: "sha256:1",
+        })],
+      },
+      {
+        format: VENDO_OVERRIDES_FORMAT_V3,
+        tools: { host_probe: { description: "Overridden host", risk: "write" } },
+        compounds: [compound("host_probe_flow", "host_probe", { risk: "write" })],
+        briefs: [{ name: "probe", text: "call host_probe first", tools: ["host_probe"] }],
+      },
+    );
+    const actions = createActions({ dir: root });
+    await expect(actions.descriptors()).resolves.toEqual([
+      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "write" },
+      { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "write" },
+    ]);
+    await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first", tools: ["host_probe"] }]);
+  });
+
+  it("keeps the overrides file strict: a typo fails loudly at load", async () => {
+    const root = await tempVendo(
+      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
+      { format: VENDO_OVERRIDES_FORMAT_V3, tools: {}, compunds: [] },
+    );
+    await expect(createActions({ dir: root }).descriptors()).rejects.toMatchObject({
+      name: "VendoError",
+      code: "validation",
+      message: expect.stringContaining("overrides.json"),
+    });
+  });
+
+  it("warns loudly on orphaned override entries, compound steps, and brief refs — never throws", async () => {
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
+    try {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
+        {
+          format: VENDO_OVERRIDES_FORMAT_V3,
+          tools: {
+            host_probe: { description: "Overridden host" },
+            host_ghost: { disabled: true },
+            ext_write: { risk: "read" },
+          },
+          compounds: [compound("host_probe_flow", "host_typo")],
+          briefs: [{ name: "probe", text: "call host_probe first", tools: ["host_probe", "host_gone"] }],
+        },
+      );
+      const actions = createActions({
+        dir: root,
+        connectors: [connector([{ name: "ext_write", description: "Write", inputSchema: {}, risk: "write" }])],
+      });
+      await expect(actions.descriptors()).resolves.toBeDefined();
+      const orphanLine = warned.find((line) => line.includes("orphan"));
+      expect(orphanLine).toContain("host_ghost");
+      expect(orphanLine).toContain("host_typo");
+      expect(orphanLine).toContain("host_gone");
+      // Overrides on connector tools are not orphans — they merged above.
+      expect(orphanLine).not.toContain("ext_write");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("migrates a legacy v1 dir in-memory and warns once advising `vendo sync`", async () => {
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
+    try {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_probe")] },
+        { format: VENDO_OVERRIDES_FORMAT, tools: { host_probe: { description: "Overridden host" } } },
+      );
+      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
+        format: "vendo/capabilities@1",
+        tools: [compound("host_probe_flow", "host_probe")],
+        briefs: [{ name: "probe", text: "call host_probe first" }],
+      }));
+      const actions = createActions({ dir: root });
+      await expect(actions.descriptors()).resolves.toEqual([
+        { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "read" },
+        { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "read" },
+      ]);
+      await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first" }]);
+      await actions.descriptors();
+      expect(warned.filter((line) => line.includes("vendo sync"))).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("a v3 dir never reads the retired capabilities.json", async () => {
+    const root = await tempVendo(
+      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
+      { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} },
+    );
+    // Malformed on purpose: reading it would throw, so resolving proves it is ignored.
+    await writeFile(join(root, ".vendo", "capabilities.json"), "{ not json");
+    const actions = createActions({ dir: root });
+    await expect(actions.descriptors()).resolves.toEqual([
+      { name: "host_probe", description: "host_probe", inputSchema: { type: "object" }, risk: "read" },
+    ]);
   });
 });
