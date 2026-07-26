@@ -32,7 +32,8 @@ export function pickGenerationBeat(beats: readonly GateBeat[]): GateBeat {
  * build+deploy takes ~5-10 minutes after `up --detach`, during which the
  * service domain answers 404 "Application not found" — anything but a clean
  * 200 means not ready (a <500 check once let the gate run against a
- * still-building service). Default budget is 15 minutes. */
+ * still-building service). Default budget is 20 minutes (a live monorepo
+ * build measured 10-15). */
 export async function waitForDeployedReady(url: string, options: {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -40,7 +41,7 @@ export async function waitForDeployedReady(url: string, options: {
   onPoll?: (status: string) => void;
 } = {}): Promise<void> {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const timeoutMs = options.timeoutMs ?? 15 * 60 * 1000;
+  const timeoutMs = options.timeoutMs ?? 20 * 60 * 1000;
   const pollMs = options.pollMs ?? 10_000;
   const deadline = Date.now() + timeoutMs;
   let last = "";

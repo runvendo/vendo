@@ -145,6 +145,8 @@ export interface PipelineIo {
   /** Pipeline-wide wall-clock hard cap (default 2h). Past the deadline no
    * further stage starts: the run PARKS with named gaps and never deploys. */
   capMs?: number;
+  /** Pause between deploy retries (default 30s; tests shrink it). */
+  deployRetryWaitMs?: number;
 }
 
 /** The contract's hard cap: a run that hasn't shipped in 2 hours parks. */
@@ -185,20 +187,22 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
   const plannedStages = ["validate", "create", "install", "research", "rewrite", "judge", "capture", "deploy", "final-gate"];
   const stageCounts = new Map<string, number>();
 
+  const parkAtCap = (context: string): DemoParkedError => {
+    const done = new Set(timings.map((row) => row.stage.split(":")[0]?.split("#")[0]));
+    const remaining = plannedStages.filter((planned) => !done.has(planned));
+    const gaps = `completed: ${[...done].join(", ") || "(none)"}; not run: ${remaining.join(", ")}`;
+    const reportPath = appDir === undefined ? "(no app dir — nothing was created)" : timingsPath(appDir);
+    return new DemoParkedError(
+      `PARKED at the ${capMinutes}-minute wall-clock cap ${context} — ${gaps}. Nothing was deployed. Timings: ${reportPath}`,
+      reportPath,
+    );
+  };
+
   const stage = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
-    // The hard cap is checked before every stage: past the deadline the run
-    // PARKS with named gaps — completed work stays as evidence, nothing more
-    // runs, and deploy can never be reached (criterion 34's 2h cap).
-    if (Date.now() > deadline) {
-      const done = new Set(timings.map((row) => row.stage.split(":")[0]?.split("#")[0]));
-      const remaining = plannedStages.filter((planned) => !done.has(planned));
-      const gaps = `completed: ${[...done].join(", ") || "(none)"}; not run: ${remaining.join(", ")}`;
-      const reportPath = appDir === undefined ? "(no app dir — nothing was created)" : timingsPath(appDir);
-      throw new DemoParkedError(
-        `PARKED at the ${capMinutes}-minute wall-clock cap before stage "${name}" — ${gaps}. Nothing was deployed. Timings: ${reportPath}`,
-        reportPath,
-      );
-    }
+    // The hard cap bounds the RUN, not just stage starts: a stage is raced
+    // against the deadline and the run parks mid-stage when it fires
+    // (criterion 34's 2h cap — deploy can never be reached past it).
+    if (Date.now() > deadline) throw parkAtCap(`before stage "${name}"`);
     // Distinct row per occurrence: a retried/repeated stage gets "#n" so the
     // timing table stays one honest row per thing that actually ran.
     const count = (stageCounts.get(name) ?? 0) + 1;
@@ -207,9 +211,18 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
     const startedAt = new Date().toISOString();
     const t0 = performance.now();
     write(`[pipeline] ${rowName} started`);
+    let capTimer: NodeJS.Timeout | undefined;
     try {
-      return await fn();
+      const capFiredMidStage = new Promise<never>((_resolve, reject) => {
+        capTimer = setTimeout(
+          () => reject(parkAtCap(`during stage "${rowName}" (aborted mid-stage)`)),
+          Math.max(1, deadline - Date.now()),
+        );
+        capTimer.unref?.();
+      });
+      return await Promise.race([fn(), capFiredMidStage]);
     } finally {
+      clearTimeout(capTimer);
       const ms = Math.round(performance.now() - t0);
       timings.push({ stage: rowName, startedAt, ms });
       write(`[pipeline] ${rowName} finished in ${ms}ms`);
@@ -307,13 +320,17 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
     const routerUrl = "https://demos.vendo.run";
     const deployArgs: DemoDeployArgs = { app: appPath, project: "vendo-demos", routerUrl, skipRegistry: false, dryRun: false };
     const deploy = await stage("deploy", async () => {
-      try {
-        return await stages.deploy(deployArgs, { repoRoot: io.repoRoot, write });
-      } catch (error) {
-        // Known transient `railway up` TLS flake (BadRecordMac) — one plain
-        // retry; demo:deploy is idempotent.
-        write(`[pipeline] deploy failed (${error instanceof Error ? error.message.split("\n")[0] : String(error)}) — retrying once`);
-        return await stages.deploy(deployArgs, { repoRoot: io.repoRoot, write });
+      // Known transient `railway up` TLS flake (BadRecordMac) — live runs
+      // measured ~80% failure per attempt on a bad network night, so retry
+      // with pauses; demo:deploy is idempotent and the 2h cap bounds the run.
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return await stages.deploy(deployArgs, { repoRoot: io.repoRoot, write });
+        } catch (error) {
+          write(`[pipeline] deploy attempt ${attempt} failed (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`);
+          if (attempt >= 6) throw error;
+          await new Promise((resolve) => setTimeout(resolve, io.deployRetryWaitMs ?? 30_000));
+        }
       }
     });
 

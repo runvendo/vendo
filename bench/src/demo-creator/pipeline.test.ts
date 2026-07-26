@@ -249,6 +249,7 @@ describe("runDemoPipeline", () => {
       fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
       exec,
       write: () => {},
+      deployRetryWaitMs: 1,
     });
     expect(stages.deploy).toHaveBeenCalledTimes(2);
     expect(stages.gate).toHaveBeenCalledWith(
@@ -279,22 +280,29 @@ describe("runDemoPipeline", () => {
     expect(result.demoUrl).toBeUndefined();
   });
 
-  it("parks at the pipeline-wide wall-clock cap: typed park, named gaps, deploy never runs", async () => {
+  it("parks when the wall-clock cap fires DURING an in-flight stage: aborts it, names the gaps, deploy never runs", async () => {
     const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot);
+    // Research hangs far past the cap — the deadline must abort it mid-stage.
+    const stages = stubStages(repoRoot, {
+      research: vi.fn(() => new Promise(() => { /* never resolves */ })),
+    });
+    const started = Date.now();
     const rejection = await runDemoPipeline({ ...pipelineArgs, skipDeploy: false, skipCapture: false }, {
       repoRoot,
       stages,
       fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
       exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
       write: () => {},
-      capMs: -1, // already expired: the first stage check trips
+      capMs: 500, // fires while research is in flight
     }).catch((error: unknown) => error);
+    expect(Date.now() - started).toBeLessThan(5_000);
     expect(rejection).toBeInstanceOf(DemoParkedError);
-    expect(String(rejection)).toMatch(/wall-clock cap/);
+    expect(String(rejection)).toMatch(/wall-clock cap during stage "research" \(aborted mid-stage\)/);
     expect(String(rejection)).toMatch(/not run:.*deploy/);
+    expect(stages.research).toHaveBeenCalled();
     expect(stages.deploy).not.toHaveBeenCalled();
-    expect(stages.create).not.toHaveBeenCalled();
+    // Park keeps the evidence: the app dir survives with its timings so far.
+    expect(existsSync(path.join(repoRoot, "apps", "demo-linear", "timings.json"))).toBe(true);
   });
 
   it("gives repeated stage occurrences distinct #n names — one honest row per run", async () => {
