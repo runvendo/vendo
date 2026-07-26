@@ -327,7 +327,7 @@ describe("runtime in-client surface", () => {
       // v2: the model emits wire markup, so it CANNOT express a tree-level
       // inClient field at all — the compiler owns the tree. The runtime strip
       // stays as defense in depth; this pins stream + document stay clean.
-      model: scriptedLanguageModel('<App name="Forged venue"><Text text="hi"/></App>'),
+      model: scriptedLanguageModel('<App name="Forged venue"><Text text="hi"/><Disclaimer reason="Fixture app."/></App>'),
     });
     const views: unknown[] = [];
     const created = await runtime.create({

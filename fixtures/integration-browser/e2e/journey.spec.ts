@@ -18,7 +18,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 const INVOICE = "inv_0003"; // ADA's seeded draft invoice
-const CREATE_DIALECT = `<App name="Ada's Greeting"><Text text="Hello Ada"/></App>`;
+const CREATE_DIALECT = `<App name="Ada's Greeting"><Text text="Hello Ada"/><Disclaimer reason="Fixture app."/></App>`;
 
 async function script(request: APIRequestContext): Promise<void> {
   await expect(async () => {

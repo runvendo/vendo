@@ -220,7 +220,7 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
       const gate = new Promise<void>((resolve) => { releaseBuild = resolve; });
       const { runtime, store } = setup(scriptedLanguageModel(async () => {
         await gate;
-        return `<App name="Late board"><Text text="Late board"/></App>`;
+        return `<App name="Late board"><Text text="Late board"/><Disclaimer reason="Fixture app."/></App>`;
       }));
       const ctx = context("user_ada");
       const pendingCreate = runtime.create({ prompt: "Late board" }, ctx);
@@ -258,6 +258,17 @@ describe("isDisclaimerOnlyTree", () => {
     expect(isDisclaimerOnlyTree(tree([
       { id: "heading-1", component: "Text", source: "prewired", props: { text: "Dashboard", variant: "heading" } } as TreeV2["nodes"][number],
       disclaimer("text-1"),
+    ]))).toBe(true);
+  });
+
+  it("a disclaimer MERGED into adjacent copy by the repair recompile still counts (containment, review 2026-07-26)", () => {
+    expect(isDisclaimerOnlyTree(tree([
+      {
+        id: "text-1",
+        component: "Text",
+        source: "prewired",
+        props: { text: `Overview\n    ${DISCLAIMER_TEXT}` },
+      } as TreeV2["nodes"][number],
     ]))).toBe(true);
   });
 

@@ -327,6 +327,60 @@ const catalogIssues = async (
   return issues;
 };
 
+/** The per-region unavailability line the repair stage substitutes for a node
+ *  it cannot fix (stages/repair.ts disclaims through it). Declared HERE so the
+ *  empty-document gate below can exempt it without a validation→stages import
+ *  cycle; repair re-exports it for its existing importers. */
+export const DISCLAIMER_TEXT = "This part of the request isn't available on this host.";
+
+/** Re-gate 2026-07-26 finding 3 — the title-only empty app (12 across arms
+ *  A/B, reproducing on re-open): a document whose rooted tree renders nothing
+ *  data-bearing or interactive beyond headings/copy in layout containers.
+ *  Content is any generated island, host component, node with a data/state/
+ *  action binding, or Kit/prewired component beyond the copy-only set below.
+ *  An honest `Disclaimer` IS content — it is the legal move when no tool
+ *  backs the ask — so a title+Disclaimer app passes untouched. So does the
+ *  repair stage's DISCLAIMER_TEXT region substitution: disclaimed regions are
+ *  a deliberate repair outcome, and the runtime's disclaimer-only gate
+ *  (isDisclaimerOnlyTree, 0.4.5 defect D) already fails a build whose EVERY
+ *  region was disclaimed away with the sharper host-capability reason —
+ *  bouncing those trees back to repair here would fight that mechanism. */
+const COPY_ONLY_COMPONENTS: ReadonlySet<string> = new Set([
+  "Stack", "Row", "Grid", "Surface", "Divider", "Skeleton", "Card", "Text", "Badge",
+]);
+
+/** Any data/state/action binding reachable in a props value. */
+const hasRuntimeBinding = (value: unknown): boolean => {
+  if (isRuntimeBound(value)) return true;
+  if (Array.isArray(value)) return value.some(hasRuntimeBinding);
+  if (isRecord(value)) return Object.values(value).some(hasRuntimeBinding);
+  return false;
+};
+
+const emptyDocumentIssues = (tree: TreeV2): string[] => {
+  const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
+  const pending = [tree.root];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const id = pending.pop();
+    if (id === undefined || visited.has(id)) continue;
+    visited.add(id);
+    const node = nodes.get(id);
+    if (node === undefined) continue;
+    pending.push(...(node.children ?? []));
+    if (node.source === "generated" || node.source === "host") return [];
+    if (!COPY_ONLY_COMPONENTS.has(node.component)) return [];
+    // Containment, not equality: the repair recompile merges adjacent Text
+    // nodes, so a disclaimed region can arrive embedded in a longer string.
+    if (node.component === "Text" && typeof node.props?.["text"] === "string"
+      && node.props["text"].includes(DISCLAIMER_TEXT)) return [];
+    if (node.props !== undefined && Object.values(node.props).some(hasRuntimeBinding)) return [];
+  }
+  return [
+    "the app has a title and no content — every rooted node is a heading, static copy, or an empty layout container. Add the sections that answer the ask (tables, stats, charts, forms, or islands over real tool data), or an honest Disclaimer stating why the data can't be shown if nothing can.",
+  ];
+};
+
 const rootedRenderIssues = (tree: TreeV2): string[] => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
@@ -405,6 +459,7 @@ export const validateCompiledCreate = async (
   }
   issues.push(...actionIssues(compiled.tree, deps.tools));
   issues.push(...rootedRenderIssues(compiled.tree));
+  issues.push(...emptyDocumentIssues(compiled.tree));
   if (issues.length > 0) return { issues };
   // The smoke-render gate (crash classes the 2026-07-21 gate shipped: React
   // #310 hooks-in-map, undefined names, unguarded-data throws). Runs LAST,
