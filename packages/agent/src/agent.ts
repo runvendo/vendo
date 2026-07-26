@@ -350,6 +350,14 @@ function providerHistory(messages: UIMessage[]): UIMessage[] {
   }));
 }
 
+function trimInvalidHistoryStart(messages: UIMessage[]): UIMessage[] {
+  const firstValidIndex = messages.findIndex(
+    (message) => message.role === "system" || message.role === "user",
+  );
+
+  return firstValidIndex === -1 ? [] : messages.slice(firstValidIndex);
+}
+
 /** 03-agent §1 */
 
 /** The one gate raw errors pass on their way to the wire. Vendo's OWN errors
@@ -510,9 +518,12 @@ export function createAgent(config: AgentConfig): VendoAgent {
           // History windowing: bound what is re-sent per turn to the last N whole messages.
           // Slicing whole UIMessages keeps each turn's tool-call/result pairing intact.
           const window = config.context?.historyWindow;
-          const history = window !== undefined && thread.messages.length > window
+          const windowedHistory = window !== undefined && thread.messages.length > window
             ? thread.messages.slice(-window)
             : thread.messages;
+          const history = window !== undefined && thread.messages.length > window
+            ? trimInvalidHistoryStart(windowedHistory)
+            : windowedHistory;
           const converted = (await convertToModelMessages(providerHistory(history)))
             .filter((message) => message.content.length > 0);
           // Cache the stable history prefix (everything but the final message) alongside the

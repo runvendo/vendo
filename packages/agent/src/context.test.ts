@@ -5,11 +5,13 @@ import { createAgent } from "./index.js";
 import {
   boundRegistry,
   ctx,
+  memoryStore,
   readSse,
   scriptedModel,
   testGuard,
   textTurn,
   toolCallTurn,
+  userMessage,
 } from "./test-helpers.js";
 
 const descriptor: ToolDescriptor = {
@@ -131,5 +133,60 @@ describe("context engineering", () => {
     expect(report.toolCalls).toEqual([]);
     expect(model.doStreamCalls).toEqual([]);
     expect(model.doGenerateCalls).toEqual([]);
+  });
+
+  it("trims leading assistant messages from windowed history so the request does not start with an assistant role", async () => {
+    const store = memoryStore();
+    const guard = testGuard({});
+    const tools = boundRegistry({}, guard);
+    const model = scriptedModel([
+      textTurn("Reply to final turn.", "text_final"),
+    ]);
+
+    // Prepopulate thread with: user, assistant, user, assistant
+    const threadId = "thr_window_trim";
+    await store.records("vendo_threads").put({
+      id: threadId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      data: {
+        subject: "u1",
+        messages: [
+          userMessage("user_1", "Hello"),
+          { id: "assistant_1", role: "assistant", parts: [{ type: "text", text: "Hi there" }] },
+          userMessage("user_2", "Second question"),
+          { id: "assistant_2", role: "assistant", parts: [{ type: "text", text: "Answer to second" }] },
+        ],
+      },
+    });
+
+    const agent = createAgent({
+      model,
+      tools,
+      guard,
+      store,
+      context: { historyWindow: 2 }, // window of 2 elements. With user_3 added, thread becomes 5 elements.
+      // Slicing last 2 elements gives: assistant_2, user_3.
+      // This is trimmed by trimInvalidHistoryStart to just: user_3.
+    });
+
+    const response = await agent.stream({
+      threadId,
+      message: userMessage("user_3", "Final message"),
+      ctx: ctx(),
+    });
+    await readSse(response);
+
+    // Verify model received the correct messages starting with a valid role.
+    const prompts = model.prompts;
+    expect(prompts).toHaveLength(1);
+    const sentMessages = prompts[0];
+
+    // sentMessages[0] is the system message.
+    expect(sentMessages[0]?.role).toBe("system");
+    // sentMessages[1] should be the trimmed history, starting with user_3's user message.
+    expect(sentMessages[1]?.role).toBe("user");
+    expect(sentMessages[1]?.content).toEqual([{ type: "text", text: "Final message" }]);
+    expect(sentMessages).toHaveLength(2); // System + User (user_3)
   });
 });
