@@ -49,7 +49,7 @@ function killPort() {
   try { execSync(`lsof -ti tcp:${PORT} -sTCP:LISTEN | xargs kill -9 2>/dev/null`, { stdio: "ignore", shell: "/bin/zsh" }); } catch {}
 }
 
-async function waitReady(timeoutMs = 60_000) {
+async function waitReady(timeoutMs = 180_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
