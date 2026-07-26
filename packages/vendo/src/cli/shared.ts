@@ -93,6 +93,37 @@ export function normalizeDotEnvValue(value: string): string {
   return value.replace(/\s+#.*$/, "").trimEnd();
 }
 
+/** Read target-project dotenv files in the order Next.js developers expect:
+ * `.env` first, then `.env.local`. Process env is merged separately so a CLI
+ * invocation never mutates its parent environment. */
+export async function readDotEnvFallback(root: string): Promise<Record<string, string>> {
+  const env: Record<string, string> = {};
+  for (const file of [".env", ".env.local"]) {
+    const source = await readOptional(join(root, file));
+    if (source === null) continue;
+    for (const rawLine of source.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (line === "" || line.startsWith("#")) continue;
+      const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
+      if (match !== null) env[match[1]!] = normalizeDotEnvValue(match[2]!.trim());
+    }
+  }
+  return env;
+}
+
+/** Explicit process env wins over dotenv fallback; a blank process value does
+ * not mask a concrete target-project value. */
+export function mergeEnvOverDotEnv(
+  fallback: Record<string, string>,
+  processEnv: NodeJS.ProcessEnv,
+): Record<string, string | undefined> {
+  const merged: Record<string, string | undefined> = { ...fallback, ...processEnv };
+  for (const [key, value] of Object.entries(processEnv)) {
+    if ((value ?? "").trim() === "" && fallback[key] !== undefined) merged[key] = fallback[key];
+  }
+  return merged;
+}
+
 export function toolingTelemetry(options: TelemetryOptions & {
   log?: (message: string) => void;
 } = {}): Telemetry {
