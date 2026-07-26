@@ -72,6 +72,14 @@ function isAlwaysActive(name: string): boolean {
   return name.startsWith("vendo_");
 }
 
+/** Does the surface menu offer this name? ONE definition, used by both the
+ *  initial loadout and the per-step re-add of the persisted loaded set, so the
+ *  two can never drift apart on the exemption rules. `undefined` menu =
+ *  unrestricted; Vendo's own `vendo_*` tools are always offered. */
+function offeredByMenu(menu: Set<string> | undefined, name: string): boolean {
+  return menu === undefined || isAlwaysActive(name) || menu.has(name);
+}
+
 /**
  * The INITIAL enabled set (loadout policy, ENG-252 spec §4):
  *  - Explicit `loadout` present → exactly those names that exist, deduped
@@ -92,7 +100,7 @@ export function computeInitialLoadout(
   // The menu binds EVERY branch below. It is applied here, once, rather than at
   // each branch, so no future loadout path can quietly escape it.
   const menu = menuNames === undefined ? undefined : new Set(menuNames);
-  const offered = (name: string): boolean => menu === undefined || isAlwaysActive(name) || menu.has(name);
+  const offered = (name: string): boolean => offeredByMenu(menu, name);
   const available = new Set(descriptors.filter((d) => offered(d.name)).map((descriptor) => descriptor.name));
   const alwaysActive = descriptors.filter((descriptor) => isAlwaysActive(descriptor.name)).map((d) => d.name);
   const hostTools = descriptors.filter((descriptor) => !isAlwaysActive(descriptor.name) && offered(descriptor.name));
@@ -147,6 +155,12 @@ export interface ToolSearchSessionOptions {
 export function createToolSearchSession(options: ToolSearchSessionOptions): ToolSearchSession {
   const available = new Set(options.descriptors.map((descriptor) => descriptor.name));
   const initial = computeInitialLoadout(options.descriptors, options.config, options.seedNames, options.menuNames);
+  // THIS turn's menu. `loaded` persists across turns within a thread, so a tool
+  // searched in while the menu was unresolved (the degrade-to-unrestricted
+  // window) would otherwise stay active on every later turn — including turns
+  // whose recovered `surfaces.agent` menu excludes it. The re-add below is
+  // therefore re-checked against the menu every step, not just at load time.
+  const menu = options.menuNames === undefined ? undefined : new Set(options.menuNames);
   // Captured at attach: the full run toolset. Every Vendo-owned `vendo_*` tool
   // in it stays active regardless of loadout — including the OTHER meta-tools
   // (notably `vendo_report_capability_miss`) that are attached after the host
@@ -159,7 +173,9 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
       const active = new Set<string>(initial);
       active.add(VENDO_TOOLS_SEARCH_TOOL_NAME);
       for (const name of Object.keys(attached ?? {})) if (isAlwaysActive(name)) active.add(name);
-      for (const name of options.loaded) if (available.has(name)) active.add(name);
+      for (const name of options.loaded) {
+        if (available.has(name) && offeredByMenu(menu, name)) active.add(name);
+      }
       return [...active];
     },
 

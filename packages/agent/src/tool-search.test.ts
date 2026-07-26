@@ -6,6 +6,7 @@ import {
   DEFAULT_MAX_INITIAL_TOOLS,
   VENDO_TOOLS_SEARCH_TOOL_NAME,
   computeInitialLoadout,
+  createToolSearchSession,
   type ToolSearchFn,
 } from "./tool-search.js";
 import {
@@ -115,6 +116,41 @@ describe("computeInitialLoadout (loadout policy)", () => {
     for (let i = 0; i < DEFAULT_MAX_INITIAL_TOOLS + 50; i += 1) big.push(descriptor(`host_${i}`, "x"));
     const loadout = computeInitialLoadout(big, { search });
     expect([...loadout].filter((n) => n.startsWith("host_"))).toHaveLength(DEFAULT_MAX_INITIAL_TOOLS);
+  });
+});
+
+describe("activeToolNames — the persisted loaded set is re-checked against the CURRENT menu", () => {
+  const surface = [
+    descriptor("vendo_apps_open", "Open an app"),
+    descriptor("host_a_read", "read a"),
+    descriptor("host_b_write", "write b", "write"),
+  ];
+  const search: ToolSearchFn = async () => [];
+
+  it("drops a tool loaded on an earlier turn when this turn's menu excludes it", () => {
+    // The window that makes this reachable: the menu failed to resolve on an
+    // earlier turn (degrade-to-unrestricted), the model searched host_b_write in
+    // and it persisted in `loaded`. This turn the menu resolved and excludes it.
+    const session = createToolSearchSession({
+      config: { search, loadout: [] },
+      descriptors: surface,
+      loaded: new Set(["host_b_write"]),
+      menuNames: ["host_a_read"],
+    });
+    const active = session.activeToolNames();
+    expect(active).not.toContain("host_b_write");
+    expect(active).toContain(VENDO_TOOLS_SEARCH_TOOL_NAME);
+    // vendo_* stays active regardless of the menu (unchanged exemption).
+    expect(active).toContain("vendo_apps_open");
+  });
+
+  it("keeps a loaded tool when no menu is defined this turn", () => {
+    const session = createToolSearchSession({
+      config: { search, loadout: [] },
+      descriptors: surface,
+      loaded: new Set(["host_b_write"]),
+    });
+    expect(session.activeToolNames()).toContain("host_b_write");
   });
 });
 
