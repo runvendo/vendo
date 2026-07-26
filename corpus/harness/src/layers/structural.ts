@@ -112,15 +112,65 @@ function loadCompiler(): typeof TS | null {
   return compilerModule;
 }
 
-interface ParsedModule {
+interface BoundModule {
   ts: typeof TS;
   sf: TS.SourceFile;
+  checker: TS.TypeChecker;
 }
 
-function parseModuleSource(source: string, fileName: string): ParsedModule | null {
+/** A real single-file ts.Program (noResolve, in-memory host) so symbol
+ * resolution rides TypeScript's own binder — the ground truth for JS scoping
+ * (hoisted vars, parameter shadows, export bindings) — instead of any
+ * hand-rolled scope walk. Imports stay unresolved on purpose: an identifier's
+ * symbol still declares AT its ImportSpecifier, which carries the module
+ * specifier — all the provenance the check needs. */
+function boundModule(source: string, fileName: string): BoundModule | null {
   const ts = loadCompiler();
   if (!ts) return null;
-  return { ts, sf: ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX) };
+  const kind = /\.[cm]?ts$/u.test(fileName) ? ts.ScriptKind.TS : ts.ScriptKind.TSX;
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
+  const options: TS.CompilerOptions = {
+    allowJs: true,
+    noResolve: true,
+    jsx: ts.JsxEmit.Preserve,
+    target: ts.ScriptTarget.Latest,
+    module: ts.ModuleKind.ESNext,
+    types: [],
+  };
+  const host: TS.CompilerHost = {
+    getSourceFile: (name) => (name === fileName ? sf : undefined),
+    getDefaultLibFileName: () => "lib.d.ts",
+    writeFile: () => {},
+    getCurrentDirectory: () => "/",
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => "\n",
+    fileExists: (name) => name === fileName,
+    readFile: () => undefined,
+  };
+  const program = ts.createProgram({ rootNames: [fileName], options, host });
+  const bound = program.getSourceFile(fileName);
+  if (bound === undefined) return null;
+  return { ts, sf: bound, checker: program.getTypeChecker() };
+}
+
+/** The import binding (module specifier + IMPORTED name, aliases resolved
+ * back) an identifier use resolves to via the binder — or null when the use
+ * resolves to anything else (local, parameter, hoisted var, nothing). */
+function importBindingOf(mod: BoundModule, use: TS.Identifier): { specifier: string; imported: string } | null {
+  const { ts, checker } = mod;
+  const symbol = checker.getSymbolAtLocation(use);
+  const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+  if (declaration === undefined) return null;
+  if (ts.isImportSpecifier(declaration)) {
+    const importDeclaration = declaration.parent.parent.parent;
+    if (!ts.isImportDeclaration(importDeclaration) || !ts.isStringLiteral(importDeclaration.moduleSpecifier)) return null;
+    return {
+      specifier: importDeclaration.moduleSpecifier.text,
+      imported: (declaration.propertyName ?? declaration.name).text,
+    };
+  }
+  return null;
 }
 const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
 
@@ -287,130 +337,44 @@ function hasFunctionalExpressVendoMount(server: string): boolean {
   return false;
 }
 
-/** Every name a binding pattern introduces (destructuring included). */
-function bindingNames(ts: typeof TS, name: TS.BindingName): string[] {
-  if (ts.isIdentifier(name)) return [name.text];
-  const names: string[] = [];
-  for (const element of name.elements) {
-    if (ts.isBindingElement(element)) names.push(...bindingNames(ts, element.name));
-  }
-  return names;
-}
-
-/** Whether this SCOPE-CREATING node itself introduces `name` (parameters,
- * block-level const/let/var, function/class declarations, catch and for-init
- * bindings). Import declarations are deliberately NOT counted here — they
- * only exist at file scope, which resolvesToTopLevel handles separately. */
-function scopeDeclares(ts: typeof TS, scope: TS.Node, name: string): boolean {
-  if (ts.isFunctionLike(scope)) {
-    for (const parameter of scope.parameters) {
-      if (ts.isParameter(parameter) && bindingNames(ts, parameter.name).includes(name)) return true;
-    }
-  }
-  const statements = ts.isBlock(scope) || ts.isModuleBlock(scope) ? scope.statements : null;
-  if (statements !== null) {
-    for (const statement of statements) {
-      if (ts.isVariableStatement(statement)) {
-        for (const declaration of statement.declarationList.declarations) {
-          if (bindingNames(ts, declaration.name).includes(name)) return true;
-        }
-      }
-      if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === name) {
-        return true;
-      }
-    }
-  }
-  if (ts.isCatchClause(scope) && scope.variableDeclaration !== undefined
-    && bindingNames(ts, scope.variableDeclaration.name).includes(name)) return true;
-  if ((ts.isForStatement(scope) || ts.isForOfStatement(scope) || ts.isForInStatement(scope))
-    && scope.initializer !== undefined && ts.isVariableDeclarationList(scope.initializer)) {
-    for (const declaration of scope.initializer.declarations) {
-      if (bindingNames(ts, declaration.name).includes(name)) return true;
-    }
-  }
-  return false;
-}
-
-/** Whether this FILE-scope statement introduces `name` (imports included). */
-function statementDeclares(ts: typeof TS, statement: TS.Statement, name: string): boolean {
-  if (ts.isImportDeclaration(statement)) {
-    const clause = statement.importClause;
-    if (clause?.name?.text === name) return true;
-    const bindings = clause?.namedBindings;
-    if (bindings !== undefined && ts.isNamespaceImport(bindings)) return bindings.name.text === name;
-    if (bindings !== undefined && ts.isNamedImports(bindings)) {
-      return bindings.elements.some((element) => element.name.text === name);
-    }
-    return false;
-  }
-  if (ts.isVariableStatement(statement)) {
-    return statement.declarationList.declarations.some((declaration) => bindingNames(ts, declaration.name).includes(name));
-  }
-  if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === name) return true;
-  return false;
-}
-
-/** Scope-aware, checker-free binding resolution: true when the identifier
- * USE resolves to a top-level (SourceFile) declaration satisfying `accept` —
- * i.e. no scope between the use and the file scope shadows the name, and the
- * first file-scope statement declaring it passes `accept`. A shadowed name
- * simply fails to resolve, so callers fail closed. */
-function resolvesToTopLevel(
-  ts: typeof TS,
-  use: TS.Identifier,
-  accept: (statement: TS.Statement) => boolean,
-): boolean {
-  const name = use.text;
-  for (let node: TS.Node | undefined = use.parent; node !== undefined; node = node.parent) {
-    if (ts.isSourceFile(node)) {
-      for (const statement of node.statements) {
-        if (statementDeclares(ts, statement, name)) return accept(statement);
-      }
-      return false;
-    }
-    if (scopeDeclares(ts, node, name)) return false;
-  }
-  return false;
-}
-
-interface VendoRootImport {
-  /** The local JSX tag the module binds VendoRoot to (alias or VendoRoot). */
-  localTag: string;
-  specifier: string;
-}
-
-function vendoRootImports(parsed: ParsedModule): VendoRootImport[] {
-  const { ts, sf } = parsed;
-  const imports: VendoRootImport[] = [];
+/** The module specifiers this file imports a binding named VendoRoot from
+ * (aliases irrelevant here — tag resolution is symbol-level). */
+function vendoRootImportSpecifiers(mod: BoundModule): string[] {
+  const { ts, sf } = mod;
+  const specifiers: string[] = [];
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     const bindings = statement.importClause?.namedBindings;
     if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
     for (const element of bindings.elements) {
-      if ((element.propertyName ?? element.name).text !== "VendoRoot") continue;
-      imports.push({ localTag: element.name.text, specifier: statement.moduleSpecifier.text });
+      if ((element.propertyName ?? element.name).text === "VendoRoot") {
+        specifiers.push(statement.moduleSpecifier.text);
+      }
     }
   }
-  return imports;
+  return specifiers;
 }
 
-/** True when a `{children}` JSX expression is a DESCENDANT of a JSX element
- * whose opening tag is `localTag` AND that tag resolves (scope-aware) to the
- * file-scope IMPORT binding — real AST containment plus symbol resolution,
- * so a self-closing `<Tag />` beside `{children}`, children sitting BETWEEN
- * two sibling `<Tag>` elements, or a local declaration SHADOWING the
- * imported alias never count as wrapped. */
-function childrenInsideTag(parsed: ParsedModule, localTag: string): boolean {
-  const { ts, sf } = parsed;
+/** True when a `{children}` JSX expression under `root` is a DESCENDANT of a
+ * JSX element whose tag SYMBOL resolves (compiler binder) to an import
+ * accepted by `accept` — AST containment plus real symbol resolution, so a
+ * self-closing `<Tag />` beside `{children}`, children BETWEEN two sibling
+ * providers, or any shadowing declaration (parameter, local, hoisted var)
+ * never count as wrapped. */
+function childrenInsideProvider(
+  mod: BoundModule,
+  accept: (binding: { specifier: string; imported: string }) => boolean,
+  root: TS.Node = mod.sf,
+): boolean {
+  const { ts } = mod;
   let found = false;
   const visit = (node: TS.Node, insideTag: boolean): void => {
     if (found) return;
-    const inside = insideTag || (
-      ts.isJsxElement(node)
-      && ts.isIdentifier(node.openingElement.tagName)
-      && node.openingElement.tagName.text === localTag
-      && resolvesToTopLevel(ts, node.openingElement.tagName, (statement) => ts.isImportDeclaration(statement))
-    );
+    let inside = insideTag;
+    if (ts.isJsxElement(node) && ts.isIdentifier(node.openingElement.tagName)) {
+      const binding = importBindingOf(mod, node.openingElement.tagName);
+      if (binding !== null && accept(binding)) inside = true;
+    }
     if (
       inside
       && ts.isJsxExpression(node)
@@ -423,8 +387,36 @@ function childrenInsideTag(parsed: ParsedModule, localTag: string): boolean {
     }
     ts.forEachChild(node, (child) => visit(child, inside));
   };
-  visit(sf, false);
+  visit(root, false);
   return found;
+}
+
+/** The function node behind the module's EXPORT named `exportName`, resolved
+ * through the module symbol's export table (so what the layout imports is
+ * exactly what is analyzed — a non-exported helper that happens to wrap
+ * children never stands in for the exported component). */
+function exportedFunctionNode(mod: BoundModule, exportName: string): TS.Node | null {
+  const { ts, sf, checker } = mod;
+  const moduleSymbol = checker.getSymbolAtLocation(sf);
+  let exported = moduleSymbol?.exports?.get(ts.escapeLeadingUnderscores(exportName));
+  if (exported !== undefined && (exported.flags & ts.SymbolFlags.Alias) !== 0) {
+    try {
+      exported = checker.getAliasedSymbol(exported);
+    } catch {
+      return null;
+    }
+  }
+  const declaration = exported?.valueDeclaration ?? exported?.declarations?.[0];
+  if (declaration === undefined) return null;
+  if (ts.isFunctionDeclaration(declaration)) return declaration;
+  if (ts.isVariableDeclaration(declaration) && declaration.initializer !== undefined) {
+    let initializer: TS.Expression = declaration.initializer;
+    while (ts.isParenthesizedExpression(initializer) || ts.isAsExpression(initializer) || ts.isSatisfiesExpression(initializer)) {
+      initializer = initializer.expression;
+    }
+    if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) return initializer;
+  }
+  return null;
 }
 
 /** The layout wraps children with the @vendoai/vendo/react provider either
@@ -432,13 +424,13 @@ function childrenInsideTag(parsed: ParsedModule, localTag: string): boolean {
  * visible-surface wiring (init-scaffolds.ts's vendoRootWrapperSource), a
  * by-the-book init mounts <VendoRoot> imported from the repo-local
  * `vendo/vendo-root` module — the layout itself never names the package.
- * "Wraps" means the `{children}` expression is an AST descendant of the
- * VendoRoot element (self-closing siblings and children between two
- * providers fail), the tag resolves scope-aware to the import (a shadowing
- * local declaration fails), and the wrapper's own JSX must nest ITS children
- * inside the package's VendoRoot under the wrapper's alias — so a layout
- * mounting some unrelated local VendoRoot still fails. Fails closed when
- * the TypeScript compiler is unavailable.
+ * "Wraps" means the `{children}` expression is an AST descendant of a JSX
+ * element whose tag SYMBOL (TypeScript's own binder — hoisted vars,
+ * parameter shadows, every scoping rule) resolves to the VendoRoot import;
+ * and through the wrapper hop, the layout's imported EXPORT itself — never
+ * some other function in the wrapper file — must nest its children inside
+ * the package's VendoRoot. Fails closed when the TypeScript compiler is
+ * unavailable.
  *
  * Precision boundary (conductor ruling 2026-07-26): symbol-correct
  * scope-aware resolution is the contract's boundary. Shapes beyond it —
@@ -447,20 +439,25 @@ function childrenInsideTag(parsed: ParsedModule, localTag: string): boolean {
  * it is a drift detector for honest codebases, not a defense against
  * adversarial hosts. */
 async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layout: string): Promise<boolean> {
-  const parsedLayout = parseModuleSource(layout, app.layoutRel);
-  if (parsedLayout === null) return false;
-  for (const { localTag, specifier } of vendoRootImports(parsedLayout)) {
-    if (!childrenInsideTag(parsedLayout, localTag)) continue;
+  const layoutModule = boundModule(layout, app.layoutRel);
+  if (layoutModule === null) return false;
+  const packageBinding = (binding: { specifier: string; imported: string }): boolean =>
+    binding.imported === "VendoRoot" && binding.specifier === "@vendoai/vendo/react";
+  for (const specifier of vendoRootImportSpecifiers(layoutModule)) {
+    const fromThisImport = (binding: { specifier: string; imported: string }): boolean =>
+      binding.imported === "VendoRoot" && binding.specifier === specifier;
+    if (!childrenInsideProvider(layoutModule, fromThisImport)) continue;
     if (specifier === "@vendoai/vendo/react") return true;
     if (!specifier.startsWith(".")) continue;
     const base = path.posix.join(path.posix.dirname(app.layoutRel), specifier);
     for (const candidate of [base, `${base}.tsx`, `${base}.ts`, `${base}.jsx`, `${base}.js`]) {
       const source = await readText(repoDir, candidate);
       if (source === null) continue;
-      const parsedWrapper = parseModuleSource(source, candidate);
-      if (parsedWrapper === null) continue;
-      const packageImport = vendoRootImports(parsedWrapper).find((entry) => entry.specifier === "@vendoai/vendo/react");
-      if (packageImport !== undefined && childrenInsideTag(parsedWrapper, packageImport.localTag)) return true;
+      const wrapperModule = boundModule(source, candidate);
+      if (wrapperModule === null) continue;
+      const exportedComponent = exportedFunctionNode(wrapperModule, "VendoRoot");
+      if (exportedComponent === null) continue;
+      if (childrenInsideProvider(wrapperModule, packageBinding, exportedComponent)) return true;
     }
   }
   return false;

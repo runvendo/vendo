@@ -375,6 +375,68 @@ describe("runStructuralLayer", () => {
     expect(results["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoRoot");
   });
 
+  it("still fails a HOISTED var shadowing the import from a nested block (binder ground truth, checker round 6)", async () => {
+    const repoDir = await makeTempRepo();
+    // The var never executes but hoists to function scope, so the tag binds
+    // to it — only the compiler's binder gets this right.
+    await writeFile(
+      path.join(repoDir, "app/layout.tsx"),
+      [
+        'import { VendoRoot } from "@vendoai/vendo/react";',
+        "",
+        "export default function RootLayout({ children }: { children: React.ReactNode }) {",
+        "  if (Math.random() < 0) {",
+        "    var VendoRoot = (({ children }: { children: React.ReactNode }) => <div>{children}</div>) as never;",
+        "  }",
+        "  return <html><body><VendoRoot>{children}</VendoRoot></body></html>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
+
+    const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
+
+    expect(results["files.expected"]).toMatchObject({ pass: false });
+  });
+
+  it("still fails a wrapper whose EXPORTED VendoRoot never wraps — a non-exported helper doesn't stand in (checker round 6)", async () => {
+    const repoDir = await makeTempRepo();
+    await mkdir(path.join(repoDir, "vendo"), { recursive: true });
+    await writeFile(
+      path.join(repoDir, "app/layout.tsx"),
+      [
+        'import { VendoRoot } from "../vendo/vendo-root";',
+        "",
+        "export default function RootLayout({ children }: { children: React.ReactNode }) {",
+        "  return <html><body><VendoRoot>{children}</VendoRoot></body></html>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(repoDir, "vendo/vendo-root.tsx"),
+      [
+        '"use client";',
+        'import { VendoRoot as VendoClientRoot } from "@vendoai/vendo/react";',
+        "// A helper that DOES wrap children in the provider — but is not the export.",
+        "function RealMount({ children }: { children: React.ReactNode }) {",
+        "  return <VendoClientRoot>{children}</VendoClientRoot>;",
+        "}",
+        "// The export the layout actually renders never touches the provider.",
+        "export function VendoRoot({ children }: { children: React.ReactNode }) {",
+        "  return <div>{children}</div>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
+
+    const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
+
+    expect(results["files.expected"]).toMatchObject({ pass: false });
+  });
+
   it("still fails a Next layout that never mounts VendoRoot", async () => {
     const repoDir = await makeTempRepo();
     await writeFile(

@@ -92,6 +92,36 @@ describe("tailwindConfigSansStack", () => {
     ].join("\n"))).toEqual({ declared: true, entries: [...TAILWIND_DEFAULT_SANS] });
   });
 
+  it("shadowed/unprovable provenance fails CLOSED — symbol resolution, not spelling (checker round 6)", () => {
+    // A namespace import whose path SPELLS fontFamily.sans but declares from
+    // a different module: never the default.
+    expect(tailwindConfigSansStack([
+      'import * as myTokens from "./tokens";',
+      'module.exports = { theme: { fontFamily: { sans: ["Brand", ...myTokens.fontFamily.sans] } } };',
+    ].join("\n"))).toEqual({ declared: true, entries: null });
+    // The sans value built behind a call (whose body shadows the import) is
+    // a declaration we cannot prove: fail closed, never expand.
+    expect(tailwindConfigSansStack([
+      'import { fontFamily } from "tailwindcss/defaultTheme";',
+      "function makeFonts() {",
+      '  const fontFamily = { sans: ["Comic Sans MS"] };',
+      '  return { sans: ["Brand", ...fontFamily.sans] };',
+      "}",
+      "module.exports = { theme: { extend: { fontFamily: makeFonts() } } };",
+    ].join("\n"))).toEqual({ declared: true, entries: null });
+  });
+
+  it("an UNRELATED fontFamily object elsewhere in the config file is never read (checker round 6)", () => {
+    // Previously any fontFamily key anywhere matched; the config's sans is
+    // now located only through the exported config object.
+    expect(tailwindConfigSansStack([
+      'const emailStyles = { fontFamily: { sans: ["Georgia", "serif"] } };',
+      "module.exports = { theme: { extend: { colors: {} } } };",
+    ].join("\n"))).toEqual({ declared: false });
+    // And an unlocatable export fails closed rather than falling through.
+    expect(tailwindConfigSansStack("export default createConfig();")).toEqual({ declared: true, entries: null });
+  });
+
   it("keeps literal-only stacks verbatim and reports undeclared when no sans key exists", () => {
     expect(tailwindConfigSansStack('module.exports = { theme: { fontFamily: { sans: ["Inter", "sans-serif"] } } }')).toEqual({
       declared: true,
@@ -193,6 +223,28 @@ describe("layoutFontBindings", () => {
     expect(layoutFontBindings(geistLayout)).toEqual([
       { variable: "--font-geist-sans", family: "Geist Sans", applied: false },
     ]);
+  });
+
+  it("a HOISTED var shadow from a dead nested block still shadows — binder ground truth (checker round 6)", () => {
+    const layout = `
+      import { Inter } from "next/font/google";
+      const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+      export default function Layout({ children }) {
+        if (Math.random() < 0) {
+          var inter = { variable: "never-executes-but-hoists" };
+        }
+        return <html className={inter.variable}><body>{children}</body></html>;
+      }
+    `;
+    expect(layoutFontBindings(layout)).toEqual([
+      { variable: "--font-inter", family: "Inter", applied: false },
+    ]);
+    expect(deriveBodyFontStack({
+      layout,
+      tailwindConfig: null,
+      cssText: '@import "tailwindcss";',
+      resolveCssVar: noCssVars,
+    })).toBeNull();
   });
 });
 

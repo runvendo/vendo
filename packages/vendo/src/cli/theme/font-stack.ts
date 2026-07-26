@@ -13,13 +13,14 @@ import type TS from "typescript";
  * - No Tailwind: a single font applied by next/font on the root layout IS
  *   the body font (next/font semantics), with no declared tail.
  *
- * All source analysis is TypeScript-AST structure matching (never substring
- * scans): import provenance is resolved to its module specifier, a spread of
- * Tailwind's default sans counts only when its binding provably comes from
- * "tailwindcss/defaultTheme", and a font is "applied" only when its
- * `.className`/`.variable` reference is attached to a JSX attribute on a
- * rendered element. Anything unprovable — including an unavailable compiler
- * — fails CLOSED to the staged model pass.
+ * All source analysis rides a real single-file ts.Program and TypeScript's
+ * own binder (TypeChecker symbol resolution) — never name matching: a spread
+ * expands to Tailwind's default stack only when its binding's SYMBOL declares
+ * from "tailwindcss/defaultTheme"; a font is "applied" only when the JSX
+ * reference's symbol IS the font's declaration; the config's sans array is
+ * located through the exported config object, never by scanning for a
+ * `fontFamily` key anywhere in the file. Anything unprovable — including an
+ * unavailable compiler — fails CLOSED to the staged model pass.
  */
 
 // The TypeScript compiler, resolved lazily through this package's own
@@ -39,103 +40,57 @@ function loadCompiler(): typeof TS | null {
   return compilerModule;
 }
 
-interface ParsedModule {
+interface BoundModule {
   ts: typeof TS;
   sf: TS.SourceFile;
+  checker: TS.TypeChecker;
 }
 
-function parseModuleSource(source: string, fileName: string): ParsedModule | null {
+/** A real single-file ts.Program (noResolve, in-memory host): symbol
+ * resolution rides the compiler's binder. Imports stay unresolved on
+ * purpose — an identifier's symbol still declares AT its ImportSpecifier,
+ * which carries all the provenance needed. */
+function boundModule(source: string, fileName: string): BoundModule | null {
   const ts = loadCompiler();
   if (!ts) return null;
   const kind = /\.[cm]?ts$/u.test(fileName) ? ts.ScriptKind.TS : ts.ScriptKind.TSX;
-  return { ts, sf: ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind) };
-}
-
-function visitNodes(ts: typeof TS, root: TS.Node, visit: (node: TS.Node) => void): void {
-  const walkNode = (node: TS.Node): void => {
-    visit(node);
-    ts.forEachChild(node, walkNode);
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
+  const options: TS.CompilerOptions = {
+    allowJs: true,
+    noResolve: true,
+    jsx: ts.JsxEmit.Preserve,
+    target: ts.ScriptTarget.Latest,
+    module: ts.ModuleKind.ESNext,
+    types: [],
   };
-  ts.forEachChild(root, walkNode);
+  const host: TS.CompilerHost = {
+    getSourceFile: (name) => (name === fileName ? sf : undefined),
+    getDefaultLibFileName: () => "lib.d.ts",
+    writeFile: () => {},
+    getCurrentDirectory: () => "/",
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => "\n",
+    fileExists: (name) => name === fileName,
+    readFile: () => undefined,
+  };
+  const program = ts.createProgram({ rootNames: [fileName], options, host });
+  const bound = program.getSourceFile(fileName);
+  if (bound === undefined) return null;
+  return { ts, sf: bound, checker: program.getTypeChecker() };
 }
 
-/** Every name a binding pattern introduces (destructuring included). */
-function bindingNames(ts: typeof TS, name: TS.BindingName): string[] {
-  if (ts.isIdentifier(name)) return [name.text];
-  const names: string[] = [];
-  for (const element of name.elements) {
-    if (ts.isBindingElement(element)) names.push(...bindingNames(ts, element.name));
-  }
-  return names;
+function declarationOf(mod: BoundModule, node: TS.Node): TS.Declaration | undefined {
+  const symbol = mod.checker.getSymbolAtLocation(node);
+  return symbol?.valueDeclaration ?? symbol?.declarations?.[0];
 }
 
-/** Whether this SCOPE-CREATING node itself introduces `name`. */
-function scopeDeclares(ts: typeof TS, scope: TS.Node, name: string): boolean {
-  if (ts.isFunctionLike(scope)) {
-    for (const parameter of scope.parameters) {
-      if (ts.isParameter(parameter) && bindingNames(ts, parameter.name).includes(name)) return true;
-    }
+function unwrapExpression(ts: typeof TS, expression: TS.Expression): TS.Expression {
+  let current = expression;
+  while (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
+    current = current.expression;
   }
-  const statements = ts.isBlock(scope) || ts.isModuleBlock(scope) ? scope.statements : null;
-  if (statements !== null) {
-    for (const statement of statements) {
-      if (ts.isVariableStatement(statement)) {
-        for (const declaration of statement.declarationList.declarations) {
-          if (bindingNames(ts, declaration.name).includes(name)) return true;
-        }
-      }
-      if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === name) {
-        return true;
-      }
-    }
-  }
-  if (ts.isCatchClause(scope) && scope.variableDeclaration !== undefined
-    && bindingNames(ts, scope.variableDeclaration.name).includes(name)) return true;
-  if ((ts.isForStatement(scope) || ts.isForOfStatement(scope) || ts.isForInStatement(scope))
-    && scope.initializer !== undefined && ts.isVariableDeclarationList(scope.initializer)) {
-    for (const declaration of scope.initializer.declarations) {
-      if (bindingNames(ts, declaration.name).includes(name)) return true;
-    }
-  }
-  return false;
-}
-
-/** Whether this FILE-scope statement introduces `name` (imports included). */
-function statementDeclares(ts: typeof TS, statement: TS.Statement, name: string): boolean {
-  if (ts.isImportDeclaration(statement)) {
-    const clause = statement.importClause;
-    if (clause?.name?.text === name) return true;
-    const bindings = clause?.namedBindings;
-    if (bindings !== undefined && ts.isNamespaceImport(bindings)) return bindings.name.text === name;
-    if (bindings !== undefined && ts.isNamedImports(bindings)) {
-      return bindings.elements.some((element) => element.name.text === name);
-    }
-    return false;
-  }
-  if (ts.isVariableStatement(statement)) {
-    return statement.declarationList.declarations.some((declaration) => bindingNames(ts, declaration.name).includes(name));
-  }
-  if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === name) return true;
-  return false;
-}
-
-/** Scope-aware, checker-free binding resolution: true when the identifier
- * USE resolves to the given top-level declaration statement — no scope
- * between the use and the file scope shadows the name, and the first
- * file-scope statement declaring it IS `declaration`. A shadowed name fails
- * to resolve, so font evidence fails CLOSED. */
-function resolvesToDeclaration(ts: typeof TS, use: TS.Identifier, declaration: TS.Statement): boolean {
-  const name = use.text;
-  for (let node: TS.Node | undefined = use.parent; node !== undefined; node = node.parent) {
-    if (ts.isSourceFile(node)) {
-      for (const statement of node.statements) {
-        if (statementDeclares(ts, statement, name)) return statement === declaration;
-      }
-      return false;
-    }
-    if (scopeDeclares(ts, node, name)) return false;
-  }
-  return false;
+  return current;
 }
 
 export interface FontBinding {
@@ -143,9 +98,10 @@ export interface FontBinding {
    *  option, or geist's fixed names); null when only `.className` exists. */
   variable: string | null;
   family: string;
-  /** The local's `.className`/`.variable` is attached to a JSX attribute on
-   *  a rendered element — actually applied to markup, not merely imported,
-   *  configured, or referenced in dead code. */
+  /** The font's `.className`/`.variable` is attached to a JSX attribute AND
+   *  the reference's SYMBOL is the font's own declaration — actually applied
+   *  to markup, not merely imported, configured, referenced in dead code, or
+   *  shadowed. */
   applied: boolean;
 }
 
@@ -170,13 +126,12 @@ const GEIST_FONTS = [
 
 interface NamedImportLocal {
   local: string;
-  statement: TS.Statement;
+  /** The ImportSpecifier node — the symbol-comparison anchor. */
+  declaration: TS.ImportSpecifier;
 }
 
-/** Named-import locals for `imported` from `specifier` (aliases resolved),
- *  with their declaring import statement for symbol resolution. */
-function namedImportLocals(parsed: ParsedModule, specifier: string, imported: string): NamedImportLocal[] {
-  const { ts, sf } = parsed;
+function namedImportLocals(mod: BoundModule, specifier: string, imported: string): NamedImportLocal[] {
+  const { ts, sf } = mod;
   const locals: NamedImportLocal[] = [];
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
@@ -185,35 +140,38 @@ function namedImportLocals(parsed: ParsedModule, specifier: string, imported: st
     if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
     for (const element of bindings.elements) {
       if ((element.propertyName ?? element.name).text === imported) {
-        locals.push({ local: element.name.text, statement });
+        locals.push({ local: element.name.text, declaration: element });
       }
     }
   }
   return locals;
 }
 
-/** True when `local.className` / `local.variable` appears inside a JSX
- *  attribute (including spread attributes) of a rendered element AND the
- *  reference resolves (scope-aware) to `declaration` — template literals and
- *  cn(...) calls inside the attribute count; a reference parked in a dead
- *  constant, or one whose name is SHADOWED by a nearer declaration, does
- *  not. */
-function appliedToJsx(parsed: ParsedModule, local: string, declaration: TS.Statement): boolean {
-  const { ts, sf } = parsed;
+/** True when `local.className` / `local.variable` sits inside a JSX
+ *  attribute (spread attributes, template literals, cn(...) calls all count)
+ *  AND the identifier's SYMBOL declares at `declaration` — dead constants
+ *  and every shadowing shape (parameters, locals, hoisted vars) resolve to
+ *  other symbols and never count. */
+function appliedToJsx(mod: BoundModule, local: string, declaration: TS.Declaration): boolean {
+  const { ts, sf } = mod;
   let applied = false;
-  visitNodes(ts, sf, (node) => {
+  const visit = (node: TS.Node): void => {
     if (applied) return;
-    if (!ts.isPropertyAccessExpression(node)) return;
-    if (!ts.isIdentifier(node.expression) || node.expression.text !== local) return;
-    if (node.name.text !== "className" && node.name.text !== "variable") return;
-    if (!resolvesToDeclaration(ts, node.expression, declaration)) return;
-    for (let ancestor: TS.Node | undefined = node.parent; ancestor !== undefined; ancestor = ancestor.parent) {
-      if (ts.isJsxAttribute(ancestor) || ts.isJsxSpreadAttribute(ancestor)) {
-        applied = true;
-        return;
+    if (ts.isPropertyAccessExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === local
+      && (node.name.text === "className" || node.name.text === "variable")
+      && declarationOf(mod, node.expression) === declaration) {
+      for (let ancestor: TS.Node | undefined = node.parent; ancestor !== undefined; ancestor = ancestor.parent) {
+        if (ts.isJsxAttribute(ancestor) || ts.isJsxSpreadAttribute(ancestor)) {
+          applied = true;
+          return;
+        }
       }
     }
-  });
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
   return applied;
 }
 
@@ -221,20 +179,22 @@ function appliedToJsx(parsed: ParsedModule, local: string, declaration: TS.State
  *  layout — fonts wired through a separate module are invisible here and the
  *  derivation simply doesn't fire, leaving the slot to the model pass). */
 export function layoutFontBindings(source: string): FontBinding[] {
-  const parsed = parseModuleSource(source, "layout.tsx");
-  if (parsed === null) return [];
-  const { ts, sf } = parsed;
+  const mod = boundModule(source, "layout.tsx");
+  if (mod === null) return [];
+  const { ts, sf } = mod;
   const bindings: FontBinding[] = [];
 
   for (const font of GEIST_FONTS) {
-    for (const { local, statement } of namedImportLocals(parsed, font.specifier, font.importName)) {
-      bindings.push({ variable: font.variable, family: font.family, applied: appliedToJsx(parsed, local, statement) });
+    for (const { local, declaration } of namedImportLocals(mod, font.specifier, font.importName)) {
+      bindings.push({ variable: font.variable, family: font.family, applied: appliedToJsx(mod, local, declaration) });
     }
   }
 
   // next/font/google: `import { Some_Font } from "next/font/google"` +
   // `const someFont = Some_Font({ ..., variable: "--font-x" })` — the export
-  // name is the family (underscores become spaces).
+  // name is the family (underscores become spaces). The factory callee is
+  // symbol-verified against the import; the font local must be a file-scope
+  // declaration (the universal layout shape) or nothing derives.
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     if (statement.moduleSpecifier.text !== "next/font/google") continue;
@@ -242,13 +202,9 @@ export function layoutFontBindings(source: string): FontBinding[] {
     if (named === undefined || !ts.isNamedImports(named)) continue;
     for (const element of named.elements) {
       const family = (element.propertyName ?? element.name).text.replace(/_/g, " ");
-      const importedLocal = element.name.text;
       let variable: string | null = null;
       let fontLocal: string | null = null;
-      let fontStatement: TS.Statement | null = null;
-      // The font local is only usable for symbol resolution when declared at
-      // file scope (the universal layout shape); a nested declaration cannot
-      // be resolved and fails closed to the model.
+      let fontDeclaration: TS.Declaration | null = null;
       for (const declStatement of sf.statements) {
         if (fontLocal !== null) break;
         if (!ts.isVariableStatement(declStatement)) continue;
@@ -256,9 +212,11 @@ export function layoutFontBindings(source: string): FontBinding[] {
           if (!ts.isIdentifier(node.name)) continue;
           const init = node.initializer;
           if (init === undefined || !ts.isCallExpression(init)) continue;
-          if (!ts.isIdentifier(init.expression) || init.expression.text !== importedLocal) continue;
+          if (!ts.isIdentifier(init.expression)) continue;
+          // Symbol-verified: the callee must BE this import binding.
+          if (declarationOf(mod, init.expression) !== element) continue;
           fontLocal = node.name.text;
-          fontStatement = declStatement;
+          fontDeclaration = node;
           const options = init.arguments[0];
           if (options !== undefined && ts.isObjectLiteralExpression(options)) {
             for (const property of options.properties) {
@@ -275,7 +233,7 @@ export function layoutFontBindings(source: string): FontBinding[] {
       bindings.push({
         variable,
         family,
-        applied: fontLocal !== null && fontStatement !== null && appliedToJsx(parsed, fontLocal, fontStatement),
+        applied: fontLocal !== null && fontDeclaration !== null && appliedToJsx(mod, fontLocal, fontDeclaration),
       });
     }
   }
@@ -283,124 +241,184 @@ export function layoutFontBindings(source: string): FontBinding[] {
 }
 
 /** A config's `fontFamily.sans` read has THREE outcomes, and the difference
- *  is load-bearing: `{ declared: false }` (no sans key — other derivation
- *  rules may apply), `{ declared: true, entries }` (parsed), and
- *  `{ declared: true, entries: null }` (a sans key exists but contains
- *  something unprovable — the config is authoritative and the derivation
- *  must fail CLOSED to the model stage, never fall through to a guess). */
+ *  is load-bearing: `{ declared: false }` (the located config declares no
+ *  sans — other derivation rules may apply), `{ declared: true, entries }`
+ *  (parsed), and `{ declared: true, entries: null }` (a config exists but
+ *  its sans — or the config object itself — is unprovable: authoritative,
+ *  fail CLOSED to the model stage, never fall through to a guess). */
 export type TailwindSansRead =
   | { declared: false }
   | { declared: true; entries: string[] | null };
 
-/** Locals provably bound to "tailwindcss/defaultTheme": either its
- *  `fontFamily` member directly (named import / destructured require) or the
- *  whole module object (default/namespace import, bare require). */
-interface DefaultThemeBinding {
-  local: string;
-  binds: "fontFamily" | "module";
-}
-
-function defaultThemeBindings(parsed: ParsedModule): DefaultThemeBinding[] {
-  const { ts, sf } = parsed;
-  const out: DefaultThemeBinding[] = [];
-  for (const statement of sf.statements) {
-    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)
-      && statement.moduleSpecifier.text === "tailwindcss/defaultTheme") {
-      const clause = statement.importClause;
-      if (clause?.name !== undefined) out.push({ local: clause.name.text, binds: "module" });
-      const bindings = clause?.namedBindings;
-      if (bindings !== undefined && ts.isNamespaceImport(bindings)) out.push({ local: bindings.name.text, binds: "module" });
-      if (bindings !== undefined && ts.isNamedImports(bindings)) {
-        for (const element of bindings.elements) {
-          if ((element.propertyName ?? element.name).text === "fontFamily") {
-            out.push({ local: element.name.text, binds: "fontFamily" });
-          }
-        }
-      }
-      continue;
-    }
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      const init = declaration.initializer;
-      if (init === undefined || !ts.isCallExpression(init)) continue;
-      if (!ts.isIdentifier(init.expression) || init.expression.text !== "require") continue;
-      const argument = init.arguments[0];
-      if (argument === undefined || !ts.isStringLiteralLike(argument) || argument.text !== "tailwindcss/defaultTheme") continue;
-      if (ts.isIdentifier(declaration.name)) out.push({ local: declaration.name.text, binds: "module" });
-      if (ts.isObjectBindingPattern(declaration.name)) {
-        for (const element of declaration.name.elements) {
-          if (!ts.isBindingElement(element) || !ts.isIdentifier(element.name)) continue;
-          const imported = element.propertyName !== undefined && ts.isIdentifier(element.propertyName)
-            ? element.propertyName.text
-            : element.name.text;
-          if (imported === "fontFamily") out.push({ local: element.name.text, binds: "fontFamily" });
-        }
-      }
-    }
-  }
-  return out;
-}
-
-/** The spread expression is provably Tailwind's own default sans:
- *  `<fontFamilyLocal>.sans` or `<moduleLocal>.fontFamily.sans`, where the
- *  root binding demonstrably comes from "tailwindcss/defaultTheme". A local
- *  object that merely SPELLS the same path never matches. */
-function isDefaultSansSpread(parsed: ParsedModule, expression: TS.Expression, bindings: DefaultThemeBinding[]): boolean {
-  const { ts } = parsed;
+/** The spread's symbol provably declares from "tailwindcss/defaultTheme":
+ *  `<fontFamily>.sans` where the identifier's declaration is that module's
+ *  named import (aliased ok) or a binding element destructured from
+ *  `require("tailwindcss/defaultTheme")`; or `<mod>.fontFamily.sans` where
+ *  the root's declaration is a default/namespace import or bare require of
+ *  that module. A local that merely SPELLS the same path resolves to its own
+ *  declaration and never matches. */
+function isDefaultSansSpread(mod: BoundModule, expression: TS.Expression): boolean {
+  const { ts } = mod;
   if (!ts.isPropertyAccessExpression(expression) || expression.name.text !== "sans") return false;
   const base = expression.expression;
   if (ts.isIdentifier(base)) {
-    return bindings.some((binding) => binding.binds === "fontFamily" && binding.local === base.text);
+    const declaration = declarationOf(mod, base);
+    if (declaration === undefined) return false;
+    if (ts.isImportSpecifier(declaration)) {
+      const importDeclaration = declaration.parent.parent.parent;
+      return ts.isImportDeclaration(importDeclaration)
+        && ts.isStringLiteral(importDeclaration.moduleSpecifier)
+        && importDeclaration.moduleSpecifier.text === "tailwindcss/defaultTheme"
+        && (declaration.propertyName ?? declaration.name).text === "fontFamily";
+    }
+    if (ts.isBindingElement(declaration)) {
+      const imported = declaration.propertyName !== undefined && ts.isIdentifier(declaration.propertyName)
+        ? declaration.propertyName.text
+        : ts.isIdentifier(declaration.name) ? declaration.name.text : null;
+      if (imported !== "fontFamily") return false;
+      const variableDeclaration = declaration.parent.parent;
+      return ts.isVariableDeclaration(variableDeclaration) && isRequireOfDefaultTheme(mod, variableDeclaration.initializer);
+    }
+    return false;
   }
   if (ts.isPropertyAccessExpression(base) && base.name.text === "fontFamily" && ts.isIdentifier(base.expression)) {
-    const root = base.expression.text;
-    return bindings.some((binding) => binding.binds === "module" && binding.local === root);
+    const declaration = declarationOf(mod, base.expression);
+    if (declaration === undefined) return false;
+    if (ts.isImportClause(declaration) && ts.isImportDeclaration(declaration.parent)
+      && ts.isStringLiteral(declaration.parent.moduleSpecifier)) {
+      return declaration.parent.moduleSpecifier.text === "tailwindcss/defaultTheme";
+    }
+    if (ts.isNamespaceImport(declaration)) {
+      const importDeclaration = declaration.parent.parent;
+      return ts.isImportDeclaration(importDeclaration)
+        && ts.isStringLiteral(importDeclaration.moduleSpecifier)
+        && importDeclaration.moduleSpecifier.text === "tailwindcss/defaultTheme";
+    }
+    if (ts.isVariableDeclaration(declaration)) return isRequireOfDefaultTheme(mod, declaration.initializer);
+    return false;
   }
   return false;
 }
 
-/** Entries of the config's `fontFamily.sans` array (Tailwind v3 shape),
- *  located structurally: a `fontFamily` object property anywhere in the
- *  config (theme or theme.extend) holding a `sans` array. String literals
- *  stay verbatim; a spread counts as Tailwind's default stack only with
- *  proven "tailwindcss/defaultTheme" provenance; anything else is
- *  unreadable. */
-export function tailwindConfigSansStack(config: string): TailwindSansRead {
-  const parsed = parseModuleSource(config, "tailwind.config.ts");
-  if (parsed === null) return { declared: false };
-  const { ts, sf } = parsed;
-  const provenance = defaultThemeBindings(parsed);
+function isRequireOfDefaultTheme(mod: BoundModule, initializer: TS.Expression | undefined): boolean {
+  const { ts } = mod;
+  if (initializer === undefined) return false;
+  const call = unwrapExpression(ts, initializer);
+  return ts.isCallExpression(call)
+    && ts.isIdentifier(call.expression)
+    && call.expression.text === "require"
+    && call.arguments.length > 0
+    && ts.isStringLiteralLike(call.arguments[0]!)
+    && (call.arguments[0] as TS.StringLiteralLike).text === "tailwindcss/defaultTheme";
+}
 
-  let sansArray: TS.ArrayLiteralExpression | null = null;
-  visitNodes(ts, sf, (node) => {
-    if (sansArray !== null) return;
-    if (!ts.isPropertyAssignment(node)) return;
-    const name = ts.isIdentifier(node.name) || ts.isStringLiteralLike(node.name) ? node.name.text : null;
-    if (name !== "fontFamily" || !ts.isObjectLiteralExpression(node.initializer)) return;
-    for (const property of node.initializer.properties) {
-      if (!ts.isPropertyAssignment(property)) continue;
+/** A named object-literal property's value, following ONE identifier hop
+ *  through the checker to a file-scope const initializer. */
+function propertyValue(mod: BoundModule, object: TS.ObjectLiteralExpression, name: string): TS.Expression | null {
+  const { ts } = mod;
+  for (const property of object.properties) {
+    if (ts.isPropertyAssignment(property)) {
       const key = ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name) ? property.name.text : null;
-      if (key === "sans" && ts.isArrayLiteralExpression(property.initializer)) {
-        sansArray = property.initializer;
-        return;
+      if (key === name) return unwrapExpression(ts, property.initializer);
+    }
+    if (ts.isShorthandPropertyAssignment(property) && property.name.text === name) {
+      const declaration = declarationOf(mod, property.name);
+      if (declaration !== undefined && ts.isVariableDeclaration(declaration) && declaration.initializer !== undefined) {
+        return unwrapExpression(ts, declaration.initializer);
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+/** The exported config object: `export default X` or `module.exports = X`,
+ *  where X is an object literal, an identifier resolving (checker) to a
+ *  const object literal, or a call whose single object-literal argument IS
+ *  the config (defineConfig/withPlugins shapes). Null = unlocatable. */
+function exportedConfigObject(mod: BoundModule): TS.ObjectLiteralExpression | null {
+  const { ts, sf } = mod;
+  let expression: TS.Expression | null = null;
+  for (const statement of sf.statements) {
+    if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+      expression = statement.expression;
+      break;
+    }
+    if (ts.isExpressionStatement(statement) && ts.isBinaryExpression(statement.expression)
+      && statement.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const target = statement.expression.left;
+      if (ts.isPropertyAccessExpression(target)
+        && ts.isIdentifier(target.expression) && target.expression.text === "module"
+        && target.name.text === "exports") {
+        expression = statement.expression.right;
+        break;
       }
     }
-  });
-  if (sansArray === null) return { declared: false };
-
-  const entries: string[] = [];
-  for (const element of (sansArray as TS.ArrayLiteralExpression).elements) {
-    if (parsed.ts.isStringLiteralLike(element)) {
-      entries.push(element.text);
-      continue;
-    }
-    if (parsed.ts.isSpreadElement(element) && isDefaultSansSpread(parsed, element.expression, provenance)) {
-      entries.push(...TAILWIND_DEFAULT_SANS);
-      continue;
-    }
-    return { declared: true, entries: null };
   }
-  return { declared: true, entries: entries.length > 0 ? entries : null };
+  if (expression === null) return null;
+  let value = unwrapExpression(ts, expression);
+  if (ts.isIdentifier(value)) {
+    const declaration = declarationOf(mod, value);
+    if (declaration === undefined || !ts.isVariableDeclaration(declaration) || declaration.initializer === undefined) return null;
+    value = unwrapExpression(ts, declaration.initializer);
+  }
+  if (ts.isCallExpression(value) && value.arguments.length === 1) {
+    const argument = unwrapExpression(ts, value.arguments[0]!);
+    if (ts.isObjectLiteralExpression(argument)) return argument;
+    return null;
+  }
+  return ts.isObjectLiteralExpression(value) ? value : null;
+}
+
+/** The config's sans array, located STRUCTURALLY through the exported config
+ *  object only — config root (theme fragment files), `theme.fontFamily`, or
+ *  `theme.extend.fontFamily`. An unrelated object elsewhere in the file that
+ *  happens to carry a fontFamily key is never read. */
+export function tailwindConfigSansStack(config: string): TailwindSansRead {
+  const mod = boundModule(config, "tailwind.config.ts");
+  // A config file exists but cannot be analyzed: authoritative → fail closed.
+  if (mod === null) return { declared: true, entries: null };
+  const { ts } = mod;
+  const configObject = exportedConfigObject(mod);
+  if (configObject === null) return { declared: true, entries: null };
+
+  const fontFamilyCandidates: TS.Expression[] = [];
+  const rootFontFamily = propertyValue(mod, configObject, "fontFamily");
+  if (rootFontFamily !== null) fontFamilyCandidates.push(rootFontFamily);
+  const theme = propertyValue(mod, configObject, "theme");
+  if (theme !== null && ts.isObjectLiteralExpression(theme)) {
+    const themeFontFamily = propertyValue(mod, theme, "fontFamily");
+    if (themeFontFamily !== null) fontFamilyCandidates.push(themeFontFamily);
+    const extend = propertyValue(mod, theme, "extend");
+    if (extend !== null && ts.isObjectLiteralExpression(extend)) {
+      const extendFontFamily = propertyValue(mod, extend, "fontFamily");
+      if (extendFontFamily !== null) fontFamilyCandidates.push(extendFontFamily);
+    }
+  }
+  if (fontFamilyCandidates.length === 0) return { declared: false };
+
+  for (const candidate of fontFamilyCandidates) {
+    // A fontFamily whose value we cannot read (a call, an unresolvable
+    // identifier) is a declaration we must respect: fail closed.
+    if (!ts.isObjectLiteralExpression(candidate)) return { declared: true, entries: null };
+    const sans = propertyValue(mod, candidate, "sans");
+    if (sans === null) continue;
+    if (!ts.isArrayLiteralExpression(sans)) return { declared: true, entries: null };
+    const entries: string[] = [];
+    for (const element of sans.elements) {
+      if (ts.isStringLiteralLike(element)) {
+        entries.push(element.text);
+        continue;
+      }
+      if (ts.isSpreadElement(element) && isDefaultSansSpread(mod, unwrapExpression(ts, element.expression))) {
+        entries.push(...TAILWIND_DEFAULT_SANS);
+        continue;
+      }
+      return { declared: true, entries: null };
+    }
+    return { declared: true, entries: entries.length > 0 ? entries : null };
+  }
+  return { declared: false };
 }
 
 export interface DerivedFontStack {
@@ -468,8 +486,8 @@ export function deriveBodyFontStack(input: {
     : tailwindConfigSansStack(input.tailwindConfig);
   if (configSans.declared) {
     // The config is authoritative once it declares a sans stack: an
-    // unreadable declaration (custom spread) or an unresolvable head fails
-    // CLOSED to the model stage — never through to the binding guesses below.
+    // unreadable declaration or an unresolvable head fails CLOSED to the
+    // model stage — never through to the binding guesses below.
     if (configSans.entries === null) return null;
     const resolved = configSans.entries.map(resolveEntry);
     if (!resolved.every((entry): entry is string => entry !== null)) return null;
