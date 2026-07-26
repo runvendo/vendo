@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedCatalog } from "@vendoai/core";
-import { sampleFromShape, smokeRenderIslands } from "./generation/validation/smoke-render.js";
+import { isWorkerLoadablePath, sampleFromShape, smokeRenderIslands } from "./generation/validation/smoke-render.js";
 import { modelEngine } from "./engine.js";
 import { scriptedLanguageModel, type ScriptedModelCall } from "./testing/index.js";
 
@@ -82,6 +82,19 @@ export default function ClientList() {
   );
 }
 `;
+
+describe("isWorkerLoadablePath", () => {
+  it("accepts absolute filesystem paths and rejects bundler externals wrappers", () => {
+    // Live 2026-07-23 — under a Turbopack dev server, createRequire().resolve
+    // returns an externals WRAPPER id instead of throwing; passing it to the
+    // worker's plain require failed EVERY island-bearing app with a fake
+    // island-crash issue. Wrappers must route to the next resolver / skip.
+    expect(isWorkerLoadablePath("/Users/dev/app/node_modules/jsdom/lib/api.js")).toBe(true);
+    expect(isWorkerLoadablePath("C:\\dev\\app\\node_modules\\jsdom\\lib\\api.js")).toBe(true);
+    expect(isWorkerLoadablePath("[externals]/jsdom [external] (jsdom, cjs)")).toBe(false);
+    expect(isWorkerLoadablePath("jsdom")).toBe(false);
+  });
+});
 
 describe("smokeRenderIslands", () => {
   it("fails an island calling useState inside a .map with a teaching message", async () => {

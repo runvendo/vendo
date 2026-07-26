@@ -375,6 +375,38 @@ describe("outline + region-parallel tier-2 (flagged)", () => {
     expect(components).toContain("Table");
   });
 
+
+  it("assembles sections written with INLINE tool references (the production dialect)", async () => {
+    // Live 2026-07-23 — the assembly recompile lacked the inline-ref compile
+    // options, so every app whose sections used inline tool references (the
+    // primary taught dialect) failed region-parallel with "unknown-reference"
+    // and burned the single-stream fallback.
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      if (isOutlineCall(call)) return outline;
+      if (text.includes("OUTLINE_SECTION s1")) {
+        return '<App name="Finance board"><MetricCard label="Revenue" value={host_metric({}).total}/></App>';
+      }
+      if (text.includes("OUTLINE_SECTION s2")) {
+        return '<App name="Finance board"><Table rows={host_invoices({}).rows}/></App>';
+      }
+      throw new Error(`unexpected single-stream call: ${text.slice(0, 120)}`);
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "A finance board" },
+      deps(model, {
+        tools: parallelTools,
+        toolShapes: parallelShapes,
+        pipeline: { regionParallel: true },
+      }),
+    );
+
+    expect(document.name).toBe("Finance board");
+    const tree = document.tree as { queries?: Array<{ tool: string }>; nodes: Nodes };
+    expect(tree.queries?.map(({ tool }) => tool).sort()).toEqual(["host_invoices", "host_metric"]);
+  });
+
   it("falls back to the single stream when the outline call fails", async () => {
     const valid = '<App name="Single"><MetricCard label="Revenue" value="$42k"/></App>';
     const lanes: string[] = [];

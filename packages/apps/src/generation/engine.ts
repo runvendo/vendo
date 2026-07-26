@@ -29,6 +29,10 @@ import { createContract } from "./contracts/create.js";
 import { editContract } from "./contracts/edit.js";
 import { layoutHeader, tier0Contract } from "./contracts/paint.js";
 import { composePromptSections, hostToolSections, islandContract } from "./contracts/sections.js";
+// The production compile options, shared with the stages' own compiles
+// (region-parallel assembly, repair/end-pass recompiles) so every compile of
+// model wire speaks the same dialect.
+import { wireCompileOptionsFor } from "./wire-options.js";
 import { regionParallelCreate } from "./stages/parallel.js";
 import { structuredRepair } from "./stages/repair.js";
 import { dataSightedVerify, endPass, extractEdit } from "./stages/verify.js";
@@ -249,19 +253,6 @@ const extractWire = (text: string): string => {
   const close = text.lastIndexOf(closeTag);
   return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
 };
-
-/** The production compile options: inline tool refs ON everywhere the engine
- *  compiles model wire (the registry names enable single-segment production
- *  tool heads); `<Query>` declarations stay accepted unchanged. */
-const wireCompileOptionsFor = (
-  deps: GenerationDependencies,
-  hostComponents: readonly string[],
-): Parameters<typeof compileWireV2>[1] => ({
-  hostComponents,
-  inlineRefs: true,
-  ...(deps.tools === undefined ? {} : { inlineTools: deps.tools.map(({ name }) => name) }),
-  ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
-});
 
 /** Stream the wire, compiling each accumulated prefix (throttled) into a
  *  valid-while-partial tree for the onPartial seam. */
