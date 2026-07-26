@@ -352,6 +352,62 @@ describe("runDeviceLogin", () => {
   });
 });
 
+// Unified auth: one `vendo login` establishes BOTH the project key (.env.local)
+// and the account-level session (~/.vendo/cloud-session.json), so a second
+// ceremony and a stale session can never strand the user. Older consoles that
+// return no session stay key-only — no empty file, no crash.
+describe("account session (same login)", () => {
+  const sessionPath = (home: string) => join(home, ".vendo", "cloud-session.json");
+  const SESSION = { access_token: "eyJhbGc.supabase.jwt", refresh_token: "r3fr3sh", expires_at: 1_893_456_000 };
+
+  it("writes the account session when the token response carries one", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer", session: SESSION } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink, fetchImpl, root, home, sleep: async () => {}, env: {}, isTty: false,
+    });
+    expect(exit).toBe(0);
+    // The key still lands in .env.local…
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
+    // …and the session lands in ~/.vendo/cloud-session.json in the SAME login.
+    expect(JSON.parse(await readFile(sessionPath(home), "utf8"))).toEqual(SESSION);
+    // Owner-only, like every credential file.
+    expect((await stat(sessionPath(home))).mode & 0o777).toBe(0o600);
+  });
+
+  it("leaves the session file untouched when the response carries no session (older console)", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer" } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink, fetchImpl, root, home, sleep: async () => {}, env: {}, isTty: false,
+    });
+    expect(exit).toBe(0);
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
+    // No empty session file was created — key-only, exactly as today.
+    await expect(stat(sessionPath(home))).rejects.toThrow();
+  });
+
+  it("ignores a malformed session (no access_token) — key-only, no crash, no file", async () => {
+    const root = await tempRoot();
+    const home = await tempRoot();
+    const { fetchImpl } = scriptedFetch([
+      { status: 200, body: { access_token: KEY, token_type: "Bearer", session: { refresh_token: "only" } } },
+    ]);
+    const exit = await runDeviceLogin(["--api-url", "https://console.test"], {
+      output: output().sink, fetchImpl, root, home, sleep: async () => {}, env: {}, isTty: false,
+    });
+    expect(exit).toBe(0);
+    expect(await readFile(join(root, ".env.local"), "utf8")).toContain(`VENDO_API_KEY=${KEY}`);
+    await expect(stat(sessionPath(home))).rejects.toThrow();
+  });
+});
+
 // The pending-claim file (#479): a claim survives the process that opened it,
 // so a fresh `vendo login` can resume polling after the original process dies
 // and a late human approval still lands the key.
