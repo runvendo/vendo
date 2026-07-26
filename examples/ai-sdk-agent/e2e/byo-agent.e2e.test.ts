@@ -77,7 +77,7 @@ function generationModel(): LanguageModel {
               {
                 type: "text-delta",
                 id: "g1",
-                delta: '<App name="Weather dashboard"><Stack><Text text="Paris, London, and Tokyo at a glance"/></Stack></App>',
+                delta: '<App name="Weather dashboard"><Stack><Text text="Paris, London, and Tokyo at a glance"/><Disclaimer reason="Fixture app."/></Stack></App>',
               } as const,
               { type: "text-end", id: "g1" } as const,
               finish("stop"),

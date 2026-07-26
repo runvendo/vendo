@@ -37,7 +37,7 @@ const POSTGRES_URL = process.env.POSTGRES_URL;
 const CREATE = "host_invoices_create";
 const EVENT = "j9.invoice.ready";
 
-const CREATE_DIALECT = `<App name="Ada's Durable Card"><Text text="Durable Ada"/></App>`;
+const CREATE_DIALECT = `<App name="Ada's Durable Card"><Text text="Durable Ada"/><Disclaimer reason="Fixture app."/></App>`;
 
 function invoiceAutomation(): AppDocument {
   return {
