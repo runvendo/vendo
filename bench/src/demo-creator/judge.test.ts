@@ -197,6 +197,14 @@ describe("runJudgeLoop", () => {
     expect(report).toContain("scored against 2 evidence image(s)".replace("scored", "Scored"));
   });
 
+  it("rerolls once when the judge returns malformed JSON", async () => {
+    const { repoRoot, appDir } = await makeFixture();
+    const { io } = stubIo(appDir, repoRoot, ['{"logo"::"broken"', verdictJson({})]);
+    const result = await runJudgeLoop(baseArgs, io);
+    expect(result.parked).toBe(false);
+    expect(io.judgeModel).toHaveBeenCalledTimes(2);
+  });
+
   it("fails loudly when there is no evidence to judge against", async () => {
     const repoRoot = await mkdtemp(path.join(tmpdir(), "vendo-judge-noev-"));
     const appDir = path.join(repoRoot, "apps", "demo-linear");

@@ -344,7 +344,16 @@ export async function runJudgeLoop(args: JudgeLoopArgs, io: JudgeLoopIo): Promis
         label: `BUILT screen ${routes[index] ?? path.basename(screen)}`,
         path: screen,
       }));
-      const verdict = parseJudgeVerdict(await judgeModel(prompt, [...evidence, ...builtImages]));
+      // One reroll on malformed output: models occasionally glitch the JSON
+      // (a live run died on a doubled colon), and a fresh sample is cheaper
+      // than losing the whole run to it.
+      let verdict: JudgeVerdict;
+      try {
+        verdict = parseJudgeVerdict(await judgeModel(prompt, [...evidence, ...builtImages]));
+      } catch (error) {
+        write(`[judge] verdict parse failed (${error instanceof Error ? error.message.split("\n")[0] : String(error)}) — rerolling once`);
+        verdict = parseJudgeVerdict(await judgeModel(prompt, [...evidence, ...builtImages]));
+      }
       write(`[judge] round ${round}: ${verdict.scores.map((score) => `${score.dimension}=${score.score}`).join(" ")} → ${verdict.pass ? "PASS" : `FAIL (${verdict.failing.join(", ")})`}`);
       return { round, verdict, builtScreens };
     });
