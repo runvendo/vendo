@@ -8,6 +8,36 @@
     "host_auth_get": {
       "disabled": true,
       "description": "Auth.js endpoint - never agent-callable"
+    },
+    "host_listAccounts": { "title": "List your accounts" },
+    "host_getAccount": { "title": "Show one account" },
+    "host_listTransactions": { "title": "Search transactions" },
+    "host_listAccountTransactions": { "title": "List an account's transactions" },
+    "host_getTransaction": { "title": "Show one transaction" },
+    "host_listCards": { "title": "List your cards" },
+    "host_listCardTransactions": { "title": "List a card's charges" },
+    "host_listPayees": { "title": "List saved payees" },
+    "host_listScheduledPayments": { "title": "List scheduled payments" },
+    "host_getSpendingInsights": { "title": "Show spending by category" },
+    "host_listGoals": { "title": "List savings goals" },
+    "host_transferMoney": { "title": "Send money" }
+  },
+  "surfaces": {
+    "mcp": {
+      "tools": [
+        "host_listAccounts",
+        "host_getAccount",
+        "host_listTransactions",
+        "host_listAccountTransactions",
+        "host_getTransaction",
+        "host_listCards",
+        "host_listCardTransactions",
+        "host_listPayees",
+        "host_listScheduledPayments",
+        "host_getSpendingInsights",
+        "host_listGoals",
+        "host_transferMoney"
+      ]
     }
   }
 }
