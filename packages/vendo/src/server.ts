@@ -1480,6 +1480,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     semantics: () => hostSemanticsProvider()?.semantics,
     domains: () => hostSemanticsProvider()?.domains,
+    // Re-gate 2026-07-26 finding 2 — the create-time shape sampler skips
+    // connector tools whose toolkit is not connected for the caller. Backed by
+    // the same connections lookup (and per-subject cache) the agent's
+    // connected-toolkit loadout seed rides; `connectedToolkitsFor` is a
+    // hoisted function declaration defined next to that seed below.
+    connectedToolkits: (toolkitCtx) => connectedToolkitsFor(toolkitCtx),
     secrets,
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)
@@ -1602,26 +1608,32 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return name.startsWith(VENDO_TOOL_PACK_PREFIX) || menu.has(name);
     });
   }
-  async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
+  // Hoisted (function declaration): the apps composition above references it
+  // as the AppsConfig.connectedToolkits seam; `connections` is declared below
+  // and only read at request time (same pattern as loadoutSeedFor).
+  async function connectedToolkitsFor(ctx: RunContext): Promise<string[]> {
     const subject = ctx.principal.subject;
     const cached = connectedToolkitsCache.get(subject);
-    let toolkits: string[];
     if (cached !== undefined && Date.now() - cached.at < CONNECTED_TOOLKITS_TTL_MS) {
-      toolkits = cached.toolkits;
-    } else {
-      try {
-        const accounts = await connections.list(ctx.principal);
-        toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
-      } catch (error) {
-        console.warn(
-          "[vendo] connected-toolkits lookup failed; seeding host tools only:",
-          error instanceof Error ? error.message : error,
-        );
-        toolkits = [];
-      }
-      if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
-      connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+      return cached.toolkits;
     }
+    let toolkits: string[];
+    try {
+      const accounts = await connections.list(ctx.principal);
+      toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
+    } catch (error) {
+      console.warn(
+        "[vendo] connected-toolkits lookup failed; treating every toolkit as unconnected:",
+        error instanceof Error ? error.message : error,
+      );
+      toolkits = [];
+    }
+    if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
+    connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+    return toolkits;
+  }
+  async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
+    const toolkits = await connectedToolkitsFor(ctx);
     return onAgentMenu(await actions.loadoutSeed(toolkits), (name) => name);
   }
   // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's

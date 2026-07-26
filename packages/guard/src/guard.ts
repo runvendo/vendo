@@ -185,6 +185,20 @@ function presenceMatches(grant: PermissionGrant, ctx: RunContext): boolean {
   return grant.appId === undefined || grant.appId === ctx.appId;
 }
 
+/** Re-gate 2026-07-26 finding 2: a read invoked from the APP venue renders a
+ *  surface — the query resolver and island tool bridge consume the outcome at
+ *  render time, and a parked read query is never resumed (apps resume only
+ *  mutating actions). An "ask" on a present app-venue read is therefore a
+ *  permanently empty region plus a dead approval card, so the HEURISTIC
+ *  deciders (judge, call-rate breaker) may run or block such a read but never
+ *  park it. Deliberate postures are exempt and keep their ask: policy rules
+ *  and host policy code are host-authored, critical descriptors always ask
+ *  (05 §2), and away runs still park (the 05 §6 downgrade needs a captured
+ *  grant regardless of what decided the run — hence the present-only scope). */
+function neverParkAppRead(descriptor: ToolDescriptor, ctx: RunContext): boolean {
+  return descriptor.risk === "read" && ctx.venue === "app" && ctx.presence === "present";
+}
+
 function normalizeCodeDecision(decision: GuardDecision): DraftDecision {
   // The policy-code stage cannot self-attribute its provenance. `policy.code` is
   // deploy-time host code, not the user's real-time consent, so it must never be
@@ -475,7 +489,12 @@ class GuardImplementation implements VendoGuard {
       const writes = this.#writeCounts.get(runKey)?.count ?? 0;
       const writesTripped = write && writes >= this.#maxWritesPerRun;
 
-      if (callsTripped || writesTripped) {
+      // A tripped call-rate breaker never parks a present app-venue read
+      // (neverParkAppRead): the call still counts toward the window — which
+      // keeps throttling everything else — but the read runs, because its
+      // parked approval would starve the rendering surface forever. Writes
+      // (which is all writesTripped can be) always park.
+      if ((callsTripped || writesTripped) && !neverParkAppRead(effectiveDescriptor, ctx)) {
         draft = { action: "ask", decidedBy: "breaker" };
       } else if (write) {
         this.#writeCounts.set(runKey, { count: writes + 1, touchedAt: Date.now() });
@@ -671,13 +690,24 @@ class GuardImplementation implements VendoGuard {
           recent,
           directions,
         });
-        const decision: DraftDecision = judged.action === "block"
+        // A judge "ask" on a present app-venue read coerces to run (run and
+        // block stay the judge's to give — see neverParkAppRead).
+        const action = judged.action === "ask" && neverParkAppRead(descriptor, ctx)
+          ? "run"
+          : judged.action;
+        const decision: DraftDecision = action === "block"
           ? { action: "block", reason: judged.rationale, decidedBy: "judge" }
-          : { action: judged.action, decidedBy: "judge" };
+          : { action, decidedBy: "judge" };
         return withInvalidated({ decision, rationale: judged.rationale });
       } catch (error) {
+        // Judge failure fails closed to ask — except for a present app-venue
+        // read, where the fail-closed ask IS the failure mode (a permanently
+        // starved surface); those run, exactly as the judge-less default does.
         return withInvalidated({
-          decision: { action: "ask", decidedBy: "judge" },
+          decision: {
+            action: neverParkAppRead(descriptor, ctx) ? "run" : "ask",
+            decidedBy: "judge",
+          },
           rationale: errorMessage(error),
         });
       }
