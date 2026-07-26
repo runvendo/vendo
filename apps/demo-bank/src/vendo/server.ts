@@ -1,9 +1,11 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { composioConnector } from "@vendoai/actions";
+import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import { createStore } from "@vendoai/store";
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo } from "@vendoai/vendo/server";
 import { authSecret, resolveMapleSubject } from "@/server/users";
+import { mapleKnowledgeDocs } from "./knowledge";
 import { mapleMcpConfig } from "./mcp-config";
 import { mapleRegistry } from "./registry";
 
@@ -41,6 +43,11 @@ export const vendo = createVendo({
     experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
   },
+  // Knowledge K1 — the product knowledge base behind `vendo_knowledge_search`
+  // (citation chips + structured refusal in the chat). The in-memory dev
+  // adapter carries Maple's help-center corpus; a real engine slots in here
+  // unchanged (same KnowledgeAdapter seam).
+  knowledge: memoryKnowledgeAdapter({ docs: mapleKnowledgeDocs }),
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
   // BYO Composio when Maple brings its own key; otherwise the slot stays
