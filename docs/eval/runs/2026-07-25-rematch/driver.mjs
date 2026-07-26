@@ -111,7 +111,7 @@ async function capture(page, label) {
 }
 
 // Wait for a busy button label (e.g. /Creating…/) to appear, then clear.
-async function waitBusyLabelCleared(page, pattern, timeout = 300_000) {
+async function waitBusyLabelCleared(page, pattern, timeout = 420_000) {
   await page.waitForFunction((source) => {
     const re = new RegExp(source);
     return [...document.querySelectorAll("button")]
@@ -126,7 +126,7 @@ async function waitBusyLabelCleared(page, pattern, timeout = 300_000) {
 
 // Cadence's VendoPage create button shows no busy state, so completion is
 // detected on the wire: the new app id appears in GET /apps once done.
-async function waitCreatedApp(page, beforeIds, timeout = 300_000) {
+async function waitCreatedApp(page, beforeIds, timeout = 420_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     await page.waitForTimeout(2_000);
