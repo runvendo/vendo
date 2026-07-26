@@ -111,7 +111,7 @@ afterAll(async () => {
 });
 
 const DELEGATE_MARKER = "Compile a weather brief for the ops team";
-const APP_MARKUP = '<App name="Weather comparison"><Text text="Paris vs Tokyo vs NYC"/></App>';
+const APP_MARKUP = '<App name="Weather comparison"><Text text="Paris vs Tokyo vs NYC"/><Disclaimer reason="Fixture app."/></App>';
 
 async function setup() {
   const dataDir = await mkdtemp(join(tmpdir(), "mastra-example-store-"));
