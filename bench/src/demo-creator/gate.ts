@@ -175,14 +175,28 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
       panelShot,
     );
 
-    // (5) One live generation: click the generate-ui suggestion (the empty
-    // landing's suggestion chips submit the prompt verbatim — the official
-    // @vendoai/ui seam) and wait for a generated view to paint.
-    await page.getByText(generationBeat.prompt, { exact: false }).first().click();
+    // (5) One live generation, driven through the composer (the same proven
+    // path the demo-beats capture uses — landing-suggestion text is not
+    // reliably matchable in the DOM). Post-turn re-renders can clear a
+    // just-filled composer, so re-fill until Send arms.
+    const composer = page.locator('form[aria-label="Message composer"]');
+    const messageBox = composer.getByRole("textbox", { name: "Message" });
+    await messageBox.waitFor({ state: "visible", timeout: 30_000 });
+    const sendButton = composer.getByRole("button", { name: "Send", exact: true });
+    const armDeadline = Date.now() + 60_000;
+    await messageBox.fill(generationBeat.prompt);
+    while (!(await sendButton.isEnabled().catch(() => false))) {
+      if (Date.now() > armDeadline) {
+        await record("generation-sent", false, "the composer's Send button never armed");
+      }
+      await page.waitForTimeout(500);
+      await messageBox.fill(generationBeat.prompt);
+    }
+    await sendButton.click();
     const sentShot = path.join(args.outDir, "gate-3-sent.png");
     await page.waitForTimeout(1_500);
     await page.screenshot({ path: sentShot });
-    await record("generation-sent", true, `clicked the "${generationBeat.key}" suggestion`, sentShot);
+    await record("generation-sent", true, `sent the "${generationBeat.key}" beat prompt through the composer`, sentShot);
 
     await page.locator("[data-vendo-node-id]").first().waitFor({ state: "attached", timeout: generationTimeoutMs });
     const viewShot = path.join(args.outDir, "gate-4-generated.png");
