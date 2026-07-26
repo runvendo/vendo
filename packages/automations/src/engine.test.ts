@@ -400,7 +400,7 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     });
   });
 
-  it("a denied set ask disarms the automation in the same decision — deny is transactional server-side", async () => {
+  it("a fully denied set disarms the automation in the same decision — deny is transactional server-side", async () => {
     const engine = makeEngine();
     const { missing } = await engine.enable(weekly.id, ctx());
     expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: true });
@@ -416,6 +416,35 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     const listed = await engine.list(ctx());
     expect(listed[0]).toMatchObject({ enabled: false });
     expect(listed[0]?.pendingGrants).toBeUndefined();
+  });
+
+  it("a PARTIALLY granted automation stays armed on deny — the ungranted step parks at fire time (05 §6, J5)", async () => {
+    const engine = makeEngine();
+    const { missing } = await engine.enable(weekly.id, ctx());
+
+    guard.decide(missing[0]!.id, true);
+    guard.decide(missing[1]!.id, false);
+    await flush();
+
+    // One grant landed, so the consent moment granted the automation
+    // SOMETHING: the row keeps firing and the denied tool parks per run.
+    expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: true });
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(1);
+    const listed = await engine.list(ctx());
+    expect(listed[0]).toMatchObject({ enabled: true });
+    expect(listed[0]?.pendingGrants).toBeUndefined();
+  });
+
+  it("deny order does not matter for partial grants: deny first, approve second still stays armed", async () => {
+    const engine = makeEngine();
+    const { missing } = await engine.enable(weekly.id, ctx());
+
+    guard.decide(missing[1]!.id, false);
+    guard.decide(missing[0]!.id, true);
+    await flush();
+
+    expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: true });
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(1);
   });
 
   it("clears the projection once every ask in the set is decided and omits grantSetId when nothing is missing", async () => {

@@ -627,12 +627,19 @@ export async function createWireServer(options: WireServerOptions = {}) {
               : { state: "declined" },
           );
         }
-        // Grant sets: a denied standing-grant ask disarms its automation in
-        // the SAME decision (the automations engine's decide subscriber) —
-        // mirror it so panels render the real post-deny state.
+        // Grant sets: denying an automation's WHOLE outstanding set disarms it
+        // in the SAME decision (the automations engine's decide subscriber);
+        // a partial deny leaves it armed (05 §6 — ungranted steps park at
+        // fire time). Mirror both so panels render the real post-deny state.
         if (body.decision?.approve !== true) {
-          for (const ask of state.approvals.filter(item => ids.includes(item.id) && item.ctx.venue === "automation")) {
-            const entry = state.automations.find(item => item.app.id === ask.ctx.appId);
+          const deniedApps = new Set(state.approvals
+            .filter(item => ids.includes(item.id) && item.ctx.venue === "automation" && item.ctx.appId !== undefined)
+            .map(item => item.ctx.appId));
+          for (const appId of deniedApps) {
+            const remaining = state.approvals.some(item =>
+              !ids.includes(item.id) && item.ctx.venue === "automation" && item.ctx.appId === appId);
+            if (remaining) continue;
+            const entry = state.automations.find(item => item.app.id === appId);
             if (entry) entry.enabled = false;
           }
         }

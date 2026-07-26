@@ -971,6 +971,25 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     }
   };
 
+  /** Whether the app holds ANY live automation-source standing grant — the
+   *  evidence a consent moment granted the automation something. */
+  const anyLiveAutomationGrant = async (subject: string, appId: string): Promise<boolean> => {
+    const records = await allRecords(config.store.records(GRANTS), { refs: { subject, app_id: appId } });
+    const at = now().getTime();
+    return records.some((record) => {
+      const result = permissionGrantSchema.safeParse(record.data);
+      if (!result.success) return false;
+      const grant = result.data;
+      return grant.subject === subject
+        && grant.appId === appId
+        && grant.source === "automation"
+        && grant.duration === "standing"
+        && grant.scope.kind === "tool"
+        && grant.revokedAt === undefined
+        && (grant.expiresAt === undefined || Date.parse(grant.expiresAt) > at);
+    });
+  };
+
   const handleDecision = async (approvalId: string, approved: boolean): Promise<void> => {
     const capture = await config.store.records(CAPTURES).get(approvalId);
     if (capture !== null) {
@@ -981,18 +1000,24 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         await mintGrant(data.request);
         await markConsumed(approval);
       }
+      await config.store.records(CAPTURES).delete(approvalId);
       if (!approved) {
-        // Deny is transactional at the DECISION (criterion 19, deny half): a
-        // denied standing-grant ask disarms its automation right here, inside
-        // the decide the guard awaits — no surface needs a second disable
-        // request that can fail after the asks are already gone.
-        const found = await appRecord(parsed.appId);
-        if (found !== null && found.row.subject === parsed.subject && found.row.enabled) {
-          found.row.enabled = false;
-          await writeApp(found.record, found.row);
+        // Deny is transactional at the DECISION (criterion 19, deny half),
+        // but disarms ONLY a consent moment that ended with NOTHING granted:
+        // no capture asks left pending for the app and no live
+        // automation-source grant held. A partially granted automation stays
+        // armed — its ungranted steps park at fire time (05 §6, J5), exactly
+        // the pre-set behavior.
+        const outstanding = (await pendingCaptures(parsed.subject))
+          .some((candidate) => candidate.data.appId === parsed.appId);
+        if (!outstanding && !(await anyLiveAutomationGrant(parsed.subject, parsed.appId))) {
+          const found = await appRecord(parsed.appId);
+          if (found !== null && found.row.subject === parsed.subject && found.row.enabled) {
+            found.row.enabled = false;
+            await writeApp(found.record, found.row);
+          }
         }
       }
-      await config.store.records(CAPTURES).delete(approvalId);
       return;
     }
     if (await config.store.records(PARKED).get(approvalId) !== null) {

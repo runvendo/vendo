@@ -59,14 +59,16 @@ async function enableMissing(appId: string): Promise<WireApproval[]> {
   return enabled.missing;
 }
 
-/** The owner's pending approvals over the wire, narrowed to the away (run) ones. */
+/** The owner's pending approvals over the wire, narrowed to the away (run)
+ *  ones — a still-pending capture ask for the same tool (presence "present")
+ *  must never satisfy this lookup. */
 async function pendingAway(tool: string): Promise<{ id: string } | undefined> {
   const pending = (await (await stack.wireFetch("/approvals", {}, ADA)).json()) as Array<{
     id: string;
     call: { tool: string };
     ctx?: { presence?: string; appId?: string };
   }>;
-  return pending.find((request) => request.call.tool === tool);
+  return pending.find((request) => request.call.tool === tool && request.ctx?.presence === "away");
 }
 
 async function invoiceStatus(id: string): Promise<string | undefined> {
@@ -226,6 +228,20 @@ describe("J5: away capture, park, resume, revoke through the composed wire", () 
     const appId = imported.id;
     const missing = await enableMissing(appId);
     expect((await decideApprovals(stack, missing.map((request) => request.id), { approve: false }, ADA)).status).toBe(200);
+
+    // Grant sets (demo-live-readiness): a consent moment refused WHOLESALE
+    // (every capture denied, nothing granted) disarms the automation in the
+    // same decision — the row must not sit enabled-but-ungranted.
+    const listed = (await (await stack.wireFetch("/automations", {}, ADA)).json()) as Array<{
+      app: { id: string };
+      enabled: boolean;
+    }>;
+    expect(listed.find((entry) => entry.app.id === appId)?.enabled).toBe(false);
+
+    // Re-arm; the re-minted capture ask stays UNDECIDED — an open ask leaves
+    // the automation armed and the ungranted step parks at fire time, the
+    // moment this leg actually exercises.
+    await enableMissing(appId);
 
     // --- Fire: the away run parks; the chat grant does not carry across -----
     expect(await invoiceStatus("inv_0002")).toBeDefined(); // exists before
