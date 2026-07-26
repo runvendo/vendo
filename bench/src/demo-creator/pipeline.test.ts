@@ -25,6 +25,7 @@ describe("parseDemoPipelineArgs", () => {
       url: "https://linear.app",
       screenshots: ["/tmp/a.png", "/tmp/b.png"],
       skipDeploy: true,
+      skipCapture: false,
       targetDir: "apps",
       port: 3150,
     });
@@ -117,6 +118,17 @@ function stubStages(repoRoot: string, overrides: Partial<PipelineStages> = {}): 
       reportPath: path.join(appDir, "RESEARCH", "FIDELITY.md"),
       costUsd: 0,
     })),
+    deploy: vi.fn(async () => ({
+      serviceName: "demo-linear",
+      appPath: "apps/demo-linear",
+      dryRun: false,
+      domain: "demo-linear.up.railway.app",
+      registryPayload: { id: "linear", url: "https://demo-linear.up.railway.app", prospect: "Linear" },
+    })),
+    gate: vi.fn(async () => ({
+      steps: [{ step: "generation-complete", ok: true, detail: "view painted" }],
+      reportPath: path.join(appDir, "RESEARCH", "gate", "GATE.md"),
+    })),
     rewrite: vi.fn(async (_args, io) => {
       // Exercise the pipeline's stage runner passthrough like the real
       // rewrite does for its substages.
@@ -144,6 +156,7 @@ const pipelineArgs = {
   url: "https://linear.app",
   targetDir: "apps",
   skipDeploy: true,
+  skipCapture: true,
   port: 3150,
 };
 
@@ -215,6 +228,55 @@ describe("runDemoPipeline", () => {
       write: () => {},
     })).rejects.toThrow(DemoParkedError);
     expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(true);
+  });
+
+  it("runs capture → deploy → final gate on a full (non-skip) run, retrying a flaky deploy once", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot);
+    (stages.deploy as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error("railway up: BadRecordMac"))
+      .mockResolvedValueOnce({
+        serviceName: "demo-linear",
+        appPath: "apps/demo-linear",
+        dryRun: false,
+        domain: "demo-linear.up.railway.app",
+        registryPayload: { id: "linear", url: "https://demo-linear.up.railway.app", prospect: "Linear" },
+      });
+    const exec = vi.fn(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const result = await runDemoPipeline({ ...pipelineArgs, skipDeploy: false, skipCapture: false }, {
+      repoRoot,
+      stages,
+      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+      exec,
+      write: () => {},
+    });
+    expect(stages.deploy).toHaveBeenCalledTimes(2);
+    expect(stages.gate).toHaveBeenCalledWith(
+      expect.objectContaining({ demoUrl: "https://demos.vendo.run/linear" }),
+      expect.anything(),
+    );
+    expect(result.demoUrl).toBe("https://demos.vendo.run/linear");
+    expect(result.gifPath).toContain("demo-beats-linear.gif");
+    // The capture stage ran the demo-beats CLI:
+    expect(exec.mock.calls.some((call) => (call[0] as string[]).includes("demo:capture"))).toBe(true);
+    const timings = JSON.parse(await readFile(path.join(result.appDir, "timings.json"), "utf8"));
+    expect(timings.map((row: { stage: string }) => row.stage))
+      .toEqual(["validate", "create", "install", "research", "rewrite:agents", "capture", "deploy", "final-gate"]);
+  });
+
+  it("skips deploy and gate under --skip-deploy", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot);
+    const result = await runDemoPipeline(pipelineArgs, {
+      repoRoot,
+      stages,
+      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      write: () => {},
+    });
+    expect(stages.deploy).not.toHaveBeenCalled();
+    expect(stages.gate).not.toHaveBeenCalled();
+    expect(result.demoUrl).toBeUndefined();
   });
 
   it("writes per-stage timings and one-line progress markers", async () => {

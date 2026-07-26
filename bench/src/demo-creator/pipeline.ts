@@ -3,7 +3,8 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { runDemoCreate, type DemoCreateArgs, type DemoCreateResult } from "./create.js";
-import { defaultExec, type ExecFn } from "./deploy.js";
+import { defaultExec, runDemoDeploy, type DemoDeployArgs, type DemoDeployResult, type DeployIo, type ExecFn } from "./deploy.js";
+import { runFinalGate, type FinalGateArgs, type FinalGateIo, type FinalGateResult } from "./gate.js";
 import { runJudgeLoop, type JudgeLoopArgs, type JudgeLoopIo, type JudgeLoopResult } from "./judge.js";
 import { runDemoResearch, type DemoResearchArgs, type DemoResearchResult } from "./research.js";
 import { runRewrite, type RewriteArgs, type RewriteIo, type RewriteResult } from "./rewrite.js";
@@ -32,12 +33,14 @@ export interface DemoPipelineArgs {
   screenshots?: string[];
   /** Stop after the local stages (no Railway, no registry row). */
   skipDeploy: boolean;
-  /** Local port for the judge/gate boots — never 3000 (capture-harness lock). */
+  /** Skip the local demo-beats GIF capture (fast iteration runs only). */
+  skipCapture: boolean;
+  /** Local port for the judge/capture boots — never 3000 (capture-harness lock). */
   port: number;
 }
 
 const valueOptions = new Set(["--id", "--prospect", "--url", "--cta-url", "--target-dir", "--screenshots", "--port"]);
-const flagOptions = new Set(["--skip-deploy"]);
+const flagOptions = new Set(["--skip-deploy", "--skip-capture"]);
 
 export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
   const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
@@ -79,6 +82,7 @@ export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
     url,
     targetDir: options.get("--target-dir") ?? "apps",
     skipDeploy: flags.has("--skip-deploy"),
+    skipCapture: flags.has("--skip-capture"),
     port,
     ...(ctaUrl === undefined ? {} : { ctaUrl }),
     ...(screenshots === undefined ? {} : { screenshots }),
@@ -145,6 +149,8 @@ export interface PipelineStages {
   research: (args: DemoResearchArgs, options: { repoRoot: string }) => Promise<DemoResearchResult>;
   rewrite: (args: RewriteArgs, io: RewriteIo) => Promise<RewriteResult>;
   judge: (args: JudgeLoopArgs, io: JudgeLoopIo) => Promise<JudgeLoopResult>;
+  deploy: (args: DemoDeployArgs, io: DeployIo) => Promise<DemoDeployResult>;
+  gate: (args: FinalGateArgs, io: FinalGateIo) => Promise<FinalGateResult>;
 }
 
 const defaultStages: PipelineStages = {
@@ -152,6 +158,8 @@ const defaultStages: PipelineStages = {
   research: runDemoResearch,
   rewrite: runRewrite,
   judge: runJudgeLoop,
+  deploy: runDemoDeploy,
+  gate: runFinalGate,
 };
 
 export interface PipelineIo {
@@ -168,6 +176,12 @@ export interface DemoPipelineResult {
   timings: StageTiming[];
   rewrite: RewriteResult;
   judge: JudgeLoopResult;
+  /** Absent with --skip-capture. */
+  gifPath?: string;
+  /** Absent with --skip-deploy. */
+  deploy?: DemoDeployResult;
+  gate?: FinalGateResult;
+  demoUrl?: string;
 }
 
 export function timingsPath(appDir: string): string {
@@ -260,7 +274,53 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       );
     }
 
-    return { appDir, appPath: path.relative(io.repoRoot, appDir), timings, rewrite, judge };
+    const appPath = path.relative(io.repoRoot, appDir);
+
+    // Behavior verification + the GIF deliverable: the demo-beats capture
+    // (playbook §2.8) boots the app locally, runs every beat in one recording,
+    // and FAILS unless each declared expectation visibly delivered.
+    let gifPath: string | undefined;
+    if (!args.skipCapture) {
+      const runId = `${args.id}-verify`;
+      await stage("capture", async () => {
+        const capture = await exec([
+          "pnpm", "--filter", "@vendoai/bench", "demo:capture", "--",
+          "demo-beats", "--host-config", appPath, "--run-id", runId, "--port", String(args.port + 1),
+        ], { cwd: io.repoRoot });
+        if (capture.code !== 0) {
+          throw new Error(`demo-beats capture failed (exit ${capture.code}) — a declared beat did not deliver:\n${(capture.stderr || capture.stdout).slice(-3000)}`);
+        }
+        // The verification consumed the demo's own capped turns (VERIFY.md §5).
+        await rm(path.join(appDir as string, ".vendo", "data", "demo-caps.json"), { force: true }).catch(() => undefined);
+      });
+      gifPath = path.join(io.repoRoot, "bench", "demo-capture", "output", runId, `demo-beats-${args.id}.gif`);
+    }
+
+    if (args.skipDeploy) {
+      write("[pipeline] --skip-deploy: stopping after the local stages");
+      return { appDir, appPath, timings, rewrite, judge, ...(gifPath === undefined ? {} : { gifPath }) };
+    }
+
+    const routerUrl = "https://demos.vendo.run";
+    const deployArgs: DemoDeployArgs = { app: appPath, project: "vendo-demos", routerUrl, skipRegistry: false, dryRun: false };
+    const deploy = await stage("deploy", async () => {
+      try {
+        return await stages.deploy(deployArgs, { repoRoot: io.repoRoot, write });
+      } catch (error) {
+        // Known transient `railway up` TLS flake (BadRecordMac) — one plain
+        // retry; demo:deploy is idempotent.
+        write(`[pipeline] deploy failed (${error instanceof Error ? error.message.split("\n")[0] : String(error)}) — retrying once`);
+        return await stages.deploy(deployArgs, { repoRoot: io.repoRoot, write });
+      }
+    });
+
+    const demoUrl = `${routerUrl}/${args.id}`;
+    const gate = await stage("final-gate", () => stages.gate(
+      { demoUrl, appDir: appDir as string, outDir: path.join(appDir as string, "RESEARCH", "gate") },
+      { write },
+    ));
+
+    return { appDir, appPath, timings, rewrite, judge, deploy, gate, demoUrl, ...(gifPath === undefined ? {} : { gifPath }) };
   } catch (error) {
     // Early-stage abort keeps the repo pristine. Later stages (rewrite, judge,
     // deploy, gate) park WITH evidence instead — the app dir stays.
