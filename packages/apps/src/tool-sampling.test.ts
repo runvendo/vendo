@@ -10,7 +10,7 @@ const ctx: RunContext = {
   sessionId: "session_sampling",
 };
 
-const generated = '<App name="Sampled dashboard"><Text text="Ready"/></App>';
+const generated = '<App name="Sampled dashboard"><Text text="Ready"/><Disclaimer reason="Fixture app."/></App>';
 
 const readDescriptor = (name: string, extras: Partial<ToolDescriptor> = {}): ToolDescriptor => ({
   name,
