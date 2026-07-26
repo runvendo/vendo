@@ -59,7 +59,10 @@ Init asks nothing on the happy path. It detects your framework and auth from
   a Vendo surface; degraded to printed paste lines if your layout can't be
   edited unambiguously)
 - your API extracted into `.vendo/tools.json`, and any `"use server"` actions
-  registered as agent tools through a generated `vendo-actions.ts` map
+  registered as agent tools through a generated `vendo-actions.ts` map (plain
+  route scanning reads Next.js conventions today; on Express, Fastify, or
+  Hono, API tools come from an OpenAPI spec, a tRPC router, or a GraphQL
+  schema)
 - your brand extracted into `.vendo/theme.json`
 - a model key: if no provider key is set, init offers a metered Vendo Cloud
   starter key inline
