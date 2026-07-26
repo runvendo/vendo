@@ -117,7 +117,7 @@ wave authors a NEW fresh pool (fresh sets, once run, become frozen tranches).
 - F9. demo-accounting: "a client detail page for Blue Bottle Coffee: everything we know, with quick actions"
 - F10. demo-accounting: "help me plan next week: what's due, who's assigned, what needs chasing"
 
-## Tranche 4 — the H-set (authored blind 2026-07-25, pre-rematch-gate)
+## Tranche 4 — the H-set (FROZEN 2026-07-25 after its single rematch run)
 
 Authored blind before the 2026-07-25 rematch gate (first commit of the gate branch,
 before any host was booted and before any generation output was seen), in the spirit
@@ -127,7 +127,13 @@ and difficulty of the frozen 30: natural user asks with an archetype spread
 rematch arms; the frozen 30 is NOT re-run (exhausted for cross-config comparison —
 it has now been the scored set for three configs across three waves, and its fails
 are individually analyzed in merged PRs' gate evidence, so a fresh blind tranche is
-the only uncontaminated cross-arm measure). Runs ONCE, then frozen at its result.
+the only uncontaminated cross-arm measure). Run ONCE in the 2026-07-25 rematch gate
+(`docs/eval/runs/2026-07-25-rematch/`). **Baseline: A (production defaults) 2/30 ·
+B (endPass) 5/30 · C (exemplarContract+endPass) 2/30** — dominated by a refusal wall
+(65/90 attempts produced no app: the island smoke-crash environment bug on Turbopack
+production servers, host-components-in-island, and law-1 rejecting user-supplied and
+unit-conversion constants; see the run READMEs). Now frozen under the same rules as
+the 30; the next wave authors a NEW fresh pool.
 
 ### demo-bank (Maple) — H1–H15
 
@@ -172,3 +178,8 @@ the only uncontaminated cross-arm measure). Runs ONCE, then frozen at its result
 | 2026-07-19 | frozen 30 (baseline) | 11/30 | pre-v3 | branches `vendo-heldout-maple`/`-cadence` |
 | 2026-07-20 | frozen 30 | **18/30** | 090b1779 (full v3) | `docs/verification/final-gate/` (PR #436) |
 | 2026-07-20 | F-set (fresh) | **8/10** | 090b1779 | `docs/verification/final-gate/` (PR #436) |
+| 2026-07-25 | H-set (fresh → frozen as Tranche 4), arm A = production defaults | **2/30** | afa66bec | `docs/eval/runs/2026-07-25-rematch/` |
+| 2026-07-25 | H-set, arm B = endPass (data-sighted verify) | **5/30** | afa66bec | `docs/eval/runs/2026-07-25-rematch/` |
+| 2026-07-25 | H-set, arm C = exemplarContract+endPass | **2/30** | afa66bec | `docs/eval/runs/2026-07-25-rematch/` |
+| 2026-07-25 | design pairwise on shipped pairs (opus-4-8, both orderings) | **B-vs-A 6W/1L/1T (8 pairs) · C-vs-A 0W/1L/3T (4 pairs)** | afa66bec | `docs/eval/runs/2026-07-25-rematch/design-pairwise.md` |
+| — | NOTE: the frozen 30 was NOT re-run this wave (exhausted for cross-config comparison after three scored configs; T4 is the cross-arm measure) | | | |
