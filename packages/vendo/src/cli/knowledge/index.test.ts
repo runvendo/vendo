@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { knowledgeHashManifestSchema, type KnowledgeAdapter, type KnowledgeDoc } from "@vendoai/core";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
+import { httpKnowledge } from "@vendoai/knowledge";
 import { runKnowledge } from "./index.js";
 import type { Output } from "../shared.js";
 
@@ -134,17 +135,13 @@ describe("vendo knowledge sync", () => {
     await expect(readFile(join(dir, ".vendo", "knowledge-manifest.json"), "utf8")).rejects.toThrow();
   });
 
-  it("refuses loudly to push to a read-only engine and leaves the manifest unwritten", async () => {
+  it("refuses loudly to push to a read-only httpKnowledge engine and leaves the manifest unwritten (ENG-365)", async () => {
     const dir = await tempProject();
     const cap = capture();
     await runKnowledge(["add", "docs/**/*.md", dir], { output: cap.output });
-    const inner = memoryKnowledgeAdapter();
-    const readOnly: KnowledgeAdapter = {
-      posture: { fetch: true, write: false, visibility: "public-only" },
-      search: inner.search.bind(inner),
-      fetch: inner.fetch!.bind(inner),
-      status: inner.status.bind(inner),
-    };
+    // The BYO default posture is read-only search-only; sync must refuse
+    // BEFORE any network call — no fetch is even wired here.
+    const readOnly = httpKnowledge({ url: "https://byo.example/knowledge" });
     expect(await runKnowledge(["sync", dir], { output: cap.output, adapter: readOnly })).toBe(1);
     expect(cap.errors.join("\n")).toContain("read-only");
     await expect(readFile(join(dir, ".vendo", "knowledge-manifest.json"), "utf8")).rejects.toThrow();

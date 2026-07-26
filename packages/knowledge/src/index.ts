@@ -14,6 +14,7 @@
 export type { KnowledgeAdapter } from "@vendoai/core";
 export { cloudKnowledge, type CloudKnowledgeOptions } from "./cloud.js";
 export { KNOWLEDGE_CHUNKS_COLLECTION, KNOWLEDGE_DOCS_COLLECTION } from "./collections.js";
+export { httpKnowledge, type HttpKnowledgeOptions } from "./http.js";
 export {
   VENDO_KNOWLEDGE_CONFIG_FORMAT,
   ingestSources,
