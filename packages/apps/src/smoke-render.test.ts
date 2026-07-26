@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedCatalog } from "@vendoai/core";
-import { sampleFromShape, smokeRenderIslands } from "./generation/validation/smoke-render.js";
+import { sampleFromShape, smokeRenderIslands, WORKER_SOURCE } from "./generation/validation/smoke-render.js";
 import { modelEngine } from "./engine.js";
 import { scriptedLanguageModel, type ScriptedModelCall } from "./testing/index.js";
 
@@ -278,6 +278,44 @@ describe("smoke-render gate inside create validation", () => {
     expect(prompts[1]).toContain("never inside .map(), loops, or conditions");
     expect(document.components?.ClientContactCards).not.toContain("clients.map((client) => {");
   }, 60_000);
+
+  // Regression, 2026-07-25 nightly demo QA: under Turbopack `require.resolve`
+  // does not throw for jsdom — it SUCCEEDS with a synthetic
+  // `[externals]/jsdom [external] (…)` specifier. The worker's plain `require`
+  // then failed in the prelude, and that failure was reported as a per-island
+  // render crash ("your component crashed, guard your .map") and routed to
+  // repair, which cannot fix a module that will not load. Every generated app
+  // carrying an island failed to build in the demo. A module the worker cannot
+  // load is an ENVIRONMENT failure and must skip the gate, per this file's
+  // contract — never an island fault.
+  it("reports an unloadable module as an environment failure, not an island crash", async () => {
+    const { Worker } = await import("node:worker_threads");
+    const message = await new Promise<{ type: string; errors?: string[] }>((resolve, reject) => {
+      const worker = new Worker(WORKER_SOURCE, {
+        eval: true,
+        workerData: {
+          compiled: "module.exports.default = function Card() { return null; };",
+          toolResults: {},
+          // Exactly the shape Turbopack hands back: resolution "succeeded",
+          // the path is not loadable.
+          paths: {
+            jsdom: "[externals]/jsdom [external] (jsdom, cjs, /nope/jsdom)",
+            react: "react",
+            reactDom: "react-dom",
+            reactDomClient: "react-dom/client",
+          },
+          reactNames: [],
+          kitNames: [],
+        },
+        env: {},
+      });
+      worker.on("message", resolve);
+      worker.on("error", reject);
+      worker.on("exit", () => reject(new Error("worker exited without a message")));
+    });
+    expect(message.type).toBe("environment");
+    expect(message.errors).toBeUndefined();
+  }, 30_000);
 
   it("can be disabled with pipeline.smokeRender: false", async () => {
     const broken = `<App name="Cards"><Island name="ClientContactCards">${HOOKS_IN_MAP}</Island><ClientContactCards/></App>`;
