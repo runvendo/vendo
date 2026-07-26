@@ -75,10 +75,13 @@ export function layoutFontBindings(source: string): FontBinding[] {
   return bindings;
 }
 
-/** A spread of Tailwind's own default sans (`...fontFamily.sans`,
- *  `...defaultTheme.fontFamily.sans`). Custom spreads (`...browserFonts.sans`)
- *  deliberately do NOT match — their contents are unknowable here. */
-const DEFAULT_SANS_SPREAD = /^\.\.\.\s*(?:[\w$]+\.)*fontFamily\.sans$/;
+/** ONLY the two real-world spellings of spreading Tailwind's own default
+ *  sans: `...fontFamily.sans` (destructured from tailwindcss/defaultTheme)
+ *  and `...defaultTheme.fontFamily.sans` (default import). Anything else —
+ *  `...browserFonts.sans`, `...designSystem.fontFamily.sans` — is a custom
+ *  expression whose contents are unknowable here and must fail CLOSED to
+ *  the model stage, never map to the default stack. */
+const DEFAULT_SANS_SPREAD = /^\.\.\.\s*(?:defaultTheme\.)?fontFamily\.sans$/;
 
 /** A config's `fontFamily.sans` read has THREE outcomes, and the difference
  *  is load-bearing: `{ declared: false }` (no sans key — other derivation

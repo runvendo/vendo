@@ -65,6 +65,19 @@ describe("tailwindConfigSansStack", () => {
     `)).toEqual({ declared: true, entries: null });
   });
 
+  it("a dotted prefix merely ENDING in fontFamily.sans is NOT the Tailwind default (checker round 2)", () => {
+    // designSystem is some custom object — its fontFamily.sans could be
+    // anything; only the recognized tailwindcss/defaultTheme spellings map.
+    expect(tailwindConfigSansStack(
+      'fontFamily: { sans: ["var(--font-brand)", ...designSystem.fontFamily.sans] }',
+    )).toEqual({ declared: true, entries: null });
+    // Both recognized spellings still expand.
+    expect(tailwindConfigSansStack('fontFamily: { sans: [...fontFamily.sans] }'))
+      .toEqual({ declared: true, entries: [...TAILWIND_DEFAULT_SANS] });
+    expect(tailwindConfigSansStack('fontFamily: { sans: [...defaultTheme.fontFamily.sans] }'))
+      .toEqual({ declared: true, entries: [...TAILWIND_DEFAULT_SANS] });
+  });
+
   it("keeps literal-only stacks verbatim and reports undeclared when no sans key exists", () => {
     expect(tailwindConfigSansStack('fontFamily: { sans: ["Inter", "sans-serif"] }')).toEqual({
       declared: true,
@@ -207,6 +220,14 @@ describe("deriveBodyFontStack", () => {
     expect(deriveBodyFontStack({
       layout: 'import { GeistSans } from "geist/font/sans";\n<html className={GeistSans.variable} />',
       tailwindConfig: "fontFamily: { sans: ['Inter Variable', ...browserFonts.sans] }",
+      cssText: '@import "tailwindcss";',
+      resolveCssVar: noCssVars,
+    })).toBeNull();
+    // Same armed fall-throughs with a custom dotted prefix that merely ends
+    // in fontFamily.sans (checker round 2): still null, never the default.
+    expect(deriveBodyFontStack({
+      layout: 'import { GeistSans } from "geist/font/sans";\n<html className={GeistSans.variable} />',
+      tailwindConfig: 'fontFamily: { sans: ["var(--font-geist-sans)", ...designSystem.fontFamily.sans] }',
       cssText: '@import "tailwindcss";',
       resolveCssVar: noCssVars,
     })).toBeNull();

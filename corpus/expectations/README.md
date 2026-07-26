@@ -103,9 +103,7 @@ Layer 2 scores each dimension as one point. Hex colors compare
 case-insensitively. Radius `8` and `"8px"` are treated as equivalent.
 
 A repo may carry a `notes.md` next to its `expected.json` documenting
-label provenance and known expected-misses (dimensions labeled from
-source truth the extractor deliberately cannot reach). Read a repo's
-notes before triaging its nightly misses.
+label provenance and known expected-misses.
 
 ## Tools
 
