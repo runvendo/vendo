@@ -8,8 +8,18 @@ export async function register() {
   // would otherwise hang its whole boot polling for the lock.
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { seedDemoScript } = await import("@/demo-script/seed");
-    seedDemoScript().catch((error: unknown) => {
-      console.error("[maple] demo-script seeding failed:", error);
-    });
+    const { pregenerateChips } = await import("@/vendo/chips-seed");
+    // Chips ride AFTER the fixture seed on the same fire-and-forget chain —
+    // both must stay un-awaited (writer-lock gotcha above), and generation is
+    // idempotent so repeated boots only repair gaps.
+    // MAPLE_DIST_DIR marks a TEST boot (away-drill and friends): those boots
+    // must never spend model tokens on chip generation, so only the fixture
+    // seed runs there.
+    const testBoot = Boolean(process.env.MAPLE_DIST_DIR);
+    seedDemoScript()
+      .then(() => (testBoot ? undefined : pregenerateChips()))
+      .catch((error: unknown) => {
+        console.error("[maple] demo seeding failed:", error);
+      });
   }
 }

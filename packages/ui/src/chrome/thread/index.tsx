@@ -449,12 +449,21 @@ export function VendoThread({
                   </div>
                 ) : null}
                 {suggestions.some(s => typeof s === "string") ? (
-                  <div className="fl-chips">
-                    {suggestions.flatMap((text, i) => (
-                      typeof text === "string"
-                        ? [<button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>]
-                        : []
-                    ))}
+                  // In MIXED mode the chips are the second tier below the
+                  // cards, so they carry the "Or try this" micro-label
+                  // (demo-live-readiness mockup §1); a chips-only array keeps
+                  // the unlabelled row it always had.
+                  <div className={suggestions.some(s => typeof s !== "string") ? "fl-try-row" : undefined}>
+                    {suggestions.some(s => typeof s !== "string") ? (
+                      <span className="fl-try-label">Or try this</span>
+                    ) : null}
+                    <div className="fl-chips">
+                      {suggestions.flatMap((text, i) => (
+                        typeof text === "string"
+                          ? [<button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>]
+                          : []
+                      ))}
+                    </div>
                   </div>
                 ) : null}
               </>

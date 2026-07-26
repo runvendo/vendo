@@ -3,10 +3,14 @@
 import { useState } from "react";
 import { ActivityPanel, VendoThread } from "@vendoai/ui/chrome";
 import { VendoRoot } from "@/components/vendo/VendoRoot";
+import { useTryThisChips } from "@/components/vendo/use-try-this-chips";
 import { cadenceScenarios } from "@/vendo/scenarios";
 
 function PageSurface() {
   const [activityOpen, setActivityOpen] = useState(false);
+  // "Try this" chips (demo-hygiene): pre-generated prompts as pill chips one
+  // tier below the scenario cards; absent entirely while the cache is empty.
+  const chips = useTryThisChips();
   return (
     <div className="fl-page">
       <div className="fl-tabbar">
@@ -24,7 +28,7 @@ function PageSurface() {
         <div className="fl-page-pane">
           {/* demo-refresh Part 6 — the scenario ladder as starter cards on the
               empty landing (same set the overlay's thread shows). */}
-          <VendoThread suggestions={cadenceScenarios} />
+          <VendoThread suggestions={[...cadenceScenarios, ...chips]} />
         </div>
       </div>
       {activityOpen ? (
