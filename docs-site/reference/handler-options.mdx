@@ -12,8 +12,9 @@ sessions, and default persistence.
 
 | Option | Behavior |
 | --- | --- |
-| `model` | AI SDK `LanguageModel` used by the agent and default app generation. Optional: an explicitly passed model always wins (BYO-LLM); when absent, the composition resolves a real key from the environment — provider keys via the [dev-mode ladder](/connect/dev-mode), then `VENDO_API_KEY` for Vendo Cloud managed inference — and fails honestly with instructions when none exists |
-| `paint` | app-generation paint-lane knob: `model` supplies a thinking-disabled model instance for the instant first paint; `disabled` forces single-lane generation |
+| `model` | **Deprecated alias of `models.agent`** (still functional). AI SDK `LanguageModel` used by the agent and default app generation. Optional: an explicitly passed model always wins (BYO-LLM); when absent, the composition resolves a real key from the environment — provider keys via the [dev-mode ladder](/connect/dev-mode), then `VENDO_API_KEY` for Vendo Cloud managed inference — and fails honestly with instructions when none exists |
+| `paint` | **Deprecated:** the `model` half is superseded by `models.paint`; `disabled` remains the single-lane switch for app generation |
+| `models` | per-slot model block: `{ agent?, paint?, judge? }`, each a model-name string (resolved through the credential ladder — passed verbatim to the resolved provider, pinnable via `VENDO_MODEL` / `VENDO_MODEL_PAINT` / `VENDO_MODEL_JUDGE`) or an explicit AI SDK `LanguageModel` object (wins as-is). `agent` supersedes `model`; `paint` supersedes `paint.model`; `judge` only feeds a judge you wired from `vendoModel("vendo-judge")` — no judge runs by default |
 | `auth` | one host-identity preset filling `principal`, `actAs`, and `oauth` from a single config key; mutually exclusive with all three — see [actAs presets](/connect/act-as-presets) |
 | `principal` | escape hatch: resolves the host request to a principal; `null` creates an ephemeral session. Mutually exclusive with `auth` |
 | `catalog` | `ComponentCatalog` or the name-keyed `ComponentRegistry` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |

@@ -25,12 +25,17 @@ const TREE_VENUES: ReadonlySet<RunContext["venue"]> = new Set(["chat", "app"]);
 export async function assembleSystemPrompt(
   guard: Guard,
   ctx: RunContext,
-  system?: { product?: string; catalog?: string; instructions?: string },
+  // `product` accepts a resolver (cse lane 3): assembleSystemPrompt runs
+  // per-turn, so a provider form is re-read every turn — the umbrella backs it
+  // with a first-request cloud read so the brief resolves LIVE (a console
+  // publish applies to the next turn with no restart). The string form is
+  // unchanged.
+  system?: { product?: string | (() => string | undefined); catalog?: string; instructions?: string },
   capabilityMiss = false,
 ): Promise<string> {
   const sections = [OPERATING_PROMPT];
   if (capabilityMiss) sections.push(CAPABILITY_MISS_PROMPT);
-  const product = system?.product?.trim();
+  const product = (typeof system?.product === "function" ? system.product() : system?.product)?.trim();
   if (product) sections.push(`Product\n${product}`);
 
   const directions = (await guard.directions(ctx))

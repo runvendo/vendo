@@ -403,3 +403,72 @@ describe("policy files, rules, directions, and code", () => {
     await expect(invalid.check(call(edit.name), edit, context())).resolves.toMatchObject({ action: "ask" });
   });
 });
+
+describe("cloud policy fallback (cse lane 3)", () => {
+  const cloudBody = JSON.stringify({
+    format: VENDO_POLICY_FORMAT,
+    directions: ["Cloud: escalate wires."],
+    rules: [{ match: { risk: "destructive" }, action: "block", note: "cloud says no" }],
+  });
+
+  it("(c) opted in with no local file falls through to the cloud-published policy body", async () => {
+    const clean = await temporaryDirectory();
+    process.chdir(clean); // no .vendo/policy.json here → default file is absent
+    const guard = createGuard({ store: createMemoryStore(), policy: {}, policyCloudFallback: () => cloudBody });
+    await expect(guard.directions(context())).resolves.toEqual(["Cloud: escalate wires."]);
+    const destructive = descriptor("destructive");
+    await expect(guard.check(call(destructive.name), destructive, context())).resolves.toEqual({
+      action: "block",
+      reason: "cloud says no",
+      decidedBy: "rule",
+    });
+  });
+
+  it("(d) a cold cloud snapshot recovers without a restart: the fallback is re-consulted live, not pinned to its first undefined", async () => {
+    const clean = await temporaryDirectory();
+    process.chdir(clean); // no local file → cloud path
+    let reads = 0;
+    // Cold on the first read (snapshot still warming), real policy thereafter.
+    const fallback = vi.fn(() => (reads++ === 0 ? undefined : cloudBody));
+    const guard = createGuard({ store: createMemoryStore(), policy: {}, policyCloudFallback: fallback });
+    // Cold: nothing yet — but this must NOT pin empty for the process lifetime.
+    await expect(guard.directions(context())).resolves.toEqual([]);
+    // Warm: the published policy now applies (the fallback was re-consulted).
+    await expect(guard.directions(context())).resolves.toEqual(["Cloud: escalate wires."]);
+    const destructive = descriptor("destructive");
+    await expect(guard.check(call(destructive.name), destructive, context())).resolves.toEqual({
+      action: "block",
+      reason: "cloud says no",
+      decidedBy: "rule",
+    });
+    expect(fallback.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("(b) a local file wins over the cloud fallback (fallback fires strictly AFTER the file)", async () => {
+    const file = await policyFile({ format: VENDO_POLICY_FORMAT, directions: ["File wins."] });
+    const fallback = vi.fn(() => cloudBody);
+    const guard = createGuard({ store: createMemoryStore(), policy: { file }, policyCloudFallback: fallback });
+    await expect(guard.directions(context())).resolves.toEqual(["File wins."]);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("(a) no policy config = no change: the cloud fallback is never consulted", async () => {
+    const clean = await temporaryDirectory();
+    process.chdir(clean);
+    const fallback = vi.fn(() => cloudBody);
+    const guard = createGuard({ store: createMemoryStore(), policyCloudFallback: fallback });
+    await expect(guard.directions(context())).resolves.toEqual([]);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("a malformed cloud policy body fails loud, exactly like a malformed file", async () => {
+    const clean = await temporaryDirectory();
+    process.chdir(clean);
+    const guard = createGuard({
+      store: createMemoryStore(),
+      policy: {},
+      policyCloudFallback: () => '{"format":"vendo/policy@999","rules":"nope"}',
+    });
+    await expect(guard.directions(context())).rejects.toMatchObject({ code: "validation" });
+  });
+});

@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { isVendoKey } from "./cli/cloud/client.js";
 import { runLoginCommand } from "./cli/cloud/device-login.js";
 import { runCloud } from "./cli/cloud/index.js";
+import { runConfig } from "./cli/config.js";
 import { runDoctor } from "./cli/doctor.js";
 import { runEject } from "./cli/eject.js";
 import { runExtractApply } from "./cli/extract/apply.js";
@@ -28,6 +29,7 @@ Advanced:
   playground      Render every Vendo surface against scripted data in the browser — no model key needed
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API
+  config <command> Push/pull a .vendo surface to/from hosted config, or show surface owners
 
 Options:
   --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations, the aiPolish delegation contract
@@ -172,6 +174,7 @@ export async function main(argv: string[]): Promise<number> {
     return runLoginCommand(args);
   }
   if (command === "cloud") return runCloud(args);
+  if (command === "config") return runConfig(args);
   if (command === "mcp") return runMcp(args);
   if (command === "init") {
     const problems = optionErrors(args, INIT_FLAGS, INIT_VALUE_OPTIONS);

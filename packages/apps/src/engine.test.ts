@@ -1203,6 +1203,59 @@ describe("v2 wire create", () => {
     expect(resolves).toBe(1);
   });
 
+  it("theme: unset is unchanged, an explicit value flows, and a provider form resolves per generation", async () => {
+    const run = async (theme: unknown): Promise<string> => {
+      let created = "";
+      const model = scriptedLanguageModel((call) => {
+        const prompt = promptText(call);
+        if (prompt.includes("THEME TOKENS:")) created = prompt;
+        return wireCreate();
+      });
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools,
+        catalog,
+        model,
+        ...(theme === undefined ? {} : { theme: theme as never }),
+      });
+      await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+      return created;
+    };
+    // (a) unset = today's behavior: null theme in the prompt.
+    expect(await run(undefined)).toContain("THEME TOKENS:\nnull");
+    // (b) an explicit value still wins.
+    expect(await run({ accent: "#5B21B6" })).toContain('"accent": "#5B21B6"');
+    // (c) a provider form resolves lazily — the same shape reaches the prompt.
+    expect(await run(() => ({ accent: "#1D4ED8" }))).toContain('"accent": "#1D4ED8"');
+  });
+
+  it("semantics and domains accept provider forms resolved per generation", async () => {
+    const semanticsProvider = vi.fn(() => ({ "invoices.list": { total: { kind: "money.cents" } } }));
+    let prompt = "";
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      if (text.includes("DATA DOMAINS")) prompt = text;
+      return wireCreate();
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+      // Provider forms — resolved once per generation, never at compose.
+      domains: () => ({ has: ["invoices"], hasNot: ["shipments"] }),
+      semantics: semanticsProvider as never,
+    });
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+    // domains provider resolved → its facts reach the prompt.
+    expect(prompt).toContain("This host HAS data for: invoices");
+    expect(prompt).toContain("This host has NO data for: shipments");
+    // semantics provider was invoked (resolved), proving the lazy path fires.
+    expect(semanticsProvider).toHaveBeenCalled();
+  });
+
   it("carries islands to document-level components, never on the tree", async () => {
     const wire = [
       '<App name="Noted"><RevenueNote/>',

@@ -91,7 +91,9 @@ interface AgentConfig {
   guard: Guard;
   store?: StoreAdapter;
   system?: {
-    product?: string;
+    /** The host product brief. The provider form (cse lane 3) is re-read
+     *  per-turn (assembleSystemPrompt), so a cloud-backed brief resolves LIVE. */
+    product?: string | (() => string | undefined);
     /** AGENT-1 (03 §3 item 4): catalog + theme summary, assembled by the
      *  umbrella; injected only for venues that render trees. */
     catalog?: string;

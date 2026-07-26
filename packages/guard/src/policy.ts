@@ -61,6 +61,24 @@ function errorCode(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
+/** Parse and validate a policy document body (from disk or, in the cse lane 3
+ *  fallback, a cloud-published policy.json). Malformed JSON or an invalid shape
+ *  fails loud as a "validation" VendoError — the same posture for both sources,
+ *  so a bad cloud policy is as noisy as a bad file. */
+function parsePolicyFileSource(source: string, label: string): PolicyFile {
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(source);
+  } catch (error) {
+    throw new VendoError("validation", `Invalid JSON in policy ${label}: ${errorMessage(error)}`);
+  }
+  const parsed = policyFileSchema.safeParse(parsedJson);
+  if (!parsed.success) {
+    throw new VendoError("validation", `Invalid policy ${label}: ${parsed.error.message}`, parsed.error.issues);
+  }
+  return parsed.data;
+}
+
 async function readPolicyFile(config: PolicyConfigObject): Promise<PolicyFile | undefined> {
   const explicit = config.file !== undefined;
   const file = config.file ?? DEFAULT_POLICY_FILE;
@@ -87,36 +105,27 @@ async function readPolicyFile(config: PolicyConfigObject): Promise<PolicyFile | 
     );
   }
 
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(source);
-  } catch (error) {
-    throw new VendoError(
-      "validation",
-      `Invalid JSON in policy file ${file}: ${errorMessage(error)}`,
-    );
-  }
-
-  const parsed = policyFileSchema.safeParse(parsedJson);
-  if (!parsed.success) {
-    throw new VendoError(
-      "validation",
-      `Invalid policy file ${file}: ${parsed.error.message}`,
-      parsed.error.issues,
-    );
-  }
-  return parsed.data;
+  return parsePolicyFileSource(source, `file ${file}`);
 }
 
 export class PolicyResolver {
   readonly #config: PolicyConfigObject | undefined;
+  readonly #cloudFallback: (() => string | undefined) | undefined;
   #filePromise: Promise<PolicyFile | undefined> | undefined;
 
   /** Takes the already-resolved object form — string presets are expanded by
    *  `resolvePolicyConfig` at `createGuard` compose time, before this class
-   *  ever sees the config. */
-  constructor(config: PolicyConfigObject | undefined) {
+   *  ever sees the config.
+   *
+   *  `cloudFallback` (cse lane 3) is a source for a cloud-published
+   *  policy.json body, consulted STRICTLY AFTER the file and only within the
+   *  existing opt-in path: it fires only when policy is configured (`#config`
+   *  set) and no local file resolves. A host that never configures policy
+   *  never reaches it, so behavior is unchanged for them. The umbrella backs
+   *  it with the config snapshot; this block never reads the key. */
+  constructor(config: PolicyConfigObject | undefined, cloudFallback?: () => string | undefined) {
     this.#config = config;
+    this.#cloudFallback = cloudFallback;
   }
 
   async rules(): Promise<PolicyRule[]> {
@@ -136,8 +145,21 @@ export class PolicyResolver {
 
   async #file(): Promise<PolicyFile | undefined> {
     if (!this.#config) return undefined;
+    // The on-disk read is stable per process — memoize only that. Its loud
+    // posture (an explicit malformed/unreadable file throws) is preserved,
+    // rejection and all, across calls.
     this.#filePromise ??= readPolicyFile(this.#config);
-    return this.#filePromise;
+    const fromFile = await this.#filePromise;
+    if (fromFile !== undefined) return fromFile;
+    // File absent (non-explicit) — cse lane 3: fall to a cloud-published
+    // policy.json body when the umbrella supplies one. Consulted LIVE on every
+    // call and never memoized: a cold cloud snapshot yields undefined now and
+    // the real policy once it warms (the snapshot is TTL-cached upstream, so
+    // this stays cheap). Memoizing here would pin the cold undefined for the
+    // process lifetime, so hosted policy would never apply after a cold start.
+    // Parsed/validated with the same loud posture as the file.
+    const body = this.#cloudFallback?.();
+    return body === undefined ? undefined : parsePolicyFileSource(body, "cloud config policy.json");
   }
 }
 
