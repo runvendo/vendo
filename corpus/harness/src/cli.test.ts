@@ -1266,13 +1266,15 @@ describe("runCli knowledge-eval", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(seen.options).toEqual({ engine: "memory", json: true, strict: true });
+    expect(seen.options).toEqual({ engines: ["memory"], json: true, strict: true });
     expect(seen.deps?.createContext?.()).toBe(context);
   });
 
-  it("defaults to the memory engine", () => {
-    expect(parseKnowledgeEvalArgs([])).toEqual({ engine: "memory", json: false, strict: false });
-    expect(parseKnowledgeEvalArgs(["--engine=lexical"])).toEqual({ engine: "lexical", json: false, strict: false });
+  it("defaults to the memory engine and collects repeated --engine flags", () => {
+    expect(parseKnowledgeEvalArgs([])).toEqual({ engines: ["memory"], json: false, strict: false });
+    expect(parseKnowledgeEvalArgs(["--engine=lexical"])).toEqual({ engines: ["lexical"], json: false, strict: false });
+    expect(parseKnowledgeEvalArgs(["--engine", "memory", "--engine", "lexical"]))
+      .toEqual({ engines: ["memory", "lexical"], json: false, strict: false });
   });
 
   it("rejects unknown options and a missing engine value", () => {

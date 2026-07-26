@@ -14,7 +14,7 @@ quality, start here.
 | Refusal set (15 + paraphrases) | [`knowledge/refusals.json`](./knowledge/refusals.json) | Questions with NO answer in the corpus; ANY non-refusal outcome is a hard failure — a red run, never a score |
 | Per-engine pass bars | [`knowledge/bars/<engine>.json`](./knowledge/bars/) | Ratcheted metric floors per engine (see "Bars" below) |
 | Fixture corpus | `corpus/harness/src/knowledge-eval/fixtures/corpus.json` | 59 `KnowledgeDoc`s derived from `docs-site/*.mdx` (reference/* → kind `api`, rest `docs`), 12 synthesized glossary entries, 4 `visibility:"internal"` docs from `docs/*.md` |
-| Runner + metrics + judge | `corpus/harness/src/knowledge-eval/` | `pnpm corpus knowledge-eval [--engine memory] [--json] [--strict]` — recall@5 + MRR per intent, refusal leg, bars check, scorecard artifacts; `judge.ts` is the shared LLM-judge surface |
+| Runner + metrics + judge | `corpus/harness/src/knowledge-eval/` | `pnpm corpus knowledge-eval [--engine memory]... [--json] [--strict]` — recall@5 + MRR per intent, refusal leg, bars check, scorecard artifacts; repeat `--engine` for the per-engine comparison (engine columns); `judge.ts` is the shared LLM-judge surface |
 | Per-PR CI gate | `.github/workflows/knowledge-eval.yml` | The deterministic offline run, strict, on every PR and push to main |
 
 Doc ids in the fixture corpus are content-derived slugs (from frontmatter
@@ -96,11 +96,13 @@ per-PR through the real tool once K1's `createKnowledgeTools` lands
 ## Reading a run
 
 The runner writes `scorecard.json`/`scorecard.md` under
-`corpus/.repos/.logs/` (per-run copies under `corpus/.repos/knowledge-eval/run/`).
-Layers: 1 retrieval (one check per golden item: expected docs in top-5) ·
-2 refusals (one check per refusal item; any hit = hard failure) · 3 judge
-(skipped offline, with the skip stated) · 4 bars. Exit is nonzero under
-`--strict` when any hard failure exists.
+`corpus/.repos/.logs/` (per-engine copies under `corpus/.repos/knowledge-<engine>/run/`).
+Each engine gets one scorecard section with layers: 1 retrieval (one check
+per golden item: expected docs in top-5) · 2 refusals (one check per refusal
+item; any hit = hard failure) · 3 judge (skipped offline, with the skip
+stated) · 4 bars. With several `--engine` flags the metrics table gains one
+column per engine — that table is the per-engine comparison report (spec
+§Evals 6). Exit is nonzero under `--strict` when any hard failure exists.
 
 ## Run ledger
 

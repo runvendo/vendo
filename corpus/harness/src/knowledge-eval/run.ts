@@ -6,6 +6,7 @@ import {
   writeScorecardArtifacts,
   type ScorecardCheck,
   type ScorecardLayerInput,
+  type ScorecardRepoInput,
 } from "../scorecard.js";
 import { createRunContext, type CorpusRunContext } from "../run-context.js";
 import {
@@ -25,11 +26,14 @@ import type { KnowledgeAnswerJudge } from "./judge.js";
 
 /**
  * The knowledge eval runner (docs/eval/KNOWLEDGE.md): load the fixture corpus
- * into the engine, run the golden items per intent, compute recall@5 + MRR,
- * run the refusal set through the tool-policy predicate, and compare against
- * the engine's ratcheted bars. Deterministic and offline for the memory
- * engine — the model-costed judge leg only runs when a judge is injected
- * (nightly, or scripted in tests), never on the per-PR path.
+ * into each selected engine, run the golden items per intent, compute
+ * recall@5 + MRR, run the refusal set through the tool-policy predicate, and
+ * compare against each engine's ratcheted bars. Multiple `--engine` flags
+ * produce the per-engine comparison (spec §Evals 6): one scorecard section
+ * per engine plus a metrics table with engine columns (the ai/matrix.ts
+ * scoreboard shape, engines instead of models). Deterministic and offline
+ * for the memory engine — the model-costed judge leg only runs when a judge
+ * is injected (nightly, or scripted in tests), never on the per-PR path.
  */
 
 export const RETRIEVAL_K = 5;
@@ -72,7 +76,9 @@ export interface JudgeLeg {
 }
 
 export interface KnowledgeEvalOptions {
-  engine: string;
+  /** Engines to run and compare; every engine gets its own scorecard section
+      and metrics column. */
+  engines: string[];
   json: boolean;
   strict: boolean;
 }
@@ -94,12 +100,179 @@ export interface KnowledgeEvalDeps {
 
 const EPSILON = 1e-9;
 
-function formatMetrics(metrics: Record<string, number>): string {
-  const lines = ["", "| Metric | Value |", "| --- | --- |"];
-  for (const [key, value] of Object.entries(metrics)) {
-    lines.push(`| ${key} | ${value.toFixed(3)} |`);
+/** Engine columns, metric rows — the per-engine comparison table. */
+export function formatMetricsComparison(metricsByEngine: Record<string, Record<string, number>>): string {
+  const engines = Object.keys(metricsByEngine);
+  const metricKeys = [...new Set(engines.flatMap((engine) => Object.keys(metricsByEngine[engine] ?? {})))];
+  const lines = [
+    "",
+    `| Metric | ${engines.join(" | ")} |`,
+    `| --- | ${engines.map(() => "---").join(" | ")} |`,
+  ];
+  for (const key of metricKeys) {
+    const cells = engines.map((engine) => {
+      const value = metricsByEngine[engine]?.[key];
+      return value === undefined ? "—" : value.toFixed(3);
+    });
+    lines.push(`| ${key} | ${cells.join(" | ")} |`);
   }
   return lines.join("\n");
+}
+
+interface EngineRunInput {
+  engineName: string;
+  corpus: FixtureCorpus;
+  golden: GoldenSet;
+  refusals: RefusalSet;
+  bars: EngineBars | null;
+  createEngine: (name: string) => KnowledgeAdapter;
+  judgeLeg: JudgeLeg | undefined;
+}
+
+interface EngineRunResult {
+  repo: ScorecardRepoInput;
+  metrics: Record<string, number>;
+}
+
+async function runEngine(input: EngineRunInput): Promise<EngineRunResult> {
+  const { engineName, corpus, golden, refusals, bars } = input;
+  const engine = input.createEngine(engineName);
+  if (engine.upsert === undefined) {
+    throw new Error(`Engine "${engineName}" declares no write posture; the eval cannot load the fixture corpus.`);
+  }
+  await engine.upsert(corpus.docs);
+
+  // --- Layer 1: retrieval --------------------------------------------------
+  const outcomes: RetrievalOutcome[] = [];
+  const retrievalChecks: ScorecardCheck[] = [];
+  for (const item of golden.items) {
+    const intent: KnowledgeIntent = item.intent ?? "chat";
+    const text = engineName === "memory" && item.memoryQuery !== undefined ? item.memoryQuery : item.question;
+    const result = await engine.search(
+      { text, intent, ...(item.kinds === undefined ? {} : { kinds: item.kinds }), limit: RETRIEVAL_K },
+      EVAL_CONTEXT,
+    );
+    const rankedDocIds = result.hits.map((hit) => hit.ref.docId);
+    outcomes.push({ itemId: item.id, intent, expectedDocIds: item.expectedDocIds, rankedDocIds });
+    const recall = recallAtK(item.expectedDocIds, rankedDocIds, RETRIEVAL_K);
+    const rr = reciprocalRank(item.expectedDocIds, rankedDocIds);
+    retrievalChecks.push({
+      id: `retrieval.${item.id}`,
+      pass: recall === 1,
+      detail: `recall@${RETRIEVAL_K}=${recall.toFixed(2)} rr=${rr.toFixed(2)} hits=[${rankedDocIds.join(", ")}]`,
+    });
+  }
+  const metrics = aggregateRetrievalMetrics(outcomes, RETRIEVAL_K);
+
+  // --- Layer 2: refusals (any non-refusal = hard failure) -------------------
+  const refusalChecks: ScorecardCheck[] = [];
+  for (const item of refusals.items) {
+    const answered: string[] = [];
+    for (const phrasing of [item.question, ...item.paraphrases]) {
+      const probe = await probeRefusal(engine, phrasing, EVAL_CONTEXT);
+      if (probe.outcome !== "insufficient-evidence") answered.push(`"${phrasing}" (${probe.hits} hits)`);
+    }
+    refusalChecks.push({
+      id: `refusal.${item.id}`,
+      pass: answered.length === 0,
+      detail: answered.length === 0
+        ? "refused on every phrasing"
+        : `non-refusal outcome on: ${answered.join("; ")}`,
+    });
+  }
+
+  // --- Layer 3: judge (model-costed; injected or loudly skipped) ------------
+  let judgeLayer: ScorecardLayerInput;
+  if (input.judgeLeg === undefined) {
+    judgeLayer = {
+      layer: 3,
+      name: "judge",
+      status: "skip",
+      detail: "offline run: the model-costed judge leg runs nightly or with an injected judge (docs/eval/KNOWLEDGE.md carve-out)",
+      hardFailure: false,
+    };
+  } else {
+    const perAxis: Record<string, { scores: number[]; verdicts: boolean[] }> = {
+      faithfulness: { scores: [], verdicts: [] },
+      citationCorrectness: { scores: [], verdicts: [] },
+      completeness: { scores: [], verdicts: [] },
+    };
+    let degraded = 0;
+    for (const item of golden.items) {
+      const answer = input.judgeLeg.answers[item.id];
+      if (answer === undefined) continue;
+      const judgement = await input.judgeLeg.judge({
+        question: item.question,
+        answer: answer.answer,
+        citations: answer.citations,
+        keyPoints: item.keyPoints,
+      });
+      if (judgement.degraded) degraded += 1;
+      for (const axis of ["faithfulness", "citationCorrectness", "completeness"] as const) {
+        perAxis[axis]!.scores.push(judgement[axis].score);
+        perAxis[axis]!.verdicts.push(judgement[axis].verdict);
+      }
+    }
+    const judgeChecks: ScorecardCheck[] = Object.entries(perAxis).map(([axis, data]) => {
+      const mean = data.scores.length === 0 ? 0 : data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+      metrics[`judge.${axis}`] = Number(mean.toFixed(6));
+      const passed = data.verdicts.filter(Boolean).length;
+      return {
+        id: `judge.${axis}`,
+        pass: data.verdicts.length > 0 && passed === data.verdicts.length,
+        detail: `mean score ${mean.toFixed(2)}/5; verdicts ${passed}/${data.verdicts.length}${degraded > 0 ? `; ${degraded} degraded judgement(s)` : ""}`,
+      };
+    });
+    judgeLayer = { layer: 3, name: "judge", checks: judgeChecks };
+  }
+
+  // --- Layer 4: bars (ratchet floors; skips are loud) ------------------------
+  const barsChecks: ScorecardCheck[] = [];
+  if (bars === null) {
+    barsChecks.push({
+      id: "bars.regression",
+      pass: true,
+      detail: `no bars recorded for engine "${engineName}"; metrics are not regression-checked (add docs/eval/knowledge/bars/${engineName}.json)`,
+    });
+  } else {
+    const breaches: string[] = [];
+    const unmeasured: string[] = [];
+    for (const [key, floor] of Object.entries(bars.bars)) {
+      const measured = metrics[key];
+      if (measured === undefined) {
+        unmeasured.push(key);
+      } else if (measured + EPSILON < floor) {
+        breaches.push(`${key}: measured ${measured.toFixed(3)} < bar ${floor}`);
+      }
+    }
+    barsChecks.push({
+      id: "bars.regression",
+      pass: breaches.length === 0,
+      detail: breaches.length === 0
+        ? `all ${Object.keys(bars.bars).length - unmeasured.length} measured bars met`
+        : breaches.join("; "),
+    });
+    if (unmeasured.length > 0) {
+      barsChecks.push({
+        id: "bars.skipped",
+        pass: true,
+        detail: `bars not measured by this run (model-costed legs): ${unmeasured.join(", ")}`,
+      });
+    }
+  }
+
+  return {
+    repo: {
+      repo: `knowledge-${engineName}`,
+      layers: [
+        { layer: 1, name: `retrieval (${engineName})`, checks: retrievalChecks },
+        { layer: 2, name: "refusals", checks: refusalChecks },
+        judgeLayer,
+        { layer: 4, name: "bars", checks: barsChecks },
+      ],
+    },
+    metrics,
+  };
 }
 
 export async function runKnowledgeEval(options: KnowledgeEvalOptions, deps: KnowledgeEvalDeps = {}): Promise<number> {
@@ -111,162 +284,44 @@ export async function runKnowledgeEval(options: KnowledgeEvalOptions, deps: Know
   const createEngine = deps.createEngine ?? defaultCreateEngine;
 
   try {
-    const [corpus, golden, refusals, bars] = await Promise.all([
+    if (options.engines.length === 0) throw new Error("knowledge-eval needs at least one engine");
+    const [corpus, golden, refusals] = await Promise.all([
       (deps.loadCorpus ?? loadFixtureCorpus)(),
       (deps.loadGolden ?? loadGoldenSet)(workspaceRoot),
       (deps.loadRefusals ?? loadRefusalSet)(workspaceRoot),
-      (deps.loadBars ?? loadEngineBars)(options.engine, workspaceRoot),
     ]);
 
-    const engine = createEngine(options.engine);
-    if (engine.upsert === undefined) {
-      throw new Error(`Engine "${options.engine}" declares no write posture; the eval cannot load the fixture corpus.`);
-    }
-    await engine.upsert(corpus.docs);
-
-    // --- Layer 1: retrieval ------------------------------------------------
-    const outcomes: RetrievalOutcome[] = [];
-    const retrievalChecks: ScorecardCheck[] = [];
-    for (const item of golden.items) {
-      const intent: KnowledgeIntent = item.intent ?? "chat";
-      const text = options.engine === "memory" && item.memoryQuery !== undefined ? item.memoryQuery : item.question;
-      const result = await engine.search(
-        { text, intent, ...(item.kinds === undefined ? {} : { kinds: item.kinds }), limit: RETRIEVAL_K },
-        EVAL_CONTEXT,
-      );
-      const rankedDocIds = result.hits.map((hit) => hit.ref.docId);
-      outcomes.push({ itemId: item.id, intent, expectedDocIds: item.expectedDocIds, rankedDocIds });
-      const recall = recallAtK(item.expectedDocIds, rankedDocIds, RETRIEVAL_K);
-      const rr = reciprocalRank(item.expectedDocIds, rankedDocIds);
-      retrievalChecks.push({
-        id: `retrieval.${item.id}`,
-        pass: recall === 1,
-        detail: `recall@${RETRIEVAL_K}=${recall.toFixed(2)} rr=${rr.toFixed(2)} hits=[${rankedDocIds.join(", ")}]`,
+    const repos: ScorecardRepoInput[] = [];
+    const metricsByEngine: Record<string, Record<string, number>> = {};
+    for (const engineName of options.engines) {
+      const bars = await (deps.loadBars ?? loadEngineBars)(engineName, workspaceRoot);
+      const result = await runEngine({
+        engineName,
+        corpus,
+        golden,
+        refusals,
+        bars,
+        createEngine,
+        judgeLeg: deps.judgeLeg,
       });
-    }
-    const metrics = aggregateRetrievalMetrics(outcomes, RETRIEVAL_K);
-
-    // --- Layer 2: refusals (any non-refusal = hard failure) ----------------
-    const refusalChecks: ScorecardCheck[] = [];
-    for (const item of refusals.items) {
-      const answered: string[] = [];
-      for (const phrasing of [item.question, ...item.paraphrases]) {
-        const probe = await probeRefusal(engine, phrasing, EVAL_CONTEXT);
-        if (probe.outcome !== "insufficient-evidence") answered.push(`"${phrasing}" (${probe.hits} hits)`);
-      }
-      refusalChecks.push({
-        id: `refusal.${item.id}`,
-        pass: answered.length === 0,
-        detail: answered.length === 0
-          ? "refused on every phrasing"
-          : `non-refusal outcome on: ${answered.join("; ")}`,
-      });
-    }
-
-    // --- Layer 3: judge (model-costed; injected or loudly skipped) ---------
-    let judgeLayer: ScorecardLayerInput;
-    if (deps.judgeLeg === undefined) {
-      judgeLayer = {
-        layer: 3,
-        name: "judge",
-        status: "skip",
-        detail: "offline run: the model-costed judge leg runs nightly or with an injected judge (docs/eval/KNOWLEDGE.md carve-out)",
-        hardFailure: false,
-      };
-    } else {
-      const perAxis: Record<string, { scores: number[]; verdicts: boolean[] }> = {
-        faithfulness: { scores: [], verdicts: [] },
-        citationCorrectness: { scores: [], verdicts: [] },
-        completeness: { scores: [], verdicts: [] },
-      };
-      let degraded = 0;
-      for (const item of golden.items) {
-        const answer = deps.judgeLeg.answers[item.id];
-        if (answer === undefined) continue;
-        const judgement = await deps.judgeLeg.judge({
-          question: item.question,
-          answer: answer.answer,
-          citations: answer.citations,
-          keyPoints: item.keyPoints,
-        });
-        if (judgement.degraded) degraded += 1;
-        for (const axis of ["faithfulness", "citationCorrectness", "completeness"] as const) {
-          perAxis[axis]!.scores.push(judgement[axis].score);
-          perAxis[axis]!.verdicts.push(judgement[axis].verdict);
-        }
-      }
-      const judgeChecks: ScorecardCheck[] = Object.entries(perAxis).map(([axis, data]) => {
-        const mean = data.scores.length === 0 ? 0 : data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-        metrics[`judge.${axis}`] = Number(mean.toFixed(6));
-        const passed = data.verdicts.filter(Boolean).length;
-        return {
-          id: `judge.${axis}`,
-          pass: data.verdicts.length > 0 && passed === data.verdicts.length,
-          detail: `mean score ${mean.toFixed(2)}/5; verdicts ${passed}/${data.verdicts.length}${degraded > 0 ? `; ${degraded} degraded judgement(s)` : ""}`,
-        };
-      });
-      judgeLayer = { layer: 3, name: "judge", checks: judgeChecks };
-    }
-
-    // --- Layer 4: bars (ratchet floors; skips are loud) ---------------------
-    const barsChecks: ScorecardCheck[] = [];
-    if (bars === null) {
-      barsChecks.push({
-        id: "bars.regression",
-        pass: true,
-        detail: `no bars recorded for engine "${options.engine}"; metrics are not regression-checked (add docs/eval/knowledge/bars/${options.engine}.json)`,
-      });
-    } else {
-      const breaches: string[] = [];
-      const unmeasured: string[] = [];
-      for (const [key, floor] of Object.entries(bars.bars)) {
-        const measured = metrics[key];
-        if (measured === undefined) {
-          unmeasured.push(key);
-        } else if (measured + EPSILON < floor) {
-          breaches.push(`${key}: measured ${measured.toFixed(3)} < bar ${floor}`);
-        }
-      }
-      barsChecks.push({
-        id: "bars.regression",
-        pass: breaches.length === 0,
-        detail: breaches.length === 0
-          ? `all ${Object.keys(bars.bars).length - unmeasured.length} measured bars met`
-          : breaches.join("; "),
-      });
-      if (unmeasured.length > 0) {
-        barsChecks.push({
-          id: "bars.skipped",
-          pass: true,
-          detail: `bars not measured by this run (model-costed legs): ${unmeasured.join(", ")}`,
-        });
-      }
+      repos.push(result.repo);
+      metricsByEngine[engineName] = result.metrics;
     }
 
     const scorecard = buildScorecard({
       generatedAt: now().toISOString(),
       strict: options.strict,
-      repos: [
-        {
-          repo: "knowledge-eval",
-          layers: [
-            { layer: 1, name: `retrieval (${options.engine})`, checks: retrievalChecks },
-            { layer: 2, name: "refusals", checks: refusalChecks },
-            judgeLayer,
-            { layer: 4, name: "bars", checks: barsChecks },
-          ],
-        },
-      ],
+      repos,
     });
 
     const context = createContext();
     await writeScorecardArtifacts(scorecard, { context });
 
     if (options.json) {
-      stdout(JSON.stringify({ ...scorecard, metrics }, null, 2));
+      stdout(JSON.stringify({ ...scorecard, metrics: metricsByEngine }, null, 2));
     } else {
       stdout(renderScorecardMarkdown(scorecard, { linkBaseDir: context.corpusRoot }));
-      stdout(formatMetrics(metrics));
+      stdout(formatMetricsComparison(metricsByEngine));
     }
 
     return scorecardExitCode(scorecard);

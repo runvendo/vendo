@@ -35,7 +35,7 @@ async function runSeeded(judgement: {
   });
 
   const exitCode = await runKnowledgeEval(
-    { engine: "memory", json: true, strict: true },
+    { engines: ["memory"], json: true, strict: true },
     {
       stdout: (line) => { lines.push(line); },
       stderr: (line) => { lines.push(line); },

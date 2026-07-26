@@ -115,7 +115,7 @@ const usage = `Usage:
   pnpm corpus ai [repo...] [--model <id>]... [--json] [--strict]
   pnpm corpus install-eval [fixture...] [--model <id>] [--dry-run] [--json] [--strict]
                            [--turn-budget <n>] [--time-budget-ms <ms>] [--max-budget-usd <usd>]
-  pnpm corpus knowledge-eval [--engine memory] [--json] [--strict]
+  pnpm corpus knowledge-eval [--engine memory]... [--json] [--strict]
 
 Commands:
   validate  Load and validate corpus/manifest.json.
@@ -130,10 +130,11 @@ Commands:
             headless Claude Code, machine scoring, report under corpus/reports/.
             Spends real model money per live run; never part of pnpm test or CI. --dry-run scores a
             canned transcript without invoking the agent.
-  knowledge-eval  Run the knowledge eval (docs/eval/KNOWLEDGE.md): fixture corpus into the
+  knowledge-eval  Run the knowledge eval (docs/eval/KNOWLEDGE.md): fixture corpus into each
             selected engine, golden-set retrieval metrics (recall@5, MRR per intent), refusal
-            hard-fails, and the engine's ratcheted bars. Deterministic and offline for the
-            memory engine; model-costed judge legs run nightly, never here.
+            hard-fails, and each engine's ratcheted bars. Repeat --engine for the per-engine
+            comparison (engine columns). Deterministic and offline for the memory engine;
+            model-costed judge legs run nightly, never here.
 `;
 
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -269,7 +270,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
 }
 
 export function parseKnowledgeEvalArgs(args: readonly string[]): KnowledgeEvalOptions {
-  let engine = "memory";
+  const engines: string[] = [];
   let json = false;
   let strict = false;
 
@@ -279,10 +280,10 @@ export function parseKnowledgeEvalArgs(args: readonly string[]): KnowledgeEvalOp
     if (arg === "--engine") {
       const value = args[index + 1];
       if (!value || value.startsWith("-")) throw new Error("--engine needs an engine name");
-      engine = value;
+      engines.push(value);
       index += 1;
     } else if (arg.startsWith("--engine=")) {
-      engine = arg.slice("--engine=".length);
+      engines.push(arg.slice("--engine=".length));
     } else if (arg === "--json") {
       json = true;
     } else if (arg === "--strict") {
@@ -294,7 +295,7 @@ export function parseKnowledgeEvalArgs(args: readonly string[]): KnowledgeEvalOp
     }
   }
 
-  return { engine, json, strict };
+  return { engines: engines.length > 0 ? engines : ["memory"], json, strict };
 }
 
 function parseLayer(value: string | undefined): 1 | 2 | 3 {

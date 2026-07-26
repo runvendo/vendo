@@ -77,20 +77,20 @@ type JsonRun = {
   exitCode: number;
   scorecard: {
     summary: { hardFailureCount: number };
-    repos: { layers: { name: string; status: string; checks: { id: string; pass: boolean; detail: string }[] }[] }[];
-    metrics: Record<string, number>;
+    repos: { repo: string; layers: { name: string; status: string; checks: { id: string; pass: boolean; detail: string }[] }[] }[];
+    metrics: Record<string, Record<string, number>>;
   };
 };
 
 async function runJson(
   overrides: Partial<KnowledgeEvalDeps>,
-  options: { strict?: boolean; engine?: string } = {},
+  options: { strict?: boolean; engines?: string[] } = {},
 ): Promise<JsonRun> {
   const { createContext } = await tempContextFactory();
   const out = collector();
   const err = collector();
   const exitCode = await runKnowledgeEval(
-    { engine: options.engine ?? "memory", json: true, strict: options.strict ?? true },
+    { engines: options.engines ?? ["memory"], json: true, strict: options.strict ?? true },
     {
       stdout: out.write,
       stderr: err.write,
@@ -115,9 +115,10 @@ function layer(run: JsonRun, name: string) {
 describe("runKnowledgeEval retrieval metrics", () => {
   it("computes recall@5 and MRR with known ranks on the tiny corpus", async () => {
     const run = await runJson({});
-    expect(run.scorecard.metrics["recall@5"]).toBeCloseTo(2 / 3, 6);
-    expect(run.scorecard.metrics.mrr).toBeCloseTo(0.5, 6);
-    expect(run.scorecard.metrics["recall@5.chat"]).toBeCloseTo(2 / 3, 6);
+    const metrics = run.scorecard.metrics["memory"]!;
+    expect(metrics["recall@5"]).toBeCloseTo(2 / 3, 6);
+    expect(metrics.mrr).toBeCloseTo(0.5, 6);
+    expect(metrics["recall@5.chat"]).toBeCloseTo(2 / 3, 6);
 
     const retrieval = layer(run, "retrieval");
     expect(retrieval.checks.find((check) => check.id === "retrieval.t-sky")?.pass).toBe(true);
@@ -135,7 +136,7 @@ describe("runKnowledgeEval over the real golden set (memory engine)", () => {
       const out = collector();
       const err = collector();
       const exitCode = await runKnowledgeEval(
-        { engine: "memory", json: false, strict },
+        { engines: ["memory"], json: false, strict },
         { stdout: out.write, stderr: err.write, createContext },
       );
       expect(exitCode, `strict=${strict}: ${err.lines.join("\n")}`).toBe(0);
@@ -265,9 +266,40 @@ describe("judge leg", () => {
     const judgeLayer = layer(judged, "judge");
     expect(judgeLayer.checks.find((check) => check.id === "judge.faithfulness")?.pass).toBe(true);
     expect(judgeLayer.checks.find((check) => check.id === "judge.completeness")?.pass).toBe(false);
-    expect(judged.scorecard.metrics["judge.faithfulness"]).toBe(5);
-    expect(judged.scorecard.metrics["judge.citationCorrectness"]).toBe(4);
-    expect(judged.scorecard.metrics["judge.completeness"]).toBe(3);
+    const metrics = judged.scorecard.metrics["memory"]!;
+    expect(metrics["judge.faithfulness"]).toBe(5);
+    expect(metrics["judge.citationCorrectness"]).toBe(4);
+    expect(metrics["judge.completeness"]).toBe(3);
+  });
+});
+
+describe("per-engine comparison", () => {
+  it("multiple engines produce one scorecard section and one metrics column each", async () => {
+    const run = await runJson(
+      {
+        // A second engine that never finds anything: its metrics column must
+        // diverge from memory's while sharing the same golden set.
+        createEngine: (name) =>
+          name === "empty"
+            ? {
+                posture: { fetch: false, write: true, visibility: "public-only" },
+                async search(): Promise<KnowledgeSearchResult> {
+                  return { hits: [] };
+                },
+                async upsert() {},
+                async status() {
+                  return { docs: 0 };
+                },
+              }
+            : memoryKnowledgeAdapter(),
+      },
+      { engines: ["memory", "empty"], strict: false },
+    );
+    expect(run.scorecard.repos.map((repo) => repo.repo)).toEqual(["knowledge-memory", "knowledge-empty"]);
+    expect(run.scorecard.metrics["memory"]?.["recall@5"]).toBeCloseTo(2 / 3, 6);
+    expect(run.scorecard.metrics["empty"]?.["recall@5"]).toBe(0);
+    // Non-strict comparison runs report and exit 0 even with failures.
+    expect(run.exitCode).toBe(0);
   });
 });
 
@@ -276,7 +308,7 @@ describe("engine registry", () => {
     const { createContext } = await tempContextFactory();
     const err = collector();
     const exitCode = await runKnowledgeEval(
-      { engine: "nope", json: false, strict: false },
+      { engines: ["nope"], json: false, strict: false },
       { stderr: err.write, stdout: () => {}, createContext },
     );
     expect(exitCode).toBe(1);
