@@ -25,3 +25,13 @@ export type { KnowledgeAdapter } from "@vendoai/core";
  */
 export const KNOWLEDGE_DOCS_COLLECTION = "vendo_knowledge_docs" as const;
 export const KNOWLEDGE_CHUNKS_COLLECTION = "vendo_knowledge_chunks" as const;
+
+export {
+  VENDO_KNOWLEDGE_CONFIG_FORMAT,
+  ingestSources,
+  knowledgeConfigSchema,
+  knowledgeSourceConfigSchema,
+  structuralChunker,
+  type KnowledgeConfig,
+  type KnowledgeSourceConfig,
+} from "./ingest/index.js";
