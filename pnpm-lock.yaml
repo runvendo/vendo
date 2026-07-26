@@ -429,6 +429,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@vendoai/knowledge':
+        specifier: workspace:*
+        version: link:../../packages/knowledge
       '@vendoai/vendo':
         specifier: workspace:*
         version: link:../../packages/vendo
