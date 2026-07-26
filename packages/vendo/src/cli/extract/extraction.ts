@@ -34,18 +34,20 @@ export { composeInstructions } from "./stages.js";
  * verification — see stages.ts for the survey / draft-per-surface /
  * cross-check / brief orchestration). The agent reads the codebase and
  * drafts judgment on top of the static facts: task-oriented tool
- * descriptions, risk corrections, critical marks, waking unclassifiable
- * tools, and the product brief.
+ * descriptions, risk corrections, critical marks, and the product brief.
  *
  * Output rides the channels that SURVIVE `vendo sync` regeneration:
  * `.vendo/overrides.json` (per-tool description/risk/critical/disabled — the
  * designed merge layer) and `.vendo/brief.md`. It never writes tools.json
  * directly, so predev/prebuild re-extraction cannot clobber it.
  *
- * Deterministic guards (never cross fingers, PostHog lesson):
+ * Deterministic guards (never cross fingers, PostHog lesson) — the SAME
+ * restrictive-only doctrine sync/init enforce via clampEnrichment: an AI draft
+ * may only make a tool MORE restrictive, never loosen it.
  * - only tool names the static extraction produced are accepted;
  * - risk may be RAISED, never lowered (fail-closed stays fail-closed);
- * - waking a disabled tool requires reasoning and an explicit risk;
+ * - a scanner-disabled tool is NEVER woken by the draft — enabling is a human
+ *   act and lives in overrides.json (disabled: false); the draft is refused;
  * - human decisions win: existing override fields are never overwritten, and
  *   a hand-written brief is never replaced (only the init template is).
  */
@@ -56,7 +58,6 @@ export interface AppliedSummary {
   described: number;
   riskRaised: number;
   critical: number;
-  woken: number;
   /** Non-end-user-audience tools excluded (disabled) this apply. */
   excluded: number;
   /** Tools still live after this apply — zero means the agent cannot act on the host API at all. */
@@ -91,7 +92,7 @@ export async function applyDraft(input: {
       })();
 
   const summary: AppliedSummary = {
-    described: 0, riskRaised: 0, critical: 0, woken: 0, excluded: 0, enabledAfter: 0,
+    described: 0, riskRaised: 0, critical: 0, excluded: 0, enabledAfter: 0,
     briefWritten: false, refused: [], missedSurfaces: input.draft.missedSurfaces ?? [],
   };
 
@@ -108,23 +109,20 @@ export async function applyDraft(input: {
       next.description = entry.description;
       summary.described += 1;
     }
-    // Waking a statically-unclassifiable tool is its own path: the static
-    // "destructive, disabled" grade is a fail-closed PLACEHOLDER, not
-    // evidence, so a reasoned wake carries the model's grade without tripping
-    // the downgrade guard (Greptile P1 / Devin on #363). A human-set risk or
-    // disabled decision always wins.
-    // A wake claiming a non-end-user audience is contradictory; audience
-    // exclusion (fail-closed) wins and the wake leg never runs.
+    // Restrictive-only doctrine (#553): enabling a scanner-disabled tool is a
+    // loosening, and an AI draft may only ever make a tool MORE restrictive —
+    // the SAME rule sync/init's clampEnrichment enforces on tools.json. So a
+    // draft that tries to wake a disabled tool is refused here, with a line
+    // pointing the operator to the human-written authored layer; overrides.json
+    // is where a human wakes it by hand (disabled: false). A wake claiming a
+    // non-end-user audience is contradictory anyway; audience exclusion
+    // (fail-closed) already wins, so the refusal leg only fires for the
+    // otherwise-plausible end-user wake. A human decision (existing.disabled
+    // set either way) simply wins — no refusal noise needed.
     const nonEndUser = entry.audience === "operator" || entry.audience === "internal";
-    const isWake = entry.disabled === false && fact.disabled === true && !nonEndUser;
-    if (isWake && existing.disabled === undefined) {
-      if (entry.reasoning === undefined || entry.risk === undefined) {
-        summary.refused.push(`${entry.name}: waking a disabled tool needs reasoning and a risk grade`);
-      } else {
-        next.disabled = false;
-        if (existing.risk === undefined) next.risk = entry.risk;
-        summary.woken += 1;
-      }
+    const proposesWake = entry.disabled === false && fact.disabled === true && !nonEndUser;
+    if (proposesWake && existing.disabled === undefined) {
+      summary.refused.push(`${entry.name}: enabling a disabled tool refused — wake it by hand in overrides.json (disabled: false)`);
     } else if (
       entry.risk !== undefined && existing.risk === undefined && fact.disabled !== true
     ) {
@@ -195,7 +193,6 @@ export function reportApplied(input: {
     `${applied.described} descriptions`,
     ...(applied.riskRaised > 0 ? [`${applied.riskRaised} risk raises`] : []),
     ...(applied.critical > 0 ? [`${applied.critical} critical marks`] : []),
-    ...(applied.woken > 0 ? [`${applied.woken} tools woken`] : []),
     ...(applied.excluded > 0 ? [`${applied.excluded} operator/internal tools excluded`] : []),
     ...(input.briefDrafted ? ["brief drafted"] : []),
   ];
