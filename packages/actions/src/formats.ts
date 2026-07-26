@@ -271,6 +271,10 @@ export interface ToolOverride {
   critical?: boolean;
   disabled?: boolean;
   description?: string;
+  /** The short human label people see for this tool (MCP client menus,
+   *  approval cards). Presentation, not capability — the authored copy is the
+   *  last word over whatever sync's enrichment proposed. */
+  title?: string;
   /** Who can legitimately call this through the product's own auth. Extraction
    *  records it as provenance for the default exclusion of non-end-user tools
    *  (operator/internal surfaces never reach the embedded agent unreviewed). */
@@ -286,6 +290,7 @@ export const toolOverrideSchema = z.object({
   critical: z.boolean().optional(),
   disabled: z.boolean().optional(),
   description: z.string().optional(),
+  title: z.string().min(1).optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
 }).strict() satisfies z.ZodType<ToolOverride>;
@@ -433,12 +438,37 @@ export const toolsFileV3Schema = z.object({
  * slot opt-outs. Strict like v1 — a typo must fail loudly — except compounds
  * and briefs entries, which keep their passthrough (additive) behavior.
  */
+/** The host-curated tool menu for ONE surface. Curation, not security: a menu
+ *  decides what a surface OFFERS, never what the guard allows — `disabled`,
+ *  guard rules, and audience exclusions are untouched by it. */
+export interface SurfaceMenu {
+  tools: string[];
+}
+
+/** Per-surface menus. The key set is a CLOSED enum on purpose: a typo'd
+ *  surface name in an authored file must fail loudly at parse rather than
+ *  silently curate nothing. `cli` and friends join when they are real. */
+export interface OverridesSurfaces {
+  agent?: SurfaceMenu;
+  mcp?: SurfaceMenu;
+}
+
+const surfaceMenuSchema = z.object({
+  tools: z.array(z.string().min(1)),
+}).strict() satisfies z.ZodType<SurfaceMenu>;
+
+const overridesSurfacesSchema = z.object({
+  agent: surfaceMenuSchema.optional(),
+  mcp: surfaceMenuSchema.optional(),
+}).strict() satisfies z.ZodType<OverridesSurfaces>;
+
 export interface OverridesFileV3 {
   format: typeof VENDO_OVERRIDES_FORMAT_V3;
   tools: Record<string, ToolOverride>;
   domains?: DomainManifest;
   compounds?: CompoundTool[];
   briefs?: CapabilityBrief[];
+  surfaces?: OverridesSurfaces;
   remix?: { ignoreSlots: string[] };
 }
 
@@ -448,6 +478,7 @@ export const overridesFileV3Schema = z.object({
   domains: authoredDomainManifestSchema.optional(),
   compounds: z.array(compoundToolSchema).optional(),
   briefs: z.array(capabilityBriefSchema).optional(),
+  surfaces: overridesSurfacesSchema.optional(),
   remix: z.object({
     ignoreSlots: z.array(z.string().min(1)),
   }).strict().optional(),

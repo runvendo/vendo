@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ActivityPanel, VendoThread } from "@vendoai/ui/chrome";
 import { VendoRoot } from "@/components/vendo/VendoRoot";
+import { cadenceScenarios } from "@/vendo/scenarios";
 
 function PageSurface() {
   const [activityOpen, setActivityOpen] = useState(false);
@@ -21,7 +22,9 @@ function PageSurface() {
       </div>
       <div className="fl-page-body">
         <div className="fl-page-pane">
-          <VendoThread />
+          {/* demo-refresh Part 6 — the scenario ladder as starter cards on the
+              empty landing (same set the overlay's thread shows). */}
+          <VendoThread suggestions={cadenceScenarios} />
         </div>
       </div>
       {activityOpen ? (

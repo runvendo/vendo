@@ -186,6 +186,9 @@ describe("generation engine through createApps", () => {
 
     expect(prompts[0]).toContain(`CURRENT DATE: ${today}`);
     expect(prompts.at(-1)).toContain(`CURRENT DATE: ${today}`);
+    // Design guidance (2026-07 demo feedback): the EDIT dialect also forbids
+    // emojis in any text an op introduces.
+    expect(prompts.at(-1)).toContain("No emojis, ever");
   });
 
   describe("data-sighted verification pass (pipeline.endPass at the runtime seam)", () => {
@@ -277,6 +280,9 @@ describe("generation engine through createApps", () => {
       expect(prompts[0]).toContain("<building_great_apps>");
       expect(prompts[0]).toContain("<examples>");
       expect(prompts[0]).toContain("Claims tell the truth");
+      // Design guidance (2026-07 demo feedback): generated UI text never
+      // carries emojis.
+      expect(prompts[0]).toContain("No emojis, ever");
       expect(prompts[0]).toContain("a semantically wrong tool is worse than a disclaimer");
       expect(prompts[0]).toContain("rows lacking the named series draws nothing");
       expect(prompts[0]).toContain(`CURRENT DATE: ${new Date().toISOString().slice(0, 10)}`);
@@ -1613,8 +1619,10 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
     expect(document.components?.Note).toContain("export default");
     expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain("REPAIR_THESE_ISSUES");
-    expect(prompts[1]).toContain("Note");
+    // demo-latency lane — an island-only failure rides the island-scoped
+    // repair (one small call rewriting just the island), not a full re-gen.
+    expect(prompts[1]).toContain("ISLANDS_TO_FIX: Note");
+    expect(prompts[1]).toContain("export default");
   });
 
   it("repairs a syntactically-broken island instead of persisting it", async () => {

@@ -7,7 +7,9 @@ import path from "node:path";
  * volume. One always-on router instance owns it, so plain synchronous fs is
  * both sufficient and race-free.
  *
- * File shape: { [id]: { url, prospect, expiresAt, killed, createdAt, hits } }.
+ * File shape: { [id]: { url, prospect, expiresAt?, permanent?, killed, createdAt, hits } }.
+ * `permanent: true` rows never expire (routeFor treats them as live until
+ * killed); `expiresAt` is required exactly when a row is NOT permanent.
  *
  * FAIL CLOSED: an unreadable/unparseable/wrong-shape file makes the public
  * path treat every id as unknown, admin operations throw
@@ -25,6 +27,15 @@ export class RegistryCorruptError extends Error {
   }
 }
 
+/** An admin write that would produce an invalid row — the server maps this to
+ * a 400 (caller error), never a 500 or a poisoned registry file. */
+export class RegistryValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "RegistryValidationError";
+  }
+}
+
 function isValidEntry(entry) {
   return (
     typeof entry === "object" &&
@@ -32,7 +43,12 @@ function isValidEntry(entry) {
     !Array.isArray(entry) &&
     typeof entry.url === "string" &&
     typeof entry.prospect === "string" &&
-    typeof entry.expiresAt === "string" &&
+    (entry.permanent === undefined || typeof entry.permanent === "boolean") &&
+    // Permanence and expiry are one axis: a permanent row may omit expiresAt;
+    // every other row must carry it.
+    (entry.permanent === true
+      ? entry.expiresAt === undefined || typeof entry.expiresAt === "string"
+      : typeof entry.expiresAt === "string") &&
     typeof entry.killed === "boolean" &&
     typeof entry.createdAt === "string" &&
     Number.isFinite(entry.hits)
@@ -154,16 +170,20 @@ export function createRegistry({
     },
 
     /** Insert or replace a row. Preserves createdAt/hits across upserts of the same id. */
-    upsert({ id, url, prospect, expiresAt, killed = false }) {
+    upsert({ id, url, prospect, expiresAt, permanent = false, killed = false }) {
       if (typeof id !== "string" || !SLUG_PATTERN.test(id)) {
         throw new Error(`registry id must be slug-shaped (received ${JSON.stringify(id)})`);
+      }
+      if (permanent !== true && typeof expiresAt !== "string") {
+        throw new RegistryValidationError("expiresAt is required unless permanent is true");
       }
       const entries = loadForAdmin();
       const existing = entries[id];
       entries[id] = {
         url: normalizeUrl(url),
         prospect,
-        expiresAt,
+        ...(expiresAt === undefined ? {} : { expiresAt }),
+        ...(permanent === true ? { permanent: true } : {}),
         killed,
         createdAt: existing?.createdAt ?? now().toISOString(),
         hits: existing?.hits ?? 0,
@@ -177,7 +197,14 @@ export function createRegistry({
       const entries = loadForAdmin();
       if (entries[id] === undefined) return undefined;
       const normalized = partial.url === undefined ? partial : { ...partial, url: normalizeUrl(partial.url) };
-      entries[id] = { ...entries[id], ...normalized };
+      const merged = { ...entries[id], ...normalized };
+      // Dropping permanence (or setting it false) without an expiry would
+      // write a row the next load() reads as corrupt — refuse it up front.
+      if (merged.permanent !== true && typeof merged.expiresAt !== "string") {
+        throw new RegistryValidationError("cannot unset permanence without an expiresAt on the row");
+      }
+      if (merged.permanent !== true) delete merged.permanent;
+      entries[id] = merged;
       save(entries);
       return withId(id, entries[id]);
     },
@@ -193,7 +220,8 @@ export function createRegistry({
     /**
      * The routing decision for one public request. Corrupt file => every id is
      * unknown (the public surface fails safe, never 500s). Kill wins over
-     * expiry; an unparseable expiresAt counts as expired (fail closed).
+     * everything (including permanence); a permanent row is otherwise never
+     * expired; an unparseable expiresAt counts as expired (fail closed).
      */
     routeFor(id, nowDate = now()) {
       const state = load();
@@ -201,6 +229,7 @@ export function createRegistry({
       const entry = state.entries[id];
       if (entry === undefined) return { kind: "unknown" };
       if (entry.killed) return { kind: "killed" };
+      if (entry.permanent === true) return { kind: "live", url: entry.url };
       const expiresAtMs = Date.parse(entry.expiresAt);
       if (Number.isNaN(expiresAtMs) || nowDate.getTime() >= expiresAtMs) return { kind: "expired" };
       return { kind: "live", url: entry.url };

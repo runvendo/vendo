@@ -67,7 +67,12 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
   // automation eyebrow, and a plain-language description synthesized from the
   // REAL inputs when the host supplies none.
   const meta = useVendoTools()[approval.descriptor.name];
-  const presentation = toolPresentation(approval.descriptor.name, approval.call.args, meta);
+  const presentation = toolPresentation(
+    approval.descriptor.name,
+    approval.call.args,
+    meta,
+    approval.descriptor.title,
+  );
   const title = presentation.title;
   const description = (presentation.description ?? approval.descriptor.description).trim();
   const fields = flatFields(approval.call.args);

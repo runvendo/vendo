@@ -6,7 +6,8 @@ import {
   type Connector,
   type ServerActionHandler,
 } from "@vendoai/actions";
-import { createAgent, type VendoAgent } from "@vendoai/agent";
+import { createAgent, VENDO_TOOL_PACK_PREFIX, type VendoAgent } from "@vendoai/agent";
+import { memoizedSurfaceMenu } from "./surface-menu.js";
 import {
   buildEnv,
   createApps,
@@ -88,7 +89,7 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
-import { configureVendoModelSlots } from "#dev-creds/model";
+import { bindVendoModelSlots } from "#dev-creds/model";
 // Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
 // entry: the lazily-resolving env ladder createVendo composes when the host
 // passes none, exported for host code too (judge wiring, host features). No
@@ -302,6 +303,10 @@ export interface CreateVendoConfig {
       DEFAULT_TOOL_OUTPUT_CAP so one huge host-tool response can't blow the context;
       pass 0 to disable. `historyWindow` bounds messages re-sent per turn (default: full). */
   agent?: {
+    /** Host voice and standing guidance, appended to the agent's system
+        prompt every turn (03 §3 `instructions`) — tone, formatting, what to
+        emphasize. Policy belongs in guard directions, not here. */
+    instructions?: string;
     toolOutputCap?: number;
     maxOutputTokens?: number;
     historyWindow?: number;
@@ -356,6 +361,10 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
+    /** Generation-pipeline flags (exemplarContract, structuredRepair,
+        regionParallel, endPass) — opt-in while the A/B is measured; threaded
+        verbatim to the apps engine. */
+    pipeline?: AppsConfig["pipeline"];
     /** Host design rules for app generation (spec 2026-07-20): the same prose
         `.vendo/design-rules.md` carries, for hosts that prefer programmatic
         config. A non-blank string wins over the file and is fixed for the
@@ -1058,9 +1067,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // blocks consume, plus the composed paint knob (family fast pick when the
   // agent slot rides the ladder; the deprecated paint.model otherwise).
   const inference = resolveModels(config);
-  // models.judge feeds host-wired vendoModel("vendo-judge") instances (v1
-  // plumbing, see configureVendoModelSlots) — there is NO judge default.
-  configureVendoModelSlots(config.models);
+  // models.judge feeds the judge the host wired from vendoModel("vendo-judge"):
+  // the model rides Judge.model, and composition binds THIS instance's config
+  // onto exactly that model (bindVendoModelSlots — per createVendo instance,
+  // no process-level registry). A custom judge without a model, or a judge
+  // built on a BYO model object, is untouched — and there is NO judge default.
+  bindVendoModelSlots(config.judge?.model, config.models);
   // cse lane 3 — the Cloud hosted-config adapter, selected at THIS composition
   // seam from VENDO_API_KEY (adapter rule: the surfaces themselves never read
   // the key; cloudKeyOptions lives only here). Constructing it is PURE (closures
@@ -1457,6 +1469,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // family fast pick when the agent slot rides the ladder, the deprecated
     // paint.model otherwise; paint.disabled survives as the one-lane switch.
     ...(inference.paint === undefined ? {} : { paint: inference.paint }),
+    ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
     // cse lane 3 — theme/semantics/domains flow as PROVIDER thunks so a
     // cloud-owned surface applies without a compose-time fetch. semantics/domains
     // resolve live per generation (pick up cloud overrides as the snapshot warms);
@@ -1515,10 +1528,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ? composeBrief
     : () => selectConfigSurface("brief.md", { explicit: config.brief, readFile: readSurfaceFile, cloud: configCloud }).value?.trim() || undefined;
   const promptCatalog = catalogThemeSummary(catalog, theme);
-  const system = product !== undefined || promptCatalog !== undefined
+  const hostInstructions = config.agent?.instructions?.trim();
+  const system = product !== undefined || hostInstructions || promptCatalog !== undefined
     ? {
         ...(product === undefined ? {} : { product }),
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
+        ...(hostInstructions ? { instructions: hostInstructions } : {}),
       }
     : undefined;
   const agent = createAgent({
@@ -1542,13 +1557,23 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // `vendo_tools_search`. The search seam is the SAME guard-bound registry the
     // agent executes through — a searched-in tool has no unguarded path.
     toolSearch: {
-      search: (query, options) => actions.search(query, options),
+      // A curated agent menu has to hold at BOTH doors into the toolset: the
+      // per-turn seed below and search, which materializes hits into the live
+      // toolset mid-turn. Filtering only the seed would let the model search
+      // its way back to an off-menu tool.
+      search: async (query, options) => onAgentMenu(await actions.search(query, options), (match) => match.name),
       // Connection-scoped loadout seed (spec 2026-07-20): each turn starts
       // with host tools + the principal's connected toolkits — never an
       // alphabetical slice of a lazy catalog. `connections` is declared below
       // this composition; turns only run after createVendo returns, so the
       // closure reference is safe.
       seed: (ctx) => loadoutSeedFor(ctx),
+      // The curated agent menu also binds an explicit `agent.loadout`: host
+      // config chooses WITHIN the menu, it does not escape it.
+      menu: async () => {
+        const menu = await agentMenu();
+        return menu === undefined ? undefined : [...menu];
+      },
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
       ...(config.agent?.loadout === undefined ? {} : { loadout: config.agent.loadout }),
     },
@@ -1558,6 +1583,25 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // only (warn, never the turn). Bounded so long-lived deployments don't grow.
   const CONNECTED_TOOLKITS_TTL_MS = 60_000;
   const connectedToolkitsCache = new Map<string, { at: number; toolkits: string[] }>();
+  // `surfaces.agent` (.vendo/overrides.json): the host's curated agent menu.
+  // Enforced HERE, at the composition seam, and not inside the registry —
+  // `actions.descriptors()` is also what the MCP door and the host's own code
+  // read, and those surfaces have their own menus. Successes are cached for the
+  // process (a menu is boot config); failures are warned and never cached (see
+  // memoizedSurfaceMenu).
+  const agentMenu = memoizedSurfaceMenu(() => actions.surfaceMenu("agent"));
+  /** Keep only entries the agent menu offers. Vendo's OWN `vendo_*` runtime
+   *  tools are never curated away: surfaces curate a product's API surface, not
+   *  the runtime's plumbing (gating `vendo_apps_*` or `vendo_tools_search` out
+   *  would break the product, not trim it). */
+  async function onAgentMenu<T>(entries: T[], nameOf: (entry: T) => string): Promise<T[]> {
+    const menu = await agentMenu();
+    if (menu === undefined) return entries;
+    return entries.filter((entry) => {
+      const name = nameOf(entry);
+      return name.startsWith(VENDO_TOOL_PACK_PREFIX) || menu.has(name);
+    });
+  }
   async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
     const subject = ctx.principal.subject;
     const cached = connectedToolkitsCache.get(subject);
@@ -1578,7 +1622,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
       connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
     }
-    return actions.loadoutSeed(toolkits);
+    return onAgentMenu(await actions.loadoutSeed(toolkits), (name) => name);
   }
   // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
   // disk rows, then cascade each swept subject into the agent's in-memory
@@ -1712,6 +1756,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       store,
       oauth: oauthSeam,
       apps: appsPort,
+      // The host's curated door menu (`surfaces.mcp`). Passed as a provider
+      // because composition is sync and resolving the authored file is not; the
+      // door resolves it once. The DOOR never reads `.vendo` itself — block
+      // layering keeps mcp off actions, so the file stays the umbrella's to
+      // read and the wire stays the door's to shape.
+      menuTools: () => actions.surfaceMenu("mcp"),
       mount: MCP_MOUNT,
       ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
       // 10-mcp §3.1/§3.2 — broker-fronted compositions: trust the external

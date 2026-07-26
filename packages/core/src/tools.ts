@@ -42,6 +42,12 @@ export interface ToolDescriptor {
   inputSchema: JsonSchema;
   risk: RiskLabel;
   critical?: boolean;
+  /** A short human label for the surfaces that show this tool to a PERSON —
+   *  MCP clients' tool menus, approval cards. Presentation only: it never
+   *  changes what the tool can do, and absent it those surfaces fall back to
+   *  `name`. Sync's AI enrichment proposes it; `.vendo/overrides.json`
+   *  corrects it. */
+  title?: string;
 }
 
 /** 01-core §4 */
@@ -51,6 +57,7 @@ export const toolDescriptorSchema = z.object({
   inputSchema: jsonSchemaSchema,
   risk: riskLabelSchema,
   critical: z.boolean().optional(),
+  title: z.string().optional(),
 }).passthrough() satisfies z.ZodType<ToolDescriptor>;
 
 /** 01-core §4 */

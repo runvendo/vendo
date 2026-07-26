@@ -99,6 +99,27 @@
       "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
+      "name": "host_demo_pin_create",
+      "description": "POST /api/demo/pin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "appId": {},
+          "slot": {}
+        },
+        "additionalProperties": false
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/demo/pin",
+        "argsIn": "body"
+      },
+      "note": "input schema partially interpreted; permissive where unknown (appId: unsupported type (unknown); slot: unsupported type (unknown))",
+      "srcHash": "sha256:4f322ddb9ec89d6b19c83d22f3783e7748120e3fdfc589030f9c63a8ea2ee967"
+    },
+    {
       "name": "host_demo_reset_create",
       "description": "POST /api/demo/reset",
       "inputSchema": {
@@ -113,7 +134,7 @@
         "path": "/api/demo/reset",
         "argsIn": "body"
       },
-      "srcHash": "sha256:24b40184bde32ce2a7ccc8b091d6fa07dcf160e76c9ba8a32464660c775434f5"
+      "srcHash": "sha256:3a72ccc751598326643c77aea72c8d628012f6eee7ea38495d3b4090a0d9177f"
     },
     {
       "name": "host_getAccount",

@@ -17,6 +17,7 @@ import {
   type WireCompileResult,
 } from "@vendoai/core";
 import type { GeneratedAppDocument, PipelineContext } from "../engine.js";
+import { wireCompileOptionsFor } from "../wire-options.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -118,10 +119,9 @@ export const recompile = (
   context: PipelineContext,
 ): WireCompileResult => compileWireV2(
   printWireV2(base, { includeIds: false }),
-  {
-    hostComponents: [...context.hostComponents],
-    ...(context.deps.toolShapes === undefined ? {} : { toolShapes: context.deps.toolShapes }),
-  },
+  // The production compile options (inline tool refs included) — a patched
+  // tree must recompile in the exact dialect the streaming lanes used.
+  wireCompileOptionsFor(context.deps, context.hostComponents),
 );
 
 /** The end pass. Runs only under the `endPass` flag (the default flips when
