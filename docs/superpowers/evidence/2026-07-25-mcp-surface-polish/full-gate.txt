@@ -1,0 +1,17 @@
+FULL GATE — surface-polish lane, 2026-07-25, run TWICE uncached, nothing else running
+
+--- run 1 ---
+pnpm build            -> exit 0
+pnpm typecheck        -> exit 0
+turbo run lint --force -> exit 0
+turbo run test --continue --force ->  Tasks:    50 successful, 50 total
+  failures: 0
+--- run 2 ---
+pnpm build            -> exit 0
+pnpm typecheck        -> exit 0
+turbo run lint --force -> exit 0
+turbo run test --continue --force ->  Tasks:    50 successful, 50 total
+  failures: 0
+
+NOTE: the Q0 demo-accounting login-e2e canary PASSED in both final runs (it is an
+intermittent live-Supabase 401, not a fixed state — it failed in earlier runs tonight).
