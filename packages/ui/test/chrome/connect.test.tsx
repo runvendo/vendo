@@ -192,4 +192,41 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     expect(await screen.findByText(/No connected accounts yet/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Connect / })).toBeNull();
   });
+
+  // Demo-hygiene: non-active rows lead with a single obvious repair —
+  // Reconnect is the primary action, Disconnect demoted to a quiet secondary.
+  it.each(["expired", "failed"] as const)("%s row leads with a primary Reconnect and a quiet Disconnect", async status => {
+    wire.state.connections = [
+      { id: "ca_1", connector: "composio", toolkit: "gmail", status, createdAt: "2026-05-14T00:00:00.000Z" },
+    ];
+    render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
+    await screen.findByText("Gmail");
+    const reconnect = screen.getByRole("button", { name: "Reconnect Gmail" });
+    expect(reconnect.className).toContain("fl-btn-primary");
+    const disconnect = screen.getByRole("button", { name: "Disconnect Gmail" });
+    expect(disconnect.className).toContain("fl-btn-quiet");
+  });
+
+  it("Reconnect triggers the initiate/complete flow and settles the row Connected", async () => {
+    vi.stubGlobal("open", vi.fn());
+    wire.state.connections = [
+      { id: "ca_1", connector: "composio", toolkit: "gmail", status: "expired", createdAt: "2026-05-14T00:00:00.000Z" },
+    ];
+    render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
+    await screen.findByText("Gmail");
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Gmail" }));
+    // The spinner state rides the button while the broker poll runs.
+    await waitFor(() => expect(wire.requests).toContainEqual(
+      expect.objectContaining({ method: "POST", path: "/connections/initiate", body: { toolkit: "gmail", connector: "composio" } }),
+    ));
+    // The poll lands active and the list refreshes — the repaired account shows Connected.
+    await screen.findByText("Connected");
+  });
+
+  it("active rows keep Disconnect as the only control — no Reconnect", async () => {
+    render(<VendoProvider client={client}><ConnectedAccountsPanel /></VendoProvider>);
+    await screen.findByText("Gmail");
+    expect(screen.queryByRole("button", { name: /^Reconnect / })).toBeNull();
+    expect(screen.getByRole("button", { name: "Disconnect Gmail" }).className).not.toContain("fl-btn-quiet");
+  });
 });
