@@ -14,8 +14,9 @@ import { VendoRoot } from "./VendoRoot";
  *  absent while the chip cache is empty).
  *  Module-scope so the component identity is stable across VendoLayer renders. */
 function CadenceThread(props: VendoThreadProps) {
-  const chips = useTryThisChips();
-  return <VendoThread {...props} suggestions={[...cadenceScenarios, ...chips]} />;
+  const chips = useTryThisChips()
+  const suggestions = chips.length === 0 ? cadenceScenarios : [...cadenceScenarios, ...chips]
+  return <VendoThread {...props} suggestions={suggestions} />;
 }
 
 async function resetDemo(): Promise<void> {

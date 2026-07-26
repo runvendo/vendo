@@ -7,7 +7,8 @@
  *
  * demo-hygiene (criterion 24): the pre-generated "try this" chips ride the
  * suggestions as strings — N manifest entries ⇒ N chips after the cards; an
- * empty manifest ⇒ the cards alone (no chip row).
+ * empty manifest keeps the ORIGINAL mapleScenarios array (no chip row, no
+ * extra render), preserving the first-visit contract above.
  */
 // @vitest-environment jsdom
 import { render, waitFor } from "@testing-library/react";
@@ -30,39 +31,42 @@ vi.mock("@/components/vendo/VendoRoot", () => ({
 
 import VendoTabPage from "./page";
 
-function stubChipsFetch(chips: { key: string; prompt: string }[]): void {
-  vi.stubGlobal("fetch", vi.fn(async () => ({
-    ok: true,
-    json: async () => ({ data: { chips } }),
-  })));
-}
-
 afterEach(() => {
   vi.unstubAllGlobals();
   threadProps.mockClear();
 });
 
 describe("/vendo full page thread", () => {
-  it("shows the scenario cards on the very first visit: tutorial stands down, cards ride in", async () => {
-    stubChipsFetch([]);
+  it("shows the scenario cards on the very first visit: tutorial stands down, cards ride in", () => {
     render(<VendoTabPage />);
+    expect(threadProps).toHaveBeenCalledTimes(1);
     const props = threadProps.mock.calls[0]?.[0] as Record<string, unknown>;
     // The fire-once greeting-as-tutorial would replace the suggestions on the
     // first-ever open (burning the flag) — quiet keeps the landing the cards.
     expect(props.discoverability).toBe("quiet");
-    expect(props.suggestions).toEqual(mapleScenarios);
-    // An empty chip manifest never adds string suggestions — no chip row.
-    await waitFor(() => {
-      const last = threadProps.mock.lastCall?.[0] as { suggestions: unknown[] };
-      expect(last.suggestions).toEqual(mapleScenarios);
-    });
+    expect(props.suggestions).toBe(mapleScenarios);
   });
 
-  it("renders one chip per manifest entry below the cards; empty manifest adds none", async () => {
-    stubChipsFetch([
-      { key: "subs", prompt: "Build me a subscriptions tracker" },
-      { key: "dining", prompt: "Where did my dining budget go?" },
-    ]);
+  it("an empty chip manifest keeps the single render and the original suggestions reference", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ data: { chips: [] } }),
+    })));
+    render(<VendoTabPage />);
+    // The chips fetch resolving empty must not re-render or copy the array.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(threadProps).toHaveBeenCalledTimes(1);
+    expect(threadProps.mock.calls[0]?.[0].suggestions).toBe(mapleScenarios);
+  });
+
+  it("renders one chip per manifest entry below the cards", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ data: { chips: [
+        { key: "subs", prompt: "Build me a subscriptions tracker" },
+        { key: "dining", prompt: "Where did my dining budget go?" },
+      ] } }),
+    })));
     render(<VendoTabPage />);
     await waitFor(() => {
       const last = threadProps.mock.lastCall?.[0] as { suggestions: unknown[] };

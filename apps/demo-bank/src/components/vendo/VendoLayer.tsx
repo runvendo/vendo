@@ -17,7 +17,10 @@ import { mapleScenarios } from "@/vendo/scenarios";
  *  machine and after every reset. */
 function MapleThread(props: VendoThreadProps) {
   const chips = useTryThisChips();
-  return <VendoThread {...props} suggestions={[...mapleScenarios, ...chips]} discoverability="quiet" />;
+  // Empty cache keeps the original mapleScenarios reference (and no extra
+  // render — see useTryThisChips), matching the full page's landing contract.
+  const suggestions = chips.length === 0 ? mapleScenarios : [...mapleScenarios, ...chips];
+  return <VendoThread {...props} suggestions={suggestions} discoverability="quiet" />;
 }
 
 async function resetDemo(): Promise<void> {
