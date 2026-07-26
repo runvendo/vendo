@@ -383,6 +383,48 @@ describe("data-sighted verify — rebind arm (pipeline.rebind, default OFF)", ()
     expect(statOf(verified)?.props?.value).toEqual({ $path: "/deep/total" });
   });
 
+  it("spends the enum budget only on kind-compatible paths — 60+ incompatible fields cannot crowd out the truthful target", async () => {
+    // Greptile P1 (third of the family): kind filtering ran AFTER the
+    // bounded enumeration, so a shape fronting 60+ string fields exhausted
+    // the budget before the compatible number field was ever enumerated.
+    const crowdedShapes = {
+      host_crowded: {
+        kind: "object" as const,
+        fields: {
+          balance: { kind: "number" as const },
+          ...Object.fromEntries(Array.from({ length: 70 }, (_, index) => [
+            `note_${index}`, { kind: "string" as const },
+          ])),
+          total: { kind: "number" as const },
+        },
+      },
+    };
+    const crowdedTools = [{ name: "host_crowded", description: "One balance, many notes, a total", risk: "read" }];
+    const wire = '<App name="Crowded"><Query id="crowded" tool="host_crowded"/><Stack><Stat label="Total" value={crowded.balance}/></Stack></App>';
+    const document = await modelEngine.create({ prompt: "build" }, deps(
+      scriptedLanguageModel(() => wire),
+      { tools: crowdedTools, toolShapes: crowdedShapes, pipeline: {} },
+    ));
+    let rebindEnum: string[] | undefined;
+    const model = scriptedLanguageModel((call) => {
+      if (isRebindCall(call)) {
+        const schema = call.tools?.[0]?.inputSchema as { properties?: { fix_0?: { enum?: string[] } } };
+        rebindEnum = schema?.properties?.fix_0?.enum;
+        return { tool: "rebind_bindings", input: { fix_0: "/crowded/total" } };
+      }
+      return "<Edit></Edit>";
+    });
+
+    const verified = await verifyDocumentAgainstData(
+      document, "the total", { crowded: { balance: 120000, total: 350000 } },
+      deps(model, { tools: crowdedTools, toolShapes: crowdedShapes }),
+    );
+
+    expect(rebindEnum).toContain("/crowded/total");
+    expect(rebindEnum).not.toContain("/crowded/note_0");
+    expect(statOf(verified)?.props?.value).toEqual({ $path: "/crowded/total" });
+  });
+
   it("skips the rebind call when nothing is rebindable (no shapes → no closed space)", async () => {
     const document = await buildDocument(lyingStatWire);
     const calls: ScriptedModelCall[] = [];

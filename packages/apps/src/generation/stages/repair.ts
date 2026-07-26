@@ -352,18 +352,31 @@ const MAX_REBIND_SLOTS = 8;
 const kindsCompatible = (a: ShapeType["kind"], b: ShapeType["kind"]): boolean =>
   a === b || a === "json" || b === "json";
 
-/** Breadth-first {@link enumerateShapePaths}: every shallow path is emitted
- *  before ANY deeper one, so the bounded budget can never bury a top-level
- *  field under an earlier sibling's deep descendants. The rebind space wants
- *  this order specifically — the shallow fields ARE the aggregates
- *  (/query/total) the gate's wrong-binding class needs to reach. */
-const enumerateShapePathsBreadthFirst = (shape: ShapeType, prefix: string): string[] => {
+/** Traversal guard for {@link enumerateShapePathsBreadthFirst}: the walk
+ *  itself is bounded (only MATCHING paths spend the option budget, so a
+ *  pathological derived shape cannot spin the queue unboundedly). */
+const MAX_PATH_WALK = 5000;
+
+/** Breadth-first, filter-during-enumeration {@link enumerateShapePaths}:
+ *  every shallow path is visited before ANY deeper one, and only paths the
+ *  predicate accepts spend the bounded option budget — so a top-level field
+ *  can neither be buried under an earlier sibling's deep descendants nor
+ *  crowded out by kind-incompatible paths. The rebind space wants exactly
+ *  this: the shallow fields ARE the aggregates (/query/total) the gate's
+ *  wrong-binding class needs to reach. */
+const enumerateShapePathsBreadthFirst = (
+  shape: ShapeType,
+  prefix: string,
+  matches: (shape: ShapeType) => boolean,
+): string[] => {
   const out: string[] = [];
   const queue: Array<{ shape: ShapeType; path: string; depth: number }> = [{ shape, path: prefix, depth: 0 }];
-  while (queue.length > 0 && out.length < MAX_PATH_OPTIONS) {
+  let visited = 0;
+  while (queue.length > 0 && out.length < MAX_PATH_OPTIONS && visited < MAX_PATH_WALK) {
     const next = queue.shift();
     if (next === undefined) break;
-    out.push(next.path);
+    visited += 1;
+    if (matches(next.shape)) out.push(next.path);
     if (next.depth >= MAX_PATH_DEPTH) continue;
     if (next.shape.kind === "object") {
       for (const [field, child] of Object.entries(next.shape.fields)) {
@@ -404,21 +417,22 @@ export const deriveRebindSlots = (
       const subPath = tokens.length > 2 ? `/${tokens.slice(2).join("/")}` : "";
       const currentKind = shapeAtPointer(shape, subPath)?.kind;
       if (currentKind === undefined) continue;
-      // Per-query candidate lists first — each breadth-first, so the bounded
-      // budget can never bury a shallow sibling (the aggregates the gate's
-      // fail class rebinds to) under an earlier field's deep descendants —
-      // then round-robined into the bounded enum, so no path-rich query
-      // starves another query's fields out of the fix space (review
-      // 2026-07-26, Greptile P1 ×2).
+      // Per-query candidate lists first — each breadth-first with the kind
+      // filter applied DURING enumeration (so neither an earlier field's
+      // deep descendants nor a crowd of kind-incompatible siblings can spend
+      // the bounded budget before the truthful target is reached) — then
+      // round-robined into the bounded enum, so no path-rich query starves
+      // another query's fields out of the fix space (review 2026-07-26,
+      // Greptile P1 ×3).
       const perQuery: string[][] = [];
       for (const candidateQuery of queries) {
         const candidateShape = deps.toolShapes?.[candidateQuery.tool];
         if (candidateShape === undefined) continue;
-        const prefix = `/${candidateQuery.name}`;
-        perQuery.push(enumerateShapePathsBreadthFirst(candidateShape, prefix).filter((candidate) => {
-          const kind = shapeAtPointer(candidateShape, candidate.slice(prefix.length))?.kind;
-          return kind !== undefined && kindsCompatible(kind, currentKind);
-        }));
+        perQuery.push(enumerateShapePathsBreadthFirst(
+          candidateShape,
+          `/${candidateQuery.name}`,
+          (candidate) => kindsCompatible(candidate.kind, currentKind),
+        ));
       }
       const options: string[] = [];
       for (let rank = 0; options.length < MAX_PATH_OPTIONS; rank += 1) {
