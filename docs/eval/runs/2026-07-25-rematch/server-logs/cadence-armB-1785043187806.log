@@ -1,0 +1,12 @@
+=== boot cadence arm B at 2026-07-26T05:19:47.806Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 155ms
+
+=== create H29 arm B start ===
+
+=== create H29 arm B end ===
+[vendo] app build failed (app_0d6a3a07-bb29-4932-91f8-49e82eb9559b): generation failed
+  - island "TodayFeed" renders <Skeleton> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).
+  - island "TodayFeed" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.

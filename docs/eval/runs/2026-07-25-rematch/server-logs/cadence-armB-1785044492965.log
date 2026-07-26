@@ -1,0 +1,15 @@
+=== boot cadence arm B at 2026-07-26T05:41:32.966Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 275ms
+
+=== create H30 arm B start ===
+
+=== create H30 arm B end ===
+[vendo] app build failed (app_638f7021-38cb-44fe-9571-c50ddda4a04d): generation failed
+  - island "ChaseTable" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+  - island "FirstMessagePanel" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+  - node "chasetable-1" references unknown component "ChaseTable"
+  - node "firstmessagepanel-1" references unknown component "FirstMessagePanel"
+  - island "ChaseListIsland" is not valid TSX: Transform failed with 1 error:

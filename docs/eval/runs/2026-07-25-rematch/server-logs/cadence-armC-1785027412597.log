@@ -1,0 +1,14 @@
+=== boot cadence arm C at 2026-07-26T00:56:52.597Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 108ms
+
+=== create H16 arm C start ===
+
+=== create H16 arm C end ===
+[vendo] app build failed (app_19bf94eb-15e3-48e9-9fcc-afd1fc31f9b4): generation failed
+  - island "DeadlineRiskPanel" computes displayed values from the hand-typed constant 1000 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "DeadlineRiskPanel" computes displayed values from the hand-typed constant 60 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "DeadlineRiskPanel" computes displayed values from the hand-typed constant 24 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "DeadlineRiskPanel" computes displayed values from the hand-typed constant 2 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.

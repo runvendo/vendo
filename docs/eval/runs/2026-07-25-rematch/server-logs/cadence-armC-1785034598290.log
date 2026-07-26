@@ -1,0 +1,11 @@
+=== boot cadence arm C at 2026-07-26T02:56:38.291Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 204ms
+
+=== create H22 arm C start ===
+
+=== create H22 arm C end ===
+[vendo] app build failed (app_b78aa8cd-25c1-48e4-907b-930cd7e48c94): generation failed
+  - island "OutstandingDocsByClient" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.

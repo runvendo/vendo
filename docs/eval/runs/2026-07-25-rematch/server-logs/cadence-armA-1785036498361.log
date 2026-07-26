@@ -1,0 +1,16 @@
+=== boot cadence arm A at 2026-07-26T03:28:18.361Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 135ms
+
+=== create H23 arm A start ===
+
+=== create H23 arm A end ===
+[vendo] app build failed (app_effba6a3-8c99-4448-bb5d-9e8e8b0639ed): generation failed
+  - island "ActivityFeed" renders <CadenceStatusBadge> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).
+  - node "text-6" prop "text" embeds a binding inside a string — string interpolation is unsupported; bind the prop to a single {reference} or split the text into separate Text nodes
+  - wire unknown-reference: "host_listActivity" does not name a declared <Query> or state
+  - wire duplicate-island: duplicate island "ActivityFeed" (the first one wins; this one was dropped)
+  - island "ActivityFeed" must be plain TSX with an `export default` component — no braces, template literals, or fences around the source
+  - island "ActivityFeed" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.

@@ -1,0 +1,21 @@
+=== boot cadence arm C at 2026-07-26T01:41:32.698Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 424ms
+
+=== create H18 arm C start ===
+
+=== create H18 arm C end ===
+
+=== create H19 arm C start ===
+
+=== create H19 arm C end ===
+[vendo] app build failed (app_7f9a6aba-7df7-4ff3-bcb6-a43b76bd6c34): generation failed
+  - island "SweetgreenDocReview" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+[vendo] app build failed (app_f59b1a1c-f3da-4ec2-b05d-3f0468e358ed): generation failed
+  - island "CompassDocuments" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+  - island "CompassMessages" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+  - island "CompassClientHero" computes displayed values from the hand-typed constant 1000 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "CompassClientHero" computes displayed values from the hand-typed constant 60 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "CompassClientHero" computes displayed values from the hand-typed constant 24 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.

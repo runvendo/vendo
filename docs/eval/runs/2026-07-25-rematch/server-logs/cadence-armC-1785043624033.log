@@ -1,0 +1,17 @@
+=== boot cadence arm C at 2026-07-26T05:27:04.033Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 166ms
+
+=== create H29 arm C start ===
+
+=== create H29 arm C end ===
+
+=== create H30 arm C start ===
+
+=== create H30 arm C end ===
+[vendo] app build failed (app_43ec7eb1-73d4-42ff-9942-6c4a0e501cf7): generation failed
+  - island "TodayActivityFeed" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+[vendo] app build failed (app_af456f5f-ac60-48e2-ab0b-8dcb02093f6a): generation failed
+  - island "ChaseList" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.

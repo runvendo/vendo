@@ -1,0 +1,72 @@
+- complementary:
+  - link "Cadence dashboard":
+    - /url: /
+    - text: cadence .
+  - navigation "Main":
+    - list:
+      - listitem:
+        - link "Dashboard":
+          - /url: /
+      - listitem:
+        - link "Vendo":
+          - /url: /assistant
+    - paragraph: Workspace
+    - list:
+      - listitem:
+        - link "Clients":
+          - /url: /clients
+      - listitem:
+        - link "Work":
+          - /url: /work
+      - listitem:
+        - link "Calendar":
+          - /url: /calendar
+      - listitem:
+        - link "Inbox":
+          - /url: /inbox
+    - paragraph: Firm
+    - list:
+      - listitem:
+        - link "Team":
+          - /url: /team
+      - listitem:
+        - link "Integrations":
+          - /url: /integrations
+      - listitem:
+        - link "Settings":
+          - /url: /settings
+  - paragraph: Hartwell & Associates
+  - paragraph: Tax season 2026
+- banner:
+  - search:
+    - searchbox "Search"
+    - text: ⌘K
+  - text: Hartwell & Associates
+  - button "Notifications"
+  - button "MA Maya Alvarez"
+- main:
+  - main "Vendo workspace":
+    - tablist "Workspace sections":
+      - tab "Chat"
+      - tab "Apps" [selected]
+      - tab "Automations"
+      - tab "Accounts"
+      - tab "Activity"
+    - tabpanel "Apps":
+      - alert: "app build failed: generation failed"
+      - form "Create app":
+        - text: Describe a new app
+        - textbox "Describe a new app": push Blue Bottle Coffee's filing deadline out two weeks and let them know
+        - button "Create"
+      - article:
+        - strong: Partners' meeting — weekly recap
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Tax season at a glance
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+- button "AI agent"
+- alert
