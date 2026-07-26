@@ -101,7 +101,10 @@ export interface JudgeImage {
 export type JudgeModelFn = (prompt: string, images: JudgeImage[]) => Promise<string>;
 
 /** Vision call through the stock ai SDK + ANTHROPIC_API_KEY (lazy import —
- * only the judge pays for it). */
+ * only the judge pays for it). API overload passes in minutes, and one judge
+ * call gates a ~$9 rewrite — so on top of the SDK's own quick retries, wait
+ * out transient errors with 30s/60s/120s backoff before giving up (an
+ * "Overloaded" burst killed a live run at judge:round-1). */
 export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
   const [{ createAnthropic }, { generateText }] = await Promise.all([import("@ai-sdk/anthropic"), import("ai")]);
   const anthropic = createAnthropic({});
@@ -113,11 +116,20 @@ export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
     content.push({ type: "text", text: `\n${image.label}:` });
     content.push({ type: "image", image: await readFile(image.path) });
   }
-  const result = await generateText({
-    model: anthropic(modelId),
-    messages: [{ role: "user", content }],
-  });
-  return result.text;
+  const backoffsMs = [30_000, 60_000, 120_000];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const result = await generateText({
+        model: anthropic(modelId),
+        messages: [{ role: "user", content }],
+      });
+      return result.text;
+    } catch (error) {
+      const wait = backoffsMs[attempt];
+      if (wait === undefined) throw error;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
 };
 
 // ---------------------------------------------------------------------------
