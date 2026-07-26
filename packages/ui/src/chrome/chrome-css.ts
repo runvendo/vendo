@@ -2224,8 +2224,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-know-searched svg { flex: none; }
 .fl-know-unavail { display: flex; align-items: flex-start; gap: 9px; margin-top: 10px;
   background: var(--vendo-warn-bg); border: 1px solid var(--vendo-warn-border);
-  border-radius: 10px; padding: 9px 12px; font-size: 12px; color: var(--vendo-warn-text);
-  line-height: 1.55; }
+  border-radius: 10px; padding: 9px 12px; font-size: 12px; line-height: 1.55;
+  /* --vendo-warn, not the mockup's --vendo-warn-text tone: at 12px on the
+     warn wash the lighter tone measures 4.38:1 — under the 4.5:1 AA floor
+     (axe). The darker warn token keeps the amber register and passes. */
+  color: var(--vendo-warn); }
 .fl-know-unavail svg { flex: none; margin-top: 2px; }
 
 `;
