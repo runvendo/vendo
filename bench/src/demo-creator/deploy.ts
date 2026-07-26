@@ -124,13 +124,25 @@ export function parseDemoDeployArgs(argv: string[]): DemoDeployArgs {
   };
 }
 
+/** Falls back to the version demo-bank's hand-maintained Dockerfile pins. */
+const fallbackPnpmVersion = "11.10.0";
+
+/** The pnpm the Docker build must install: the repo root's `packageManager`
+ * pin. A hardcoded version here silently breaks every deploy when the repo
+ * migrates pnpm (a stale 9.12.0 pin failed the frozen install against the
+ * pnpm-11 lockfile with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH on a live run). */
+export function pnpmVersionFromPackageManager(packageManager: string | undefined): string {
+  const match = /^pnpm@(\d+\.\d+\.\d+)/.exec(packageManager ?? "");
+  return match?.[1] ?? fallbackPnpmVersion;
+}
+
 /** demo-bank's Dockerfile, parametrized: repo-root build context, turbo filter = the app's package name. */
-export function renderDockerfile(options: { packageName: string; appPath: string }): string {
+export function renderDockerfile(options: { packageName: string; appPath: string; pnpmVersion?: string }): string {
   return `# ${GENERATED_FILE_MARKER}
 FROM node:22-bookworm-slim
 
 WORKDIR /app
-RUN npm install --global pnpm@9.12.0
+RUN npm install --global pnpm@${options.pnpmVersion ?? fallbackPnpmVersion}
 
 COPY . .
 RUN pnpm install --frozen-lockfile
@@ -329,8 +341,11 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
   // Docker only honors the root .dockerignore — that (committed) file is the
   // real upload/exclusion mechanism.
   const dockerfilePath = path.join(appDir, "Dockerfile");
+  const rootPackageRaw = await readIfExists(path.join(io.repoRoot, "package.json"));
+  const rootPackageJson = rootPackageRaw === undefined ? {} : JSON.parse(rootPackageRaw) as { packageManager?: string };
+  const pnpmVersion = pnpmVersionFromPackageManager(rootPackageJson.packageManager);
   if (shouldWriteGeneratedFile(await readIfExists(dockerfilePath))) {
-    await writeFile(dockerfilePath, renderDockerfile({ packageName, appPath }));
+    await writeFile(dockerfilePath, renderDockerfile({ packageName, appPath, pnpmVersion }));
     write(`Wrote ${appPath}/Dockerfile`);
   } else {
     write(`Keeping hand-edited ${appPath}/Dockerfile (no generated-file marker)`);
