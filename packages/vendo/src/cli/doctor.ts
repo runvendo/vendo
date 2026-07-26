@@ -10,7 +10,8 @@ import {
   type CloudDoctorResult,
   type LiveTurnResult,
 } from "./doctor-live.js";
-import { installedAiVersion } from "./dep-versions.js";
+import { installedAiVersion, installedZodVersion } from "./dep-versions.js";
+import { zodBelowAiSdkFloor, zodBumpInvocation } from "./provider-deps.js";
 import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
@@ -250,6 +251,17 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     fail("deps/ai-sdk-major", "E-DEP-001", `installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
   } else if (aiMajor === 6) {
     pass("deps/ai-sdk-major", `installed ai@${aiVersion} is the supported AI SDK major (v6)`);
+  }
+
+  // FINDINGS F2 — ai@6 imports the zod/v3 + zod/v4 subpaths that arrive in
+  // zod 3.25; a host pinning older zod builds red inside ai the moment the
+  // vendo wiring pulls it into the bundle. An absent zod skips silently: a
+  // host without its own zod resolves ai's copy, which always satisfies.
+  const zodVersion = await installedZodVersion(root);
+  if (zodVersion !== null && zodBelowAiSdkFloor(zodVersion)) {
+    fail("deps/zod-floor", "E-DEP-003", `installed zod@${zodVersion} predates the zod/v3 + zod/v4 subpaths the AI SDK imports (needs >=3.25) — the app build fails inside ai@6; bump within zod 3: ${await zodBumpInvocation(root)}`);
+  } else if (zodVersion !== null) {
+    pass("deps/zod-floor", `installed zod@${zodVersion} exposes the AI SDK's zod/v3 + zod/v4 subpaths (>=3.25)`);
   }
 
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {

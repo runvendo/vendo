@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { access, readdir, readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
+import type TS from "typescript";
 import {
   vendoThemeSchema,
 } from "@vendoai/core";
@@ -92,6 +94,84 @@ const CHECK_ORDER: StructuralCheckId[] = [
 ];
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+// The TypeScript compiler, resolved lazily and fail-closed (the same posture
+// as packages/actions/src/sync/common.ts's loadCompiler): when it cannot be
+// loaded, wiring analysis verifies nothing rather than guessing with string
+// scans — the check fails, never passes.
+let compilerModule: typeof TS | null | undefined;
+
+function loadCompiler(): typeof TS | null {
+  if (compilerModule === undefined) {
+    try {
+      compilerModule = createRequire(import.meta.url)("typescript") as typeof TS;
+    } catch {
+      compilerModule = null;
+    }
+  }
+  return compilerModule;
+}
+
+interface BoundModule {
+  ts: typeof TS;
+  sf: TS.SourceFile;
+  checker: TS.TypeChecker;
+}
+
+/** A real single-file ts.Program (noResolve, in-memory host) so symbol
+ * resolution rides TypeScript's own binder — the ground truth for JS scoping
+ * (hoisted vars, parameter shadows, export bindings) — instead of any
+ * hand-rolled scope walk. Imports stay unresolved on purpose: an identifier's
+ * symbol still declares AT its ImportSpecifier, which carries the module
+ * specifier — all the provenance the check needs. */
+function boundModule(source: string, fileName: string): BoundModule | null {
+  const ts = loadCompiler();
+  if (!ts) return null;
+  const kind = /\.[cm]?ts$/u.test(fileName) ? ts.ScriptKind.TS : ts.ScriptKind.TSX;
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
+  const options: TS.CompilerOptions = {
+    allowJs: true,
+    noResolve: true,
+    jsx: ts.JsxEmit.Preserve,
+    target: ts.ScriptTarget.Latest,
+    module: ts.ModuleKind.ESNext,
+    types: [],
+  };
+  const host: TS.CompilerHost = {
+    getSourceFile: (name) => (name === fileName ? sf : undefined),
+    getDefaultLibFileName: () => "lib.d.ts",
+    writeFile: () => {},
+    getCurrentDirectory: () => "/",
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => "\n",
+    fileExists: (name) => name === fileName,
+    readFile: () => undefined,
+  };
+  const program = ts.createProgram({ rootNames: [fileName], options, host });
+  const bound = program.getSourceFile(fileName);
+  if (bound === undefined) return null;
+  return { ts, sf: bound, checker: program.getTypeChecker() };
+}
+
+/** The import binding (module specifier + IMPORTED name, aliases resolved
+ * back) an identifier use resolves to via the binder — or null when the use
+ * resolves to anything else (local, parameter, hoisted var, nothing). */
+function importBindingOf(mod: BoundModule, use: TS.Identifier): { specifier: string; imported: string } | null {
+  const { ts, checker } = mod;
+  const symbol = checker.getSymbolAtLocation(use);
+  const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+  if (declaration === undefined) return null;
+  if (ts.isImportSpecifier(declaration)) {
+    const importDeclaration = declaration.parent.parent.parent;
+    if (!ts.isImportDeclaration(importDeclaration) || !ts.isStringLiteral(importDeclaration.moduleSpecifier)) return null;
+    return {
+      specifier: importDeclaration.moduleSpecifier.text,
+      imported: (declaration.propertyName ?? declaration.name).text,
+    };
+  }
+  return null;
+}
 const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
 
 export function corpusHostCommandEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -257,6 +337,135 @@ function hasFunctionalExpressVendoMount(server: string): boolean {
   return false;
 }
 
+/** The module specifiers this file imports a binding named VendoRoot from
+ * (aliases irrelevant here — tag resolution is symbol-level). */
+function vendoRootImportSpecifiers(mod: BoundModule): string[] {
+  const { ts, sf } = mod;
+  const specifiers: string[] = [];
+  for (const statement of sf.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
+    for (const element of bindings.elements) {
+      if ((element.propertyName ?? element.name).text === "VendoRoot") {
+        specifiers.push(statement.moduleSpecifier.text);
+      }
+    }
+  }
+  return specifiers;
+}
+
+/** True when a `{children}` JSX expression under `root` is a DESCENDANT of a
+ * JSX element whose tag SYMBOL resolves (compiler binder) to an import
+ * accepted by `accept` — AST containment plus real symbol resolution, so a
+ * self-closing `<Tag />` beside `{children}`, children BETWEEN two sibling
+ * providers, or any shadowing declaration (parameter, local, hoisted var)
+ * never count as wrapped. */
+function childrenInsideProvider(
+  mod: BoundModule,
+  accept: (binding: { specifier: string; imported: string }) => boolean,
+  root: TS.Node = mod.sf,
+): boolean {
+  const { ts } = mod;
+  let found = false;
+  const visit = (node: TS.Node, insideTag: boolean): void => {
+    if (found) return;
+    let inside = insideTag;
+    if (ts.isJsxElement(node) && ts.isIdentifier(node.openingElement.tagName)) {
+      const binding = importBindingOf(mod, node.openingElement.tagName);
+      if (binding !== null && accept(binding)) inside = true;
+    }
+    if (
+      inside
+      && ts.isJsxExpression(node)
+      && node.expression !== undefined
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === "children"
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, (child) => visit(child, inside));
+  };
+  visit(root, false);
+  return found;
+}
+
+/** The function node behind the module's EXPORT named `exportName`, resolved
+ * through the module symbol's export table (so what the layout imports is
+ * exactly what is analyzed — a non-exported helper that happens to wrap
+ * children never stands in for the exported component). */
+function exportedFunctionNode(mod: BoundModule, exportName: string): TS.Node | null {
+  const { ts, sf, checker } = mod;
+  const moduleSymbol = checker.getSymbolAtLocation(sf);
+  let exported = moduleSymbol?.exports?.get(ts.escapeLeadingUnderscores(exportName));
+  if (exported !== undefined && (exported.flags & ts.SymbolFlags.Alias) !== 0) {
+    try {
+      exported = checker.getAliasedSymbol(exported);
+    } catch {
+      return null;
+    }
+  }
+  const declaration = exported?.valueDeclaration ?? exported?.declarations?.[0];
+  if (declaration === undefined) return null;
+  if (ts.isFunctionDeclaration(declaration)) return declaration;
+  if (ts.isVariableDeclaration(declaration) && declaration.initializer !== undefined) {
+    let initializer: TS.Expression = declaration.initializer;
+    while (ts.isParenthesizedExpression(initializer) || ts.isAsExpression(initializer) || ts.isSatisfiesExpression(initializer)) {
+      initializer = initializer.expression;
+    }
+    if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) return initializer;
+  }
+  return null;
+}
+
+/** The layout wraps children with the @vendoai/vendo/react provider either
+ * directly or through the ONE generated wrapper hop: since 0.4.1's
+ * visible-surface wiring (init-scaffolds.ts's vendoRootWrapperSource), a
+ * by-the-book init mounts <VendoRoot> imported from the repo-local
+ * `vendo/vendo-root` module — the layout itself never names the package.
+ * "Wraps" means the `{children}` expression is an AST descendant of a JSX
+ * element whose tag SYMBOL (TypeScript's own binder — hoisted vars,
+ * parameter shadows, every scoping rule) resolves to the VendoRoot import;
+ * and through the wrapper hop, the layout's imported EXPORT itself — never
+ * some other function in the wrapper file — must nest its children inside
+ * the package's VendoRoot. Fails closed when the TypeScript compiler is
+ * unavailable.
+ *
+ * Precision boundary (conductor ruling + Yousef ruling, 2026-07-26):
+ * symbol-correct import + nesting + direct JSX usage is the required depth.
+ * Shapes beyond it are documented limitations of this check, not detected —
+ * it is a drift detector for honest codebases, not a defense against
+ * adversarial hosts:
+ * - eval/require-time indirection, dynamic component maps, runtime
+ *   re-assignment;
+ * - render-graph reachability: a provider element inside a component that
+ *   is imported but never actually rendered by the route tree. */
+async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layout: string): Promise<boolean> {
+  const layoutModule = boundModule(layout, app.layoutRel);
+  if (layoutModule === null) return false;
+  const packageBinding = (binding: { specifier: string; imported: string }): boolean =>
+    binding.imported === "VendoRoot" && binding.specifier === "@vendoai/vendo/react";
+  for (const specifier of vendoRootImportSpecifiers(layoutModule)) {
+    const fromThisImport = (binding: { specifier: string; imported: string }): boolean =>
+      binding.imported === "VendoRoot" && binding.specifier === specifier;
+    if (!childrenInsideProvider(layoutModule, fromThisImport)) continue;
+    if (specifier === "@vendoai/vendo/react") return true;
+    if (!specifier.startsWith(".")) continue;
+    const base = path.posix.join(path.posix.dirname(app.layoutRel), specifier);
+    for (const candidate of [base, `${base}.tsx`, `${base}.ts`, `${base}.jsx`, `${base}.js`]) {
+      const source = await readText(repoDir, candidate);
+      if (source === null) continue;
+      const wrapperModule = boundModule(source, candidate);
+      if (wrapperModule === null) continue;
+      const exportedComponent = exportedFunctionNode(wrapperModule, "VendoRoot");
+      if (exportedComponent === null) continue;
+      if (childrenInsideProvider(wrapperModule, packageBinding, exportedComponent)) return true;
+    }
+  }
+  return false;
+}
+
 async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<StructuralCheckResult> {
   const framework = ctx.framework ?? "next";
   const { files, app } = await defaultExpectedFilesForFramework(ctx.repoDir, framework);
@@ -293,8 +502,8 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
     } else {
       const layout = await readText(ctx.repoDir, app.layoutRel);
       const route = await readText(ctx.repoDir, routeRel(app));
-      if (layout && (!layout.includes("@vendoai/vendo/react") || !layout.includes("<VendoRoot"))) {
-        wiringProblems.push(`${app.layoutRel} does not wrap children with @vendoai/vendo/react VendoRoot`);
+      if (layout && !await layoutReachesVendoReact(ctx.repoDir, app, layout)) {
+        wiringProblems.push(`${app.layoutRel} does not wrap children with @vendoai/vendo/react VendoRoot (directly or via a local VendoRoot wrapper module)`);
       }
       if (route && (!route.includes("createVendo") || !route.includes("nextVendoHandler"))) {
         wiringProblems.push(`${routeRel(app)} does not compose createVendo() with nextVendoHandler()`);
