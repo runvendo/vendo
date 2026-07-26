@@ -35,3 +35,6 @@ export {
   type StaticExtraction,
   type ZodSchemaResult,
 } from "./static-ts.js";
+// Version-tolerant probes for host TypeScript APIs (#551); shared so CLI-side
+// compiler consumers stay in lockstep with the extractors.
+export { isSatisfiesExpressionNode, modifiersOf } from "./ts-compat.js";

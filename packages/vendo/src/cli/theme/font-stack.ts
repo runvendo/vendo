@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { isSatisfiesExpressionNode } from "@vendoai/actions/sync";
 import type TS from "typescript";
 
 /**
@@ -93,15 +94,6 @@ function boundModule(source: string, fileName: string): BoundModule | null {
 function declarationOf(mod: BoundModule, node: TS.Node): TS.Declaration | undefined {
   const symbol = mod.checker.getSymbolAtLocation(node);
   return symbol?.valueDeclaration ?? symbol?.declarations?.[0];
-}
-
-/** `ts.isSatisfiesExpression` appeared in TS 4.9; the compiler here is the
- * host's own, so probe before use (#551). */
-function isSatisfiesExpressionNode(ts: typeof TS, node: TS.Node): node is TS.SatisfiesExpression {
-  const modern = ts as unknown as {
-    isSatisfiesExpression?: (node: TS.Node) => node is TS.SatisfiesExpression;
-  };
-  return modern.isSatisfiesExpression ? modern.isSatisfiesExpression(node) : false;
 }
 
 function unwrapExpression(ts: typeof TS, expression: TS.Expression): TS.Expression {
