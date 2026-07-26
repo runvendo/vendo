@@ -8,6 +8,7 @@ import {
   type CloudCommandOptions,
   type CloudFetcher,
 } from "./cloud/command.js";
+import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
 import { askYesNo, consoleOutput, exists, readOptional, writeText, type Output } from "./shared.js";
 
 /** `vendo config` (unified auth) — move a `.vendo` content surface between local
@@ -103,11 +104,23 @@ function keyOptions(args: string[], options: ConfigCommandOptions): CloudFetchOp
   };
 }
 
+/** Load the project's dotenv (`.env` then `.env.local`; local wins) and merge
+ *  it UNDER the process/host env, then hand that back as the command's env.
+ *  `vendo login` writes VENDO_API_KEY to `.env.local`, so a fresh shell after
+ *  login must pick the key up from there with no manual `source` — while an
+ *  already-set process VENDO_API_KEY still wins, exactly as init and the
+ *  runtime resolve credentials. Reuses doctor's dotenv util (no hand-rolled
+ *  parser). */
+async function scopedEnv(dir: string, options: ConfigCommandOptions): Promise<Record<string, string | undefined>> {
+  return mergeEnvOverDotEnv(await readDotEnvFallback(dir), (options.env ?? process.env) as NodeJS.ProcessEnv);
+}
+
 /** The same key resolution the runtime uses: an explicit `--key`, else
- *  VENDO_API_KEY from the environment (.env.local is loaded into it). Returns
- *  the key or, when none is present, prints the `vendo login` remedy and null —
- *  so push/pull refuse up front instead of failing on the first service call
- *  with a bare "missing key". status stays lenient (it degrades to "unknown"). */
+ *  VENDO_API_KEY from the environment (with `.env.local` merged in by
+ *  scopedEnv). Returns the key or, when none is present, prints the `vendo
+ *  login` remedy and null — so push/pull refuse up front instead of failing on
+ *  the first service call with a bare "missing key". status stays lenient (it
+ *  degrades to "unknown"). */
 function requireKey(args: string[], options: ConfigCommandOptions, output: Output): string | null {
   const key = option(args, "--key") ?? (options.env ?? process.env).VENDO_API_KEY;
   if (key === undefined || key === "") {
@@ -133,11 +146,12 @@ async function runStatus(args: string[], context: {
 }): Promise<number> {
   const { fetcher, output, options } = context;
   const dir = targetDir(args, options, false); // status takes no surface
+  const scoped: ConfigCommandOptions = { ...options, env: await scopedEnv(dir, options) };
   // The published cloud doc (key-authed). A missing key / unreachable console
   // leaves cloud presence UNKNOWN rather than falsely reporting "unset".
   let published: Record<string, string> | null | undefined;
   try {
-    const result = (await fetcher("/api/v1/config", keyOptions(args, options))) as PublishedConfig;
+    const result = (await fetcher("/api/v1/config", keyOptions(args, scoped))) as PublishedConfig;
     published = result.config;
   } catch {
     published = undefined;
@@ -177,8 +191,9 @@ async function runPush(args: string[], context: {
     output.error(`no ${join(".vendo", surface)} to push (nothing local to make cloud the source of)`);
     return 1;
   }
-  if (requireKey(args, options, output) === null) return 1;
-  const keyOpts = keyOptions(args, options);
+  const scoped: ConfigCommandOptions = { ...options, env: await scopedEnv(dir, options) };
+  if (requireKey(args, scoped, output) === null) return 1;
+  const keyOpts = keyOptions(args, scoped);
   // Read-merge-write against the KEY-authed draft plane (project from the key):
   // the draft PUT replaces the WHOLE draft, so merge this one surface onto the
   // current draft — never drop the others.
@@ -213,15 +228,16 @@ async function runPull(args: string[], context: {
   }
   const dir = targetDir(args, options, true); // dir follows the surface
   const wantDraft = args.includes("--draft");
-  if (requireKey(args, options, output) === null) return 1;
+  const scoped: ConfigCommandOptions = { ...options, env: await scopedEnv(dir, options) };
+  if (requireKey(args, scoped, output) === null) return 1;
   let value: string | undefined;
   if (wantDraft) {
     // The KEY-authed draft plane (project from the key) — same credential as
     // the published read, no user session.
-    const result = (await fetcher(DRAFT_PATH, keyOptions(args, options))) as DraftConfig;
+    const result = (await fetcher(DRAFT_PATH, keyOptions(args, scoped))) as DraftConfig;
     value = result.draft?.[surface];
   } else {
-    const result = (await fetcher("/api/v1/config", keyOptions(args, options))) as PublishedConfig;
+    const result = (await fetcher("/api/v1/config", keyOptions(args, scoped))) as PublishedConfig;
     value = result.config?.[surface];
   }
   if (value === undefined) {

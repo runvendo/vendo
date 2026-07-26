@@ -312,6 +312,78 @@ describe("vendo config pull", () => {
   });
 });
 
+// `vendo login` writes VENDO_API_KEY to .env.local, so the config commands must
+// load .env (then .env.local, local wins) from the project dir before resolving
+// the key — matching how init/the runtime source credentials. Precedence: an
+// already-set process env VENDO_API_KEY wins; an unset one falls back to
+// .env.local. Without this a fresh shell after `vendo login` would fail the
+// guard until the user manually `source`d the file (the decoupling the live
+// e2e caught).
+describe("vendo config key resolution (.env.local)", () => {
+  const FILE_KEY = `vnd_${"f".repeat(40)}`;
+
+  it("push resolves VENDO_API_KEY from .env.local when the process env has none", async () => {
+    const dir = await tempProject({ "design-rules.md": "# local" });
+    await writeFile(join(dir, ".env.local"), `VENDO_API_KEY=${FILE_KEY}\n`, "utf8");
+    const seen: Array<{ auth?: string; env?: Record<string, string | undefined> }> = [];
+    const fetcher: CloudFetcher = vi.fn(async (path, options) => {
+      seen.push({ auth: options?.auth, env: options?.env });
+      if (path === "/api/v1/config/draft" && (options?.method ?? "GET") === "GET") return { draft: {} };
+      return { draft: (options!.body as { draft: unknown }).draft };
+    });
+    const code = await runConfig(["push", "design-rules.md"], {
+      targetDir: dir, fetcher, output: capture().output, confirm: async () => false, env: {},
+    });
+    expect(code).toBe(0);
+    // The .env.local key reached the fetcher (the server reads env.VENDO_API_KEY).
+    expect(seen[0]?.auth).toBe("key");
+    expect(seen[0]?.env?.VENDO_API_KEY).toBe(FILE_KEY);
+  });
+
+  it("pull resolves VENDO_API_KEY from .env.local when the process env has none", async () => {
+    const dir = await tempProject();
+    await writeFile(join(dir, ".env.local"), `VENDO_API_KEY=${FILE_KEY}\n`, "utf8");
+    const fetcher: CloudFetcher = vi.fn(async (path, options) => {
+      expect(options?.auth).toBe("key");
+      expect(options?.env?.VENDO_API_KEY).toBe(FILE_KEY);
+      return PUBLISHED;
+    });
+    const code = await runConfig(["pull", "design-rules.md"], {
+      targetDir: dir, fetcher, output: capture().output, env: {},
+    });
+    expect(code).toBe(0);
+    expect(await readFile(join(dir, ".vendo", "design-rules.md"), "utf8")).toBe("# cloud rules");
+  });
+
+  it("a set process env VENDO_API_KEY wins over .env.local (env wins, like the runtime)", async () => {
+    const dir = await tempProject();
+    await writeFile(join(dir, ".env.local"), `VENDO_API_KEY=${FILE_KEY}\n`, "utf8");
+    const envKey = `vnd_${"e".repeat(40)}`;
+    let seenEnvKey: string | undefined;
+    const fetcher: CloudFetcher = vi.fn(async (_path, options) => {
+      seenEnvKey = options?.env?.VENDO_API_KEY;
+      return PUBLISHED;
+    });
+    await runConfig(["pull", "design-rules.md"], {
+      targetDir: dir, fetcher, output: capture().output, env: { VENDO_API_KEY: envKey },
+    });
+    expect(seenEnvKey).toBe(envKey);
+  });
+
+  it("still fires the `vendo login` guard when neither env nor .env.local carries a key", async () => {
+    const dir = await tempProject({ "design-rules.md": "# local" });
+    await writeFile(join(dir, ".env.local"), "FOO=bar\n", "utf8"); // present but no key
+    const fetcher = vi.fn();
+    const cap = capture();
+    const code = await runConfig(["push", "design-rules.md"], {
+      targetDir: dir, fetcher: fetcher as unknown as CloudFetcher, output: cap.output, env: {},
+    });
+    expect(code).toBe(1);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(cap.errors.join("\n")).toMatch(/vendo login/);
+  });
+});
+
 // A bare `--key X` (and --api-url) must never have its VALUE read as the
 // surface or the target dir, in EITHER order (Devin/Greptile P2 — same class as
 // cli.ts's --engine target() fix). These exercise the positional path (no
