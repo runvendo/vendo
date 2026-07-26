@@ -88,6 +88,15 @@ Read the app's source tokens, global CSS, Tailwind config, and font setup at
 the pinned SHA. Record fully resolved primitive values, not CSS variables.
 Normalize HSL, OKLCH, Tailwind palette classes, and rem radii to the schema's
 primitive form (hex colors and pixel radii). For example `0.5rem` is `8`.
+`fontFamily` labels are the source-declared stack in canonical form: family
+names unquoted, comma-space separated, ending at the FIRST generic family
+(`sans-serif`, `serif`, `monospace`, `cursive`, `fantasy`) — entries after a
+generic are per-character glyph fallbacks (Tailwind's default emoji tail),
+not brand identity, and the extractor normalizes them away identically. A
+next/font or geist variable resolves to its family name (the import's export
+name, underscores as spaces). Example: `["var(--font-geist-sans)",
+...fontFamily.sans]` labels as
+`Geist Sans, ui-sans-serif, system-ui, sans-serif`.
 If a value is genuinely absent, label the default Vendo should choose and note
 the uncertainty in the repo's labeling notes when Task 11 adds real labels.
 

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { contrastingText, normalizeColor, normalizeLength, resolveCssVarRefs } from "./color.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
 import { ENTRY_FILE_CANDIDATES } from "./entry-candidates.js";
+import { deriveBodyFontStack } from "./font-stack.js";
 import { walk } from "./walk.js";
 
 /**
@@ -248,16 +249,22 @@ function lastLightDecl(vars: CssVarDecl[], names: string[]): CssVarDecl | undefi
   return undefined;
 }
 
+const GENERIC_FAMILY = /^(?:sans-serif|serif|monospace|cursive|fantasy)$/i;
+
 function normalizeFontStack(value: string): string {
   // Quotes are optional CSS syntax around family names, not identity: "Outfit"
   // and Outfit are the same family (unquoted multi-word names are valid too).
-  const stack = value.split(",")
+  const parts = value.split(",")
     .map((part) => part.trim().replace(/^(["'])(.*)\1$/, "$2").trim())
-    .filter(Boolean)
-    .join(", ");
-  return /(?:^|,\s*)(?:sans-serif|serif|monospace|cursive|fantasy)(?:\s*,|$)/i.test(stack)
-    ? stack
-    : `${stack}, sans-serif`;
+    .filter(Boolean);
+  // Canonical form ends at the FIRST generic family: entries after it are
+  // per-character glyph fallbacks (Tailwind's default emoji tail), not brand
+  // identity — for ordinary text the generic always resolves first. A stack
+  // with no generic gets `sans-serif` appended, as before.
+  const generic = parts.findIndex((part) => GENERIC_FAMILY.test(part));
+  return generic === -1
+    ? `${parts.join(", ")}, sans-serif`
+    : parts.slice(0, generic + 1).join(", ");
 }
 
 /** Fully-resolved font stack: no var() refs, no CSS structural characters. */
@@ -408,6 +415,26 @@ export async function extractTheme(targetDir: string): Promise<ThemeSummary> {
   const context = await gatherContext(targetDir);
   const vars: CssVarDecl[] = context.css.flatMap((file) => parseCssVars(file.content, file.path));
   const exact = readExact(vars);
+  // No CSS `--font-sans`: the body stack may still be deterministically
+  // derivable from the Tailwind config / next/font conventions (font-stack.ts)
+  // — same exact-read status, so the staged model pass never re-guesses it.
+  if (exact.values.fontFamily === undefined) {
+    const declaredSans = lastLightDecl(vars, ["--font-sans"]);
+    const derived = deriveBodyFontStack({
+      layout: context.layout?.content ?? null,
+      tailwindConfig: context.tailwindConfig?.content ?? null,
+      cssText: context.css.map((file) => file.content).join("\n"),
+      resolveCssVar: (name) => {
+        const decl = lastLightDecl(vars, [name]);
+        return decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
+      },
+      ...(declaredSans === undefined ? {} : { cssFontSans: declaredSans.value }),
+    });
+    if (derived !== null && isSafeFontStack(derived.value)) {
+      exact.values.fontFamily = normalizeFontStack(derived.value);
+      exact.matched.fontFamily = derived.provenance;
+    }
+  }
   const needed = SLOT_KEYS.filter((slot) => exact.values[slot] === undefined);
   const { slots, matched, defaulted } = assembleTheme(exact.values, exact.matched, {});
 
