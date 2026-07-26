@@ -42,7 +42,7 @@ The umbrella exposes it as the page's one flag — literally `createVendo({ mcp:
 
 - **Same perimeter**: every door tool call becomes a `ToolCall` executed through the guard-bound registry with `RunContext{ venue: "mcp", presence: "present", principal }` — risk labels, grants, approvals, audit, breakers all apply identically. A `pending-approval` outcome returns as a **tool result with `isError: true`** whose content names the approval and says to resolve it in-product (MCP tool *execution* errors are in-band, never JSON-RPC protocol errors — the model must see the message); `blocked` likewise with the guard's reason. A `connect-required` outcome (01 §4, ENG-262) maps the same way: the door has no browser surface to run an OAuth redirect through, so the in-band error tells the user to connect the named toolkit account in the product and retry. Nothing is auto-elevated for being "just MCP".
 - **Principal**: minted by the OAuth layer (§3) — the door never trusts client-supplied identity. Anonymous/ephemeral principals are not served: an unauthenticated request gets `401` with the challenge header (§3), never a session.
-- **Tool surface**: `tools/list` = the bound registry's descriptors verbatim (names are already MCP-safe, `inputSchema` is already the MCP field). No door-specific renames, no second catalog.
+- **Tool surface**: `tools/list` = the bound registry's descriptors verbatim (names are already MCP-safe, `inputSchema` is already the MCP field). No door-specific renames, no second catalog. <!-- amended 2026-07-25 (surface-polish): "verbatim" now means verbatim in CONTENT, not in extent or in presentation. (a) Extent: when the umbrella passes a resolved `surfaces.mcp` menu, `tools/list` is the menu-filtered SUBSET of those descriptors, and `tools/call` refuses an off-menu name with the SAME in-band not-found an unknown tool gets — curation, not a permission boundary; the guard is unchanged. (b) Presentation: the door SYNTHESIZES `annotations` from each descriptor's risk label (read → readOnlyHint, destructive → destructiveHint) and passes an authored `title` through in both standard MCP positions. Name, description, and inputSchema are still never rewritten, and there is still no second catalog. -->
 - **Default policy posture**: unchanged from guard's — but the shipped policy example (05 §3) blocks `venue: "mcp"`; `vendo init` asks before opening the door. Opening it is a host decision, never a default.
 
 ## 2.1 Host-call auth over the door (normative)
@@ -127,6 +127,7 @@ The user's saved layer, not just raw tools — delivered the way the MCP Apps sp
 
 - The door ships **one static HTML shim resource** — the tree renderer (`@vendoai/ui/tree`, which already ships as a library per 08 §1) — at a `ui://` URI with mimeType `text/html;profile=mcp-app`, negotiated via the `io.modelcontextprotocol/ui` extension.
 - The generated shim stays generic. When `theme` is present, the door specializes the resource it serves by injecting the canonical `--vendo-*` variables; the shim wraps every rendered surface in `VendoProvider`, so the same resolved theme reaches prewired primitives, notices/link-out chrome, and generated-component jail frames. The current `VendoTheme` contract carries one palette, so the shim declares the same light color-scheme as the in-product chrome rather than inventing an uncontracted dark palette.
+<!-- amended 2026-07-25 (surface-polish): the ride-along tools carry `title` and risk-derived `annotations` like every other listing, and are NEVER removed by a `surfaces.mcp` menu — Vendo's own `vendo_*` tools are the runtime's plumbing, not the host's API surface. -->
 - App access is **ordinary door tools** (`vendo_apps_list`, `vendo_apps_open`) carrying `_meta: { ui: { resourceUri } }`; the host client renders the shim when the tool is called, and the tool result carries the `UIPayload` for the shim to render. Format dispatch inside the shim follows core §8 (unknown tags render a contained notice).
 - `AppsRuntime.open()` has already resolved v0 tree queries into `tree.data` (06 §1), so the MCP projection omits `tree.queries` from that resolved payload. The static shim retains query resolution only as a compatibility fallback for unresolved payloads from non-door hosts; a door open executes each query exactly once.
 - A rung-4 `{ kind: "http", url }` open is never embedded in the MCP client. The door projects it as the MCP-only structured envelope `{ kind: "vendo/open-in-product@1", url, productName, appName? }`; the shim renders a branded link-out card, and the tool's text content includes the same URL for clients that do not render MCP Apps. `appName` is best-effort; `productName` is the door's server identity.
@@ -148,6 +149,7 @@ export interface AppsPort {
 - Protected-resource metadata at the **path-inserted** well-known URL (RFC 9728 §3): a door mounted at `/api/vendo/mcp` serves `/.well-known/oauth-protected-resource/api/vendo/mcp`. Authorization-server metadata (RFC 8414) likewise.
 - **Origin derivation (ENG-333)**: every advertised origin — the issuer, endpoint URLs, the protected-resource `resource`, the `401` challenge's metadata URL — and RFC 8707 audience validation derive from the configured `baseUrl` (origin only) when set; unset, they derive from each request's own URL. `X-Forwarded-*`/`Host` headers are never consulted (Host-header injection). The umbrella defaults `baseUrl` from `VENDO_BASE_URL`; the additive `createVendo({ mcp: { baseUrl } })` form overrides it for compositions whose door origin differs from the route-binding origin.
 - With `remoteAs`, protected-resource metadata names the external issuer and the door does not serve RFC 8414 authorization-server metadata; the external server owns it (§3.1).
+<!-- amended 2026-07-25 (surface-polish): the door also serves an unauthenticated, session-free HTML page at `{mount}/connect` — product name, the transport URL, and per-client setup steps. It discloses only what this section already publishes. `McpDoorConfig.productName` (additive) overrides the package.json-derived server identity for both the card and that page. -->
 - Server card at `/.well-known/mcp-server-card` — ⚑ **provisional**, tracking SEP-2127 (Draft); the path moves with the SEP if it changes before ratification. Registry listings are a publishing step, not code. The door accepts an optional `mount` (e.g. `/api/vendo/mcp`): when set it is authoritative for the card's advertised transport URL, so a **cold** composed umbrella advertises the right mount before any request arrives, and learned request paths never override it (the umbrella passes its fixed `MCP_MOUNT`). Unset, the card falls back to `/mcp` until an authenticated request teaches it a mount.
 - `vendo doctor` validates both metadata documents resolve and the card parses.
 
@@ -171,6 +173,33 @@ Hosted broker (Cloud), registry submission automation, MCP Apps write-back beyon
 Dual review applied before any build: **standards** (verified against MCP 2025-11-25, MCP Apps 2026-01-26, RFC 8707/9728/8414/7591, CIMD draft) — all 6 findings applied, the big two being resource/audience binding and the MCP Apps shim delivery model. **Simplification** — 5 of 7 applied (`HostOAuthAdapter` shrunk to two functions, door owns its own state via `StoreAdapter`, `isRevoked`/`ttl`/`serverInfo` deleted, `AppsPort` = structural subset of `AppsRuntime`); 2 declined with rationale: the server card stays (the page mandates discovery — "agent-reachability becomes distribution" — path corrected + marked provisional instead), and `guard` stays in config (the page mandates "same audit"; auth events belong in the SIEM export, not only in SQL).
 
 ## 9. Additive amendments
+
+### 2026-07-25 — per-surface tool menus, titles, annotations, connect page (surface-polish)
+
+- **Changed:** §2's "descriptors verbatim" is amended in two additive ways.
+  `McpDoorConfig.menuTools` (a resolved name list, or a provider the door calls
+  per listing/call) filters `tools/list` and gates `tools/call`; and every
+  listing carries door-synthesized MCP `annotations` derived from the
+  descriptor's risk label, plus an authored `title` in both standard positions
+  (top-level and `annotations.title`).
+- **Changed:** §5 gains `{mount}/connect`, an unauthenticated, script-free,
+  themed HTML page (product name, transport URL, per-client setup steps), and
+  `McpDoorConfig.productName`, which wins over the package.json-derived identity
+  for the server card and that page.
+- **Semantics:** a menu is CURATION, not a permission boundary. An off-menu call
+  returns the identical in-band not-found an unknown tool returns, so the menu
+  neither grants nor leaks anything, and the guard, `disabled`, and audience
+  exclusions are untouched. `vendo_*` tools are never curated away. The menu is
+  re-resolved per listing and per call because the bound registry grows at
+  runtime (lazy connector expansion); a frozen menu would strand late tools.
+- **Compatibility:** every field is optional. A door with no `menuTools` lists
+  exactly what it listed before, except that annotations (and titles, where
+  authored) now ride along — additive metadata clients may ignore. The one
+  behavioral note for hosts: a `read` tool now asserts `readOnlyHint: true`, so
+  a client may skip its own confirmation step for it; Vendo's server-side guard
+  is unchanged.
+- **Approved by:** the signed surface-polish spec
+  (`features/mcp-surface-polish/SPEC.md`, signed 2026-07-25).
 
 ### 2026-07-14 — RFC 7009 token revocation
 

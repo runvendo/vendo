@@ -44,9 +44,6 @@ importers:
 
   apps/demo-accounting:
     dependencies:
-      '@ai-sdk/anthropic':
-        specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
       '@vendoai/actions':
         specifier: workspace:*
         version: link:../../packages/actions
@@ -162,6 +159,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@vendoai/guard':
+        specifier: workspace:*
+        version: link:../../packages/guard
       '@vendoai/store':
         specifier: workspace:*
         version: link:../../packages/store
@@ -241,9 +241,6 @@ importers:
       '@vendoai/automations':
         specifier: workspace:*
         version: link:../../packages/automations
-      '@vendoai/guard':
-        specifier: workspace:*
-        version: link:../../packages/guard
       eslint:
         specifier: ^9
         version: 9.39.5(jiti@2.7.0)

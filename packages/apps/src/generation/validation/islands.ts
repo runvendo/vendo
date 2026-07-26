@@ -8,6 +8,7 @@
 import {
   KIT_WIRE_COMPONENT_NAMES,
   RESERVED_COMPONENT_NAMES,
+  WIRE_COMPONENT_NAMES,
   ISLAND_AMBIENT_KIT_NAMES,
   ISLAND_STRIPPED_SPECIFIERS,
   islandDerivedValueViolations,
@@ -86,6 +87,79 @@ const islandImportSpecifiers = (source: string): string[] => {
 
 const ISLAND_RESOLVABLE_MODULE_SET = new Set<string>(ISLAND_STRIPPED_SPECIFIERS);
 
+// ---------------------------------------------------------------------------
+// Host-component-in-island teaching. Rematch gate 2026-07-25: 17+ Cadence and
+// several Maple creates burned EVERY repair round on islands rendering
+// <CadenceStatusBadge>/<MapleSparkline>/<Skeleton> — the issue string named
+// the whole ambient list but no concrete substitution, so repair reproduced
+// the class instead of fixing it. Each offending tag now carries the specific
+// ambient Kit equivalent the rewrite should use.
+// ---------------------------------------------------------------------------
+
+/** A loading placeholder has no ambient equivalent — the substitution is a
+ *  loading STATE, not a component. */
+const LOADING_PLACEHOLDER = /skeleton|spinner|loader|shimmer/i;
+
+/** Keyword → ambient Kit vocabulary for host component names whose suffix is
+ *  not itself an ambient name. Ordered: first hit wins. */
+const KIT_VOCABULARY: ReadonlyArray<readonly [RegExp, string]> = [
+  [/status/i, "EnumBadge"],
+  [/badge|pill|chip/i, "Badge"],
+  [/sparkline/i, "Sparkline"],
+  [/donut|pie/i, "DonutChart"],
+  [/bar\s*chart|histogram/i, "BarChart"],
+  [/chart|graph|trend/i, "LineChart"],
+  [/progress|meter|gauge/i, "Progress"],
+  [/table|datagrid/i, "DataTable"],
+  [/stat|metric|kpi|tile/i, "Stat"],
+  [/callout|banner|alert|notice/i, "Callout"],
+  [/card|panel|surface/i, "Surface"],
+  [/list|feed/i, "CardList"],
+  [/money|amount|currency|price/i, "Money"],
+  [/date|time/i, "DateTime"],
+];
+
+const AMBIENT_KIT_SET = new Set<string>(ISLAND_AMBIENT_KIT_NAMES);
+
+/** The ambient Kit component an island should render in place of a host
+ *  catalog / non-ambient prewired name — teaching heuristic for the repair
+ *  prompt, never a rewrite the engine performs itself. Undefined when the
+ *  name is a loading placeholder (the substitution is a loading state) or
+ *  maps to nothing recognizable. */
+export const ambientKitEquivalent = (name: string): string | undefined => {
+  if (LOADING_PLACEHOLDER.test(name)) return undefined;
+  // "…StatusBadge" wants the ENUM badge, so the status keyword outranks the
+  // Badge suffix.
+  if (/status/i.test(name)) return "EnumBadge";
+  // An ambient-name suffix is the strongest signal: MapleSparkline →
+  // Sparkline, CadenceDocProgress → Progress (longest match wins).
+  let suffix: string | undefined;
+  for (const kitName of AMBIENT_KIT_SET) {
+    if (name.length > kitName.length && name.endsWith(kitName)
+      && (suffix === undefined || kitName.length > suffix.length)) {
+      suffix = kitName;
+    }
+  }
+  if (suffix !== undefined) return suffix;
+  for (const [pattern, kitName] of KIT_VOCABULARY) {
+    if (pattern.test(name)) return kitName;
+  }
+  return undefined;
+};
+
+/** One teaching issue per offending tag, naming the concrete substitution so
+ *  a repair round can act (the generic all-ambient-names list demonstrably
+ *  did not converge — rematch 2026-07-25). */
+const hostTagIssue = (island: string, tag: string): string => {
+  const equivalent = ambientKitEquivalent(tag);
+  const substitution = equivalent !== undefined
+    ? `use the ambient Kit equivalent (${equivalent}) inside the island, or move it to a tree node`
+    : LOADING_PLACEHOLDER.test(tag)
+      ? `islands render against live tool data — replace it with a brief loading state (e.g. <Text text="Loading…"/> until the data arrives), or move it to a tree node`
+      : `use one of the ambient Kit components inside the island (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}), or move it to a tree node`;
+  return `island "${island}" renders <${tag}> — <${tag}> renders on the host page and cannot exist inside an island (the name is undefined in the sandbox): ${substitution}.`;
+};
+
 export interface PreparedIslands {
   /** name → stripped canonical source. Empty record when there are no islands. */
   components: Record<string, string>;
@@ -104,17 +178,22 @@ export const prepareIslands = async (
   rawComponents: Record<string, string>,
   tools: readonly HostToolInfo[] | undefined,
   hostComponents: readonly string[] = [],
+  /** The user's request text — law 1 exempts constants that are the user's
+   *  own numbers (see islandDerivedValueViolations). Absent → no carve-out. */
+  requestText?: string,
 ): Promise<PreparedIslands> => {
   const issues: string[] = [];
   const components: Record<string, string> = {};
   const componentTools: Record<string, string[]> = {};
   const knownTools = tools === undefined ? undefined : new Set(tools.map((tool) => tool.name));
-  // Host catalog + prewired components render in the HOST page — they can
-  // never cross into the opaque-origin jail, so an island JSX tag naming one
-  // is a guaranteed ReferenceError (live example: <MapleSpendingDonut/>).
-  // Names the ambient Kit also provides are fine — the Kit version renders.
+  // Host catalog + tree-resolvable components (prewired AND branded — a
+  // non-ambient <Table>/<Card> dies exactly like <Skeleton>) render in the
+  // HOST page — they can never cross into the opaque-origin jail, so an
+  // island JSX tag naming one is a guaranteed ReferenceError (live example:
+  // <MapleSpendingDonut/>). Names the ambient Kit also provides are fine —
+  // the Kit version renders.
   const ambientNames = new Set<string>(ISLAND_AMBIENT_KIT_NAMES);
-  const hostOnlyNames = [...new Set([...hostComponents, ...RESERVED_COMPONENT_NAMES])]
+  const hostOnlyNames = [...new Set([...hostComponents, ...WIRE_COMPONENT_NAMES])]
     .filter((componentName) => !ambientNames.has(componentName));
   // Name resolution is host catalog → built-ins → islands, so an island NAMED
   // after any of those never renders: the built-in wins and the island is
@@ -147,8 +226,8 @@ export const prepareIslands = async (
       // A locally-declared component of the same name is the island's own:
       // the local binding wins inside the jail, so don't reject it.
       && !new RegExp(`\\b(?:function|const|let|var|class)\\s+${componentName}\\b`).test(source));
-    if (hostTags.length > 0) {
-      issues.push(`island "${name}" renders ${hostTags.map((tag) => `<${tag}>`).join(", ")} — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}).`);
+    for (const tag of hostTags) {
+      issues.push(hostTagIssue(name, tag));
     }
     // The jail has no network: a habit-written fetch/XHR dies silently at the
     // CSP, so catch it here and repair to the ambient tools API instead.
@@ -158,7 +237,7 @@ export const prepareIslands = async (
     // Law 1 teeth for island math: a hand-typed constant feeding displayed
     // arithmetic over tool-derived values is invented data (the FX-rate
     // class).
-    for (const violation of islandDerivedValueViolations(source)) {
+    for (const violation of islandDerivedValueViolations(source, requestText === undefined ? undefined : { requestText })) {
       issues.push(`island "${name}" ${violation}`);
     }
     // The ambient tools contract: literal member access only, every chain

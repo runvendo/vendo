@@ -105,6 +105,79 @@ door cannot mint principals otherwise. The full adapter contract, including
 the legacy authorize-only mode, is in
 [HostOAuthAdapter](#hostoauthadapter).
 
+## Curate the tool menu
+
+By default the door offers every merged, enabled tool whose `audience` is
+`end-user` or unset. That default exists because an MCP client speaks for a
+person, so the door offers what that person's own auth admits. Operator and
+internal tools stay off it.
+
+Most products want a shorter, deliberate menu. Name it in
+`.vendo/overrides.json` under `surfaces.mcp`:
+
+```json
+{
+  "format": "vendo/overrides@3",
+  "tools": {
+    "host_listAccounts": { "title": "List your accounts" },
+    "host_transferMoney": { "title": "Send money" }
+  },
+  "surfaces": {
+    "mcp": {
+      "tools": ["host_listAccounts", "host_transferMoney"]
+    }
+  }
+}
+```
+
+The door then lists exactly those tools, and a call to any other tool returns
+the same not-found error an unknown tool name returns. `surfaces.agent` does
+the same for your in-product agent's loadout. Both keys are optional and
+independent; `surfaces` accepts only `agent` and `mcp`, so a misspelled surface
+name fails loudly when the file parses.
+
+A menu is curation, not a permission boundary. It changes what a surface
+offers. Your policy, approvals, audit, `disabled`, and audience exclusions
+decide what may run, and none of them read this block. Keep a destructive tool
+on the menu if users need it: the guard still parks it.
+
+An entry naming a tool that does not exist or is disabled warns once at boot
+and is skipped. The rest of the menu still applies, because a stale name in a
+hand-edited file must not take your product down.
+
+Vendo's own `vendo_*` tools, including the saved-apps viewer, are never
+curated away. They are the runtime's plumbing, not your API.
+
+### Title your tools
+
+Tool names are wire identifiers and extracted descriptions are often raw route
+text. Give a tool a `title` and every surface that shows it to a person uses
+that label instead: the door's `tools/list`, and your approval cards.
+
+`vendo sync`'s AI enrichment pass proposes titles for you while it reads your
+handlers. A `title` in `.vendo/overrides.json` always wins over what it wrote.
+
+### Annotations on the wire
+
+Each listed tool carries MCP `annotations` derived from its Vendo risk label,
+so a client can warn a person before a write without re-reading prose:
+
+| Risk | `readOnlyHint` | `destructiveHint` |
+| --- | --- | --- |
+| `read` | `true` | `false` |
+| `write` | `false` | `false` |
+| `destructive` | `false` | `true` |
+
+Annotations are hints for presentation. The guard is what decides.
+
+Annotations ride on every listing, whether or not you curate a menu. One
+consequence worth knowing before you upgrade: a `read` tool now asserts
+`readOnlyHint: true`, and some clients use that to skip their own confirmation
+prompt for read calls. Your server-side perimeter is unchanged. If a
+`read`-labelled tool is not actually side-effect free, fix its `risk` in
+`.vendo/overrides.json`; that label was already driving your policy and
+approvals.
+
 ## Consent page
 
 The door renders the consent page for you when your adapter uses `session`. It
@@ -183,6 +256,18 @@ your `server.json` and `mcp-registry-auth` challenge match the live door.
 
 To make the deployed door discoverable through the official registry, follow
 [Publish to the MCP registry](/capabilities/mcp-registry).
+
+### The connect page
+
+The door serves a themed page at `{mount}/connect`, for example
+`https://your-app.example.com/api/vendo/mcp/connect`. It shows your product
+name, the exact MCP URL to paste, and per-client setup steps for Claude,
+ChatGPT, and Cursor, including a one-click Cursor install link. Link users to
+it from your settings or docs.
+
+The page is unauthenticated and reads no user data: it shows only what your
+public server card already advertises. Like the consent page it ships zero
+JavaScript and it themes itself from `.vendo/theme.json`.
 
 ## Route the discovery paths
 

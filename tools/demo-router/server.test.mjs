@@ -175,6 +175,48 @@ describe("admin CRUD", () => {
     assert.equal(malformed.status, 400);
   });
 
+  it("POST accepts a permanent row without expiresAt; it routes live forever", async () => {
+    const { admin, request, registry } = await boot();
+    const response = await admin("/admin/demos", {
+      method: "POST",
+      body: JSON.stringify({ id: "maple", url: liveRow.url, prospect: "Maple", permanent: true }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(registry.get("maple").permanent, true);
+    assert.equal(registry.get("maple").expiresAt, undefined);
+    const redirect = await request("/maple");
+    assert.equal(redirect.status, 302);
+    assert.equal(redirect.headers.get("location"), new URL(liveRow.url).href);
+  });
+
+  it("POST rejects a row with neither permanent: true nor expiresAt (400)", async () => {
+    const { admin } = await boot();
+    for (const body of [
+      { id: "maple", url: liveRow.url, prospect: "Maple" },
+      { id: "maple", url: liveRow.url, prospect: "Maple", permanent: false },
+      { id: "maple", url: liveRow.url, prospect: "Maple", permanent: "yes", expiresAt: liveRow.expiresAt },
+    ]) {
+      const response = await admin("/admin/demos", { method: "POST", body: JSON.stringify(body) });
+      assert.equal(response.status, 400, JSON.stringify(body));
+    }
+  });
+
+  it("PATCH can flip permanence, but refuses to strand a row with no expiry (400)", async () => {
+    const { admin, registry } = await boot({ seed: [liveRow] });
+    const flipOn = await admin("/admin/demos/acme", { method: "PATCH", body: JSON.stringify({ permanent: true }) });
+    assert.equal(flipOn.status, 200);
+    assert.equal(registry.get("acme").permanent, true);
+
+    const seedPermanent = await admin("/admin/demos", {
+      method: "POST",
+      body: JSON.stringify({ id: "maple", url: liveRow.url, prospect: "Maple", permanent: true }),
+    });
+    assert.equal(seedPermanent.status, 200);
+    const strand = await admin("/admin/demos/maple", { method: "PATCH", body: JSON.stringify({ permanent: false }) });
+    assert.equal(strand.status, 400);
+    assert.equal(registry.get("maple").permanent, true, "the refused patch must not land");
+  });
+
   it("PATCH /admin/demos/:id updates killed/expiresAt/url and 404s on unknown ids", async () => {
     const { admin, registry } = await boot({ seed: [liveRow] });
     const response = await admin("/admin/demos/acme", {

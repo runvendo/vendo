@@ -27,7 +27,10 @@ export interface RegistryRow {
   id: string;
   url: string;
   prospect: string;
-  expiresAt: string;
+  /** Absent only on permanent rows (the router requires it otherwise). */
+  expiresAt?: string;
+  /** First-class permanence: never reaped (unless killed), never expires. */
+  permanent?: boolean;
   killed: boolean;
   createdAt: string;
   hits: number;
@@ -78,9 +81,11 @@ export function parseDemoReapArgs(argv: string[]): DemoReapArgs {
 }
 
 /**
- * Which rows come down: killed always; past-or-at `expiresAt` (>= to match
- * the router's boundary); an unparseable `expiresAt` is reapable too — the
- * router already stopped routing it (fail closed), so tearing it down is
+ * Which rows come down: killed always (an explicit kill outranks permanence);
+ * permanent rows are otherwise NEVER reaped, regardless of any expiresAt on
+ * the row; past-or-at `expiresAt` (>= to match the router's boundary); an
+ * absent or unparseable `expiresAt` on a non-permanent row is reapable too —
+ * the router already stopped routing it (fail closed), so tearing it down is
  * consistent, and the distinct reason keeps the report honest.
  */
 export function selectReapable(rows: RegistryRow[], now: Date): ReapCandidate[] {
@@ -90,7 +95,8 @@ export function selectReapable(rows: RegistryRow[], now: Date): ReapCandidate[] 
       candidates.push({ row, reason: "killed" });
       continue;
     }
-    const expiresAtMs = Date.parse(row.expiresAt);
+    if (row.permanent === true) continue;
+    const expiresAtMs = Date.parse(row.expiresAt ?? "");
     if (Number.isNaN(expiresAtMs)) {
       candidates.push({ row, reason: "invalid-expiry" });
     } else if (now.getTime() >= expiresAtMs) {
@@ -147,7 +153,7 @@ export async function runDemoReap(args: DemoReapArgs, io: ReapIo): Promise<DemoR
   write(`${candidates.length} demo(s) to reap (of ${demos.length} registered):`);
   for (const candidate of candidates) {
     const plan = buildReapPlan(candidate.row, args.routerUrl);
-    write(`  ${candidate.row.id} (${candidate.reason}, expires ${candidate.row.expiresAt}, ${candidate.row.hits} hits)`);
+    write(`  ${candidate.row.id} (${candidate.reason}, expires ${candidate.row.expiresAt ?? "<none>"}, ${candidate.row.hits} hits)`);
     write(`    ${plan.railwayDown.join(" ")}`);
     write(`    DELETE ${plan.registryDelete}`);
   }

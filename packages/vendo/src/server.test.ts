@@ -2173,6 +2173,169 @@ describe("ENG-252 agent.loadout through createVendo", () => {
   });
 });
 
+describe("surfaces.agent through createVendo", () => {
+  /** A .vendo pair whose overrides curate the AGENT surface. */
+  async function curatedRoot(surfaces: unknown): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-surfaces-agent-"));
+    const previousCwd = process.cwd();
+    cleanups.push(async () => {
+      process.chdir(previousCwd);
+      await rm(root, { recursive: true, force: true });
+    });
+    await mkdir(join(root, ".vendo"));
+    const tool = (name: string, description: string) => ({
+      name,
+      description,
+      inputSchema: { type: "object" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: `/api/${name}`, argsIn: "query" },
+    });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [tool("host_listAccounts", "List accounts"), tool("host_exportLedger", "Export the raw ledger to CSV")],
+    }));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
+      format: "vendo/overrides@3",
+      tools: {},
+      ...(surfaces === undefined ? {} : { surfaces }),
+    }));
+    process.chdir(root);
+    return root;
+  }
+
+  function recordingModel(scripted: Array<"search" | "text">) {
+    const toolNamesPerCall: string[][] = [];
+    let call = 0;
+    return { toolNamesPerCall, model: async () => {
+      const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+      return new MockLanguageModelV3({
+        doStream: async (req) => {
+          toolNamesPerCall.push(((req as { tools?: Array<{ name: string }> }).tools ?? []).map((tool) => tool.name));
+          const step = scripted[Math.min(call, scripted.length - 1)] ?? "text";
+          call += 1;
+          const finish = {
+            type: "finish" as const,
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: step === "search" ? "tool-calls" as const : "stop" as const, raw: undefined },
+          };
+          return {
+            stream: simulateReadableStream({
+              chunks: step === "search"
+                ? [
+                  {
+                    type: "tool-call" as const,
+                    toolCallId: "call_search",
+                    toolName: "vendo_tools_search",
+                    input: JSON.stringify({ query: "export the raw ledger" }),
+                  },
+                  finish,
+                ]
+                : [
+                  { type: "text-start" as const, id: "t1" },
+                  { type: "text-delta" as const, id: "t1", delta: "Done." },
+                  { type: "text-end" as const, id: "t1" },
+                  finish,
+                ],
+            }),
+          };
+        },
+      });
+    } };
+  }
+
+  it("offers the agent only its curated menu — and never gates Vendo's own vendo_* tools", async () => {
+    await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
+    const store = await tempStore("vendo-surfaces-agent-store-");
+    const recorder = recordingModel(["text"]);
+    const vendo = createVendo({
+      model: await recorder.model() as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+    });
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_surface_agent",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
+    expect(recorder.toolNamesPerCall[0]).not.toContain("host_exportLedger");
+    expect(recorder.toolNamesPerCall[0]).toContain("vendo_tools_search");
+    // The registry itself is untouched — the door and the host's own code still
+    // see the whole surface; only what the AGENT is offered is curated.
+    expect((await vendo.actions.descriptors()).map((entry) => entry.name)).toContain("host_exportLedger");
+  });
+
+  it("never materializes an off-menu tool-search hit into a callable tool", async () => {
+    await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
+    const store = await tempStore("vendo-surfaces-agent-search-store-");
+    const recorder = recordingModel(["search", "text"]);
+    const vendo = createVendo({
+      model: await recorder.model() as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+    });
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_surface_search",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "export the raw ledger" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    // The model searched for the excluded tool by its exact description and the
+    // step AFTER the search still does not offer it.
+    expect(recorder.toolNamesPerCall.length).toBeGreaterThanOrEqual(2);
+    expect(recorder.toolNamesPerCall.at(-1)).not.toContain("host_exportLedger");
+  });
+
+  it("binds an explicit agent.loadout to the menu — host config chooses within it, never around it", async () => {
+    await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
+    const store = await tempStore("vendo-surfaces-agent-loadout-store-");
+    const recorder = recordingModel(["text"]);
+    const vendo = createVendo({
+      model: await recorder.model() as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      // The host names BOTH tools in its explicit loadout; the menu still wins.
+      agent: { loadout: ["host_listAccounts", "host_exportLedger"] },
+    });
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_surface_loadout",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
+    expect(recorder.toolNamesPerCall[0]).not.toContain("host_exportLedger");
+    expect(recorder.toolNamesPerCall[0]).toContain("vendo_tools_search");
+  });
+
+  it("without a surfaces block the agent surface is unchanged", async () => {
+    await curatedRoot(undefined);
+    const store = await tempStore("vendo-surfaces-agent-none-store-");
+    const recorder = recordingModel(["text"]);
+    const vendo = createVendo({
+      model: await recorder.model() as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+    });
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_surface_none",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
+    expect(recorder.toolNamesPerCall[0]).toContain("host_exportLedger");
+  });
+});
+
 describe("09 §2 apps composition", () => {
   it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
     const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");

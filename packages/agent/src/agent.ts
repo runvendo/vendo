@@ -471,6 +471,17 @@ export function createAgent(config: AgentConfig): VendoAgent {
               seedNames = undefined;
             }
           }
+          // The host's curated surface menu, resolved beside the seed. A failure
+          // degrades to unrestricted (the composition seam owns the warning);
+          // an empty menu is a real answer and must not read as "unrestricted".
+          let menuNames: readonly string[] | undefined;
+          if (config.toolSearch?.menu !== undefined) {
+            try {
+              menuNames = await config.toolSearch.menu(input.ctx);
+            } catch {
+              menuNames = undefined;
+            }
+          }
           const bridgeOptions = {
             registry: config.tools,
             guard: config.guard,
@@ -488,6 +499,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
                 descriptors: await config.tools.descriptors(),
                 loaded: loadedFor(thread.id),
                 ...(seedNames === undefined ? {} : { seedNames }),
+                ...(menuNames === undefined ? {} : { menuNames }),
                 // Search hits expanded mid-turn resolve to full descriptors and
                 // materialize into the LIVE toolset — prepareStep re-reads the
                 // active names each step, so they are callable next step.

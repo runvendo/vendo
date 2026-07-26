@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { createRegistry, RegistryCorruptError } from "./registry.mjs";
+import { createRegistry, RegistryCorruptError, RegistryValidationError } from "./registry.mjs";
 
 function tempRegistryPath() {
   return path.join(mkdtempSync(path.join(tmpdir(), "demo-router-registry-")), "data", "registry.json");
@@ -82,6 +82,35 @@ describe("registry CRUD", () => {
     const reopened = createRegistry({ filePath });
     assert.equal(reopened.get("acme").prospect, "Acme Widgets");
   });
+
+  it("stores permanent rows (with or without expiresAt) and they survive reopen", () => {
+    const filePath = tempRegistryPath();
+    const registry = createRegistry({ filePath });
+    const stored = registry.upsert({ id: "maple", url: sampleRow.url, prospect: "Maple", permanent: true });
+    assert.equal(stored.permanent, true);
+    assert.equal(stored.expiresAt, undefined);
+    const reopened = createRegistry({ filePath });
+    assert.equal(reopened.get("maple").permanent, true);
+  });
+
+  it("refuses a non-permanent upsert without an expiresAt (RegistryValidationError)", () => {
+    const registry = createRegistry({ filePath: tempRegistryPath() });
+    assert.throws(
+      () => registry.upsert({ id: "acme", url: sampleRow.url, prospect: "Acme" }),
+      RegistryValidationError,
+    );
+  });
+
+  it("refuses a patch that would unset permanence with no expiresAt on the row", () => {
+    const registry = createRegistry({ filePath: tempRegistryPath() });
+    registry.upsert({ id: "maple", url: sampleRow.url, prospect: "Maple", permanent: true });
+    assert.throws(() => registry.patch("maple", { permanent: false }), RegistryValidationError);
+    // With an expiresAt supplied in the same patch it is fine, and the row
+    // drops the permanent marker entirely.
+    const patched = registry.patch("maple", { permanent: false, expiresAt: "2099-01-01T00:00:00Z" });
+    assert.equal(patched.permanent, undefined);
+    assert.equal(patched.expiresAt, "2099-01-01T00:00:00Z");
+  });
 });
 
 describe("registry atomic writes", () => {
@@ -120,6 +149,20 @@ describe("routeFor", () => {
       kind: "live",
       url: new URL(sampleRow.url).href,
     });
+  });
+
+  it("treats a permanent row as live regardless of expiry, but kill still wins", () => {
+    const registry = createRegistry({ filePath: tempRegistryPath() });
+    // Permanent with a stale expiresAt on the row — permanence wins.
+    registry.upsert({ ...sampleRow, id: "forever", permanent: true, expiresAt: "2020-01-01T00:00:00Z" });
+    // Permanent with NO expiresAt at all — the honest permanent shape.
+    registry.upsert({ id: "maple", url: sampleRow.url, prospect: "Maple", permanent: true });
+    registry.upsert({ id: "deadforever", url: sampleRow.url, prospect: "X", permanent: true, killed: true });
+
+    const now = new Date("2099-06-01T00:00:00Z");
+    assert.deepEqual(registry.routeFor("forever", now), { kind: "live", url: new URL(sampleRow.url).href });
+    assert.deepEqual(registry.routeFor("maple", now), { kind: "live", url: new URL(sampleRow.url).href });
+    assert.deepEqual(registry.routeFor("deadforever", now), { kind: "killed" });
   });
 
   it("treats an unparseable expiresAt as expired (fail closed)", () => {

@@ -61,6 +61,24 @@ export interface ActionsRegistry extends ToolRegistry {
   /** The per-turn initial loadout: host/eager tools first, then the given
    * (connected) toolkits' tools — never an alphabetical slice of the catalog. */
   loadoutSeed(connectedToolkits: string[]): Promise<string[]>;
+  /**
+   * The tool menu one SURFACE offers, resolved from `.vendo/overrides.json`'s
+   * `surfaces` block. `undefined` means unrestricted — the surface offers
+   * everything it would have offered before menus existed.
+   *
+   * An explicit `surfaces.<surface>.tools` wins, in the host's authored order.
+   * Absent, `agent` is unrestricted and `mcp` falls back to the default door
+   * menu: every merged, enabled tool whose post-override `audience` is
+   * `"end-user"` or ungraded — the tools a product's own customer could
+   * legitimately call, which is exactly who is on the far end of an MCP client.
+   *
+   * CURATION, NOT SECURITY. A menu changes what a surface OFFERS; the guard,
+   * `disabled`, and audience exclusions decide what may RUN, and none of them
+   * consult this. A menu entry naming an unknown or disabled tool is therefore
+   * a typo, not a breach: it warns once per boot and is ignored, and the rest
+   * of the menu still applies (a bad label must never take a host down).
+   */
+  surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined>;
 }
 
 /** CORE-2 (wave 5): `grant` and `mcpConsent` are first-class optional fields
@@ -149,6 +167,10 @@ type Dispatch =
 interface LoadedRegistry {
   descriptors: ToolDescriptor[];
   dispatch: Map<string, Dispatch>;
+  /** Post-override audience per registered tool name — provenance the
+   *  descriptor surface deliberately drops, kept here because the door's
+   *  default menu is defined in terms of it. Absent name = ungraded. */
+  audience: Map<string, ExtractedToolV3["audience"]>;
 }
 
 const STRIPPED_HEADERS = new Set([
@@ -175,6 +197,7 @@ function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
     inputSchema: tool.inputSchema,
     risk: tool.risk,
     ...(tool.critical !== undefined ? { critical: tool.critical } : {}),
+    ...(tool.title !== undefined ? { title: tool.title } : {}),
   };
 }
 
@@ -188,6 +211,7 @@ function mergeOverride<T extends ToolDescriptor & Pick<ExtractedToolV3, "audienc
     ...(override.risk !== undefined ? { risk: override.risk } : {}),
     ...(override.critical !== undefined ? { critical: override.critical } : {}),
     ...(override.description !== undefined ? { description: override.description } : {}),
+    ...(override.title !== undefined ? { title: override.title } : {}),
     ...(override.disabled !== undefined ? { disabled: override.disabled } : {}),
     ...(override.audience !== undefined ? { audience: override.audience } : {}),
     // v3: overrides correct semantics field-by-field, never wholesale.
@@ -721,6 +745,8 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   // The product's core promise, warned at the seam that knows: an agent with
   // zero live host tools serves users it cannot help (field case: an
   // extraction stripped to tools: [] shipped a silently useless agent).
+  /** One warning per surface per boot, however often the menu is resolved. */
+  const surfaceMenuWarned = new Set<string>();
   let zeroLiveWarned = false;
   const warnZeroLiveTools = (host: LoadedHost): LoadedHost => {
     if (zeroLiveWarned) return host;
@@ -849,6 +875,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const registryLists = await Promise.all(added.map((registry) => cachedDescriptors(registry)));
       const reserved = new Map<string, Dispatch | undefined>();
       const descriptors: ToolDescriptor[] = [];
+      const audience = new Map<string, ExtractedToolV3["audience"]>();
       // The primitive table compound steps validate against: post-override host +
       // connector tools ONLY — never compounds, never `add()`-registry tools.
       const primitives = new Map<string, PrimitiveStepTarget>();
@@ -863,6 +890,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       for (const extracted of host.tools) {
         const merged = mergeOverride({ ...extracted }, host.overrides.tools[extracted.name]);
         const descriptor = descriptorOf(merged);
+        if (merged.audience !== undefined) audience.set(merged.name, merged.audience);
         const disabled = merged.disabled === true;
         register(merged.name, "host tools", disabled ? undefined : { kind: "host", descriptor, tool: merged });
         primitives.set(merged.name, { risk: merged.risk, disabled });
@@ -877,6 +905,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
           const merged = mergeOverride(rawDescriptor, host.overrides.tools[rawDescriptor.name]);
           // audience/semantics are override provenance, not descriptor surface.
           const { disabled: _disabled, audience: _audience, semantics: _semantics, ...descriptor } = merged;
+          if (merged.audience !== undefined) audience.set(descriptor.name, merged.audience);
           register(
             descriptor.name,
             `connector ${connector.name}`,
@@ -920,6 +949,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
           }
           continue;
         }
+        if (compound.audience !== undefined) audience.set(compound.name, compound.audience);
         register(compound.name, "capabilities", { kind: "compound", descriptor: descriptorOf(compound), tool: compound });
       }
 
@@ -950,7 +980,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // Runtime dispatch keeps only enabled entries once all collision checks ran.
       const dispatch = new Map<string, Dispatch>();
       for (const [name, entry] of reserved) if (entry) dispatch.set(name, entry);
-      return { descriptors, dispatch };
+      return { descriptors, dispatch, audience };
     })();
     return loadedPromise;
   }
@@ -1027,6 +1057,40 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         if (connectedToolkits.some((toolkit) => descriptor.name.startsWith(`${toolkit}_`))) connected.push(descriptor.name);
       }
       return [...eager, ...connected];
+    },
+
+    async surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined> {
+      const [{ dispatch, audience }, host] = await Promise.all([load(), loadHost()]);
+      const authored = host.overrides.surfaces?.[surface];
+      if (authored !== undefined) {
+        // A menu is a FILTER, not a validated reference list. The authored set
+        // is returned whole and matched against the live surface at use time,
+        // because the surface grows: a lazy connector's tools do not exist at
+        // boot, and dropping their names here would make them permanently
+        // unreachable the moment they DO arrive. Unmatched names simply never
+        // match anything, which is what a filter should do.
+        const unmatched = authored.tools.filter((name) => !dispatch.has(name));
+        if (unmatched.length > 0 && !surfaceMenuWarned.has(surface)) {
+          surfaceMenuWarned.add(surface);
+          console.warn(
+            unmatched.length === authored.tools.length
+              ? `[vendo] surfaces.${surface}.tools in .vendo/overrides.json matches no registered tool at all `
+                + `(${unmatched.join(", ")}). If these are not lazy connector tools awaiting expansion, this surface `
+                + "will offer nothing — check for typos or re-run `vendo sync`."
+              : `[vendo] surfaces.${surface}.tools in .vendo/overrides.json names tools that are not registered right `
+                + `now: ${unmatched.join(", ")}. They stay on the menu (a lazy connector tool matches once expanded); `
+                + "if that is not what they are, check for a typo, a disabled tool, or re-run `vendo sync`.",
+          );
+        }
+        return [...authored.tools];
+      }
+      if (surface === "agent") return undefined;
+      // The default door menu: an MCP client speaks for a person, so offer the
+      // tools that person's own auth admits. Ungraded reads as end-user.
+      return [...dispatch.keys()].filter((name) => {
+        const grade = audience.get(name);
+        return grade === undefined || grade === "end-user";
+      });
     },
 
     async search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {

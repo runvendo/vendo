@@ -365,6 +365,10 @@ const rootedRenderIssues = (tree: TreeV2): string[] => {
 export const validateCompiledCreate = async (
   compiled: WireCompileResult,
   deps: GenerationDependencies,
+  /** The user's request text, threaded into the island law-1 scan so the
+   *  user's own numbers are never refused as invented data (rematch
+   *  2026-07-25 rows H12/H14). Absent → no carve-out. */
+  requestText?: string,
 ): Promise<{ document?: GeneratedAppDocument; issues: string[] }> => {
   const issues: string[] = [];
   if (!compiled.complete) issues.push("wire did not parse to a complete <App> document");
@@ -375,7 +379,7 @@ export const validateCompiledCreate = async (
   } else if (name.length > APP_NAME_MAX_CHARS) {
     issues.push(`App name="${name}" is ${name.length} characters — name is the app's display title (at most ${APP_NAME_MAX_CHARS} characters); write a short human title, never the request echoed back`);
   }
-  const prepared = await prepareIslands(compiled.components, deps.tools, deps.catalog.map(({ name: componentName }) => componentName));
+  const prepared = await prepareIslands(compiled.components, deps.tools, deps.catalog.map(({ name: componentName }) => componentName), requestText);
   const components = Object.keys(prepared.components).length === 0 ? undefined : prepared.components;
   issues.push(...prepared.issues);
   if (deps.tools !== undefined) {

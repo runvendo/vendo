@@ -6,7 +6,8 @@ import {
   type Connector,
   type ServerActionHandler,
 } from "@vendoai/actions";
-import { createAgent, type VendoAgent } from "@vendoai/agent";
+import { createAgent, VENDO_TOOL_PACK_PREFIX, type VendoAgent } from "@vendoai/agent";
+import { memoizedSurfaceMenu } from "./surface-menu.js";
 import {
   buildEnv,
   createApps,
@@ -1537,13 +1538,23 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // `vendo_tools_search`. The search seam is the SAME guard-bound registry the
     // agent executes through — a searched-in tool has no unguarded path.
     toolSearch: {
-      search: (query, options) => actions.search(query, options),
+      // A curated agent menu has to hold at BOTH doors into the toolset: the
+      // per-turn seed below and search, which materializes hits into the live
+      // toolset mid-turn. Filtering only the seed would let the model search
+      // its way back to an off-menu tool.
+      search: async (query, options) => onAgentMenu(await actions.search(query, options), (match) => match.name),
       // Connection-scoped loadout seed (spec 2026-07-20): each turn starts
       // with host tools + the principal's connected toolkits — never an
       // alphabetical slice of a lazy catalog. `connections` is declared below
       // this composition; turns only run after createVendo returns, so the
       // closure reference is safe.
       seed: (ctx) => loadoutSeedFor(ctx),
+      // The curated agent menu also binds an explicit `agent.loadout`: host
+      // config chooses WITHIN the menu, it does not escape it.
+      menu: async () => {
+        const menu = await agentMenu();
+        return menu === undefined ? undefined : [...menu];
+      },
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
       ...(config.agent?.loadout === undefined ? {} : { loadout: config.agent.loadout }),
     },
@@ -1553,6 +1564,25 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // only (warn, never the turn). Bounded so long-lived deployments don't grow.
   const CONNECTED_TOOLKITS_TTL_MS = 60_000;
   const connectedToolkitsCache = new Map<string, { at: number; toolkits: string[] }>();
+  // `surfaces.agent` (.vendo/overrides.json): the host's curated agent menu.
+  // Enforced HERE, at the composition seam, and not inside the registry —
+  // `actions.descriptors()` is also what the MCP door and the host's own code
+  // read, and those surfaces have their own menus. Successes are cached for the
+  // process (a menu is boot config); failures are warned and never cached (see
+  // memoizedSurfaceMenu).
+  const agentMenu = memoizedSurfaceMenu(() => actions.surfaceMenu("agent"));
+  /** Keep only entries the agent menu offers. Vendo's OWN `vendo_*` runtime
+   *  tools are never curated away: surfaces curate a product's API surface, not
+   *  the runtime's plumbing (gating `vendo_apps_*` or `vendo_tools_search` out
+   *  would break the product, not trim it). */
+  async function onAgentMenu<T>(entries: T[], nameOf: (entry: T) => string): Promise<T[]> {
+    const menu = await agentMenu();
+    if (menu === undefined) return entries;
+    return entries.filter((entry) => {
+      const name = nameOf(entry);
+      return name.startsWith(VENDO_TOOL_PACK_PREFIX) || menu.has(name);
+    });
+  }
   async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
     const subject = ctx.principal.subject;
     const cached = connectedToolkitsCache.get(subject);
@@ -1573,7 +1603,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
       connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
     }
-    return actions.loadoutSeed(toolkits);
+    return onAgentMenu(await actions.loadoutSeed(toolkits), (name) => name);
   }
   // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
   // disk rows, then cascade each swept subject into the agent's in-memory
@@ -1707,6 +1737,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       store,
       oauth: oauthSeam,
       apps: appsPort,
+      // The host's curated door menu (`surfaces.mcp`). Passed as a provider
+      // because composition is sync and resolving the authored file is not; the
+      // door resolves it once. The DOOR never reads `.vendo` itself — block
+      // layering keeps mcp off actions, so the file stays the umbrella's to
+      // read and the wire stays the door's to shape.
+      menuTools: () => actions.surfaceMenu("mcp"),
       mount: MCP_MOUNT,
       ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
       // 10-mcp §3.1/§3.2 — broker-fronted compositions: trust the external

@@ -6,6 +6,7 @@ import { useProfile } from "@/lib/hooks"
 import { MapleMark } from "@/components/ui/maple-mark"
 import { PRIMARY_NAV, SECONDARY_NAV, type NavItem } from "./nav"
 import { AccountSwitcher } from "./account-switcher"
+import { ResetDemoButton } from "./reset-demo"
 
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href)
@@ -52,6 +53,7 @@ export function Sidebar() {
           {SECONDARY_NAV.map((item) => (
             <NavLink key={item.href} item={item} pathname={pathname} />
           ))}
+          <ResetDemoButton />
         </div>
       </nav>
 

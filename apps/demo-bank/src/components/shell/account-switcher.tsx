@@ -9,6 +9,15 @@ export function AccountSwitcher() {
   const { data, isLoading } = useProfile()
   const toast = useToast()
   const demo = () => toast({ title: "Demo only", description: "Account actions are disabled in this demo." })
+  // Real sign-out: POST /logout clears the Auth.js session cookie server-side,
+  // then land on /login (pages 401/redirect there without a session anyway).
+  const signout = async () => {
+    try {
+      await fetch("/logout", { method: "POST" })
+    } finally {
+      window.location.href = "/login"
+    }
+  }
 
   return (
     <Dropdown>
@@ -50,7 +59,7 @@ export function AccountSwitcher() {
           Personal
         </DropdownItem>
         <DropdownSeparator />
-        <DropdownItem onSelect={demo}>
+        <DropdownItem onSelect={() => void signout()}>
           <LogOut className="h-4 w-4 text-muted" />
           Sign out
         </DropdownItem>

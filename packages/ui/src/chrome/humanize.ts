@@ -44,10 +44,18 @@ export function humanizeToolName(raw: string): string {
   return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }
 
-/** The display title for a tool: host label wins, else the prettified id. */
-export function toolTitle(name: string, meta?: ToolMeta): string {
+/**
+ * The display title for a tool, most local authority first: the host's
+ * in-code `ToolMeta.label`, then the descriptor's authored `title` (written by
+ * sync's enrichment into `.vendo/tools.json`, correctable in
+ * `.vendo/overrides.json` — the same label the MCP door puts on the wire), then
+ * the prettified id. A raw slug is never shown.
+ */
+export function toolTitle(name: string, meta?: ToolMeta, descriptorTitle?: string): string {
   const label = meta?.label?.trim();
-  return label ? label : humanizeToolName(name);
+  if (label) return label;
+  const authored = descriptorTitle?.trim();
+  return authored ? authored : humanizeToolName(name);
 }
 
 /** Well-known toolkit slugs whose display name is not just proper-casing

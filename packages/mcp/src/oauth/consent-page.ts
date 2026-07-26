@@ -1,4 +1,5 @@
 import type { VendoTheme } from "@vendoai/core";
+import { escapeHtml, htmlPage, themeAttribute } from "../page-chrome.js";
 
 export function consentPage(
   clientName: string,
@@ -7,7 +8,7 @@ export function consentPage(
   theme?: VendoTheme,
 ): Response {
   const safeClientName = escapeHtml(clientName);
-  const themeStyle = theme === undefined ? "" : ` style="${escapeHtml(vendoThemeStyle(theme))}"`;
+  const themeStyle = themeAttribute(theme);
   const scopeList = scopes.length === 0
     ? ""
     : `<div class="scope"><span>Requested access</span><strong>${escapeHtml(scopes.join(" · "))}</strong></div>`;
@@ -118,52 +119,5 @@ export function consentPage(
   </main>
 </body>
 </html>`;
-  return new Response(html, {
-    status: 200,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-      pragma: "no-cache",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-      "referrer-policy": "no-referrer",
-      "x-content-type-options": "nosniff",
-    },
-  });
-}
-
-/** Intentionally mirrors `@vendoai/ui`'s theme-token mapping (`packages/ui/src/theme.ts`)
- * rather than importing it: `scripts/dependency-guard.mjs` restricts `@vendoai/mcp` to
- * `@vendoai/core` only, so ui is not an importable dependency here. There is no shared
- * home for this mapping today — core does not carry it, and ui does not re-export it from
- * core — so any change to ui's theme→CSS-variable mapping must be mirrored here by eye. */
-function vendoThemeStyle(theme: VendoTheme): string {
-  const variables: Record<string, string> = {};
-  for (const [key, value] of Object.entries(theme.colors)) {
-    variables[`--vendo-color-${kebab(key)}`] = value;
-  }
-  variables["--vendo-font-family"] = theme.typography.fontFamily;
-  if (theme.typography.headingFamily !== undefined) {
-    variables["--vendo-heading-family"] = theme.typography.headingFamily;
-  }
-  variables["--vendo-font-size"] = theme.typography.baseSize;
-  for (const [key, value] of Object.entries(theme.radius)) {
-    variables[`--vendo-radius-${kebab(key)}`] = value;
-  }
-  variables["--vendo-density"] = theme.density;
-  variables["--vendo-motion"] = theme.motion;
-  return Object.entries(variables).map(([name, value]) => `${name}:${value}`).join(";");
-}
-
-function kebab(name: string): string {
-  return name.replace(/[A-Z]/g, (character) => `-${character.toLowerCase()}`);
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[character]!);
+  return htmlPage(html, { formAction: "self" });
 }
