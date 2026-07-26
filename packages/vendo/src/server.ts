@@ -6,7 +6,7 @@ import {
   type Connector,
   type ServerActionHandler,
 } from "@vendoai/actions";
-import { createAgent, type VendoAgent } from "@vendoai/agent";
+import { createAgent, VENDO_TOOL_PACK_PREFIX, type VendoAgent } from "@vendoai/agent";
 import {
   buildEnv,
   createApps,
@@ -1523,7 +1523,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // `vendo_tools_search`. The search seam is the SAME guard-bound registry the
     // agent executes through — a searched-in tool has no unguarded path.
     toolSearch: {
-      search: (query, options) => actions.search(query, options),
+      // A curated agent menu has to hold at BOTH doors into the toolset: the
+      // per-turn seed below and search, which materializes hits into the live
+      // toolset mid-turn. Filtering only the seed would let the model search
+      // its way back to an off-menu tool.
+      search: async (query, options) => onAgentMenu(await actions.search(query, options), (match) => match.name),
       // Connection-scoped loadout seed (spec 2026-07-20): each turn starts
       // with host tools + the principal's connected toolkits — never an
       // alphabetical slice of a lazy catalog. `connections` is declared below
@@ -1539,6 +1543,32 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // only (warn, never the turn). Bounded so long-lived deployments don't grow.
   const CONNECTED_TOOLKITS_TTL_MS = 60_000;
   const connectedToolkitsCache = new Map<string, { at: number; toolkits: string[] }>();
+  // `surfaces.agent` (.vendo/overrides.json): the host's curated agent menu.
+  // Enforced HERE, at the composition seam, and not inside the registry —
+  // `actions.descriptors()` is also what the MCP door and the host's own code
+  // read, and those surfaces have their own menus. Resolved once per boot
+  // (menus are boot config, like the rest of the authored file); a failure to
+  // resolve degrades to unrestricted rather than silently emptying the agent,
+  // because a malformed overrides.json already fails loudly at descriptors().
+  let agentMenuPromise: Promise<Set<string> | undefined> | undefined;
+  const agentMenu = (): Promise<Set<string> | undefined> => {
+    agentMenuPromise ??= actions.surfaceMenu("agent")
+      .then((names) => (names === undefined ? undefined : new Set(names)))
+      .catch(() => undefined);
+    return agentMenuPromise;
+  };
+  /** Keep only entries the agent menu offers. Vendo's OWN `vendo_*` runtime
+   *  tools are never curated away: surfaces curate a product's API surface, not
+   *  the runtime's plumbing (gating `vendo_apps_*` or `vendo_tools_search` out
+   *  would break the product, not trim it). */
+  async function onAgentMenu<T>(entries: T[], nameOf: (entry: T) => string): Promise<T[]> {
+    const menu = await agentMenu();
+    if (menu === undefined) return entries;
+    return entries.filter((entry) => {
+      const name = nameOf(entry);
+      return name.startsWith(VENDO_TOOL_PACK_PREFIX) || menu.has(name);
+    });
+  }
   async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
     const subject = ctx.principal.subject;
     const cached = connectedToolkitsCache.get(subject);
@@ -1559,7 +1589,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
       connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
     }
-    return actions.loadoutSeed(toolkits);
+    return onAgentMenu(await actions.loadoutSeed(toolkits), (name) => name);
   }
   // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
   // disk rows, then cascade each swept subject into the agent's in-memory
