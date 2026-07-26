@@ -2,6 +2,7 @@ import type {
   Guard,
   Json,
   Principal,
+  RiskLabel,
   RunContext,
   StoreAdapter,
   ToolDescriptor,
@@ -103,6 +104,26 @@ export interface McpDoorConfig {
   remoteAs?: { issuer: string; jwksUri?: string; audience: string };
   /** Enable the generic signed login-federation handshake at `{mount}/federate`. */
   federation?: { secret: string };
+  /**
+   * The tool menu this door offers — the host's curated `surfaces.mcp` list,
+   * resolved by the umbrella (`registry.surfaceMenu("mcp")`) and passed in.
+   * Absent = offer the whole bound surface. The door never reads `.vendo`
+   * files itself: block layering forbids mcp importing actions, so the
+   * composition seam owns the file and the door owns the wire.
+   *
+   * CURATION, NOT SECURITY. A name outside the menu is neither listed nor
+   * callable, but the refusal is the SAME in-band not-found an unknown tool
+   * gets — the menu leaks nothing and grants nothing. Vendo's own `vendo_*`
+   * tools (the apps ride-alongs and any runtime tool the registry owns) are
+   * never curated away: they are the product's plumbing, not the host's API.
+   *
+   * The provider form exists because composition is synchronous while resolving
+   * the menu is not (it reads the authored file through the registry). It is
+   * resolved ONCE, lazily, on the first listing or call, and memoized — the
+   * same shape `RegistryConfig.overrides` uses for the same reason. Resolving
+   * to `undefined` means unrestricted.
+   */
+  menuTools?: string[] | (() => string[] | undefined | Promise<string[] | undefined>);
 }
 
 export interface McpDoor {
@@ -144,6 +165,9 @@ class Door {
   readonly #publicOrigin: string | undefined;
   #identity: Promise<HostIdentity> | undefined;
   readonly #shimHtml: string;
+  /** The resolved menu as a set, or undefined for an uncurated door. Resolved
+   *  once on first use (see McpDoorConfig.menuTools). */
+  #menuPromise: Promise<Set<string> | undefined> | undefined;
 
   constructor(config: McpDoorConfig, state: McpDoorState) {
     this.#config = config;
@@ -382,8 +406,19 @@ class Door {
     }
   }
 
+  #menu(): Promise<Set<string> | undefined> {
+    this.#menuPromise ??= (async () => {
+      const configured = this.#config.menuTools;
+      const names = typeof configured === "function" ? await configured() : configured;
+      return names === undefined ? undefined : new Set(names);
+    })();
+    return this.#menuPromise;
+  }
+
   async #listedTools(): Promise<Tool[]> {
-    const descriptors = await this.#config.tools.descriptors();
+    const menu = await this.#menu();
+    const descriptors = (await this.#config.tools.descriptors())
+      .filter((descriptor) => offeredAtDoor(menu, descriptor.name));
     const appsConfigured = this.#config.apps !== undefined;
     // The bound registry's descriptors are served VERBATIM — name, description,
     // and inputSchema are the registry's, never the door's (10-mcp §2/§4). But a
@@ -393,8 +428,14 @@ class Door {
     // door's `_meta.ui` to those listings (FIX E). Execution still routes through
     // the registry (one guard decision), and #callTool unwraps its OpenSurface
     // output into a shim-renderable payload.
-    const tools: Tool[] = descriptors.map(({ name, description, inputSchema }) => {
-      const tool: Tool = { name, description, inputSchema: inputSchema as Tool["inputSchema"] };
+    const tools: Tool[] = descriptors.map(({ name, description, inputSchema, risk, title }) => {
+      const tool: Tool = {
+        name,
+        description,
+        inputSchema: inputSchema as Tool["inputSchema"],
+        ...(title === undefined ? {} : { title }),
+        annotations: toolAnnotations(risk, title),
+      };
       if (appsConfigured && APP_TOOL_NAMES.has(name)) tool._meta = appUiMeta();
       return tool;
     });
@@ -416,7 +457,10 @@ class Door {
     identity: HostIdentity,
   ): Promise<CallToolResult> {
     const descriptors = await this.#config.tools.descriptors();
-    if (!descriptors.some((descriptor) => descriptor.name === name)) {
+    // An off-menu name answers exactly like a name that does not exist: the
+    // menu decides what this door OFFERS, and offering nothing is the whole
+    // refusal (the guard, not the menu, is what stops a call that IS offered).
+    if (!offeredAtDoor(await this.#menu(), name) || !descriptors.some((descriptor) => descriptor.name === name)) {
       if (this.#config.apps !== undefined && APP_TOOL_NAMES.has(name)) {
         return this.#callAppsTool(name, args, state, identity);
       }
@@ -731,12 +775,14 @@ function notFound(): Response {
 const APP_TOOL_DESCRIPTORS: ToolDescriptor[] = [
   {
     name: "vendo_apps_list",
+    title: "List saved apps",
     description: "List the current user's saved Vendo apps",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     risk: "read",
   },
   {
     name: "vendo_apps_open",
+    title: "Open a saved app",
     description: "Open a saved Vendo app",
     inputSchema: {
       type: "object",
@@ -748,6 +794,7 @@ const APP_TOOL_DESCRIPTORS: ToolDescriptor[] = [
   },
   {
     name: "vendo_apps_call",
+    title: "Use a saved app",
     description: "Run an interaction from a saved Vendo app",
     inputSchema: {
       type: "object",
@@ -765,6 +812,36 @@ const APP_TOOL_DESCRIPTORS: ToolDescriptor[] = [
 
 const APP_TOOL_NAMES = new Set(APP_TOOL_DESCRIPTORS.map((descriptor) => descriptor.name));
 
+/** Vendo's own reserved tool namespace. A per-surface menu curates the HOST's
+ *  API; the runtime's own tools (apps viewer, and anything else the umbrella
+ *  registers under this prefix) are plumbing and are never curated away —
+ *  the agent side of the same rule lives in the umbrella. Duplicated as a
+ *  literal because block layering keeps mcp off the agent/actions packages. */
+const VENDO_TOOL_PREFIX = "vendo_";
+
+/** Whether a curated door offers `name`. Asked by BOTH the listing and the call
+ *  path, so a curated door cannot advertise one surface and answer to another. */
+function offeredAtDoor(menu: Set<string> | undefined, name: string): boolean {
+  return menu === undefined || name.startsWith(VENDO_TOOL_PREFIX) || menu.has(name);
+}
+
+/**
+ * 10-mcp §2 — the MCP annotation hints derived from Vendo's ONE risk label, so
+ * a client can warn a person before a write and colour a destructive call
+ * without re-deriving intent from prose. Hints only: the guard is what actually
+ * decides, and a client is free to ignore these (per the MCP spec). `title`
+ * rides along here too — the spec moved it to a top-level field, but clients
+ * that predate that move still read `annotations.title`, so the door emits
+ * both and neither can drift from the other.
+ */
+function toolAnnotations(risk: RiskLabel, title?: string): NonNullable<Tool["annotations"]> {
+  return {
+    ...(title === undefined ? {} : { title }),
+    readOnlyHint: risk === "read",
+    destructiveHint: risk === "destructive",
+  };
+}
+
 /** 10-mcp §4 — the MCP Apps `_meta` that advertises the shim resource so a host
  * client preloads the tree renderer. A non-renderable result (e.g. a list) is
  * contained gracefully by the shim's core-§8 format dispatch. */
@@ -776,10 +853,12 @@ function appTools(): Tool[] {
   // 10-mcp §4 names both vendo_apps_list and vendo_apps_open as carrying
   // _meta.ui.resourceUri; all three ride-along tools advertise the shim so the
   // host can preload it.
-  return APP_TOOL_DESCRIPTORS.map(({ name, description, inputSchema }) => ({
+  return APP_TOOL_DESCRIPTORS.map(({ name, title, description, inputSchema, risk }) => ({
     name,
+    ...(title === undefined ? {} : { title }),
     description,
     inputSchema: inputSchema as Tool["inputSchema"],
+    annotations: toolAnnotations(risk, title),
     _meta: appUiMeta(),
   }));
 }

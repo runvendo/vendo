@@ -1144,6 +1144,8 @@ describe("createMcpDoor MCP protocol", () => {
       name: "host_lookup",
       description: "Look something up",
       inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+      // risk-derived hints ride on every listing (this descriptor is untitled)
+      annotations: { readOnlyHint: true, destructiveHint: false },
     }]);
 
     const ok = await connected.client.callTool({ name: "host_lookup", arguments: { query: "x" } });
@@ -1492,6 +1494,7 @@ describe("createMcpDoor MCP protocol", () => {
       name: "vendo_apps_open",
       description: "Registry-owned apps open (agentTools via the umbrella)",
       inputSchema: { type: "object" },
+      annotations: { readOnlyHint: true, destructiveHint: false },
       _meta: {
         ui: { resourceUri: "ui://vendo/tree-shim.html" },
         "ui/resourceUri": "ui://vendo/tree-shim.html",
@@ -1611,8 +1614,111 @@ describe("createMcpDoor MCP protocol", () => {
   });
 });
 
+describe("createMcpDoor tool menu, titles, and annotations", () => {
+  const surfaceDescriptors = [
+    { name: "host_pay", description: "Pay a payee", inputSchema: { type: "object" }, risk: "write" as const, title: "Send payment" },
+    { name: "host_wipe", description: "Delete everything", inputSchema: { type: "object" }, risk: "destructive" as const },
+    { name: "host_admin", description: "Operator console", inputSchema: { type: "object" }, risk: "read" as const },
+  ];
+
+  async function open(options: HarnessOptions) {
+    const harness = makeHarness(options);
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+    return { harness, connected };
+  }
+
+  it("carries the human title in both standard places and risk-derived annotations on every tool", async () => {
+    const { connected } = await open({ extraDescriptors: surfaceDescriptors });
+    const listed = await connected.client.listTools();
+    const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
+
+    // read
+    expect(byName.get("host_lookup")).toMatchObject({
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    });
+    expect(byName.get("host_lookup")!.title).toBeUndefined();
+    // write, titled — the label lands top-level (spec) AND on annotations
+    // (where older clients still read it)
+    expect(byName.get("host_pay")).toMatchObject({
+      title: "Send payment",
+      annotations: { title: "Send payment", readOnlyHint: false, destructiveHint: false },
+    });
+    // destructive
+    expect(byName.get("host_wipe")).toMatchObject({
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    });
+    await connected.client.close();
+  });
+
+  it("lists only the configured menu, and a call to an off-menu tool is a plain not-found", async () => {
+    const { harness, connected } = await open({
+      extraDescriptors: surfaceDescriptors,
+      menuTools: ["host_lookup", "host_pay"],
+    });
+    const listed = await connected.client.listTools();
+    expect(listed.tools.map((tool) => tool.name)).toEqual(["host_lookup", "host_pay"]);
+
+    const before = harness.executions.length;
+    const refused = await connected.client.callTool({ name: "host_admin", arguments: {} });
+    expect(refused).toMatchObject({ isError: true, content: [{ type: "text", text: expect.stringContaining("not-found") }] });
+    // Curation, not security: the tool never ran, and the answer is the SAME
+    // in-band not-found an unknown name gets — the menu leaks nothing.
+    expect(harness.executions.length).toBe(before);
+    const unknown = await connected.client.callTool({ name: "host_nonexistent", arguments: {} });
+    expect((refused.content as Array<{ text: string }>)[0]!.text.replace("host_admin", "X"))
+      .toBe((unknown.content as Array<{ text: string }>)[0]!.text.replace("host_nonexistent", "X"));
+    await connected.client.close();
+  });
+
+  it("never curates away Vendo's own apps ride-alongs, menu or no menu", async () => {
+    const { connected } = await open({
+      extraDescriptors: surfaceDescriptors,
+      menuTools: ["host_pay"],
+      apps: {
+        async list() { return []; },
+        async open() { return { kind: "tree" as const, payload: { formatVersion: "vendo-genui/v2", root: "root", nodes: [] } }; },
+        async call() { return {}; },
+      },
+    });
+    const listed = await connected.client.listTools();
+    expect(listed.tools.map((tool) => tool.name)).toEqual([
+      "host_pay",
+      "vendo_apps_list",
+      "vendo_apps_open",
+      "vendo_apps_call",
+    ]);
+    await connected.client.close();
+  });
+
+  it("resolves a provider-form menu exactly once, however many times it is consulted", async () => {
+    let resolutions = 0;
+    const { connected } = await open({
+      extraDescriptors: surfaceDescriptors,
+      menuTools: () => {
+        resolutions += 1;
+        return Promise.resolve(["host_pay"]);
+      },
+    });
+    expect((await connected.client.listTools()).tools.map((tool) => tool.name)).toEqual(["host_pay"]);
+    await connected.client.listTools();
+    await connected.client.callTool({ name: "host_pay", arguments: {} });
+    expect(resolutions).toBe(1);
+    await connected.client.close();
+  });
+
+  it("lists the whole surface when no menu is configured", async () => {
+    const { connected } = await open({ extraDescriptors: surfaceDescriptors });
+    const listed = await connected.client.listTools();
+    expect(listed.tools.map((tool) => tool.name)).toEqual(["host_lookup", "host_pay", "host_wipe", "host_admin"]);
+    await connected.client.close();
+  });
+});
+
 interface HarnessOptions {
   store?: MemoryStore;
+  menuTools?: string[] | (() => string[] | undefined | Promise<string[] | undefined>);
   state?: McpDoorState;
   getOutcome?: () => ToolOutcome;
   principal?: (subject: string) => Principal | null;
@@ -1664,6 +1770,7 @@ function makeHarness(options: HarnessOptions = {}) {
     guard,
     store,
     apps: options.apps,
+    ...(options.menuTools === undefined ? {} : { menuTools: options.menuTools }),
     ...(options.mount === undefined ? {} : { mount: options.mount }),
     ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
     ...(options.remoteAs === undefined ? {} : { remoteAs: options.remoteAs }),
