@@ -198,6 +198,17 @@ export interface AppsConfig {
   /** W3 — the host's domain manifest (has / has-NOT), generation fact.
    *  Provider form resolved per generation (see catalog note). */
   domains?: DomainManifest | (() => DomainManifest | undefined);
+  /** Re-gate 2026-07-26 finding 2 — the caller's CONNECTED toolkits, resolved
+   *  per create/edit. The create-time shape sampler probes every no-arg read
+   *  tool once; a connector tool (descriptor.toolkit set, 01-core §4) whose
+   *  toolkit is not in this set is never probed — on the gate hosts, ~159
+   *  unconnected Slack/Gmail probes piled up at the approval gate and the
+   *  burst tripped the call-rate breaker under real creates. The umbrella
+   *  backs this with the connections seam (connections.list, active accounts).
+   *  Unset or failing = treat every toolkit as unconnected: connector probes
+   *  skip, host tools are unaffected, and the tools stay LISTED for
+   *  generation (execution still answers `connect-required` on its own). */
+  connectedToolkits?: (ctx: RunContext) => Promise<string[]>;
 }
 
 /** 06-apps §1 */
@@ -1213,9 +1224,24 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ctx: RunContext,
   ): Promise<Pick<GenerationDependencies, "tools" | "toolShapes">> => {
     const descriptors = await config.tools.descriptors().catch(() => []);
-    await Promise.all(descriptors
-      .filter((descriptor) =>
-        descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name))
+    const candidates = descriptors.filter((descriptor) =>
+      descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name));
+    // Re-gate 2026-07-26 finding 2: a connector tool (descriptor.toolkit,
+    // 01-core §4) is probed ONLY when its toolkit is connected for this
+    // caller — an unconnected toolkit's probe can never yield a shape (the
+    // account is missing), and on the gate hosts the ~50-tool probe burst
+    // per create parked at the approval gate and tripped the call-rate
+    // breaker under the create's own host reads. The connected set is
+    // resolved lazily (only when a connector candidate exists) and degrades
+    // to empty on failure or when the seam is not composed: probes skip,
+    // the tools stay listed below.
+    const connectorCandidates = candidates.filter((descriptor) => typeof descriptor.toolkit === "string");
+    let connected: ReadonlySet<string> = new Set();
+    if (connectorCandidates.length > 0 && config.connectedToolkits !== undefined) {
+      connected = new Set(await config.connectedToolkits(ctx).catch(() => []));
+    }
+    await Promise.all(candidates
+      .filter((descriptor) => typeof descriptor.toolkit !== "string" || connected.has(descriptor.toolkit))
       .map(async (descriptor) => {
         try {
           const outcome = await config.tools.execute(
@@ -1225,9 +1251,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           if (outcome.status === "ok") {
             settledSamples.add(descriptor.name);
             sampledShapes.set(descriptor.name, deriveShapeCard(descriptor.name, [outcome.output]).output);
-          } else if (outcome.status === "pending-approval" || outcome.status === "blocked") {
-            // The policy gates this read: never re-ask on later creates (one
-            // parked approval per boot at most), and leave the shape unknown.
+          } else if (
+            outcome.status === "pending-approval"
+            || outcome.status === "blocked"
+            || outcome.status === "connect-required"
+          ) {
+            // The policy gates this read, or its account connection is
+            // missing/expired at the provider: never re-ask on later creates
+            // (one probe per boot at most), and leave the shape unknown.
             settledSamples.add(descriptor.name);
           }
           // Transient errors (e.g. an unauthenticated caller) retry on the
