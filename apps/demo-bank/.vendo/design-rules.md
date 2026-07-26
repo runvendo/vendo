@@ -20,5 +20,8 @@ Maple app itself: quiet surfaces, ink on porcelain, one number that matters.
   shadows, no decoration, no tinted backgrounds.
 - Copy is short and warm. Labels are two or three words ("Total balance",
   "This month"). An empty state is one reassuring sentence.
+- No emojis, ever. Not in titles, labels, list rows, empty states, or any
+  generated copy — an icon need is met with a plain glyph, a color swatch,
+  or nothing at all.
 - The Maple host components (MapleNetWorthCard, MapleSparkline,
   MapleSpendingDonut) are the brand — always prefer them for their intents.

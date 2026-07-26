@@ -16,14 +16,18 @@ export default function HomePage() {
         <p className="text-sm text-muted">Here&apos;s where your money stands today.</p>
       </div>
       <QuickActions />
+      {/* Hero row: the Total balance chart and the "home-hero" Vendo slot
+          split the row 50/50 — the slot is where a pinned Maple view lands. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <NetWorthCard />
+        <VendoCard />
+      </div>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <NetWorthCard />
           <AccountsStrip />
           <RecentActivity />
         </div>
         <div className="space-y-6">
-          <VendoCard />
           <CashflowCard />
           <UpcomingBills />
           <GoalsCard />

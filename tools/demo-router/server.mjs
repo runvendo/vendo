@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import { pathToFileURL } from "node:url";
-import { createRegistry, RegistryCorruptError, SLUG_PATTERN } from "./registry.mjs";
+import { createRegistry, RegistryCorruptError, RegistryValidationError, SLUG_PATTERN } from "./registry.mjs";
 
 /**
  * The demos.vendo.run router — plain node:http, zero dependencies.
@@ -17,8 +17,9 @@ import { createRegistry, RegistryCorruptError, SLUG_PATTERN } from "./registry.m
  * Admin surface (Authorization: Bearer $ROUTER_ADMIN_TOKEN; 401 without,
  * 503 when the env is unset so a misdeployed router can't be driven):
  *   GET    /admin/demos       list rows
- *   POST   /admin/demos       upsert {id, url, prospect, expiresAt, killed?}
- *   PATCH  /admin/demos/:id   partial {killed?, expiresAt?, url?, prospect?}
+ *   POST   /admin/demos       upsert {id, url, prospect, expiresAt?, permanent?, killed?}
+ *                             (expiresAt is required unless permanent is true)
+ *   PATCH  /admin/demos/:id   partial {killed?, expiresAt?, permanent?, url?, prospect?}
  *   DELETE /admin/demos/:id   remove the row
  */
 
@@ -98,6 +99,8 @@ function fieldError(field, value) {
       return typeof value === "string" && value.length > 0 ? null : "prospect must be a non-empty string";
     case "expiresAt":
       return isIsoDate(value) ? null : "expiresAt must be an ISO-8601 date-time";
+    case "permanent":
+      return typeof value === "boolean" ? null : "permanent must be a boolean";
     case "killed":
       return typeof value === "boolean" ? null : "killed must be a boolean";
     default:
@@ -220,10 +223,13 @@ export function createRouterServer({
         const body = await parseJsonBody(request, response);
         if (body === undefined) return undefined;
         const validated = validateFields(body, {
-          required: ["id", "url", "prospect", "expiresAt"],
-          optional: ["killed"],
+          required: ["id", "url", "prospect"],
+          optional: ["expiresAt", "permanent", "killed"],
         });
         if (validated.error !== undefined) return respondJson(response, 400, { error: validated.error });
+        if (body.permanent !== true && body.expiresAt === undefined) {
+          return respondJson(response, 400, { error: "expiresAt is required unless permanent is true" });
+        }
         // Slug uniqueness: the same id may only be re-posted for the SAME demo
         // (matching prospect + url — a legitimate redeploy that can extend
         // expiresAt or un-kill). A different prospect or url means a new demo
@@ -243,7 +249,10 @@ export function createRouterServer({
       if (request.method === "PATCH" && suffix !== undefined) {
         const body = await parseJsonBody(request, response);
         if (body === undefined) return undefined;
-        const validated = validateFields(body, { required: [], optional: ["killed", "expiresAt", "url", "prospect"] });
+        const validated = validateFields(body, {
+          required: [],
+          optional: ["killed", "expiresAt", "permanent", "url", "prospect"],
+        });
         if (validated.error !== undefined) return respondJson(response, 400, { error: validated.error });
         const patched = registry.patch(suffix, body);
         if (patched === undefined) return respondJson(response, 404, { error: "unknown demo" });
@@ -259,6 +268,9 @@ export function createRouterServer({
     } catch (error) {
       if (error instanceof RegistryCorruptError) {
         return respondJson(response, 500, { error: "registry is corrupt — failing closed; inspect the registry file" });
+      }
+      if (error instanceof RegistryValidationError) {
+        return respondJson(response, 400, { error: error.message });
       }
       throw error;
     }

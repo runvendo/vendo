@@ -13,7 +13,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "3.0.12",
     "@vendoai/actions": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",

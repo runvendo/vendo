@@ -6,6 +6,9 @@ import { NetWorthView } from "@/components/home/net-worth-view";
 import type { SpendingSlice } from "@/server/types";
 
 function MapleSparkline({ data, height = 28 }: { data: number[]; height?: number }) {
+  // Mid-stream renders can mount the component before its props bind (the
+  // 2026-07 walkthrough crashed here); render nothing until data arrives.
+  if (!data?.length) return null;
   return (
     <div style={{ height }}>
       <Sparkline data={data} height={height} stroke="var(--vendo-color-text, #14151A)" />
@@ -20,6 +23,9 @@ function MapleSpendingDonut({
   slices: Array<{ category: SpendingSlice["category"]; amount: number }>;
   size?: number;
 }) {
+  // Mid-stream renders can mount the component before its props bind (the
+  // 2026-07 walkthrough crashed here); render nothing until slices arrive.
+  if (!slices?.length) return null;
   // W3 — Maple money is integer CENTS everywhere (the spending-insights API
   // included); the old dollars surface silently 100×'d bound tool data.
   return <Donut data={slices.map((slice) => ({ ...slice, amount: Math.round(slice.amount) }))} size={size} />;

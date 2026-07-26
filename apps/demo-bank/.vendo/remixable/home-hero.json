@@ -1,0 +1,7 @@
+{
+  "slot": "home-hero",
+  "source": "\"use client\";\n\nimport { VendoSlot } from \"@vendoai/ui/chrome\";\nimport { VendoRoot } from \"@/components/vendo/VendoRoot\";\n\n/**\n * The Home hero slot — a REAL VendoSlot with the stable id \"home-hero\".\n * It self-discovers whatever app the user pinned (the thread embed's\n * \"Pin to dashboard\" affordance records the pin server-side; the slot's\n * own polling picks it up). Empty, it renders the ghost invitation with\n * Maple-flavored prompts that prefill the Ask Maple composer.\n */\nexport function VendoCard() {\n  return (\n    <section aria-label=\"Custom view\" className=\"h-full\">\n      <VendoRoot>\n        <VendoSlot\n          id=\"home-hero\"\n          emptyState={{\n            title: \"This space builds itself\",\n            subtitle: \"ask Maple for a view — it renders here, live on your data\",\n            suggestions: [\n              \"Build my money HQ\",\n              \"Show my spending by category\",\n              \"Track my savings goals\",\n            ],\n          }}\n        />\n      </VendoRoot>\n    </section>\n  );\n}\n",
+  "hash": "sha256:7ad7026ac3e6585378d1cdac2b38f0b475148a669e308348026399c2b6cf8150",
+  "exportable": true,
+  "capturedAt": "2026-07-23T09:49:03.059Z"
+}
