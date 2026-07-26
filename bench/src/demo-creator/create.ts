@@ -25,6 +25,10 @@ export interface DemoCreateArgs {
   targetDir: string;
   /** The prospect's site, recorded in the RESEARCH stub for `demo:research`. */
   url?: string;
+  /** Operator-provided product screenshots, copied into RESEARCH/ as
+   * top-priority brand evidence (they often show logged-in screens a crawler
+   * can't reach). */
+  screenshots?: string[];
 }
 
 export interface DemoCreateResult {
@@ -53,7 +57,7 @@ export const cloneExclusions = [
 
 const defaultCtaUrl = "https://cal.com/yousefhelal";
 
-const valueOptions = new Set(["--id", "--prospect", "--cta-url", "--target-dir", "--url"]);
+const valueOptions = new Set(["--id", "--prospect", "--cta-url", "--target-dir", "--url", "--screenshots"]);
 
 function requireHttpUrl(option: string, value: string): string {
   let parsed: URL;
@@ -85,12 +89,19 @@ export function parseDemoCreateArgs(argv: string[]): DemoCreateArgs {
   const prospect = options.get("--prospect");
   if (prospect === undefined) throw new Error("--prospect is required");
   const url = options.get("--url");
+  const rawScreenshots = options.get("--screenshots");
+  let screenshots: string[] | undefined;
+  if (rawScreenshots !== undefined) {
+    screenshots = rawScreenshots.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
+    if (screenshots.length === 0) throw new Error("--screenshots needs at least one image path (comma-separated)");
+  }
   return {
     id,
     prospect,
     ctaUrl: options.get("--cta-url") ?? defaultCtaUrl,
     targetDir: options.get("--target-dir") ?? "apps",
     ...(url === undefined ? {} : { url: requireHttpUrl("--url", url) }),
+    ...(screenshots === undefined ? {} : { screenshots }),
   };
 }
 
@@ -121,7 +132,25 @@ export function displayAppPath(repoRoot: string, appDir: string): string {
   return relative.startsWith("..") ? appDir : relative.split(path.sep).join("/");
 }
 
-function researchStub(appPath: string, prospectUrl: string | undefined): string {
+/** One operator-supplied screenshot as indexed in RESEARCH/manifest.json —
+ * top-priority brand evidence for the research + judge stages. */
+export interface OperatorScreenshot {
+  /** Saved name, relative to RESEARCH/ (e.g. "operator-1-board.png"). */
+  file: string;
+  provenance: "operator-provided";
+  /** The path the operator passed to --screenshots. */
+  source: string;
+}
+
+export const operatorManifestName = "manifest.json";
+
+function researchStub(appPath: string, prospectUrl: string | undefined, screenshots: readonly OperatorScreenshot[]): string {
+  const operatorSection = screenshots.length === 0 ? "" : `
+Operator-provided screenshots (TOP-PRIORITY brand evidence — often logged-in
+product screens a crawler can't reach; indexed in ${operatorManifestName}):
+
+${screenshots.map((shot) => `- ${shot.file} (from ${shot.source})`).join("\n")}
+`;
   return `# RESEARCH
 
 Prospect brand evidence for the creator agent — screenshots, page metadata,
@@ -130,7 +159,7 @@ and a computed-style palette sample. Populate this directory with:
 \`\`\`sh
 pnpm --filter @vendoai/bench demo:research -- --app ${appPath} --url ${prospectUrl ?? "<prospect site>"}
 \`\`\`
-
+${operatorSection}
 Prospect site: ${prospectUrl ?? "TODO(creator): record the prospect's site URL"}
 `;
 }
@@ -139,6 +168,12 @@ export async function runDemoCreate(args: DemoCreateArgs, options: { repoRoot: s
   const templateDir = path.join(options.repoRoot, "apps", "demo-template");
   if (!existsSync(path.join(templateDir, "demo.config.json"))) {
     throw new Error(`demo:create clones apps/demo-template, but there is no demo.config.json in "${templateDir}"`);
+  }
+
+  // Validated up front, with the rest of the input checks: a typo'd path must
+  // fail the run before anything touches disk.
+  for (const screenshot of args.screenshots ?? []) {
+    if (!existsSync(screenshot)) throw new Error(`--screenshots file not found: ${screenshot}`);
   }
 
   const { parseDemoConfig } = await loadDemoConfigModule();
@@ -183,9 +218,24 @@ export async function runDemoCreate(args: DemoCreateArgs, options: { repoRoot: s
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
   const appPath = displayAppPath(options.repoRoot, appDir);
-  const researchReadme = path.join(appDir, "RESEARCH", "README.md");
-  await mkdir(path.dirname(researchReadme), { recursive: true });
-  await writeFile(researchReadme, researchStub(appPath, args.url));
+  const researchDir = path.join(appDir, "RESEARCH");
+  const researchReadme = path.join(researchDir, "README.md");
+  await mkdir(researchDir, { recursive: true });
+
+  const operatorScreenshots: OperatorScreenshot[] = [];
+  for (const [index, source] of (args.screenshots ?? []).entries()) {
+    const file = `operator-${index + 1}-${path.basename(source)}`;
+    await cp(source, path.join(researchDir, file));
+    operatorScreenshots.push({ file, provenance: "operator-provided", source });
+  }
+  if (operatorScreenshots.length > 0) {
+    await writeFile(
+      path.join(researchDir, operatorManifestName),
+      `${JSON.stringify({ screenshots: operatorScreenshots }, null, 2)}\n`,
+    );
+  }
+
+  await writeFile(researchReadme, researchStub(appPath, args.url, operatorScreenshots));
 
   return { appDir, packageName, configPath, researchReadme };
 }

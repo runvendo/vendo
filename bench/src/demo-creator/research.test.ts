@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   aggregateFonts,
@@ -12,6 +15,7 @@ import {
   pageFileStem,
   parseDemoResearchArgs,
   planAssetDownloads,
+  readOperatorScreenshots,
   type AssetCandidate,
   type PageAssetEvidence,
   type ResearchPageEntry,
@@ -370,7 +374,38 @@ describe("aggregateFonts", () => {
   });
 });
 
+describe("readOperatorScreenshots", () => {
+  it("reads the create-stage manifest and returns its entries", async () => {
+    const researchDir = await mkdtemp(path.join(tmpdir(), "vendo-demo-research-"));
+    await mkdir(researchDir, { recursive: true });
+    const entries = [
+      { file: "operator-1-board.png", provenance: "operator-provided", source: "/tmp/board.png" },
+    ];
+    await writeFile(path.join(researchDir, "manifest.json"), JSON.stringify({ screenshots: entries }));
+    expect(await readOperatorScreenshots(researchDir)).toEqual(entries);
+  });
+
+  it("returns an empty list when no manifest exists", async () => {
+    const researchDir = await mkdtemp(path.join(tmpdir(), "vendo-demo-research-"));
+    expect(await readOperatorScreenshots(researchDir)).toEqual([]);
+  });
+});
+
 describe("buildResearchReport", () => {
+  it("indexes operator screenshots ahead of the captured pages", () => {
+    const report = buildResearchReport({
+      urls: ["https://acme.example"],
+      pages: [{ url: "https://acme.example", error: "net::ERR_NAME_NOT_RESOLVED" }],
+      capturedAt: "2026-07-16T00:00:00.000Z",
+      operatorScreenshots: [
+        { file: "operator-1-board.png", provenance: "operator-provided", source: "/tmp/board.png" },
+      ],
+    });
+    expect(report.operatorScreenshots).toEqual([
+      { file: "operator-1-board.png", provenance: "operator-provided", source: "/tmp/board.png" },
+    ]);
+  });
+
   it("shapes research.json with palette and fonts aggregated over successful pages only", () => {
     const pages: ResearchPageEntry[] = [
       capturedPage({
@@ -395,6 +430,7 @@ describe("buildResearchReport", () => {
     expect(report).toEqual({
       capturedAt: "2026-07-16T00:00:00.000Z",
       urls: ["https://acme.example", "https://acme.example/pricing"],
+      operatorScreenshots: [],
       pages,
       palette: {
         colors: ["rgb(20, 20, 20)", "rgb(255, 255, 255)"],

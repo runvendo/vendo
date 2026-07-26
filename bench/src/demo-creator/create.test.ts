@@ -59,6 +59,18 @@ describe("parseDemoCreateArgs", () => {
     expect(() => parseDemoCreateArgs(["--id", "acme", "--prospect", "Acme", "--url", "not a url"]))
       .toThrow("--url must be an http(s) URL");
   });
+
+  it("splits --screenshots on commas and drops empty segments", () => {
+    expect(parseDemoCreateArgs([
+      "--id", "acme", "--prospect", "Acme",
+      "--screenshots", "/tmp/a.png, /tmp/b.png,",
+    ])).toMatchObject({ screenshots: ["/tmp/a.png", "/tmp/b.png"] });
+  });
+
+  it("rejects an empty --screenshots list", () => {
+    expect(() => parseDemoCreateArgs(["--id", "acme", "--prospect", "Acme", "--screenshots", ","]))
+      .toThrow("--screenshots needs at least one image path");
+  });
 });
 
 describe("runDemoCreate", () => {
@@ -164,6 +176,35 @@ describe("runDemoCreate", () => {
     expect(stub).toContain("demo:research");
     expect(stub).toContain("--app apps/demo-acme-widgets");
     expect(stub).toContain("https://acme.example/pricing");
+  });
+
+  it("copies operator screenshots into RESEARCH/ and indexes them with provenance", async () => {
+    const repoRoot = await writeRepoFixture();
+    const shotsDir = path.join(repoRoot, "shots");
+    await mkdir(shotsDir);
+    await writeFile(path.join(shotsDir, "board.png"), "png-bytes-a");
+    await writeFile(path.join(shotsDir, "issue.png"), "png-bytes-b");
+    const { appDir } = await runDemoCreate(
+      { ...args, screenshots: [path.join(shotsDir, "board.png"), path.join(shotsDir, "issue.png")] },
+      { repoRoot },
+    );
+    expect(await readFile(path.join(appDir, "RESEARCH", "operator-1-board.png"), "utf8")).toBe("png-bytes-a");
+    expect(await readFile(path.join(appDir, "RESEARCH", "operator-2-issue.png"), "utf8")).toBe("png-bytes-b");
+    const manifest = JSON.parse(await readFile(path.join(appDir, "RESEARCH", "manifest.json"), "utf8"));
+    expect(manifest).toEqual({
+      screenshots: [
+        { file: "operator-1-board.png", provenance: "operator-provided", source: path.join(shotsDir, "board.png") },
+        { file: "operator-2-issue.png", provenance: "operator-provided", source: path.join(shotsDir, "issue.png") },
+      ],
+    });
+  });
+
+  it("fails on a missing screenshot, naming the path, before touching disk", async () => {
+    const repoRoot = await writeRepoFixture();
+    const missing = path.join(repoRoot, "shots", "nope.png");
+    await expect(runDemoCreate({ ...args, screenshots: [missing] }, { repoRoot }))
+      .rejects.toThrow(`--screenshots file not found: ${missing}`);
+    expect(existsSync(path.join(repoRoot, "apps", "demo-acme-widgets"))).toBe(false);
   });
 
   it("refuses an id that fails the demo.config slug rule, before touching disk", async () => {
