@@ -1051,6 +1051,20 @@ describe("vendo init (zero-question)", () => {
       await expect(guard.check({ id: "call_2", tool: read.name, args: {} }, read, ctx))
         .resolves.toMatchObject({ action: "run", decidedBy: "rule" });
 
+      // ENG-370 hardening line: vendo_knowledge_* over MCP asks even though
+      // the tool is read-class — the rule must outrank read→run (first match
+      // wins). Everywhere else the same tool keeps the read posture.
+      const knowledgeSearch: ToolDescriptor = {
+        name: "vendo_knowledge_search",
+        description: "knowledge fixture tool",
+        inputSchema: { type: "object", additionalProperties: true },
+        risk: "read",
+      };
+      await expect(guard.check({ id: "call_mcp", tool: knowledgeSearch.name, args: {} }, knowledgeSearch, { ...ctx, venue: "mcp" }))
+        .resolves.toMatchObject({ action: "ask", decidedBy: "rule" });
+      await expect(guard.check({ id: "call_chat", tool: knowledgeSearch.name, args: {} }, knowledgeSearch, ctx))
+        .resolves.toMatchObject({ action: "run", decidedBy: "rule" });
+
       // The documented edge (quickstart/install): deleting the init-written
       // file while keeping `policy: {}` degrades to auto-run WITHOUT the
       // unconfigured notice — the default file is read fail-soft, and
