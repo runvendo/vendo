@@ -142,14 +142,61 @@ const errorOutcome = (error: unknown): ToolOutcome => ({
     : { code: "internal", message: error instanceof Error ? error.message : "unknown knowledge error" },
 });
 
+/** Read-more sizing is the CALLER's job (core knowledge.ts: fetch returns up
+    to the whole doc); this hard cap keeps one fetched document comfortably
+    under the agent's tool-output cap. */
+const READ_MORE_MAX_CHARS = 4000;
+
+/** The refusal/escalation predicate: no evidence at all, or — for engines
+    calibrated with a positive threshold — every scored hit below it. Hits
+    without scores never count as weak (an uncalibrated engine must not
+    refuse on scores it doesn't emit). */
+function isWeak(hits: KnowledgeHit[], threshold: number): boolean {
+  if (hits.length === 0) return true;
+  if (threshold <= 0) return false;
+  return hits.every((hit) => typeof hit.score === "number" && hit.score < threshold);
+}
+
+const envelope = (
+  fields: Omit<KnowledgeResultEnvelope, "kind">,
+): ToolOutcome => ({
+  status: "ok",
+  output: { kind: VENDO_KNOWLEDGE_RESULT_KIND, ...fields } as unknown as Json,
+});
+
 /** Knowledge K1 — the one knowledge agent tool behind core's adapter contract.
     The registry composes into createVendo exactly when a `knowledge` adapter
-    is configured (selectKnowledge). */
+    is configured (selectKnowledge). Tool-layer policy (spec §Agent experience
+    and trust): chat default → auto-escalate deep once on weak results →
+    structured insufficient-evidence; lookup → schema over glossary/api with
+    honest not-found; readMore → posture-gated fetch; adapter failure → loud
+    unavailable, never a silent empty result. */
 export function createKnowledgeTools(
   adapter: KnowledgeAdapter,
   options: KnowledgeToolsOptions = {},
 ): ToolRegistry {
-  void options;
+  const threshold = options.weakScoreThreshold ?? 0;
+
+  const readMore = async (ref: { docId: string; chunkId?: string }, ctx: RunContext): Promise<ToolOutcome> => {
+    if (adapter.posture.fetch !== true || adapter.fetch === undefined) {
+      return {
+        status: "error",
+        error: {
+          code: "not-implemented",
+          message: "read-more is unavailable for this knowledge engine — answer from the search snippets instead.",
+        },
+      };
+    }
+    const result = await adapter.fetch(ref, { principal: ctx.principal });
+    if (result === null) return envelope({ outcome: "not-found" });
+    const truncated = result.text.length > READ_MORE_MAX_CHARS;
+    return envelope({
+      outcome: "answered",
+      text: truncated ? result.text.slice(0, READ_MORE_MAX_CHARS) : result.text,
+      ...(truncated || result.truncated === true ? { truncated: true } : {}),
+    });
+  };
+
   return {
     async descriptors() {
       return [structuredClone(descriptor)];
@@ -158,19 +205,52 @@ export function createKnowledgeTools(
       if (call.tool !== VENDO_KNOWLEDGE_SEARCH_TOOL) {
         return { status: "error", error: { code: "not-found", message: `Unknown tool: ${call.tool}` } };
       }
+      let input: KnowledgeSearchInput;
       try {
-        const input = parseInput(call.args);
-        // R5 (knowledge.ts KnowledgeContext): the agent path is
-        // principal-carrying, so includeInternal is NEVER set here.
-        const result = await adapter.search({ text: input.query }, { principal: ctx.principal });
-        const envelope: KnowledgeResultEnvelope = {
-          kind: VENDO_KNOWLEDGE_RESULT_KIND,
-          outcome: "answered",
-          hits: result.hits.slice(0, MAX_HITS).map(toCitation),
-        };
-        return { status: "ok", output: envelope as unknown as Json };
+        input = parseInput(call.args);
       } catch (error) {
         return errorOutcome(error);
+      }
+
+      // R5 (knowledge.ts KnowledgeContext): the agent path is
+      // principal-carrying, so includeInternal is NEVER set here.
+      const knowledgeCtx = { principal: ctx.principal };
+      try {
+        if (input.readMore !== undefined) return await readMore(input.readMore, ctx);
+
+        if (input.lookup === true) {
+          // Contract invariant (knowledge.ts R3): intent never implies kinds —
+          // the schema lookup restricts to the structured-fact kinds
+          // explicitly. An empty result is an honest not-found, never a fuzzy
+          // fallback into prose docs.
+          const result = await adapter.search(
+            { text: input.query, intent: "schema", kinds: ["glossary", "api"] },
+            knowledgeCtx,
+          );
+          if (result.hits.length === 0) return envelope({ outcome: "not-found" });
+          return envelope({ outcome: "answered", hits: result.hits.slice(0, MAX_HITS).map(toCitation) });
+        }
+
+        const chat = await adapter.search({ text: input.query, intent: "chat" }, knowledgeCtx);
+        if (!isWeak(chat.hits, threshold)) {
+          return envelope({ outcome: "answered", hits: chat.hits.slice(0, MAX_HITS).map(toCitation) });
+        }
+        // Weak chat evidence → exactly one deep retry (engines without a deep
+        // mode treat it as chat, so the retry is at worst a repeat).
+        const deep = await adapter.search({ text: input.query, intent: "deep" }, knowledgeCtx);
+        if (!isWeak(deep.hits, threshold)) {
+          return envelope({ outcome: "answered", hits: deep.hits.slice(0, MAX_HITS).map(toCitation) });
+        }
+        // Structured refusal WITH the weak evidence: the model says it does
+        // not know; the UI still gets whatever weak hits existed.
+        return envelope({
+          outcome: "insufficient-evidence",
+          hits: deep.hits.slice(0, MAX_HITS).map(toCitation),
+        });
+      } catch {
+        // The loud engine-outage rule: a thrown adapter is NEVER a silent
+        // empty result — the model and the UI both see "unavailable".
+        return envelope({ outcome: "unavailable", hits: [] });
       }
     },
   };

@@ -1,7 +1,15 @@
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
-import type { KnowledgeDoc, RunContext } from "@vendoai/core";
+import type {
+  Json,
+  KnowledgeAdapter,
+  KnowledgeContext,
+  KnowledgeDoc,
+  KnowledgeQuery,
+  RunContext,
+  ToolRegistry,
+} from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createKnowledgeTools, VENDO_KNOWLEDGE_SEARCH_TOOL } from "./index.js";
+import { createKnowledgeTools, VENDO_KNOWLEDGE_SEARCH_TOOL, type KnowledgeResultEnvelope } from "./index.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "u1" },
@@ -87,5 +95,202 @@ describe("vendo_knowledge_search execute (walking skeleton)", () => {
     expect(outcome.status).toBe("error");
     if (outcome.status !== "error") return;
     expect(outcome.error.code).toBe("validation");
+  });
+});
+
+/** Wraps an adapter recording every search invocation, so policy tests can
+    assert intent/kinds/ctx without leaving the memory adapter behind. */
+function spyAdapter(adapter: KnowledgeAdapter): KnowledgeAdapter & {
+  searches: Array<{ query: KnowledgeQuery; ctx: KnowledgeContext }>;
+} {
+  const searches: Array<{ query: KnowledgeQuery; ctx: KnowledgeContext }> = [];
+  return {
+    ...adapter,
+    searches,
+    async search(query, searchCtx) {
+      searches.push({ query: structuredClone(query), ctx: structuredClone(searchCtx) });
+      return adapter.search(query, searchCtx);
+    },
+  };
+}
+
+async function envelopeOf(outcome: Awaited<ReturnType<ToolRegistry["execute"]>>): Promise<KnowledgeResultEnvelope> {
+  expect(outcome.status).toBe("ok");
+  if (outcome.status !== "ok") throw new Error("expected ok outcome");
+  const output = outcome.output as unknown as KnowledgeResultEnvelope;
+  expect(output.kind).toBe("vendo/knowledge-result@1");
+  return output;
+}
+
+const search = (registry: ToolRegistry, args: Json, id = "call_t2") =>
+  registry.execute({ id, tool: VENDO_KNOWLEDGE_SEARCH_TOOL, args }, ctx);
+
+describe("tool policy: intent + escalation + refusal (T2)", () => {
+  it("passes only { principal } as knowledge context — includeInternal is never set", async () => {
+    const adapter = spyAdapter(memoryKnowledgeAdapter({ docs }));
+    await search(createKnowledgeTools(adapter), { query: "wire transfers" });
+    expect(adapter.searches.length).toBeGreaterThan(0);
+    for (const record of adapter.searches) {
+      expect(record.ctx).toEqual({ principal: { kind: "user", subject: "u1" } });
+      expect("includeInternal" in record.ctx).toBe(false);
+    }
+  });
+
+  it("defaults to chat intent and answers without escalating when hits are strong", async () => {
+    const adapter = spyAdapter(memoryKnowledgeAdapter({ docs }));
+    const envelope = await envelopeOf(await search(createKnowledgeTools(adapter), { query: "wire transfers" }));
+    expect(envelope.outcome).toBe("answered");
+    expect(adapter.searches).toHaveLength(1);
+    expect(adapter.searches[0]!.query.intent ?? "chat").toBe("chat");
+  });
+
+  it("escalates to deep exactly once on weak results, then refuses with insufficient-evidence", async () => {
+    const adapter = spyAdapter(memoryKnowledgeAdapter({ docs: [] }));
+    const envelope = await envelopeOf(await search(createKnowledgeTools(adapter), { query: "quantum ledgers" }));
+    expect(envelope.outcome).toBe("insufficient-evidence");
+    expect(envelope.hits).toEqual([]);
+    expect(adapter.searches).toHaveLength(2);
+    expect(adapter.searches[0]!.query.intent ?? "chat").toBe("chat");
+    expect(adapter.searches[1]!.query.intent).toBe("deep");
+  });
+
+  it("answers from the deep retry when escalation finds hits", async () => {
+    const base = memoryKnowledgeAdapter({ docs });
+    const adapter = spyAdapter({
+      ...base,
+      async search(query, searchCtx) {
+        if (query.intent === "deep") return base.search(query, searchCtx);
+        return { hits: [] };
+      },
+    });
+    const envelope = await envelopeOf(await search(createKnowledgeTools(adapter), { query: "wire transfers" }));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.hits).toHaveLength(1);
+    expect(adapter.searches.map((record) => record.query.intent ?? "chat")).toEqual(["chat", "deep"]);
+  });
+
+  it("treats all-scores-below-threshold as weak and includes the weak hits in the refusal", async () => {
+    // The memory adapter always scores 1; a threshold above that makes every
+    // hit weak, so the policy escalates once and then refuses WITH the hits.
+    const adapter = spyAdapter(memoryKnowledgeAdapter({ docs }));
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(adapter, { weakScoreThreshold: 2 }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("insufficient-evidence");
+    expect(envelope.hits).toHaveLength(1);
+    expect(envelope.hits![0]).toMatchObject({ docId: "doc-transfers" });
+    expect(adapter.searches.map((record) => record.query.intent ?? "chat")).toEqual(["chat", "deep"]);
+  });
+
+  it("never falsely refuses with the default threshold of 0", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(memoryKnowledgeAdapter({ docs })),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+  });
+});
+
+describe("tool policy: schema lookups (T2)", () => {
+  it("lookup:true searches with schema intent AND explicit glossary/api kinds", async () => {
+    const adapter = spyAdapter(memoryKnowledgeAdapter({ docs }));
+    const envelope = await envelopeOf(await search(createKnowledgeTools(adapter), { query: "APY", lookup: true }));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.hits).toHaveLength(1);
+    expect(envelope.hits![0]).toMatchObject({ docId: "glossary-apy", kind: "glossary" });
+    expect(adapter.searches).toHaveLength(1);
+    expect(adapter.searches[0]!.query.intent).toBe("schema");
+    expect(adapter.searches[0]!.query.kinds).toEqual(["glossary", "api"]);
+  });
+
+  it("returns an honest not-found on an empty schema result — no fuzzy fallback, no escalation", async () => {
+    // "wire transfers" only matches a docs-kind document; the schema lookup's
+    // explicit kinds filter excludes it, so the result must be not-found.
+    const adapter = spyAdapter(memoryKnowledgeAdapter({ docs }));
+    const envelope = await envelopeOf(await search(createKnowledgeTools(adapter), { query: "wire transfers", lookup: true }));
+    expect(envelope.outcome).toBe("not-found");
+    expect(adapter.searches).toHaveLength(1);
+  });
+});
+
+describe("tool policy: read-more (T2)", () => {
+  it("fetches the full document text for readMore", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(memoryKnowledgeAdapter({ docs })),
+      { query: "wire transfer limits", readMore: { docId: "doc-transfers" } },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.text).toContain("Maple caps outbound wire transfers");
+    expect(envelope.truncated).not.toBe(true);
+  });
+
+  it("hard-trims readMore text to the 4000-char sizing budget", async () => {
+    const long: KnowledgeDoc = {
+      id: "doc-long",
+      kind: "docs",
+      visibility: "public",
+      title: "Long policy",
+      text: "x".repeat(9000),
+      source: "docs/long.md",
+    };
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(memoryKnowledgeAdapter({ docs: [long] })),
+      { query: "long policy", readMore: { docId: "doc-long" } },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.text!.length).toBeLessThanOrEqual(4000);
+    expect(envelope.truncated).toBe(true);
+  });
+
+  it("returns not-found for a readMore miss (unknown or non-visible doc)", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(memoryKnowledgeAdapter({ docs })),
+      { query: "anything", readMore: { docId: "doc-missing" } },
+    ));
+    expect(envelope.outcome).toBe("not-found");
+  });
+
+  it("refuses readMore with a model-readable error when the posture lacks fetch", async () => {
+    const base = memoryKnowledgeAdapter({ docs });
+    const noFetch: KnowledgeAdapter = {
+      posture: { ...base.posture, fetch: false },
+      search: base.search,
+      status: base.status,
+    };
+    const outcome = await search(createKnowledgeTools(noFetch), { query: "anything", readMore: { docId: "doc-transfers" } });
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") return;
+    expect(outcome.error.message).toMatch(/read-more is unavailable/i);
+  });
+});
+
+describe("tool policy: engine outage (T2)", () => {
+  it("maps a thrown adapter to a loud unavailable outcome — never a silent empty result", async () => {
+    const base = memoryKnowledgeAdapter({ docs });
+    const broken: KnowledgeAdapter = {
+      ...base,
+      async search() {
+        throw new Error("engine down");
+      },
+    };
+    const envelope = await envelopeOf(await search(createKnowledgeTools(broken), { query: "wire transfers" }));
+    expect(envelope.outcome).toBe("unavailable");
+    expect(envelope.hits ?? []).toEqual([]);
+  });
+
+  it("maps a thrown fetch to unavailable too", async () => {
+    const base = memoryKnowledgeAdapter({ docs });
+    const broken: KnowledgeAdapter = {
+      ...base,
+      async fetch() {
+        throw new Error("engine down");
+      },
+    };
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(broken),
+      { query: "anything", readMore: { docId: "doc-transfers" } },
+    ));
+    expect(envelope.outcome).toBe("unavailable");
   });
 });
