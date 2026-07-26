@@ -277,6 +277,8 @@ describe("generation engine through createApps", () => {
       expect(prompts[0]).toContain("<building_great_apps>");
       expect(prompts[0]).toContain("<examples>");
       expect(prompts[0]).toContain("Claims tell the truth");
+      expect(prompts[0]).toContain("a semantically wrong tool is worse than a disclaimer");
+      expect(prompts[0]).toContain("rows lacking the named series draws nothing");
       expect(prompts[0]).toContain(`CURRENT DATE: ${new Date().toISOString().slice(0, 10)}`);
       expect(prompts[1]).not.toContain("<building_great_apps>");
       expect(prompts[1]).toContain("WIRE DIALECT");
