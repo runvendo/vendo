@@ -438,12 +438,37 @@ export const toolsFileV3Schema = z.object({
  * slot opt-outs. Strict like v1 — a typo must fail loudly — except compounds
  * and briefs entries, which keep their passthrough (additive) behavior.
  */
+/** The host-curated tool menu for ONE surface. Curation, not security: a menu
+ *  decides what a surface OFFERS, never what the guard allows — `disabled`,
+ *  guard rules, and audience exclusions are untouched by it. */
+export interface SurfaceMenu {
+  tools: string[];
+}
+
+/** Per-surface menus. The key set is a CLOSED enum on purpose: a typo'd
+ *  surface name in an authored file must fail loudly at parse rather than
+ *  silently curate nothing. `cli` and friends join when they are real. */
+export interface OverridesSurfaces {
+  agent?: SurfaceMenu;
+  mcp?: SurfaceMenu;
+}
+
+const surfaceMenuSchema = z.object({
+  tools: z.array(z.string().min(1)),
+}).strict() satisfies z.ZodType<SurfaceMenu>;
+
+const overridesSurfacesSchema = z.object({
+  agent: surfaceMenuSchema.optional(),
+  mcp: surfaceMenuSchema.optional(),
+}).strict() satisfies z.ZodType<OverridesSurfaces>;
+
 export interface OverridesFileV3 {
   format: typeof VENDO_OVERRIDES_FORMAT_V3;
   tools: Record<string, ToolOverride>;
   domains?: DomainManifest;
   compounds?: CompoundTool[];
   briefs?: CapabilityBrief[];
+  surfaces?: OverridesSurfaces;
   remix?: { ignoreSlots: string[] };
 }
 
@@ -453,6 +478,7 @@ export const overridesFileV3Schema = z.object({
   domains: authoredDomainManifestSchema.optional(),
   compounds: z.array(compoundToolSchema).optional(),
   briefs: z.array(capabilityBriefSchema).optional(),
+  surfaces: overridesSurfacesSchema.optional(),
   remix: z.object({
     ignoreSlots: z.array(z.string().min(1)),
   }).strict().optional(),

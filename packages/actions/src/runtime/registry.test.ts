@@ -1236,6 +1236,95 @@ describe("format v3 host files (cse lane 1)", () => {
     ]);
   });
 
+  describe("surfaceMenu (per-surface tool menus)", () => {
+    const menuTools = () => [
+      routeTool("host_listAccounts"),
+      routeTool("host_getProfile", { audience: "end-user" } as Partial<ExtractedToolV3>),
+      routeTool("host_adminPurge", { audience: "operator" } as Partial<ExtractedToolV3>),
+      routeTool("host_webhookSink", { audience: "internal" } as Partial<ExtractedToolV3>),
+      routeTool("host_legacy", { disabled: true } as Partial<ExtractedToolV3>),
+    ];
+
+    it("without a surfaces block the agent is unrestricted and the door defaults to end-user/unset tools", async () => {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: menuTools() },
+        { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} },
+      );
+      const actions = createActions({ dir: root });
+      await expect(actions.surfaceMenu("agent")).resolves.toBeUndefined();
+      await expect(actions.surfaceMenu("mcp")).resolves.toEqual(["host_listAccounts", "host_getProfile"]);
+    });
+
+    it("honors an explicit list for each surface independently", async () => {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: menuTools() },
+        {
+          format: VENDO_OVERRIDES_FORMAT_V3,
+          tools: {},
+          surfaces: {
+            agent: { tools: ["host_listAccounts", "host_adminPurge"] },
+            mcp: { tools: ["host_getProfile"] },
+          },
+        },
+      );
+      const actions = createActions({ dir: root });
+      await expect(actions.surfaceMenu("agent")).resolves.toEqual(["host_listAccounts", "host_adminPurge"]);
+      await expect(actions.surfaceMenu("mcp")).resolves.toEqual(["host_getProfile"]);
+    });
+
+    it("warns once naming an unknown or disabled menu entry, ignores it, and still applies the menu", async () => {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: menuTools() },
+        {
+          format: VENDO_OVERRIDES_FORMAT_V3,
+          tools: {},
+          surfaces: { mcp: { tools: ["host_getProfile", "host_typo", "host_legacy"] } },
+        },
+      );
+      const warned: string[] = [];
+      const spy = vi.spyOn(console, "warn").mockImplementation((line: string) => { warned.push(line); });
+      try {
+        const actions = createActions({ dir: root });
+        await expect(actions.surfaceMenu("mcp")).resolves.toEqual(["host_getProfile"]);
+        await actions.surfaceMenu("mcp");
+        const menuWarnings = warned.filter((line) => line.includes("surfaces.mcp"));
+        expect(menuWarnings).toHaveLength(1);
+        expect(menuWarnings[0]).toContain("host_typo");
+        expect(menuWarnings[0]).toContain("host_legacy");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("keeps a disabled tool out of the default door menu too", async () => {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_live"), routeTool("host_legacy")] },
+        { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_legacy: { disabled: true } } },
+      );
+      await expect(createActions({ dir: root }).surfaceMenu("mcp")).resolves.toEqual(["host_live"]);
+    });
+
+    it("reads audience through overrides, not just the extracted grade", async () => {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_a", { audience: "operator" } as Partial<ExtractedToolV3>), routeTool("host_b")] },
+        { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_a: { audience: "end-user" }, host_b: { audience: "internal" } } },
+      );
+      await expect(createActions({ dir: root }).surfaceMenu("mcp")).resolves.toEqual(["host_a"]);
+    });
+
+    it("fails loudly on a surface name that is not a real surface (closed enum, authored file)", async () => {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_a")] },
+        { format: VENDO_OVERRIDES_FORMAT_V3, tools: {}, surfaces: { cli: { tools: ["host_a"] } } },
+      );
+      await expect(createActions({ dir: root }).surfaceMenu("mcp")).rejects.toMatchObject({
+        name: "VendoError",
+        code: "validation",
+        message: expect.stringContaining("overrides.json"),
+      });
+    });
+  });
+
   it("a malformed leftover capabilities.json beside a v3 pair fails loud, like every authored file", async () => {
     const root = await tempVendo(
       { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
