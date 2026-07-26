@@ -5,14 +5,12 @@ import { option, positionals } from "./cloud/args.js";
 import type { CloudFetchOptions } from "./cloud/client.js";
 import {
   commandContext,
-  resolveProjectId,
-  userOptions,
   type CloudCommandOptions,
   type CloudFetcher,
 } from "./cloud/command.js";
 import { askYesNo, consoleOutput, exists, readOptional, writeText, type Output } from "./shared.js";
 
-/** `vendo config` (cse lane 3) — move a `.vendo` content surface between local
+/** `vendo config` (unified auth) — move a `.vendo` content surface between local
  * disk and the hosted console, and report each surface's resolved OWNER.
  *
  * The seam this drives (selectConfigSurface): per surface, resolution is
@@ -26,11 +24,12 @@ import { askYesNo, consoleOutput, exists, readOptional, writeText, type Output }
  *     for the working draft) into the local `.vendo` file, ejecting cloud→file.
  *   - `config status`   lists each surface's owner (file / cloud / unset).
  *
- * The console DRAFT plane is session-authed (`vendo login`), so push and
- * `pull --draft` resolve a project (org → project, or `--project <id>`) and use
- * the user session; the PUBLISHED read is key-authed (the same call the runtime
- * makes). `explicit` (a programmatic override in createVendo) is not visible to
- * the CLI, so `config status` reports only file / cloud / unset. */
+ * These are all PROJECT-SCOPED, so they authenticate with the single project
+ * credential — VENDO_API_KEY — against the key-authed console plane (the
+ * project is derived from the key), NOT the user session. `vendo login` mints
+ * that key, so one login is enough; there is no separate session to go stale.
+ * `explicit` (a programmatic override in createVendo) is not visible to the
+ * CLI, so `config status` reports only file / cloud / unset. */
 
 export interface ConfigCommandOptions extends CloudCommandOptions {
   targetDir?: string;
@@ -47,14 +46,15 @@ Usage:
   vendo config push <surface> [dir]      Write the local .vendo file into the console draft
   vendo config pull <surface> [dir]      Write the console value into the local .vendo file
 
+All commands authenticate with VENDO_API_KEY (run \`vendo login\` to mint one);
+the project is derived from the key.
+
 Surfaces: ${CONFIG_SURFACES.join(", ")}
 
 Options:
   --draft            Pull only: pull the working draft instead of the published value
   --yes              Push only: delete the local file without asking (cloud becomes the source)
-  --project <id>     Console draft: the project (omit only when the org has one project)
-  --org <id>         Console draft: the organization (omit only when you have one org)
-  --key <key>        Published read: override VENDO_API_KEY
+  --key <key>        Override VENDO_API_KEY
   --api-url <url>    Override VENDO_CLOUD_URL / https://console.vendo.run
 `;
 
@@ -63,12 +63,16 @@ function vendoPath(targetDir: string, surface: ConfigSurfaceName): string {
 }
 
 /** Value-taking flags whose VALUE must never be read as the surface or dir.
- *  A bare `--project X` leaks `X` into a naive non-`--` scan, so the surface or
+ *  A bare `--key X` leaks `X` into a naive non-`--` scan, so the surface or
  *  target dir is silently wrong (Devin/Greptile P2 — the same class as cli.ts's
  *  --engine target() fix). `positionals()` strips each `<opt> <value>` pair,
- *  which fixes BOTH orderings (`push <surface> --project X` and
- *  `push --project X <surface>`). Boolean flags (--draft, --yes) take no value. */
-const CONFIG_VALUE_OPTIONS = ["--project", "--org", "--key", "--api-url", "--token"];
+ *  which fixes BOTH orderings (`push <surface> --key X` and
+ *  `push --key X <surface>`). Boolean flags (--draft, --yes) take no value. */
+const CONFIG_VALUE_OPTIONS = ["--key", "--api-url"];
+
+/** The key-authed console DRAFT plane (project derived from the key). Mirrors
+ *  the published read `/api/v1/config`; PUT replaces the whole draft doc. */
+const DRAFT_PATH = "/api/v1/config/draft";
 
 function surfaceArg(args: string[]): { surface?: ConfigSurfaceName; error?: string } {
   const positional = positionals(args, CONFIG_VALUE_OPTIONS)[0];
@@ -97,6 +101,20 @@ function keyOptions(args: string[], options: ConfigCommandOptions): CloudFetchOp
     home: options.home,
     env: options.env ?? process.env,
   };
+}
+
+/** The same key resolution the runtime uses: an explicit `--key`, else
+ *  VENDO_API_KEY from the environment (.env.local is loaded into it). Returns
+ *  the key or, when none is present, prints the `vendo login` remedy and null —
+ *  so push/pull refuse up front instead of failing on the first service call
+ *  with a bare "missing key". status stays lenient (it degrades to "unknown"). */
+function requireKey(args: string[], options: ConfigCommandOptions, output: Output): string | null {
+  const key = option(args, "--key") ?? (options.env ?? process.env).VENDO_API_KEY;
+  if (key === undefined || key === "") {
+    output.error("No VENDO_API_KEY found. Run `vendo login` to mint a project key (or pass --key).");
+    return null;
+  }
+  return key;
 }
 
 interface PublishedConfig {
@@ -159,16 +177,15 @@ async function runPush(args: string[], context: {
     output.error(`no ${join(".vendo", surface)} to push (nothing local to make cloud the source of)`);
     return 1;
   }
-  const commandCtx = commandContext(options);
-  const projectId = await resolveProjectId(args, commandCtx);
-  const userOpts = userOptions(args, commandCtx);
-  const path = `/api/v1/projects/${encodeURIComponent(projectId)}/config`;
-  // Read-merge-write: the draft PUT replaces the WHOLE draft, so merge this one
-  // surface onto the current draft — never drop the others.
-  const current = (await fetcher(path, userOpts)) as DraftConfig;
+  if (requireKey(args, options, output) === null) return 1;
+  const keyOpts = keyOptions(args, options);
+  // Read-merge-write against the KEY-authed draft plane (project from the key):
+  // the draft PUT replaces the WHOLE draft, so merge this one surface onto the
+  // current draft — never drop the others.
+  const current = (await fetcher(DRAFT_PATH, keyOpts)) as DraftConfig;
   const nextDraft = { ...(current.draft ?? {}), [surface]: body };
-  await fetcher(path, { ...userOpts, method: "PUT", body: { draft: nextDraft } });
-  output.log(`Pushed ${surface} to the ${projectId} config draft. Publish it from the console to make it live.`);
+  await fetcher(DRAFT_PATH, { ...keyOpts, method: "PUT", body: { draft: nextDraft } });
+  output.log(`Pushed ${surface} to the config draft. Publish it from the console to make it live.`);
   // #557 — warn before the delete offer that a cloud overrides.json does not
   // disable tools at runtime, so removing the local file is not a tool-disable.
   if (surface === "overrides.json") output.log(OVERRIDES_ENABLEMENT_CAVEAT);
@@ -196,14 +213,12 @@ async function runPull(args: string[], context: {
   }
   const dir = targetDir(args, options, true); // dir follows the surface
   const wantDraft = args.includes("--draft");
+  if (requireKey(args, options, output) === null) return 1;
   let value: string | undefined;
   if (wantDraft) {
-    const commandCtx = commandContext(options);
-    const projectId = await resolveProjectId(args, commandCtx);
-    const result = (await fetcher(
-      `/api/v1/projects/${encodeURIComponent(projectId)}/config`,
-      userOptions(args, commandCtx),
-    )) as DraftConfig;
+    // The KEY-authed draft plane (project from the key) — same credential as
+    // the published read, no user session.
+    const result = (await fetcher(DRAFT_PATH, keyOptions(args, options))) as DraftConfig;
     value = result.draft?.[surface];
   } else {
     const result = (await fetcher("/api/v1/config", keyOptions(args, options))) as PublishedConfig;
