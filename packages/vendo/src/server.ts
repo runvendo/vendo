@@ -32,6 +32,7 @@ import {
   type ComponentCatalog,
   type ComponentRegistry,
   type Json,
+  type KnowledgeAdapter,
   type PermissionGrant,
   type Principal,
   type RunContext,
@@ -43,6 +44,7 @@ import {
   type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
+import { createKnowledgeTools } from "@vendoai/knowledge";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
@@ -255,6 +257,10 @@ export interface CreateVendoConfig {
   brief?: string;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
+  /** Knowledge K1 — the product knowledge base seam (core's KnowledgeAdapter).
+      Configured, it composes the `vendo_knowledge_search` agent tool; unset,
+      the tool does not exist (precedence: selectKnowledge). */
+  knowledge?: KnowledgeAdapter;
   connectors?: Connector[];
   /** 04-actions §3 — an explicit connections adapter; always wins over the
       defaults (precedence: selectConnections). */
@@ -501,6 +507,15 @@ function selectConnectors(configured: Connector[] | undefined): Connector[] {
     return [cloudTools({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) })];
   }
   return [];
+}
+
+/** ADAPTER RULE, knowledge seam: which KnowledgeAdapter (if any) backs the
+    `vendo_knowledge_search` tool. v1 precedence: an explicitly passed adapter
+    or nothing — no VENDO_API_KEY cloud default yet (that arrives with the
+    hosted knowledge engine, K3); unconfigured means the tool simply does not
+    compose, so the agent never advertises a knowledge base the host lacks. */
+function selectKnowledge(configured: KnowledgeAdapter | undefined): KnowledgeAdapter | undefined {
+  return configured;
 }
 
 /** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
@@ -1484,6 +1499,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   });
   resolveAppToolRisk = apps.agentToolRisk;
   actions.add(apps.agentTools());
+  // Knowledge K1 — the tool exists exactly when an adapter is configured;
+  // no adapter, no `vendo_knowledge_search` in any descriptor surface.
+  const knowledge = selectKnowledge(config.knowledge);
+  if (knowledge !== undefined) actions.add(createKnowledgeTools(knowledge));
   const missSurface = actions.descriptors()
     .then(capabilitySurfaceSnapshot)
     .catch(() => capabilitySurfaceSnapshot([]));

@@ -38,8 +38,18 @@ describe("Maple Auth.js sessions", () => {
 
   it("rejects tampered cookies, unknown subjects, and missing sessions", async () => {
     const cookie = await sessionCookie("vendo-demo");
+    // Corrupt a FULLY-USED character of the JWE's tag. The old
+    // `slice(0, -2) + "xx"` tamper was a NO-OP roughly 1/1024 runs: only the
+    // token's FINAL base64url char carries discarded bits, and a token
+    // ending "xw" differs from the "xx" replacement solely in those
+    // discarded bits, so the "tampered" cookie still decoded to the real
+    // session (CI integration failure, 2026-07-26). Flipping a character
+    // five places from the end always lands on fully-used bits, so the tag
+    // always changes and the decode must always reject.
+    const at = cookie.length - 5;
+    const tampered = `${cookie.slice(0, at)}${cookie[at] === "x" ? "y" : "x"}${cookie.slice(at + 1)}`;
     await expect(resolveMapleSession(new Request("http://localhost:3000/", {
-      headers: { cookie: `${cookie.slice(0, -2)}xx` },
+      headers: { cookie: tampered },
     }))).resolves.toBeNull();
     await expect(resolveMapleSession(new Request("http://localhost:3000/", {
       headers: { cookie: await sessionCookie("user_stranger") },
