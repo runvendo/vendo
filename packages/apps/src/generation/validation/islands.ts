@@ -104,6 +104,9 @@ export const prepareIslands = async (
   rawComponents: Record<string, string>,
   tools: readonly HostToolInfo[] | undefined,
   hostComponents: readonly string[] = [],
+  /** The user's request text — law 1 exempts constants that are the user's
+   *  own numbers (see islandDerivedValueViolations). Absent → no carve-out. */
+  requestText?: string,
 ): Promise<PreparedIslands> => {
   const issues: string[] = [];
   const components: Record<string, string> = {};
@@ -158,7 +161,7 @@ export const prepareIslands = async (
     // Law 1 teeth for island math: a hand-typed constant feeding displayed
     // arithmetic over tool-derived values is invented data (the FX-rate
     // class).
-    for (const violation of islandDerivedValueViolations(source)) {
+    for (const violation of islandDerivedValueViolations(source, requestText === undefined ? undefined : { requestText })) {
       issues.push(`island "${name}" ${violation}`);
     }
     // The ambient tools contract: literal member access only, every chain
