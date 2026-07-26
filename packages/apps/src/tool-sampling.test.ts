@@ -1,5 +1,5 @@
 import type { RunContext, ToolCall, ToolDescriptor, ToolOutcome, ToolRegistry } from "@vendoai/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApps } from "./index.js";
 import { guardFixture, memoryStore, scriptedLanguageModel } from "./testing/index.js";
 
@@ -165,6 +165,41 @@ describe("generation tool sampling and connector connectedness", () => {
     });
 
     expect(tools.executed.filter((tool) => tool === "gmail_FETCH_EMAILS")).toHaveLength(2);
+  });
+
+  it("a connect-required settle expires: a mid-boot reconnect is sampled after the TTL", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-26T00:00:00.000Z"));
+    try {
+      const tools = new RecordingTools([
+        readDescriptor("gmail_FETCH_EMAILS", { toolkit: "gmail" }),
+      ]);
+      tools.setOutcome("gmail_FETCH_EMAILS", {
+        status: "connect-required",
+        connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail first." },
+      });
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools,
+        catalog: [],
+        model: scriptedLanguageModel(generated),
+        connectedToolkits: async () => ["gmail"],
+      });
+
+      await runtime.create({ prompt: "Build a dashboard" }, ctx);
+      // Within the TTL the dead probe stays quiet.
+      vi.setSystemTime(new Date("2026-07-26T00:05:00.000Z"));
+      await runtime.create({ prompt: "Build a dashboard again" }, ctx);
+      expect(tools.executed.filter((tool) => tool === "gmail_FETCH_EMAILS")).toHaveLength(1);
+      // The user reconnects; past the TTL the probe retries and fills the shape.
+      tools.setOutcome("gmail_FETCH_EMAILS", { status: "ok", output: { emails: [] } });
+      vi.setSystemTime(new Date("2026-07-26T00:11:00.000Z"));
+      await runtime.create({ prompt: "Build a dashboard once more" }, ctx);
+      expect(tools.executed.filter((tool) => tool === "gmail_FETCH_EMAILS")).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a failing connectedToolkits lookup degrades to host-tools-only sampling", async () => {
