@@ -35,7 +35,7 @@ on re-open, except where the create-time starvation itself is the shipped experi
 via honest handling; partially-feasible I9/I10 need the feasible half BUILT and the
 infeasible half honestly disclaimed. Action-payload evidence via `driver.mjs fire` /
 `fireframe` (added mid-run for island iframes; harness fix, not tuning) + the approvals
-API (`shots/tmp-apr*.json`); every fired action was left PENDING/denied — nothing
+API (`shots/approvals-after-*.json`); every fired action was left PENDING/denied — nothing
 approved.
 
 ## Results
@@ -56,14 +56,14 @@ approved.
 | I4 | C | FAIL | 34.1s | error-box | no | ran | Correct tiles + island, sunk by the Kit Callout crash: "Node callout-1 could not render: Cannot destructure property 'accent'". |
 | I5 | A | PASS | 7.8s | — | no | — | Fired: host_transferMoney {amount: 2500, recipient "Mom", memo "Brunch"} — correct $25.00 payload, approval-gated, left pending (approvals-I5A.json). Wart: placeholder prose "This part of the request isn't available on this host." ×2 in the body. |
 | I5 | B | PASS | 11.5s | — | no | ran | Fired: identical correct 2500-cent payload. Same placeholder-prose wart ×3. |
-| I5 | C | FAIL | 20.6s | wrong-action-payload | no | ran | Island form fired host_transferMoney {amount: **25**} = **$0.25** for the asked $25 — cents/dollars confusion in island source (tmp-apr3.json; I5-C-fire.png). Gated + left pending, nothing moved. |
+| I5 | C | FAIL | 20.6s | wrong-action-payload | no | ran | Island form fired host_transferMoney {amount: **25**} = **$0.25** for the asked $25 — cents/dollars confusion in island source (approvals-after-island-fires.json; I5-C-fire.png). Gated + left pending, nothing moved. |
 | I6 | A | FAIL | 44.7s | wrong-data-binding + format | yes | — | Tiles "Total spent this year -$20.00" (one ChatGPT charge) and "Recurring subscriptions detected -$2,850.00" (the rent); chart axis renders raw ISO timestamps. Table itself correct (15 subscription txns May–Jul). |
 | I6 | B | FAIL | 42.6s | empty-app | yes | ran | Title "Streaming subscriptions · 2026 (Jan–Jul)" and nothing else; reproduces on re-open (I6-B-reopen). |
 | I6 | C | FAIL | 36.5s | wrong-data-binding | no | ran | Tile labels transposed: "Next recurring charge **-$2,850.00**" / "Recurring subscriptions total **Aug 1, 2026**" (a date in the money tile). |
 | I7 | A | PASS | 38.8s | — | no | — | Island lists all four accounts with correct balances. Wart: "what each is for" / last-activity halves thin. |
 | I7 | B | FAIL | 38.1s | wrong-data-binding (false empty) | no | ran | Account cards correct + invented-but-harmless purpose copy, sunk by "LAST TRANSACTION — No transactions yet" on ALL FOUR accounts (transactions exist); reproduces on re-open. |
 | I7 | C | FAIL | 30.8s | wrong-data-binding | no | ran | "Total across accounts $9,412.20" — checking-only bound as the total (true $54,907.15); island reads also judge-gated (finding 2). |
-| I8 | A | PASS | 44.6s | — | yes | — | Threshold 5000 honored (user's number, law-1 fix), amount to transfer $4,412.20 correct, after-balances correct. FIRED: host_transferMoney {amount: 441220, "Maple Savings"} — correct payload at the approval gate (tmp-apr3.json). The rematch's H4 wrong-payload class, fixed. |
+| I8 | A | PASS | 44.6s | — | yes | — | Threshold 5000 honored (user's number, law-1 fix), amount to transfer $4,412.20 correct, after-balances correct. FIRED: host_transferMoney {amount: 441220, "Maple Savings"} — correct payload at the approval gate (approvals-after-island-fires.json). The rematch's H4 wrong-payload class, fixed. |
 | I8 | B | PASS | 73.4s | — | yes | ran | Same correct computed sweep ($4,412.20), from/to correct. |
 | I8 | C | PASS | 31.7s | — | no | ran | Same correct amounts + honest irreversibility note ("your checking account will keep exactly $5,000"). |
 | I9 | A | FAIL | 39.7s | dead-control (empty dispute stub) | yes | — | Steam table correct (the one -$59.99 charge), but "Dispute a charge" renders an empty grey strip — no control, no disclaimer; reproduces on re-open. |
@@ -132,7 +132,7 @@ approved.
    the logs).
 2. **NEW dominant mechanism bug: the guard judge approval-gates READ-ONLY tools called
    from apps, starving them of data.** 43 pending `host_list*/get*` approvals from 8
-   gate apps after the half (`shots/tmp-apr.json`): I14 (all arms) shipped surfaces
+   gate apps after the half (`shots/approvals-after-maple-half.json`): I14 (all arms) shipped surfaces
    where every section was an empty state; I1-B/I3-C/I7-C/I13-C shipped false
    "no data" regions and stray "Action is waiting for approval" chips on read-only
    views. Arm-blind, intermittent (the judge is a model: I14-A's identical reads ran
