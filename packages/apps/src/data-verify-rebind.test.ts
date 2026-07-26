@@ -294,6 +294,50 @@ describe("data-sighted verify — rebind arm (pipeline.rebind, default OFF)", ()
     expect(statOf(verified)?.props?.label).toBe("Checking balance");
   });
 
+  it("shares the option budget across queries — a path-rich first query cannot starve the query holding the truth", async () => {
+    // Greptile P1: options fill first-query-first, so a wide first shape
+    // (60+ compatible paths) used to crowd every later query's fields out of
+    // the enum — the truthful target could never be chosen.
+    const wideShapes = {
+      host_wide: {
+        kind: "object" as const,
+        fields: Object.fromEntries(Array.from({ length: 70 }, (_, index) => [
+          `metric_${index}`, { kind: "number" as const },
+        ])),
+      },
+      host_totals: {
+        kind: "object" as const,
+        fields: { grandTotal: { kind: "number" as const } },
+      },
+    };
+    const wideTools = [
+      { name: "host_wide", description: "Seventy metrics", risk: "read" },
+      { name: "host_totals", description: "The real total", risk: "read" },
+    ];
+    const wire = '<App name="Wide"><Query id="wide" tool="host_wide"/><Query id="wide2" tool="host_wide"/><Query id="totals" tool="host_totals"/><Stack><Stat label="Grand total" value={wide.metric_0}/></Stack></App>';
+    const document = await modelEngine.create({ prompt: "build" }, deps(
+      scriptedLanguageModel(() => wire),
+      { tools: wideTools, toolShapes: wideShapes, pipeline: {} },
+    ));
+    let rebindEnum: string[] | undefined;
+    const model = scriptedLanguageModel((call) => {
+      if (isRebindCall(call)) {
+        const schema = call.tools?.[0]?.inputSchema as { properties?: { fix_0?: { enum?: string[] } } };
+        rebindEnum = schema?.properties?.fix_0?.enum;
+        return { tool: "rebind_bindings", input: { fix_0: "/totals/grandTotal" } };
+      }
+      return "<Edit></Edit>";
+    });
+
+    const verified = await verifyDocumentAgainstData(
+      document, "the grand total", { wide: {}, totals: { grandTotal: 350000 } },
+      deps(model, { tools: wideTools, toolShapes: wideShapes }),
+    );
+
+    expect(rebindEnum).toContain("/totals/grandTotal");
+    expect(statOf(verified)?.props?.value).toEqual({ $path: "/totals/grandTotal" });
+  });
+
   it("skips the rebind call when nothing is rebindable (no shapes → no closed space)", async () => {
     const document = await buildDocument(lyingStatWire);
     const calls: ScriptedModelCall[] = [];

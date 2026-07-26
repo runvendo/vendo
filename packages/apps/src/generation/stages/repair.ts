@@ -376,16 +376,31 @@ export const deriveRebindSlots = (
       const subPath = tokens.length > 2 ? `/${tokens.slice(2).join("/")}` : "";
       const currentKind = shapeAtPointer(shape, subPath)?.kind;
       if (currentKind === undefined) continue;
-      const options: string[] = [];
+      // Per-query candidate lists first, then round-robin into the bounded
+      // enum — filling query-by-query let one path-rich query starve every
+      // later query's fields out of the enum, leaving the verifier unable to
+      // choose the truthful target when it lived under a different query
+      // (review 2026-07-26, Greptile P1).
+      const perQuery: string[][] = [];
       for (const candidateQuery of queries) {
         const candidateShape = deps.toolShapes?.[candidateQuery.tool];
         if (candidateShape === undefined) continue;
         const prefix = `/${candidateQuery.name}`;
-        for (const candidate of enumerateShapePaths(candidateShape, prefix)) {
-          if (options.length >= MAX_PATH_OPTIONS) break;
+        perQuery.push(enumerateShapePaths(candidateShape, prefix).filter((candidate) => {
           const kind = shapeAtPointer(candidateShape, candidate.slice(prefix.length))?.kind;
-          if (kind !== undefined && kindsCompatible(kind, currentKind)) options.push(candidate);
+          return kind !== undefined && kindsCompatible(kind, currentKind);
+        }));
+      }
+      const options: string[] = [];
+      for (let rank = 0; options.length < MAX_PATH_OPTIONS; rank += 1) {
+        let drained = true;
+        for (const list of perQuery) {
+          const candidate = list[rank];
+          if (candidate === undefined || options.length >= MAX_PATH_OPTIONS) continue;
+          options.push(candidate);
+          drained = false;
         }
+        if (drained) break;
       }
       if (options.filter((option) => option !== value.$path).length === 0) continue;
       const label = node.props?.["label"] ?? node.props?.["title"];
