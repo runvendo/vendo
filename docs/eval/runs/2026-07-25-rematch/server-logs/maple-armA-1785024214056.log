@@ -1,0 +1,13 @@
+=== boot maple arm A at 2026-07-26T00:03:34.057Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 406ms
+
+=== create H6 arm A start ===
+
+=== create H6 arm A end ===
+[vendo] app build failed (app_5532cb32-bb3b-4315-a785-e788c431bacb): generation failed
+  - node "goalsprogress-1" references unknown component "GoalsProgress"
+  - node "goalprogresslist-1" references unknown component "GoalProgressList"
+  - island "GoalProgressSection" renders <Skeleton> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).

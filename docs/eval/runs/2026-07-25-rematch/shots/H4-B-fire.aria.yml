@@ -1,0 +1,162 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Income timeline 2026"
+      - button "Remove Income timeline 2026": ×
+    - listitem:
+      - button "Paycheck timeline 2026"
+      - button "Remove Paycheck timeline 2026": ×
+    - listitem:
+      - button "Paycheck timeline 2026"
+      - button "Remove Paycheck timeline 2026": ×
+    - listitem:
+      - button "Month-end summary — July 2026"
+      - button "Remove Month-end summary — July 2026": ×
+    - listitem:
+      - button "Month-end summary — July 2026"
+      - button "Remove Month-end summary — July 2026": ×
+    - listitem:
+      - button "July 2026 — Accountant summary"
+      - button "Remove July 2026 — Accountant summary": ×
+    - listitem:
+      - button "Entertainment budget tracker"
+      - button "Remove Entertainment budget tracker": ×
+    - listitem:
+      - button "Your cards"
+      - button "Remove Your cards": ×
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Card freeze & suspicious activity"
+      - button "Remove Card freeze & suspicious activity": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "August rent payment"
+      - button "Remove August rent payment": ×
+    - listitem:
+      - button "Food & Coffee — July 2026"
+      - button "Remove Food & Coffee — July 2026": ×
+    - listitem:
+      - button "Food & coffee this month"
+      - button "Remove Food & coffee this month": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "Spending breakdown this month"
+      - button "Remove Spending breakdown this month": ×
+    - listitem:
+      - button "Transfer money"
+      - button "Remove Transfer money": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+  - heading "Pay August rent" [level=3]
+  - text: Send rent from your checking account to your landlord or property manager. Pay to
+  - combobox "Pay to":
+    - option "Select payee" [selected]
+    - option "Jordan Avery"
+    - option "Mission St Property"
+    - option "PG&E"
+    - option "Mom"
+  - text: Amount
+  - spinbutton "Amount Enter the rent amount in dollars"
+  - text: Enter the rent amount in dollars Memo
+  - textbox "Memo":
+    - /placeholder: August 2026 rent
+  - button "Send rent payment"
+  - text: Paying from
+  - table:
+    - rowgroup:
+      - row "Account Type •••• Balance":
+        - columnheader "Account"
+        - columnheader "Type"
+        - columnheader "••••"
+        - columnheader "Balance"
+    - rowgroup:
+      - row "Maple Checking checking 4471 $9,412.20":
+        - cell "Maple Checking"
+        - cell "checking"
+        - cell "4471"
+        - cell "$9,412.20"
+      - row "Maple Savings savings 8820 $28,141.35":
+        - cell "Maple Savings"
+        - cell "savings"
+        - cell "8820"
+        - cell "$28,141.35"
+      - row "Maple Credit credit 0934 -$1,288.40":
+        - cell "Maple Credit"
+        - cell "credit"
+        - cell "0934"
+        - cell "-$1,288.40"
+      - row "Maple Invest investing 5567 $18,642.00":
+        - cell "Maple Invest"
+        - cell "investing"
+        - cell "5567"
+        - cell "$18,642.00"
+  - status: This moves real money Rent payments are sent immediately and cannot be undone. Double-check the payee name and amount before submitting.
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

@@ -1,0 +1,439 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Paycheck timeline 2026"
+      - button "Remove Paycheck timeline 2026": ×
+    - listitem:
+      - button "Month-end summary — July 2026"
+      - button "Remove Month-end summary — July 2026": ×
+    - listitem:
+      - button "Month-end summary — July 2026"
+      - button "Remove Month-end summary — July 2026": ×
+    - listitem:
+      - button "July 2026 — Accountant summary"
+      - button "Remove July 2026 — Accountant summary": ×
+    - listitem:
+      - button "Entertainment budget tracker"
+      - button "Remove Entertainment budget tracker": ×
+    - listitem:
+      - button "Your cards"
+      - button "Remove Your cards": ×
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Card freeze & suspicious activity"
+      - button "Remove Card freeze & suspicious activity": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "August rent payment"
+      - button "Remove August rent payment": ×
+    - listitem:
+      - button "Food & Coffee — July 2026"
+      - button "Remove Food & Coffee — July 2026": ×
+    - listitem:
+      - button "Food & coffee this month"
+      - button "Remove Food & coffee this month": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "Spending breakdown this month"
+      - button "Remove Spending breakdown this month": ×
+    - listitem:
+      - button "Transfer money"
+      - button "Remove Transfer money": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+  - status: About this view This host has no payroll or paycheck data — income deposits aren't exposed through any available tool, so a paycheck timeline can't be built from real data. You may find income-related transactions by browsing your full transaction history below.
+  - searchbox "Search table"
+  - combobox "Filter by Category":
+    - option "All Category" [selected]
+    - option "coffee"
+    - option "dining"
+    - option "groceries"
+    - option "housing"
+    - option "income"
+    - option "shopping"
+    - option "subscriptions"
+    - option "transfer"
+    - option "transport"
+  - combobox "Filter by Status":
+    - option "All Status" [selected]
+    - option "authorized"
+    - option "posted"
+  - table "All transactions this year":
+    - caption: All transactions this year
+    - rowgroup:
+      - row "Date ▼ Description Category Amount Status":
+        - columnheader "Date ▼"
+        - columnheader "Description"
+        - columnheader "Category"
+        - columnheader "Amount"
+        - columnheader "Status"
+    - rowgroup:
+      - row "Jul 25, 2026 DoorDash dining -$87.00 posted":
+        - cell "Jul 25, 2026"
+        - cell "DoorDash"
+        - cell "dining"
+        - cell "-$87.00"
+        - cell "posted"
+      - row "Jul 24, 2026 Tartine Bakery dining -$39.39 posted":
+        - cell "Jul 24, 2026"
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$39.39"
+        - cell "posted"
+      - row "Jul 24, 2026 Whole Foods Market groceries -$52.18 posted":
+        - cell "Jul 24, 2026"
+        - cell "Whole Foods Market"
+        - cell "groceries"
+        - cell "-$52.18"
+        - cell "posted"
+      - row "Jul 24, 2026 Apple Store shopping -$200.04 posted":
+        - cell "Jul 24, 2026"
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$200.04"
+        - cell "posted"
+      - row "Jul 24, 2026 United Airlines transport -$418.00 authorized":
+        - cell "Jul 24, 2026"
+        - cell "United Airlines"
+        - cell "transport"
+        - cell "-$418.00"
+        - cell "authorized"
+      - row "Jul 23, 2026 Tartine Bakery dining -$16.21 posted":
+        - cell "Jul 23, 2026"
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$16.21"
+        - cell "posted"
+      - row "Jul 21, 2026 Lyft transport -$23.40 posted":
+        - cell "Jul 21, 2026"
+        - cell "Lyft"
+        - cell "transport"
+        - cell "-$23.40"
+        - cell "posted"
+      - row "Jul 21, 2026 Uber Eats dining -$34.60 posted":
+        - cell "Jul 21, 2026"
+        - cell "Uber Eats"
+        - cell "dining"
+        - cell "-$34.60"
+        - cell "posted"
+      - row "Jul 20, 2026 Shell transport -$66.17 posted":
+        - cell "Jul 20, 2026"
+        - cell "Shell"
+        - cell "transport"
+        - cell "-$66.17"
+        - cell "posted"
+      - row "Jul 20, 2026 Apple Store shopping -$71.25 posted":
+        - cell "Jul 20, 2026"
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$71.25"
+        - cell "posted"
+      - row "Jul 18, 2026 Apple Store shopping -$176.07 posted":
+        - cell "Jul 18, 2026"
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$176.07"
+        - cell "posted"
+      - row "Jul 18, 2026 Amazon shopping $34.99 posted":
+        - cell "Jul 18, 2026"
+        - cell "Amazon"
+        - cell "shopping"
+        - cell "$34.99"
+        - cell "posted"
+      - row "Jul 18, 2026 Blue Bottle Coffee coffee -$8.10 posted":
+        - cell "Jul 18, 2026"
+        - cell "Blue Bottle Coffee"
+        - cell "coffee"
+        - cell "-$8.10"
+        - cell "posted"
+      - row "Jul 16, 2026 Uber transport -$14.29 posted":
+        - cell "Jul 16, 2026"
+        - cell "Uber"
+        - cell "transport"
+        - cell "-$14.29"
+        - cell "posted"
+      - row "Jul 16, 2026 Sightglass Coffee coffee -$5.37 posted":
+        - cell "Jul 16, 2026"
+        - cell "Sightglass Coffee"
+        - cell "coffee"
+        - cell "-$5.37"
+        - cell "posted"
+      - row "Jul 16, 2026 Amazon shopping -$64.99 posted":
+        - cell "Jul 16, 2026"
+        - cell "Amazon"
+        - cell "shopping"
+        - cell "-$64.99"
+        - cell "posted"
+      - row "Jul 15, 2026 Apple Store shopping -$30.78 posted":
+        - cell "Jul 15, 2026"
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$30.78"
+        - cell "posted"
+      - row "Jul 15, 2026 Amazon shopping -$74.36 posted":
+        - cell "Jul 15, 2026"
+        - cell "Amazon"
+        - cell "shopping"
+        - cell "-$74.36"
+        - cell "posted"
+      - row "Jul 14, 2026 Uber transport -$25.31 posted":
+        - cell "Jul 14, 2026"
+        - cell "Uber"
+        - cell "transport"
+        - cell "-$25.31"
+        - cell "posted"
+      - row "Jul 14, 2026 Trader Joe's groceries -$27.20 posted":
+        - cell "Jul 14, 2026"
+        - cell "Trader Joe's"
+        - cell "groceries"
+        - cell "-$27.20"
+        - cell "posted"
+      - row "Jul 13, 2026 Blue Bottle Coffee coffee -$10.75 posted":
+        - cell "Jul 13, 2026"
+        - cell "Blue Bottle Coffee"
+        - cell "coffee"
+        - cell "-$10.75"
+        - cell "posted"
+      - row "Jul 13, 2026 Taco Bell dining -$18.20 posted":
+        - cell "Jul 13, 2026"
+        - cell "Taco Bell"
+        - cell "dining"
+        - cell "-$18.20"
+        - cell "posted"
+      - row "Jul 12, 2026 Lyft transport -$14.89 posted":
+        - cell "Jul 12, 2026"
+        - cell "Lyft"
+        - cell "transport"
+        - cell "-$14.89"
+        - cell "posted"
+      - row "Jul 12, 2026 ChatGPT subscriptions -$20.00 posted":
+        - cell "Jul 12, 2026"
+        - cell "ChatGPT"
+        - cell "subscriptions"
+        - cell "-$20.00"
+        - cell "posted"
+      - row "Jul 11, 2026 Transfer to Savings transfer -$1,000.00 posted":
+        - cell "Jul 11, 2026"
+        - cell "Transfer to Savings"
+        - cell "transfer"
+        - cell "-$1,000.00"
+        - cell "posted"
+      - row "Jul 11, 2026 Transfer from Checking transfer $1,000.00 posted":
+        - cell "Jul 11, 2026"
+        - cell "Transfer from Checking"
+        - cell "transfer"
+        - cell "$1,000.00"
+        - cell "posted"
+      - row "Jul 11, 2026 Acme Corp Payroll income $6,420.00 posted":
+        - cell "Jul 11, 2026"
+        - cell "Acme Corp Payroll"
+        - cell "income"
+        - cell "$6,420.00"
+        - cell "posted"
+      - row "Jul 10, 2026 Philz Coffee coffee -$5.86 posted":
+        - cell "Jul 10, 2026"
+        - cell "Philz Coffee"
+        - cell "coffee"
+        - cell "-$5.86"
+        - cell "posted"
+      - row "Jul 9, 2026 Whole Foods Market groceries -$47.23 posted":
+        - cell "Jul 9, 2026"
+        - cell "Whole Foods Market"
+        - cell "groceries"
+        - cell "-$47.23"
+        - cell "posted"
+      - row "Jul 9, 2026 iCloud+ subscriptions -$2.99 posted":
+        - cell "Jul 9, 2026"
+        - cell "iCloud+"
+        - cell "subscriptions"
+        - cell "-$2.99"
+        - cell "posted"
+      - row "Jul 7, 2026 DoorDash dining -$41.30 posted":
+        - cell "Jul 7, 2026"
+        - cell "DoorDash"
+        - cell "dining"
+        - cell "-$41.30"
+        - cell "posted"
+      - row "Jul 7, 2026 Netflix subscriptions -$15.49 posted":
+        - cell "Jul 7, 2026"
+        - cell "Netflix"
+        - cell "subscriptions"
+        - cell "-$15.49"
+        - cell "posted"
+      - row "Jul 6, 2026 Trader Joe's groceries -$22.14 posted":
+        - cell "Jul 6, 2026"
+        - cell "Trader Joe's"
+        - cell "groceries"
+        - cell "-$22.14"
+        - cell "posted"
+      - row "Jul 6, 2026 Chipotle dining -$19.14 posted":
+        - cell "Jul 6, 2026"
+        - cell "Chipotle"
+        - cell "dining"
+        - cell "-$19.14"
+        - cell "posted"
+      - row "Jul 5, 2026 Tartine Bakery dining -$45.61 posted":
+        - cell "Jul 5, 2026"
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$45.61"
+        - cell "posted"
+      - row "Jul 4, 2026 Philz Coffee coffee -$14.83 posted":
+        - cell "Jul 4, 2026"
+        - cell "Philz Coffee"
+        - cell "coffee"
+        - cell "-$14.83"
+        - cell "posted"
+      - row "Jul 4, 2026 Spotify subscriptions -$11.99 posted":
+        - cell "Jul 4, 2026"
+        - cell "Spotify"
+        - cell "subscriptions"
+        - cell "-$11.99"
+        - cell "posted"
+      - row "Jul 3, 2026 Blue Bottle Coffee coffee -$6.25 posted":
+        - cell "Jul 3, 2026"
+        - cell "Blue Bottle Coffee"
+        - cell "coffee"
+        - cell "-$6.25"
+        - cell "posted"
+      - row "Jul 3, 2026 Blue Bottle Coffee coffee -$12.97 posted":
+        - cell "Jul 3, 2026"
+        - cell "Blue Bottle Coffee"
+        - cell "coffee"
+        - cell "-$12.97"
+        - cell "posted"
+      - row "Jul 3, 2026 Uber transport -$29.75 posted":
+        - cell "Jul 3, 2026"
+        - cell "Uber"
+        - cell "transport"
+        - cell "-$29.75"
+        - cell "posted"
+      - row "Jul 2, 2026 Tartine Bakery dining -$17.18 posted":
+        - cell "Jul 2, 2026"
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$17.18"
+        - cell "posted"
+      - row "Jul 1, 2026 Whole Foods Market groceries -$27.34 posted":
+        - cell "Jul 1, 2026"
+        - cell "Whole Foods Market"
+        - cell "groceries"
+        - cell "-$27.34"
+        - cell "posted"
+      - row "Jul 1, 2026 Equinox subscriptions -$285.00 posted":
+        - cell "Jul 1, 2026"
+        - cell "Equinox"
+        - cell "subscriptions"
+        - cell "-$285.00"
+        - cell "posted"
+      - row "Jul 1, 2026 Rent — Mission St housing -$2,850.00 posted":
+        - cell "Jul 1, 2026"
+        - cell "Rent — Mission St"
+        - cell "housing"
+        - cell "-$2,850.00"
+        - cell "posted"
+      - row "Jun 30, 2026 Tartine Bakery dining -$38.46 posted":
+        - cell "Jun 30, 2026"
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$38.46"
+        - cell "posted"
+      - row "Jun 29, 2026 Blue Bottle Coffee coffee -$6.31 posted":
+        - cell "Jun 29, 2026"
+        - cell "Blue Bottle Coffee"
+        - cell "coffee"
+        - cell "-$6.31"
+        - cell "posted"
+      - row "Jun 29, 2026 Steam shopping -$59.99 posted":
+        - cell "Jun 29, 2026"
+        - cell "Steam"
+        - cell "shopping"
+        - cell "-$59.99"
+        - cell "posted"
+      - row "Jun 28, 2026 Tartine Bakery dining -$46.15 posted":
+        - cell "Jun 28, 2026"
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$46.15"
+        - cell "posted"
+      - row "Jun 27, 2026 Transfer to Savings transfer -$1,000.00 posted":
+        - cell "Jun 27, 2026"
+        - cell "Transfer to Savings"
+        - cell "transfer"
+        - cell "-$1,000.00"
+        - cell "posted"
+      - row "Jun 27, 2026 Transfer from Checking transfer $1,000.00 posted":
+        - cell "Jun 27, 2026"
+        - cell "Transfer from Checking"
+        - cell "transfer"
+        - cell "$1,000.00"
+        - cell "posted"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

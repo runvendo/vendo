@@ -1,0 +1,52 @@
+[
+  {
+    "id": "apr_352b5544-4cf7-40d6-856a-b13e52cbcbb5",
+    "ctx": {
+      "appId": "app_0e518b4d-8e01-443a-87ce-9b7a22690cfb",
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Yousef Helal",
+        "subject": "vendo-demo"
+      }
+    },
+    "call": {
+      "id": "call_e855f596-238c-4f1e-8ed3-2d3c4731799b",
+      "args": {
+        "amount": 941220,
+        "recipient_name": "Jordan Avery"
+      },
+      "tool": "host_transferMoney"
+    },
+    "createdAt": "2026-07-26T00:39:23.544Z",
+    "descriptor": {
+      "name": "host_transferMoney",
+      "risk": "destructive",
+      "description": "Send money to a person from the user's checking account. This IRREVERSIBLY MOVES MONEY: it debits checking and appends a transfer. There is no undo.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "amount",
+          "recipient_name"
+        ],
+        "properties": {
+          "memo": {
+            "type": "string",
+            "description": "Optional note shown on the transfer, e.g. June rent"
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Amount to send in cents (positive whole number), e.g. 50000 = $500.00"
+          },
+          "recipient_name": {
+            "type": "string",
+            "description": "Who the money goes to, e.g. Alex Rivera"
+          }
+        }
+      }
+    },
+    "inputPreview": "host_transferMoney {\"amount\":941220,\"recipient_name\":\"Jordan Avery\"}"
+  }
+]

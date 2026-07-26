@@ -1,0 +1,13 @@
+=== boot maple arm A at 2026-07-26T00:08:47.338Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 191ms
+
+=== create H8 arm A start ===
+
+=== create H8 arm A end ===
+[vendo] app build failed (app_fbe8b9a5-471c-4bd7-87c1-dbc7f3381018): generation failed
+  - wire nested-query: <Query> belongs at App level; the query was still hoisted
+  - island "RecentMerchantOrder" crashed when rendered against stubbed tool results: The "id" argument must be of type string. Received type number (429302) — the component must render without throwing for any tool data it can receive: guard undefined/empty results before .map/.reduce and render a loading or empty state instead of crashing.
+  - island "RecentMerchantOrder" must be plain TSX with an `export default` component — no braces, template literals, or fences around the source

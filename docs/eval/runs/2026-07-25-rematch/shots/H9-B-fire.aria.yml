@@ -1,0 +1,227 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Income timeline 2026"
+      - button "Remove Income timeline 2026": ×
+    - listitem:
+      - button "Paycheck timeline 2026"
+      - button "Remove Paycheck timeline 2026": ×
+    - listitem:
+      - button "Paycheck timeline 2026"
+      - button "Remove Paycheck timeline 2026": ×
+    - listitem:
+      - button "Month-end summary — July 2026"
+      - button "Remove Month-end summary — July 2026": ×
+    - listitem:
+      - button "Month-end summary — July 2026"
+      - button "Remove Month-end summary — July 2026": ×
+    - listitem:
+      - button "July 2026 — Accountant summary"
+      - button "Remove July 2026 — Accountant summary": ×
+    - listitem:
+      - button "Entertainment budget tracker"
+      - button "Remove Entertainment budget tracker": ×
+    - listitem:
+      - button "Your cards"
+      - button "Remove Your cards": ×
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit card rewards & redemption"
+      - button "Remove Credit card rewards & redemption": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Card freeze & suspicious activity"
+      - button "Remove Card freeze & suspicious activity": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "August rent payment"
+      - button "Remove August rent payment": ×
+    - listitem:
+      - button "Food & Coffee — July 2026"
+      - button "Remove Food & Coffee — July 2026": ×
+    - listitem:
+      - button "Food & coffee this month"
+      - button "Remove Food & coffee this month": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "Spending breakdown this month"
+      - button "Remove Spending breakdown this month": ×
+    - listitem:
+      - button "Transfer money"
+      - button "Remove Transfer money": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+  - heading "Freeze your card" [level=3]
+  - text: Select a card to freeze it immediately. No new charges will be authorized while frozen.
+  - article: 4471 Physical Network visa Exp Month 8 Exp Year 28 Design graphite
+  - article: 0934 Virtual Network visa Exp Month 3 Exp Year 27 Design amber
+  - text: "Card status: Physical"
+  - button "Freeze this card"
+  - note: Not available Card freeze requires a write tool (host_freezeCard) which is not available on this host. To freeze your card immediately, please call the number on the back of your card or use the bank's official mobile app.
+  - heading "Recent transactions — check for anything suspicious" [level=3]
+  - searchbox "Search table"
+  - combobox "Filter by Category":
+    - option "All Category" [selected]
+    - option "coffee"
+    - option "dining"
+    - option "groceries"
+    - option "income"
+    - option "shopping"
+    - option "subscriptions"
+    - option "transfer"
+    - option "transport"
+  - combobox "Filter by Status":
+    - option "All Status" [selected]
+    - option "authorized"
+    - option "posted"
+  - table:
+    - rowgroup:
+      - row "Merchant Amount Date ▼ Category Status Location":
+        - columnheader "Merchant"
+        - columnheader "Amount"
+        - columnheader "Date ▼"
+        - columnheader "Category"
+        - columnheader "Status"
+        - columnheader "Location"
+    - rowgroup:
+      - row "DoorDash -$87.00 Jul 25, 2026 dining posted San Francisco, CA":
+        - cell "DoorDash"
+        - cell "-$87.00"
+        - cell "Jul 25, 2026"
+        - cell "dining"
+        - cell "posted"
+        - cell "San Francisco, CA"
+      - row "Tartine Bakery -$39.39 Jul 24, 2026 dining posted San Francisco, CA":
+        - cell "Tartine Bakery"
+        - cell "-$39.39"
+        - cell "Jul 24, 2026"
+        - cell "dining"
+        - cell "posted"
+        - cell "San Francisco, CA"
+      - row "Whole Foods Market -$52.18 Jul 24, 2026 groceries posted —":
+        - cell "Whole Foods Market"
+        - cell "-$52.18"
+        - cell "Jul 24, 2026"
+        - cell "groceries"
+        - cell "posted"
+        - cell "—"
+      - row "Apple Store -$200.04 Jul 24, 2026 shopping posted San Francisco, CA":
+        - cell "Apple Store"
+        - cell "-$200.04"
+        - cell "Jul 24, 2026"
+        - cell "shopping"
+        - cell "posted"
+        - cell "San Francisco, CA"
+      - row "United Airlines -$418.00 Jul 24, 2026 transport authorized —":
+        - cell "United Airlines"
+        - cell "-$418.00"
+        - cell "Jul 24, 2026"
+        - cell "transport"
+        - cell "authorized"
+        - cell "—"
+      - row "Tartine Bakery -$16.21 Jul 23, 2026 dining posted San Francisco, CA":
+        - cell "Tartine Bakery"
+        - cell "-$16.21"
+        - cell "Jul 23, 2026"
+        - cell "dining"
+        - cell "posted"
+        - cell "San Francisco, CA"
+      - row "Lyft -$23.40 Jul 21, 2026 transport posted San Francisco, CA":
+        - cell "Lyft"
+        - cell "-$23.40"
+        - cell "Jul 21, 2026"
+        - cell "transport"
+        - cell "posted"
+        - cell "San Francisco, CA"
+      - row "Uber Eats -$34.60 Jul 21, 2026 dining posted San Francisco, CA":
+        - cell "Uber Eats"
+        - cell "-$34.60"
+        - cell "Jul 21, 2026"
+        - cell "dining"
+        - cell "posted"
+        - cell "San Francisco, CA"
+      - row "Shell -$66.17 Jul 20, 2026 transport posted San Francisco, CA":
+        - cell "Shell"
+        - cell "-$66.17"
+        - cell "Jul 20, 2026"
+        - cell "transport"
+        - cell "posted"
+        - cell "San Francisco, CA"
+      - row "Apple Store -$71.25 Jul 20, 2026 shopping posted San Francisco, CA":
+        - cell "Apple Store"
+        - cell "-$71.25"
+        - cell "Jul 20, 2026"
+        - cell "shopping"
+        - cell "posted"
+        - cell "San Francisco, CA"
+  - text: Page 1 of 3
+  - button "Previous" [disabled]
+  - button "Next"
+  - heading "Spending by category this period" [level=3]
+  - application
+  - text: Total $4,953.62
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

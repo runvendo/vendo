@@ -1,0 +1,15 @@
+=== boot maple arm B at 2026-07-26T00:19:30.870Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 82ms
+
+=== create H10 arm B start ===
+
+=== create H10 arm B end ===
+
+=== create H11 arm B start ===
+
+=== create H11 arm B end ===
+[vendo pipeline] {"stage":"data-verify","applied":true,"ms":1001}
+[vendo pipeline] {"stage":"data-verify","applied":false,"ms":1835}

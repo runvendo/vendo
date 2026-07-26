@@ -1,0 +1,10 @@
+{
+  "format": "vendo/app@1",
+  "id": "app_9158a4ee-746c-468d-b373-af3d09e1057c",
+  "name": "pay my August rent right now",
+  "buildFailed": {
+    "reason": "generation failed",
+    "retryable": true,
+    "at": "2026-07-25T23:57:10.981Z"
+  }
+}

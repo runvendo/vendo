@@ -1,0 +1,234 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "Spending breakdown this month"
+      - button "Remove Spending breakdown this month": ×
+    - listitem:
+      - button "Transfer money"
+      - button "Remove Transfer money": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+  - article:
+    - text: Total balance $9,412.20 Total balance
+    - button "1W"
+    - button "1M"
+    - button "3M"
+    - button "1Y"
+    - button "All"
+  - article "Money in (June)":
+    - text: Money in (June)
+    - strong: $0.00
+  - article "Money out (June)":
+    - text: Money out (June)
+    - strong: $273.20
+  - heading "Spending by category" [level=3]
+  - application
+  - text: Total $4,953.62
+  - table:
+    - rowgroup:
+      - row "Category Amount":
+        - columnheader "Category"
+        - columnheader "Amount"
+    - rowgroup:
+      - row "housing $2,850.00":
+        - cell "housing"
+        - cell "$2,850.00"
+      - row "shopping $617.49":
+        - cell "shopping"
+        - cell "$617.49"
+      - row "transport $591.81":
+        - cell "transport"
+        - cell "$591.81"
+      - row "subscriptions $335.47":
+        - cell "subscriptions"
+        - cell "$335.47"
+      - row "dining $318.63":
+        - cell "dining"
+        - cell "$318.63"
+      - row "groceries $176.09":
+        - cell "groceries"
+        - cell "$176.09"
+      - row "coffee $64.13":
+        - cell "coffee"
+        - cell "$64.13"
+  - heading "Budgets" [level=3]
+  - table:
+    - rowgroup:
+      - row "Category Spent Limit":
+        - columnheader "Category"
+        - columnheader "Spent"
+        - columnheader "Limit"
+    - rowgroup:
+      - row "dining $318.63 $600.00":
+        - cell "dining"
+        - cell "$318.63"
+        - cell "$600.00"
+      - row "groceries $176.09 $500.00":
+        - cell "groceries"
+        - cell "$176.09"
+        - cell "$500.00"
+      - row "coffee $64.13 $120.00":
+        - cell "coffee"
+        - cell "$64.13"
+        - cell "$120.00"
+      - row "transport $591.81 $300.00":
+        - cell "transport"
+        - cell "$591.81"
+        - cell "$300.00"
+      - row "shopping $617.49 $600.00":
+        - cell "shopping"
+        - cell "$617.49"
+        - cell "$600.00"
+      - row "subscriptions $335.47 $120.00":
+        - cell "subscriptions"
+        - cell "$335.47"
+        - cell "$120.00"
+  - heading "Savings goals" [level=3]
+  - table:
+    - rowgroup:
+      - row "Goal Saved Target":
+        - columnheader "Goal"
+        - columnheader "Saved"
+        - columnheader "Target"
+    - rowgroup:
+      - row "Japan trip $3,120.00 $5,000.00":
+        - cell "Japan trip"
+        - cell "$3,120.00"
+        - cell "$5,000.00"
+      - row "Emergency fund $7,400.00 $10,000.00":
+        - cell "Emergency fund"
+        - cell "$7,400.00"
+        - cell "$10,000.00"
+      - row "New MacBook $900.00 $2,500.00":
+        - cell "New MacBook"
+        - cell "$900.00"
+        - cell "$2,500.00"
+  - heading "Recent transactions" [level=3]
+  - table:
+    - rowgroup:
+      - row "Merchant Category Amount Date":
+        - columnheader "Merchant"
+        - columnheader "Category"
+        - columnheader "Amount"
+        - columnheader "Date"
+    - rowgroup:
+      - row "DoorDash dining -$87.00 Jul 25, 2026":
+        - cell "DoorDash"
+        - cell "dining"
+        - cell "-$87.00"
+        - cell "Jul 25, 2026"
+      - row "Tartine Bakery dining -$39.39 Jul 24, 2026":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$39.39"
+        - cell "Jul 24, 2026"
+      - row "Whole Foods Market groceries -$52.18 Jul 24, 2026":
+        - cell "Whole Foods Market"
+        - cell "groceries"
+        - cell "-$52.18"
+        - cell "Jul 24, 2026"
+      - row "Apple Store shopping -$200.04 Jul 24, 2026":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$200.04"
+        - cell "Jul 24, 2026"
+      - row "United Airlines transport -$418.00 Jul 24, 2026":
+        - cell "United Airlines"
+        - cell "transport"
+        - cell "-$418.00"
+        - cell "Jul 24, 2026"
+      - row "Tartine Bakery dining -$16.21 Jul 23, 2026":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "-$16.21"
+        - cell "Jul 23, 2026"
+      - row "Lyft transport -$23.40 Jul 21, 2026":
+        - cell "Lyft"
+        - cell "transport"
+        - cell "-$23.40"
+        - cell "Jul 21, 2026"
+      - row "Uber Eats dining -$34.60 Jul 21, 2026":
+        - cell "Uber Eats"
+        - cell "dining"
+        - cell "-$34.60"
+        - cell "Jul 21, 2026"
+      - row "Shell transport -$66.17 Jul 20, 2026":
+        - cell "Shell"
+        - cell "transport"
+        - cell "-$66.17"
+        - cell "Jul 20, 2026"
+      - row "Apple Store shopping -$71.25 Jul 20, 2026":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "-$71.25"
+        - cell "Jul 20, 2026"
+  - heading "Upcoming payments" [level=3]
+  - table:
+    - rowgroup:
+      - row "Payee Amount Next date Frequency":
+        - columnheader "Payee"
+        - columnheader "Amount"
+        - columnheader "Next date"
+        - columnheader "Frequency"
+    - rowgroup:
+      - row "Mission St Property -$2,850.00 Aug 1, 2026 monthly":
+        - cell "Mission St Property"
+        - cell "-$2,850.00"
+        - cell "Aug 1, 2026"
+        - cell "monthly"
+      - row "PG&E -$86.40 Aug 15, 2026 monthly":
+        - cell "PG&E"
+        - cell "-$86.40"
+        - cell "Aug 15, 2026"
+        - cell "monthly"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

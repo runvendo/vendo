@@ -1,0 +1,311 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "August rent payment"
+      - button "Remove August rent payment": ×
+    - listitem:
+      - button "Food & Coffee — July 2026"
+      - button "Remove Food & Coffee — July 2026": ×
+    - listitem:
+      - button "Food & coffee this month"
+      - button "Remove Food & coffee this month": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "Spending breakdown this month"
+      - button "Remove Spending breakdown this month": ×
+    - listitem:
+      - button "Transfer money"
+      - button "Remove Transfer money": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+  - heading "Scheduled payments" [level=3]
+  - text: Due by 2026-08-09
+  - table:
+    - rowgroup:
+      - row "Payee Frequency Next date ▲ Amount":
+        - columnheader "Payee"
+        - columnheader "Frequency"
+        - columnheader "Next date ▲"
+        - columnheader "Amount"
+    - rowgroup:
+      - row "Mission St Property monthly Aug 1, 2026 -$2,850.00":
+        - cell "Mission St Property"
+        - cell "monthly"
+        - cell "Aug 1, 2026"
+        - cell "-$2,850.00"
+      - row "PG&E monthly Aug 15, 2026 -$86.40":
+        - cell "PG&E"
+        - cell "monthly"
+        - cell "Aug 15, 2026"
+        - cell "-$86.40"
+  - heading "Recurring charges" [level=3]
+  - text: Detected subscriptions and bills due by 2026-08-09
+  - table:
+    - rowgroup:
+      - row "Merchant Category Frequency Next date ▲ Amount":
+        - columnheader "Merchant"
+        - columnheader "Category"
+        - columnheader "Frequency"
+        - columnheader "Next date ▲"
+        - columnheader "Amount"
+    - rowgroup:
+      - row "Rent — Mission St housing monthly Aug 1, 2026 -$2,850.00":
+        - cell "Rent — Mission St"
+        - cell "housing"
+        - cell "monthly"
+        - cell "Aug 1, 2026"
+        - cell "-$2,850.00"
+      - row "Equinox subscriptions monthly Aug 1, 2026 -$285.00":
+        - cell "Equinox"
+        - cell "subscriptions"
+        - cell "monthly"
+        - cell "Aug 1, 2026"
+        - cell "-$285.00"
+      - row "Spotify subscriptions monthly Aug 4, 2026 -$11.99":
+        - cell "Spotify"
+        - cell "subscriptions"
+        - cell "monthly"
+        - cell "Aug 4, 2026"
+        - cell "-$11.99"
+      - row "Netflix subscriptions monthly Aug 7, 2026 -$15.49":
+        - cell "Netflix"
+        - cell "subscriptions"
+        - cell "monthly"
+        - cell "Aug 7, 2026"
+        - cell "-$15.49"
+      - row "iCloud+ subscriptions monthly Aug 9, 2026 -$2.99":
+        - cell "iCloud+"
+        - cell "subscriptions"
+        - cell "monthly"
+        - cell "Aug 9, 2026"
+        - cell "-$2.99"
+      - row "ChatGPT subscriptions monthly Aug 12, 2026 -$20.00":
+        - cell "ChatGPT"
+        - cell "subscriptions"
+        - cell "monthly"
+        - cell "Aug 12, 2026"
+        - cell "-$20.00"
+  - heading "Recent outgoing transactions" [level=3]
+  - text: Posted and authorized debits from 2026-07-12 to today
+  - searchbox "Search table"
+  - combobox "Filter by Category":
+    - option "All Category" [selected]
+    - option "coffee"
+    - option "dining"
+    - option "groceries"
+    - option "shopping"
+    - option "subscriptions"
+    - option "transport"
+  - combobox "Filter by Status":
+    - option "All Status" [selected]
+    - option "authorized"
+    - option "posted"
+  - table:
+    - rowgroup:
+      - row "Merchant Category Status Date ▼ Amount":
+        - columnheader "Merchant"
+        - columnheader "Category"
+        - columnheader "Status"
+        - columnheader "Date ▼"
+        - columnheader "Amount"
+    - rowgroup:
+      - row "DoorDash dining posted Jul 25, 2026 -$87.00":
+        - cell "DoorDash"
+        - cell "dining"
+        - cell "posted"
+        - cell "Jul 25, 2026"
+        - cell "-$87.00"
+      - row "Tartine Bakery dining posted Jul 24, 2026 -$39.39":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "posted"
+        - cell "Jul 24, 2026"
+        - cell "-$39.39"
+      - row "Whole Foods Market groceries posted Jul 24, 2026 -$52.18":
+        - cell "Whole Foods Market"
+        - cell "groceries"
+        - cell "posted"
+        - cell "Jul 24, 2026"
+        - cell "-$52.18"
+      - row "Apple Store shopping posted Jul 24, 2026 -$200.04":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "posted"
+        - cell "Jul 24, 2026"
+        - cell "-$200.04"
+      - row "United Airlines transport authorized Jul 24, 2026 -$418.00":
+        - cell "United Airlines"
+        - cell "transport"
+        - cell "authorized"
+        - cell "Jul 24, 2026"
+        - cell "-$418.00"
+      - row "Tartine Bakery dining posted Jul 23, 2026 -$16.21":
+        - cell "Tartine Bakery"
+        - cell "dining"
+        - cell "posted"
+        - cell "Jul 23, 2026"
+        - cell "-$16.21"
+      - row "Lyft transport posted Jul 21, 2026 -$23.40":
+        - cell "Lyft"
+        - cell "transport"
+        - cell "posted"
+        - cell "Jul 21, 2026"
+        - cell "-$23.40"
+      - row "Uber Eats dining posted Jul 21, 2026 -$34.60":
+        - cell "Uber Eats"
+        - cell "dining"
+        - cell "posted"
+        - cell "Jul 21, 2026"
+        - cell "-$34.60"
+      - row "Shell transport posted Jul 20, 2026 -$66.17":
+        - cell "Shell"
+        - cell "transport"
+        - cell "posted"
+        - cell "Jul 20, 2026"
+        - cell "-$66.17"
+      - row "Apple Store shopping posted Jul 20, 2026 -$71.25":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "posted"
+        - cell "Jul 20, 2026"
+        - cell "-$71.25"
+      - row "Apple Store shopping posted Jul 18, 2026 -$176.07":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "posted"
+        - cell "Jul 18, 2026"
+        - cell "-$176.07"
+      - row "Amazon shopping posted Jul 18, 2026 $34.99":
+        - cell "Amazon"
+        - cell "shopping"
+        - cell "posted"
+        - cell "Jul 18, 2026"
+        - cell "$34.99"
+      - row "Blue Bottle Coffee coffee posted Jul 18, 2026 -$8.10":
+        - cell "Blue Bottle Coffee"
+        - cell "coffee"
+        - cell "posted"
+        - cell "Jul 18, 2026"
+        - cell "-$8.10"
+      - row "Uber transport posted Jul 16, 2026 -$14.29":
+        - cell "Uber"
+        - cell "transport"
+        - cell "posted"
+        - cell "Jul 16, 2026"
+        - cell "-$14.29"
+      - row "Sightglass Coffee coffee posted Jul 16, 2026 -$5.37":
+        - cell "Sightglass Coffee"
+        - cell "coffee"
+        - cell "posted"
+        - cell "Jul 16, 2026"
+        - cell "-$5.37"
+      - row "Amazon shopping posted Jul 16, 2026 -$64.99":
+        - cell "Amazon"
+        - cell "shopping"
+        - cell "posted"
+        - cell "Jul 16, 2026"
+        - cell "-$64.99"
+      - row "Apple Store shopping posted Jul 15, 2026 -$30.78":
+        - cell "Apple Store"
+        - cell "shopping"
+        - cell "posted"
+        - cell "Jul 15, 2026"
+        - cell "-$30.78"
+      - row "Amazon shopping posted Jul 15, 2026 -$74.36":
+        - cell "Amazon"
+        - cell "shopping"
+        - cell "posted"
+        - cell "Jul 15, 2026"
+        - cell "-$74.36"
+      - row "Uber transport posted Jul 14, 2026 -$25.31":
+        - cell "Uber"
+        - cell "transport"
+        - cell "posted"
+        - cell "Jul 14, 2026"
+        - cell "-$25.31"
+      - row "Trader Joe's groceries posted Jul 14, 2026 -$27.20":
+        - cell "Trader Joe's"
+        - cell "groceries"
+        - cell "posted"
+        - cell "Jul 14, 2026"
+        - cell "-$27.20"
+      - row "Blue Bottle Coffee coffee posted Jul 13, 2026 -$10.75":
+        - cell "Blue Bottle Coffee"
+        - cell "coffee"
+        - cell "posted"
+        - cell "Jul 13, 2026"
+        - cell "-$10.75"
+      - row "Taco Bell dining posted Jul 13, 2026 -$18.20":
+        - cell "Taco Bell"
+        - cell "dining"
+        - cell "posted"
+        - cell "Jul 13, 2026"
+        - cell "-$18.20"
+      - row "Lyft transport posted Jul 12, 2026 -$14.89":
+        - cell "Lyft"
+        - cell "transport"
+        - cell "posted"
+        - cell "Jul 12, 2026"
+        - cell "-$14.89"
+      - row "ChatGPT subscriptions posted Jul 12, 2026 -$20.00":
+        - cell "ChatGPT"
+        - cell "subscriptions"
+        - cell "posted"
+        - cell "Jul 12, 2026"
+        - cell "-$20.00"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

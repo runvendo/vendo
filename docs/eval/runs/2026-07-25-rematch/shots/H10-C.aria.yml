@@ -1,0 +1,141 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Credit score"
+      - button "Remove Credit score": ×
+    - listitem:
+      - button "Card freeze & suspicious activity"
+      - button "Remove Card freeze & suspicious activity": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "Upcoming outflows — next 2 weeks"
+      - button "Remove Upcoming outflows — next 2 weeks": ×
+    - listitem:
+      - button "August rent payment"
+      - button "Remove August rent payment": ×
+    - listitem:
+      - button "Food & Coffee — July 2026"
+      - button "Remove Food & Coffee — July 2026": ×
+    - listitem:
+      - button "Food & coffee this month"
+      - button "Remove Food & coffee this month": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "July 2026 financial snapshot"
+      - button "Remove July 2026 financial snapshot": ×
+    - listitem:
+      - button "Spending breakdown this month"
+      - button "Remove Spending breakdown this month": ×
+    - listitem:
+      - button "Transfer money"
+      - button "Remove Transfer money": ×
+    - listitem:
+      - button "Recent transactions"
+      - button "Remove Recent transactions": ×
+  - note: Credit score isn't available This host has no connection to credit bureaus or scoring models, so your credit score and its factors can't be shown here. For your current score and what's driving it, check a service like Credit Karma, Experian, or your card issuer's app — many offer free access.
+  - status: What we can show instead Your accounts, balances, and spending patterns are available below — these are the kinds of factors that influence credit scores.
+  - article "Accounts":
+    - text: Accounts
+    - strong: —
+  - article "Scheduled payments":
+    - text: Scheduled payments
+    - strong: —
+  - article "Active cards":
+    - text: Active cards
+    - strong: —
+  - table "Your accounts":
+    - caption: Your accounts
+    - rowgroup:
+      - row "Account Type Ending Balance":
+        - columnheader "Account"
+        - columnheader "Type"
+        - columnheader "Ending"
+        - columnheader "Balance"
+    - rowgroup:
+      - row "Maple Checking checking 4471 $9,412.20":
+        - cell "Maple Checking"
+        - cell "checking"
+        - cell "4471"
+        - cell "$9,412.20"
+      - row "Maple Savings savings 8820 $28,141.35":
+        - cell "Maple Savings"
+        - cell "savings"
+        - cell "8820"
+        - cell "$28,141.35"
+      - row "Maple Credit credit 0934 -$1,288.40":
+        - cell "Maple Credit"
+        - cell "credit"
+        - cell "0934"
+        - cell "-$1,288.40"
+      - row "Maple Invest investing 5567 $18,642.00":
+        - cell "Maple Invest"
+        - cell "investing"
+        - cell "5567"
+        - cell "$18,642.00"
+  - table "Upcoming scheduled payments":
+    - caption: Upcoming scheduled payments
+    - rowgroup:
+      - row "Payee Amount Next payment ▲ Frequency":
+        - columnheader "Payee"
+        - columnheader "Amount"
+        - columnheader "Next payment ▲"
+        - columnheader "Frequency"
+    - rowgroup:
+      - row "Mission St Property -$2,850.00 Aug 1, 2026 monthly":
+        - cell "Mission St Property"
+        - cell "-$2,850.00"
+        - cell "Aug 1, 2026"
+        - cell "monthly"
+      - row "PG&E -$86.40 Aug 15, 2026 monthly":
+        - cell "PG&E"
+        - cell "-$86.40"
+        - cell "Aug 15, 2026"
+        - cell "monthly"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- alert

@@ -1,0 +1,16 @@
+=== boot maple arm A at 2026-07-26T00:17:24.425Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 117ms
+
+=== create H9 arm A start ===
+
+=== create H9 arm A end ===
+[vendo] app build failed (app_197bc695-1cd0-467e-badb-9f15b5365f8d): generation failed
+  - wire unknown-reference: "cards.data" does not name a declared <Query> or state
+  - wire unknown-reference: "txns.data.data" does not name a declared <Query> or state
+  - node "freezecardpanel-1" references unknown component "FreezeCardPanel"
+  - node "freezecardisland-1" references unknown component "FreezeCardIsland"
+  - island "FreezeCardPanel" renders <Skeleton> — host catalog and prewired components exist only in the host page and can never load inside an island. Compose them in the TREE, or use the ambient Kit inside the island (Stack, Row, Grid, Surface, Divider, Text, Money, DateTime, Percent, Num, EnumBadge, DataTable, CardList, Stat, Badge, LineChart, BarChart, DonutChart, Sparkline, Progress, Input, Select, DatePicker, Textarea, Checkbox, Button, Form, Disclaimer, Tabs, Callout, Accordion).
+  - island "FreezeCardPanel" is not valid TSX: Transform failed with 3 errors:

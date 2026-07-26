@@ -1,0 +1,24 @@
+=== boot maple arm B at 2026-07-25T23:54:34.199Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 126ms
+
+=== create H3 arm B start ===
+
+=== create H3 arm B end ===
+
+=== create H4 arm B start ===
+
+=== create H4 arm B end ===
+[vendo pipeline] {"stage":"repair","rounds":1,"repaired":false,"noValidFix":0,"ms":1118}
+[vendo pipeline] {"stage":"repair","rounds":1,"repaired":true,"noValidFix":0,"ms":2006}
+[vendo pipeline] {"stage":"data-verify","applied":false,"ms":1246}
+[vendo] app build failed (app_e16f99fe-86e6-4e37-816c-5c9b271ef211): generation failed
+  - island "RecurringTotal" computes displayed values from the hand-typed constant 12 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "RecurringTotal" computes displayed values from the hand-typed constant 3 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "RecurringTotal" computes displayed values from the hand-typed constant 4.33 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - island "RecurringTotal" computes displayed values from the hand-typed constant 52 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.
+  - node "text-1" prop "text" embeds a binding inside a string — string interpolation is unsupported; bind the prop to a single {reference} or split the text into separate Text nodes
+  - node "maplenetworthcard-1" prop "series" on <MapleNetWorthCard> carries hand-typed LITERAL business data — law 1: every data-classed prop must be a binding to a tool result, e.g. series={queryName.field.path}. If NO host tool provides this data, render an honest <Disclaimer reason="..."/> instead — never invent figures.
+  - node "maplenetworthcard-1" prop "series" binds /recurring/data: expected a number, the bound field is object — bind a field whose shape matches the component's prop type

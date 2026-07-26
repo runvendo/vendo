@@ -1,0 +1,45 @@
+H1	A	app_683018c3-4a79-46f4-9b48-81d356cde027	July 2026 financial snapshot	10.7	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785023247783.log
+H1	C	UNKNOWN	?	51.8	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785023338826.log
+H1	B	app_4aa5c662-5a16-4ede-8079-d1fca7931994	July 2026 financial snapshot	14.0	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785023403516.log
+H2	B	app_9ebbf6c5-e7e4-4519-82fe-ea7962618785	Food & coffee this month	11.1	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785023403516.log
+H2	A	app_e994613f-5fc8-4938-888b-6edf029aa989	Food & Coffee — July 2026	9.1	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785023451857.log
+H2	C	UNKNOWN	?	76.1	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785023473866.log
+H3	A	UNKNOWN	?	35.6	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785023562923.log
+H3	C	UNKNOWN	?	49.8	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785023611485.log
+H3	B	UNKNOWN	?	33.2	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785023674199.log
+H4	B	app_0e518b4d-8e01-443a-87ce-9b7a22690cfb	August rent payment	12.2	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785023674199.log
+H4	C	UNKNOWN	?	85.3	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785023742556.log
+H4	A	UNKNOWN	?	8.3	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785023840690.log
+H5	B	UNKNOWN	?	41.8	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785023861983.log
+H5	C	UNKNOWN	?	49.3	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785023916859.log
+H5	A	UNKNOWN	?	55.6	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785023979188.log
+H6	C	UNKNOWN	?	67.6	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785024049972.log
+H6	B	UNKNOWN	?	62.1	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785024134171.log
+H6	A	UNKNOWN	?	40.0	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785024214056.log
+H7	C	UNKNOWN	?	71.5	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785024271827.log
+H7	B	app_3c65c0dd-7149-46af-ad63-620955511f90	Upcoming outflows — next 2 weeks	11.6	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785024360772.log
+H7	A	app_8c370698-832c-4290-909e-c0628d55bff2	Upcoming outflows — next 2 weeks	10.4	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785024387742.log
+H8	C	UNKNOWN	?	99.1	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785024413307.log
+H8	A	UNKNOWN	?	89.5	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785024527337.log
+H8	B	UNKNOWN	?	92.9	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785024629951.log
+H9	C	UNKNOWN	?	94.8	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785024735958.log
+H9	B	app_1ae1f0e8-6973-4589-aa90-cd24c8e8a95d	Card freeze & suspicious activity	57.6	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785024847119.log
+H9	A	UNKNOWN	?	62.7	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785025044425.log
+H10	C	app_95f47509-e43a-40f4-86a8-6ad215729de3	Credit score	10.8	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785025120020.log
+H10	A	app_26d2fecf-2f4b-4748-9553-f197fbf3aa7f	Credit score	14.7	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785025143462.log
+H10	B	app_ff518077-82e0-46d7-8892-592880cb9642	Credit score	10.8	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785025170869.log
+H11	B	app_79a1dd10-5d9b-41ff-8834-49d40d93fcef	Credit card rewards & redemption	16.8	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785025170869.log
+H11	A	app_5c10e3c6-74ec-4b21-8f52-db8ccffda96c	Credit card rewards & redemption	16.8	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785025221210.log
+H11	C	app_3fedbebc-4020-44c1-821d-218ef74ee19d	Your cards	7.2	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785025250864.log
+H12	C	UNKNOWN	?	101.0	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785025250864.log
+H12	A	UNKNOWN	?	82.4	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785025382539.log
+H12	B	app_51ca3a3f-0962-48f8-a813-253beec5a067	Entertainment budget tracker	16.7	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785025478053.log
+H13	C	app_79ef55b9-01a3-4d0b-8e10-e54968897789	July 2026 — Accountant summary	18.2	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785025507788.log
+H13	B	app_32d5182f-7b58-4880-871f-23b8c990ed97	Month-end summary — July 2026	20.2	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785025538796.log
+H13	A	app_25f94cf2-fa34-4cd0-b959-919dfbfcee40	Month-end summary — July 2026	17.3	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785025571829.log
+H14	C	UNKNOWN	?	98.9	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785025601779.log
+H14	B	UNKNOWN	?	52.6	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785025713283.log
+H14	A	UNKNOWN	?	130.5	1	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785025778434.log
+H15	B	app_5f3cee31-29e3-47b8-8542-5b448065447d	Paycheck timeline 2026	8.1	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armB-1785025921594.log
+H15	C	app_b69670be-6543-46b3-bc22-0f9aa4120ab9	Paycheck timeline 2026	8.0	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armC-1785025942372.log
+H15	A	app_2c724c04-ca48-41fc-8f83-3c599e073377	Income timeline 2026	8.1	0	/tmp/vendo-rematch/docs/eval/runs/2026-07-25-rematch/server-logs/maple-armA-1785025963030.log
