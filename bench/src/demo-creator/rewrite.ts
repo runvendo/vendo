@@ -385,7 +385,7 @@ export function buildAgentJobs(options: AgentJobsOptions): AgentJob[] {
       name: "domain",
       ownedRoots: ["openapi.json", "src/server/types.ts", "src/server/store.ts", "src/server/seed.ts", `src/server/${plan.entity.stem}.ts`, "src/server/items.ts", "src/server/__tests__", "src/app/api"],
       maxBudgetUsd: 6,
-      timeoutMs: 15 * 60 * 1000,
+      timeoutMs: 20 * 60 * 1000,
       model,
       prompt: `You are the DOMAIN agent rewriting a Vendo demo-template clone into a ${prospect} demo.
 
@@ -409,7 +409,7 @@ YOUR FILE LIST (writable): openapi.json, src/server/* (except the fenced caps.ts
       name: "shell-home",
       ownedRoots: ["src/app/page.tsx", "src/app/layout.tsx", "src/app/globals.css", "src/components/shell", "src/components/home"],
       maxBudgetUsd: 8,
-      timeoutMs: 15 * 60 * 1000,
+      timeoutMs: 20 * 60 * 1000,
       model: shellModel,
       prompt: `You are the SHELL+HOME agent rewriting a Vendo demo-template clone into a ${prospect} demo.
 
@@ -430,7 +430,7 @@ YOUR FILE LIST (writable): src/app/page.tsx, src/app/layout.tsx, src/app/globals
       name: `screen-${screen.slug}`,
       ownedRoots: [`src/app/${screen.slug}`, `src/components/${screen.slug}`],
       maxBudgetUsd: 5,
-      timeoutMs: 15 * 60 * 1000,
+      timeoutMs: 20 * 60 * 1000,
       model,
       prompt: `You are the SCREEN agent for "${screen.title}" (${screen.route}) in a ${prospect} demo built from the Vendo demo-template.
 
@@ -664,7 +664,10 @@ export async function runRewrite(args: RewriteArgs, io: RewriteIo): Promise<Rewr
   const env = io.env ?? process.env;
   const runStage = io.runStage ?? (async <T>(_name: string, fn: () => Promise<T>): Promise<T> => await fn());
   const model = env.VENDO_DEMO_AGENT_MODEL ?? "sonnet";
-  const shellModel = env.VENDO_DEMO_SHELL_MODEL ?? "opus";
+  // Sonnet by default here too: the 45-min budget can't afford an opus pass
+  // on the shell (a live run timed one out at 15 min), and the judge loop is
+  // the quality backstop by design. Override for special runs.
+  const shellModel = env.VENDO_DEMO_SHELL_MODEL ?? "sonnet";
   const researchDir = path.join(io.appDir, "RESEARCH");
 
   // (a) Deterministic brand tokens.
