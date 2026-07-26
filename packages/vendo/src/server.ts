@@ -1,9 +1,11 @@
 import {
   createActions,
   mergedSemanticsAndDomains,
+  overridesFileV3Schema,
   type ActionsRegistry,
   type ActionsRunContext,
   type Connector,
+  type OverridesFileV3,
   type ServerActionHandler,
 } from "@vendoai/actions";
 import { createAgent, VENDO_TOOL_PACK_PREFIX, type VendoAgent } from "@vendoai/agent";
@@ -87,6 +89,7 @@ import type { LanguageModel } from "ai";
 import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
+  type CapabilitySurfaceSnapshot,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
 import { bindVendoModelSlots } from "#dev-creds/model";
@@ -132,7 +135,7 @@ import { cloudTools } from "./cloud-tools.js";
 // rides the server surface the same way: pass it explicitly via
 // createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
 export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
-import { cloudConfig, type CloudConfig } from "./cloud-config.js";
+import { cloudConfig, type CloudConfig, type CloudConfigResult } from "./cloud-config.js";
 // The Cloud hosted-config adapter (the read half of the config-resolution seam)
 // rides the server surface too: the composition seam (selectConfigSurface)
 // consults it for a `.vendo` surface the host neither set nor keeps on disk.
@@ -1213,17 +1216,53 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
   // defaults the Cloud tools connector for a wholly unset slot.
   const resolvedConnectors = selectConnectors(config.connectors);
-  // cse lane 3 NOTE — cloud overrides do NOT feed the actions registry's tool
-  // ENABLEMENT here. The actions block accepts an `overrides` injection
-  // (additive, tested), but wiring it from cloud requires the resolution to run
-  // on first REQUEST; the registry's first `loadHost` is driven at COMPOSE by
-  // the eager capability-miss surface (`missSurface = actions.descriptors()`
-  // below) and memoized, so injecting a cloud read there would fetch at module
-  // init (Workers global-scope violation) or lock an empty result before the
-  // snapshot warms. Making it correct means deferring that eager compose-time
-  // descriptors() call — an existing-behavior change beyond this seam. Reported
-  // to the coordinator. Cloud overrides DO feed app-generation semantics/domains
-  // (hostSemanticsProvider, resolved lazily per generation) below.
+  // #557 — cloud overrides.json feeds the actions registry's tool ENABLEMENT
+  // (disabled/audience), not only app-generation semantics/domains. The registry
+  // resolves `config.overrides` ONCE through its memoized `loadHost`, and every
+  // tool-serving path (descriptors/execute/search/surfaceMenu) awaits loadHost
+  // before it exposes anything — so a cloud-disabled tool is NEVER live before
+  // the override resolves. The provider below reads AUTHORITATIVELY via
+  // configCloud.fetch() (awaited), NOT the cold stale-while-revalidate
+  // snapshot: the whole point of the async design is that enablement resolves
+  // before the first serve, so a cloud disable can never leak on a cold boot.
+  // Precedence mirrors selectConfigSurface (file → cloud): a local
+  // .vendo/overrides.json wins and is read by the registry itself (provider
+  // returns undefined); only a cloud-OWNED surface triggers the fetch. This is
+  // now safe at compose because `missSurface` below is deferred — nothing calls
+  // actions.descriptors()/loadHost at module init, so no console fetch happens
+  // in Workers global scope (portability-gate).
+  const overridesEnablementProvider = async (): Promise<OverridesFileV3 | undefined> => {
+    // File-owned: let the registry read the local .vendo/overrides.json (which
+    // also handles v1/legacy migration). No cloud fetch decides enablement.
+    if (readSurfaceFile("overrides.json") !== undefined) return undefined;
+    // Cloud-owned: AWAIT the authoritative read so enablement is resolved before
+    // any tool is served (boot-once on the first request).
+    let result: CloudConfigResult;
+    try {
+      result = await configCloud!.fetch();
+    } catch (error) {
+      // A flaky/unreachable console must not permanently brick the registry
+      // (loadHost memoizes its result). Degrade to no cloud overrides this boot,
+      // the same fail-open posture as the guard policy fallback; key/meter
+      // problems still surface on the first real service call.
+      console.warn(
+        "[vendo] hosted overrides.json fetch failed; tool enablement falls back to the local file / none "
+        + `this boot: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+    const body = result.config?.["overrides.json"];
+    if (body === undefined) return undefined;
+    try {
+      return overridesFileV3Schema.parse(JSON.parse(body));
+    } catch (error) {
+      console.error(
+        "[vendo] hosted overrides.json is malformed; ignoring it for tool enablement this boot: "
+        + `${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  };
   const actionsConfig: {
     dir: string;
     connectors?: Connector[];
@@ -1234,12 +1273,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     onPresentCredentialsNotForwarded: typeof warnPresentCredentialsNotForwarded;
     untrustedOriginPolicy?: "warn" | "fail";
     invokeTool?: ToolRegistry["execute"];
+    overrides?: () => Promise<OverridesFileV3 | undefined>;
   } = {
     dir: ".",
     ...(resolvedConnectors.length === 0 ? {} : { connectors: resolvedConnectors }),
     ...(actAsSeam === undefined ? {} : { actAs: actAsSeam }),
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
     ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
+    ...(configCloud === undefined ? {} : { overrides: overridesEnablementProvider }),
     onPresentCredentialsNotForwarded: warnPresentCredentialsNotForwarded,
     // 09-vendo §2 install-dx wave 1.1: production refuses a present-mode call
     // it can't authenticate rather than quietly dropping the caller's
@@ -1509,9 +1550,19 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // no adapter, no `vendo_knowledge_search` in any descriptor surface.
   const knowledge = selectKnowledge(config.knowledge);
   if (knowledge !== undefined) actions.add(createKnowledgeTools(knowledge));
-  const missSurface = actions.descriptors()
-    .then(capabilitySurfaceSnapshot)
-    .catch(() => capabilitySurfaceSnapshot([]));
+  // #557 — the capability-miss surface is DEFERRED to first use behind a
+  // memoized promise. Building it eagerly at compose would call
+  // actions.descriptors() → loadHost → the cloud overrides fetch at module
+  // init, which Workers forbids in global scope (portability-gate). It resolves
+  // ONCE, on the first capability-miss upload or detector report — the same
+  // boot-once posture as the enablement provider it now shares loadHost with.
+  // (The zero-live-tools warning, emitted inside loadHost, therefore fires on
+  // that first request rather than at compose.)
+  let missSurfacePromise: Promise<CapabilitySurfaceSnapshot> | undefined;
+  const missSurface = (): Promise<CapabilitySurfaceSnapshot> =>
+    (missSurfacePromise ??= actions.descriptors()
+      .then(capabilitySurfaceSnapshot)
+      .catch(() => capabilitySurfaceSnapshot([])));
   // ADAPTER RULE, miss-upload seam: capability-misses.ts never reads the
   // environment for its Cloud uploader — VENDO_API_KEY fills the slot HERE,
   // like the share/publish seam above; unfilled, misses stay local-only.
@@ -1556,7 +1607,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
     capabilityMiss: {
       hostId: missCapture.hostId,
-      surface: missSurface.then(({ hash }) => ({ format: "vendo/tools@1" as const, hash })),
+      surface: () => missSurface().then(({ hash }) => ({ format: "vendo/tools@1" as const, hash })),
       emit: (event) => missCapture.record(event),
     },
     // ENG-252: the agent starts with a bounded loadout and discovers the rest via

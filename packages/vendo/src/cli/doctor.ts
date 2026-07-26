@@ -19,7 +19,7 @@ import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { overridesFileSchema, overridesFileV3Schema, toolsFileSchema, toolsFileV3Schema, vendoFileVersion } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
-import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_CAVEAT } from "../config-surface.js";
+import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
 import { askYesNo, CLI_VERSION, consoleOutput, exists, normalizeDotEnvValue, readOptional, toolingTelemetry, type Output } from "./shared.js";
@@ -266,7 +266,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const surfaceOwners = await Promise.all(
     CONFIG_SURFACES.map(async (surface) => `${surface}=${(await exists(join(root, ".vendo", surface))) ? "file" : "runtime"}`),
   );
-  pass("config/ownership", `surface ownership (file = local source of truth; runtime = resolved from hosted config or unset): ${surfaceOwners.join(", ")}. ${OVERRIDES_ENABLEMENT_CAVEAT}`);
+  pass("config/ownership", `surface ownership (file = local source of truth; runtime = resolved from hosted config or unset): ${surfaceOwners.join(", ")}. ${OVERRIDES_ENABLEMENT_NOTE}`);
 
   // Models spec 2026-07-22 — exactly two honest model facts, resolver-based
   // (the same resolver the runtime rides, no network): which credential rung

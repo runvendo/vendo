@@ -149,6 +149,26 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
     setSevering(current => ({ ...current, [id]: undefined }));
   };
 
+  // Demo-hygiene: a non-active row leads with a single obvious repair — the
+  // same initiate/complete broker flow the connect card runs, then a refresh
+  // so the repaired account settles into the Connected chip.
+  const reconnect = async (connection: ConnectionAccount) => {
+    setError(undefined);
+    setBusy(current => ({ ...current, [`reconnect-${connection.id}`]: true }));
+    try {
+      await completeConnection(
+        client,
+        { toolkit: connection.toolkit, connector: connection.connector },
+        () => cancelled.current,
+      );
+      if (!cancelled.current) await refresh();
+    } catch (reason) {
+      if (!cancelled.current) setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      if (!cancelled.current) setBusy(current => ({ ...current, [`reconnect-${connection.id}`]: false }));
+    }
+  };
+
   // Connect-ahead runs through the host's connector catalog (context), so the
   // chips honour host labels and pinned broker connectors — never a hardcoded
   // toolkit list.
@@ -202,6 +222,10 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
           const name = toolkitDisplayName(connection.toolkit);
           const status = STATUS[connection.status];
           const sever = severing[connection.id];
+          // Expired/failed rows lead with Reconnect (primary); Disconnect
+          // demotes to a quiet secondary. Active/initiated rows are unchanged.
+          const repairable = connection.status === "expired" || connection.status === "failed";
+          const reconnecting = busy[`reconnect-${connection.id}`] === true;
           if (sever) {
             return (
               <div className="fl-acct-severed" key={`${connection.connector}-${connection.id}`} role="status">
@@ -236,14 +260,36 @@ export function ConnectedAccountsPanel({ undoMs = 10_000 }: ConnectedAccountsPan
                     {connection.createdAt ? ` · connected ${connectedDate(connection.createdAt)}` : ""}
                   </div>
                 </div>
-                <button
-                  className="fl-btn"
-                  type="button"
-                  aria-label={`Disconnect ${name}`}
-                  aria-expanded={confirming[connection.id] === true}
-                  style={{ marginLeft: "auto" }}
-                  onClick={() => setConfirming(current => ({ ...current, [connection.id]: !current[connection.id] }))}
-                >Disconnect…</button>
+                <span className="fl-acct-actions">
+                  {repairable ? (
+                    <button
+                      className="fl-btn fl-btn-primary"
+                      type="button"
+                      aria-label={`Reconnect ${name}`}
+                      disabled={reconnecting}
+                      onClick={() => void reconnect(connection)}
+                    >
+                      {reconnecting ? (
+                        <span className="fl-btn-spin" aria-hidden="true" />
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                          <path d="M21 3v5h-5" />
+                          <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                          <path d="M3 21v-5h5" />
+                        </svg>
+                      )}
+                      {reconnecting ? "Reconnecting…" : "Reconnect"}
+                    </button>
+                  ) : null}
+                  <button
+                    className={repairable ? "fl-btn fl-btn-quiet" : "fl-btn"}
+                    type="button"
+                    aria-label={`Disconnect ${name}`}
+                    aria-expanded={confirming[connection.id] === true}
+                    onClick={() => setConfirming(current => ({ ...current, [connection.id]: !current[connection.id] }))}
+                  >Disconnect…</button>
+                </span>
               </div>
               <div className={`fl-acct-confirm${confirming[connection.id] ? " fl-acct-confirm--open" : ""}`}>
                 <div className="fl-acct-confirm-inner">

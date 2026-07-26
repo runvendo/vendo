@@ -15,7 +15,11 @@ export const CAPABILITY_MISS_TOOL_NAME = "vendo_report_capability_miss";
 
 export interface CapabilityMissConfig {
   hostId: string;
-  surface: Promise<CapabilityMissEvent["surface"]>;
+  /** #557 — a LAZY, memoized factory rather than an eager promise: resolving the
+   *  surface hash drives the actions registry's `loadHost`, which now awaits the
+   *  cloud overrides fetch. Deferring keeps that fetch off the compose path
+   *  (Workers global scope). Awaited only when a miss is actually reported. */
+  surface: () => Promise<CapabilityMissEvent["surface"]>;
   emit(event: CapabilityMissEvent): void | Promise<void>;
 }
 
@@ -94,7 +98,7 @@ export function createCapabilityMissDetector(options: DetectorOptions): Capabili
     if (reported) return false;
     reported = true;
     void (async () => {
-      const surface = await options.config.surface;
+      const surface = await options.config.surface();
       const event: CapabilityMissEvent = {
         format: "vendo/capability-miss@1",
         id: `mis_${globalThis.crypto.randomUUID().replaceAll("-", "")}`,

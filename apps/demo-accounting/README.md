@@ -26,6 +26,11 @@ boots the local stack and seeds two demo users from `supabase/seed.sql`:
 | `maya@cadence.test` | `cadence-demo` | Maya Alvarez (primary)   |
 | `daniel@cadence.test` | `cadence-demo` | Daniel Hartwell          |
 
+The password's single source of truth is `cadenceDemoPassword()` in
+`src/server/users.ts` (`CADENCE_DEMO_PASSWORD` overrides it); the seed and
+this table must match its default. Re-applying the seed converges a drifted
+row back to these credentials.
+
 Every page and firm API route requires a session (`src/proxy.ts`): pages
 bounce to `/login`, APIs answer 401. The login form posts to GoTrue's real
 password grant; the resulting Supabase access token becomes the session
