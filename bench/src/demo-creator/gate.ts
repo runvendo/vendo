@@ -29,8 +29,11 @@ export function pickGenerationBeat(beats: readonly GateBeat[]): GateBeat {
   return beat;
 }
 
-/** Polls the deployed URL until it serves HTTP (<500). Railway build+deploy
- * takes ~5-10 minutes after `up --detach`; default budget is 15. */
+/** Polls the deployed URL until it serves the app with HTTP 200. Railway
+ * build+deploy takes ~5-10 minutes after `up --detach`, during which the
+ * service domain answers 404 "Application not found" — anything but a clean
+ * 200 means not ready (a <500 check once let the gate run against a
+ * still-building service). Default budget is 15 minutes. */
 export async function waitForDeployedReady(url: string, options: {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -45,7 +48,7 @@ export async function waitForDeployedReady(url: string, options: {
   while (Date.now() < deadline) {
     try {
       const response = await fetchImpl(url, { redirect: "follow", signal: AbortSignal.timeout(20_000) });
-      if (response.status < 500) return;
+      if (response.ok) return;
       last = `HTTP ${response.status}`;
     } catch (error) {
       last = error instanceof Error ? error.message : String(error);

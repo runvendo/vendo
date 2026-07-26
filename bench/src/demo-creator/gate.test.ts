@@ -18,13 +18,14 @@ describe("pickGenerationBeat", () => {
 });
 
 describe("waitForDeployedReady", () => {
-  it("returns once the service answers below 500", async () => {
+  it("returns only once the app answers 200 — Railway's mid-build 404 is not ready", async () => {
     const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
       .mockResolvedValueOnce(new Response(null, { status: 503 }))
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
     await expect(waitForDeployedReady("https://demos.vendo.run/linear", { fetchImpl, pollMs: 1, timeoutMs: 5_000 }))
       .resolves.toBeUndefined();
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("times out with the URL and the last failure", async () => {
