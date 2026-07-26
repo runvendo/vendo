@@ -1,0 +1,31 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Demo Template API",
+    "description": "EXAMPLE host contract — one generic entity showing the pattern. The creator replaces these operations with the prospect's domain API; `vendo sync .` turns each operation into an agent-callable tool.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/items": {
+      "get": {
+        "operationId": "listItems",
+        "summary": "List the demo items with status and amount.",
+        "x-vendo-formats": { "amount": "cents" },
+        "responses": { "200": { "description": "Items" } }
+      }
+    },
+    "/api/items/{id}/archive": {
+      "post": {
+        "operationId": "archiveItem",
+        "summary": "Archive one item by id. This mutates the item: its status becomes archived.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Item id, e.g. item_001" }
+        ],
+        "responses": {
+          "200": { "description": "The archived item" },
+          "404": { "description": "Unknown item" }
+        }
+      }
+    }
+  }
+}
