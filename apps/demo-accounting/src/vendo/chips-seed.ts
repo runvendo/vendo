@@ -68,6 +68,9 @@ export async function pregenerate(
 export async function pregenerateChips(): Promise<void> {
   const primary = cadenceDemoUsers()[0]
   if (primary === undefined) return
+  // Cadence has no other boot-time seed, so the store schema may not exist
+  // yet on a fresh checkout — migrate before the first manifest read.
+  await vendo.store.ensureSchema()
   await pregenerate(
     vendo.apps,
     vendo.store.records(CHIP_MANIFEST_COLLECTION),

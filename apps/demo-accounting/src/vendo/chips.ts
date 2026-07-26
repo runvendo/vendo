@@ -37,7 +37,14 @@ export function chipManifestRowId(subject: string): string {
 }
 
 export async function readChipManifest(subject: string): Promise<ChipManifestEntry[]> {
-  const record = await vendo.store.records(CHIP_MANIFEST_COLLECTION).get(chipManifestRowId(subject))
+  // A store whose schema hasn't migrated yet (fresh checkout, pre-generation
+  // still booting) reads as "no chips", never as an error.
+  let record
+  try {
+    record = await vendo.store.records(CHIP_MANIFEST_COLLECTION).get(chipManifestRowId(subject))
+  } catch {
+    return []
+  }
   const data = record?.data as { subject?: string; entries?: ChipManifestEntry[] } | undefined
   if (record === null || data?.subject !== subject) return []
   return data.entries ?? []
