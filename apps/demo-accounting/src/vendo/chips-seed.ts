@@ -9,8 +9,9 @@
  * failures are logged and skipped. Primary demo user only (~5 apps per seed,
  * the accepted budget). Mirrors demo-bank's chips-seed module.
  */
-import type { AppDocument, RecordStore, RunContext } from "@vendoai/core"
+import type { AppDocument, PermissionGrant, RecordStore, RunContext } from "@vendoai/core"
 import { cadenceDemoUsers } from "@/server/users"
+import { cadenceAuth } from "./auth"
 import {
   CHIP_MANIFEST_COLLECTION,
   cadenceChips,
@@ -32,12 +33,14 @@ export async function pregenerate(
   manifests: RecordStore,
   subject: string,
   chips: TryThisChip[],
+  requestHeaders?: Record<string, string>,
 ): Promise<ChipManifestEntry[]> {
   const ctx: RunContext = {
     principal: { kind: "user", subject },
     venue: "chat",
     presence: "present",
     sessionId: "demo-chips-seed",
+    ...(requestHeaders === undefined ? {} : { requestHeaders }),
   }
   const rowId = chipManifestRowId(subject)
   const record = await manifests.get(rowId)
@@ -76,5 +79,31 @@ export async function pregenerateChips(): Promise<void> {
     vendo.store.records(CHIP_MANIFEST_COLLECTION),
     primary.subject,
     cadenceChips,
+    await seedSessionHeaders(primary.subject),
   )
+}
+
+/** A background seed has no request, but the generated apps' data captures
+ * need Cadence's session-walled firm API — mint the SAME away session the
+ * automations path mints (supabase preset actAs, HS256 against the project
+ * JWT secret). Failure degrades to headerless generation rather than
+ * blocking the seed. */
+async function seedSessionHeaders(subject: string): Promise<Record<string, string> | undefined> {
+  const grant: PermissionGrant = {
+    id: "grt_demo_chips_seed",
+    subject,
+    tool: "host_*",
+    descriptorHash: "sha256:demo-chips-seed",
+    scope: { kind: "tool" },
+    duration: "standing",
+    source: "automation",
+    grantedAt: new Date().toISOString(),
+  }
+  try {
+    const material = await cadenceAuth.actAs?.({ kind: "user", subject }, grant)
+    return material?.headers
+  } catch (error) {
+    console.warn("demo chips: minting the seed session failed; generating without host auth", error)
+    return undefined
+  }
 }

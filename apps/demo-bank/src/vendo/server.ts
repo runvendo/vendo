@@ -11,23 +11,27 @@ import { mapleRegistry } from "./registry";
 
 const composioApiKey = process.env.COMPOSIO_API_KEY;
 
+// One preset fills all three identity seams (09-vendo §2.1): the
+// request→Principal resolver, the away/MCP actAs seam, and the door's
+// OAuth adapter. `user` maps an Auth.js subject to the seeded Maple
+// identity; returning null means "not a Maple user" — the principal
+// resolves to anonymous and away/MCP minting for that subject declines.
+// Exported so chip pre-generation (chips-seed.ts) can mint the same away
+// session the automations path mints — a background seed has no request.
+export const mapleAuth = authJs({
+  secret: authSecret,
+  user: (subject) => {
+    const user = resolveMapleSubject(subject);
+    return user ? { display: user.display, email: user.email } : null;
+  },
+});
+
 export const vendo = createVendo({
   // Model + store slots stay UNSET (demo-refresh Part 2): the env ladder
   // resolves them — locally ANTHROPIC_API_KEY, deployed VENDO_API_KEY — and
   // the unset store composes the local default. Known deliberate regression
   // until the model-family lane lands: paint rides the main model.
-  // One preset fills all three identity seams (09-vendo §2.1): the
-  // request→Principal resolver, the away/MCP actAs seam, and the door's
-  // OAuth adapter. `user` maps an Auth.js subject to the seeded Maple
-  // identity; returning null means "not a Maple user" — the principal
-  // resolves to anonymous and away/MCP minting for that subject declines.
-  auth: authJs({
-    secret: authSecret,
-    user: (subject) => {
-      const user = resolveMapleSubject(subject);
-      return user ? { display: user.display, email: user.email } : null;
-    },
-  }),
+  auth: mapleAuth,
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
   catalog: mapleRegistry,
