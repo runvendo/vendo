@@ -1,7 +1,8 @@
 # KNOWLEDGE — the knowledge eval
 
-Status: ACTIVE since 2026-07-25 (lane K2 of the knowledge block design,
-`docs/archive`-signed spec 2026-07-24, §Evals). This is the quality gate for
+Status: ACTIVE since 2026-07-25 (lane K2 of the knowledge block design —
+signed spec `2026-07-24-knowledge-block-design.md`, §Evals). This is the
+quality gate for
 everything the knowledge block does: retrieval, grounded answers, honest
 refusals. If you are about to measure, improve, or make claims about knowledge
 quality, start here.
