@@ -2,8 +2,11 @@ import {
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_APPS_CREATE_TOOL,
   VENDO_APPS_TOOL_PREFIX,
+  VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_VIEW_STREAM,
   toVendoWirePart,
+  vendoCitationsPartSchema,
+  vendoKnowledgeCitationSchema,
   vendoViewStreamId,
   vendoViewPartSchema,
   type ApprovalId,
@@ -16,6 +19,7 @@ import {
   type ToolRegistry,
   type VendoApprovalPart,
   type VendoBuildFailedPart,
+  type VendoCitationsPart,
   type VendoConnectPart,
   type VendoViewPart,
   type VendoViewStreamingToolCall,
@@ -28,7 +32,7 @@ import {
   type UIMessageStreamWriter,
 } from "ai";
 
-type VendoPart = VendoApprovalPart | VendoBuildFailedPart | VendoConnectPart | VendoViewPart;
+type VendoPart = VendoApprovalPart | VendoBuildFailedPart | VendoCitationsPart | VendoConnectPart | VendoViewPart;
 
 /** 03-agent §2 */
 export interface ToolBridgeOptions {
@@ -78,6 +82,37 @@ function executionError(): ToolOutcome {
       message: "Tool execution failed.",
     },
   };
+}
+
+/** Knowledge K1 — lift a `vendo/knowledge-result@1` ok-output onto the
+ * citations part. Returns null when the output is not a knowledge envelope,
+ * when the outcome is model-facing only (`not-found`, and read-more results,
+ * which carry text but no citations), or when no valid citation survives an
+ * answered outcome. `title` falls back to the docId — the part surface
+ * requires one. Hits validate INDIVIDUALLY (fail-soft, AI-review finding):
+ * one malformed hit from a nonconforming BYO engine drops only itself, never
+ * the whole citation surface of an otherwise grounded answer. */
+function knowledgeCitationsPart(toolCallId: string, output: unknown): VendoCitationsPart | null {
+  if (typeof output !== "object" || output === null || Array.isArray(output)) return null;
+  const record = output as Record<string, unknown>;
+  if (record.kind !== VENDO_KNOWLEDGE_RESULT_KIND) return null;
+  const outcome = record.outcome;
+  if (outcome !== "answered" && outcome !== "insufficient-evidence" && outcome !== "unavailable") return null;
+  const hits = Array.isArray(record.hits) ? record.hits : [];
+  const citations = hits.flatMap((hit) => {
+    const entry = (typeof hit === "object" && hit !== null ? hit : {}) as Record<string, unknown>;
+    const candidate = { ...entry, title: typeof entry.title === "string" && entry.title !== "" ? entry.title : entry.docId };
+    const parsed = vendoKnowledgeCitationSchema.safeParse(candidate);
+    return parsed.success ? [parsed.data] : [];
+  });
+  if (outcome === "answered" && citations.length === 0) return null;
+  const parsed = vendoCitationsPartSchema.safeParse({
+    type: "data-vendo-citations",
+    toolCallId,
+    citations,
+    outcome,
+  });
+  return parsed.success ? parsed.data : null;
 }
 
 function capOutcome(outcome: ToolOutcome, cap: number | undefined): ToolOutcome {
@@ -185,6 +220,15 @@ export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options
           toolCallId,
           reason: outcome.error.message,
         });
+      }
+
+      // Knowledge K1 — the FULL citation data reaches the client on its own
+      // part, written BEFORE capOutcome can touch the ok-output (mirrors the
+      // connect part above: the part is the UI's channel; the capped tool
+      // output is the model's).
+      if (outcome.status === "ok") {
+        const citations = knowledgeCitationsPart(toolCallId, outcome.output);
+        if (citations !== null) writePart(options.writer, citations);
       }
 
       const modelOutcome = capOutcome(outcome, options.toolOutputCap);

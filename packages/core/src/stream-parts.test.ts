@@ -4,6 +4,7 @@ import {
   vendoApprovalPartSchema,
   vendoAutomationPartSchema,
   vendoBuildFailedPartSchema,
+  vendoCitationsPartSchema,
   vendoStepLimitPartSchema,
   vendoConnectPartSchema,
   vendoViewPartSchema,
@@ -214,6 +215,70 @@ describe("vendoAutomationPartSchema", () => {
       appId: "app_auto",
       name: "",
       enabled: true,
+    }).success).toBe(false);
+  });
+});
+
+/** Knowledge K1 (additive): the citation-chips part `vendo_knowledge_search`
+    results ride to the UI. */
+describe("vendoCitationsPartSchema", () => {
+  it("accepts a grounded answer and round-trips through the wire envelope", () => {
+    const part = {
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "answered",
+      citations: [{
+        docId: "doc-transfers",
+        chunkId: "doc-transfers#0",
+        title: "Wire transfer limits",
+        source: "docs/transfers.md",
+        kind: "docs",
+        visibility: "public",
+        snippet: "Maple caps outbound wire transfers at $25,000 per business day.",
+      }],
+    };
+    const parsed = vendoCitationsPartSchema.safeParse(part);
+    expect(parsed.success).toBe(true);
+    const wire = toVendoWirePart(parsed.success ? parsed.data : (part as never));
+    expect(wire.type).toBe("data-vendo-citations");
+    expect(vendoCitationsPartSchema.safeParse({ type: wire.type, ...wire.data }).success).toBe(true);
+  });
+
+  it("accepts refusal and unavailable outcomes with empty citations", () => {
+    for (const outcome of ["insufficient-evidence", "unavailable"]) {
+      expect(vendoCitationsPartSchema.safeParse({
+        type: "data-vendo-citations",
+        toolCallId: "call_k1",
+        outcome,
+        citations: [],
+      }).success).toBe(true);
+    }
+  });
+
+  it("rejects a not-found outcome, a missing title, a wrong kind, and a missing visibility", () => {
+    expect(vendoCitationsPartSchema.safeParse({
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "not-found",
+      citations: [],
+    }).success).toBe(false);
+    expect(vendoCitationsPartSchema.safeParse({
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "answered",
+      citations: [{ docId: "d1", kind: "docs", visibility: "public", snippet: "s" }],
+    }).success).toBe(false);
+    expect(vendoCitationsPartSchema.safeParse({
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "answered",
+      citations: [{ docId: "d1", title: "T", kind: "notes", visibility: "public", snippet: "s" }],
+    }).success).toBe(false);
+    expect(vendoCitationsPartSchema.safeParse({
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "answered",
+      citations: [{ docId: "d1", title: "T", kind: "docs", snippet: "s" }],
     }).success).toBe(false);
   });
 });

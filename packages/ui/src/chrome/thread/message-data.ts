@@ -1,4 +1,4 @@
-import type { ApprovalRequest, RiskLabel } from "@vendoai/core";
+import type { ApprovalRequest, RiskLabel, VendoCitationsPart, VendoKnowledgeCitation } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { previewArgs } from "../humanize.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
@@ -57,6 +57,43 @@ export function approvalByCall(messages: UIMessage[]): Map<string, {
     }
   }
   return approvals;
+}
+
+/** Knowledge K1 — what a turn's `data-vendo-citations` parts add up to.
+    Chips render only ANSWERED citations (a refusal's weak hits stay off the
+    chip row — mockup state 2 shows the searched-line alone); the flags carry
+    the refusal/outage states. */
+export interface TurnKnowledgeSources {
+  citations: VendoKnowledgeCitation[];
+  refused: boolean;
+  unavailable: boolean;
+}
+
+/** Knowledge K1 (pattern: approvalByCall) — fold a turn's citations parts
+    into the one summary TurnCitations renders, deduped by doc+chunk across
+    multiple knowledge calls in the same turn. */
+export function sourcesFor(message: UIMessage): TurnKnowledgeSources {
+  const citations: VendoKnowledgeCitation[] = [];
+  const seen = new Set<string>();
+  let refused = false;
+  let unavailable = false;
+  for (const part of message.parts) {
+    if (part.type !== "data-vendo-citations") continue;
+    const data = partData(part) as Partial<VendoCitationsPart>;
+    if (data.outcome === "unavailable") unavailable = true;
+    if (data.outcome === "insufficient-evidence") refused = true;
+    if (data.outcome !== "answered" || !Array.isArray(data.citations)) continue;
+    for (const citation of data.citations) {
+      if (typeof citation?.docId !== "string" || typeof citation.title !== "string") continue;
+      if (typeof citation.snippet !== "string" || typeof citation.kind !== "string") continue;
+      if (citation.visibility !== "public" && citation.visibility !== "internal") continue;
+      const key = `${citation.docId}::${citation.chunkId ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      citations.push(citation);
+    }
+  }
+  return { citations, refused, unavailable };
 }
 
 export function toolName(part: Extract<UIMessage["parts"][number], { toolCallId: string }>): string {
