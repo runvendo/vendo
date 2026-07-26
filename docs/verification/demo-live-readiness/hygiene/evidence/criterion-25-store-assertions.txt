@@ -1,9 +1,9 @@
 manifest entries: 5
-subs: appId=app_d54c533a-c86d-4a97-a27e-99ae4f43ce49 subject=vendo-demo name="Subscriptions tracker" ui=tree treeNodes=7 treeQueries=2 fixture=false
-dining: appId=app_8746ef2b-5f69-4810-8487-f534fe91de56 subject=vendo-demo name="Dining Budget Breakdown" ui=tree treeNodes=16 treeQueries=3 fixture=false
-bills: appId=app_726f75d2-4582-4d4b-a1ba-ed2548f5eaff subject=vendo-demo name="Bills due next week" ui=tree treeNodes=7 treeQueries=1 fixture=false
-goal: appId=app_9b17aced-b268-4aa8-87a1-c694fd035b66 subject=vendo-demo name="Lisbon Trip Savings Tracker" ui=tree treeNodes=17 treeQueries=3 fixture=false
-cards: appId=app_513c5e01-0571-4649-8b66-7d0413140bbe subject=vendo-demo name="Card spending breakdown" ui=tree treeNodes=9 treeQueries=3 fixture=false
+subs: appId=app_335b2be1-2205-40f8-8c49-be2a0e118ca5 subject=vendo-demo name="Subscriptions Tracker" ui=tree treeNodes=8 treeQueries=2 fixture=false
+dining: appId=app_690c1b63-dab1-4d04-9d43-ff9e8d1d895c subject=vendo-demo name="Dining Budget Breakdown" ui=tree treeNodes=10 treeQueries=2 fixture=false
+bills: appId=app_abdea7e2-9180-40f2-a267-7b4b0ab88852 subject=vendo-demo name="Bills due next week" ui=tree treeNodes=7 treeQueries=1 fixture=false
+goal: appId=app_fe635db1-5498-4527-99e0-2abc844fbe0f subject=vendo-demo name="Lisbon Trip Savings Tracker" ui=tree treeNodes=4 treeQueries=0 fixture=false
+cards: appId=app_28311d1d-19dd-4721-bf2b-6c029dc4542e subject=vendo-demo name="Card spending breakdown" ui=tree treeNodes=9 treeQueries=2 fixture=false
 PASS: all 5 chip apps are real pipeline-generated store rows
 
 manifest entries: 5
