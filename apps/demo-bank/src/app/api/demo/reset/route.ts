@@ -5,6 +5,7 @@ import { __reseed } from "@/server/store";
 import { ok } from "@/server/http";
 import { mapleDemoUsers } from "@/server/users";
 import { demoRequestAllowed } from "@/vendo/request";
+import { sweepDemoConnections } from "@/vendo/reset-connections";
 import { vendo } from "@/vendo/server";
 
 export const runtime = "nodejs";
@@ -30,6 +31,10 @@ export async function POST(req: Request) {
   for (const user of mapleDemoUsers()) {
     await erase.bySubject(user.subject);
   }
+  // Demo-hygiene: connected accounts live broker-side and survive both the
+  // erase cascade and redeploys — sweep them so reset returns connections to
+  // out-of-the-box too.
+  await sweepDemoConnections(vendo.connections, mapleDemoUsers());
   // Scripted demo: re-seed the fixture microapps + the weekly-summary
   // automation so the four scenario cards are replayable immediately.
   await seedDemoScript();
