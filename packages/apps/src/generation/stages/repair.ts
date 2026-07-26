@@ -22,6 +22,7 @@ import type {
 } from "../engine.js";
 import { actionBindingsInProps, actionFaults, hasPayload } from "../validation/actions.js";
 import { literalDataFaults } from "../validation/literals.js";
+import { DISCLAIMER_TEXT } from "../validation/validate.js";
 import { recompile } from "./verify.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -392,7 +393,9 @@ export const strictToolCall = async (
   }
 };
 
-export const DISCLAIMER_TEXT = "This part of the request isn't available on this host.";
+// Defined beside the empty-document gate (which must exempt it) and
+// re-exported here so existing importers keep their path.
+export { DISCLAIMER_TEXT };
 
 const disclaimNode = (tree: TreeV2, nodeId: string): void => {
   const node = tree.nodes.find((candidate) => candidate.id === nodeId);

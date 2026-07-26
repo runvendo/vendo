@@ -220,7 +220,7 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
       const gate = new Promise<void>((resolve) => { releaseBuild = resolve; });
       const { runtime, store } = setup(scriptedLanguageModel(async () => {
         await gate;
-        return `<App name="Late board"><Text text="Late board"/></App>`;
+        return `<App name="Late board"><Text text="Late board"/><Disclaimer reason="Fixture app."/></App>`;
       }));
       const ctx = context("user_ada");
       const pendingCreate = runtime.create({ prompt: "Late board" }, ctx);
