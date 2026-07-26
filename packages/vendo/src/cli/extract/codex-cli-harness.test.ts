@@ -79,6 +79,14 @@ describe("codexCliHarness", () => {
 
     await harness.run({ root: "/x", env: { VENDO_EXTRACTION_MODEL: "gpt-5-codex" }, instructions: "go" });
     expect(capturedArgs.slice(-3)).toEqual(["--model", "gpt-5-codex", "go"]);
+
+    // VENDO_MODEL_EXTRACT (models spec 2026-07-22) outranks the deprecated var.
+    await harness.run({
+      root: "/x",
+      env: { VENDO_MODEL_EXTRACT: "gpt-5", VENDO_EXTRACTION_MODEL: "gpt-5-codex" },
+      instructions: "go",
+    });
+    expect(capturedArgs.slice(-3)).toEqual(["--model", "gpt-5", "go"]);
   });
 
   it("returns the final message text on success", async () => {

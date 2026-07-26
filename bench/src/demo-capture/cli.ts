@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runBrowserCapture } from "./capture.js";
+import { runBrowserCapture, runConfigCapture } from "./capture.js";
 import { parseDemoCaptureArgs } from "./cli-args.js";
 import { assembleCorpusMontage } from "./montage.js";
 
@@ -12,6 +12,7 @@ function usage(): string {
   pnpm --filter @vendoai/bench demo:capture -- streaming-first-paint [--host maple|cadence|both] [--run-id ID]
   pnpm --filter @vendoai/bench demo:capture -- host-component [--host maple|cadence|both] [--prompt TEXT]
   pnpm --filter @vendoai/bench demo:capture -- remix-edit [--host maple|cadence|both] [--prompt TEXT] [--edit-prompt TEXT]
+  pnpm --filter @vendoai/bench demo:capture -- demo-beats --host-config APP_DIR [--run-id ID]
   pnpm --filter @vendoai/bench demo:capture -- corpus-montage --gallery-run DIR [--repos a,b,c,d,e] [--output FILE]
 
 Browser options: --port N --timeout-ms N --headed --no-boot [--url URL] --output-dir DIR
@@ -45,7 +46,9 @@ async function main(): Promise<void> {
     process.stdout.write(`${JSON.stringify({ beat: args.beat, output, repos: pairs.map((pair) => pair.repo) }, null, 2)}\n`);
     return;
   }
-  const result = await runBrowserCapture(args);
+  const result = args.beat === "demo-beats"
+    ? await runConfigCapture(args)
+    : await runBrowserCapture(args);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
