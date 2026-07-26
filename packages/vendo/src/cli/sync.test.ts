@@ -578,6 +578,49 @@ describe("sync AI enrichment integration (cse lane 1c)", () => {
     expect(messages.logs.join("\n")).toContain("host_a mutates a counter.");
   });
 
+  it("loads model credentials from the target dotenv files without overriding process env", async () => {
+    const { dir } = await hostWithTools();
+    await writeFile(join(dir, ".env"), "ANTHROPIC_API_KEY=from-env\nUNRELATED_SECRET_FOR_SYNC_TEST=never-forward\n");
+    await writeFile(join(dir, ".env.local"), 'ANTHROPIC_API_KEY="from-local"\nPATH=untrusted\n');
+    const seen: Array<Record<string, string | undefined>> = [];
+    const resolveCredential = async ({ env }: { env: Record<string, string | undefined> }) => {
+      seen.push(env);
+      return { rung: "none" as const };
+    };
+
+    await runSync({
+      targetDir: dir,
+      output: captureOutput().output,
+      fetchImpl: offline,
+      sync: async () => report(),
+      enrich: { resolveCredential },
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.ANTHROPIC_API_KEY).toBe("from-local");
+    expect(seen[0]?.UNRELATED_SECRET_FOR_SYNC_TEST).toBeUndefined();
+    expect(seen[0]?.PATH).not.toBe("untrusted");
+
+    vi.stubEnv("ANTHROPIC_API_KEY", "from-process");
+    await runSync({
+      targetDir: dir,
+      output: captureOutput().output,
+      fetchImpl: offline,
+      sync: async () => report(),
+      enrich: { resolveCredential },
+    });
+    expect(seen[1]?.ANTHROPIC_API_KEY).toBe("from-process");
+
+    vi.stubEnv("ANTHROPIC_API_KEY", "  ");
+    await runSync({
+      targetDir: dir,
+      output: captureOutput().output,
+      fetchImpl: offline,
+      sync: async () => report(),
+      enrich: { resolveCredential },
+    });
+    expect(seen[2]?.ANTHROPIC_API_KEY).toBe("from-local");
+  });
+
   it("--no-watermark passes watermark: false to the engine and skips enrichment entirely", async () => {
     const { dir, toolsPath } = await hostWithTools();
     const before = await readFile(toolsPath, "utf8");

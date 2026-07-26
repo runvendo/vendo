@@ -1,11 +1,19 @@
 import { join, resolve } from "node:path";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
+import { ENV_KEY_VARS } from "../dev-creds/resolve.js";
 import { pushSyncReport } from "./cloud/services.js";
 import { askYesNo } from "./extract/extraction.js";
 import { readPreviousToolsState, runSyncEnrichment, type SyncEnrichmentOptions } from "./enrich/pass.js";
 import { syncSemantics } from "./semantics.js";
-import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
+import {
+  consoleOutput,
+  mergeEnvOverDotEnv,
+  readDotEnvFallback,
+  withCommandRun,
+  type Output,
+  type TelemetryOptions,
+} from "./shared.js";
 
 export interface SyncReportPayload {
   report: SyncReportWithWarnings;
@@ -40,6 +48,22 @@ export interface SyncOptions {
   /** Enrichment seams (tests / init's chosen harness). */
   enrich?: Pick<SyncEnrichmentOptions,
     "harness" | "harnesses" | "resolveCredential" | "computeDiff" | "treeHash" | "confirm" | "onProgress">;
+}
+
+const ENRICHMENT_CREDENTIAL_ENV_VARS = [...ENV_KEY_VARS.map(({ envVar }) => envVar), "VENDO_API_KEY"];
+
+/** Only model credentials cross from target dotenv files into model tooling.
+ * The host's other dotenv values can include application secrets or process
+ * controls and must never be forwarded to an enrichment subprocess. */
+function mergeEnrichmentCredentialEnv(
+  dotenv: Record<string, string>,
+  processEnv: NodeJS.ProcessEnv,
+): Record<string, string | undefined> {
+  const credentials: Record<string, string> = {};
+  for (const name of ENRICHMENT_CREDENTIAL_ENV_VARS) {
+    if (dotenv[name] !== undefined) credentials[name] = dotenv[name];
+  }
+  return mergeEnvOverDotEnv(credentials, processEnv);
 }
 
 /** `sync --json` — the one machine-readable object printed on stdout. */
@@ -173,10 +197,11 @@ async function sync(options: SyncOptions): Promise<number> {
     // Fail-soft like everything else in sync — the exit code never changes.
     if (options.noWatermark !== true) {
       try {
+        const enrichmentEnv = mergeEnrichmentCredentialEnv(await readDotEnvFallback(root), process.env);
         await runSyncEnrichment({
           root,
           vendoDir,
-          env: process.env,
+          env: enrichmentEnv,
           note,
           warn: noteError,
           previous: previousTools,
