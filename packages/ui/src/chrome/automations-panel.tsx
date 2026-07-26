@@ -216,16 +216,18 @@ export function AutomationsPanel() {
   }, [approvals.pending]);
 
   /** Decide the app's WHOLE grant set with one wire call (atomic per
-      criterion: all granted or none). Deny also disarms the automation so the
-      row never sits enabled-but-ungranted; the announcement carries the set
-      id so a thread parked on this set resumes from here. */
-  const decideSet = async (appId: AppId, asks: ApprovalRequest[], grantSetId: string | undefined, approve: boolean) => {
+      criterion: all granted or none — the guard lands the batch all-or-none,
+      and a denied set disarms its automation inside the SAME decision, so no
+      second request exists to fail after the asks are gone). The announcement
+      carries the set id so a thread parked on this set resumes from here. A
+      thrown decide surfaces in the card (visible error + the actions stay,
+      so retrying is one click). */
+  const decideSet = async (asks: ApprovalRequest[], grantSetId: string | undefined, approve: boolean) => {
     await approvals.decide(
       asks.map(ask => ask.id),
       { approve },
       grantSetId === undefined ? undefined : { grantSetId },
     );
-    if (!approve) await automations.disable(appId);
     await automations.refresh();
   };
 
@@ -433,7 +435,7 @@ export function AutomationsPanel() {
                   }))}
                   state="parked"
                   onDecide={async approve => {
-                    await decideSet(appId, pendingAsks, entry.grantSetId, approve);
+                    await decideSet(pendingAsks, entry.grantSetId, approve);
                     if (approve) celebrateEnable(appId);
                   }}
                 />

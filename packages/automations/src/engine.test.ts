@@ -366,6 +366,58 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     });
   });
 
+  it("backward-compat: a legacy capture row without grantSetId still projects, and enable() adopts it into the set", async () => {
+    // A pre-grant-sets deployment minted this ask: capture row with NO
+    // grantSetId. New code must read it (schema optional), count it in the
+    // projection, and adopt it on the next enable() instead of re-minting.
+    const legacyRequest = {
+      id: "apr_legacy",
+      call: { id: "call_legacy", tool: insightsTool.name, args: {} },
+      descriptor: insightsTool,
+      inputPreview: "legacy standing ask",
+      ctx: { principal: ctx().principal, venue: "automation" as const, presence: "present" as const, appId: weekly.id },
+      createdAt: NOW.toISOString(),
+    };
+    await store.records("vendo_approvals").put({
+      id: legacyRequest.id,
+      data: { request: legacyRequest, status: "pending" },
+    });
+    await store.records("automations:captures").put({
+      id: legacyRequest.id,
+      data: { appId: weekly.id, subject: "user_a", tool: insightsTool.name, descriptorHash: descriptorHash(insightsTool) },
+    });
+    const engine = makeEngine();
+
+    const listed = await engine.list(ctx());
+    expect(listed[0]).toMatchObject({ pendingGrants: 1 });
+    expect(listed[0]?.grantSetId).toBeUndefined();
+
+    const result = await engine.enable(weekly.id, ctx());
+    expect(result.missing.map((ask) => ask.id)).toEqual(["apr_legacy", result.missing[1]!.id]);
+    expect(result.grantSetId).toEqual(expect.stringMatching(/^gset_/));
+    expect((await store.records("automations:captures").get("apr_legacy"))?.data).toMatchObject({
+      grantSetId: result.grantSetId,
+    });
+  });
+
+  it("a denied set ask disarms the automation in the same decision — deny is transactional server-side", async () => {
+    const engine = makeEngine();
+    const { missing } = await engine.enable(weekly.id, ctx());
+    expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: true });
+
+    guard.decide(missing[0]!.id, false);
+    guard.decide(missing[1]!.id, false);
+    await flush();
+
+    // No second disable request exists to fail: the row disarmed with the
+    // decision itself, no grants were minted, and the projection is clear.
+    expect((await store.records("vendo_apps").get(weekly.id))?.data).toMatchObject({ enabled: false });
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    const listed = await engine.list(ctx());
+    expect(listed[0]).toMatchObject({ enabled: false });
+    expect(listed[0]?.pendingGrants).toBeUndefined();
+  });
+
   it("clears the projection once every ask in the set is decided and omits grantSetId when nothing is missing", async () => {
     const engine = makeEngine();
     const { missing } = await engine.enable(weekly.id, ctx());

@@ -974,12 +974,23 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const handleDecision = async (approvalId: string, approved: boolean): Promise<void> => {
     const capture = await config.store.records(CAPTURES).get(approvalId);
     if (capture !== null) {
-      captureSchema.parse(capture.data);
+      const parsed = captureSchema.parse(capture.data);
       const approval = await config.store.records(APPROVALS).get(approvalId);
       if (approved && approval !== null) {
         const data = approvalRowSchema.parse(approval.data);
         await mintGrant(data.request);
         await markConsumed(approval);
+      }
+      if (!approved) {
+        // Deny is transactional at the DECISION (criterion 19, deny half): a
+        // denied standing-grant ask disarms its automation right here, inside
+        // the decide the guard awaits — no surface needs a second disable
+        // request that can fail after the asks are already gone.
+        const found = await appRecord(parsed.appId);
+        if (found !== null && found.row.subject === parsed.subject && found.row.enabled) {
+          found.row.enabled = false;
+          await writeApp(found.record, found.row);
+        }
       }
       await config.store.records(CAPTURES).delete(approvalId);
       return;

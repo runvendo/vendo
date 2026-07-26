@@ -259,6 +259,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // answers {kind:"failed"} with the reason (the record exists as a failure),
     // so the embed resolves promptly instead of spinning to its deadline.
     failedApps: new Map<string, { reason: string; retryable?: boolean }>(),
+    /** Backward-compat harness: serve /automations and enable WITHOUT the
+     *  grant-set fields (pendingGrants/grantSetId), the payload an older
+     *  server emits — new clients must parse and render it unchanged. */
+    legacyAutomationsPayload: false,
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
@@ -623,6 +627,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
               : { state: "declined" },
           );
         }
+        // Grant sets: a denied standing-grant ask disarms its automation in
+        // the SAME decision (the automations engine's decide subscriber) —
+        // mirror it so panels render the real post-deny state.
+        if (body.decision?.approve !== true) {
+          for (const ask of state.approvals.filter(item => ids.includes(item.id) && item.ctx.venue === "automation")) {
+            const entry = state.automations.find(item => item.app.id === ask.ctx.appId);
+            if (entry) entry.enabled = false;
+          }
+        }
         state.approvals = state.approvals.filter(item => !ids.includes(item.id));
         return empty(response);
       }
@@ -795,6 +808,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
       }
 
       if (method === "GET" && url.pathname === "/automations") {
+        if (state.legacyAutomationsPayload) return json(response, state.automations);
         // The engine's pending-captures projection: an entry with undecided
         // standing asks carries pendingGrants + the set id (reload survival).
         return json(response, state.automations.map(entry => {
@@ -812,6 +826,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
         if (action === "enable") {
           entry.enabled = true;
           const missing = mintGrantSet(state.approvals);
+          if (state.legacyAutomationsPayload) return json(response, { enabled: true, missing });
           return json(response, { enabled: true, missing, grantSetId: GRANT_SET_ID });
         }
         if (action === "disable") {

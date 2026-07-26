@@ -754,6 +754,26 @@ class GuardImplementation implements VendoGuard {
     return receipt !== null;
   }
 
+  /** Releases transition receipts a BATCH decide won before its claim phase
+   *  failed — deleting a receipt re-opens the one-time transition. Only ever
+   *  called before ANY member of the batch committed, so a re-opened
+   *  transition can never re-decide a written row. Best-effort per receipt: a
+   *  failed delete leaves that approval claimed-but-undecided, which keeps
+   *  failing closed (conflict) rather than ever going partial. */
+  async #releaseApprovalTransitions(
+    transition: "decided" | "consumed",
+    approvalIds: string[],
+  ): Promise<void> {
+    const records = this.#store.records(APPROVAL_CLAIMS_COLLECTION);
+    for (const approvalId of approvalIds) {
+      try {
+        await records.delete(`${transition}:${approvalId}`);
+      } catch {
+        // Fail closed: the stuck receipt only makes later decides conflict.
+      }
+    }
+  }
+
   async #consumeApprovedCall(
     call: ToolCall,
     descriptor: ToolDescriptor,
@@ -898,9 +918,21 @@ class GuardImplementation implements VendoGuard {
     decision: ApprovalDecision,
     principal: Principal,
   ): Promise<void> {
-    const normalizedIds = Array.isArray(ids) ? ids : [ids];
+    const normalizedIds = [...new Set(Array.isArray(ids) ? ids : [ids])];
     const store = this.#store.records(APPROVALS_COLLECTION);
+    // A multi-id decide is a SET decision (a grant set's one consent moment):
+    // it must land all-or-none — never a partially-granted set.
+    const batch = normalizedIds.length > 1;
+    const targetStatus = decision.approve ? "approved" : "denied";
 
+    // Phase 1 — validate the WHOLE batch before touching any state. A batch
+    // member already decided in the SAME direction is skipped (another
+    // surface got there first; the remainder still converges on the set's
+    // goal state — all granted / all denied). A member decided in the
+    // OPPOSITE direction makes that goal unreachable, so the whole batch
+    // conflicts with nothing written. Single-id decides keep the strict
+    // one-time-transition semantics (any prior decision conflicts).
+    const toDecide: Array<{ id: string; data: ReturnType<typeof approvalData> }> = [];
     for (const id of normalizedIds) {
       const record = await store.get(id);
       if (record === null) {
@@ -911,16 +943,35 @@ class GuardImplementation implements VendoGuard {
         throw new VendoError("not-found", `Approval ${id} was not found`);
       }
       if (data.status !== "pending") {
+        if (batch && data.status === targetStatus) continue;
         throw new VendoError("conflict", `Approval ${id} has already been decided`);
       }
-      // pending → decided happens once: the receipt's atomic insert picks a
-      // single winner, so a concurrent approve and deny can never both act —
-      // no contradictory audit records, and no live grant minted for an
-      // approval whose stored status says denied. The loser reports the same
-      // conflict a late decider sees.
-      if (!(await this.#claimApprovalTransition("decided", id, principal.subject))) {
-        throw new VendoError("conflict", `Approval ${id} has already been decided`);
+      toDecide.push({ id, data });
+    }
+
+    // Phase 2 — claim EVERY undecided member before committing ANY of them.
+    // pending → decided happens once: the receipt's atomic insert picks a
+    // single winner, so a concurrent approve and deny can never both act —
+    // no contradictory audit records, and no live grant minted for an
+    // approval whose stored status says denied. Sorted order makes racing
+    // set-deciders contend on the same first id (one wins the whole set, the
+    // other loses before holding anything); a lost claim releases the
+    // receipts this batch DID win, so a partial set can never commit.
+    toDecide.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const claimed: string[] = [];
+    for (const member of toDecide) {
+      if (await this.#claimApprovalTransition("decided", member.id, principal.subject)) {
+        claimed.push(member.id);
+        continue;
       }
+      await this.#releaseApprovalTransitions("decided", claimed);
+      throw new VendoError("conflict", `Approval ${member.id} has already been decided`);
+    }
+
+    // Phase 3 — commit. This batch holds every member's one-time transition,
+    // so nothing below can be contested; per-member writes, remembered
+    // grants, audit records, and subscriber callbacks keep their order.
+    for (const { id, data } of toDecide) {
       const decidedAt = now();
       const status = decision.approve ? "approved" : "denied";
       await store.put({

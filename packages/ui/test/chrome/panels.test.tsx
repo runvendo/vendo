@@ -107,7 +107,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     expect(screen.getByText("Enabled · waiting on 2 permissions")).toBeTruthy();
   });
 
-  it("Deny on the set card grants nothing and disarms the automation (criterion 19)", async () => {
+  it("Deny on the set card grants nothing and disarms the automation in the ONE decision (criterion 19)", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
     fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher" }));
     await screen.findByLabelText("Standing access — Invoice watcher");
@@ -120,13 +120,70 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
       path: "/approvals/decide",
       body: { ids: ["apr_set_1", "apr_set_2"], decision: { approve: false } },
     }));
-    expect(wire.requests).toContainEqual(expect.objectContaining({
-      method: "POST",
-      path: "/automations/app_auto/disable",
-    }));
+    // Deny is transactional server-side: the decide itself disarmed the row —
+    // no second disable request exists to fail after the asks are gone.
+    expect(wire.requests.filter(request => request.path === "/automations/app_auto/disable")).toHaveLength(0);
     await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("false"));
     // Nothing granted: no grant rows were minted by the deny.
     expect(wire.state.approvals.filter(item => item.ctx.appId === "app_auto")).toHaveLength(0);
+  });
+
+  it("a failed deny surfaces IN the card and stays retryable — never a vanished card with a live automation", async () => {
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher" }));
+    await screen.findByLabelText("Standing access — Invoice watcher");
+    wire.state.failures.push({
+      method: "POST",
+      path: "/approvals/decide",
+      code: "sandbox-unavailable",
+      message: "Store briefly unavailable",
+      status: 503,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+
+    // Visible failure: the card keeps its actions (retry is one click) and
+    // NOTHING was decided — asks still pending, automation state untouched.
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Store briefly unavailable");
+    const card = screen.getByLabelText("Standing access — Invoice watcher");
+    expect(card.contains(alert)).toBe(true);
+    expect((screen.getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(wire.state.approvals.filter(item => item.ctx.appId === "app_auto")).toHaveLength(2);
+
+    // Retry succeeds: one decision denies the set and disarms the row.
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    await waitFor(() => expect(screen.queryByLabelText("Standing access — Invoice watcher")).toBeNull());
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("false"));
+  });
+
+  it("backward-compat: a legacy payload WITHOUT pendingGrants/grantSetId still parses, renders, and decides", async () => {
+    // An older server: /automations entries and the enable result carry none
+    // of the grant-set fields. The panel must render unchanged — the set card
+    // still derives from the pending approvals, the count falls back to the
+    // asks themselves, and the decision goes out without a set id.
+    wire.state.legacyAutomationsPayload = true;
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    fireEvent.click(toggle);
+
+    const card = await screen.findByLabelText("Standing access — Invoice watcher");
+    expect(card.textContent).toContain("Invoice watcher needs 2 permissions");
+    fireEvent.click(screen.getByRole("button", { name: "Allow both & enable" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Standing access — Invoice watcher")).toBeNull());
+    const decide = wire.requests.find(request => request.method === "POST" && request.path === "/approvals/decide");
+    expect(decide?.body).toEqual({ ids: ["apr_set_1", "apr_set_2"], decision: { approve: true } });
+  });
+
+  it("backward-compat: an entry with no pending grants renders the plain Enabled row (no waiting copy)", async () => {
+    wire.state.runs.length = 0;
+    wire.state.automations[0]!.enabled = true;
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    expect(await screen.findByText("Enabled")).toBeTruthy();
+    expect(screen.queryByText(/waiting on/)).toBeNull();
+    expect(screen.queryByLabelText(/^Standing access/)).toBeNull();
   });
 
   it("renders a scheduler-refused run as failed with its blocked reason in run history (pricing v3 §5)", async () => {

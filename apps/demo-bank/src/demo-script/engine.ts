@@ -508,12 +508,9 @@ async function automationGrantResume(
   const appId = demoAppId(key, ctx.principal.subject);
   if (!approved) {
     write(writer, { type: "tool-output-denied", toolCallId });
-    try {
-      await vendo.automations.disable(appId, ctx);
-    } catch {
-      // The store is the demo's own; a failed cleanup only leaves the row
-      // enabled-but-ungranted, which the panel shows honestly.
-    }
+    // No disable call here: the automations engine already disarmed the app
+    // inside the deny decision itself (its decide subscriber) — the card
+    // re-emission below reads the settled, disabled row.
     await automationCardPart(writer, ctx, key);
     await streamText(
       writer,
