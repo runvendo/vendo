@@ -249,22 +249,18 @@ function lastLightDecl(vars: CssVarDecl[], names: string[]): CssVarDecl | undefi
   return undefined;
 }
 
-const GENERIC_FAMILY = /^(?:sans-serif|serif|monospace|cursive|fantasy)$/i;
-
 function normalizeFontStack(value: string): string {
   // Quotes are optional CSS syntax around family names, not identity: "Outfit"
   // and Outfit are the same family (unquoted multi-word names are valid too).
-  const parts = value.split(",")
+  // The stack itself is preserved in full — every source-declared fallback
+  // entry stays; only a stack with no generic at all gets `sans-serif`.
+  const stack = value.split(",")
     .map((part) => part.trim().replace(/^(["'])(.*)\1$/, "$2").trim())
-    .filter(Boolean);
-  // Canonical form ends at the FIRST generic family: entries after it are
-  // per-character glyph fallbacks (Tailwind's default emoji tail), not brand
-  // identity — for ordinary text the generic always resolves first. A stack
-  // with no generic gets `sans-serif` appended, as before.
-  const generic = parts.findIndex((part) => GENERIC_FAMILY.test(part));
-  return generic === -1
-    ? `${parts.join(", ")}, sans-serif`
-    : parts.slice(0, generic + 1).join(", ");
+    .filter(Boolean)
+    .join(", ");
+  return /(?:^|,\s*)(?:sans-serif|serif|monospace|cursive|fantasy)(?:\s*,|$)/i.test(stack)
+    ? stack
+    : `${stack}, sans-serif`;
 }
 
 /** Fully-resolved font stack: no var() refs, no CSS structural characters. */

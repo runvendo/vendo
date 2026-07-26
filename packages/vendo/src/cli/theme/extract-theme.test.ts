@@ -294,7 +294,7 @@ describe("applyThemeDraft (merges a parsed theme-stage artifact onto an exact-on
 });
 
 describe("extractTheme deterministic body-font-stack derivation (full source stacks, corpus evidence 2026-07-25)", () => {
-  it("skateshop shape (e954d543): tailwind config var head + default spread emits the full stack, truncated at the generic", async () => {
+  it("skateshop shape (e954d543): tailwind config var head + default spread emits the FULL source-declared stack", async () => {
     const root = await fixture({
       "package.json": "{}\n",
       "src/app/layout.tsx": [
@@ -324,7 +324,7 @@ describe("extractTheme deterministic body-font-stack derivation (full source sta
 
     const result = await extractTheme(root);
 
-    expect(result.slots.fontFamily).toBe("Geist Sans, ui-sans-serif, system-ui, sans-serif");
+    expect(result.slots.fontFamily).toBe("Geist Sans, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji");
     expect(result.matched["fontFamily"]).toBe("tailwind.config fontFamily.sans");
     expect(result.needed).not.toContain("fontFamily");
   });
@@ -344,7 +344,7 @@ describe("extractTheme deterministic body-font-stack derivation (full source sta
 
     const result = await extractTheme(root);
 
-    expect(result.slots.fontFamily).toBe("Geist Sans, ui-sans-serif, system-ui, sans-serif");
+    expect(result.slots.fontFamily).toBe("Geist Sans, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji");
     expect(result.needed).not.toContain("fontFamily");
   });
 
@@ -386,7 +386,7 @@ describe("extractTheme deterministic body-font-stack derivation (full source sta
     expect(result.matched["fontFamily"]).toBe("--font-sans (next/font vars)");
   });
 
-  it("counter-example: an exact short --font-sans stays short and untruncated", async () => {
+  it("counter-example: an exact short --font-sans stays short — nothing is appended or expanded", async () => {
     const root = await fixture({
       "package.json": "{}\n",
       "app/layout.tsx": 'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',

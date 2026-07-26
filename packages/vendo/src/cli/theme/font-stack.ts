@@ -80,13 +80,24 @@ export function layoutFontBindings(source: string): FontBinding[] {
  *  deliberately do NOT match — their contents are unknowable here. */
 const DEFAULT_SANS_SPREAD = /^\.\.\.\s*(?:[\w$]+\.)*fontFamily\.sans$/;
 
+/** A config's `fontFamily.sans` read has THREE outcomes, and the difference
+ *  is load-bearing: `{ declared: false }` (no sans key — other derivation
+ *  rules may apply), `{ declared: true, entries }` (parsed), and
+ *  `{ declared: true, entries: null }` (a sans key exists but contains
+ *  something unreadable, e.g. a custom spread — the config is authoritative
+ *  and the derivation must fail CLOSED to the model stage, never fall
+ *  through to a guess). */
+export type TailwindSansRead =
+  | { declared: false }
+  | { declared: true; entries: string[] | null };
+
 /** Entries of the config's `fontFamily.sans` array (Tailwind v3 shape).
  *  String literals stay verbatim, a spread of Tailwind's default sans
- *  expands to the documented stack, anything else aborts (null). */
-export function tailwindConfigSansStack(config: string): string[] | null {
+ *  expands to the documented stack, anything else is unreadable. */
+export function tailwindConfigSansStack(config: string): TailwindSansRead {
   const fontFamily = config.match(/fontFamily\s*:\s*\{([\s\S]*?)\}/);
   const sans = fontFamily?.[1]?.match(/\bsans\s*:\s*\[([^\]]*)\]/);
-  if (!sans) return null;
+  if (!sans) return { declared: false };
   const entries: string[] = [];
   for (const raw of sans[1]!.split(",")) {
     const entry = raw.trim();
@@ -100,9 +111,9 @@ export function tailwindConfigSansStack(config: string): string[] | null {
       entries.push(...TAILWIND_DEFAULT_SANS);
       continue;
     }
-    return null;
+    return { declared: true, entries: null };
   }
-  return entries.length > 0 ? entries : null;
+  return { declared: true, entries: entries.length > 0 ? entries : null };
 }
 
 export interface DerivedFontStack {
@@ -164,11 +175,15 @@ export function deriveBodyFontStack(input: {
     return { value: resolved.join(", "), provenance: "--font-sans (next/font vars)" };
   }
 
-  const configStack = input.tailwindConfig === null ? null : tailwindConfigSansStack(input.tailwindConfig);
-  if (configStack !== null) {
-    const resolved = configStack.map(resolveEntry);
-    // A declared-but-unresolvable head means the config is authoritative and
-    // we can't honor it — never fall through to a guess.
+  const configSans: TailwindSansRead = input.tailwindConfig === null
+    ? { declared: false }
+    : tailwindConfigSansStack(input.tailwindConfig);
+  if (configSans.declared) {
+    // The config is authoritative once it declares a sans stack: an
+    // unreadable declaration (custom spread) or an unresolvable head fails
+    // CLOSED to the model stage — never through to the binding guesses below.
+    if (configSans.entries === null) return null;
+    const resolved = configSans.entries.map(resolveEntry);
     if (!resolved.every((entry): entry is string => entry !== null)) return null;
     return { value: resolved.join(", "), provenance: "tailwind.config fontFamily.sans" };
   }

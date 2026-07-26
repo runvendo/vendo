@@ -88,44 +88,24 @@ Read the app's source tokens, global CSS, Tailwind config, and font setup at
 the pinned SHA. Record fully resolved primitive values, not CSS variables.
 Normalize HSL, OKLCH, Tailwind palette classes, and rem radii to the schema's
 primitive form (hex colors and pixel radii). For example `0.5rem` is `8`.
-`fontFamily` labels are the source-declared stack in canonical form: family
-names unquoted, comma-space separated, ending at the FIRST generic family
-(`sans-serif`, `serif`, `monospace`, `cursive`, `fantasy`) — entries after a
-generic are per-character glyph fallbacks (Tailwind's default emoji tail),
-not brand identity, and the extractor normalizes them away identically. A
+`fontFamily` labels record the FULL source-declared fallback stack, fully
+resolved: family names unquoted, comma-space separated, no entry dropped. A
 next/font or geist variable resolves to its family name (the import's export
-name, underscores as spaces). Example: `["var(--font-geist-sans)",
-...fontFamily.sans]` labels as
-`Geist Sans, ui-sans-serif, system-ui, sans-serif`.
+name, underscores as spaces); a spread of Tailwind's default sans resolves
+to Tailwind's documented default list in full. Example:
+`["var(--font-geist-sans)", ...fontFamily.sans]` labels as
+`Geist Sans, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji,
+Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji`.
 If a value is genuinely absent, label the default Vendo should choose and note
 the uncertainty in the repo's labeling notes when Task 11 adds real labels.
 
 Layer 2 scores each dimension as one point. Hex colors compare
 case-insensitively. Radius `8` and `"8px"` are treated as equivalent.
 
-### Known expected-misses (labels stay source-true; not extraction bugs)
-
-These dimensions are labeled from source truth the deterministic
-extractor deliberately cannot reach; a nightly miss here is expected and
-needs no triage (analysis: extraction-quality-1 lane, 2026-07-26):
-
-- **invoify `background` (#f1f5f9):** the token sheet declares
-  `--background: 0 0% 100%` (#ffffff, `app/globals.css:7`) but the app
-  paints `bg-slate-100` on the body of a nested locale layout
-  (`app/[locale]/layout.tsx:90`). The exact read is faithful to the
-  token; overriding exact reads with a nested-layout utility scan would
-  break the exact-read precedence law on one repo's evidence.
-- **umami `radius` (6):** the control radius lives in the vendor package
-  `@umami/react-zen`'s stylesheet, not the host tree; the gatherer
-  deliberately does not chase package CSS (host brand tokens live in the
-  host's own tree). The extractor reports the slot as defaulted —
-  a visible miss, not a silent wrong value.
-- **vercel-commerce `accent` (#000000) and `radius` (8):** the repo has
-  no token sheet; brand evidence lives in utility classes where the
-  primary CTAs are `bg-blue-600` and `rounded-full`. The labels record a
-  monochrome-brand judgment the utilities do not state; no deterministic
-  rule reproduces them without inventing counter-example failures
-  elsewhere.
+A repo may carry a `notes.md` next to its `expected.json` documenting
+label provenance and known expected-misses (dimensions labeled from
+source truth the extractor deliberately cannot reach). Read a repo's
+notes before triaging its nightly misses.
 
 ## Tools
 

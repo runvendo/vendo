@@ -28,7 +28,10 @@ describe("tailwindConfigSansStack", () => {
         },
       }
     `;
-    expect(tailwindConfigSansStack(config)).toEqual(["var(--font-geist-sans)", ...TAILWIND_DEFAULT_SANS]);
+    expect(tailwindConfigSansStack(config)).toEqual({
+      declared: true,
+      entries: ["var(--font-geist-sans)", ...TAILWIND_DEFAULT_SANS],
+    });
   });
 
   it("parses inbox-zero's real config: require + defaultTheme spread (b73bdecc apps/web/tailwind.config.js:48)", () => {
@@ -46,23 +49,29 @@ describe("tailwindConfigSansStack", () => {
         },
       };
     `;
-    expect(tailwindConfigSansStack(config)).toEqual(["var(--font-geist)", ...TAILWIND_DEFAULT_SANS]);
+    expect(tailwindConfigSansStack(config)).toEqual({
+      declared: true,
+      entries: ["var(--font-geist)", ...TAILWIND_DEFAULT_SANS],
+    });
   });
 
-  it("fails closed on teable's custom spread — its contents are unknowable here (105e0f94 tailwind.theme.js:8)", () => {
+  it("reports a declared-but-unreadable sans on teable's custom spread (105e0f94 tailwind.theme.js:8)", () => {
     expect(tailwindConfigSansStack(`
       module.exports = {
         fontFamily: {
           sans: ['Inter Variable', ...browserFonts.sans],
         },
       };
-    `)).toBeNull();
+    `)).toEqual({ declared: true, entries: null });
   });
 
-  it("keeps literal-only stacks verbatim and returns null when no sans key exists", () => {
-    expect(tailwindConfigSansStack('fontFamily: { sans: ["Inter", "sans-serif"] }')).toEqual(["Inter", "sans-serif"]);
-    expect(tailwindConfigSansStack('fontFamily: { mono: ["Menlo", "monospace"] }')).toBeNull();
-    expect(tailwindConfigSansStack("module.exports = {}")).toBeNull();
+  it("keeps literal-only stacks verbatim and reports undeclared when no sans key exists", () => {
+    expect(tailwindConfigSansStack('fontFamily: { sans: ["Inter", "sans-serif"] }')).toEqual({
+      declared: true,
+      entries: ["Inter", "sans-serif"],
+    });
+    expect(tailwindConfigSansStack('fontFamily: { mono: ["Menlo", "monospace"] }')).toEqual({ declared: false });
+    expect(tailwindConfigSansStack("module.exports = {}")).toEqual({ declared: false });
   });
 });
 
@@ -187,6 +196,18 @@ describe("deriveBodyFontStack", () => {
       layout: 'import { outfit } from "@/lib/fonts";\n<body className={outfit.className} />',
       tailwindConfig: null,
       cssText: "@tailwind base;",
+      resolveCssVar: noCssVars,
+    })).toBeNull();
+  });
+
+  it("a declared sans with an unknown custom spread fails CLOSED — never the default-stack guess (checker finding 3)", () => {
+    // teable shape + an applied font binding + a Tailwind marker: every
+    // fall-through condition is armed, and the answer must still be null —
+    // the config declares a stack we cannot read, so the model stage owns it.
+    expect(deriveBodyFontStack({
+      layout: 'import { GeistSans } from "geist/font/sans";\n<html className={GeistSans.variable} />',
+      tailwindConfig: "fontFamily: { sans: ['Inter Variable', ...browserFonts.sans] }",
+      cssText: '@import "tailwindcss";',
       resolveCssVar: noCssVars,
     })).toBeNull();
   });
