@@ -212,7 +212,11 @@ export async function waitForTurn(options: {
         hasView = turns > options.previousAssistantTurns
           && await lastAssistant.locator("[data-vendo-node-id]").count() > 0;
       }
-      if (turns > options.previousAssistantTurns && idle && hasView) return { approvals };
+      // `!busy` is load-bearing: the assistant article attaches the moment the
+      // turn STARTS streaming, and a composer that stays enabled mid-turn
+      // (template-derived demos) would otherwise settle the beat seconds in,
+      // before any view painted (struck the linear-issues pipeline run).
+      if (turns > options.previousAssistantTurns && idle && !busy && hasView) return { approvals };
     }
     await options.page.waitForTimeout(300);
   }
