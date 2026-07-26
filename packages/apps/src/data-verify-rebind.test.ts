@@ -338,6 +338,51 @@ describe("data-sighted verify — rebind arm (pipeline.rebind, default OFF)", ()
     expect(statOf(verified)?.props?.value).toEqual({ $path: "/totals/grandTotal" });
   });
 
+  it("admits shallow fields ahead of deep ones — a truthful aggregate declared last still makes the capped enum", async () => {
+    // Greptile P1 follow-up: the enum is bounded (a strict schema must stay
+    // small), and DFS enumeration put an earlier field's DEEP descendants
+    // ahead of a later shallow sibling — burying exactly the aggregate
+    // fields (/q/total) the gate's fail class needs. Candidates are ordered
+    // shallow-first per query before the round-robin.
+    const deepShapes = {
+      host_deep: {
+        kind: "object" as const,
+        fields: {
+          groups: {
+            kind: "object" as const,
+            fields: Object.fromEntries(Array.from({ length: 70 }, (_, index) => [
+              `metric_${index}`, { kind: "number" as const },
+            ])),
+          },
+          total: { kind: "number" as const },
+        },
+      },
+    };
+    const deepTools = [{ name: "host_deep", description: "Grouped metrics with a total", risk: "read" }];
+    const wire = '<App name="Deep"><Query id="deep" tool="host_deep"/><Stack><Stat label="Total" value={deep.groups.metric_0}/></Stack></App>';
+    const document = await modelEngine.create({ prompt: "build" }, deps(
+      scriptedLanguageModel(() => wire),
+      { tools: deepTools, toolShapes: deepShapes, pipeline: {} },
+    ));
+    let rebindEnum: string[] | undefined;
+    const model = scriptedLanguageModel((call) => {
+      if (isRebindCall(call)) {
+        const schema = call.tools?.[0]?.inputSchema as { properties?: { fix_0?: { enum?: string[] } } };
+        rebindEnum = schema?.properties?.fix_0?.enum;
+        return { tool: "rebind_bindings", input: { fix_0: "/deep/total" } };
+      }
+      return "<Edit></Edit>";
+    });
+
+    const verified = await verifyDocumentAgainstData(
+      document, "the total", { deep: { groups: {}, total: 350000 } },
+      deps(model, { tools: deepTools, toolShapes: deepShapes }),
+    );
+
+    expect(rebindEnum).toContain("/deep/total");
+    expect(statOf(verified)?.props?.value).toEqual({ $path: "/deep/total" });
+  });
+
   it("skips the rebind call when nothing is rebindable (no shapes → no closed space)", async () => {
     const document = await buildDocument(lyingStatWire);
     const calls: ScriptedModelCall[] = [];

@@ -352,6 +352,34 @@ const MAX_REBIND_SLOTS = 8;
 const kindsCompatible = (a: ShapeType["kind"], b: ShapeType["kind"]): boolean =>
   a === b || a === "json" || b === "json";
 
+/** Breadth-first {@link enumerateShapePaths}: every shallow path is emitted
+ *  before ANY deeper one, so the bounded budget can never bury a top-level
+ *  field under an earlier sibling's deep descendants. The rebind space wants
+ *  this order specifically — the shallow fields ARE the aggregates
+ *  (/query/total) the gate's wrong-binding class needs to reach. */
+const enumerateShapePathsBreadthFirst = (shape: ShapeType, prefix: string): string[] => {
+  const out: string[] = [];
+  const queue: Array<{ shape: ShapeType; path: string; depth: number }> = [{ shape, path: prefix, depth: 0 }];
+  while (queue.length > 0 && out.length < MAX_PATH_OPTIONS) {
+    const next = queue.shift();
+    if (next === undefined) break;
+    out.push(next.path);
+    if (next.depth >= MAX_PATH_DEPTH) continue;
+    if (next.shape.kind === "object") {
+      for (const [field, child] of Object.entries(next.shape.fields)) {
+        queue.push({
+          shape: child,
+          path: `${next.path}/${field.replaceAll("~", "~0").replaceAll("/", "~1")}`,
+          depth: next.depth + 1,
+        });
+      }
+    } else if (next.shape.kind === "array") {
+      queue.push({ shape: next.shape.items, path: `${next.path}/0`, depth: next.depth + 1 });
+    }
+  }
+  return out;
+};
+
 /** Every rebindable binding in the tree with its closed set of legal targets:
  *  whole-prop `$path` bindings whose query has a known tool shape, offered
  *  the bounded real paths (across ALL known queries — the true value may live
@@ -376,17 +404,18 @@ export const deriveRebindSlots = (
       const subPath = tokens.length > 2 ? `/${tokens.slice(2).join("/")}` : "";
       const currentKind = shapeAtPointer(shape, subPath)?.kind;
       if (currentKind === undefined) continue;
-      // Per-query candidate lists first, then round-robin into the bounded
-      // enum — filling query-by-query let one path-rich query starve every
-      // later query's fields out of the enum, leaving the verifier unable to
-      // choose the truthful target when it lived under a different query
-      // (review 2026-07-26, Greptile P1).
+      // Per-query candidate lists first — each breadth-first, so the bounded
+      // budget can never bury a shallow sibling (the aggregates the gate's
+      // fail class rebinds to) under an earlier field's deep descendants —
+      // then round-robined into the bounded enum, so no path-rich query
+      // starves another query's fields out of the fix space (review
+      // 2026-07-26, Greptile P1 ×2).
       const perQuery: string[][] = [];
       for (const candidateQuery of queries) {
         const candidateShape = deps.toolShapes?.[candidateQuery.tool];
         if (candidateShape === undefined) continue;
         const prefix = `/${candidateQuery.name}`;
-        perQuery.push(enumerateShapePaths(candidateShape, prefix).filter((candidate) => {
+        perQuery.push(enumerateShapePathsBreadthFirst(candidateShape, prefix).filter((candidate) => {
           const kind = shapeAtPointer(candidateShape, candidate.slice(prefix.length))?.kind;
           return kind !== undefined && kindsCompatible(kind, currentKind);
         }));
