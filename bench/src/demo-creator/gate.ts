@@ -134,12 +134,17 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
 
-    // (2) Open through the router (follows the demos.vendo.run 302).
+    // (2) Open through the router (follows the demos.vendo.run 302). The
+    // resolved origin is pinned here — later navigations use it explicitly
+    // (a post-login redirect once ended on chrome-error:// and page.url()
+    // poisoned every URL derived from it).
     await page.goto(args.demoUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
     const productShot = path.join(args.outDir, "gate-1-product.png");
     await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
     await page.screenshot({ path: productShot });
-    await record("open", true, `landed on ${page.url()}`, productShot);
+    const landedUrl = page.url();
+    await record("open", landedUrl.startsWith("http"), `landed on ${landedUrl}`, productShot);
+    const demoOrigin = new URL(landedUrl).origin;
 
     // (3) Login — REAL and REQUIRED (criterion 37: "login works"). Every
     // clone ships the injected wall; a deployed demo without one fails the
@@ -154,13 +159,19 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
       .catch(async () => {
         await record("login", false, "the demo password was rejected (still on /login after submit)");
       });
-    await page.waitForLoadState("domcontentloaded");
+    // Land on the product page explicitly (the 303-follow can abort on a cold
+    // route); reaching "/" without bouncing back to /login proves the cookie.
+    await page.goto(new URL("/", demoOrigin).toString(), { waitUntil: "domcontentloaded", timeout: 60_000 });
+    if (new URL(page.url()).pathname.startsWith("/login")) {
+      await record("login", false, "the auth cookie did not stick — / bounced back to /login");
+    }
+    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
     const loginShot = path.join(args.outDir, "gate-2-logged-in.png");
     await page.screenshot({ path: loginShot });
-    await record("login", true, `logged in with the demo password; landed on ${new URL(page.url()).pathname}`, loginShot);
+    await record("login", true, `logged in with the demo password; authenticated on ${new URL(page.url()).pathname}`, loginShot);
 
     // (4) The /vendo panel: badge chrome + every beat's suggestion card.
-    const panelUrl = new URL("/vendo", page.url()).toString();
+    const panelUrl = new URL("/vendo", demoOrigin).toString();
     await page.goto(panelUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
     const panelShot = path.join(args.outDir, "gate-3-panel.png");
