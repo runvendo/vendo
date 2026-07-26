@@ -64,7 +64,7 @@ describe("lane pick 4B — landing starter cards", () => {
   });
 });
 
-describe("lane pick 2C — composer focus-bloom hint row", () => {
+describe("composer chrome stays hint-free (2C hint row removed 2026-07-23)", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
 
@@ -78,14 +78,9 @@ describe("lane pick 2C — composer focus-bloom hint row", () => {
     await wire.close();
   });
 
-  it("mounts the hint row inside the composer (visibility is CSS :focus-within)", async () => {
+  it("renders no keyboard-hint row inside the composer (removed 2026-07-23)", async () => {
     render(<VendoProvider client={client}><VendoThread discoverability="quiet" /></VendoProvider>);
     await screen.findByRole("form", { name: "Message composer" });
-    const hintrow = document.querySelector(".fl-hintrow");
-    expect(hintrow).toBeTruthy();
-    expect(hintrow?.textContent).toContain("new line");
-    expect(hintrow?.textContent).toContain("drop files anywhere");
-    // Presentation-only: hidden from the tree (reveal is a pure CSS bloom).
-    expect(hintrow?.getAttribute("aria-hidden")).toBe("true");
+    expect(document.querySelector(".fl-hintrow")).toBeNull();
   });
 });

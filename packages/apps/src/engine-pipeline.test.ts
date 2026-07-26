@@ -375,6 +375,38 @@ describe("outline + region-parallel tier-2 (flagged)", () => {
     expect(components).toContain("Table");
   });
 
+
+  it("assembles sections written with INLINE tool references (the production dialect)", async () => {
+    // Live 2026-07-23 — the assembly recompile lacked the inline-ref compile
+    // options, so every app whose sections used inline tool references (the
+    // primary taught dialect) failed region-parallel with "unknown-reference"
+    // and burned the single-stream fallback.
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      if (isOutlineCall(call)) return outline;
+      if (text.includes("OUTLINE_SECTION s1")) {
+        return '<App name="Finance board"><MetricCard label="Revenue" value={host_metric({}).total}/></App>';
+      }
+      if (text.includes("OUTLINE_SECTION s2")) {
+        return '<App name="Finance board"><Table rows={host_invoices({}).rows}/></App>';
+      }
+      throw new Error(`unexpected single-stream call: ${text.slice(0, 120)}`);
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "A finance board" },
+      deps(model, {
+        tools: parallelTools,
+        toolShapes: parallelShapes,
+        pipeline: { regionParallel: true },
+      }),
+    );
+
+    expect(document.name).toBe("Finance board");
+    const tree = document.tree as { queries?: Array<{ tool: string }>; nodes: Nodes };
+    expect(tree.queries?.map(({ tool }) => tool).sort()).toEqual(["host_invoices", "host_metric"]);
+  });
+
   it("falls back to the single stream when the outline call fails", async () => {
     const valid = '<App name="Single"><MetricCard label="Revenue" value="$42k"/></App>';
     const lanes: string[] = [];
@@ -469,6 +501,140 @@ describe("outline + region-parallel tier-2 (flagged)", () => {
     await modelEngine.create({ prompt: "Build it" }, deps(model, { tools: parallelTools }));
 
     expect(lanes).toEqual(["full"]);
+  });
+});
+
+
+describe("island-scoped repair (demo-latency lane)", () => {
+  // The live Maple class (2026-07-23): a generation whose ONLY validation
+  // failures are island-scoped (a fabricating constant inside one island)
+  // burned three full ~60s re-generations and still failed. The repair
+  // rewrites just the offending island sources in one small call.
+  const tools = [{ name: "host_metric", description: "Revenue metric", risk: "read" }];
+  const fabricating = [
+    '<App name="HQ"><Query id="metric" tool="host_metric"/><MetricCard label="Revenue" value={metric.total}/><Sparky/><Island name="Sparky">',
+    "export default function Sparky() {",
+    "  const [rows, setRows] = useState([]);",
+    "  useEffect(() => { tools.host_metric({}).then((r) => setRows(r.rows)); }, []);",
+    "  return <p>{rows.length * 0.92}</p>;",
+    "}",
+    "</Island></App>",
+  ].join("\n");
+  const fixedIsland = [
+    '<Island name="Sparky">',
+    "export default function Sparky() {",
+    "  const [rows, setRows] = useState([]);",
+    "  useEffect(() => { tools.host_metric({}).then((r) => setRows(r.rows)); }, []);",
+    "  return <p>{rows.length}</p>;",
+    "}",
+    "</Island>",
+  ].join("\n");
+  const isIslandRepairCall = (call: ScriptedModelCall): boolean =>
+    promptText(call).includes("ISLANDS_TO_FIX");
+
+  it("rescues an island-only failure with ONE island rewrite instead of a full re-generation", async () => {
+    const lanes: string[] = [];
+    const events: Array<Record<string, unknown>> = [];
+    const model = scriptedLanguageModel((call) => {
+      if (isIslandRepairCall(call)) {
+        lanes.push("island-repair");
+        expect(promptText(call)).toContain("ISLANDS_TO_FIX: Sparky");
+        expect(promptText(call)).toContain("hand-typed constant");
+        return fixedIsland; // bare <Island> elements, no <App> wrapper
+      }
+      lanes.push("full");
+      return fabricating;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue HQ" },
+      deps(model, {
+        tools,
+        toolShapes: metricShapes,
+        onPipeline: (event: Record<string, unknown>) => events.push(event),
+      }),
+    );
+
+    expect(lanes).toEqual(["full", "island-repair"]);
+    expect(document.components?.Sparky).toContain("rows.length");
+    expect(document.components?.Sparky).not.toContain("0.92");
+    expect(events).toContainEqual(expect.objectContaining({ stage: "island-repair", islands: 1, repaired: true }));
+  });
+
+  it("rescues a region-parallel assembly whose only failures are island-scoped (no single-stream fallback)", async () => {
+    const outline = {
+      tool: "plan_outline",
+      input: {
+        appName: "HQ",
+        sharedFacts: "",
+        sections: [
+          { id: "s1", brief: "Revenue summary", tools: ["host_metric"], coupledWithPrevious: false },
+          { id: "s2", brief: "Trend", tools: ["host_metric"], coupledWithPrevious: false },
+        ],
+      },
+    };
+    const lanes: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      if (isOutlineCall(call)) { lanes.push("outline"); return outline; }
+      if (isIslandRepairCall(call)) { lanes.push("island-repair"); return fixedIsland; }
+      if (text.includes("OUTLINE_SECTION s1")) {
+        lanes.push("s1");
+        return '<App name="HQ"><Query id="s1_metric" tool="host_metric"/><MetricCard label="Revenue" value={s1_metric.total}/></App>';
+      }
+      if (text.includes("OUTLINE_SECTION s2")) {
+        lanes.push("s2");
+        return [
+          '<App name="HQ"><Sparky/><Island name="Sparky">',
+          "export default function Sparky() {",
+          "  const [rows, setRows] = useState([]);",
+          "  useEffect(() => { tools.host_metric({}).then((r) => setRows(r.rows)); }, []);",
+          "  return <p>{rows.length * 0.92}</p>;",
+          "}",
+          "</Island></App>",
+        ].join("\n");
+      }
+      lanes.push("full");
+      return '<App name="ShouldNotRun"><Text text="fallback"/></App>';
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "A revenue HQ" },
+      deps(model, {
+        tools,
+        toolShapes: metricShapes,
+        pipeline: { regionParallel: true },
+      }),
+    );
+
+    expect(lanes).not.toContain("full");
+    expect(lanes).toContain("island-repair");
+    expect(document.name).toBe("HQ");
+    expect(document.components?.Sparky).not.toContain("0.92");
+  });
+
+  it("leaves mixed (island + tree) failure sets to the existing repair/retry flow", async () => {
+    // A dead submit button (tree issue) beside a broken island: the closed
+    // island class does not apply, so the island repair must not fire.
+    const mixed = [
+      '<App name="Mixed"><Button label="Send reminder"/><Sparky/><Island name="Sparky">const x = 1;</Island></App>',
+    ].join("\n");
+    const valid = '<App name="Clean"><MetricCard label="Revenue" value="$42k"/></App>';
+    const lanes: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      if (isIslandRepairCall(call)) { lanes.push("island-repair"); return valid; }
+      if (isRepairCall(call)) { lanes.push("strict-repair"); return { tool: "apply_fixes", input: { fix_0: NO_VALID_FIX } }; }
+      lanes.push("full");
+      return lanes.filter((lane) => lane === "full").length === 1 ? mixed : valid;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build it" },
+      deps(model, { tools, toolShapes: metricShapes }),
+    );
+
+    expect(lanes).not.toContain("island-repair");
+    expect(document.name).toBe("Clean");
   });
 });
 

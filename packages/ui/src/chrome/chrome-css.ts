@@ -350,6 +350,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    as its own block instead of butting against the beat above and the line
    below. Beats hug (their own 3px padding); the app card gets real air. */
 .fl-turn-assistant > .fl-appcard { margin: 10px 0; }
+/* The in-thread automation card (data-vendo-automation) gets the same air. */
+.fl-turn-assistant > .fl-automation { margin: 10px 0; }
 /* Lone caret while a streamed turn is still empty (stable line box, no jitter). */
 .fl-caret { display: inline-block; width: 7px; min-height: 1.05em; height: 1.05em; background: var(--vendo-accent);
   vertical-align: -2px; margin-left: 2px; border-radius: 1px; animation: fl-blink 1s steps(1) infinite; }
@@ -533,7 +535,20 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-approval-field dd { margin: 0; color: var(--vendo-fg); overflow-wrap: anywhere; white-space: pre-line; }
 .fl-approval-more { font-size: 11.5px; color: var(--vendo-fg-muted); }
 .fl-approval-desc { margin: 10px 0 0; font: 400 12.5px/1.5 var(--vendo-font); color: var(--vendo-fg-soft, var(--vendo-fg-muted)); }
-.fl-approval-actions { display: flex; gap: 8px; margin-top: 12px; }
+.fl-approval-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+/* Connect-card lifecycle (2026-07 demo feedback): the button spins while the
+   OAuth window is open, then becomes a quiet permanent Connected badge. */
+.fl-connect-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; display: inline-block;
+  vertical-align: -2px; margin-right: 7px;
+  border: 2px solid color-mix(in srgb, currentColor 35%, transparent); border-top-color: currentColor;
+  animation: fl-spin .7s linear infinite; }
+.fl-connect-done { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px 5px 8px;
+  border: 1px solid var(--vendo-border); border-radius: 999px;
+  background: color-mix(in srgb, var(--vendo-accent) 7%, var(--vendo-surface));
+  color: var(--vendo-fg); font: 600 12px/1 var(--vendo-font); }
+.fl-connect-done-ic { display: inline-grid; place-items: center; width: 15px; height: 15px;
+  border-radius: 999px; background: var(--vendo-accent); color: var(--vendo-accent-fg); }
+.fl-connect-done-ic svg { width: 9px; height: 9px; }
 .fl-automation-approval { padding: 14px; }
 .fl-auto-approval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .fl-auto-approval-heading { min-width: 0; }
@@ -862,8 +877,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-send:disabled:hover { opacity: .4; background: var(--vendo-accent); }
 
 /* ---------- landing ---------- */
+/* The landing is ONLY the greeting + starter cards: the composer renders as a
+   sibling below (the same bottom slot it occupies in an active conversation),
+   so sending the first message never moves it. Content centers in the free
+   space and scrolls when the panel is shorter than the card stack. */
 .fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 16px; flex: 1; padding: 30px; text-align: center; }
+  gap: 16px; flex: 1; min-height: 0; overflow-y: auto; padding: 30px 30px 10px; text-align: center; }
 .fl-greet { margin: 0; font-family: var(--vendo-heading-font); font-size: calc(var(--vendo-base-size) * 1.533); font-weight: 600; letter-spacing: -.022em; }
 /* Greeting-as-tutorial (ui-usage-dx §6): the one-time first message reads as
    the agent speaking — left-aligned assistant typography with its prompt chips
@@ -882,10 +901,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-chip:active { transform: translateY(0); box-shadow: none; }
 /* Brand focus ring — the UA default blue halo is off-brand in every host. */
 .fl-chip:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
-.fl-landing-composer { width: 100%; max-width: 560px; }
-/* No padding override here: the hero composer keeps the standard bar
-   geometry, so the send circle stays inset and concentric with the bar's
-   rounded end instead of colliding with the border arc. */
+/* (No landing-specific composer wrapper: the landing renders the SAME
+   bottom-pinned composer bar as an active conversation, so the first send
+   causes no composer jump.) */
 
 /* ---------- connection selector (denser, brand-forward) ---------- */
 .fl-picker { border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius-lg);
@@ -1004,25 +1022,132 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    Offsets = close's right + close's width + a 6px gap, per pointer density. */
 .fl-overlay-new { right: 46px; }
 /* Compact when empty (ui-lane-entry pick P-C): while the thread shows its
-   landing (no conversation yet), the panel is a small box — greeting, command
-   chips, composer, no dead glass — and animates to full height the moment the
-   first turn lands (the landing swaps to the message list, :has stops
-   matching). Browsers without :has() simply keep the full-size panel. */
-.fl-overlay-panel { transition: height .45s cubic-bezier(.22, 1, .36, 1); }
-.fl-overlay-panel:has(.fl-landing) { height: min(360px, 80vh); }
+   landing (no conversation yet), the panel is a smaller box — greeting,
+   starter cards, the bottom-pinned composer, no dead glass — and animates to
+   full height the moment the first turn lands (the landing swaps to the
+   message list, :has stops matching). Browsers without :has() simply keep the
+   full-size panel. Sized so a greeting plus TWO rows of starter cards (four
+   cards) fit without clipping — hosts ship four scenario cards out of the
+   box (2026-07 fix: was 360px, which clipped the wrapped second row). */
+.fl-overlay-panel { transition: height .45s cubic-bezier(.22, 1, .36, 1), width .45s cubic-bezier(.22, 1, .36, 1); }
+.fl-overlay-panel:has(.fl-landing) { height: min(500px, 80vh); }
 .fl-overlay-panel:has(.fl-landing) .fl-landing { padding-top: 34px; }
 @keyframes fl-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fl-overlay-stretch {
   from { transform: translate(-50%, -50%) scaleX(.06) scaleY(.7); opacity: .4; }
   60%  { opacity: 1; }
   to   { transform: translate(-50%, -50%) scaleX(1) scaleY(1); opacity: 1; } }
+/* ---------- split-view workspace (2026-07 demo feedback) ---------- */
+/* The overlay's expandable workspace: the panel grows near-fullscreen, the
+   featured microapp renders LARGE on a left stage (the leftover ~2/3) and the
+   conversation docks as the right rail. One animated property does the pane
+   work — the rail's flex-basis walks 100% ⇄ max(360px, 33.5%), so the stage
+   (flex 1 1 0) grows exactly as the rail shrinks; the panel's own width/height
+   ride the existing .45s spring. The thread's DOM slot is identical in both
+   states (no remount — the ENG-221 invariant). */
+.fl-split { flex: 1; min-height: 0; display: flex; align-items: stretch; }
+.fl-split-stage { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column;
+  background: var(--vendo-bg); opacity: 0;
+  border-right: 0 solid var(--vendo-border);
+  transition: opacity .28s ease .1s, border-right-width 0s .45s; }
+.fl-split-rail { flex: 0 0 100%; min-width: 0; display: flex; flex-direction: column;
+  transition: flex-basis .45s cubic-bezier(.22, 1, .36, 1); }
+.fl-overlay-panel[data-vendo-expanded] { width: min(1500px, 96vw); height: min(940px, 94vh); }
+.fl-overlay-panel[data-vendo-expanded] .fl-split-rail { flex-basis: max(360px, 33.5%); }
+.fl-overlay-panel[data-vendo-expanded] .fl-split-stage { opacity: 1; border-right-width: 1px;
+  transition: opacity .28s ease .1s, border-right-width 0s; }
+/* The stage: a quiet porcelain workspace — hairline-framed content, generous
+   air, the same app-boundary vocabulary as the in-thread card. */
+.fl-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: fl-fade-in .22s ease both; }
+.fl-stage-bar { display: flex; align-items: center; gap: 8px; flex: none;
+  padding: 13px 20px; border-bottom: 1px solid var(--vendo-border);
+  font: 600 12.5px/1 var(--vendo-font); color: var(--vendo-fg-muted); letter-spacing: .01em;
+  background: var(--vendo-surface); }
+.fl-stage-name { color: var(--vendo-fg); font-size: 13px; }
+.fl-stage-body { flex: 1; min-height: 0; overflow: auto; padding: 26px clamp(20px, 4vw, 48px) 32px; }
+.fl-stage-empty { margin: auto; text-align: center; color: var(--vendo-fg-muted);
+  font-size: 13px; line-height: 1.55; max-width: 340px; padding: 24px; display: grid; gap: 4px; }
+.fl-stage-empty p { margin: 0; }
+/* Header affordance: expand sits left of new-conversation (close 12 → new 46
+   → expand 80; the mobile block below never shows it — the takeover owns
+   small screens). A fresh embed landing while collapsed pulses it once. */
+.fl-overlay-expand { right: 80px; }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-overlay-expand[data-vendo-suggest] { animation: fl-suggest-pulse 1.4s ease 2; color: var(--vendo-accent); }
+}
+@keyframes fl-suggest-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vendo-accent) 40%, transparent); }
+  45% { box-shadow: 0 0 0 8px transparent; background: var(--vendo-accent-soft); } }
+/* Compact in-chat embeds (2026-07 demo feedback): inside an overlay the
+   in-thread card is a scaled-down PREVIEW — the app renders full-size on a
+   fixed-width canvas and transform-scales to the card width, clamped short
+   (~300px), inert (the stage is the interactive venue), with the Expand pill
+   prominent. Inline styles carry the measured height/scale; this is the skin. */
+.fl-appcard-preview { position: relative; overflow: hidden; padding: 0; display: block; }
+.fl-appcard-canvas { transform-origin: top left; pointer-events: none;
+  box-sizing: border-box; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.fl-appcard-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--vendo-surface) 92%, transparent)); }
+.fl-embed-expand { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; cursor: pointer;
+  border: 1px solid var(--vendo-border-strong); border-radius: 999px;
+  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  color: var(--vendo-fg); font: 600 11.5px/1 var(--vendo-font);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--vendo-fg) 14%, transparent);
+  transition: border-color .14s, transform .18s cubic-bezier(.22, 1, .36, 1); }
+.fl-embed-expand:hover { border-color: var(--vendo-accent); transform: translateX(-50%) translateY(-1px); }
+/* Staged = blurred in chat (2026-07): while this app is featured on the
+   fullscreen stage, its preview blurs under a centered "Full screened" label
+   (chrome type voice, no interaction) — collapse clears it. */
+.fl-appcard-preview[data-vendo-staged] .fl-appcard-canvas { filter: blur(9px) saturate(.85); }
+.fl-appcard-veil { position: absolute; inset: 0; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--vendo-surface) 45%, transparent);
+  color: var(--vendo-fg-muted); font: 600 12.5px/1 var(--vendo-font); letter-spacing: .02em; }
+/* Pin from fullscreen: the stage bar's action, same quiet pill as the card
+   bar's pin (fl-barpin) pushed to the right edge. */
+.fl-stage-pin { margin-left: auto; }
+
+/* Rail app cards while the workspace is up: clickable to feature, and the
+   featured one carries a quiet accent ring so "what's on stage" reads. */
+.fl-appcard[data-vendo-featurable] { cursor: pointer; }
+.fl-appcard[data-vendo-featured] { border-color: var(--vendo-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vendo-accent) 55%, transparent); }
+/* The embed's shared-element flight (EmbedMorphGhost — MorphToast's ghost
+   pattern): a static clone of the app frame flies rail-card ⇄ stage on the
+   same spring as the panel, so the microapp GROWS out of the conversation
+   instead of a pane resizing around it. Fixed above the panel (which clips
+   overflow); inline styles carry the animated box, this is just the skin. */
+.fl-embed-ghost { position: fixed; z-index: 2147483002; overflow: hidden; pointer-events: none;
+  border-radius: 14px; border: 1px solid var(--vendo-border); background: var(--vendo-bg);
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--vendo-fg) 22%, transparent); }
+.fl-embed-ghost-scale { transform-origin: top left; }
+.fl-embed-ghost .fl-turn-actions, .fl-embed-ghost .fl-newbar { display: none; }
+/* While the ghost flies IN, the real stage frame holds back and takes over
+   right where the ghost lands (the fade-out/fade-in overlap masks the swap).
+   While it flies OUT, the stage frame vanishes at once — its clone IS the
+   visible surface for the whole collapse. */
+.fl-overlay-panel[data-vendo-ghost="in"] .fl-stage { animation: fl-fade-in .2s ease both; animation-delay: .3s; }
+.fl-overlay-panel[data-vendo-ghost="out"] .fl-stage { opacity: 0; animation: none; }
+/* While the clone flies OUT of the rail, the REAL featured card dims — the
+   card reads as lifting out, not duplicating; the base opacity transition
+   restores it softly when the ghost unmounts. (On collapse the card stays
+   lit: the clone visibly lands INTO it.) */
+.fl-appcard { transition: opacity .22s ease; }
+.fl-overlay-panel[data-vendo-ghost="in"] .fl-appcard[data-vendo-featured] { opacity: .3; }
+/* The takeover is already the full-screen surface: expansion is inert there. */
+.fl-overlay-panel.fl-takeover .fl-split-stage { display: none; }
+.fl-overlay-panel.fl-takeover .fl-split-rail { flex-basis: 100%; }
+
 @media (prefers-reduced-motion: reduce) {
   .fl-overlay-panel { animation: fl-overlay-fade .18s ease both; }
   @keyframes fl-overlay-fade { from { opacity: 0; } to { opacity: 1; } }
+  /* Split-view flips snap instead of sliding. */
+  .fl-split-rail, .fl-split-stage { transition: none; }
+  .fl-stage { animation: none; }
   /* Silence every looping loader for vestibular-sensitive users. */
   .fl-caret, .fl-md--streaming > :last-child::after { animation: none; opacity: 1; }
   .fl-typing span, .fl-generating .fl-pulse, .fl-skeleton-bar,
-  .fl-tool-spin, .fl-tool-spinner, .fl-act-pulse, .fl-act-spin,
+  .fl-tool-spin, .fl-tool-spinner, .fl-act-pulse, .fl-act-spin, .fl-connect-spin,
   .fl-auto-created-live::after { animation: none; }
   /* Glass skeleton: the sweep and pulse freeze; the blocks stay tinted. */
   .fl-glass-shimmer, .fl-glass-dot { animation: none; }
@@ -1085,7 +1210,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   .fl-jump { width: 44px; height: 44px; }
   .fl-overlay-close { width: 44px; height: 44px; }
   .fl-overlay-new { right: 62px; }
-  .fl-cmd-chip { min-height: 38px; }
+  .fl-overlay-expand { right: 112px; }
   .fl-invite-chip { width: 100%; min-height: 44px; justify-content: center; display: inline-flex; align-items: center; }
   .fl-invite-chips { align-self: stretch; align-items: stretch; max-width: none; padding: 0 8px; }
   /* The grown close button keeps its visual position under the notch. */
@@ -1096,20 +1221,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
     right: calc(54px + env(safe-area-inset-right, 0px)); }
 }
 
-/* ---------- conversation command strip (one-surface \u2318K, pick P-C) ---------- */
-/* The palette's commands, rendered by the overlay as chips pinned above the
-   composer. Anything typed that matches no chip is simply the message. */
-.fl-cmdstrip { display: flex; gap: 7px; padding: 0 14px 9px; overflow-x: auto;
-  scrollbar-width: none; flex-shrink: 0; }
-.fl-cmdstrip::-webkit-scrollbar { display: none; }
-.fl-landing .fl-cmdstrip { padding: 0 0 4px; flex-wrap: wrap; justify-content: center; overflow: visible; }
-.fl-cmd-chip { display: inline-flex; align-items: center; gap: 6px; flex: none;
-  border: 1px solid var(--vendo-border); border-radius: 999px; padding: 7px 12px;
-  background: var(--vendo-surface); font: 500 12px/1 var(--vendo-font); color: var(--vendo-fg-muted);
-  cursor: pointer; transition: color .12s, border-color .12s, transform .12s; }
-.fl-cmd-chip:hover { color: var(--vendo-fg); border-color: var(--vendo-border-strong); transform: translateY(-1px); }
-.fl-cmd-chip:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
-.fl-cmd-chip svg { flex: none; }
 
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vendo-border);
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--vendo-fg);
@@ -1376,8 +1487,14 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 @keyframes fl-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 /* ---------- realtime voice stage (ENG-185) ---------- */
 /* The stage fills the surface that launched it. The blob head is pinned; the
-   feed scrolls beneath it; the caption + footer stay anchored at the bottom. */
-.fl-voice-root { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+   feed scrolls beneath it; the caption + footer stay anchored at the bottom.
+   overflow hidden: when the stage shares a bounded flex column with a thread
+   (Maple /vendo stacks them as siblings) a short viewport squeezes this root
+   toward zero height — without the clip its foot (the Transcript button) kept
+   painting over the thread content above and STOLE ITS CLICKS (the in-thread
+   Approve button's lower half landed on Transcript at ~729px-tall viewports).
+   A squeezed stage must clip to its own box, never overlay a sibling. */
+.fl-voice-root { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .fl-voice-root > .fl-voice-stage { flex: 1; }
 .fl-voice-stage { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0;
   animation: fl-voice-rise .42s cubic-bezier(.22, 1, .36, 1) both; }
@@ -1840,19 +1957,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   border-radius: 6px; font: 600 11px/1.2 var(--vendo-font); color: var(--vendo-accent); }
 .fl-queued-now:hover { background: var(--vendo-accent-soft); }
 
-/* 2C — focus bloom: hint row exists only while the TEXTAREA holds focus. The
-   typing hints are a typing affordance — keying it off :focus-within grew the
-   bar the instant ANY composer button was pressed, which shifted the icon row
-   upward between mousedown and mouseup and turned the press into a dead click
-   (dock/attach/send all moved out from under the pointer; caught by the e2e
-   "affordances — dark" conformance spec). */
-.fl-hintrow { display: flex; align-items: center; gap: 12px; padding: 0 2px;
-  font: 500 11px/1.4 var(--vendo-font); color: var(--vendo-fg-muted);
-  max-height: 0; opacity: 0; overflow: hidden; margin: 0;
-  transition: max-height .18s ease, opacity .18s ease, margin .18s ease; }
-.fl-composer:has(textarea:focus) .fl-hintrow { max-height: 22px; opacity: 1; margin-top: 2px; }
-.fl-kbd { font: 600 10px/1 var(--vendo-font-mono); border: 1px solid var(--vendo-border);
-  border-bottom-width: 2px; border-radius: 4px; padding: 2px 4px; color: var(--vendo-fg-muted); }
 
 /* 2E — the whole thread is the drop target; the overlay covers the surface
    with a centered card. (The composer-local .fl-drop geometry is superseded.) */
@@ -1875,12 +1979,24 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-att-retry { border: 0; background: none; padding: 0; cursor: pointer; font: inherit;
   color: var(--vendo-danger); text-decoration: underline; text-underline-offset: 2px; }
 
-/* 3A — the new-replies bar docks onto the composer edge (replaces .fl-jump). */
-.fl-newbar { position: absolute; left: 16px; right: 16px; bottom: 0; z-index: 5; display: flex;
+/* 3A — the new-replies bar docks FLUSH onto the composer (replaces .fl-jump).
+   Rendered inside .fl-dock-anchor with the tray's geometry: the anchor's top
+   is always exactly 10px above the bar's border edge, so bottom:
+   calc(100% - 10px) seats the banner's bottom directly ON the composer's top
+   border and left/right 16px matches the bar's margins — same width, no gap.
+   The composer's top border is the ONE seam line (the banner keeps
+   border-bottom: 0), its bottom corners square into it, and the shadow is
+   flipped upward so nothing casts a second edge onto the bar below. */
+.fl-newbar { position: absolute; left: 16px; right: 16px; bottom: calc(100% - 10px); display: flex;
   align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; cursor: pointer;
-  border: 1px solid var(--vendo-border-strong); border-radius: 12px 12px 0 0; border-bottom: 0;
+  border: 1px solid var(--vendo-border); border-radius: 14px 14px 0 0; border-bottom: 0;
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  font: 600 12px/1 var(--vendo-font); color: var(--vendo-fg); box-shadow: var(--vendo-shadow); }
+  font: 600 12px/1 var(--vendo-font); color: var(--vendo-fg);
+  box-shadow: 0 -1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
+    0 -10px 28px color-mix(in srgb, var(--vendo-fg) 7%, transparent); }
+/* While the banner shows, the bar squares its top corners so the two read as
+   one card — same choreography as the connect tray above. */
+.fl-dock-anchor:has(.fl-newbar) .fl-composer { border-top-left-radius: 0; border-top-right-radius: 0; }
 @media (prefers-reduced-motion: no-preference) {
   .fl-newbar { animation: fl-newbar-rise .22s cubic-bezier(.22, 1, .36, 1) both; }
 }
@@ -1890,23 +2006,27 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-newbar small { color: var(--vendo-fg-muted); font-weight: 500; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
 /* 6B — at phone widths (and in the takeover) the same affordance re-clothes as
-   a bottom-center thumb pill; the snippet yields to the count. Centered via
+   a bottom-center thumb pill floating just above the bar (which un-squares its
+   corners: the :not(:has(.fl-tray)) guard keeps the tray's own squaring rule
+   intact); the snippet yields to the count. Centered via
    auto margins, NOT translateX — the fl-newbar-rise entrance animates the
    transform property with fill:both, which would overwrite a transform-based centering
    and land the pill half off-center (AI-review catch). The two pill blocks
    below are intentionally identical — keep them in lockstep (a media query and
    a class selector can't share one declaration block in this sheet). */
 @media (max-width: 480px) {
-  .fl-newbar { left: 0; right: 0; bottom: 8px; margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
-    border-radius: 999px; border-bottom: 1px solid var(--vendo-border-strong);
-    padding: 7px 14px; font-size: 11.5px; }
+  .fl-newbar { left: 0; right: 0; bottom: calc(100% - 2px); margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
+    border-radius: 999px; border-bottom: 1px solid var(--vendo-border);
+    padding: 7px 14px; font-size: 11.5px; box-shadow: var(--vendo-shadow); }
   .fl-newbar small { display: none; }
+  .fl-dock-anchor:has(.fl-newbar):not(:has(.fl-tray)) .fl-composer { border-top-left-radius: 14px; border-top-right-radius: 14px; }
 }
 /* mirror of the 480px pill block above — keep identical */
-.fl-takeover .fl-newbar { left: 0; right: 0; bottom: 8px; margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
-  border-radius: 999px; border-bottom: 1px solid var(--vendo-border-strong);
-  padding: 7px 14px; font-size: 11.5px; }
+.fl-takeover .fl-newbar { left: 0; right: 0; bottom: calc(100% - 2px); margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
+  border-radius: 999px; border-bottom: 1px solid var(--vendo-border);
+  padding: 7px 14px; font-size: 11.5px; box-shadow: var(--vendo-shadow); }
 .fl-takeover .fl-newbar small { display: none; }
+.fl-takeover .fl-dock-anchor:has(.fl-newbar):not(:has(.fl-tray)) .fl-composer { border-top-left-radius: 14px; border-top-right-radius: 14px; }
 
 /* 3D — fold-with-fade for restored huge bodies (user paste + markdown). */
 .fl-fold { position: relative; }
@@ -1925,6 +2045,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 /* 4B — starter cards on the landing (object suggestions). */
 .fl-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
   width: 100%; max-width: 560px; }
+/* Five(+) cards (2026-07 demo feedback): the grid would leave a hole in the
+   last row — flex-wrap instead, so the trailing cards stretch edge-to-edge
+   (3 up top, 2 wide below at the overlay's landing width). */
+.fl-cards:has(> .fl-card:nth-child(5)) { display: flex; flex-wrap: wrap; }
+.fl-cards:has(> .fl-card:nth-child(5)) > .fl-card { flex: 1 1 160px; min-width: 150px; }
 .fl-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left;
   cursor: pointer; border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
@@ -1956,13 +2081,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-md th, .fl-md td { border-bottom: 1px solid var(--vendo-border); }
 .fl-td-num { text-align: right; font-variant-numeric: tabular-nums; }
 
-/* 8C — the settled turn's quiet sources row. */
-.fl-sources { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
-.fl-source { display: inline-flex; align-items: center; gap: 5px;
-  border: 1px solid var(--vendo-border); border-radius: 999px; background: var(--vendo-surface);
-  font: 600 10px/1 var(--vendo-font); color: var(--vendo-fg-muted); padding: 3px 8px; }
-.fl-source i { width: 6px; height: 6px; border-radius: 2px; background: var(--vendo-accent); opacity: .7; }
-.fl-source-count { margin-left: 1px; color: var(--vendo-fg-muted); font-weight: 700; }
+/* 8C (sources chip row) removed 2026-07 — settled read calls leave no
+   transcript trace; the Activity panel is the record. */
 
 /* 8D — collapsible sections in restored long replies. The h2/h3 wrapper keeps
    document-outline semantics; the button inside carries all the styling. */
@@ -1994,10 +2114,16 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 
 /* 1-H · mobile approval sheet. A consent surface: the scrim does NOT dismiss
    and Esc is a no-op (enforced in approval-sheet.tsx) — deciding is the only
-   way out. Sits above the takeover panel and the palette scrim. */
-.fl-approval-sheet-layer { position: fixed; inset: 0; z-index: 2147483004; }
+   way out. Sits above the takeover panel and the palette scrim.
+   NON-modal layering (voice-approval-overlap regression): only the sheet
+   itself takes pointer events — the layer and the dimming scrim are
+   hit-transparent, so surfaces behind them (the voice stage's Start button
+   at short viewports) stay usable while a consent is pending. */
+.fl-approval-sheet-layer { position: fixed; inset: 0; z-index: 2147483004;
+  pointer-events: none; }
 .fl-approval-sheet-scrim { position: absolute; inset: 0;
   background: color-mix(in srgb, var(--vendo-fg) 26%, transparent); }
+.fl-approval-sheet { pointer-events: auto; }
 .fl-approval-sheet { position: absolute; left: 0; right: 0; bottom: 0;
   border-radius: 18px 18px 0 0; background: var(--vendo-surface);
   box-shadow: 0 -12px 40px color-mix(in srgb, var(--vendo-fg) 22%, transparent);

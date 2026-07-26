@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type OpenSurface, type VendoClient } from "../../src/index.js";
 import { VendoOverlay, VendoPage, VendoPalette, VendoSlot } from "../../src/chrome/index.js";
+import { getConversationCommands } from "../../src/chrome/overlay-registry.js";
 import { createWireServer } from "../wire-server.js";
 
 describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
@@ -54,15 +55,28 @@ describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
     opener.focus();
     fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
     // One surface: the conversation overlay, composer focused, no combobox.
-    const dialog = await screen.findByRole("dialog", { name: "Vendo assistant" });
+    expect(await screen.findByRole("dialog", { name: "Vendo assistant" })).toBeTruthy();
     expect(screen.queryByRole("combobox")).toBeNull();
     const composer = await screen.findByRole("textbox", { name: "Message" });
     await waitFor(() => expect(document.activeElement).toBe(composer));
-    // The palette's commands (built-ins + wire apps) are the chip strip.
-    fireEvent.click(await screen.findByRole("button", { name: "Open Invoices" }));
+    // The palette's commands (built-ins + wire apps) publish through the
+    // overlay registry (chip strip removed 2026-07-23); a host router
+    // consumes them via select().
+    await waitFor(() => {
+      const set = getConversationCommands();
+      expect(set?.commands.some(command => command.kind === "open-app")).toBe(true);
+    });
+    const set = getConversationCommands()!;
+    set.select(set.commands.find(command => command.kind === "open-app")!);
     expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ kind: "open-app", appId: "app_1" }));
+    // Host-routed select closes the surface (close-on-select) — reopen for
+    // the Escape/focus assertions below.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
+    opener.focus();
+    fireEvent.keyDown(globalThis, { key: "k", ctrlKey: true });
+    await screen.findByRole("dialog", { name: "Vendo assistant" });
     // Escape closes the surface and restores focus to the invoker.
-    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Vendo assistant" }), { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Vendo assistant" })).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(opener));
 

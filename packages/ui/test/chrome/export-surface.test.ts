@@ -15,6 +15,7 @@ import * as chrome from "../../src/chrome/index.js";
 const VALUE_EXPORTS = [
   "ActivityPanel",
   "ApprovalCard",
+  "AutomationCard",
   "AutomationsPanel",
   "ConnectCard",
   "ConnectedAccountsPanel",
@@ -43,6 +44,7 @@ const VALUE_EXPORTS = [
   // thread compiles against, exported deliberately so ejected chrome keeps
   // data/wire logic as a package dependency and only forks pixels.
   "describeActivity",
+  "eventOutcomeLabel",
   "formatAuditTime",
   "outcomeLabel",
   // ui-lane-panels pick B — the shared icon-ledger rows (ActivityPanel +
@@ -52,13 +54,21 @@ const VALUE_EXPORTS = [
   "kindGlyph",
   "BuildBeat",
   "StatusRibbon",
+  // 2026-07 loading-state audit — the between-steps busy voice; the ejected
+  // thread template renders it, so it must be public (eject standalone rule).
+  "WorkingRibbon",
   "toolPresentation",
+  // 2026-07 split-view workspace — the overlay's expand/collapse machine;
+  // the ejected thread's app cards read the context via useSplitView.
+  "SplitViewContext",
+  "useSplitView",
   "ChromeRoot",
   "useCopyFeedback",
   "ConnectDockButton",
   "ConnectTray",
   "FluidThinking",
   "previewArgs",
+  "toolkitDisplayName",
   "toolTitle",
   "Markdown",
   "MorphToast",
@@ -83,6 +93,7 @@ const VALUE_EXPORTS = [
 
 const TYPE_EXPORTS = [
   "ApprovalCardProps",
+  "AutomationCardProps",
   "ConnectCardProps",
   "VendoOverlayProps",
   "VendoCommand",

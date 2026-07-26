@@ -87,7 +87,7 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
-import { configureVendoModelSlots } from "#dev-creds/model";
+import { bindVendoModelSlots } from "#dev-creds/model";
 // Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
 // entry: the lazily-resolving env ladder createVendo composes when the host
 // passes none, exported for host code too (judge wiring, host features). No
@@ -297,6 +297,10 @@ export interface CreateVendoConfig {
       DEFAULT_TOOL_OUTPUT_CAP so one huge host-tool response can't blow the context;
       pass 0 to disable. `historyWindow` bounds messages re-sent per turn (default: full). */
   agent?: {
+    /** Host voice and standing guidance, appended to the agent's system
+        prompt every turn (03 §3 `instructions`) — tone, formatting, what to
+        emphasize. Policy belongs in guard directions, not here. */
+    instructions?: string;
     toolOutputCap?: number;
     maxOutputTokens?: number;
     historyWindow?: number;
@@ -351,6 +355,10 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
+    /** Generation-pipeline flags (exemplarContract, structuredRepair,
+        regionParallel, endPass) — opt-in while the A/B is measured; threaded
+        verbatim to the apps engine. */
+    pipeline?: AppsConfig["pipeline"];
     /** Host design rules for app generation (spec 2026-07-20): the same prose
         `.vendo/design-rules.md` carries, for hosts that prefer programmatic
         config. A non-blank string wins over the file and is fixed for the
@@ -1044,9 +1052,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // blocks consume, plus the composed paint knob (family fast pick when the
   // agent slot rides the ladder; the deprecated paint.model otherwise).
   const inference = resolveModels(config);
-  // models.judge feeds host-wired vendoModel("vendo-judge") instances (v1
-  // plumbing, see configureVendoModelSlots) — there is NO judge default.
-  configureVendoModelSlots(config.models);
+  // models.judge feeds the judge the host wired from vendoModel("vendo-judge"):
+  // the model rides Judge.model, and composition binds THIS instance's config
+  // onto exactly that model (bindVendoModelSlots — per createVendo instance,
+  // no process-level registry). A custom judge without a model, or a judge
+  // built on a BYO model object, is untouched — and there is NO judge default.
+  bindVendoModelSlots(config.judge?.model, config.models);
   // cse lane 3 — the Cloud hosted-config adapter, selected at THIS composition
   // seam from VENDO_API_KEY (adapter rule: the surfaces themselves never read
   // the key; cloudKeyOptions lives only here). Constructing it is PURE (closures
@@ -1443,6 +1454,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // family fast pick when the agent slot rides the ladder, the deprecated
     // paint.model otherwise; paint.disabled survives as the one-lane switch.
     ...(inference.paint === undefined ? {} : { paint: inference.paint }),
+    ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
     // cse lane 3 — theme/semantics/domains flow as PROVIDER thunks so a
     // cloud-owned surface applies without a compose-time fetch. semantics/domains
     // resolve live per generation (pick up cloud overrides as the snapshot warms);
@@ -1497,10 +1509,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ? composeBrief
     : () => selectConfigSurface("brief.md", { explicit: config.brief, readFile: readSurfaceFile, cloud: configCloud }).value?.trim() || undefined;
   const promptCatalog = catalogThemeSummary(catalog, theme);
-  const system = product !== undefined || promptCatalog !== undefined
+  const hostInstructions = config.agent?.instructions?.trim();
+  const system = product !== undefined || hostInstructions || promptCatalog !== undefined
     ? {
         ...(product === undefined ? {} : { product }),
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
+        ...(hostInstructions ? { instructions: hostInstructions } : {}),
       }
     : undefined;
   const agent = createAgent({

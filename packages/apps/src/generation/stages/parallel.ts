@@ -7,6 +7,7 @@
 import { compileWireV2 } from "@vendoai/core";
 import type { GeneratedAppDocument, PipelineContext } from "../engine.js";
 import { strictToolCall, structuredRepair } from "./repair.js";
+import { wireCompileOptionsFor } from "../wire-options.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -182,10 +183,11 @@ export const regionParallelCreate = async (
   if (landedCount !== outline.sections.length) {
     return finish({ fallback: "sections-failed", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
   }
-  const compiled = compileWireV2(assemble(), {
-    hostComponents: [...context.hostComponents],
-    ...(context.deps.toolShapes === undefined ? {} : { toolShapes: context.deps.toolShapes }),
-  });
+  // The sections are RAW model wire (inline tool references included), so the
+  // assembly compiles with the exact options the streaming lanes use — the
+  // bare options here made every inline-reference app fail region-parallel
+  // with "unknown-reference" (live 2026-07-23).
+  const compiled = compileWireV2(assemble(), wireCompileOptionsFor(context.deps, context.hostComponents));
   const validated = await context.validate(compiled);
   if (validated.document !== undefined) {
     return finish({ document: validated.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
@@ -194,6 +196,16 @@ export const regionParallelCreate = async (
     const repaired = await structuredRepair(compiled, hooks.userRequest, context);
     if (repaired.document !== undefined) {
       return finish({ document: repaired.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
+    }
+  }
+  // demo-latency lane — an assembly whose ONLY failures are island-scoped
+  // (the observed live class: one fabricating island) is rescued by rewriting
+  // just those islands instead of abandoning ~90s of landed sections for a
+  // full single-stream re-generation.
+  if (context.repairIslands !== undefined) {
+    const islandRepaired = await context.repairIslands(compiled, validated.issues);
+    if (islandRepaired.document !== undefined) {
+      return finish({ document: islandRepaired.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
     }
   }
   return finish({ fallback: "assembly-invalid", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });

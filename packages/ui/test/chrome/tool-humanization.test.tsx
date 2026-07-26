@@ -38,6 +38,17 @@ const doneTool = (toolCallId: string, input: unknown) => ({
   output: { ok: true },
 });
 
+/** A FAILED call is the one settled state that still leaves a transcript line
+    (BuildBeat) — the surviving venue for label humanization checks. */
+const erroredTool = (toolCallId: string, input: unknown) => ({
+  type: "dynamic-tool" as const,
+  toolName: "host_listClientDocuments",
+  toolCallId,
+  state: "output-error" as const,
+  input,
+  errorText: "boom",
+});
+
 describe("tool beat humanization", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
@@ -58,45 +69,54 @@ describe("tool beat humanization", () => {
         <VendoThread threadId={thread.id} />
       </VendoProvider>,
     );
-    // Lane pick C1/8C — settled tool calls surface as the turn's sources row
-    // (the beat stack left the transcript). Wait for the chips, label-agnostic.
-    await waitFor(() => expect(document.querySelector(".fl-source")).toBeTruthy(), { timeout: 15_000 });
+    // Wait for the restored transcript to land (the assistant article mounts).
+    await waitFor(() => expect(document.querySelector(".fl-turn-assistant")).toBeTruthy(), { timeout: 15_000 });
   }
 
-  it("renders a humanized fallback label and no lifecycle string on the beat", { timeout: 20_000 }, async () => {
+  it("leaves NO transcript trace for a settled successful call — no sources chips, no raw slug", { timeout: 20_000 }, async () => {
+    // 2026-07 demo feedback: the lane-8C sources chip row under assistant
+    // turns is gone. A completed call's record lives in the Activity panel.
     await mount([doneTool("call_1", {})]);
-    expect(screen.getByText("List client documents")).toBeTruthy();
-    // The raw slug and the ai-SDK lifecycle string are never shown to end users.
+    expect(document.querySelector(".fl-sources")).toBeNull();
+    expect(document.querySelector(".fl-source")).toBeNull();
+    expect(screen.queryByText("List client documents")).toBeNull();
     expect(screen.queryByText(/host_listClientDocuments/)).toBeNull();
     expect(screen.queryByText("output-available")).toBeNull();
+  });
+
+  it("renders a humanized fallback label and no lifecycle string on the failed-call beat", { timeout: 20_000 }, async () => {
+    await mount([erroredTool("call_1", {})]);
+    expect(screen.getByText(/List client documents/)).toBeTruthy();
+    // The raw slug and the ai-SDK lifecycle string are never shown to end users.
+    expect(screen.queryByText(/host_listClientDocuments/)).toBeNull();
+    expect(screen.queryByText("output-error")).toBeNull();
     expect(screen.queryByText(/^Tool:/)).toBeNull();
   });
 
   it("prefers a host-supplied friendly label", { timeout: 20_000 }, async () => {
-    await mount([doneTool("call_1", {})], {
+    await mount([erroredTool("call_1", {})], {
       host_listClientDocuments: { label: "Look up client files" },
     });
-    expect(screen.getByText("Look up client files")).toBeTruthy();
-    expect(screen.queryByText("List client documents")).toBeNull();
+    expect(screen.getByText(/Look up client files/)).toBeTruthy();
+    expect(screen.queryByText(/List client documents/)).toBeNull();
   });
 
-  it("collapses consecutive identical tool beats into one with a count", { timeout: 20_000 }, async () => {
+  it("collapses consecutive identical failed beats into one with a count", { timeout: 20_000 }, async () => {
     await mount([
-      doneTool("call_1", { clientId: "c1" }),
-      doneTool("call_2", { clientId: "c1" }),
-      doneTool("call_3", { clientId: "c1" }),
+      erroredTool("call_1", { clientId: "c1" }),
+      erroredTool("call_2", { clientId: "c1" }),
+      erroredTool("call_3", { clientId: "c1" }),
     ]);
-    const chips = screen.getAllByText("List client documents");
-    expect(chips).toHaveLength(1);
+    expect(screen.getAllByText(/List client documents/)).toHaveLength(1);
     expect(screen.getByText("×3")).toBeTruthy();
   });
 
-  it("does not collapse tool beats whose args differ", { timeout: 20_000 }, async () => {
+  it("does not collapse beats whose args differ", { timeout: 20_000 }, async () => {
     await mount([
-      doneTool("call_1", { clientId: "c1" }),
-      doneTool("call_2", { clientId: "c2" }),
+      erroredTool("call_1", { clientId: "c1" }),
+      erroredTool("call_2", { clientId: "c2" }),
     ]);
-    expect(screen.getAllByText("List client documents")).toHaveLength(2);
+    expect(screen.getAllByText(/List client documents/)).toHaveLength(2);
     expect(screen.queryByText("×2")).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ export { VendoActivities, type VendoActivitiesProps } from "./vendo-activities.j
 export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./embeds.js";
 export { ApprovalSheet } from "./approval-sheet.js";
+export { AutomationCard, type AutomationCardProps } from "./automation-card.js";
 export { AutomationsPanel } from "./automations-panel.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
 export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
@@ -28,6 +29,7 @@ export { VendoStage } from "../voice/stage.js";
 export { ActivityLedger } from "./activity-ledger.js";
 export {
   describeActivity,
+  eventOutcomeLabel,
   formatAuditTime,
   formatRelativeAuditTime,
   kindGlyph,
@@ -35,12 +37,17 @@ export {
   type ActivityGlyph,
   type OutcomeTone,
 } from "./activity-semantics.js";
-export { BuildBeat, StatusRibbon, toolPresentation } from "./build-beat.js";
+export { BuildBeat, StatusRibbon, WorkingRibbon, toolPresentation } from "./build-beat.js";
 export { ChromeRoot } from "./chrome-root.js";
 export { useCopyFeedback } from "./clipboard.js";
 export { ConnectDockButton, ConnectTray } from "./connect-dock.js";
 export { FluidThinking } from "./fluid-thinking.js";
-export { previewArgs, toolTitle } from "./humanize.js";
+export {
+  useSplitView,
+  SplitViewContext,
+  type SplitViewContextValue,
+} from "./split-view.js";
+export { previewArgs, toolkitDisplayName, toolTitle } from "./humanize.js";
 export { Markdown } from "./markdown.js";
 export { ACTIVITY_ANCHOR_ATTRIBUTE, ACTIVITY_BUMP_EVENT, MorphToast, type MorphToastProps } from "./morph-toast.js";
 export { PrefillScopeContext, registerPrefillConsumer } from "./overlay-registry.js";

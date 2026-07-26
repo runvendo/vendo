@@ -94,6 +94,20 @@ describe("TreeView public surface", () => {
     expect(screen.getByRole("note", { name: /empty ui tree/i }).textContent).toMatch(/no renderable content/i);
   });
 
+  it("skeletons an empty STREAMING tree instead of flashing the empty-tree notice", () => {
+    // A partial stream legitimately passes through content-less shapes on its
+    // way to the full tree; the loud notice is for FINAL payloads only.
+    const partial = {
+      ...tree([{ id: "root", component: "Stack", source: "prewired" }]),
+      streaming: true,
+    } as WalkTree;
+
+    render(<TreeView tree={partial} components={{}} onAction={ok} />);
+
+    expect(screen.queryByRole("note", { name: /empty ui tree/i })).toBeNull();
+    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+  });
+
   it("contains an erroring host node while preserving its sibling", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const Boom = () => {
@@ -115,6 +129,86 @@ describe("TreeView public surface", () => {
 
     expect(screen.getByText("Sibling survived")).toBeTruthy();
     expect(screen.getByRole("note", { name: /node render error/i }).textContent).toContain("bad");
+  });
+
+  it("skeletons an erroring host node while STREAMING, then verdicts on the final payload", () => {
+    // Demo-latency lane — mid-stream, a host component crash (partial props,
+    // half-arrived data) is a transient: the region holds the silhouette and
+    // the latch retries on the next prefix. The loud "Node render error"
+    // notice is a verdict reserved for FINAL payloads.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const Boom = () => {
+      throw new Error("host render exploded");
+    };
+    const nodes: WalkTree["nodes"] = [
+      { id: "root", component: "Row", children: ["bad"] },
+      { id: "bad", component: "Boom", source: "host" },
+    ];
+    const partial = { ...tree(nodes), streaming: true } as WalkTree;
+
+    const view = render(<TreeView tree={partial} components={{ Boom }} onAction={ok} />);
+    expect(screen.queryByRole("note", { name: /node render error/i })).toBeNull();
+    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+
+    // The FINAL payload (streaming flag gone) re-evaluates fresh: the crash
+    // is now a verdict and the notice renders.
+    view.rerender(<TreeView tree={tree(nodes)} components={{ Boom }} onAction={ok} />);
+    expect(screen.getByRole("note", { name: /node render error/i }).textContent).toContain("bad");
+  });
+
+  it("skeletons an unknown component name while STREAMING instead of the unknown-component notice", () => {
+    const partial = {
+      ...tree([
+        { id: "root", component: "Row", children: ["mystery"] },
+        { id: "mystery", component: "NotYetDefined", source: "host" },
+      ]),
+      streaming: true,
+    } as WalkTree;
+
+    render(<TreeView tree={partial} components={{}} onAction={ok} />);
+
+    expect(screen.queryByRole("note", { name: /unknown component/i })).toBeNull();
+    expect(document.querySelector('[data-streaming-component="NotYetDefined"]')).not.toBeNull();
+  });
+
+  it("skeletons a data-shape mismatch while STREAMING instead of the data-shape notice", () => {
+    // A reshape mismatch over half-arrived data is a transient mid-stream;
+    // the notice is for final payloads.
+    const nodes: WalkTree["nodes"] = [
+      { id: "root", component: "Row", children: ["stat"] },
+      {
+        id: "stat",
+        component: "Text",
+        props: { text: { $path: "/metric/rows", $reshape: [{ op: "sum", field: "amount" }] } },
+      },
+    ];
+    const data = { metric: { rows: [{ amount: "not-a-number" }] } };
+
+    // Control: the same mismatch on a FINAL payload verdicts loudly — proves
+    // these inputs really trip the mismatch path.
+    const view = render(<TreeView tree={tree(nodes)} components={{}} data={data} onAction={ok} />);
+    expect(screen.getByRole("note", { name: /data shape/i })).toBeTruthy();
+
+    const partial = { ...tree(nodes), streaming: true } as WalkTree;
+    view.rerender(<TreeView tree={partial} components={{}} data={data} onAction={ok} />);
+    expect(screen.queryByRole("note", { name: /data shape/i })).toBeNull();
+  });
+
+  it("skeletons an invalid STREAMING v2 payload instead of the invalid-tree notice", () => {
+    const payload = {
+      formatVersion: VENDO_TREE_FORMAT_V2,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack" },
+        { id: "root", component: "Stack" }, // duplicate id → validateTreeV2 fails
+      ],
+      streaming: true,
+    } as unknown as Parameters<typeof PayloadView>[0]["payload"];
+
+    render(<PayloadView payload={payload} components={{}} onAction={ok} />);
+
+    expect(screen.queryByRole("note", { name: /invalid ui tree/i })).toBeNull();
+    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
   });
 
   it("contains unknown format versions", () => {

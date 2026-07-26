@@ -60,9 +60,11 @@ test("in-flow connect card: connect-required → connect → automatic retry exe
   // while it flies (a deliberate visual clone) — an unscoped getByText can catch
   // it mid-flight on slow runners and trip strict mode.
   await expect(page.locator(".fl-msglist").getByText("Sent the email.")).toBeVisible({ timeout: 20_000 });
-  // ENG-216 — the chip renders the humanized tool label (host metadata absent →
-  // humanizeToolName("gmail_GMAIL_SEND_EMAIL")), never the raw slug or "Tool:" prefix.
-  await expect(page.getByText("Gmail send email").last()).toBeVisible({ timeout: 10_000 });
+  // 2026-07 chrome wave (lane pick C1) — a succeeded call leaves NO transcript
+  // chip: live progress rides the status ribbon above the composer and the
+  // mechanical record stays in the Activity panel. The connect card itself
+  // settles into a permanent in-transcript "Connected" record.
+  await expect(card.getByText("Connected")).toBeVisible({ timeout: 10_000 });
   await page.screenshot({ path: "e2e/artifacts/connect-card-retried.png", fullPage: false });
 });
 

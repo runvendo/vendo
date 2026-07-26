@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { LanguageModel } from "ai";
 import {
   DevModelController,
-  configureVendoModelSlots,
+  bindVendoModelSlots,
   devModel,
   NO_CREDENTIAL_MESSAGE,
   vendoModel,
@@ -186,8 +186,6 @@ describe("devModel (env-resolving default model)", () => {
 });
 
 describe("vendoModel (the vendo model family entry)", () => {
-  afterEach(() => configureVendoModelSlots(undefined));
-
   it("is an ai-SDK LanguageModel and devModel stays a working deprecated alias", () => {
     const model = vendoModel(undefined, { env: {} }) as unknown as Record<string, unknown>;
     expect(model.specificationVersion).toBe("v3");
@@ -326,25 +324,49 @@ describe("vendoModel (the vendo model family entry)", () => {
     }))).toBe("vendo-judge");
   });
 
-  it("feeds models.judge (string) into vendoModel(\"vendo-judge\") via configureVendoModelSlots", async () => {
-    configureVendoModelSlots({ judge: "vendo-strong" });
+  it("binds models.judge (string) onto ONE vendoModel(\"vendo-judge\") instance via bindVendoModelSlots", async () => {
+    const bound = vendoModel("vendo-judge", {
+      env: { VENDO_API_KEY: "vnd_x" },
+      importModule: scriptedProvider("createAnthropic"),
+    });
+    bindVendoModelSlots(bound, { judge: "vendo-strong" });
+    expect(await resolvedId(bound)).toBe("vendo-strong");
+    // The binding is PER INSTANCE: a second judge model in the same process
+    // keeps its own (unbound) resolution — no last-createVendo-wins registry.
     expect(await resolvedId(vendoModel("vendo-judge", {
       env: { VENDO_API_KEY: "vnd_x" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("vendo-strong");
-    // Env pin still outranks the configured string.
-    expect(await resolvedId(vendoModel("vendo-judge", {
+    }))).toBe("vendo-judge");
+    // Env pin still outranks the bound string.
+    const pinned = vendoModel("vendo-judge", {
       env: { VENDO_API_KEY: "vnd_x", VENDO_MODEL_JUDGE: "vendo-fast" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("vendo-fast");
+    });
+    bindVendoModelSlots(pinned, { judge: "vendo-strong" });
+    expect(await resolvedId(pinned)).toBe("vendo-fast");
     // Non-judge slots never read the judge config.
-    expect(await resolvedId(vendoModel(undefined, {
+    const agent = vendoModel(undefined, {
       env: { VENDO_API_KEY: "vnd_x" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("vendo");
+    });
+    bindVendoModelSlots(agent, { judge: "vendo-strong" });
+    expect(await resolvedId(agent)).toBe("vendo");
   });
 
-  it("feeds models.judge (explicit LanguageModel object) straight through — it wins over env pins", async () => {
+  it("two instances bind independently — each createVendo gets ITS OWN models.judge", async () => {
+    const options = () => ({
+      env: { VENDO_API_KEY: "vnd_x" },
+      importModule: scriptedProvider("createAnthropic"),
+    });
+    const first = vendoModel("vendo-judge", options());
+    const second = vendoModel("vendo-judge", options());
+    bindVendoModelSlots(first, { judge: "vendo-strong" });
+    bindVendoModelSlots(second, { judge: "vendo-fast" });
+    expect(await resolvedId(first)).toBe("vendo-strong");
+    expect(await resolvedId(second)).toBe("vendo-fast");
+  });
+
+  it("binds models.judge (explicit LanguageModel object) straight through — it wins over env pins", async () => {
     const explicit = {
       specificationVersion: "v3",
       provider: "host",
@@ -353,10 +375,25 @@ describe("vendoModel (the vendo model family entry)", () => {
       doGenerate: async () => ({ modelId: "host-judge" }),
       doStream: async () => ({ modelId: "host-judge" }),
     } as unknown as LanguageModel;
-    configureVendoModelSlots({ judge: explicit });
-    expect(await resolvedId(vendoModel("vendo-judge", {
+    const bound = vendoModel("vendo-judge", {
       env: { VENDO_API_KEY: "vnd_x", VENDO_MODEL_JUDGE: "vendo-fast" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("host-judge");
+    });
+    bindVendoModelSlots(bound, { judge: explicit });
+    expect(await resolvedId(bound)).toBe("host-judge");
+  });
+
+  it("binding a BYO model object (not a vendoModel instance) is a no-op", () => {
+    const byo = {
+      specificationVersion: "v3",
+      provider: "host",
+      modelId: "host-model",
+      supportedUrls: {},
+      doGenerate: async () => ({ modelId: "host-model" }),
+      doStream: async () => ({ modelId: "host-model" }),
+    } as unknown as LanguageModel;
+    expect(() => bindVendoModelSlots(byo, { judge: "vendo-strong" })).not.toThrow();
+    expect(() => bindVendoModelSlots(undefined, { judge: "vendo-strong" })).not.toThrow();
+    expect((byo as unknown as { modelId: string }).modelId).toBe("host-model");
   });
 });

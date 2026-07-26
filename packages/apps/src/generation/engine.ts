@@ -28,6 +28,11 @@ import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } f
 import { createContract } from "./contracts/create.js";
 import { editContract } from "./contracts/edit.js";
 import { layoutHeader, tier0Contract } from "./contracts/paint.js";
+import { composePromptSections, hostToolSections, islandContract } from "./contracts/sections.js";
+// The production compile options, shared with the stages' own compiles
+// (region-parallel assembly, repair/end-pass recompiles) so every compile of
+// model wire speaks the same dialect.
+import { wireCompileOptionsFor } from "./wire-options.js";
 import { regionParallelCreate } from "./stages/parallel.js";
 import { structuredRepair } from "./stages/repair.js";
 import { dataSightedVerify, endPass, extractEdit } from "./stages/verify.js";
@@ -95,7 +100,11 @@ export type PipelineEvent =
   | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; ms: number }
   | { stage: "region-parallel"; fallback?: "no-outline" | "sections-failed" | "assembly-invalid"; sectionsPlanned?: number; sectionsLanded?: number; ms: number }
   | { stage: "end-pass"; applied: boolean; ms: number }
-  | { stage: "data-verify"; applied: boolean; ms: number };
+  | { stage: "data-verify"; applied: boolean; ms: number }
+  // demo-latency lane — island-scoped repair: when EVERY validation issue is
+  // island-scoped, only the offending island sources are rewritten (one small
+  // model call) instead of regenerating the whole app (a full-lane attempt).
+  | { stage: "island-repair"; islands: number; repaired: boolean; ms: number };
 
 export interface GenerationDependencies {
   model: LanguageModel;
@@ -185,6 +194,14 @@ export interface PipelineContext {
   validate: CreateValidator;
   /** Milliseconds origin of the surrounding create() for onTiming events. */
   startedAt: number;
+  /** demo-latency lane — the engine's island-scoped repair (engine.ts owns
+   *  the island contract text), passed as a callback like `validate` so the
+   *  region-parallel path can rescue an assembly whose only failures are
+   *  island-scoped instead of falling back to a full single-stream re-gen. */
+  repairIslands?: (
+    compiled: WireCompileResult,
+    issues: string[],
+  ) => Promise<{ document?: GeneratedAppDocument }>;
 }
 
 // The graduation judgment (instructionRequiresServer): UNAMBIGUOUS signals of
@@ -236,19 +253,6 @@ const extractWire = (text: string): string => {
   const close = text.lastIndexOf(closeTag);
   return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
 };
-
-/** The production compile options: inline tool refs ON everywhere the engine
- *  compiles model wire (the registry names enable single-segment production
- *  tool heads); `<Query>` declarations stay accepted unchanged. */
-const wireCompileOptionsFor = (
-  deps: GenerationDependencies,
-  hostComponents: readonly string[],
-): Parameters<typeof compileWireV2>[1] => ({
-  hostComponents,
-  inlineRefs: true,
-  ...(deps.tools === undefined ? {} : { inlineTools: deps.tools.map(({ name }) => name) }),
-  ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
-});
 
 /** Stream the wire, compiling each accumulated prefix (throttled) into a
  *  valid-while-partial tree for the onPartial seam. */
@@ -411,6 +415,106 @@ const generateWireText = async (
   } catch (error) {
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
   }
+};
+
+// ---------------------------------------------------------------------------
+// demo-latency lane — island-scoped repair. Live finding (Maple, 2026-07-23):
+// a whole 6-minute create failed because EVERY lane's output carried ONE
+// fabricating island; structured repair has no island arm, so each failure
+// cost a full ~60s re-generation that reproduced the same island class. When
+// every validation issue is island-scoped, rewriting just those island
+// sources (one small model call) converges faster and cheaper.
+// ---------------------------------------------------------------------------
+
+const ISLAND_ISSUE_NAME = /^island "([^"]+)"/;
+
+/** Island issues a SOURCE rewrite cannot fix: a name collision needs the
+ *  island renamed AND its tree references updated — tree surgery, so it stays
+ *  with the free-form retry. */
+const ISLAND_SOURCE_UNFIXABLE = /would never render/;
+
+/** The offending island names when EVERY issue is island-scoped (each issue
+ *  string starts `island "<name>"` — the one prefix all island validators
+ *  share) and source-fixable; undefined as soon as any issue lies outside
+ *  that closed class. */
+export const islandIssueNames = (issues: readonly string[]): string[] | undefined => {
+  const names = new Set<string>();
+  for (const issue of issues) {
+    const match = ISLAND_ISSUE_NAME.exec(issue);
+    if (match === null || ISLAND_SOURCE_UNFIXABLE.test(issue)) return undefined;
+    names.add(match[1] as string);
+  }
+  return names.size === 0 ? undefined : [...names];
+};
+
+const islandRepairContract = (deps: GenerationDependencies): string => composePromptSections([{
+  id: "role",
+  content: `You are the Vendo island repair engine. An app compiled and validated cleanly EXCEPT for the generated <Island> components named in ISLANDS_TO_FIX. Rewrite ONLY those islands so every VALIDATION_ISSUE is fixed while keeping each island's purpose and look. Return ONLY the corrected <Island name="...">TSX</Island> elements — the same names, one element per island — with no prose, no markdown fences, no <App> wrapper, and no other markup. Honesty rules: every number or row an island renders comes from its props or an ambient tools read — when the host has no tool for a value, render an honest "not available" note instead of inventing data or constants.`,
+}, {
+  id: "tree-contract",
+  content: islandContract(),
+}, ...hostToolSections(deps)]);
+
+/** Rewrite the offending islands, splice the corrected sources back into the
+ *  otherwise-clean document, and revalidate whole. Returns no document when
+ *  the issues are outside the island-only class, the model call fails, or the
+ *  spliced document still fails validation — the caller's normal fallback
+ *  (free-form retry / resident paint) proceeds unchanged. */
+export const repairIslandsScoped = async (
+  compiled: WireCompileResult,
+  issues: string[],
+  userRequest: string,
+  context: PipelineContext,
+): Promise<{ document?: GeneratedAppDocument }> => {
+  const names = islandIssueNames(issues);
+  if (names === undefined) return {};
+  if (!names.every((name) => typeof compiled.components[name] === "string")) return {};
+  const { deps } = context;
+  const repairStart = Date.now();
+  const finish = (document?: GeneratedAppDocument): { document?: GeneratedAppDocument } => {
+    deps.onPipeline?.({ stage: "island-repair", islands: names.length, repaired: document !== undefined, ms: Date.now() - repairStart });
+    return document === undefined ? {} : { document };
+  };
+  const base = {
+    tree: compiled.tree,
+    components: compiled.components,
+    ...(compiled.name === undefined ? {} : { name: compiled.name }),
+  };
+  const output = await generateWireText(
+    deps,
+    islandRepairContract(deps),
+    [
+      `USER_REQUEST: ${userRequest}`,
+      `CURRENT_APP (context only — do NOT re-emit it; everything outside the named islands is already valid):`,
+      printWireV2(base, { includeIds: false }),
+      `ISLANDS_TO_FIX: ${names.join(", ")}`,
+      `VALIDATION_ISSUES:`,
+      ...issues.map((issue) => `- ${issue}`),
+    ].join("\n"),
+  );
+  deps.onTiming?.({ lane: "repair", phase: "complete", atMs: Date.now() - context.startedAt, thinking: false });
+  if (output.text === undefined) return finish();
+  // The reply is bare <Island> elements; models sometimes wrap in an <App> or
+  // fences anyway — the wire compiler extracts islands from either shape.
+  const text = output.text.replaceAll(/```[a-z]*\n?/gi, "");
+  const fixesWire = text.includes("<App") ? extractWire(text) : `<App name="__island_repair__">${text}</App>`;
+  const fixes = compileWireV2(fixesWire, wireCompileOptionsFor(deps, [...context.hostComponents]));
+  const nextComponents: Record<string, string> = { ...compiled.components };
+  let replaced = 0;
+  for (const name of names) {
+    const source = fixes.components[name];
+    if (typeof source === "string" && source.trim() !== "") {
+      nextComponents[name] = source;
+      replaced += 1;
+    }
+  }
+  if (replaced === 0) return finish();
+  const recompiled = compileWireV2(
+    printWireV2({ ...base, components: nextComponents }, { includeIds: false }),
+    wireCompileOptionsFor(deps, [...context.hostComponents]),
+  );
+  const validated = await context.validate(recompiled);
+  return finish(validated.document);
 };
 
 /** The deterministic fork core (06-apps §8): copies the TRUSTED captured
@@ -600,6 +704,16 @@ const logDeprecatedDialect = (document: GeneratedAppDocument): GeneratedAppDocum
 const snapshotDesignRules = (deps: GenerationDependencies): GenerationDependencies =>
   typeof deps.designRules === "function" ? { ...deps, designRules: deps.designRules() } : deps;
 
+/** demo-latency lane — per-attempt observability: a failed lane's issues were
+ *  invisible unless the WHOLE create failed, so a 6-minute create that burned
+ *  three invalid attempts read as silence. One compact operator line per
+ *  invalid lane result; full issue lists still ride the final VendoError. */
+const logInvalidLane = (lane: string, issues: readonly string[]): void => {
+  if (issues.length === 0) return;
+  const preview = issues.slice(0, 3).map((issue) => issue.split(" — ")[0]).join(" | ");
+  console.info(`[vendo] gen ${lane} invalid (${issues.length} issue${issues.length === 1 ? "" : "s"}): ${preview.slice(0, 360)}`);
+};
+
 /** 06-apps §§2,5 — wire-backed rung-1 generation and two-dialect edit
  *  planning. */
 export const modelEngine: GenerationEngine = {
@@ -609,48 +723,63 @@ export const modelEngine: GenerationEngine = {
     const hostComponents = deps.catalog.map(({ name }) => name);
     const basePrompt = `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}`;
     // Pipeline context: structured repair / region-parallel / end pass all
-    // validate through the ONE create validator.
+    // validate through the ONE create validator; the island-scoped repair
+    // rides along so the region-parallel path can rescue island-only failures.
     const pipelineContext: PipelineContext = {
       deps,
       hostComponents,
       startedAt,
       validate: (compiled) => validateCompiledCreate(compiled, deps),
+      repairIslands: (compiled, repairIssues) => {
+        logInvalidLane("assembly", repairIssues);
+        return repairIslandsScoped(compiled, repairIssues, input.prompt, pipelineContext);
+      },
     };
-    const finish = (document: GeneratedAppDocument): Promise<GeneratedAppDocument> =>
-      endPass(document, input.prompt, pipelineContext).then(logDeprecatedDialect);
+    // demo-latency lane — one shared, MONOTONIC partial gate for every lane:
+    // the painted surface never regresses to a smaller prefix, whichever lane
+    // (tier-0 paint, section assembly, full stream) produced it. This is what
+    // lets the paint lane run CONCURRENTLY with region-parallel instead of
+    // serializing ~20-60s ahead of it. `settled` closes the gate the moment a
+    // final document is chosen, so a still-streaming slower lane can never
+    // repaint over the final emit.
+    const forward = deps.onPartial;
+    let bestNodes = 0;
+    let settled = false;
+    const gatedPartial = forward === undefined ? undefined : (partial: GeneratedPartial): void => {
+      if (settled || partial.tree.nodes.length < bestNodes) return;
+      bestNodes = partial.tree.nodes.length;
+      void Promise.resolve(forward(partial)).catch(() => undefined);
+    };
+    const gatedDeps: GenerationDependencies = gatedPartial === undefined ? deps : { ...deps, onPartial: gatedPartial };
+    const finish = (document: GeneratedAppDocument): Promise<GeneratedAppDocument> => {
+      settled = true;
+      return endPass(document, input.prompt, pipelineContext).then(logDeprecatedDialect);
+    };
     // Tier-0 paint lane: only with a streaming consumer — the instant paint
     // exists to reach a screen. One attempt, no repair loop: an invalid
     // paint is simply not resident (the full lane still runs).
     let resident: GeneratedAppDocument | undefined;
     let residentLayout: string | undefined;
-    if (deps.onPartial !== undefined && deps.paint?.disabled !== true) {
-      const paintDeps = deps.paint?.model === undefined ? deps : { ...deps, model: deps.paint.model };
-      const paint = await streamWire(paintDeps, tier0Contract(deps), basePrompt, hostComponents, { lane: "paint", thinking: false, startedAt });
-      if (paint.compiled !== undefined) {
-        const validated = await validateCompiledCreate(paint.compiled, deps);
-        if (validated.document !== undefined) {
-          resident = validated.document;
-          residentLayout = layoutHeader(paint.compiled);
+    const paintPromise: Promise<void> = deps.onPartial !== undefined && deps.paint?.disabled !== true
+      ? (async () => {
+        const paintDeps = deps.paint?.model === undefined ? gatedDeps : { ...gatedDeps, model: deps.paint.model };
+        const paint = await streamWire(paintDeps, tier0Contract(deps), basePrompt, hostComponents, { lane: "paint", thinking: false, startedAt });
+        if (paint.compiled !== undefined) {
+          const validated = await validateCompiledCreate(paint.compiled, deps);
+          if (validated.document !== undefined) {
+            resident = validated.document;
+            residentLayout = layoutHeader(paint.compiled);
+          } else {
+            logInvalidLane("paint", validated.issues);
+          }
         }
-      }
-    }
-    // The upgrade must never regress the painted surface: while the resident
-    // tier-0 app is on screen, full-lane prefixes smaller than the resident
-    // stay suppressed — the paint holds until the upgrade can replace it
-    // whole (ids stay stable via the TIER0_LAYOUT conditioning).
-    const residentNodes = resident === undefined
-      ? 0
-      : (resident.tree as unknown as TreeV2).nodes.length;
-    const forward = deps.onPartial;
-    const fullLaneDeps: GenerationDependencies = forward === undefined || residentNodes === 0
-      ? deps
-      : {
-        ...deps,
-        onPartial: (partial) => partial.tree.nodes.length < residentNodes ? undefined : forward(partial),
-      };
-    // Outline + region-parallel tier-2 (flagged). Any planning/section/
-    // assembly failure falls through to the single-stream loop below:
-    // parallel is an optimization, never a gate.
+      })().catch(() => undefined)
+      : Promise.resolve();
+    // Outline + region-parallel tier-2 (flagged), running CONCURRENTLY with
+    // the paint lane (neither conditions on the other; the monotonic gate
+    // arbitrates the painted surface). Any planning/section/assembly failure
+    // falls through to the single-stream loop below: parallel is an
+    // optimization, never a gate.
     if (deps.pipeline?.regionParallel === true) {
       const parallel = await regionParallelCreate(pipelineContext, {
         userRequest: input.prompt,
@@ -666,27 +795,34 @@ export const modelEngine: GenerationEngine = {
           );
           return output.raw;
         },
-        ...(fullLaneDeps.onPartial === undefined ? {} : {
+        ...(gatedPartial === undefined ? {} : {
           emitPartial: (assembledWire: string) => {
             const compiled = compileWireV2(assembledWire, wireCompileOptionsFor(deps, hostComponents));
-            if (compiled.tree.nodes.length < residentNodes) return;
-            void Promise.resolve(fullLaneDeps.onPartial?.({
+            gatedPartial({
               tree: compiled.tree,
               ...(compiled.name === undefined ? {} : { name: compiled.name }),
               ...(Object.keys(compiled.components).length === 0 ? {} : { components: compiled.components }),
-            })).catch(() => undefined);
+            });
           },
         }),
       });
       if (parallel.document !== undefined) return finish(parallel.document);
     }
+    // The single-stream lane conditions on the paint layout (TIER0_LAYOUT →
+    // stable minted ids → in-place hot-swap), so it awaits the paint lane —
+    // with region-parallel on, the paint finished long ago; without it, this
+    // is exactly the old serial order.
+    await paintPromise;
     let issues: string[] = [];
     // Structured repair budget: at most 2 strict rounds per create, then the
-    // free-form regeneration loop takes over.
+    // free-form regeneration loop takes over. The island-scoped repair has
+    // its own single-round budget: one rescue per create (a second identical
+    // failure means the class isn't converging).
     let repairRounds = deps.pipeline?.structuredRepair === false ? 0 : 2;
+    let islandRepairRounds = 1;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const output = await streamWire(
-        fullLaneDeps,
+        gatedDeps,
         createContract(deps),
         `${basePrompt}${residentLayout === undefined
           ? ""
@@ -698,7 +834,16 @@ export const modelEngine: GenerationEngine = {
       if (output.compiled !== undefined) {
         const validated = await validateCompiledCreate(output.compiled, deps);
         if (validated.document !== undefined) return finish(validated.document);
+        logInvalidLane("full", validated.issues);
         issues = distinctIssues(issues, validated.issues);
+        // demo-latency lane — when EVERY issue is island-scoped, rewrite just
+        // those islands (one small call) instead of burning another ~60s
+        // full-lane attempt on the same failure class.
+        if (islandRepairRounds > 0 && islandIssueNames(validated.issues) !== undefined) {
+          islandRepairRounds -= 1;
+          const islandRepaired = await repairIslandsScoped(output.compiled, validated.issues, input.prompt, pipelineContext);
+          if (islandRepaired.document !== undefined) return finish(islandRepaired.document);
+        }
         if (repairRounds > 0) {
           const repaired = await structuredRepair(output.compiled, input.prompt, pipelineContext, repairRounds);
           repairRounds -= repaired.rounds;
@@ -709,6 +854,7 @@ export const modelEngine: GenerationEngine = {
     }
     // Never a white box: a failed full lane falls back to the resident
     // tier-0 app.
+    settled = true;
     if (resident !== undefined) return logDeprecatedDialect(resident);
     throw new VendoError("validation", "model could not produce a valid app", issues);
   },
