@@ -142,8 +142,14 @@ export const islandContract = (): string => `- <Island name="PascalName">TSX wit
  *  user's dollar number to a cents field ($25 → amount: 25 = $0.25). */
 const unitAnnotation = (field: string, schema: Record<string, unknown> | null | undefined): string => {
   const description = typeof schema?.description === "string" ? schema.description : "";
-  if (/cents$/i.test(field) || /\bcents\b|\bminor units?\b/i.test(description)) return " (integer cents)";
-  if (/\bdollars\b/i.test(description)) return " (dollars)";
+  const cents = /cents$/i.test(field) || /\bcents\b|\bminor units?\b/i.test(description);
+  const dollars = /\bdollars\b/i.test(description);
+  // Contradictory metadata (a *cents field DESCRIBED as dollars) teaches
+  // nothing — annotating either way would be a coin flip, and the runtime
+  // guard skips such fields for the same reason (call.ts, review 2026-07-26).
+  if (cents && dollars) return "";
+  if (cents) return " (integer cents)";
+  if (dollars) return " (dollars)";
   return "";
 };
 

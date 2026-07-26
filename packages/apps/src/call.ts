@@ -81,6 +81,9 @@ export const amountUnitIssue = (
       const description = isRecord(propSchema) && typeof propSchema.description === "string"
         ? propSchema.description
         : "";
+      // Contradictory metadata (a *cents field described as dollars) proves
+      // nothing — skip, exactly as the prompt sketch declines to annotate it
+      // (sections.ts unitAnnotation).
       if (DOLLARS_DESCRIPTION.test(description)) continue;
       if (CENTS_FIELD_NAME.test(field) || CENTS_DESCRIPTION.test(description)) {
         return `arg "${field}" on ${descriptor.name} takes integer cents (minor units), but ${fieldValue} is fractional — that is a dollar amount. Convert dollars to cents by multiplying by 100 (e.g. $25 → 2500) and send a whole number.`;

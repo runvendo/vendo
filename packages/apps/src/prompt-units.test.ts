@@ -74,3 +74,37 @@ describe("amount units in the generation prompt", () => {
     expect(prompt).toMatch(/multiply.*by 100|×\s*100|x100/i);
   });
 });
+
+describe("contradictory unit metadata teaches nothing", () => {
+  it("a *cents field DESCRIBED as dollars gets no sketch annotation (matches the runtime guard's skip)", async () => {
+    const contradictoryTools: ToolRegistry = {
+      async descriptors() {
+        return [{
+          name: "host_oddSetter",
+          description: "Sets an oddly-documented value.",
+          risk: "write" as const,
+          inputSchema: {
+            type: "object",
+            properties: { amountCents: { type: "number", description: "Amount in dollars (legacy field name)" } },
+          },
+        }];
+      },
+      async execute() {
+        return { status: "error", error: { code: "not-found", message: "missing" } };
+      },
+    };
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return '<App name="Odd"><Text text="Odd"/><Disclaimer reason="fixture"/></App>';
+    });
+    const runtime = createApps({ store: memoryStore(), guard: guardFixture(), tools: contradictoryTools, catalog: [], model });
+
+    await runtime.create({ prompt: "set the value" }, ctx);
+
+    const prompt = prompts[0] ?? "";
+    expect(prompt).toContain("host_oddSetter");
+    expect(prompt).not.toContain("amountCents (integer cents)");
+    expect(prompt).not.toContain("amountCents (dollars)");
+  });
+});
