@@ -42,7 +42,7 @@ export const EXTRACTION_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
           critical: { type: "boolean" },
           disabled: {
             type: "boolean",
-            description: "false = wake a statically-unclassifiable tool (requires reasoning and risk).",
+            description: "A scanner-disabled tool stays disabled: a draft may only make tools MORE restrictive, so disabled: false is refused on apply — waking a tool is a human edit in overrides.json.",
           },
           audience: {
             enum: ["end-user", "operator", "internal"],
@@ -77,7 +77,7 @@ export function composeDelegatedInstructions(tools: StaticTool[], appName: strin
     '  { "brief": string, "tools": [{ "name", "description", "risk"?, "critical"?, "disabled"?, "audience"?, "reasoning"? }], "missedSurfaces"?: string[] }',
     "- tools: include ONLY names from the list above. Rewrite each description so an agent choosing tools understands what it actually does (read the handler source). <= 200 chars each.",
     "- risk: you may RAISE risk (read->write->destructive) when the handler is more dangerous than labeled; never lower it. Mark irreversible operations critical: true.",
-    "- A tool listed as disabled was statically unclassifiable. If you can read its handler and grade it, set disabled: false WITH a risk and one-line reasoning. Leave it out otherwise.",
+    "- A tool listed as disabled stays disabled: a draft may only make tools MORE restrictive, so do NOT set disabled: false (it is refused on apply) — waking a tool is a human edit in overrides.json. You may still improve its description.",
     "- audience: who the handler's own auth admits — \"end-user\" (a signed-in customer acting on their own data),",
     "  \"operator\" (admin/staff/support consoles), or \"internal\" (machine-to-machine: webhooks, cron, reconciliation,",
     "  service tokens). Read the auth checks, not the route name. When unsure, default to internal — non-end-user",
