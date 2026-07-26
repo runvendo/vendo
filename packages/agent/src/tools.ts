@@ -6,6 +6,7 @@ import {
   VENDO_VIEW_STREAM,
   toVendoWirePart,
   vendoCitationsPartSchema,
+  vendoKnowledgeCitationSchema,
   vendoViewStreamId,
   vendoViewPartSchema,
   type ApprovalId,
@@ -86,8 +87,11 @@ function executionError(): ToolOutcome {
 /** Knowledge K1 — lift a `vendo/knowledge-result@1` ok-output onto the
  * citations part. Returns null when the output is not a knowledge envelope,
  * when the outcome is model-facing only (`not-found`, and read-more results,
- * which carry text but no citations), or when the candidate fails the part
- * schema. `title` falls back to the docId — the part surface requires one. */
+ * which carry text but no citations), or when no valid citation survives an
+ * answered outcome. `title` falls back to the docId — the part surface
+ * requires one. Hits validate INDIVIDUALLY (fail-soft, AI-review finding):
+ * one malformed hit from a nonconforming BYO engine drops only itself, never
+ * the whole citation surface of an otherwise grounded answer. */
 function knowledgeCitationsPart(toolCallId: string, output: unknown): VendoCitationsPart | null {
   if (typeof output !== "object" || output === null || Array.isArray(output)) return null;
   const record = output as Record<string, unknown>;
@@ -95,9 +99,11 @@ function knowledgeCitationsPart(toolCallId: string, output: unknown): VendoCitat
   const outcome = record.outcome;
   if (outcome !== "answered" && outcome !== "insufficient-evidence" && outcome !== "unavailable") return null;
   const hits = Array.isArray(record.hits) ? record.hits : [];
-  const citations = hits.map((hit) => {
+  const citations = hits.flatMap((hit) => {
     const entry = (typeof hit === "object" && hit !== null ? hit : {}) as Record<string, unknown>;
-    return { ...entry, title: typeof entry.title === "string" && entry.title !== "" ? entry.title : entry.docId };
+    const candidate = { ...entry, title: typeof entry.title === "string" && entry.title !== "" ? entry.title : entry.docId };
+    const parsed = vendoKnowledgeCitationSchema.safeParse(candidate);
+    return parsed.success ? [parsed.data] : [];
   });
   if (outcome === "answered" && citations.length === 0) return null;
   const parsed = vendoCitationsPartSchema.safeParse({

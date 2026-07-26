@@ -121,15 +121,39 @@ describe("agent citations bridge (Knowledge K1)", () => {
     });
   });
 
-  it("writes NO part for a hit missing the pinned visibility field", async () => {
+  it("writes NO part when an answered result's only hit is malformed", async () => {
     // The pin (checker round 1 amendment) requires visibility on every
-    // citation; a malformed envelope must not half-render.
+    // citation; with nothing valid left there is no citation surface.
     const found = await citationsPartsFor({
       kind: VENDO_KNOWLEDGE_RESULT_KIND,
       outcome: "answered",
       hits: [{ docId: "doc-x", title: "X", kind: "docs", snippet: "s" }],
     });
     expect(found).toHaveLength(0);
+  });
+
+  it("fail-soft: one malformed hit drops only itself — the valid citations still ride", async () => {
+    // AI-review finding: a nonconforming BYO engine emitting ONE bad hit must
+    // not silently strip the whole citation surface from a grounded answer.
+    const valid = (docId: string) => ({
+      docId,
+      title: `Doc ${docId}`,
+      kind: "docs",
+      visibility: "public",
+      snippet: "snippet",
+    });
+    const found = await citationsPartsFor({
+      kind: VENDO_KNOWLEDGE_RESULT_KIND,
+      outcome: "answered",
+      hits: [
+        valid("doc-a"),
+        { docId: "doc-bad", title: "Bad", kind: "docs", snippet: "s" }, // no visibility
+        valid("doc-b"),
+      ],
+    });
+    expect(found).toHaveLength(1);
+    const citations = found[0]!.data.citations as Array<Record<string, unknown>>;
+    expect(citations.map((citation) => citation.docId)).toEqual(["doc-a", "doc-b"]);
   });
 
   it("writes NO citations part for model-facing-only results", async () => {
