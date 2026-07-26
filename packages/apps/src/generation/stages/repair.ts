@@ -23,7 +23,7 @@ import type {
 import { actionBindingsInProps, actionFaults, hasPayload } from "../validation/actions.js";
 import { literalDataFaults } from "../validation/literals.js";
 import { DISCLAIMER_TEXT } from "../validation/validate.js";
-import { recompile } from "./verify.js";
+import { recompile } from "../wire-options.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -296,6 +296,147 @@ const deriveFixes = (
 };
 
 const fixKey = (index: number): string => `fix_${index}`;
+
+// ---------------------------------------------------------------------------
+// Rebind fix space — consumed by the data-sighted verify (stages/verify.ts).
+// Re-gate 2026-07-26: wrong-data-binding is the top model-error class in
+// every arm and a copy-only patch cannot fix it. The verify pass may propose
+// pointing a binding at a different field, but ONLY through this closed
+// space: one strict slot per bound prop, its enum the REAL field paths from
+// the tool shapes, kind-filtered to the current binding's delivered kind
+// (the kind that already validated against the prop type), plus the
+// no-valid-fix (keep) arm. Free-text binding edits do not exist on this path.
+// ---------------------------------------------------------------------------
+
+/** One rebindable binding: a whole-prop `$path` into a known query shape. */
+export interface RebindSlot {
+  nodeId: string;
+  component: string;
+  prop: string;
+  /** The current binding's `$path`. */
+  path: string;
+  /** The node's own copy label, naming the claim the binding must honor. */
+  label?: string;
+  /** The RESOLVED value at the current path (trimmed) — the evidence the
+   *  verifier judges the binding against. */
+  sample?: string;
+  options: string[];
+}
+
+const decodePointerToken = (token: string): string =>
+  token.replace(/~1/g, "/").replace(/~0/g, "~");
+
+/** The resolved value at a query-prefixed JSON-Pointer path, trimmed to ride
+ *  a strict-schema description. */
+const resolvedSampleAt = (data: Record<string, unknown>, path: string): string | undefined => {
+  let current: unknown = data;
+  for (const token of path.split("/").slice(1)) {
+    const key = decodePointerToken(token);
+    if (Array.isArray(current)) {
+      const index = Number(key);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) return undefined;
+      current = current[index];
+    } else if (isRecord(current)) {
+      current = current[key];
+    } else {
+      return undefined;
+    }
+  }
+  if (current === undefined) return undefined;
+  const text = JSON.stringify(current) ?? "";
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+};
+
+const MAX_REBIND_SLOTS = 8;
+
+const kindsCompatible = (a: ShapeType["kind"], b: ShapeType["kind"]): boolean =>
+  a === b || a === "json" || b === "json";
+
+/** Every rebindable binding in the tree with its closed set of legal targets:
+ *  whole-prop `$path` bindings whose query has a known tool shape, offered
+ *  the bounded real paths (across ALL known queries — the true value may live
+ *  under a different query) that deliver the same kind the current binding
+ *  does. A slot whose only legal target is itself is not a slot. */
+export const deriveRebindSlots = (
+  tree: TreeV2,
+  deps: GenerationDependencies,
+  resolvedData: Record<string, unknown>,
+): RebindSlot[] => {
+  const slots: RebindSlot[] = [];
+  const queries = tree.queries ?? [];
+  const queryByName = new Map(queries.map((query) => [query.name, query]));
+  for (const node of tree.nodes) {
+    for (const [prop, value] of Object.entries(node.props ?? {})) {
+      if (slots.length >= MAX_REBIND_SLOTS) return slots;
+      if (!isPathBinding(value)) continue;
+      const tokens = value.$path.split("/");
+      const query = queryByName.get(decodePointerToken(tokens[1] ?? ""));
+      const shape = query === undefined ? undefined : deps.toolShapes?.[query.tool];
+      if (shape === undefined) continue;
+      const subPath = tokens.length > 2 ? `/${tokens.slice(2).join("/")}` : "";
+      const currentKind = shapeAtPointer(shape, subPath)?.kind;
+      if (currentKind === undefined) continue;
+      const options: string[] = [];
+      for (const candidateQuery of queries) {
+        const candidateShape = deps.toolShapes?.[candidateQuery.tool];
+        if (candidateShape === undefined) continue;
+        const prefix = `/${candidateQuery.name}`;
+        for (const candidate of enumerateShapePaths(candidateShape, prefix)) {
+          if (options.length >= MAX_PATH_OPTIONS) break;
+          const kind = shapeAtPointer(candidateShape, candidate.slice(prefix.length))?.kind;
+          if (kind !== undefined && kindsCompatible(kind, currentKind)) options.push(candidate);
+        }
+      }
+      if (options.filter((option) => option !== value.$path).length === 0) continue;
+      const label = node.props?.["label"] ?? node.props?.["title"];
+      const sample = resolvedSampleAt(resolvedData, value.$path);
+      slots.push({
+        nodeId: node.id,
+        component: node.component,
+        prop,
+        path: value.$path,
+        ...(typeof label === "string" ? { label } : {}),
+        ...(sample === undefined ? {} : { sample }),
+        options,
+      });
+    }
+  }
+  return slots;
+};
+
+/** The strict flat schema for one rebind round (same discipline as
+ *  {@link buildFixSchema}): one property per slot, its enum the slot's legal
+ *  paths plus the explicit keep arm, the current binding and its resolved
+ *  sample named in the description. */
+export const buildRebindSchema = (slots: RebindSlot[]): Record<string, unknown> => ({
+  type: "object",
+  additionalProperties: false,
+  required: slots.map((_, index) => fixKey(index)),
+  properties: Object.fromEntries(slots.map((slot, index) => [fixKey(index), {
+    type: "string",
+    enum: [...slot.options, NO_VALID_FIX],
+    description: `Node "${slot.nodeId}" (<${slot.component}>${slot.label === undefined ? "" : ` labeled "${slot.label}"`}) prop "${slot.prop}" binds ${slot.path}${slot.sample === undefined ? "" : `, which resolved to ${slot.sample}`}. If that value contradicts the node's label or the user's ask, choose the REAL field path holding the value the label truthfully describes; otherwise ${NO_VALID_FIX} keeps the current binding.`,
+  }])),
+});
+
+/** Validates one rebind answer set against its slots. `undefined` on ANY
+ *  out-of-enum value — enum discipline drops the whole patch, it never
+ *  clamps (a wrong rebind is worse than no rebind). Keeps (the no-valid-fix
+ *  arm or re-choosing the current path) are filtered out. */
+export const rebindChoices = (
+  slots: RebindSlot[],
+  chosen: Record<string, unknown>,
+): Array<{ nodeId: string; prop: string; from: string; to: string }> | undefined => {
+  const picks: Array<{ nodeId: string; prop: string; from: string; to: string }> = [];
+  for (const [index, slot] of slots.entries()) {
+    const value = chosen[fixKey(index)];
+    if (typeof value !== "string") return undefined;
+    if (value === NO_VALID_FIX) continue;
+    if (!slot.options.includes(value)) return undefined;
+    if (value !== slot.path) picks.push({ nodeId: slot.nodeId, prop: slot.prop, from: slot.path, to: value });
+  }
+  return picks;
+};
 
 /** The flat strict schema (Anthropic strict: additionalProperties:false +
  *  required everywhere, no recursion): one property per pending failure, its

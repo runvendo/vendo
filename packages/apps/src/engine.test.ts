@@ -257,6 +257,58 @@ describe("generation engine through createApps", () => {
         .find(({ component }) => component === "Stat");
       expect(stat?.props?.label).toBe("Total clients");
     });
+
+    // Re-gate 2026-07-26 finding 4 — wrong-data-binding is the top model-error
+    // class in every arm and the copy-only verify caught none of them. The
+    // rebind arm (pipeline.rebind, default OFF) points the binding at the
+    // right field through a strict enum of real paths.
+    it("rebinds a lying binding at the runtime seam under pipeline.rebind and persists the corrected app", async () => {
+      const accountsWire = '<App name="Balances"><Query id="accounts" tool="host_accounts"/><Stack><Stat label="Total balance" value={accounts.data.0.balanceCents}/></Stack></App>';
+      const accountsOutput = {
+        data: [
+          { id: "acct_1", name: "Checking", balanceCents: 120000 },
+          { id: "acct_2", name: "Savings", balanceCents: 230000 },
+        ],
+        totalBalanceCents: 350000,
+      };
+      const accountTools: ToolRegistry = {
+        async descriptors() {
+          return [{ name: "host_accounts", description: "List accounts", risk: "read", inputSchema: { type: "object", properties: {} } }];
+        },
+        async execute(call) {
+          if (call.tool === "host_accounts") return { status: "ok", output: structuredClone(accountsOutput) };
+          return { status: "error", error: { code: "not-found", message: "missing" } };
+        },
+      };
+      let calls = 0;
+      const model = scriptedLanguageModel((call) => {
+        calls += 1;
+        if (call.tools?.[0]?.name === "rebind_bindings") {
+          return { tool: "rebind_bindings", input: { fix_0: "/accounts/totalBalanceCents" } };
+        }
+        if (promptText(call).includes("ACTUAL data")) return "<Edit></Edit>";
+        return accountsWire;
+      });
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools: accountTools,
+        catalog: [],
+        model,
+        pipeline: { endPass: true, rebind: true },
+      });
+
+      const app = await runtime.create({ prompt: "total balance across my accounts" }, ctx);
+
+      // create + rebind strict call + copy pass — nothing else.
+      expect(calls).toBe(3);
+      const stat = (app.tree as { nodes: Array<{ component: string; props?: Record<string, unknown> }> }).nodes
+        .find(({ component }) => component === "Stat");
+      expect(stat?.props?.value).toEqual({ $path: "/accounts/totalBalanceCents" });
+      expect(stat?.props?.label).toBe("Total balance");
+      // The corrected app is what persists.
+      expect(await runtime.get(app.id, ctx)).toEqual(app);
+    });
   });
 
   describe("exemplar create contract (pipeline.exemplarContract)", () => {
