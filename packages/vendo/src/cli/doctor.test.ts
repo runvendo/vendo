@@ -1106,6 +1106,55 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(report.checks.some((entry) => entry.id === "deps/ai-sdk-major")).toBe(false);
   });
 
+  it("fails with E-DEP-003 when the installed zod predates the AI SDK's subpaths", async () => {
+    // FINDINGS F2 (skateshop): ai@6 imports zod/v3 + zod/v4, which arrive in
+    // zod 3.25 — a host pinning older zod builds red the moment the vendo
+    // wiring pulls ai into the bundle.
+    const root = await healthy();
+    await mkdir(join(root, "node_modules", "zod"), { recursive: true });
+    await writeFile(join(root, "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version: "3.23.8" }));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "deps/zod-floor");
+    expect(check).toMatchObject({
+      status: "broken",
+      error_code: "E-DEP-003",
+      fix_ref: doctorFixRef("E-DEP-003"),
+    });
+    expect(check?.message).toContain("zod@3.23.8");
+    expect(check?.message).toContain("3.25");
+    expect(check?.message).toContain("npm install zod@^3.25.0");
+  });
+
+  it("passes the zod floor check on a 3.25+ or zod 4 host", async () => {
+    for (const version of ["3.25.76", "4.1.8"]) {
+      const root = await healthy();
+      await mkdir(join(root, "node_modules", "zod"), { recursive: true });
+      await writeFile(join(root, "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version }));
+      const { exit, report } = await jsonChecks({
+        targetDir: root,
+        fetchImpl: successfulProbeFetch(),
+      });
+      expect(exit).toBe(0);
+      const check = report.checks.find((entry) => entry.id === "deps/zod-floor");
+      expect(check).toMatchObject({ status: "ok" });
+      expect(check?.message).toContain(`zod@${version}`);
+    }
+  });
+
+  it("skips the zod floor check silently when zod is not installed", async () => {
+    // A host without its own zod resolves ai's copy, which always satisfies.
+    const { exit, report } = await jsonChecks({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(0);
+    expect(report.checks.some((entry) => entry.id === "deps/zod-floor")).toBe(false);
+  });
+
   it("exits nonzero while any single check fails", async () => {
     const root = await healthy();
     await rm(join(root, ".vendo", "brief.md"));

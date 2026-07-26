@@ -53,8 +53,23 @@ function bareVersion(range: unknown): string | undefined {
  * dependency story belongs to the wiring checks, not this reader).
  */
 export async function installedAiVersion(root: string): Promise<string | null> {
+  return installedVersion(root, "ai");
+}
+
+/**
+ * The HOST's installed `zod` version (FINDINGS F2): ai@6 imports the
+ * `zod/v3` + `zod/v4` subpaths that arrive in zod 3.25, and the host's own
+ * pin wins the installed tree — so the floor must be read from the TARGET
+ * dir's node_modules, exactly like `installedAiVersion`. Non-throwing: an
+ * absent install returns null (a host without zod resolves ai's own copy).
+ */
+export async function installedZodVersion(root: string): Promise<string | null> {
+  return installedVersion(root, "zod");
+}
+
+async function installedVersion(root: string, name: string): Promise<string | null> {
   try {
-    const manifest = JSON.parse(await readFile(join(root, "node_modules", "ai", "package.json"), "utf8")) as { version?: unknown };
+    const manifest = JSON.parse(await readFile(join(root, "node_modules", ...name.split("/"), "package.json"), "utf8")) as { version?: unknown };
     return typeof manifest.version === "string" ? manifest.version : null;
   } catch {
     return null;

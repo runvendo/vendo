@@ -16,7 +16,7 @@ import { BRIEF_TEMPLATE, type StaticTool } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { resolveScaffoldAuth, type AuthMatch, type AuthPresetName, type ConfirmAuth, type SelectAuth } from "./init-auth.js";
-import { ensureProviderDeps, type InstallRunner } from "./provider-deps.js";
+import { ensureProviderDeps, ensureZodFloor, type InstallRunner } from "./provider-deps.js";
 import {
   customServerSource,
   expressServerSource,
@@ -170,6 +170,11 @@ export interface InitOptions {
   resolveCredential?: (options: { env: Record<string, string | undefined> }) => Promise<DevCredential>;
   /** Test seam: the provider-dependency install subprocess (provider-deps.ts). */
   installProvider?: InstallRunner;
+  /** Test seam: the zod-floor bump confirm (provider-deps.ts, FINDINGS F2),
+      asked only in interactive runs. Mirrors the auth confirm's shape. */
+  confirmZodBump?: (question: string, defaultYes: boolean) => Promise<boolean>;
+  /** Test seam: the zod-floor bump install subprocess. */
+  installZod?: InstallRunner;
   /** Test seam (ENG-339): cloud-in-init step overrides. */
   cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
   /** Test seam: AI extraction step overrides (harnesses, consent). */
@@ -1313,6 +1318,21 @@ export async function runInit(options: InitOptions): Promise<number> {
       credential,
       output,
       ...(options.installProvider === undefined ? {} : { run: options.installProvider }),
+    });
+
+    // FINDINGS F2 (skateshop): a host pinning zod < 3.25 builds red once the
+    // wiring pulls ai@6 into the bundle (ai imports the zod/v3 + zod/v4
+    // subpaths that arrive in 3.25, and the host's own pin wins the installed
+    // tree). Ask-and-bump with the auth confirm's interactivity posture:
+    // --yes performs the announced bump, non-interactive prints the command.
+    await ensureZodFloor({
+      root,
+      output,
+      ...(options.yes === true ? { yes: true } : {}),
+      ...(options.yes === true || !interactive
+        ? {}
+        : { confirm: options.confirmZodBump ?? (pretty === null ? askYesNo : pretty.confirm) }),
+      ...(options.installZod === undefined ? {} : { run: options.installZod }),
     });
 
     // The one short Cloud reminder in the end-of-run summary — ONLY while no
