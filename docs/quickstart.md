@@ -45,10 +45,9 @@ this order:
    the minted metered dev-mode key is written to `.env.local` for you. You
    never paste a key. (`vendo cloud login <email>` remains as an email-OTP
    fallback.)
-   Model calls go through the Vendo Cloud model gateway (curated aliases:
-   `vendo-default`, `vendo-fast`, `vendo-strong` — pick with
-   `VENDO_CLOUD_MODEL`, served via the installed `@ai-sdk/anthropic`) and
-   meter your dev-mode runs allowance.
+   Model calls go through the Vendo Cloud model gateway (`vendo` by
+   default — pin another id with `VENDO_MODEL`, served via the installed
+   `@ai-sdk/anthropic`) and meter your dev-mode runs allowance.
 3. Nothing available: chat fails honestly, with exact instructions in the
    server log.
 
@@ -423,16 +422,16 @@ doctor → read `fix_ref` → fix → repeat.
 `sync` extracts the host API and remix baselines. In strict mode, breaking
 extraction changes exit with code 2.
 
-`sync` also writes `.vendo/semantics.json`: per-tool field semantics (cents
-money, ISO/epoch dates, enum vocabularies with display labels, ids, percents)
-inferred ONCE by sampling each zero-input read tool through the dev server,
-plus a domain manifest (`has` / `hasNot`) derived from tool names on first
-sync. The file is yours to edit — corrections and the manifest survive every
-re-sync, and `overrides.json` `tools[name].semantics` wins over everything.
-Generation treats it as fact: annotated response shapes, correct money/date
-formatting by default, and honest disclaimers for domains you list under
-`hasNot`. Empty tool descriptions also get generated "Use this to …" lines in
-`tools.json` (override in `overrides.json`).
+`sync` also fills per-tool field `semantics` inside `.vendo/tools.json`
+(cents money, ISO/epoch dates, enum vocabularies with display labels, ids,
+percents), inferred ONCE by sampling each zero-input read tool through the
+dev server, plus a `domains` manifest (`has` / `hasNot`) derived from tool
+names on first sync. Inferred entries never churn on re-sync, and
+`overrides.json` `tools[name].semantics` (plus your own `domains` additions
+there) wins over everything. Generation treats it as fact: annotated response
+shapes, correct money/date formatting by default, and honest disclaimers for
+domains you list under `hasNot`. Empty tool descriptions also get generated
+"Use this to …" lines in `tools.json` (override in `overrides.json`).
 
 To make the deployed door discoverable through the official registry, follow
 [Publish to the MCP registry](publish-mcp-registry.md).

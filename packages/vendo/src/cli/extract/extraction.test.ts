@@ -18,13 +18,30 @@ const TOOLS = [
   { name: "host_admin_unclassified", description: "Route /api/admin could not be classified", risk: "destructive" as const, disabled: true },
 ];
 
+/** The full v3 entries the fixture's tools.json carries — runAiExtraction's
+ *  loose static projection AND the enrichment channel's strict v3 read must
+ *  both parse it, like the real vendoSync-written file. */
+const TOOLS_V3 = TOOLS.map((tool) => {
+  const { method, path } = tool as { method?: string; path?: string };
+  return {
+    ...tool,
+    inputSchema: { type: "object", properties: {} },
+    binding: {
+      kind: "route",
+      method: method ?? "POST",
+      path: path ?? "/api/admin",
+      argsIn: (method ?? "POST") === "GET" ? "query" : "body",
+    },
+  };
+});
+
 async function fixture(overrides?: object, brief?: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "vendo-extract-"));
   cleanup.push(root);
   await mkdir(join(root, ".vendo"), { recursive: true });
-  await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: TOOLS }));
+  await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: TOOLS_V3 }));
   await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(
-    overrides ?? { format: "vendo/overrides@1", tools: {}, remix: { ignoreSlots: [] } },
+    overrides ?? { format: "vendo/overrides@3", tools: {}, remix: { ignoreSlots: [] } },
   ));
   await writeFile(join(root, ".vendo", "brief.md"),
     `${brief ?? "Describe this product, its users, and the jobs the agent should help them complete."}\n`);
@@ -124,7 +141,7 @@ describe("applyDraft (deterministic verification)", () => {
 
   it("audience exclusion never reverses a human enable decision", async () => {
     const root = await fixture({
-      format: "vendo/overrides@1",
+      format: "vendo/overrides@3",
       tools: { host_invoices_create: { disabled: false } },
       remix: { ignoreSlots: [] },
     });
@@ -139,6 +156,55 @@ describe("applyDraft (deterministic verification)", () => {
     expect(summary.excluded).toBe(0);
     const overrides = await readOverrides(root);
     expect(overrides.tools["host_invoices_create"]).toMatchObject({ disabled: false });
+  });
+
+  it("writes strict overrides@3: format tag on the file, authored extras preserved", async () => {
+    const root = await fixture({
+      format: "vendo/overrides@3",
+      tools: {},
+      domains: { has: ["billing"], hasNot: ["payroll"] },
+      briefs: [{ name: "bulk", text: "one invoice per row" }],
+      remix: { ignoreSlots: ["invoice-card"] },
+    });
+    await applyDraft({
+      root,
+      tools: TOOLS,
+      draft: { brief: "Maple.", tools: [{ name: "host_invoices_list", description: "List invoices." }] },
+    });
+    const overrides = JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8"));
+    expect(overrides.format).toBe("vendo/overrides@3");
+    expect(overrides.domains).toEqual({ has: ["billing"], hasNot: ["payroll"] });
+    expect(overrides.briefs).toEqual([{ name: "bulk", text: "one invoice per row" }]);
+    expect(overrides.remix).toEqual({ ignoreSlots: ["invoice-card"] });
+  });
+
+  it("folds a legacy v1 overrides.json in-memory and writes it back as v3", async () => {
+    const root = await fixture({
+      format: "vendo/overrides@1",
+      tools: { host_invoices_create: { critical: true } },
+      remix: { ignoreSlots: [] },
+    });
+    await applyDraft({
+      root,
+      tools: TOOLS,
+      draft: { brief: "Maple.", tools: [{ name: "host_invoices_list", description: "List invoices." }] },
+    });
+    const overrides = JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8"));
+    expect(overrides.format).toBe("vendo/overrides@3");
+    expect(overrides.tools["host_invoices_create"]).toEqual({ critical: true });
+    expect(overrides.tools["host_invoices_list"]).toEqual({ description: "List invoices." });
+  });
+
+  it("a malformed authored overrides.json fails loud (strict v3), never silently drops", async () => {
+    const root = await fixture({
+      format: "vendo/overrides@3",
+      tools: { host_invoices_list: { descriptin: "typo" } },
+    });
+    await expect(applyDraft({
+      root,
+      tools: TOOLS,
+      draft: { brief: "Maple.", tools: [{ name: "host_invoices_list", description: "List invoices." }] },
+    })).rejects.toThrow();
   });
 
   it("reportApplied warns loudly when the applied surface leaves the agent with zero live tools", async () => {
@@ -432,12 +498,16 @@ describe("runAiExtraction", () => {
     expect(sink.logs.join("\n")).toContain("Reading your product");
   });
 
-  it("runs the harness, applies the draft, and summarizes", async () => {
+  it("runs the harness and applies the draft as full-repo ENRICHMENT of tools.json (init = sync's degenerate diff)", async () => {
     const root = await fixture();
     const sink = output();
     const draft = {
       brief: "Maple is a consumer bank.",
-      tools: [{ name: "host_invoices_list", description: "List invoices with status filters." }],
+      tools: [
+        { name: "host_invoices_list", description: "List invoices with status filters." },
+        // restrictive-only: a wake attempt is clamped; enabling stays human
+        { name: "host_admin_unclassified", description: "Deletes ledger rows.", risk: "read" as const, disabled: false, reasoning: "looks safe" },
+      ],
       missedSurfaces: ["/api/reports (GET) — monthly aging report"],
     };
     const result = await runAiExtraction({
@@ -448,10 +518,18 @@ describe("runAiExtraction", () => {
     expect(result.ran).toBe(true);
     const logs = sink.logs.join("\n");
     expect(logs).toContain("Reading your product (your Claude Code login)");
-    expect(logs).toContain("1 descriptions");
+    expect(logs).toContain("2 tools enriched");
     expect(logs).toContain("brief drafted");
     expect(logs).toContain("missed surface");
-    expect((await readOverrides(root)).tools["host_invoices_list"]?.description).toBe("List invoices with status filters.");
+    // the judgment lands in the machine layer, marked enriched…
+    const tools = JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8")) as { tools: any[]; watermark?: string };
+    const byName = new Map(tools.tools.map((tool) => [tool.name, tool]));
+    expect(byName.get("host_invoices_list")).toMatchObject({ description: "List invoices with status filters.", enriched: true });
+    expect(byName.get("host_admin_unclassified")).toMatchObject({ risk: "destructive", disabled: true, enriched: true });
+    expect(sink.errors.join("\n")).toContain("clamped");
+    // …NOT in overrides.json, which stays human-written in format v3
+    expect((await readOverrides(root)).tools["host_invoices_list"]).toBeUndefined();
+    expect(await readFile(join(root, ".vendo", "brief.md"), "utf8")).toContain("Maple is a consumer bank.");
   });
 
   it("a failing harness degrades honestly and writes nothing", async () => {

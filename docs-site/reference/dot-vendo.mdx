@@ -6,10 +6,9 @@ description: "Every path inside the .vendo directory, which tool writes it, and 
 
 | Path | Written by | Format |
 | --- | --- | --- |
-| `tools.json` | sync | `vendo/tools@1` (04) |
+| `tools.json` | sync | `vendo/tools@3` (04) — tools with inferred field `semantics`, the `domains` manifest, per-tool `srcHash`, a per-tool `enriched` marker (set by the AI enrichment pass; absent = structural defaults), and the `watermark` (git tree at the last enrichment; absent until one runs) |
 | `catalog.json` | sync | `vendo/catalog@1` (04) |
-| `capabilities.json` | human | `vendo/capabilities@1` (04) |
-| `overrides.json` | init / human | `vendo/overrides@1` (04) |
+| `overrides.json` | init / human | `vendo/overrides@3` (04) — per-tool overrides plus your `domains` additions, `compounds`, and `briefs` |
 | `policy.json` | init / human | `vendo/policy@1` (05) |
 | `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
 | `brief.md` | init | product brief for the system prompt (03 §3) |
@@ -18,8 +17,16 @@ description: "Every path inside the .vendo directory, which tool writes it, and 
 | `data/` | store | PGlite files (gitignored; init writes the ignore) |
 | `data/misses.jsonl` | runtime | one `vendo/capability-miss@1` event per line ([Telemetry](/deploy/telemetry#capability-misses)) |
 
-This table is complete. Sync owns generated tool and remix baseline files.
-Human overrides remain separate so extraction never overwrites reviewed risk,
-descriptions, or disabled state.
+This table is complete, and it is split by author: `tools.json` is the machine
+layer `vendo sync` regenerates wholesale, and `overrides.json` is the only
+hand-edited file, so extraction can never overwrite reviewed risk,
+descriptions, disabled state, compounds, or briefs.
+
+Older installs used a four-file layout (`vendo/tools@1`, `vendo/overrides@1`,
+plus `capabilities.json` and `semantics.json`). The next `vendo sync` migrates
+it in place: compounds and briefs fold into `overrides.json`, per-tool
+semantics and the domain manifest fold into `tools.json`, and the two retired
+files are deleted. Every authored value is preserved — review the diff and
+commit.
 
 `data/` is runtime state, not configuration. Do not commit it.

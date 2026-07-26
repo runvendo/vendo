@@ -12,8 +12,15 @@ import { withSchemaLock } from "#store/db";
 
     v4 (kill-list §B3) adds `vendo_sessions`: the ephemeral in-memory overlay is
     gone, anonymous rows are ordinary disk rows, and this table is the session
-    registry the TTL sweep reads (02 §4). */
-export const SCHEMA_VERSION = 4;
+    registry the TTL sweep reads (02 §4).
+
+    v5 (ENG-356, knowledge design v2 (2026-07-22) R1) adds the dedicated
+    knowledge record collections `vendo_knowledge_docs` / `vendo_knowledge_chunks`.
+    Bumping the version is load-bearing, not cosmetic (review fix F1): the DDL
+    loop runs only while `version < SCHEMA_VERSION`, so appending the tables
+    WITHOUT this bump would leave every existing v4 database on 4 forever and the
+    new tables would never be created. */
+export const SCHEMA_VERSION = 5;
 
 /** 02-store §2 */
 export const DDL = [
@@ -85,6 +92,23 @@ export const DDL = [
   `CREATE TABLE IF NOT EXISTS vendo_sessions (
     subject text PRIMARY KEY, touched_at timestamptz NOT NULL
   )`,
+  // 02-store §2 + knowledge design v2 (2026-07-22) R1 (ENG-356, v5): the
+  // dedicated knowledge record collections. `vendo_knowledge_docs` is one row
+  // per document-level corpus entry; `vendo_knowledge_chunks` is one row per
+  // engine-minted chunk of a synced doc (the local engine's index — the cloud
+  // engine keeps its corpus server-side and never populates these). Same
+  // id/data/refs/created_at/updated_at layout as the MCP door tables; `refs`
+  // carries the subject/app keys the erase cascade matches (§5).
+  `CREATE TABLE IF NOT EXISTS vendo_knowledge_docs (
+    id text PRIMARY KEY, data jsonb NOT NULL, refs jsonb,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_knowledge_docs_refs_idx ON vendo_knowledge_docs USING GIN (refs jsonb_path_ops)",
+  `CREATE TABLE IF NOT EXISTS vendo_knowledge_chunks (
+    id text PRIMARY KEY, data jsonb NOT NULL, refs jsonb,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_knowledge_chunks_refs_idx ON vendo_knowledge_chunks USING GIN (refs jsonb_path_ops)",
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2
@@ -115,6 +139,11 @@ const ADDITIVE_DDL = [
   "CREATE INDEX IF NOT EXISTS vendo_records_collection_created_idx ON vendo_records (collection, created_at DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_mcp_clients_created_idx ON vendo_mcp_clients (created_at DESC, id DESC)",
   "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_created_idx ON vendo_mcp_grants (created_at DESC, id DESC)",
+  // The knowledge collections list newest-first for the corpus read-back
+  // (status()/listing, F2's 1000-row page bound), same keyset shape as the door
+  // tables above.
+  "CREATE INDEX IF NOT EXISTS vendo_knowledge_docs_created_idx ON vendo_knowledge_docs (created_at DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_knowledge_chunks_created_idx ON vendo_knowledge_chunks (created_at DESC, id DESC)",
   // The automations tick and vendo.emit fetch apps by trigger kind (schedule / host-event).
   // A STORED generated column projects doc->trigger->on->kind into an indexable value so
   // those paths query only the matching apps instead of scanning every app for every subject.

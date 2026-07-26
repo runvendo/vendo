@@ -181,6 +181,12 @@ describe("vendo init (zero-question)", () => {
     }
     await expect(readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).resolves.toBe("*\n!.gitignore\n");
     await expect(readFile(join(root, ".env"))).rejects.toMatchObject({ code: "ENOENT" });
+    // Everything init writes is format v3: the pair, and NO retired files.
+    expect(JSON.parse(await readFile(join(root, ".vendo", "tools.json"), "utf8"))).toMatchObject({ format: "vendo/tools@3" });
+    expect(JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8")))
+      .toEqual({ format: "vendo/overrides@3", tools: {}, remix: { ignoreSlots: [] } });
+    await expect(readFile(join(root, ".vendo", "capabilities.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(root, ".vendo", "semantics.json"))).rejects.toMatchObject({ code: "ENOENT" });
 
     // The summary lists what changed; nothing is left to paste.
     const logs = sink.logs.join("\n");
@@ -1807,7 +1813,7 @@ describe("vendo init (custom runtime)", () => {
     // Adapter rule: with a Cloud key the seams wire EXPLICITLY (model via the
     // stock Anthropic provider at the console gateway — the dev ladder cannot
     // resolve provider installs inside a Worker bundle).
-    expect(server).toContain('createAnthropic({ apiKey: cloud.apiKey, baseURL: `${cloud.baseUrl}/api/v1` })("vendo-default")');
+    expect(server).toContain('createAnthropic({ apiKey: cloud.apiKey, baseURL: `${cloud.baseUrl}/api/v1` })("vendo")');
     expect(server).toContain("store: hostedStore(cloud),");
     expect(server).toContain("sandbox: cloudSandbox(cloud),");
     // No framework file-layout assumptions.

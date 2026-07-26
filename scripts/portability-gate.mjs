@@ -52,6 +52,7 @@ const FORBIDDEN_INPUTS = [
   { fragment: "node_modules/.pnpm/pg@", seam: "#store/db conditions" },
   { fragment: "node_modules/.pnpm/typescript@", seam: "@vendoai/actions/sync subpath split" },
   { fragment: "node_modules/.pnpm/e2b@", seam: "bundler-blind e2b specifier (apps/src/e2b)" },
+  { fragment: "node_modules/.pnpm/esbuild@", seam: "bundler-blind esbuild specifier (apps/src/engine island validator)" },
 ];
 
 /** Raw source patterns whose fix classes this gate owns. */
@@ -63,6 +64,10 @@ const SOURCE_GUARDS = [
   {
     pattern: /await import\((?:\/\*[^*]*\*\/\s*)*["']e2b["']\)/,
     message: "literal import(\"e2b\") — esbuild hard-resolves it; route through the bundler-blind specifier in packages/apps/src/e2b",
+  },
+  {
+    pattern: /await import\((?:\/\*[^*]*\*\/\s*)*["']esbuild["']\)/,
+    message: "literal import(\"esbuild\") — Wrangler inlines the Node-only package into Worker bundles (island validator field failure); use the mutable-specifier pattern",
   },
 ];
 

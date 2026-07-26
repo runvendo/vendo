@@ -1,7 +1,7 @@
 ---
 title: "Compound tools"
 sidebarTitle: "Compound tools"
-description: "Compose multi-step capabilities from your existing tools in .vendo/capabilities.json and run each step through guard with its own approval and audit."
+description: "Compose multi-step capabilities from your existing tools in .vendo/overrides.json and run each step through guard with its own approval and audit."
 ---
 
 A compound tool bundles a short sequence of your existing host and connector
@@ -25,15 +25,19 @@ Reach for a compound when all three are true:
 If any step needs branching a JSONata expression cannot express, or the flow
 is long-running or event-driven, use an automation instead.
 
-## The capabilities file
+## Where compounds live
 
-Compounds live in `.vendo/capabilities.json`. A compound entry inside
-`tools.json` is rejected at load with a pointer to this file.
+Compounds are the `compounds` array of `.vendo/overrides.json` — the authored
+file `vendo sync` never regenerates. A compound entry inside `tools.json` is
+rejected at load with a pointer here. (Older installs kept compounds in
+`.vendo/capabilities.json`; the next `vendo sync` folds that file into
+`overrides.json` and deletes it.)
 
 ```json
 {
-  "format": "vendo/capabilities@1",
-  "tools": [
+  "format": "vendo/overrides@3",
+  "tools": {},
+  "compounds": [
     {
       "name": "host_invoice_send_reminder",
       "description": "Fetch an overdue invoice and email the customer a reminder.",
@@ -96,13 +100,13 @@ overrides apply. Under- or over-declaring risk quarantines the entry.
 
 ## Overrides
 
-`.vendo/overrides.json` applies to compounds by name, field by field, the same
-way it applies to extracted tools. Use overrides to tighten risk, mark a
-compound `critical`, or disable it without editing the capabilities file.
+The `tools` map of the same file applies to compounds by name, field by
+field, the same way it applies to extracted tools. Use it to tighten risk,
+mark a compound `critical`, or disable it without editing the compound entry.
 
 ```json
 {
-  "format": "vendo/overrides@1",
+  "format": "vendo/overrides@3",
   "tools": {
     "host_invoice_send_reminder": { "critical": true }
   }

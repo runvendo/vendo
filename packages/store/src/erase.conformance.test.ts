@@ -7,7 +7,7 @@ import { appFixture, approvalFixture, auditFixture, grantFixture } from "./fixtu
 import { appStore, grantStore, registerEphemeralSubject } from "./index.js";
 
 // 02-store §5: "A store-level erase API ... erases by subject (full erasure)
-// or by app, cascading the matching data across all 14 tables, and is
+// or by app, cascading the matching data across all 16 tables, and is
 // exposed on the umbrella. It is the only sanctioned deletion path for audit
 // rows."
 
@@ -85,6 +85,18 @@ for (const backend of backends()) {
         data: { open: true },
         refs: { subject: erased },
       });
+      // Knowledge corpus rows carrying the subject as a ref — exercise the new
+      // dedicated-table cascade (they'd read 0 and hide a broken DELETE if unseeded).
+      await store.records("vendo_knowledge_docs").put({
+        id: "kn_doc_erase_target",
+        data: { title: "mine" },
+        refs: { subject: erased },
+      });
+      await store.records("vendo_knowledge_chunks").put({
+        id: "kn_chunk_erase_target",
+        data: { text: "mine" },
+        refs: { subject: erased },
+      });
 
       // Seed the bystander, who must survive untouched.
       const bystanderDoc = appFixture("app_erase_bystander");
@@ -116,6 +128,8 @@ for (const backend of backends()) {
         vendo_mcp_clients: 0,
         vendo_mcp_grants: 1,
         vendo_sessions: 0, // durable subject — never registered as a session
+        vendo_knowledge_docs: 1,
+        vendo_knowledge_chunks: 1,
       });
 
       // Gone through the doors...
@@ -193,6 +207,7 @@ for (const backend of backends()) {
         await store.records("vendo_grants").put({ id: grant.id, data: grant });
         const event = auditFixture(`aud_${id}`, { principal: { kind: "user", subject }, appId: id });
         await store.records("vendo_audit").put({ id: event.id, data: event });
+        await store.records("vendo_knowledge_docs").put({ id: `kn_${id}`, data: { t: id }, refs: { app_id: id } });
       };
       await seedApp("app_erase_drop");
       await seedApp("app_erase_keep");
@@ -209,6 +224,7 @@ for (const backend of backends()) {
       expect(report.vendo_runs).toBe(1);
       expect(report.vendo_grants).toBe(1);
       expect(report.vendo_audit).toBe(1);
+      expect(report.vendo_knowledge_docs).toBe(1);
       expect(report.vendo_threads).toBe(0); // no app axis (§2) — subject/age cover threads
 
       expect(await store.records("vendo_apps").get("app_erase_drop")).toBeNull();
@@ -219,6 +235,7 @@ for (const backend of backends()) {
       expect(await store.records("vendo_runs").get("run_app_erase_keep")).not.toBeNull();
       expect(await store.records("vendo_grants").get("grt_app_erase_keep")).not.toBeNull();
       expect(await store.records("vendo_audit").get("aud_app_erase_keep")).not.toBeNull();
+      expect(await store.records("vendo_knowledge_docs").get("kn_app_erase_keep")).not.toBeNull();
       expect(await store.records("vendo_threads").get("thr_erase_by_app")).not.toBeNull();
     });
   });

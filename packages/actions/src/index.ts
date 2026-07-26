@@ -1,5 +1,6 @@
 /** @vendoai/actions — every API becomes agent tools (docs/contracts/04-actions.md). */
 export * from "./formats.js";
+export * from "./migrate.js";
 export * from "./connectors/connector.js";
 export { composioConnector } from "./connectors/composio.js";
 // Consumed by @vendoai/vendo's cloudTools, which mirrors the BYO connector's

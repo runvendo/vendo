@@ -58,6 +58,13 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
   the direct `@vendoai/vendo` entry to the same version (or drop it and
   depend on `vendoai` only), then reinstall. `vendo doctor` (0.4.3+) flags
   the mismatch.
+- On an edge runtime (Cloudflare Workers, Bun, Deno), a refusal naming the
+  local store engines ("the local store engines … need Node; pass `store:` …")
+  or the dev model ladder ("the dev model ladder needs Node; … pass `model:`
+  explicitly") means an infrastructure seam is unfilled: those two defaults
+  are Node-only by design. Set `VENDO_API_KEY` to wire the Cloud adapters, or
+  pass your own `store:`/`model:` — the generated custom wiring shows both
+  slots. See [Edge runtimes](/deploy/edge-runtimes).
 - Cookie-authenticated mutations require `Content-Type: application/json`.
 - `/tick` requires the configured bearer secret.
 - Webhook verification uses the raw body and delivery headers.

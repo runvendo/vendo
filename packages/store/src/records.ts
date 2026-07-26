@@ -21,7 +21,11 @@ import {
   unknownAppError,
 } from "./helpers/utils.js";
 
-export type DedicatedRecordTable = "vendo_mcp_clients" | "vendo_mcp_grants";
+export type DedicatedRecordTable =
+  | "vendo_mcp_clients"
+  | "vendo_mcp_grants"
+  | "vendo_knowledge_docs"
+  | "vendo_knowledge_chunks";
 
 function recordFromRow(row: Record<string, unknown>): VendoRecord {
   const refs = row["refs"] as Record<string, string> | null;

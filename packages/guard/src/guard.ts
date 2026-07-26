@@ -254,7 +254,7 @@ class GuardImplementation implements VendoGuard {
     // policy misconfiguration `resolvePolicyConfig` catches) must fail loud
     // from `createGuard` itself.
     this.#policyConfig = resolvePolicyConfig(config.policy);
-    this.#policy = new PolicyResolver(this.#policyConfig);
+    this.#policy = new PolicyResolver(this.#policyConfig, config.policyCloudFallback);
     this.#maxCallsPerMinute = config.breakers?.maxCallsPerMinute ?? 60;
     this.#maxWritesPerRun = config.breakers?.maxWritesPerRun ?? 20;
   }

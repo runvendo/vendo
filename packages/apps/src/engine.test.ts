@@ -19,7 +19,7 @@ import {
   scriptedLanguageModel,
   type ScriptedModelCall,
 } from "./testing/index.js";
-import { instructionRequiresServedApp, instructionRequiresServer, modelEngine, V4_EXEMPLARS, V4_EXEMPLAR_TOOLS } from "./engine.js";
+import { instructionRequiresServedApp, instructionRequiresServer, modelEngine, CONTRACT_EXEMPLARS, EXEMPLAR_HOST_TOOLS } from "./engine.js";
 import { fakeBoxSandbox } from "./testing/fake-box.js";
 
 const ctx: RunContext = {
@@ -188,10 +188,78 @@ describe("generation engine through createApps", () => {
     expect(prompts.at(-1)).toContain(`CURRENT DATE: ${today}`);
   });
 
-  describe("v4 create contract (pipeline.promptRewrite)", () => {
+  describe("data-sighted verification pass (pipeline.endPass at the runtime seam)", () => {
+    const appWire = '<App name="Client board"><Query id="metric" tool="host_metric"/><Stack><Stat label="Total clients" value={metric.headline}/></Stack></App>';
+    const metricTools: ToolRegistry = {
+      async descriptors() {
+        return [{ name: "host_metric", description: "Client metrics", risk: "read", inputSchema: { type: "object", properties: {} } }];
+      },
+      async execute(call) {
+        if (call.tool === "host_metric") return { status: "ok", output: { headline: "cl_rivera", clientCount: 12 } };
+        return { status: "error", error: { code: "not-found", message: "missing" } };
+      },
+    };
+
+    it("sees the RESOLVED data, relabels a lying headline, and persists the corrected app", async () => {
+      let verifyPrompt = "";
+      let calls = 0;
+      const model = scriptedLanguageModel((call) => {
+        calls += 1;
+        const text = promptText(call);
+        if (text.includes("ACTUAL data")) {
+          verifyPrompt = text;
+          return '<Edit><Set id="stat-1" label="Latest client id"/></Edit>';
+        }
+        return appWire;
+      });
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools: metricTools,
+        catalog: [],
+        model,
+        pipeline: { endPass: true },
+      });
+
+      const app = await runtime.create({ prompt: "how many clients do we have" }, ctx);
+
+      // The verifier saw the real resolved value next to the wire.
+      expect(verifyPrompt).toContain("cl_rivera");
+      expect(verifyPrompt).toContain('label="Total clients"');
+      // The lie was corrected before persistence; the stored app matches.
+      const stat = (app.tree as { nodes: Array<{ component: string; props?: Record<string, unknown> }> }).nodes
+        .find(({ component }) => component === "Stat");
+      expect(stat?.props?.label).toBe("Latest client id");
+      expect(await runtime.get(app.id, ctx)).toEqual(app);
+      // Exactly two model calls: create + the sighted pass (the blind engine
+      // end pass must NOT also run — the runtime owns the flag now).
+      expect(calls).toBe(2);
+    });
+
+    it("ships the original app untouched when the verifier finds nothing or fails", async () => {
+      const model = scriptedLanguageModel((call) =>
+        promptText(call).includes("ACTUAL data") ? "<Edit></Edit>" : appWire);
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools: metricTools,
+        catalog: [],
+        model,
+        pipeline: { endPass: true },
+      });
+
+      const app = await runtime.create({ prompt: "how many clients do we have" }, ctx);
+
+      const stat = (app.tree as { nodes: Array<{ component: string; props?: Record<string, unknown> }> }).nodes
+        .find(({ component }) => component === "Stat");
+      expect(stat?.props?.label).toBe("Total clients");
+    });
+  });
+
+  describe("exemplar create contract (pipeline.exemplarContract)", () => {
     it("selects the rewritten contract only under the flag", async () => {
       const prompts: string[] = [];
-      const make = (promptRewrite: boolean) => createApps({
+      const make = (exemplarContract: boolean) => createApps({
         store: memoryStore(),
         guard: guardFixture(),
         tools,
@@ -200,7 +268,7 @@ describe("generation engine through createApps", () => {
           prompts.push(promptText(call));
           return validCreate();
         }),
-        pipeline: { promptRewrite },
+        pipeline: { exemplarContract },
       });
 
       await make(true).create({ prompt: "Dashboard" }, ctx);
@@ -209,6 +277,8 @@ describe("generation engine through createApps", () => {
       expect(prompts[0]).toContain("<building_great_apps>");
       expect(prompts[0]).toContain("<examples>");
       expect(prompts[0]).toContain("Claims tell the truth");
+      expect(prompts[0]).toContain("a semantically wrong tool is worse than a disclaimer");
+      expect(prompts[0]).toContain("rows lacking the named series draws nothing");
       expect(prompts[0]).toContain(`CURRENT DATE: ${new Date().toISOString().slice(0, 10)}`);
       expect(prompts[1]).not.toContain("<building_great_apps>");
       expect(prompts[1]).toContain("WIRE DIALECT");
@@ -216,14 +286,14 @@ describe("generation engine through createApps", () => {
 
     // A broken example teaches broken apps: every exemplar must survive the
     // REAL create path (compile + full validation) against its fictional host.
-    it.each(V4_EXEMPLARS.map((exemplar) => [exemplar.title, exemplar] as const))(
+    it.each(CONTRACT_EXEMPLARS.map((exemplar) => [exemplar.title, exemplar] as const))(
       "exemplar %s compiles and validates",
       async (_title, exemplar) => {
         const withTools = createApps({
           store: memoryStore(),
           guard: guardFixture(),
           tools: {
-            async descriptors() { return V4_EXEMPLAR_TOOLS.map((tool) => ({ ...tool })); },
+            async descriptors() { return EXEMPLAR_HOST_TOOLS.map((tool) => ({ ...tool })); },
             async execute() { return { status: "error", error: { code: "not-found", message: "fictional" } }; },
           },
           catalog: [],
@@ -245,7 +315,7 @@ describe("generation engine through createApps", () => {
   describe("empty-states batch (first-run generation spec)", () => {
     it("teaches the empty-data, About-this-view, display-title, and static-island rules in both create contracts", async () => {
       const prompts: string[] = [];
-      const make = (promptRewrite: boolean) => createApps({
+      const make = (exemplarContract: boolean) => createApps({
         store: memoryStore(),
         guard: guardFixture(),
         tools,
@@ -254,7 +324,7 @@ describe("generation engine through createApps", () => {
           prompts.push(promptText(call));
           return validCreate();
         }),
-        pipeline: { promptRewrite },
+        pipeline: { exemplarContract },
       });
 
       await make(false).create({ prompt: "Dashboard" }, ctx);
@@ -1131,6 +1201,59 @@ describe("v2 wire create", () => {
     await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
 
     expect(resolves).toBe(1);
+  });
+
+  it("theme: unset is unchanged, an explicit value flows, and a provider form resolves per generation", async () => {
+    const run = async (theme: unknown): Promise<string> => {
+      let created = "";
+      const model = scriptedLanguageModel((call) => {
+        const prompt = promptText(call);
+        if (prompt.includes("THEME TOKENS:")) created = prompt;
+        return wireCreate();
+      });
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools,
+        catalog,
+        model,
+        ...(theme === undefined ? {} : { theme: theme as never }),
+      });
+      await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+      return created;
+    };
+    // (a) unset = today's behavior: null theme in the prompt.
+    expect(await run(undefined)).toContain("THEME TOKENS:\nnull");
+    // (b) an explicit value still wins.
+    expect(await run({ accent: "#5B21B6" })).toContain('"accent": "#5B21B6"');
+    // (c) a provider form resolves lazily — the same shape reaches the prompt.
+    expect(await run(() => ({ accent: "#1D4ED8" }))).toContain('"accent": "#1D4ED8"');
+  });
+
+  it("semantics and domains accept provider forms resolved per generation", async () => {
+    const semanticsProvider = vi.fn(() => ({ "invoices.list": { total: { kind: "money.cents" } } }));
+    let prompt = "";
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      if (text.includes("DATA DOMAINS")) prompt = text;
+      return wireCreate();
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+      // Provider forms — resolved once per generation, never at compose.
+      domains: () => ({ has: ["invoices"], hasNot: ["shipments"] }),
+      semantics: semanticsProvider as never,
+    });
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+    // domains provider resolved → its facts reach the prompt.
+    expect(prompt).toContain("This host HAS data for: invoices");
+    expect(prompt).toContain("This host has NO data for: shipments");
+    // semantics provider was invoked (resolved), proving the lazy path fires.
+    expect(semanticsProvider).toHaveBeenCalled();
   });
 
   it("carries islands to document-level components, never on the tree", async () => {

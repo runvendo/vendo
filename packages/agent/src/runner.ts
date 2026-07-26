@@ -27,7 +27,7 @@ import {
 export interface RunnerConfig {
   model: LanguageModel;
   guard: Guard;
-  system?: { product?: string; instructions?: string };
+  system?: { product?: string | (() => string | undefined); instructions?: string };
   context?: { maxOutputTokens?: number; toolOutputCap?: number };
   capabilityMiss?: CapabilityMissConfig;
 }

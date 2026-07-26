@@ -52,7 +52,12 @@ export const RESERVED_COLLECTIONS = [
   "vendo_state",
 ] as const;
 
-export const DEDICATED_RECORD_COLLECTIONS = ["vendo_mcp_clients", "vendo_mcp_grants"] as const;
+export const DEDICATED_RECORD_COLLECTIONS = [
+  "vendo_mcp_clients",
+  "vendo_mcp_grants",
+  "vendo_knowledge_docs",
+  "vendo_knowledge_chunks",
+] as const;
 
 export type ReservedCollection = typeof RESERVED_COLLECTIONS[number];
 

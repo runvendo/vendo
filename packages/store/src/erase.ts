@@ -23,6 +23,8 @@ export const ERASE_TABLES = [
   "vendo_mcp_clients",
   "vendo_mcp_grants",
   "vendo_sessions",
+  "vendo_knowledge_docs",
+  "vendo_knowledge_chunks",
 ] as const;
 
 export type EraseTable = typeof ERASE_TABLES[number];
@@ -36,7 +38,7 @@ function emptyReport(): EraseReport {
 
 /**
  * 02-store §5 — the store-level erase API: by subject (full erasure) or by
- * app, cascading the matching data across all 14 tables of §2's map. It is
+ * app, cascading the matching data across all 16 tables of §2's map. It is
  * the ONLY sanctioned deletion path for `vendo_audit` rows — the routed door
  * refuses audit deletion (§2); this API reaches the tables directly.
  * Ephemeral subjects are erased the same way (their rows are ordinary disk
@@ -109,6 +111,10 @@ export function eraseStore(store: VendoStore): {
       await del(report, "vendo_records", "refs @> $1::jsonb", [subjectRef]);
       await del(report, "vendo_mcp_clients", "refs @> $1::jsonb", [subjectRef]);
       await del(report, "vendo_mcp_grants", "refs @> $1::jsonb", [subjectRef]);
+      // Knowledge corpus rows the subject axis reaches carry the subject only as
+      // a ref, same as the door tables (the knowledge engine owns what it refs).
+      await del(report, "vendo_knowledge_docs", "refs @> $1::jsonb", [subjectRef]);
+      await del(report, "vendo_knowledge_chunks", "refs @> $1::jsonb", [subjectRef]);
       // The session registration (if any) is retired with the data (§4).
       await del(report, "vendo_sessions", "subject = $1", [subject]);
       return report;
@@ -129,6 +135,9 @@ export function eraseStore(store: VendoStore): {
       await del(report, "vendo_records", "refs @> $1::jsonb", [appRef]);
       await del(report, "vendo_mcp_clients", "refs @> $1::jsonb", [appRef]);
       await del(report, "vendo_mcp_grants", "refs @> $1::jsonb", [appRef]);
+      // An app's knowledge corpus (docs + their chunks) goes with the app.
+      await del(report, "vendo_knowledge_docs", "refs @> $1::jsonb", [appRef]);
+      await del(report, "vendo_knowledge_chunks", "refs @> $1::jsonb", [appRef]);
       return report;
     },
   };

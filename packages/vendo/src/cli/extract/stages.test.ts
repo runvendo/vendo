@@ -114,6 +114,28 @@ describe("runStagedExtraction", () => {
     expect(await readArtifact(root, "draft")).toMatchObject({ brief: "Maple is a consumer bank." });
   });
 
+  it("the survey override also shadows a VENDO_MODEL_EXTRACT pin, which base stages keep", async () => {
+    const root = await fixture();
+    const { harness, runs } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") return { tools: [] };
+      return { brief: "b" };
+    });
+    await runStagedExtraction({
+      root,
+      env: { VENDO_MODEL_EXTRACT: "vendo-extract", VENDO_EXTRACTION_SURVEY_MODEL: "small-model" },
+      harness,
+      tools: TOOLS,
+      appName: "maple",
+    });
+    // Both the new pin and the deprecated var carry the survey override, so
+    // every harness (new-var-first precedence) lands on the survey model.
+    expect(runs[0]?.input.env["VENDO_MODEL_EXTRACT"]).toBe("small-model");
+    expect(runs[0]?.input.env["VENDO_EXTRACTION_MODEL"]).toBe("small-model");
+    expect(runs.slice(1).every((run) => run.input.env["VENDO_MODEL_EXTRACT"] === "vendo-extract")).toBe(true);
+  });
+
   it("a failed surface pass is skipped with an honest note, not fatal", async () => {
     const root = await fixture();
     const { harness } = scriptedHarness((stage, input) => {

@@ -3,13 +3,13 @@ import { pathToFileURL } from "node:url";
 import { isVendoKey } from "./cli/cloud/client.js";
 import { runLoginCommand } from "./cli/cloud/device-login.js";
 import { runCloud } from "./cli/cloud/index.js";
+import { runConfig } from "./cli/config.js";
 import { runDoctor } from "./cli/doctor.js";
 import { runEject } from "./cli/eject.js";
 import { runExtractApply } from "./cli/extract/apply.js";
 import { runInit, type InitOptions } from "./cli/init.js";
 import { runMcp } from "./cli/mcp/index.js";
 import { runPlayground } from "./cli/playground.js";
-import { runRefineCommand } from "./cli/refine.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
 
@@ -23,18 +23,18 @@ Commands:
   doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
 
 Advanced:
-  sync [dir]      Re-extract tools and baselines (init hooks this into predev/prebuild; --strict is the CI gate)
+  sync [dir]      Re-extract tools and baselines, then AI-enrich entries the code diff affected (keyless: structural only; --strict is the CI gate)
   eject <surface> [dir]  Copy a shipped chrome surface's presentation source into your repo (--list to see surfaces)
   extract [dir]   Apply a coding agent's extraction draft through the deterministic guards (--apply <draft.json>)
-  refine [dir]    Propose compound capabilities, risk corrections, and brief updates as reviewable diffs
   playground      Render every Vendo surface against scripted data in the browser — no model key needed
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API
+  config <command> Push/pull a .vendo surface to/from hosted config, or show surface owners
 
 Options:
   --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations, the aiPolish delegation contract
   --apply <draft.json>       Extract only: draft file an external agent produced from the plan's aiPolish contract
-  --yes                      Init: skip the cloud-login offer; refine: approve displayed diffs; doctor: auto-start the dev server
+  --yes                      Init: skip the cloud-login offer; doctor: auto-start the dev server
   --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
   --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
   --framework <name>         Init only: override framework detection (next, express) — required non-interactively when detection fails
@@ -42,13 +42,14 @@ Options:
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
-  --engine <name>            Init only: pin the AI-polish engine (claude, codex, npx) instead of first-available
+  --engine <name>            Init/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
-  --model-import <specifier> Refine only: module exporting the host's ai-SDK model
-  --ask <text>               Refine only: interview answer (repeatable) for non-interactive runs
-  --url <url>                Doctor/refine/server-json: mounted wire base or public MCP URL
+  --url <url>                Doctor/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
+  --review                   Sync only: show the AI enrichment narrative and confirm before writing
+  --full                     Sync only: force full re-enrichment instead of the watermark diff
+  --no-watermark             Sync only: workspace-internal sync — no watermark bookkeeping, no AI enrichment
   --port <port>              Playground only: listen on a fixed port (default: any free port)
   --no-open                  Playground only: print the URL without opening the browser
   --json                     Sync/doctor: print one machine-readable report object
@@ -78,16 +79,14 @@ const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "
 /** Agent-install-dx: every init wizard question has a value-flag answer; a
     bad value fails as loudly as an unknown flag, with the valid choices. */
 const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
-const INIT_FRAMEWORK_VALUES = ["next", "express"];
+const INIT_FRAMEWORK_VALUES = ["next", "express", "custom"];
 const INIT_ENGINE_VALUES = ["claude", "codex", "npx"];
 const EXTRACT_FLAGS = new Set(["--force"]);
 const EXTRACT_VALUE_OPTIONS = ["--apply"];
 const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
 const DOCTOR_VALUE_OPTIONS = ["--url"];
-const REFINE_FLAGS = new Set(["--yes"]);
-const REFINE_VALUE_OPTIONS = ["--url", "--model-import", "--ask"];
-const SYNC_FLAGS = new Set(["--strict", "--json", "--report"]);
-const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url"];
+const SYNC_FLAGS = new Set(["--strict", "--json", "--report", "--review", "--full", "--no-watermark"]);
+const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url", "--engine"];
 const LOGIN_VALUE_OPTIONS = ["--api-url", "--wait"];
 
 /** ENG-335: options the CLI does not recognize — or value options missing
@@ -143,8 +142,8 @@ function playgroundOptionErrors(args: string[]): { errors: string[]; port?: numb
 
 function target(args: string[]): string {
   const optionValues = new Set<string>();
-  for (const name of ["--model-import", "--url", "--key", "--api-url", "--ask", "--apply",
-    "--auth", "--framework", "--cloud-key", "--theme"]) {
+  for (const name of ["--url", "--key", "--api-url", "--apply",
+    "--auth", "--framework", "--cloud-key", "--theme", "--engine"]) {
     for (let index = 0; index < args.length; index += 1) {
       if (args[index] === name && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
     }
@@ -175,6 +174,7 @@ export async function main(argv: string[]): Promise<number> {
     return runLoginCommand(args);
   }
   if (command === "cloud") return runCloud(args);
+  if (command === "config") return runConfig(args);
   if (command === "mcp") return runMcp(args);
   if (command === "init") {
     const problems = optionErrors(args, INIT_FLAGS, INIT_VALUE_OPTIONS);
@@ -184,7 +184,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     const framework = option(args, "--framework");
     if (framework !== undefined && !INIT_FRAMEWORK_VALUES.includes(framework)) {
-      problems.push("--framework must be next or express (example: vendo init --framework next)");
+      problems.push("--framework must be next, express, or custom (example: vendo init --framework custom for a Cloudflare Worker / Bun / Deno host)");
     }
     const cloudKey = option(args, "--cloud-key");
     if (cloudKey !== undefined && !isVendoKey(cloudKey)) {
@@ -268,20 +268,6 @@ export async function main(argv: string[]): Promise<number> {
       yes: args.includes("--yes"),
     });
   }
-  if (command === "refine") {
-    const problems = optionErrors(args, REFINE_FLAGS, REFINE_VALUE_OPTIONS);
-    if (problems.length > 0) {
-      console.error(`vendo refine: ${problems.join("; ")}\n\n${HELP}`);
-      return 1;
-    }
-    return runRefineCommand({
-      targetDir: target(args),
-      url: option(args, "--url"),
-      modelImport: option(args, "--model-import"),
-      asks: options(args, "--ask"),
-      yes: args.includes("--yes"),
-    });
-  }
   if (command === "playground") {
     const { errors, port } = playgroundOptionErrors(args);
     if (errors.length > 0) {
@@ -292,6 +278,13 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "sync") {
     const problems = optionErrors(args, SYNC_FLAGS, SYNC_VALUE_OPTIONS);
+    const engine = option(args, "--engine");
+    if (engine !== undefined && !INIT_ENGINE_VALUES.includes(engine)) {
+      problems.push(`--engine must be one of ${INIT_ENGINE_VALUES.join(", ")} (example: vendo sync --engine codex)`);
+    }
+    if (args.includes("--review") && args.includes("--json")) {
+      problems.push("--review is interactive and cannot combine with --json");
+    }
     if (problems.length > 0) {
       console.error(`vendo sync: ${problems.join("; ")}\n\n${HELP}`);
       return 1;
@@ -304,6 +297,10 @@ export async function main(argv: string[]): Promise<number> {
       report: args.includes("--report"),
       apiKey: option(args, "--key"),
       apiUrl: option(args, "--api-url"),
+      review: args.includes("--review"),
+      full: args.includes("--full"),
+      noWatermark: args.includes("--no-watermark"),
+      ...(engine === undefined ? {} : { engine }),
     });
   }
   console.error(`Unknown command: ${command}\n\n${HELP}`);

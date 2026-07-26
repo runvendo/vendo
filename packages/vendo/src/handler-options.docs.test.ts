@@ -13,6 +13,7 @@ import type { CreateVendoConfig } from "./server.js";
 const CONFIG_KEYS = [
   "model",
   "paint",
+  "models",
   "auth",
   "principal",
   "catalog",

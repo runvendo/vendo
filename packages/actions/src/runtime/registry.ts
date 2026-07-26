@@ -14,24 +14,31 @@ import {
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
 import {
+  VENDO_OVERRIDES_FORMAT_V3,
+  VENDO_TOOLS_FORMAT_V3,
   capabilitiesFileSchema,
   extractedToolSchema,
   overridesFileSchema,
+  overridesFileV3Schema,
   toolsFileSchema,
+  toolsFileV3Schema,
+  vendoFileVersion,
   type CapabilitiesFile,
   type CapabilityBrief,
   type CompoundTool,
   type ExtractedTool,
+  type ExtractedToolV3,
   type GraphqlBinding,
   type HttpMethod,
   type OpenApiBinding,
-  type OverridesFile,
+  type OverridesFileV3,
   type RouteBinding,
   type ServerActionBinding,
   type ToolBinding,
   type ToolOverride,
   type TrpcBinding,
 } from "../formats.js";
+import { migrateLegacyVendoDir, type LegacyVendoFiles } from "../migrate.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
 import { searchToolDescriptors, tokenize, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
@@ -39,7 +46,7 @@ import { defaultFetch } from "@vendoai/core";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
-  /** Capability briefs carried by `.vendo/capabilities.json` (04 §1). Validated and exposed; consumed by later milestones. */
+  /** Capability briefs carried by `.vendo/overrides.json` (04 §1; legacy capabilities.json migrates in). Validated and exposed; consumed by later milestones. */
   briefs(): Promise<CapabilityBrief[]>;
   /**
    * Runtime tool search (ENG-252): rank the merged, enabled tool surface against
@@ -115,6 +122,15 @@ interface RegistryConfig {
   fetch?: typeof fetch;
   /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
   capabilities?: CapabilitiesFile;
+  /** Inject the v3 overrides doc directly instead of reading
+   *  `.vendo/overrides.json` from `dir` — the hosted-config seam (cse lane 3):
+   *  the umbrella passes cloud-published overrides here when there is no local
+   *  file. Takes precedence over the file read (mirrors `tools`/`capabilities`).
+   *  The provider form is resolved ONCE through the memoized loadHost (boot-once,
+   *  no hot-swap) and MAY be async so the umbrella can await a first-request
+   *  cloud fetch; resolving to undefined falls back to the `dir` file read.
+   *  `tools.json` always comes from `dir`. */
+  overrides?: OverridesFileV3 | (() => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>);
   /**
    * 04 §6: the guard-bound execution seam every compound step routes through.
    * The umbrella assigns it AFTER `guard.bind(actions)` — read at execution
@@ -144,6 +160,14 @@ const STRIPPED_HEADERS = new Set([
   "upgrade",
 ]);
 
+/** Name-keyed union: primary entries win; secondary contributes only the
+ *  names primary lacks (registry load of compounds/briefs across the pair
+ *  plus a stranded capabilities.json). */
+function unionByName<T extends { name: string }>(primary: readonly T[], secondary: readonly T[]): T[] {
+  const names = new Set(primary.map((entry) => entry.name));
+  return [...primary, ...secondary.filter((entry) => !names.has(entry.name))];
+}
+
 function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
   return {
     name: tool.name,
@@ -154,7 +178,10 @@ function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
   };
 }
 
-function mergeOverride<T extends ToolDescriptor>(descriptor: T, override?: ToolOverride): T & { disabled?: boolean } {
+function mergeOverride<T extends ToolDescriptor & Pick<ExtractedToolV3, "audience" | "semantics">>(
+  descriptor: T,
+  override?: ToolOverride,
+): T & { disabled?: boolean } & Pick<ExtractedToolV3, "audience" | "semantics"> {
   if (!override) return descriptor;
   return {
     ...descriptor,
@@ -162,6 +189,9 @@ function mergeOverride<T extends ToolDescriptor>(descriptor: T, override?: ToolO
     ...(override.critical !== undefined ? { critical: override.critical } : {}),
     ...(override.description !== undefined ? { description: override.description } : {}),
     ...(override.disabled !== undefined ? { disabled: override.disabled } : {}),
+    ...(override.audience !== undefined ? { audience: override.audience } : {}),
+    // v3: overrides correct semantics field-by-field, never wholesale.
+    ...(override.semantics !== undefined ? { semantics: { ...descriptor.semantics, ...override.semantics } } : {}),
   };
 }
 
@@ -662,10 +692,13 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
   return actAsMinted ? withActAs(outcome, "minted") : outcome;
 }
 
+/** The v3-normalized host view (cse lane 1): legacy v1 dirs migrate into this
+ *  shape in-memory at load, so everything downstream speaks one format. */
 interface LoadedHost {
-  tools: ExtractedTool[];
-  overrides: OverridesFile;
-  capabilities?: CapabilitiesFile;
+  tools: ExtractedToolV3[];
+  overrides: OverridesFileV3;
+  compounds: CompoundTool[];
+  briefs: CapabilityBrief[];
 }
 
 export function createActions(config: RegistryConfig): ActionsRegistry {
@@ -705,28 +738,96 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
 
   function loadHost(): Promise<LoadedHost> {
     if (!hostPromise) hostPromise = (async () => {
-      const emptyOverrides: OverridesFile = { format: "vendo/overrides@1", tools: {} };
+      const emptyOverrides: OverridesFileV3 = { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} };
       const configuredTools = config.tools?.map((tool, index) => parseExtractedTool(tool, `config.tools[${index}]`));
       const configuredCapabilities = config.capabilities === undefined
         ? undefined
         : parseCapabilities(config.capabilities, "config.capabilities");
+      // cse lane 3 — an injected overrides doc (hosted config) resolved ONCE
+      // through this memoized loadHost. The provider form may be async so the
+      // umbrella can await a first-request cloud fetch (reliable for the
+      // security-relevant enablement path); it resolves to undefined when the
+      // surface is not cloud-owned, letting the dir read below handle the file.
+      const injectedOverrides = typeof config.overrides === "function"
+        ? await (config.overrides as () => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>)()
+        : config.overrides;
       if (!config.dir) {
         return {
           tools: configuredTools ?? [],
-          overrides: emptyOverrides,
-          ...(configuredCapabilities === undefined ? {} : { capabilities: configuredCapabilities }),
+          // An injected v3 overrides doc still applies without a .vendo dir
+          // (non-file / cloud-only hosts).
+          overrides: injectedOverrides ?? emptyOverrides,
+          compounds: configuredCapabilities?.tools ?? injectedOverrides?.compounds ?? [],
+          briefs: configuredCapabilities?.briefs ?? injectedOverrides?.briefs ?? [],
         };
       }
-      const [toolsFile, overrides, capabilitiesFile] = await Promise.all([
-        readOptionalVendoJson(config.dir, "tools.json", (value) => toolsFileSchema.parse(value)),
-        readOptionalVendoJson(config.dir, "overrides.json", (value) => overridesFileSchema.parse(value)),
-        readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value)),
+      // Format v3 (cse lane 1): each file parses per its own format tag — v1
+      // keeps its exact v1 errors, everything else must be v3 and fails loud.
+      // An injected overrides doc (cse lane 3 hosted config) wins over the
+      // overrides.json read; tools.json still comes from the dir.
+      const [toolsFile, overridesFileRead] = await Promise.all([
+        readOptionalVendoJson(config.dir, "tools.json", (value) =>
+          vendoFileVersion(value) === 1 ? toolsFileSchema.parse(value) : toolsFileV3Schema.parse(value)),
+        injectedOverrides !== undefined
+          ? Promise.resolve(undefined)
+          : readOptionalVendoJson(config.dir, "overrides.json", (value) =>
+            vendoFileVersion(value) === 1 ? overridesFileSchema.parse(value) : overridesFileV3Schema.parse(value)),
       ]);
-      const capabilities = configuredCapabilities ?? capabilitiesFile;
+      const overridesFile = injectedOverrides ?? overridesFileRead;
+      const toolsV3 = toolsFile !== undefined && toolsFile.format === VENDO_TOOLS_FORMAT_V3 ? toolsFile : undefined;
+      const overridesV3 = overridesFile !== undefined && overridesFile.format === VENDO_OVERRIDES_FORMAT_V3 ? overridesFile : undefined;
+      const toolsV1 = toolsFile !== undefined && toolsFile.format !== VENDO_TOOLS_FORMAT_V3 ? toolsFile : undefined;
+      const overridesV1 = overridesFile !== undefined && overridesFile.format !== VENDO_OVERRIDES_FORMAT_V3 ? overridesFile : undefined;
+      // The retired capabilities.json is read whenever it EXISTS on disk —
+      // including beside a fully-v3 pair (an interrupted or hand-rolled
+      // migration leaves it stranded there). Its compounds/briefs always
+      // ingest through the legacy fold rather than silently dropping authored
+      // work; overrides.json-carried entries win by name (the sync path's
+      // conflicted-state posture), the file's unique entries are added.
+      const fullyV3 = toolsV3 !== undefined && overridesV3 !== undefined;
+      const capabilitiesFile = await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value));
+      const legacy: LegacyVendoFiles = {
+        ...(toolsV1 === undefined ? {} : { tools: toolsV1 }),
+        ...(overridesV1 === undefined ? {} : { overrides: overridesV1 }),
+        ...(capabilitiesFile === undefined ? {} : { capabilities: capabilitiesFile }),
+      };
+      const mixed = (toolsV3 === undefined) !== (overridesV3 === undefined)
+        && toolsFile !== undefined && overridesFile !== undefined;
+      if (mixed) {
+        console.warn(
+          "[vendo] .vendo is half-migrated: exactly one of tools.json/overrides.json is in the v3 format "
+          + `(tools.json is ${toolsFile.format}, overrides.json is ${overridesFile.format}). Legacy content — `
+          + "including any capabilities.json compounds/briefs — is still ingested in-memory this run, but this "
+          + "state usually means a sync or migration was interrupted. Run `vendo sync` to rewrite .vendo/ as the "
+          + "v3 pair.",
+        );
+      } else if (fullyV3 && capabilitiesFile !== undefined) {
+        console.warn(
+          "[vendo] .vendo is half-migrated: the retired capabilities.json is still on disk next to the v3 pair. "
+          + "Its compounds/briefs were ingested in-memory this run — overrides.json entries win by name, the "
+          + "file's unique entries were added. Run `vendo sync` to fold and retire it (a conflicted file is left "
+          + "for review).",
+        );
+      } else if (Object.keys(legacy).length > 0) {
+        console.warn(
+          "[vendo] .vendo uses the legacy v1 file layout (tools@1 / overrides@1 / capabilities.json) — migrated "
+          + "in-memory this run. Run `vendo sync` to rewrite .vendo/ in the v3 two-file format.",
+        );
+      }
+      const migrated = migrateLegacyVendoDir(legacy);
+      const tools = toolsV3 ?? migrated.tools;
+      const overrides = overridesV3 ?? migrated.overrides;
       return {
-        tools: configuredTools ?? toolsFile?.tools ?? [],
-        overrides: overrides ?? emptyOverrides,
-        ...(capabilities === undefined ? {} : { capabilities }),
+        tools: configuredTools ?? tools.tools,
+        overrides,
+        // The name-keyed union keeps a stranded capabilities.json's entries
+        // alive in every layout: overrides.json compounds/briefs win by name,
+        // the fold contributes only names overrides.json lacks. (On the pure
+        // legacy path the fold IS the overrides, so the union is identity.)
+        compounds: configuredCapabilities?.tools
+          ?? unionByName(overrides.compounds ?? [], migrated.overrides.compounds ?? []),
+        briefs: configuredCapabilities?.briefs
+          ?? unionByName(overrides.briefs ?? [], migrated.overrides.briefs ?? []),
       };
     })();
     return hostPromise.then(warnZeroLiveTools);
@@ -774,7 +875,8 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
             `connector ${connector.name}[${descriptorIndex}]`,
           );
           const merged = mergeOverride(rawDescriptor, host.overrides.tools[rawDescriptor.name]);
-          const { disabled: _disabled, ...descriptor } = merged;
+          // audience/semantics are override provenance, not descriptor surface.
+          const { disabled: _disabled, audience: _audience, semantics: _semantics, ...descriptor } = merged;
           register(
             descriptor.name,
             `connector ${connector.name}`,
@@ -798,7 +900,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // Name collisions (any direction) throw `conflict` via register(); a
       // semantic-validation failure QUARANTINES the entry — name reserved,
       // absent from descriptors and dispatch, boot never degrades.
-      const compounds = (host.capabilities?.tools ?? []).map(
+      const compounds = host.compounds.map(
         (tool) => mergeOverride({ ...tool }, host.overrides.tools[tool.name]),
       );
       const issuesByTool = new Map<string, string[]>();
@@ -813,12 +915,36 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
           register(compound.name, "capabilities", undefined);
           if (compound.disabled !== true) {
             console.warn(
-              `[vendo] quarantined compound tool ${compound.name} from .vendo/capabilities.json: ${compoundIssues.join("; ")}`,
+              `[vendo] quarantined compound tool ${compound.name} from .vendo/overrides.json: ${compoundIssues.join("; ")}`,
             );
           }
           continue;
         }
         register(compound.name, "capabilities", { kind: "compound", descriptor: descriptorOf(compound), tool: compound });
+      }
+
+      // v3 orphan detection (cse lane 1): an authored reference — override
+      // entry, compound step, brief tools ref — naming a tool no source
+      // registered is almost always a typo or a removed tool. LOUD warn,
+      // never a throw: a stale reference must not take the agent down.
+      const orphans: string[] = [];
+      for (const name of Object.keys(host.overrides.tools)) {
+        if (!reserved.has(name)) orphans.push(`tools["${name}"]`);
+      }
+      for (const compound of compounds) {
+        for (const step of compound.binding.steps) {
+          if (!reserved.has(step.tool)) orphans.push(`compound ${compound.name} step ${step.id} → ${step.tool}`);
+        }
+      }
+      for (const brief of host.briefs) {
+        for (const name of brief.tools ?? []) {
+          if (!reserved.has(name)) orphans.push(`brief "${brief.name}" → ${name}`);
+        }
+      }
+      if (orphans.length > 0) {
+        console.warn(
+          `[vendo] orphaned tool references in .vendo/overrides.json — these name no extracted, connector, or compound tool: ${orphans.join(", ")}. Check for typos or re-run \`vendo sync\`.`,
+        );
       }
 
       // Runtime dispatch keeps only enabled entries once all collision checks ran.
@@ -878,7 +1004,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     },
 
     async briefs(): Promise<CapabilityBrief[]> {
-      return (await loadHost()).capabilities?.briefs ?? [];
+      return (await loadHost()).briefs;
     },
 
     async expandToolkits(toolkits: string[]): Promise<void> {

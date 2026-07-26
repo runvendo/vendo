@@ -5,6 +5,19 @@
  *  these, which put ~4MB of dev tooling (and hard Node deps) into every
  *  Worker bundle. CLI and tests import from here. */
 export { mergeOverrides, vendoSync, type SyncReportWithWarnings } from "./index.js";
+// cse lane 1c — the AI enrichment pass's deterministic half: the restrictive-
+// only clamp the CLI applies to every model proposal, and the git-tree
+// watermark helper the pass advances after a successful enrichment.
+export {
+  AUDIENCE_RANK,
+  RISK_RANK,
+  applyEnrichmentFields,
+  carryEnrichment,
+  clampEnrichment,
+  type ClampedEnrichment,
+  type EnrichmentFields,
+} from "./enrichment.js";
+export { gitTreeHash } from "./watermark.js";
 export {
   extractServerActions,
   serverActionRegistrations,

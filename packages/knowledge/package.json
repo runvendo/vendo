@@ -1,0 +1,55 @@
+{
+  "name": "@vendoai/knowledge",
+  "version": "0.4.8",
+  "description": "The product knowledge base: KnowledgeAdapter engines (local, cloud client, BYO HTTP) and ingestion, behind core's frozen contract.",
+  "keywords": [
+    "ai",
+    "agent",
+    "rag",
+    "retrieval",
+    "knowledge",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/knowledge"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@vendoai/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

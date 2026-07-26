@@ -1,5 +1,5 @@
 {
-  "format": "vendo/tools@1",
+  "format": "vendo/tools@3",
   "tools": [
     {
       "name": "host_createVoiceSession",
@@ -14,7 +14,8 @@
         "operationId": "createVoiceSession",
         "method": "POST",
         "path": "/api/voice"
-      }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_getClient",
@@ -37,7 +38,8 @@
         "operationId": "getClient",
         "method": "GET",
         "path": "/api/clients/{id}"
-      }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_getDashboard",
@@ -52,7 +54,21 @@
         "operationId": "getDashboard",
         "method": "GET",
         "path": "/api/dashboard"
-      }
+      },
+      "semantics": {
+        "data.nearestDeadline": {
+          "kind": "date",
+          "format": "iso"
+        },
+        "data.nearestDeadlineClient.id": {
+          "kind": "id"
+        },
+        "data.nearestDeadlineClient.filingDeadline": {
+          "kind": "date",
+          "format": "iso"
+        }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_listActivity",
@@ -72,7 +88,31 @@
         "operationId": "listActivity",
         "method": "GET",
         "path": "/api/activity"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        },
+        "data.type": {
+          "kind": "enum",
+          "labels": {
+            "deadline_approaching": "Deadline approaching",
+            "document_rejected": "Document rejected",
+            "document_verified": "Document verified",
+            "message_sent": "Message sent",
+            "upload_received": "Upload received"
+          }
+        },
+        "data.clientId": {
+          "kind": "id",
+          "entity": "client"
+        },
+        "data.at": {
+          "kind": "date",
+          "format": "iso"
+        }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_listClientDocuments",
@@ -95,7 +135,8 @@
         "operationId": "listClientDocuments",
         "method": "GET",
         "path": "/api/clients/{id}/documents"
-      }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_listClientMessages",
@@ -118,7 +159,8 @@
         "operationId": "listClientMessages",
         "method": "GET",
         "path": "/api/clients/{id}/messages"
-      }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_listClients",
@@ -145,7 +187,41 @@
         "operationId": "listClients",
         "method": "GET",
         "path": "/api/clients"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        },
+        "data.entityType": {
+          "kind": "enum",
+          "labels": {
+            "c_corp": "C corp",
+            "individual": "Individual",
+            "partnership": "Partnership",
+            "s_corp": "S corp",
+            "sole_prop": "Sole prop"
+          }
+        },
+        "data.assigneeId": {
+          "kind": "id",
+          "entity": "assignee"
+        },
+        "data.filingDeadline": {
+          "kind": "date",
+          "format": "iso"
+        },
+        "data.status": {
+          "kind": "enum",
+          "labels": {
+            "complete": "Complete",
+            "missing_docs": "Missing docs"
+          }
+        },
+        "data.assignee.id": {
+          "kind": "id"
+        }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_listDeadlines",
@@ -160,7 +236,41 @@
         "operationId": "listDeadlines",
         "method": "GET",
         "path": "/api/deadlines"
-      }
+      },
+      "semantics": {
+        "data.id": {
+          "kind": "id"
+        },
+        "data.entityType": {
+          "kind": "enum",
+          "labels": {
+            "c_corp": "C corp",
+            "individual": "Individual",
+            "partnership": "Partnership",
+            "s_corp": "S corp",
+            "sole_prop": "Sole prop"
+          }
+        },
+        "data.assigneeId": {
+          "kind": "id",
+          "entity": "assignee"
+        },
+        "data.filingDeadline": {
+          "kind": "date",
+          "format": "iso"
+        },
+        "data.status": {
+          "kind": "enum",
+          "labels": {
+            "complete": "Complete",
+            "missing_docs": "Missing docs"
+          }
+        },
+        "data.assignee.id": {
+          "kind": "id"
+        }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_resetDemo",
@@ -175,7 +285,8 @@
         "operationId": "resetDemo",
         "method": "POST",
         "path": "/api/demo/reset"
-      }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_sendClientMessage",
@@ -215,7 +326,8 @@
         "operationId": "sendClientMessage",
         "method": "POST",
         "path": "/api/clients/{id}/messages"
-      }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_setDocumentStatus",
@@ -269,7 +381,8 @@
         "operationId": "setDocumentStatus",
         "method": "POST",
         "path": "/api/clients/{id}/documents/{docId}/status"
-      }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     },
     {
       "name": "host_simulateClientUpload",
@@ -318,7 +431,27 @@
         "operationId": "simulateClientUpload",
         "method": "POST",
         "path": "/api/demo/simulate/upload"
-      }
+      },
+      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
     }
-  ]
+  ],
+  "domains": {
+    "has": [
+      "clients",
+      "client documents",
+      "client messages",
+      "deadlines",
+      "filing activity",
+      "practice dashboard (documents outstanding/received, deadlines)"
+    ],
+    "hasNot": [
+      "invoices or billing",
+      "payroll",
+      "bank transactions",
+      "expenses",
+      "tax calculations",
+      "time tracking",
+      "e-signatures"
+    ]
+  }
 }

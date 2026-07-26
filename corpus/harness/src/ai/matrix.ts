@@ -4,7 +4,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
+import { overridesFileV3Schema, toolsFileSchema, toolsFileV3Schema, vendoFileVersion } from "@vendoai/actions";
 import {
   applyDraft,
   claudeHarness,
@@ -77,7 +77,9 @@ export interface AiScoreboardDocument {
  * the repo must have gone through `vendo init` first. */
 export async function readRepoStaticContext(appRoot: string): Promise<AiRepoStaticContext> {
   const raw = await readFile(path.join(appRoot, ".vendo", "tools.json"), "utf8");
-  const parsed = toolsFileSchema.parse(JSON.parse(raw));
+  const value: unknown = JSON.parse(raw);
+  // init writes vendo/tools@3; a legacy (pre-migration) repo still parses.
+  const parsed = vendoFileVersion(value) === 1 ? toolsFileSchema.parse(value) : toolsFileV3Schema.parse(value);
 
   const forPipeline: StaticTool[] = [];
   const forScoring: AiScoredStaticTool[] = [];
@@ -142,7 +144,8 @@ export async function evaluateDraft(options: EvaluateDraftOptions): Promise<Retu
 
   await applyDraft({ root: options.scratchRoot, draft: options.draft, tools: options.statics.forPipeline });
   const overridesRaw = await readFile(path.join(options.scratchRoot, ".vendo", "overrides.json"), "utf8");
-  const overrides = overridesFileSchema.parse(JSON.parse(overridesRaw)).tools;
+  // applyDraft writes strict vendo/overrides@3 (format v3).
+  const overrides = overridesFileV3Schema.parse(JSON.parse(overridesRaw)).tools;
 
   return scoreAiExtraction({
     staticTools: options.statics.forScoring,

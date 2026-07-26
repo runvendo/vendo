@@ -1,5 +1,6 @@
 import {
   createActions,
+  mergedSemanticsAndDomains,
   type ActionsRegistry,
   type ActionsRunContext,
   type Connector,
@@ -24,7 +25,6 @@ import {
 import {
   VendoError,
   descriptorHash,
-  semanticsFileSchema,
   vendoThemeSchema,
   type ActAs,
   type AppDocument,
@@ -86,11 +86,16 @@ import {
   createCapabilityMissCapture,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
-import { devModel } from "#dev-creds/model";
-// install-dx v1 — `devModel()` is the env-resolving model createVendo composes
-// when the host passes none; the resolver is shared by init and doctor (one
-// credential story, real keys only).
-export { devModel, type DevModelOptions } from "#dev-creds/model";
+import { configureVendoModelSlots } from "#dev-creds/model";
+// Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
+// entry: the lazily-resolving env ladder createVendo composes when the host
+// passes none, exported for host code too (judge wiring, host features). No
+// argument means `vendo` semantics (per-rung defaults); a name passes through
+// VERBATIM to the resolved rung. `devModel` stays as the deprecated alias.
+export { devModel, vendoModel, type DevModelOptions, type VendoModelOptions, type VendoModelSlot } from "#dev-creds/model";
+import { resolveModels } from "./models-config.js";
+export { type ModelsConfig } from "./models-config.js";
+import type { ModelsConfig } from "./models-config.js";
 import {
   byoConnections,
   cloudConnections,
@@ -113,11 +118,30 @@ import { cloudSandbox } from "./sandbox.js";
 // its own options instead of relying on the VENDO_API_KEY default.
 export { cloudSandbox, type CloudSandboxOptions } from "./sandbox.js";
 import { cloudApps } from "./cloud-apps.js";
+import { chainSecrets, cloudSecrets } from "./cloud-secrets.js";
+// The Cloud secrets provider and its chaining helper ride the server surface
+// like the other Cloud adapters: a host can compose them explicitly via
+// createVendo({ secrets: chainSecrets(envSecrets(), cloudSecrets({...})) })
+// instead of relying on the VENDO_API_KEY default (selectSecrets below).
+export { chainSecrets, cloudSecrets, type CloudSecretsOptions } from "./cloud-secrets.js";
 import { cloudTools } from "./cloud-tools.js";
 // The Cloud tools adapter (the execution half of the zero-key Composio seam)
 // rides the server surface the same way: pass it explicitly via
 // createVendo({ connectors: [cloudTools({...})] }) to scope with `apps`.
 export { cloudTools, type CloudToolsOptions } from "./cloud-tools.js";
+import { cloudConfig, type CloudConfig } from "./cloud-config.js";
+// The Cloud hosted-config adapter (the read half of the config-resolution seam)
+// rides the server surface too: the composition seam (selectConfigSurface)
+// consults it for a `.vendo` surface the host neither set nor keeps on disk.
+export { cloudConfig, type CloudConfig, type CloudConfigDoc, type CloudConfigResult, type CloudConfigOptions } from "./cloud-config.js";
+import { selectConfigSurface, type ConfigSurfaceName } from "./config-surface.js";
+export {
+  selectConfigSurface,
+  isConfigSurface,
+  CONFIG_SURFACES,
+  type ConfigSurfaceName,
+  type ConfigSurfaceOwner,
+} from "./config-surface.js";
 import { HostedSessionDoorsMissingError, hostedStore, type HostedStore } from "./hosted-store.js";
 // The hosted-store adapter rides the server surface like the other Cloud
 // adapters: a host can pass it explicitly via createVendo({ store }) with its
@@ -132,7 +156,6 @@ import {
   errorResponse,
   internalError,
   routeSegments,
-  type ModelVenue,
   type RouteEntry,
   type SandboxVenue,
   type WireContext,
@@ -186,17 +209,26 @@ export interface Vendo {
 }
 
 export interface CreateVendoConfig {
-  /** The agent's LLM — the inference adapter seam (03-agent §1): any ai-SDK
-      LanguageModel. Optional since install-dx v1: an explicitly passed model
-      always wins (BYO-LLM); when absent the seam resolves a real key from the
-      environment — provider keys via devModel's ladder, then VENDO_API_KEY →
-      Vendo Cloud managed inference — and fails honestly with instructions
-      when none exists (precedence: selectModel). */
+  /** @deprecated Superseded by `models.agent` (models spec 2026-07-22);
+      still functional for one release. The agent's LLM — the inference
+      adapter seam (03-agent §1): any ai-SDK LanguageModel. An explicitly
+      passed model always wins (BYO-LLM); when absent the seam resolves a
+      real key from the environment — provider keys via vendoModel's ladder,
+      then VENDO_API_KEY → Vendo Cloud managed inference — and fails honestly
+      with instructions when none exists (precedence: resolveModels). */
   model?: LanguageModel;
-  /** v2 spec §4 — tier-0 paint lane knob for app generation. `model` is the
-      no-think switch (a thinking-disabled model instance for the instant
-      paint); `disabled` forces single-lane generation. */
+  /** @deprecated The `model` half is superseded by `models.paint`;
+      `disabled` remains the single-lane switch. v2 spec §4 — tier-0 paint
+      lane knob for app generation. */
   paint?: AppsConfig["paint"];
+  /** Models spec 2026-07-22 (DX surface 3) — the models block, keyed by slot,
+      valued by a model-name string (resolved through vendoModel's credential
+      ladder: VERBATIM passthrough, per-rung defaults, env pins) or an
+      explicit ai-SDK LanguageModel object (wins as-is). `agent` supersedes
+      the top-level `model`; `paint` supersedes `paint.model`; `judge` only
+      feeds a judge the host wired from a string — vendoAutoJudge(
+      vendoModel("vendo-judge")) — there is NO judge-on-by-default. */
+  models?: ModelsConfig;
   /** 09-vendo §2.1 — ONE host-identity preset filling the principal, actAs, and
       oauth seams from one config key. Mutually exclusive with all three:
       mixing throws VendoError("validation") at compose time. */
@@ -210,6 +242,16 @@ export interface CreateVendoConfig {
       each entry's `component` reference) or the array form. Entry names must
       mirror the client-side components map 1:1. */
   catalog?: ComponentCatalog | ComponentRegistry;
+  /** cse lane 3 — programmatic override for the theme surface. An explicit
+      theme wins over `.vendo/theme.json` (config-surface precedence). A
+      structural, boot-once surface: it is resolved once at compose (feeds app
+      generation and the system-prompt summary), so unlike design-rules/brief
+      it is not re-read live. */
+  theme?: VendoTheme;
+  /** cse lane 3 — programmatic override for the product brief surface (03-agent
+      §3; the same prose `.vendo/brief.md` carries). A non-blank string wins
+      over the file; blank falls through. */
+  brief?: string;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
@@ -474,25 +516,18 @@ function selectConnections(
   return cloud !== undefined ? cloudConnections(cloud) : unconfiguredConnections();
 }
 
-/** ADAPTER RULE, inference seam (cloned from selectConnections): the agent and
-    apps blocks consume one ai-SDK LanguageModel; which implementation composes
-    is decided HERE. Precedence, top to bottom:
-      1. an explicitly passed model always wins (BYO-LLM — any ai-SDK model);
-      2. otherwise devModel()'s env ladder composes as the default, and the
-         remaining rungs live INSIDE it (resolveDevCredential): a provider key
-         (ANTHROPIC / OPENAI / GOOGLE) via the host-installed @ai-sdk provider,
-         then VENDO_API_KEY via @ai-sdk/anthropic pointed at the Cloud model
-         gateway (`<console>/api/v1` — Anthropic-compatible /messages), then
-         the honest keyless failure with exact instructions on first use.
-    devModel is the one seam-sanctioned lazy env resolver; every other adapter
-    still never reads the environment. */
-function selectModel(configured: LanguageModel | undefined): {
-  model: LanguageModel;
-  venue: ModelVenue;
-} {
-  if (configured !== undefined) return { model: configured, venue: "custom" };
-  return { model: devModel(), venue: "ladder" };
-}
+/* ADAPTER RULE, inference seam: the agent and apps blocks consume one ai-SDK
+   LanguageModel; which implementation composes is decided at resolveModels
+   (models-config.ts). Precedence per slot: an explicitly passed model object
+   always wins (BYO-LLM) → env pin (VENDO_MODEL / VENDO_MODEL_<SLOT>) →
+   `models` string → the per-rung default. Every string rides vendoModel()'s
+   env ladder, whose rungs live INSIDE it (resolveDevCredential): a provider
+   key (ANTHROPIC / OPENAI / GOOGLE) via the host-installed @ai-sdk provider,
+   then VENDO_API_KEY via @ai-sdk/anthropic pointed at the Cloud model gateway
+   (`<console>/api/v1` — Anthropic-compatible /messages), then the honest
+   keyless failure with exact instructions on first use. vendoModel is the one
+   seam-sanctioned lazy env resolver; every other adapter still never reads
+   the environment. */
 
 /** The ephemeral-session operations bound to the composed store (02-store §4):
     registration == touch, adoption on sign-in, and the TTL sweep. Selected
@@ -656,6 +691,28 @@ function selectStore(configured: VendoStore | undefined, touchDebounceMs: number
   return { store: local, sessions: localSessionOps(local) };
 }
 
+/** ADAPTER RULE, secrets seam (cloned from selectConnections): generated-app
+    env building and the apps block's redaction consume one SecretsProvider;
+    which implementation composes is decided HERE. Precedence, top to bottom:
+      1. an explicitly passed provider always wins (BYO — the host's own vault
+         indirection via createVendo({ secrets }));
+      2. the process environment stays first even with a key — a defined,
+         non-empty env value wins (the hard BYO rule: setting a Vendo key
+         never shadows a secret the operator already ships in the env) — and
+         VENDO_API_KEY chains the Cloud secrets provider behind it for the
+         names the environment leaves unset (VENDO_CLOUD_URL overrides the
+         console base URL);
+      3. keyless, the envSecrets default alone (unchanged behavior).
+    The providers themselves never read VENDO_API_KEY; a Cloud lookup failure
+    propagates from the chain (chainSecrets) — redaction already tolerates
+    provider failures at its own layer. */
+function selectSecrets(configured: SecretsProvider | undefined): SecretsProvider {
+  if (configured !== undefined) return configured;
+  const cloud = cloudKeyOptions();
+  if (cloud === undefined) return envSecrets();
+  return chainSecrets(envSecrets(), cloudSecrets(cloud));
+}
+
 function isJsonRequest(request: Request): boolean {
   return request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
     === "application/json";
@@ -687,8 +744,10 @@ function dotVendoRoot(): string | undefined {
   }
 }
 
-function dotVendoTheme(): VendoTheme | undefined {
-  const raw = dotVendoFile("theme.json");
+/** Parse a theme surface body (from `.vendo/theme.json` or, when it later gains
+    a cloud leg, the published doc). Malformed → undefined, same fail-soft
+    stance as the rest of the .vendo readers. */
+function parseVendoTheme(raw: string | undefined): VendoTheme | undefined {
   if (raw === undefined) return undefined;
   try {
     const parsed = vendoThemeSchema.safeParse(JSON.parse(raw));
@@ -974,9 +1033,55 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ),
   );
   const sandbox = selectSandbox(config.sandbox);
+  // Secrets, selected by the adapter rule at this composition seam
+  // (selectSecrets above): explicit provider → env chained over the
+  // VENDO_API_KEY Cloud provider → env alone. Consumed by machine env
+  // building and the apps block (redaction) below.
+  const secrets = selectSecrets(config.secrets);
   // Inference, selected by the adapter rule at this composition seam
-  // (selectModel above) — the one model the agent and apps blocks consume.
-  const inference = selectModel(config.model);
+  // (resolveModels, models-config.ts) — the agent model the agent and apps
+  // blocks consume, plus the composed paint knob (family fast pick when the
+  // agent slot rides the ladder; the deprecated paint.model otherwise).
+  const inference = resolveModels(config);
+  // models.judge feeds host-wired vendoModel("vendo-judge") instances (v1
+  // plumbing, see configureVendoModelSlots) — there is NO judge default.
+  configureVendoModelSlots(config.models);
+  // cse lane 3 — the Cloud hosted-config adapter, selected at THIS composition
+  // seam from VENDO_API_KEY (adapter rule: the surfaces themselves never read
+  // the key; cloudKeyOptions lives only here). Constructing it is PURE (closures
+  // only, no fetch). It is READ only from LAZY call sites — the block provider
+  // seams (design-rules/theme/semantics/domains thunks, the brief resolver, the
+  // guard policy fallback, the actions overrides injection) — never at compose,
+  // so createVendo stays I/O-free at module init (portability-gate). The
+  // snapshot warms on its first (cold) read and revalidates in the background,
+  // so a host that resolves no cloud surface makes no config call at all.
+  const configCloudOptions = cloudKeyOptions();
+  const configCloud: CloudConfig | undefined =
+    configCloudOptions === undefined ? undefined : cloudConfig(configCloudOptions);
+  // The .vendo surface reader, bound to the pinned compose-time root so the
+  // LATER lazy reads (per-generation, per-turn) see the same project every
+  // other .vendo input came from (a host that chdirs mid-run).
+  const surfaceRoot = dotVendoRoot();
+  const readSurfaceFile = (name: ConfigSurfaceName): string | undefined =>
+    dotVendoFile(name, surfaceRoot);
+  // Memoize the first DEFINED resolution of a BOOT-ONCE surface (theme,
+  // overrides): the surface locks to its first resolved value and never
+  // hot-reloads, yet a cold cloud snapshot (warming in the background) still
+  // lets a later resolution lock the value in. LIVE surfaces
+  // (design-rules/brief) skip this and re-resolve on every read.
+  const memoizeOnce = <T>(resolve: () => T | undefined): (() => T | undefined) => {
+    let cached: T | undefined;
+    let locked = false;
+    return () => {
+      if (locked) return cached;
+      const value = resolve();
+      if (value !== undefined) {
+        cached = value;
+        locked = true;
+      }
+      return value;
+    };
+  };
   // Construction stays PURE — no I/O, no timers — because the common edge
   // wiring calls createVendo() at module init, where Workers forbids both
   // (Mohamed's field report: "Disallowed operation called within global
@@ -1001,6 +1106,17 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // hook in guard means chat/SSE and the MCP door reach the same decision.
     resolveRisk: (call, _descriptor, ctx) => resolveAppToolRisk?.(call, ctx),
     ...(config.policy === undefined ? {} : { policy: config.policy }),
+    // cse lane 3 — a cloud policy.json body, consulted by the resolver STRICTLY
+    // AFTER the local file and only within its existing opt-in path (decision
+    // 3: no change for hosts that don't configure policy). Returns the cloud
+    // value only when the surface is cloud-owned; a local file is handled by
+    // the guard's own file read.
+    ...(configCloud === undefined ? {} : {
+      policyCloudFallback: (): string | undefined => {
+        const resolved = selectConfigSurface("policy.json", { readFile: readSurfaceFile, cloud: configCloud });
+        return resolved.owner === "cloud" ? resolved.value : undefined;
+      },
+    }),
     ...(config.judge === undefined ? {} : { judge: config.judge }),
   });
   let presentCredentialsWarningEmitted = false;
@@ -1070,6 +1186,17 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
   // defaults the Cloud tools connector for a wholly unset slot.
   const resolvedConnectors = selectConnectors(config.connectors);
+  // cse lane 3 NOTE — cloud overrides do NOT feed the actions registry's tool
+  // ENABLEMENT here. The actions block accepts an `overrides` injection
+  // (additive, tested), but wiring it from cloud requires the resolution to run
+  // on first REQUEST; the registry's first `loadHost` is driven at COMPOSE by
+  // the eager capability-miss surface (`missSurface = actions.descriptors()`
+  // below) and memoized, so injecting a cloud read there would fetch at module
+  // init (Workers global-scope violation) or lock an empty result before the
+  // snapshot warms. Making it correct means deferring that eager compose-time
+  // descriptors() call — an existing-behavior change beyond this seam. Reported
+  // to the coordinator. Cloud overrides DO feed app-generation semantics/domains
+  // (hostSemanticsProvider, resolved lazily per generation) below.
   const actionsConfig: {
     dir: string;
     connectors?: Connector[];
@@ -1135,29 +1262,56 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // automations ride), the wire's per-approval read, and the TTL sweep leg.
   const byoApprovals = createByoApprovals({ guard, tools: boundTools, store });
   const parkedCallTtlMs = validateParkedCallTtl(config.approvals);
-  const theme = dotVendoTheme();
-  // App design rules (spec 2026-07-20): explicit config wins; otherwise the
-  // file is re-read per generation (from the compose-time root) so brief
-  // tuning never needs a restart.
+  // The .vendo surface reader, bound to the pinned compose-time root so the
+  // LATER per-generation design-rules read sees the same project every other
+  // .vendo input came from (a host that chdirs mid-run).
+  // Theme surface (cse lane 3, boot-once/next-load STRUCTURAL): explicit config
+  // wins; else file → cloud. The compose-time `theme` value (file/explicit only,
+  // no cloud) still feeds the wire and the system-prompt catalog summary — they
+  // read a value at compose. The cloud-aware boot-once PROVIDER feeds app
+  // GENERATION through the apps thunk seam so a console theme publish is honored
+  // on the next-load lock without a compose-time fetch.
+  const theme = config.theme ?? parseVendoTheme(readSurfaceFile("theme.json"));
+  const themeProvider: () => VendoTheme | undefined = config.theme !== undefined
+    ? () => config.theme
+    : memoizeOnce(() => parseVendoTheme(selectConfigSurface("theme.json", { readFile: readSurfaceFile, cloud: configCloud }).value));
+  // App design rules (spec 2026-07-20 + cse lane 3): explicit config wins;
+  // otherwise a PER-GENERATION resolution — local file → cloud published value
+  // → unset — so both file edits and a console publish apply to the next
+  // create/edit without a restart (LIVE, re-resolved every generation).
   const configDesignRules = config.apps?.designRules?.trim();
-  const designRulesRoot = dotVendoRoot();
   const designRules = configDesignRules
     ? configDesignRules
-    : () => dotVendoFile("design-rules.md", designRulesRoot);
+    : () => selectConfigSurface("design-rules.md", { readFile: readSurfaceFile, cloud: configCloud }).value;
   const pinBaselines = dotVendoPinBaselines();
-  // W3 — .vendo/semantics.json (field semantics + domain manifest), written
-  // by `vendo sync`, host-edited, treated as generation fact. Malformed →
-  // loud + absent, same stance as catalog.json.
-  const semanticsFile = (() => {
-    const raw = dotVendoFile("semantics.json");
-    if (raw === undefined) return undefined;
+  // W3, format v3 (cse lane 1) + cse lane 3 — field semantics + domain manifest
+  // from the merged .vendo pair (generated tools.json overlaid by overrides.json;
+  // a legacy dir's semantics.json ingested in-memory until `vendo sync`). The
+  // OVERRIDES surface resolves file → cloud; tools.json/semantics.json stay
+  // local generation inputs (not cloud surfaces). Resolved LIVE per generation
+  // (NOT memoized) — the apps block's own "re-read per generation" contract:
+  // memoizing would lock a local-only merge on a cold cloud snapshot (whenever a
+  // local tools.json makes the first merge defined) and drop cloud-owned
+  // overrides for the process lifetime (#557 review). A tools.json read +
+  // JSON.parse per generation is negligible against generation cost. Malformed
+  // → loud + absent, same stance as catalog.json.
+  const hostSemanticsProvider = (): ReturnType<typeof mergedSemanticsAndDomains> => {
+    const parsedFile = (name: string): unknown => {
+      const raw = dotVendoFile(name, surfaceRoot);
+      return raw === undefined ? undefined : JSON.parse(raw) as unknown;
+    };
+    const overridesRaw = selectConfigSurface("overrides.json", { readFile: readSurfaceFile, cloud: configCloud }).value;
     try {
-      return semanticsFileSchema.parse(JSON.parse(raw));
+      return mergedSemanticsAndDomains({
+        tools: parsedFile("tools.json"),
+        overrides: overridesRaw === undefined ? undefined : JSON.parse(overridesRaw) as unknown,
+        semantics: parsedFile("semantics.json"),
+      });
     } catch (error) {
-      console.error(`[vendo] Failed to load .vendo/semantics.json: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate the file.`);
+      console.error(`[vendo] Failed to load .vendo tool semantics: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate .vendo/tools.json.`);
       return undefined;
     }
-  })();
+  };
   const catalog = mergeRuntimeCatalog(
     runtimeCatalogFromJson(dotVendoFile("catalog.json")),
     normalizeCatalogConfig(config.catalog),
@@ -1177,7 +1331,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // model). Explicit VENDO_INFERENCE_URL/KEY win; otherwise the BYO Anthropic
   // key rides api.anthropic.com; otherwise VENDO_API_KEY rides the console's
   // Anthropic-compatible model gateway — the same key that provisions the
-  // Cloud machine funds its model (chat inference already does, via devModel's
+  // Cloud machine funds its model (chat inference already does, via vendoModel's
   // vendo-cloud rung; a machine without this rung fails every in-box task).
   const boxInference = (): { url: string; key: string; model?: string } | undefined => {
     const url = environment("VENDO_INFERENCE_URL");
@@ -1192,16 +1346,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     }
     const cloud = cloudKeyOptions();
     if (cloud !== undefined) {
-      // The gateway base mirrors devModel's vendo-cloud rung: `<console>/api/v1`.
+      // The gateway base mirrors vendoModel's vendo-cloud rung: `<console>/api/v1`.
       const base = (cloud.baseUrl ?? "https://console.vendo.run").replace(/\/+$/, "");
-      // The gateway serves curated aliases only (vendo-default / vendo-fast /
-      // vendo-strong); the box harness's own default is a raw claude-* id the
-      // gateway would grace-remap, so pin the alias unless the operator chose
-      // a model via VENDO_INFERENCE_MODEL.
+      // The gateway serves the vendo model family as literal ids (`vendo` is
+      // the flagship); the box harness's own default is a raw claude-* id the
+      // gateway would grace-remap, so pin the family name unless the operator
+      // chose a model via VENDO_INFERENCE_MODEL.
       return {
         url: base.endsWith("/api/v1") ? base : `${base}/api/v1`,
         key: cloud.apiKey,
-        model: model ?? "vendo-default",
+        model: model ?? "vendo",
       };
     }
     return undefined;
@@ -1225,7 +1379,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     const inferenceEndpoint = boxInference();
     const built = await buildEnv(app, {
       granted: grants?.grantedSecrets ?? new Set<string>(),
-      secrets: config.secrets ?? envSecrets(),
+      secrets,
       storeUrl: boxBase,
       hostUrl: boxBase,
       appToken: await appTokens.mint(app.id, subject),
@@ -1267,7 +1421,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     guard,
     tools: boundTools,
-    model: inference.model,
+    model: inference.agent.model,
     catalog,
     pinBaselines,
     // execution-v2 Waves 4+9 — the layer-2/3 experimental opt-ins, host-config
@@ -1284,12 +1438,21 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       }
       return automationsForArming.enable(appId, armCtx);
     },
-    ...(config.paint === undefined ? {} : { paint: config.paint }),
-    ...(theme === undefined ? {} : { theme }),
+    // Paint invisibility (models spec 2026-07-22): the composed knob — the
+    // family fast pick when the agent slot rides the ladder, the deprecated
+    // paint.model otherwise; paint.disabled survives as the one-lane switch.
+    ...(inference.paint === undefined ? {} : { paint: inference.paint }),
+    // cse lane 3 — theme/semantics/domains flow as PROVIDER thunks so a
+    // cloud-owned surface applies without a compose-time fetch. semantics/domains
+    // resolve live per generation (pick up cloud overrides as the snapshot warms);
+    // theme is boot-once via memoizeOnce (structural, next-load). Each returns
+    // undefined when unset, which the engine treats exactly as an omitted value.
+    theme: themeProvider,
     designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
-    ...(semanticsFile === undefined ? {} : { semantics: semanticsFile.tools, domains: semanticsFile.domains }),
-    secrets: config.secrets ?? envSecrets(),
+    semantics: () => hostSemanticsProvider()?.semantics,
+    domains: () => hostSemanticsProvider()?.domains,
+    secrets,
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)
     // and Lane C's env assembly. The box template (Node + the in-box agent
@@ -1311,20 +1474,36 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const missSurface = actions.descriptors()
     .then(capabilitySurfaceSnapshot)
     .catch(() => capabilitySurfaceSnapshot([]));
-  const missCapture = createCapabilityMissCapture({ surface: missSurface });
+  // ADAPTER RULE, miss-upload seam: capability-misses.ts never reads the
+  // environment for its Cloud uploader — VENDO_API_KEY fills the slot HERE,
+  // like the share/publish seam above; unfilled, misses stay local-only.
+  const missCloud = cloudKeyOptions();
+  const missCapture = createCapabilityMissCapture({
+    surface: missSurface,
+    ...(missCloud === undefined ? {} : { cloud: missCloud }),
+  });
   // AGENT-1/2 — 03 §3: the host product brief (init writes .vendo/brief.md)
   // and the catalog+theme summary feed the system prompt; prompt.ts places
   // them (brief = Product section; summary only where trees render).
-  const brief = dotVendoFile("brief.md")?.trim();
+  // cse lane 3 — brief is a prompt-family surface, so it resolves LIVE: with a
+  // key present, product is a RESOLVER (file → cloud) re-read per turn by
+  // assembleSystemPrompt, so a console publish applies to the next turn with no
+  // restart. Without a key, product is the compose-time file/explicit value (no
+  // snapshot read → no I/O at compose). A programmatic `brief` wins over the
+  // file either way.
+  const composeBrief = selectConfigSurface("brief.md", { explicit: config.brief, readFile: readSurfaceFile }).value?.trim() || undefined;
+  const product: string | (() => string | undefined) | undefined = configCloud === undefined
+    ? composeBrief
+    : () => selectConfigSurface("brief.md", { explicit: config.brief, readFile: readSurfaceFile, cloud: configCloud }).value?.trim() || undefined;
   const promptCatalog = catalogThemeSummary(catalog, theme);
-  const system = brief || promptCatalog !== undefined
+  const system = product !== undefined || promptCatalog !== undefined
     ? {
-        ...(brief ? { product: brief } : {}),
+        ...(product === undefined ? {} : { product }),
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
       }
     : undefined;
   const agent = createAgent({
-    model: inference.model,
+    model: inference.agent.model,
     tools: boundTools,
     guard,
     store,
@@ -1563,7 +1742,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     byoApprovals,
     connections,
     sandbox: sandbox.venue,
-    model: inference.venue,
+    model: inference.agent.venue,
     doctor,
     mcp: mcpOptions !== undefined,
     development,

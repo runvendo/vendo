@@ -11,10 +11,15 @@ import {
   type LiveTurnResult,
 } from "./doctor-live.js";
 import { installedAiVersion } from "./dep-versions.js";
+import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
+// Relative (not the #dev-creds condition): the CLI is Node-only and the edge
+// build deliberately does not export the pin map.
+import { SLOT_PIN_ENV } from "../dev-creds/model.js";
 import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
-import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
+import { overridesFileSchema, overridesFileV3Schema, toolsFileSchema, toolsFileV3Schema, vendoFileVersion } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
+import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_CAVEAT } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
 import { askYesNo, CLI_VERSION, consoleOutput, exists, normalizeDotEnvValue, readOptional, toolingTelemetry, type Output } from "./shared.js";
@@ -253,6 +258,34 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   }
   if (!await exists(join(root, ".vendo", "data", ".gitignore"))) warn("config/data-gitignore", "E-CFG-002", ".vendo/data/.gitignore is missing");
 
+  // cse lane 3 — per-surface OWNERSHIP: for each cloud-resolvable content
+  // surface, is the local file the source of truth, or is it resolved at
+  // runtime (from hosted config when VENDO_API_KEY is set, else unset)? Local
+  // only (no console call) — `vendo config status` does the cloud-aware view.
+  // A programmatic `explicit` override in createVendo is not observable here.
+  const surfaceOwners = await Promise.all(
+    CONFIG_SURFACES.map(async (surface) => `${surface}=${(await exists(join(root, ".vendo", surface))) ? "file" : "runtime"}`),
+  );
+  pass("config/ownership", `surface ownership (file = local source of truth; runtime = resolved from hosted config or unset): ${surfaceOwners.join(", ")}. ${OVERRIDES_ENABLEMENT_CAVEAT}`);
+
+  // Models spec 2026-07-22 — exactly two honest model facts, resolver-based
+  // (the same resolver the runtime rides, no network): which credential rung
+  // wins, and any active VENDO_MODEL_* pins. Deliberately NO role/alias
+  // table: on the Cloud rung the family names map to concrete models
+  // SERVER-SIDE, so the client would only be guessing.
+  const modelCredential = await resolveDevCredential({ env });
+  if (modelCredential.rung !== "none") {
+    pass("model/credential", `model credential: ${describeDevCredential(modelCredential)}`);
+  } else {
+    note("model credential: none found — the live turn check below carries the honest failure");
+  }
+  const activePins = Object.values(SLOT_PIN_ENV)
+    .map((name) => ({ name, value: env[name]?.trim() }))
+    .filter((pin): pin is { name: string; value: string } => (pin.value ?? "").length > 0);
+  if (activePins.length > 0) {
+    pass("model/pins", `model pins: ${activePins.map(({ name, value }) => `${name}=${value}`).join(", ")}`);
+  }
+
   // The core promise, statically checkable: does the agent have any HOST
   // tool it may actually call? All-disabled is an explicit misconfiguration
   // (fail); an empty extraction is a strong warning — connector-only hosts
@@ -263,11 +296,17 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const overridesRaw = await readOptional(join(root, ".vendo", "overrides.json"));
   if (toolsRaw !== null) {
     try {
-      const toolsFile = toolsFileSchema.parse(JSON.parse(toolsRaw));
+      const toolsParsed: unknown = JSON.parse(toolsRaw);
+      const toolsFile = vendoFileVersion(toolsParsed) === 1
+        ? toolsFileSchema.parse(toolsParsed)
+        : toolsFileV3Schema.parse(toolsParsed);
       let overridesTools: Record<string, { disabled?: boolean }> = {};
       if (overridesRaw !== null) {
         try {
-          overridesTools = overridesFileSchema.parse(JSON.parse(overridesRaw)).tools;
+          const overridesParsed: unknown = JSON.parse(overridesRaw);
+          overridesTools = (vendoFileVersion(overridesParsed) === 1
+            ? overridesFileSchema.parse(overridesParsed)
+            : overridesFileV3Schema.parse(overridesParsed)).tools;
         } catch {
           // Malformed overrides are their own (pre-existing) failure surface.
         }
@@ -281,7 +320,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         pass("tools/live-surface", `${live.length} live host tool${live.length === 1 ? "" : "s"}`);
       }
     } catch {
-      // Not the vendo/tools@1 shape (e.g. a placeholder {}) — the config
+      // Not a vendo/tools@1 or @3 shape (e.g. a placeholder {}) — the config
       // checks above already govern presence; nothing to grade here.
     }
   }
@@ -592,7 +631,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   note("Ladder: execution venue is checked above; actAs for away host actions; connectors for external tools.");
 
   // One real model turn through the wired route (design §5). Exit 0 == a user
-  // would have gotten an answer. Reuses the resolver + devModel: the running
+  // would have gotten an answer. Reuses the resolver + vendoModel: the running
   // dev server serves the turn over the same credential doctor reports.
   let liveTurn: LiveTurnResult;
   if (liveComposition) {

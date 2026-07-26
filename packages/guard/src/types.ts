@@ -149,6 +149,11 @@ export interface CreateGuardConfig {
   store: StoreAdapter;
   resolveRisk?: RiskResolver;
   policy?: PolicyConfig;
+  /** cse lane 3 — a source for a cloud-published policy.json body, consulted
+   *  by the PolicyResolver STRICTLY AFTER the local file and only when policy
+   *  is already configured (opt-in). The umbrella backs it with the hosted
+   *  config snapshot; this block never reads the key. Unset = no change. */
+  policyCloudFallback?: () => string | undefined;
   judge?: Judge;
   breakers?: {
     maxCallsPerMinute?: number;

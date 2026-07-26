@@ -82,14 +82,18 @@ Init detects two frameworks by dependency and scaffolds only what applies:
   registry. Two manual steps remain, which init prints: mount the adapter with
   `app.use("/api/vendo", mountVendo())` and wrap the client entry in
   `<VendoRoot>`. `vendo doctor` reports broken until both are done.
+- **Everything else** (`--framework custom`, and the automatic landing for a
+  host with neither dependency): a runtime-neutral `vendo/server.ts` — one
+  exported `handleVendoRequest(request, env)` taking a web `Request` and
+  returning a `Response`, constructed lazily on the first request. Cloudflare
+  Workers, Bun, Deno, Hono, and Lambda adapters all mount it in one line. See
+  [Edge runtimes](/deploy/edge-runtimes) for the wiring and the adapter rules.
 
 Init checks `next` first, so an app with both dependencies gets the Next
-scaffold: framework detection precedence is Next.js over Express. Interactively,
-a host with neither is treated as Next. A non-interactive run (`--yes` or no
-TTY) with no detected framework errors and asks for `--framework` rather than
-guessing. For other runtimes (Fastify, Hono, Bun), follow the Express shape by
-hand. See
-[Quickstart: Express and other JavaScript servers](/quickstart#wire-the-express-adapter).
+scaffold: framework detection precedence is Next.js over Express, and a host
+with neither lands on the custom scaffold. A non-interactive run (`--yes` or
+no TTY) with no detected framework still errors and asks for an explicit
+`--framework` rather than guessing on an agent's behalf.
 
 ### Auth
 

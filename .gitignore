@@ -12,6 +12,9 @@ dist
 # misc
 corpus/.repos/
 
+# env files (secrets) — never committed
+.env
+
 # browser-verification artifacts
 .playwright-mcp/
 *.png

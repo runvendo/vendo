@@ -55,6 +55,17 @@ export interface ExtractionHarness {
   run(input: ExtractionRunInput): Promise<string>;
 }
 
+/** The extraction model pin every harness honors (models spec 2026-07-22):
+ *  VENDO_MODEL_EXTRACT, with the pre-family VENDO_EXTRACTION_MODEL kept as a
+ *  deprecated fallback. Blank values count as unset. */
+export function extractionModelPin(env: Record<string, string | undefined>): string | undefined {
+  for (const name of ["VENDO_MODEL_EXTRACT", "VENDO_EXTRACTION_MODEL"]) {
+    const value = env[name];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
 /** Walk balanced `{…}` spans (string-aware) starting at each `{`, returning
  *  each complete candidate — so prose containing stray braces around the real
  *  JSON object cannot poison the parse (Greptile P2 on #363). */

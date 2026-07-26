@@ -243,6 +243,20 @@ export async function loadSurface(repoDir: string): Promise<SurfaceEntry[]> {
   for (const tool of toolsArray) {
     if (isRecord(tool)) push(tool.name, "tool", tool.risk, tool.disabled);
   }
+  // Format v3: compounds/briefs live in overrides.json; the retired
+  // capabilities.json is still read for legacy (pre-migration) repos.
+  if (isRecord(overridesDoc)) {
+    if (Array.isArray(overridesDoc.compounds)) {
+      for (const tool of overridesDoc.compounds) {
+        if (isRecord(tool)) push(tool.name, "compound", tool.risk, tool.disabled);
+      }
+    }
+    if (Array.isArray(overridesDoc.briefs)) {
+      for (const brief of overridesDoc.briefs) {
+        if (isRecord(brief)) push(brief.name, "brief", undefined, false);
+      }
+    }
+  }
   if (isRecord(capsDoc)) {
     if (Array.isArray(capsDoc.tools)) {
       for (const tool of capsDoc.tools) {

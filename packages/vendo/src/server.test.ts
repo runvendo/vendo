@@ -808,11 +808,26 @@ describe("09 §3 public wire", () => {
     // An explicitly passed model wins over every env credential.
     expect(await modelVenue({ model: {} as LanguageModel })).toBe("custom");
 
-    // Otherwise the devModel ladder composes — with or without any key set
+    // Otherwise the vendoModel ladder composes — with or without any key set
     // (rung resolution is lazy; the honest failure happens on first call).
     expect(await modelVenue({})).toBe("ladder");
     vi.stubEnv("VENDO_API_KEY", "");
     expect(await modelVenue({})).toBe("ladder");
+
+    // Models block (models spec 2026-07-22): an explicit LanguageModel object
+    // wins as-is; a string resolves through the ladder; models.agent
+    // supersedes the deprecated top-level `model` (so a string there flips
+    // the venue back to "ladder" even with an object on the alias).
+    expect(await modelVenue({ models: { agent: {} as LanguageModel } })).toBe("custom");
+    expect(await modelVenue({ models: { agent: "claude-opus-4-8" } })).toBe("ladder");
+    expect(await modelVenue({ model: {} as LanguageModel, models: { agent: "claude-opus-4-8" } })).toBe("ladder");
+
+    // Slot values must be model-name strings or LanguageModel objects.
+    expect(() => createVendo({
+      principal: vi.fn(async () => principal),
+      store,
+      models: { agent: "   " },
+    })).toThrow(VendoError);
   });
 
   it("selects the store with the adapter-rule precedence", async () => {
@@ -1804,6 +1819,72 @@ describe("app design rules (spec 2026-07-20)", () => {
     const sections = designRulesSections(prompts);
     expect(sections.length).toBeGreaterThan(0);
     expect(sections.every((section) => section.startsWith("File rules: airy layouts."))).toBe(true);
+  });
+
+  it("re-resolves cloud overrides semantics/domains per generation — a cold snapshot that warms is NOT locked (cse lane 3, #557 review)", async () => {
+    // The trap: a local tools.json contributes a DEFINED merge (domains here),
+    // so a boot-once memoize would lock the local-only result on the first
+    // (cold-snapshot) generation and drop cloud-owned overrides for the process
+    // lifetime. Live per-generation resolution picks up cloud on the next gen.
+    const root = await mkdtemp(join(tmpdir(), "vendo-cloud-overrides-"));
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [],
+      domains: { has: ["local_ledger"], hasNot: [] },
+    }));
+    // NOTE: no local overrides.json — the overrides surface is cloud-owned.
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    cleanups.push(async () => { process.chdir(originalCwd); await rm(root, { recursive: true, force: true }); });
+
+    vi.stubEnv("E2B_API_KEY", "");
+    vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
+    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-overrides.test");
+    const cloudOverrides = { format: "vendo/overrides@3", tools: {}, domains: { has: ["cloud_ledger"], hasNot: [] } };
+    // Gate the config fetch so the snapshot stays COLD through the first
+    // generation and warms only before the second — a deterministic cold start
+    // (an instant mock would race the generation's own awaits).
+    let releaseFetch = (): void => undefined;
+    const fetchGate = new Promise<void>((resolve) => { releaseFetch = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/config")) {
+        await fetchGate;
+        return Response.json(
+          { version: "rel_1", config: { "overrides.json": JSON.stringify(cloudOverrides) } },
+          { headers: { etag: '"rel_1"' } },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }));
+
+    const store = await tempStore("vendo-cloud-overrides-store-");
+    await store.ensureSchema();
+    const prompts: string[] = [];
+    // Explicit store wins over the key (BYO); connectors:[] avoids the cloud
+    // tools connector's descriptor fetch — the ONLY fetch is /api/v1/config.
+    const vendo = createVendo({ model: appGenModel(prompts), principal: async () => principal, store, connectors: [] });
+    cleanups.push(async () => { await vendo.store.close(); });
+
+    const domainsLine = (all: string[]): string =>
+      all.filter((p) => p.includes("DATA DOMAINS")).join("\n");
+
+    // First generation: cold snapshot (fetch gated) → local-only domains.
+    await vendo.apps.create({ prompt: "Build a dashboard" }, ctx);
+    expect(domainsLine(prompts)).toContain("local_ledger");
+    expect(domainsLine(prompts)).not.toContain("cloud_ledger");
+
+    // Release the config fetch and let it settle, then generate again.
+    releaseFetch();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    prompts.length = 0;
+    await vendo.apps.create({ prompt: "Build another dashboard" }, ctx);
+
+    // The SECOND generation reflects the cloud-owned overrides — proving the
+    // provider is re-resolved live, not locked on the cold first read.
+    expect(domainsLine(prompts)).toContain("cloud_ledger");
+    expect(domainsLine(prompts)).toContain("local_ledger");
   });
 });
 

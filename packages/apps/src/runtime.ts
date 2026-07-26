@@ -50,6 +50,7 @@ import {
   modelEngine,
   prewarmModels,
   serverWorkRung,
+  verifyDocumentAgainstData,
   type GenerationDependencies,
   type GenerationEngine,
 } from "./engine.js";
@@ -171,9 +172,13 @@ export interface AppsConfig {
   /** W4 pipeline knobs, passed to the generation engine: structured repair
    *  (default on), outline+region-parallel tier-2 and the end pass (opt-in). */
   pipeline?: GenerationDependencies["pipeline"];
-  /** The composition-normalized catalog (01 §14): derived schemas included. */
+  /** The composition-normalized catalog (01 §14): derived schemas included.
+   *  The provider (function) form of theme/semantics/domains below mirrors
+   *  designRules: it is resolved lazily per create/edit (in
+   *  generationDependencies), never eagerly, so the umbrella can back it with a
+   *  first-request cloud read without doing I/O at compose time. */
   catalog: NormalizedCatalog;
-  theme?: VendoTheme;
+  theme?: VendoTheme | (() => VendoTheme | undefined);
   secrets?: SecretsProvider;
   /** Host design rules for generation prompts; the function form is re-read
    *  per create/edit (engine.ts GenerationDependencies). */
@@ -186,10 +191,11 @@ export interface AppsConfig {
   cloud?: CloudAppsClient;
   /** W3 — per-tool field semantics from `.vendo/semantics.json`, passed to
    *  the generation engine (annotated shape cards, law checks, Kit format
-   *  defaults). */
-  semantics?: Readonly<Record<string, ToolSemantics>>;
-  /** W3 — the host's domain manifest (has / has-NOT), generation fact. */
-  domains?: DomainManifest;
+   *  defaults). Provider form resolved per generation (see catalog note). */
+  semantics?: Readonly<Record<string, ToolSemantics>> | (() => Readonly<Record<string, ToolSemantics>> | undefined);
+  /** W3 — the host's domain manifest (has / has-NOT), generation fact.
+   *  Provider form resolved per generation (see catalog note). */
+  domains?: DomainManifest | (() => DomainManifest | undefined);
 }
 
 /** 06-apps §1 */
@@ -638,24 +644,36 @@ const rungFor = (
   return 1;
 };
 
+/** Resolve a value-or-provider config slot. The provider (function) form is
+ *  called ONCE here — generationDependencies runs once per create/edit — so
+ *  theme/semantics/domains match designRules' "re-read per generation" contract
+ *  and a first-request cloud-backed provider never does I/O at compose time. */
+const resolveProvider = <T>(slot: T | (() => T | undefined) | undefined): T | undefined =>
+  typeof slot === "function" ? (slot as () => T | undefined)() : slot;
+
 const generationDependencies = (
   config: AppsConfig,
   model: LanguageModel,
   toolContext: Pick<GenerationDependencies, "tools" | "toolShapes">,
   onPartial?: GenerationDependencies["onPartial"],
-): GenerationDependencies => ({
-  model,
-  catalog: config.catalog,
-  theme: config.theme,
-  designRules: config.designRules,
-  pinBaselines: config.pinBaselines,
-  ...(config.semantics === undefined ? {} : { semantics: config.semantics }),
-  ...(config.domains === undefined ? {} : { domains: config.domains }),
-  ...toolContext,
-  ...(config.paint === undefined ? {} : { paint: config.paint }),
-  ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
-  ...(onPartial === undefined ? {} : { onPartial }),
-});
+): GenerationDependencies => {
+  const theme = resolveProvider(config.theme);
+  const semantics = resolveProvider(config.semantics);
+  const domains = resolveProvider(config.domains);
+  return {
+    model,
+    catalog: config.catalog,
+    ...(theme === undefined ? {} : { theme }),
+    designRules: config.designRules,
+    pinBaselines: config.pinBaselines,
+    ...(semantics === undefined ? {} : { semantics }),
+    ...(domains === undefined ? {} : { domains }),
+    ...toolContext,
+    ...(config.paint === undefined ? {} : { paint: config.paint }),
+    ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
+    ...(onPartial === undefined ? {} : { onPartial }),
+  };
+};
 
 /** v2 spec §1 — assemble the emitted payload: the tree plus document islands
  *  at payload level (the v2 renderer lifts them into the shared walk). */
@@ -1060,8 +1078,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // accepted loading state — no v1 cover machinery).
         await requestAppWithBootRetry(machine, { method: "GET", path: "/" }).catch(() => undefined);
         const url = new URL(await machine.url());
-        if (config.theme !== undefined) {
-          url.searchParams.set("vendoTheme", JSON.stringify(config.theme));
+        // Resolve the theme provider (cse lane 3) before serializing it into the
+        // served-app URL — config.theme may now be a value OR a lazy provider.
+        const resolvedTheme = resolveProvider(config.theme);
+        if (resolvedTheme !== undefined) {
+          url.searchParams.set("vendoTheme", JSON.stringify(resolvedTheme));
         }
         return url.toString();
       },
@@ -1712,18 +1733,24 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           if (latestTree === undefined) return;
           emit({ ...structuredClone(latestTree), data, streaming: true } as TreeV2);
         });
+      // v4 data-verify — the runtime owns the endPass flag now: queries
+      // resolve HERE, so the verification runs data-sighted at this seam and
+      // the engine's blind end pass is suppressed (it demonstrably could not
+      // catch label-vs-data lies it never saw — gate 2026-07-21).
+      const verifyEnabled = config.pipeline?.endPass === true;
+      const engineConfig = verifyEnabled
+        ? { ...config, pipeline: { ...config.pipeline, endPass: false } }
+        : config;
+      const generationDeps = generationDependencies(engineConfig, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
+        // v2 spec §1 — the payload carries islands at payload level (the
+        // renderer lifts them); a mid-stream payload is marked streaming.
+        latestTree = assembleTree(partial);
+        emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
+        queryResolver?.update(latestTree);
+      });
       let generated: Awaited<ReturnType<GenerationEngine["create"]>>;
       try {
-        generated = await engine.create(
-          { prompt: input.prompt },
-          generationDependencies(config, config.model, await generationToolContext(ctx), input.onView === undefined ? undefined : (partial) => {
-            // v2 spec §1 — the payload carries islands at payload level (the
-            // renderer lifts them); a mid-stream payload is marked streaming.
-            latestTree = assembleTree(partial);
-            emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
-            queryResolver?.update(latestTree);
-          }),
-        );
+        generated = await engine.create({ prompt: input.prompt }, generationDeps);
         // 0.4.5 E2E cert (defect D) — a build whose every substantive region
         // was disclaimed away "succeeds" into an app that only says "not
         // available": no failure record, no log line, and a host chat that
@@ -1767,7 +1794,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           { appId, reason, retryable, issues: detailLines },
         );
       }
-      const app: AppDocument = {
+      let app: AppDocument = {
         ...generated,
         id: appId,
       };
@@ -1781,12 +1808,31 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // successfully generated document never carries it, whatever the model
       // emitted into the tree markup.
       delete app.buildFailed;
+      // v4 data-verify: resolve the finished app's queries once, show the
+      // verifier the ACTUAL values next to the labels, adopt the (copy-only,
+      // revalidated) correction before anything persists or paints. The
+      // resolved data stays valid across the patch — the guard forbids
+      // touching queries — so the final view reuses it. Best-effort: any
+      // failure ships the unverified app.
+      let verifiedData: Record<string, Json> | undefined;
+      if (verifyEnabled && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+        try {
+          const verifyResolver = createProgressiveQueryResolver(caller, app, ctx);
+          verifyResolver.update(assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools }));
+          verifiedData = await verifyResolver.complete();
+          const { id: _verifyId, ...unidentified } = structuredClone(app);
+          const verified = await verifyDocumentAgainstData(unidentified, input.prompt, verifiedData, generationDeps);
+          app = { ...verified, id: appId };
+        } catch {
+          // The unverified app ships; open() resolves its data as always.
+        }
+      }
       let finalTree: TreeV2 | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
         finalTree = assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools });
         latestTree = structuredClone(finalTree);
         queryResolver?.update(finalTree);
-        finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
+        finalTree.data = verifiedData ?? await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
       }
       await apps.put(appRecordInput(app, ctx.principal.subject));
       clearTimeout(watchdog);

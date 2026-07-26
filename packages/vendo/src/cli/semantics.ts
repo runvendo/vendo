@@ -1,30 +1,25 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import {
-  fieldSemanticSchema,
-  semanticsFileSchema,
-  VENDO_SEMANTICS_FORMAT,
-  type FieldSemantic,
-  type SemanticsFile,
-  type ToolSemantics,
-} from "@vendoai/core";
-import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
+import { fieldSemanticSchema, type FieldSemantic, type ToolSemantics } from "@vendoai/core";
+import { VENDO_TOOLS_FORMAT_V3 } from "@vendoai/actions";
 
 /**
- * W3 (v3 spec §Context) — `.vendo/semantics.json`, written by `vendo sync`.
+ * W3, retargeted for format v3 — per-tool field semantics live INSIDE
+ * `.vendo/tools.json` (vendo/tools@3) now; there is no semantics.json.
  *
  * Per tool response field: `money(cents|dollars)`, `date(iso|epoch)`,
  * `enum(value→label)`, `id(entity)`, `percent(ratio|0-100)` — everything else
  * stays plain and is omitted. Priority per field:
  *
- *   1. host annotation (`overrides.json.tools[name].semantics`)
- *   2. what this file already says (inference runs ONCE — a host edit here
- *      is never overwritten, and an inference never churns)
+ *   1. host annotation (`overrides.json.tools[name].semantics`) — stays in the
+ *      authored file and wins at merge time; it is never copied here
+ *   2. what tools.json already says (inference runs ONCE — the sync engine
+ *      carries entries across regenerations, so an inference never churns)
  *   3. fresh inference (the dev server samples each zero-input read tool at
  *      POST /sync/semantics and returns classifications, never values)
  *
- * The `domains` manifest (has / has-NOT) is derived from tool names on FIRST
- * sync and host-owned afterwards.
+ * The `domains` manifest is owned by the sync engine (derived from tool names
+ * on first sync, host-curated afterwards) — not this module.
  */
 
 export interface SemanticsSyncOptions {
@@ -43,28 +38,6 @@ const readJson = async (file: string): Promise<unknown | undefined> => {
     return undefined;
   }
 };
-
-/** Verb tokens dropped from a tool name when deriving its data domain. */
-const NAME_VERBS = /^(get|list|create|update|delete|set|send|reset|simulate|search|fetch|read|add|remove|post|put|patch)$/i;
-/** Whole tools that are plumbing, not a data domain. */
-const NOISE_TOKENS = /^(auth|demo|voice|session|sessions|webhook|webhooks|health|ping)$/i;
-
-/** host_listAccountTransactions → "account transactions". */
-export const domainFromToolName = (name: string): string | undefined => {
-  const tokens = name
-    .replace(/^host_/, "")
-    .split(/[_.]/)
-    .flatMap((part) => part.split(/(?=[A-Z])/))
-    .map((token) => token.toLowerCase())
-    .filter((token) => token.length > 0);
-  if (tokens.some((token) => NOISE_TOKENS.test(token))) return undefined;
-  const nouns = tokens.filter((token) => !NAME_VERBS.test(token));
-  if (nouns.length === 0) return undefined;
-  return nouns.join(" ");
-};
-
-export const deriveDomains = (toolNames: readonly string[]): string[] =>
-  [...new Set(toolNames.map(domainFromToolName).filter((domain): domain is string => domain !== undefined))].sort();
 
 interface InferredResponse {
   tools: Record<string, ToolSemantics>;
@@ -106,53 +79,33 @@ const fieldSemanticSafe = (value: unknown): FieldSemantic | undefined => {
   return result.success ? result.data : undefined;
 };
 
-/** Read tools + annotations + the existing file, fetch one-time inference,
- *  merge by priority, and write `.vendo/semantics.json`. Fail-soft: any
- *  problem becomes a note, never a sync failure. */
+/** Fetch one-time inference from the dev server and fold it into the v3
+ *  tools.json per tool — existing entries win field-by-field, so a manual
+ *  correction is never overwritten and an inference never churns. Operates on
+ *  the RAW parsed JSON (no schema round-trip) so unknown additive fields
+ *  survive the rewrite byte-exactly. Fail-soft: any problem becomes a note,
+ *  never a sync failure. */
 export async function syncSemantics(options: SemanticsSyncOptions): Promise<void> {
-  const toolsRaw = await readJson(join(options.vendoDir, "tools.json"));
-  const toolsParse = toolsFileSchema.safeParse(toolsRaw);
-  if (!toolsParse.success) return; // no tools file → nothing to describe
-  const toolNames = toolsParse.data.tools.map((tool) => tool.name);
+  const file = join(options.vendoDir, "tools.json");
+  const raw = await readJson(file);
+  if (raw === undefined || typeof raw !== "object" || raw === null) return; // nothing to describe
+  const toolsFile = raw as { format?: unknown; tools?: unknown };
+  // Legacy layouts are the sync engine's job (it rewrites the dir as v3
+  // before this enrichment runs); anything non-v3 here is left alone.
+  if (toolsFile.format !== VENDO_TOOLS_FORMAT_V3 || !Array.isArray(toolsFile.tools)) return;
 
-  const overridesRaw = await readJson(join(options.vendoDir, "overrides.json"));
-  const overridesParse = overridesFileSchema.safeParse(overridesRaw);
-  const annotations: Record<string, ToolSemantics> = {};
-  if (overridesParse.success) {
-    for (const [tool, override] of Object.entries(overridesParse.data.tools)) {
-      if (override.semantics !== undefined) annotations[tool] = override.semantics;
-    }
+  const inferred = await fetchInferred(options);
+  if (inferred === undefined) return; // unreachable server — noted, file untouched
+
+  for (const entry of toolsFile.tools) {
+    if (entry === null || typeof entry !== "object") continue;
+    const tool = entry as { name?: unknown; semantics?: Record<string, FieldSemantic> };
+    if (typeof tool.name !== "string") continue;
+    const merged: ToolSemantics = { ...inferred[tool.name], ...tool.semantics };
+    if (Object.keys(merged).length > 0) tool.semantics = merged;
   }
 
-  const file = join(options.vendoDir, "semantics.json");
-  const existingRaw = await readJson(file);
-  const existingParse = semanticsFileSchema.safeParse(existingRaw);
-  const existing: SemanticsFile | undefined = existingParse.success ? existingParse.data : undefined;
-  if (existingRaw !== undefined && existing === undefined) {
-    options.note("semantics.json is malformed; regenerating it (host edits in the old file are not carried over)");
-  }
-
-  const inferred = await fetchInferred(options) ?? {};
-
-  const tools: Record<string, ToolSemantics> = {};
-  for (const name of toolNames) {
-    const merged: ToolSemantics = {
-      ...inferred[name],
-      ...existing?.tools[name],
-      ...annotations[name],
-    };
-    if (Object.keys(merged).length > 0) tools[name] = merged;
-  }
-
-  const next: SemanticsFile & { note: string } = {
-    format: VENDO_SEMANTICS_FORMAT,
-    note: "Generated by `vendo sync` and safe to edit: field entries are inferred ONCE and your edits are preserved; overrides.json tools[name].semantics wins over everything. `domains` is derived from tool names on first sync and yours afterwards — keep has/hasNot honest, generation treats them as fact.",
-    tools,
-    // First sync derives the positive list; afterwards the manifest is
-    // host-owned (curation survives every sync).
-    domains: existing?.domains ?? { has: deriveDomains(toolNames), hasNot: [] },
-  };
-  const bytes = `${JSON.stringify(next, null, 2)}\n`;
+  const bytes = `${JSON.stringify(toolsFile, null, 2)}\n`;
   try {
     if (await fs.readFile(file, "utf8") === bytes) return;
   } catch {
