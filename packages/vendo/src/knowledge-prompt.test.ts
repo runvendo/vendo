@@ -1,7 +1,7 @@
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import type { KnowledgeAdapter, KnowledgeDoc } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { bootLockedKnowledgeIndex, knowledgeIndexSummary, parseKnowledgeConfig } from "./knowledge-prompt.js";
+import { knowledgeIndexResolver, knowledgeIndexSummary, parseKnowledgeConfig } from "./knowledge-prompt.js";
 
 const doc = (id: string, kind: KnowledgeDoc["kind"] = "docs"): KnowledgeDoc => ({
   id,
@@ -39,6 +39,26 @@ describe("knowledgeIndexSummary (k8 prompt index)", () => {
     });
     expect(summary).toContain("sources: product-docs (docs), api-ref (api)");
   });
+
+  it("P0 (ENG-370): never names an internal source — internal corpus metadata stays off end-user prompts", () => {
+    const summary = knowledgeIndexSummary({ docs: 9 }, {
+      format: "vendo/knowledge@1",
+      sources: [
+        { name: "help-center", glob: "docs/**/*.md", kind: "docs", visibility: "public" },
+        { name: "secret-fraud-runbooks", glob: "internal/**/*.md", kind: "docs", visibility: "internal" },
+      ],
+    });
+    expect(summary).toContain("sources: help-center (docs).");
+    expect(summary).not.toContain("secret-fraud-runbooks");
+
+    // All-internal config: the sources clause disappears entirely.
+    const allInternal = knowledgeIndexSummary({ docs: 2 }, {
+      format: "vendo/knowledge@1",
+      sources: [{ name: "secret-fraud-runbooks", glob: "internal/**/*.md", kind: "docs", visibility: "internal" }],
+    });
+    expect(allInternal).not.toContain("sources:");
+    expect(allInternal).not.toContain("secret-fraud-runbooks");
+  });
 });
 
 describe("parseKnowledgeConfig (fail-soft ingestion-input read)", () => {
@@ -54,53 +74,106 @@ describe("parseKnowledgeConfig (fail-soft ingestion-input read)", () => {
   });
 });
 
-describe("bootLockedKnowledgeIndex (cache-stability, a hard k8 criterion)", () => {
-  it("locks to the first resolved bytes — later corpus changes never move the block", async () => {
-    const adapter = memoryKnowledgeAdapter({ docs: [doc("a"), doc("b")] });
-    const resolve = bootLockedKnowledgeIndex(adapter, () => undefined);
-    const first = await resolve();
-    expect(first).toContain("2 documents");
-    await adapter.upsert?.([doc("c"), doc("d", "glossary")]);
-    const second = await resolve();
-    const third = await resolve();
-    expect(second).toBe(first);
-    expect(third).toBe(first);
+describe("knowledgeIndexResolver (byte-stable at fixed sync state, refreshes on sync change)", () => {
+  const readers = (state: { manifest?: string; config?: string }) => ({
+    readConfig: () => state.config,
+    readManifest: () => state.manifest,
   });
 
-  it("does no I/O at construction and only one status() flight for concurrent first turns", async () => {
+  it("is byte-stable at a FIXED sync state — repeated resolves return the same string with one status() call", async () => {
     let statusCalls = 0;
-    const adapter = memoryKnowledgeAdapter({ docs: [doc("a")] });
+    const base = memoryKnowledgeAdapter({ docs: [doc("a"), doc("b")] });
     const counted: KnowledgeAdapter = {
-      ...adapter,
-      posture: adapter.posture,
+      ...base,
+      posture: base.posture,
       status: async () => {
         statusCalls += 1;
-        return adapter.status();
+        return base.status();
       },
     };
-    const resolve = bootLockedKnowledgeIndex(counted, () => undefined);
+    const state = { manifest: '{"format":"vendo/knowledge-hash@1","docs":{},"updatedAt":"2026-07-26T00:00:00Z"}' };
+    const resolve = knowledgeIndexResolver(counted, readers(state));
+    const first = await resolve();
+    expect(first).toContain("2 documents");
+    // Corpus mutation WITHOUT a sync-manifest change does not move the bytes
+    // (the manifest is the sync-state signal, written last by sync).
+    await base.upsert?.([doc("c")]);
+    expect(await resolve()).toBe(first);
+    expect(await resolve()).toBe(first);
+    expect(statusCalls).toBe(1);
+  });
+
+  it("REFRESHES when the sync manifest changes, then is byte-stable at the new state", async () => {
+    const base = memoryKnowledgeAdapter({ docs: [doc("a")] });
+    const state: { manifest?: string; config?: string } = { manifest: "v1" };
+    const resolve = knowledgeIndexResolver(base, readers(state));
+    const first = await resolve();
+    expect(first).toContain("1 document");
+
+    // A sync lands: docs change AND the manifest is rewritten.
+    await base.upsert?.([doc("b"), doc("c", "glossary")]);
+    state.manifest = "v2";
+    const refreshed = await resolve();
+    expect(refreshed).toContain("3 documents");
+    expect(refreshed).not.toBe(first);
+    expect(await resolve()).toBe(refreshed);
+  });
+
+  it("picks up config changes (new sources) on the same refresh", async () => {
+    const base = memoryKnowledgeAdapter({ docs: [doc("a")] });
+    const state: { manifest?: string; config?: string } = { manifest: "v1" };
+    const resolve = knowledgeIndexResolver(base, readers(state));
+    expect(await resolve()).not.toContain("sources:");
+    state.manifest = "v2";
+    state.config = JSON.stringify({
+      format: "vendo/knowledge@1",
+      sources: [{ name: "help-center", glob: "docs/**/*.md", kind: "docs", visibility: "public" }],
+    });
+    expect(await resolve()).toContain("sources: help-center (docs)");
+  });
+
+  it("does no I/O at construction and single-flights concurrent first turns", async () => {
+    let statusCalls = 0;
+    const base = memoryKnowledgeAdapter({ docs: [doc("a")] });
+    const counted: KnowledgeAdapter = {
+      ...base,
+      posture: base.posture,
+      status: async () => {
+        statusCalls += 1;
+        return base.status();
+      },
+    };
+    const resolve = knowledgeIndexResolver(counted, readers({}));
     expect(statusCalls).toBe(0);
     const [first, second] = await Promise.all([resolve(), resolve()]);
     expect(first).toBe(second);
     expect(statusCalls).toBe(1);
   });
 
-  it("resolves undefined while the engine is down, then retries and locks on recovery", async () => {
+  it("resolves undefined while the engine is down, retries on recovery, and serves STALE bytes over absence after a failed refresh", async () => {
     let healthy = false;
-    const adapter = memoryKnowledgeAdapter({ docs: [doc("a")] });
+    const base = memoryKnowledgeAdapter({ docs: [doc("a")] });
     const flaky: KnowledgeAdapter = {
-      ...adapter,
-      posture: adapter.posture,
+      ...base,
+      posture: base.posture,
       status: async () => {
         if (!healthy) throw new Error("engine down");
-        return adapter.status();
+        return base.status();
       },
     };
-    const resolve = bootLockedKnowledgeIndex(flaky, () => undefined);
+    const state: { manifest?: string; config?: string } = { manifest: "v1" };
+    const resolve = knowledgeIndexResolver(flaky, readers(state));
     expect(await resolve()).toBeUndefined();
     healthy = true;
     const recovered = await resolve();
     expect(recovered).toContain("1 document");
+    // A sync lands but the engine is sick: the last good bytes keep serving
+    // (guidance never vanishes mid-session), and recovery re-caches.
+    healthy = false;
+    state.manifest = "v2";
+    await base.upsert?.([doc("b")]);
     expect(await resolve()).toBe(recovered);
+    healthy = true;
+    expect(await resolve()).toContain("2 documents");
   });
 });

@@ -100,6 +100,26 @@ describe("assembleSystemPrompt", () => {
     }
   });
 
+  it("knowledge k8 P0: the ONLY knowledge content in any venue's prompt is the resolver's bytes — internal source names filtered upstream can never reappear", async () => {
+    // The umbrella's assembler filters internal sources out of the resolver
+    // output (knowledge-prompt.ts, unit-tested there). This sweep closes the
+    // loop at the prompt layer for ALL FOUR venues: tree venues carry the
+    // resolver bytes verbatim and nothing else knowledge-shaped; the other
+    // venues carry no knowledge block at all.
+    const guard = testGuard({}, []);
+    const filtered = "Knowledge\n4 documents — sources: help-center (docs).";
+    for (const venue of ["chat", "app"] as const) {
+      const prompt = await assembleSystemPrompt(guard, ctx({ venue }), { knowledge: filtered });
+      expect(prompt).toContain(filtered);
+      expect(prompt).not.toContain("secret-fraud-runbooks");
+    }
+    for (const venue of ["automation", "mcp"] as const) {
+      const prompt = await assembleSystemPrompt(guard, ctx({ venue }), { knowledge: filtered });
+      expect(prompt).not.toContain("Knowledge\n");
+      expect(prompt).not.toContain("help-center");
+    }
+  });
+
   it("knowledge k8: awaits a knowledge RESOLVER and drops an undefined or blank resolution", async () => {
     const guard = testGuard({}, []);
     // The umbrella's boot-locked resolver is async — the first turn awaits it.

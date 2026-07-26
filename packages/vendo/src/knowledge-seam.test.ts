@@ -113,7 +113,32 @@ describe("knowledge prompt index (k8)", () => {
     return { model: model as unknown as LanguageModel, prompts };
   }
 
-  it("rides the chat system prompt with status counts and stays byte-stable across turns even as the corpus changes", async () => {
+  it("rides chat turns byte-stable at a FIXED sync state and REFRESHES when the sync manifest changes", async () => {
+    // A real .vendo dir: the resolver fingerprints .vendo/knowledge-manifest.json
+    // (sync writes it LAST), and reads .vendo/knowledge.json for sources.
+    const { mkdtemp: makeTemp, mkdir, rm: remove, writeFile } = await import("node:fs/promises");
+    const root = await makeTemp(join(tmpdir(), "vendo-k8-syncstate-"));
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    const manifest = (docs: Record<string, string>) => JSON.stringify({
+      format: "vendo/knowledge-hash@1",
+      docs,
+      updatedAt: "2026-07-26T00:00:00.000Z",
+    });
+    await writeFile(join(root, ".vendo", "knowledge-manifest.json"), manifest({ "docs#a": `sha256:${"a".repeat(64)}` }));
+    await writeFile(join(root, ".vendo", "knowledge.json"), JSON.stringify({
+      format: "vendo/knowledge@1",
+      sources: [
+        { name: "help-center", glob: "docs/**/*.md", kind: "docs", visibility: "public" },
+        { name: "secret-fraud-runbooks", glob: "internal/**/*.md", kind: "docs", visibility: "internal" },
+      ],
+    }));
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    cleanups.push(async () => {
+      process.chdir(originalCwd);
+      await remove(root, { recursive: true, force: true });
+    });
+
     const adapter = memoryKnowledgeAdapter({
       docs: [
         { id: "doc-1", kind: "docs", visibility: "public", title: "Transfers", text: "Transfers settle in one business day.", source: "docs/transfers.md" },
@@ -129,12 +154,28 @@ describe("knowledge prompt index (k8)", () => {
     expect(first).toContain("vendo_knowledge_search");
     expect(first).toContain("lookup:true");
     expect(first).toContain("readMore:{docId}");
+    // P0 (ENG-370): the PUBLIC source is named; the internal source's NAME
+    // never reaches an end-user prompt.
+    expect(first).toContain("help-center");
+    expect(first).not.toContain("secret-fraud-runbooks");
 
-    // The lock: an upsert between turns must NOT move the prompt bytes — the
-    // index refreshes at boot, never per-turn.
+    // Half 1 — FIXED sync state: an upsert without a manifest rewrite (no
+    // sync completed) must NOT move the prompt bytes (prompt-cache stability).
     await adapter.upsert?.([{ id: "doc-3", kind: "api", visibility: "public", title: "POST /wires", text: "Creates a wire.", source: "api/wires.md" }]);
     const second = await systemPromptOfTurn(vendo, prompts, "thr_k8_stability");
     expect(second).toBe(first);
+
+    // Half 2 — a SYNC lands (manifest rewritten): the index refreshes to the
+    // new counts, then is byte-stable at the new state.
+    await writeFile(join(root, ".vendo", "knowledge-manifest.json"), manifest({
+      "docs#a": `sha256:${"a".repeat(64)}`,
+      "docs#b": `sha256:${"b".repeat(64)}`,
+    }));
+    const third = await systemPromptOfTurn(vendo, prompts, "thr_k8_stability");
+    expect(third).toContain("3 documents");
+    expect(third).not.toBe(first);
+    const fourth = await systemPromptOfTurn(vendo, prompts, "thr_k8_stability");
+    expect(fourth).toBe(third);
   });
 
   it("is absent when no knowledge adapter is composed", async () => {

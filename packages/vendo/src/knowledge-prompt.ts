@@ -4,8 +4,13 @@ import { knowledgeConfigSchema, VENDO_KNOWLEDGE_SEARCH_TOOL, type KnowledgeConfi
 /** Knowledge k8 (ENG-368) — the static prompt index + usage guidance. Pure
     assembly: sources come from `.vendo/knowledge.json` (when the developer
     door wrote one), counts from the adapter's `status()`. The caller owns
-    WHEN this runs (boot, never per-turn) — the output for a given input is
-    byte-stable by construction. */
+    WHEN this runs (boot + sync-state change, never per-turn) — the output
+    for a given input is byte-stable by construction.
+
+    Checker round 1 P0 (ENG-370 law): the index rides END-USER prompts, so it
+    names PUBLIC sources only — an internal source's existence is corpus
+    metadata and must never surface on a principal-facing path, exactly like
+    internal hits. Counts stay aggregate (no per-source identity). */
 export function knowledgeIndexSummary(status: KnowledgeStatus, config?: KnowledgeConfig): string {
   const byKind = status.byKind;
   const kindCounts = byKind === undefined
@@ -15,7 +20,10 @@ export function knowledgeIndexSummary(status: KnowledgeStatus, config?: Knowledg
         .map((kind) => `${byKind[kind]} ${kind}`)
         .join(", ");
   const counts = `${status.docs} document${status.docs === 1 ? "" : "s"}${kindCounts === "" ? "" : ` (${kindCounts})`}`;
-  const sources = (config?.sources ?? []).map((source) => `${source.name} (${source.kind})`).join(", ");
+  const sources = (config?.sources ?? [])
+    .filter((source) => source.visibility === "public")
+    .map((source) => `${source.name} (${source.kind})`)
+    .join(", ");
   return [
     "Knowledge",
     `The host has a product knowledge base of ${counts}${sources === "" ? "" : ` — sources: ${sources}`}.`,
@@ -40,29 +48,48 @@ export function parseKnowledgeConfig(raw: string | undefined): KnowledgeConfig |
   }
 }
 
-/** The boot-locked index resolver assembleSystemPrompt consumes. Construction
-    is PURE (createVendo may run at Workers module init, where I/O is
-    forbidden): the first TURN triggers one status() read, single-flight, and
-    the resolved bytes lock forever — later corpus changes surface only on
-    reboot, keeping the prompt block byte-stable across turns (prompt-cache
-    stability, a hard k8 criterion). A failed status() clears the flight so a
-    later turn retries; until then the block is simply absent. */
-export function bootLockedKnowledgeIndex(
+export interface KnowledgeIndexReaders {
+  /** Raw `.vendo/knowledge.json` contents (fail-soft). */
+  readConfig(): string | undefined;
+  /** Raw `.vendo/knowledge-manifest.json` contents (fail-soft) — sync writes
+      it LAST, so its bytes ARE the sync-state fingerprint. */
+  readManifest(): string | undefined;
+}
+
+/** The index resolver assembleSystemPrompt consumes. Construction is PURE
+    (createVendo may run at Workers module init, where I/O is forbidden).
+
+    Refresh contract (checker round 1 P1 — real invalidation, not a
+    boot-forever lock):
+    - At a FIXED sync state (same manifest bytes) every turn returns the SAME
+      cached string — byte-stable, zero adapter I/O (prompt-cache stability).
+    - When the sync manifest changes (`vendo knowledge sync` writes it last),
+      the next turn re-reads config + status() once and re-caches — the
+      per-turn cost is one fail-soft file read, never a rebuild.
+    - Setups without a manifest (programmatic adapters, no CLI sync) have a
+      constant fingerprint: the index locks at first resolution and refreshes
+      at reboot, the documented boot posture.
+    - A failed status() keeps serving the last good bytes (a sick engine must
+      not strip guidance mid-session); with nothing cached yet the block is
+      simply absent and the next turn retries. */
+export function knowledgeIndexResolver(
   adapter: KnowledgeAdapter,
-  readConfigFile: () => string | undefined,
+  readers: KnowledgeIndexReaders,
 ): () => Promise<string | undefined> {
-  let locked: string | undefined;
+  let cached: { fingerprint: string | undefined; text: string } | undefined;
   let flight: Promise<string | undefined> | undefined;
   return () => {
-    if (locked !== undefined) return Promise.resolve(locked);
+    const fingerprint = readers.readManifest();
+    if (cached !== undefined && cached.fingerprint === fingerprint) return Promise.resolve(cached.text);
     flight ??= adapter.status().then(
       (status) => {
-        locked = knowledgeIndexSummary(status, parseKnowledgeConfig(readConfigFile()));
-        return locked;
+        cached = { fingerprint, text: knowledgeIndexSummary(status, parseKnowledgeConfig(readers.readConfig())) };
+        flight = undefined;
+        return cached.text;
       },
       () => {
         flight = undefined;
-        return undefined;
+        return cached?.text;
       },
     );
     return flight;

@@ -92,7 +92,7 @@ import {
   type CapabilitySurfaceSnapshot,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromJson } from "./catalog.js";
-import { bootLockedKnowledgeIndex } from "./knowledge-prompt.js";
+import { knowledgeIndexResolver } from "./knowledge-prompt.js";
 import { bindVendoModelSlots } from "#dev-creds/model";
 // Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
 // entry: the lazily-resolving env ladder createVendo composes when the host
@@ -1558,7 +1558,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // fail-soft reader like catalog.json.
   const knowledgeIndex = knowledge === undefined
     ? undefined
-    : bootLockedKnowledgeIndex(knowledge, () => dotVendoFile("knowledge.json", surfaceRoot));
+    : knowledgeIndexResolver(knowledge, {
+        readConfig: () => dotVendoFile("knowledge.json", surfaceRoot),
+        readManifest: () => dotVendoFile("knowledge-manifest.json", surfaceRoot),
+      });
   // #557 — the capability-miss surface is DEFERRED to first use behind a
   // memoized promise. Building it eagerly at compose would call
   // actions.descriptors() → loadHost → the cloud overrides fetch at module
