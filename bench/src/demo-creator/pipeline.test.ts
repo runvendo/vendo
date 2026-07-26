@@ -279,6 +279,52 @@ describe("runDemoPipeline", () => {
     expect(result.demoUrl).toBeUndefined();
   });
 
+  it("parks at the pipeline-wide wall-clock cap: typed park, named gaps, deploy never runs", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot);
+    const rejection = await runDemoPipeline({ ...pipelineArgs, skipDeploy: false, skipCapture: false }, {
+      repoRoot,
+      stages,
+      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      write: () => {},
+      capMs: -1, // already expired: the first stage check trips
+    }).catch((error: unknown) => error);
+    expect(rejection).toBeInstanceOf(DemoParkedError);
+    expect(String(rejection)).toMatch(/wall-clock cap/);
+    expect(String(rejection)).toMatch(/not run:.*deploy/);
+    expect(stages.deploy).not.toHaveBeenCalled();
+    expect(stages.create).not.toHaveBeenCalled();
+  });
+
+  it("gives repeated stage occurrences distinct #n names — one honest row per run", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot, {
+      rewrite: vi.fn(async (_args, io) => {
+        await io.runStage?.("judge:round-1", async () => undefined);
+        await io.runStage?.("judge:round-1", async () => undefined);
+        return {
+          plan: { entity: { name: "Issue", stem: "issues", action: "closeIssue", fields: [], sampleRecordNames: ["x"] }, screens: [{ slug: "board", route: "/", title: "Board", purpose: "clone" }], nav: ["Inbox"], copyTone: "terse" },
+          agents: [],
+          fencedViolations: [],
+          buildRounds: 1,
+          costUsd: 0,
+        };
+      }),
+    });
+    const result = await runDemoPipeline(pipelineArgs, {
+      repoRoot,
+      stages,
+      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      write: () => {},
+    });
+    const timings = JSON.parse(await readFile(path.join(result.appDir, "timings.json"), "utf8")) as { stage: string }[];
+    const names = timings.map((row) => row.stage);
+    expect(names.filter((name) => name.startsWith("judge:round-1"))).toEqual(["judge:round-1", "judge:round-1#2"]);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it("writes per-stage timings and one-line progress markers", async () => {
     const repoRoot = await makeRepoRoot();
     const stages = stubStages(repoRoot);

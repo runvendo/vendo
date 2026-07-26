@@ -2,9 +2,10 @@ import { rm } from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { runDemoCreate, type DemoCreateArgs, type DemoCreateResult } from "./create.js";
+import { runDemoCreate, validateProspectUrl, type DemoCreateArgs, type DemoCreateResult } from "./create.js";
 import { defaultExec, runDemoDeploy, type DemoDeployArgs, type DemoDeployResult, type DeployIo, type ExecFn } from "./deploy.js";
 import { runFinalGate, type FinalGateArgs, type FinalGateIo, type FinalGateResult } from "./gate.js";
+import { demoPassword } from "./inject-auth.js";
 import { runJudgeLoop, type JudgeLoopArgs, type JudgeLoopIo, type JudgeLoopResult } from "./judge.js";
 import { runDemoResearch, type DemoResearchArgs, type DemoResearchResult } from "./research.js";
 import { runRewrite, type RewriteArgs, type RewriteIo, type RewriteResult } from "./rewrite.js";
@@ -101,36 +102,9 @@ export class DemoParkedError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Fail-fast URL validation
-// ---------------------------------------------------------------------------
-
-/**
- * Probes the prospect URL before the pipeline touches disk. Reachable means
- * "a live server answered at all": any HTTP status below 500 passes (bot
- * walls answer 403, some servers reject HEAD with 405 — a challenge page
- * still proves the site exists; the research stage deals with junk evidence
- * separately). HEAD is tried first, then GET; network errors, timeouts, and
- * persistent 5xx are unreachable.
- */
-export async function validateProspectUrl(
-  url: string,
-  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {},
-): Promise<void> {
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const timeoutMs = options.timeoutMs ?? 15_000;
-  let lastFailure = "";
-  for (const method of ["HEAD", "GET"]) {
-    try {
-      const response = await fetchImpl(url, { method, redirect: "follow", signal: AbortSignal.timeout(timeoutMs) });
-      if (response.status < 500) return;
-      lastFailure = `HTTP ${response.status}`;
-    } catch (error) {
-      lastFailure = error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error);
-    }
-  }
-  throw new Error(`Prospect URL ${url} is unreachable (${lastFailure}) — nothing was created. Fix the URL and re-run.`);
-}
+// The fail-fast URL probe lives in create.ts (criterion 33 binds it to
+// demo:create itself); the pipeline re-runs it as its own first stage.
+export { validateProspectUrl };
 
 // ---------------------------------------------------------------------------
 // Stage runner
@@ -168,7 +142,13 @@ export interface PipelineIo {
   fetchImpl?: typeof fetch;
   exec?: ExecFn;
   write?: (line: string) => void;
+  /** Pipeline-wide wall-clock hard cap (default 2h). Past the deadline no
+   * further stage starts: the run PARKS with named gaps and never deploys. */
+  capMs?: number;
 }
+
+/** The contract's hard cap: a run that hasn't shipped in 2 hours parks. */
+export const defaultCapMs = 2 * 60 * 60 * 1000;
 
 export interface DemoPipelineResult {
   appDir: string;
@@ -200,16 +180,39 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
   // failures leave the app dir in place for the park report.
   let cleanupOnAbort = true;
 
+  const deadline = Date.now() + (io.capMs ?? defaultCapMs);
+  const capMinutes = Math.round((io.capMs ?? defaultCapMs) / 60000);
+  const plannedStages = ["validate", "create", "install", "research", "rewrite", "judge", "capture", "deploy", "final-gate"];
+  const stageCounts = new Map<string, number>();
+
   const stage = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+    // The hard cap is checked before every stage: past the deadline the run
+    // PARKS with named gaps — completed work stays as evidence, nothing more
+    // runs, and deploy can never be reached (criterion 34's 2h cap).
+    if (Date.now() > deadline) {
+      const done = new Set(timings.map((row) => row.stage.split(":")[0]?.split("#")[0]));
+      const remaining = plannedStages.filter((planned) => !done.has(planned));
+      const gaps = `completed: ${[...done].join(", ") || "(none)"}; not run: ${remaining.join(", ")}`;
+      const reportPath = appDir === undefined ? "(no app dir — nothing was created)" : timingsPath(appDir);
+      throw new DemoParkedError(
+        `PARKED at the ${capMinutes}-minute wall-clock cap before stage "${name}" — ${gaps}. Nothing was deployed. Timings: ${reportPath}`,
+        reportPath,
+      );
+    }
+    // Distinct row per occurrence: a retried/repeated stage gets "#n" so the
+    // timing table stays one honest row per thing that actually ran.
+    const count = (stageCounts.get(name) ?? 0) + 1;
+    stageCounts.set(name, count);
+    const rowName = count === 1 ? name : `${name}#${count}`;
     const startedAt = new Date().toISOString();
     const t0 = performance.now();
-    write(`[pipeline] ${name} started`);
+    write(`[pipeline] ${rowName} started`);
     try {
       return await fn();
     } finally {
       const ms = Math.round(performance.now() - t0);
-      timings.push({ stage: name, startedAt, ms });
-      write(`[pipeline] ${name} finished in ${ms}ms`);
+      timings.push({ stage: rowName, startedAt, ms });
+      write(`[pipeline] ${rowName} finished in ${ms}ms`);
       if (appDir !== undefined) {
         await writeFile(timingsPath(appDir), `${JSON.stringify(timings, null, 2)}\n`).catch(() => undefined);
       }
@@ -228,7 +231,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       targetDir: args.targetDir,
       url: args.url,
       ...(args.screenshots === undefined ? {} : { screenshots: args.screenshots }),
-    }, { repoRoot: io.repoRoot }));
+    }, { repoRoot: io.repoRoot, ...(io.fetchImpl === undefined ? {} : { fetchImpl: io.fetchImpl }) }));
     appDir = created.appDir;
 
     await stage("install", async () => {
@@ -316,15 +319,20 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
 
     const demoUrl = `${routerUrl}/${args.id}`;
     const gate = await stage("final-gate", () => stages.gate(
-      { demoUrl, appDir: appDir as string, outDir: path.join(appDir as string, "RESEARCH", "gate") },
+      {
+        demoUrl,
+        appDir: appDir as string,
+        outDir: path.join(appDir as string, "RESEARCH", "gate"),
+        demoPassword: demoPassword(args.id, process.env),
+      },
       { write },
     ));
 
     return { appDir, appPath, timings, rewrite, judge, deploy, gate, demoUrl, ...(gifPath === undefined ? {} : { gifPath }) };
   } catch (error) {
-    // Early-stage abort keeps the repo pristine. Later stages (rewrite, judge,
-    // deploy, gate) park WITH evidence instead — the app dir stays.
-    if (appDir !== undefined && cleanupOnAbort) {
+    // Early-stage abort keeps the repo pristine. Parks (cap, judge) and later
+    // stages keep the app dir — the evidence IS the park report's substance.
+    if (appDir !== undefined && cleanupOnAbort && !(error instanceof DemoParkedError)) {
       await rm(appDir, { recursive: true, force: true }).catch(() => undefined);
     }
     throw error;

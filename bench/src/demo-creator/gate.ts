@@ -6,10 +6,9 @@ import { chromium } from "@playwright/test";
  * The final self-gate of `demo:pipeline` — after deploy, the pipeline itself
  * drives the DEPLOYED demo end-to-end (criterion 37): wait for the Railway
  * service to come up (`railway up --detach` returns long before the build
- * finishes), log in if the demo has a login wall (template clones ship
- * without one — the helper no-ops, same as demo-capture's sign-in), assert
- * the beat suggestion cards render on the /vendo landing, click the
- * generate-ui beat and wait for a real generated view to paint, and
+ * finishes), perform a REAL login through the injected demo wall (a demo
+ * without one FAILS the gate), assert the beat suggestion cards render,
+ * run one live generation through the composer to a settled turn, and
  * screenshot every step. Any failure = the run is NOT done.
  */
 
@@ -85,6 +84,10 @@ export interface FinalGateArgs {
   appDir: string;
   /** Absolute dir for step screenshots + GATE.md. */
   outDir: string;
+  /** The demo's login password (env DEMO_PASSWORD on the deployment, else
+   * the seeded `<id>-demo`). The gate performs a REAL login and FAILS when
+   * the deployed demo has no login wall — the wall is part of the contract. */
+  demoPassword: string;
 }
 
 export interface FinalGateIo {
@@ -104,7 +107,7 @@ const generationTimeoutMs = 5 * 60 * 1000;
 
 export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): Promise<FinalGateResult> {
   const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
-  const env = io.env ?? process.env;
+
   await mkdir(args.outDir, { recursive: true });
   const steps: GateStep[] = [];
   const reportPath = path.join(args.outDir, "GATE.md");
@@ -138,28 +141,29 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
     await page.screenshot({ path: productShot });
     await record("open", true, `landed on ${page.url()}`, productShot);
 
-    // (3) Login — template clones ship without a wall; the helper no-ops
-    // (same contract as demo-capture's sign-in). A wall without a password
-    // in the environment is a hard fail, not a skip.
+    // (3) Login — REAL and REQUIRED (criterion 37: "login works"). Every
+    // clone ships the injected wall; a deployed demo without one fails the
+    // gate, and so does a login that doesn't land past /login.
     const loginForm = page.locator('form[action="/login"]');
-    if (await loginForm.count() > 0) {
-      const password = env.DEMO_GATE_PASSWORD ?? "";
-      if (password === "") {
-        await record("login", false, "the deployed demo has a login wall but DEMO_GATE_PASSWORD is not set");
-      }
-      await loginForm.locator('input[name="password"]').fill(password);
-      await loginForm.locator('button[type="submit"]').click();
-      await page.waitForLoadState("domcontentloaded");
-      await record("login", true, "login form submitted with the demo password");
-    } else {
-      await record("login", true, "no login wall (template demos ship without one)");
+    if (await loginForm.count() === 0) {
+      await record("login", false, "the deployed demo has NO login wall — the injected demo login is missing");
     }
+    await loginForm.locator('input[name="password"]').fill(args.demoPassword);
+    await loginForm.locator('button[type="submit"]').click();
+    await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 60_000, waitUntil: "commit" })
+      .catch(async () => {
+        await record("login", false, "the demo password was rejected (still on /login after submit)");
+      });
+    await page.waitForLoadState("domcontentloaded");
+    const loginShot = path.join(args.outDir, "gate-2-logged-in.png");
+    await page.screenshot({ path: loginShot });
+    await record("login", true, `logged in with the demo password; landed on ${new URL(page.url()).pathname}`, loginShot);
 
     // (4) The /vendo panel: badge chrome + every beat's suggestion card.
     const panelUrl = new URL("/vendo", page.url()).toString();
     await page.goto(panelUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
-    const panelShot = path.join(args.outDir, "gate-2-panel.png");
+    const panelShot = path.join(args.outDir, "gate-3-panel.png");
     await page.screenshot({ path: panelShot });
     const missingChips: string[] = [];
     for (const beat of beats) {
@@ -193,7 +197,7 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
       await messageBox.fill(generationBeat.prompt);
     }
     await sendButton.click();
-    const sentShot = path.join(args.outDir, "gate-3-sent.png");
+    const sentShot = path.join(args.outDir, "gate-4-sent.png");
     await page.waitForTimeout(1_500);
     await page.screenshot({ path: sentShot });
     await record("generation-sent", true, `sent the "${generationBeat.key}" beat prompt through the composer`, sentShot);
@@ -213,7 +217,7 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
       }
       await page.waitForTimeout(500);
     }
-    const viewShot = path.join(args.outDir, "gate-4-generated.png");
+    const viewShot = path.join(args.outDir, "gate-5-generated.png");
     await page.waitForTimeout(2_000);
     await page.screenshot({ path: viewShot });
     await record("generation-complete", true, "a generated Vendo view painted and the turn settled", viewShot);

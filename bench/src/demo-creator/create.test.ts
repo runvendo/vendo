@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseDemoConfig } from "demo-template/demo-config";
-import { describe, expect, it } from "vitest";
-import { cloneExclusions, displayAppPath, parseDemoCreateArgs, runDemoCreate } from "./create.js";
+import { describe, expect, it, vi } from "vitest";
+import { cloneExclusions, displayAppPath, parseDemoCreateArgs, runDemoCreate, validateProspectUrl } from "./create.js";
 
 describe("displayAppPath", () => {
   it("prefers the repo-root-relative shape and falls back to absolute outside the repo", () => {
@@ -70,6 +70,16 @@ describe("parseDemoCreateArgs", () => {
   it("rejects an empty --screenshots list", () => {
     expect(() => parseDemoCreateArgs(["--id", "acme", "--prospect", "Acme", "--screenshots", ","]))
       .toThrow("--screenshots needs at least one image path");
+  });
+});
+
+describe("validateProspectUrl", () => {
+  it("passes on any sub-500 answer and fails naming the URL otherwise", async () => {
+    const ok = vi.fn().mockResolvedValue(new Response(null, { status: 403 }));
+    await expect(validateProspectUrl("https://x.example", { fetchImpl: ok as unknown as typeof fetch })).resolves.toBeUndefined();
+    const dead = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    await expect(validateProspectUrl("https://dead.invalid", { fetchImpl: dead as unknown as typeof fetch }))
+      .rejects.toThrow(/https:\/\/dead\.invalid/);
   });
 });
 
@@ -171,7 +181,8 @@ describe("runDemoCreate", () => {
 
   it("leaves a RESEARCH stub that records the prospect site and points at demo:research", async () => {
     const repoRoot = await writeRepoFixture();
-    const { appDir } = await runDemoCreate({ ...args, url: "https://acme.example/pricing" }, { repoRoot });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 })) as unknown as typeof fetch;
+    const { appDir } = await runDemoCreate({ ...args, url: "https://acme.example/pricing" }, { repoRoot, fetchImpl });
     const stub = await readFile(path.join(appDir, "RESEARCH", "README.md"), "utf8");
     expect(stub).toContain("demo:research");
     expect(stub).toContain("--app apps/demo-acme-widgets");
@@ -205,6 +216,35 @@ describe("runDemoCreate", () => {
     await expect(runDemoCreate({ ...args, screenshots: [missing] }, { repoRoot }))
       .rejects.toThrow(`--screenshots file not found: ${missing}`);
     expect(existsSync(path.join(repoRoot, "apps", "demo-acme-widgets"))).toBe(false);
+  });
+
+  it("injects the demo login wall into every clone", async () => {
+    const repoRoot = await writeRepoFixture();
+    const { appDir } = await runDemoCreate(args, { repoRoot });
+    const middleware = await readFile(path.join(appDir, "middleware.ts"), "utf8");
+    expect(middleware).toContain("vendo_demo_auth");
+    const login = await readFile(path.join(appDir, "src", "app", "login", "route.ts"), "utf8");
+    expect(login).toContain('action="/login"');
+    expect(login).toContain('"acme-widgets-demo"');
+    expect(login).toContain("DEMO_PASSWORD");
+  });
+
+  it("fails fast on an unreachable --url, naming it, with NO app dir left behind (criterion 33 at demo:create)", async () => {
+    const repoRoot = await writeRepoFixture();
+    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    await expect(runDemoCreate(
+      { ...args, url: "https://unreachable.invalid" },
+      { repoRoot, fetchImpl: fetchImpl as unknown as typeof fetch },
+    )).rejects.toThrow(/https:\/\/unreachable\.invalid/);
+    expect(existsSync(path.join(repoRoot, "apps", "demo-acme-widgets"))).toBe(false);
+  });
+
+  it("stays offline-capable without --url (no probe, clone succeeds)", async () => {
+    const repoRoot = await writeRepoFixture();
+    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("offline"));
+    const { appDir } = await runDemoCreate(args, { repoRoot, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(existsSync(appDir)).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("refuses an id that fails the demo.config slug rule, before touching disk", async () => {

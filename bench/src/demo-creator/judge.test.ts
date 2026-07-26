@@ -101,19 +101,25 @@ function reportFixture(withOperator: boolean): ResearchReport {
 }
 
 describe("selectEvidenceImages", () => {
-  it("labels operator screenshots and the live capture, operator first", async () => {
+  it("labels operator screenshots and the live capture, operator first, both classes present", async () => {
     const researchDir = await mkdtemp(path.join(tmpdir(), "vendo-judge-evidence-"));
     await writeFile(path.join(researchDir, "operator-1-board.png"), "png");
     await writeFile(path.join(researchDir, "page-1-viewport.png"), "png");
-    const images = selectEvidenceImages(reportFixture(true), researchDir);
+    const { images, missing } = selectEvidenceImages(reportFixture(true), researchDir);
     expect(images).toHaveLength(2);
     expect(images[0]?.label).toContain("operator");
     expect(images[1]?.label).toContain("live-site");
+    expect(missing).toEqual([]);
   });
 
-  it("drops images whose files are missing", async () => {
+  it("reports each absent evidence class as missing (criterion 36 requires BOTH)", async () => {
     const researchDir = await mkdtemp(path.join(tmpdir(), "vendo-judge-evidence-"));
-    expect(selectEvidenceImages(reportFixture(true), researchDir)).toEqual([]);
+    expect(selectEvidenceImages(reportFixture(true), researchDir).missing)
+      .toEqual(["operator-screenshots", "live-site-capture"]);
+    await writeFile(path.join(researchDir, "operator-1-board.png"), "png");
+    expect(selectEvidenceImages(reportFixture(true), researchDir).missing).toEqual(["live-site-capture"]);
+    await writeFile(path.join(researchDir, "page-1-viewport.png"), "png");
+    expect(selectEvidenceImages(reportFixture(false), researchDir).missing).toEqual(["operator-screenshots"]);
   });
 });
 
@@ -205,13 +211,32 @@ describe("runJudgeLoop", () => {
     expect(io.judgeModel).toHaveBeenCalledTimes(2);
   });
 
-  it("fails loudly when there is no evidence to judge against", async () => {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), "vendo-judge-noev-"));
+  it("PARKS (never ships) when the operator-screenshot class is missing — criterion 36 needs both", async () => {
+    const repoRoot = await mkdtemp(path.join(tmpdir(), "vendo-judge-noop-"));
     const appDir = path.join(repoRoot, "apps", "demo-linear");
     await mkdir(path.join(appDir, "RESEARCH"), { recursive: true });
     await writeFile(path.join(appDir, "RESEARCH", "research.json"), JSON.stringify(reportFixture(false)));
+    await writeFile(path.join(appDir, "RESEARCH", "page-1-viewport.png"), "png");
     const { io } = stubIo(appDir, repoRoot, [verdictJson({})]);
-    await expect(runJudgeLoop(baseArgs, io)).rejects.toThrow("no evidence images");
+    const result = await runJudgeLoop(baseArgs, io);
+    expect(result.parked).toBe(true);
+    expect(io.judgeModel).not.toHaveBeenCalled();
+    const report = await readFile(result.reportPath, "utf8");
+    expect(report).toContain("PARKED — DO NOT SHIP");
+    expect(report).toContain("operator-screenshots");
+  });
+
+  it("PARKS when the live-site-capture class is missing", async () => {
+    const repoRoot = await mkdtemp(path.join(tmpdir(), "vendo-judge-nolive-"));
+    const appDir = path.join(repoRoot, "apps", "demo-linear");
+    await mkdir(path.join(appDir, "RESEARCH"), { recursive: true });
+    await writeFile(path.join(appDir, "RESEARCH", "research.json"), JSON.stringify(reportFixture(true)));
+    await writeFile(path.join(appDir, "RESEARCH", "operator-1-board.png"), "png");
+    const { io } = stubIo(appDir, repoRoot, [verdictJson({})]);
+    const result = await runJudgeLoop(baseArgs, io);
+    expect(result.parked).toBe(true);
+    const report = await readFile(result.reportPath, "utf8");
+    expect(report).toContain("live-site-capture");
   });
 
   it("records verdicts for every round in the fidelity report", async () => {

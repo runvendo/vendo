@@ -305,6 +305,10 @@ export function parseRewritePlan(raw: string): RewritePlan {
  * is fenced too (its predev/prebuild `vendo sync .` scripts are load-bearing
  * and nothing creative lives there). */
 export const fencedFiles = [
+  // The injected demo login (inject-auth.ts) — the gate's "login works"
+  // depends on it surviving the rewrite untouched.
+  "middleware.ts",
+  "src/app/login/route.ts",
   "package.json",
   "src/server/caps.ts",
   "src/server/http.ts",

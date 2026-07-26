@@ -157,8 +157,9 @@ export interface CaptureScreensOptions {
   logFile: string;
 }
 
-/** Boots the built demo (same machinery as demo-capture) and screenshots each
- * route at the research viewport (1440x900). Returns absolute paths. */
+/** Boots the built demo (same machinery as demo-capture), signs in through
+ * the injected login wall, and screenshots each route at the research
+ * viewport (1440x900). Returns absolute paths. */
 export async function captureBuiltScreens(options: CaptureScreensOptions): Promise<string[]> {
   const { host } = await configDemoHost(options.appDir);
   const running = await bootDemoHost({
@@ -174,6 +175,17 @@ export async function captureBuiltScreens(options: CaptureScreensOptions): Promi
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
+    // The clone ships a login wall (injected at demo:create); authenticate
+    // once, then the cookie carries the rest of the routes.
+    await page.goto(new URL("/", running.baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 60_000 });
+    const loginForm = page.locator('form[action="/login"]');
+    if (await loginForm.count() > 0) {
+      const password = (host.demoPasswordEnv === undefined ? undefined : process.env[host.demoPasswordEnv])
+        ?? host.demoPasswordFallback ?? "";
+      await loginForm.locator('input[name="password"]').fill(password);
+      await loginForm.locator('button[type="submit"]').click();
+      await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 60_000, waitUntil: "commit" });
+    }
     for (const route of options.routes) {
       await page.goto(new URL(route, running.baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 60_000 });
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
@@ -195,21 +207,36 @@ export async function captureBuiltScreens(options: CaptureScreensOptions): Promi
 // ---------------------------------------------------------------------------
 
 /** The judge compares against BOTH operator screenshots and the live-site
- * capture (criterion 36). Returns RESEARCH-dir-relative labeled images. */
-export function selectEvidenceImages(report: ResearchReport, researchDir: string): JudgeImage[] {
-  const images: JudgeImage[] = report.operatorScreenshots.map((shot) => ({
-    label: `EVIDENCE operator screenshot (${shot.file} — real logged-in product UI)`,
-    path: path.join(researchDir, shot.file),
-  }));
+ * capture — criterion 36 requires both classes, so a missing class is a
+ * hard verdict (`missing`), not a silent drop: the loop PARKS on it rather
+ * than shipping a demo scored against half the evidence. */
+export function selectEvidenceImages(report: ResearchReport, researchDir: string): {
+  images: JudgeImage[];
+  /** Evidence classes required by criterion 36 that are absent on disk. */
+  missing: ("operator-screenshots" | "live-site-capture")[];
+} {
+  const operator: JudgeImage[] = report.operatorScreenshots
+    .map((shot) => ({
+      label: `EVIDENCE operator screenshot (${shot.file} — real logged-in product UI)`,
+      path: path.join(researchDir, shot.file),
+    }))
+    .filter((image) => existsSync(image.path));
+  const live: JudgeImage[] = [];
   for (const page of report.pages) {
     if ("error" in page || page.botChallenge) continue;
-    images.push({
+    const candidate = {
       label: `EVIDENCE live-site capture (${page.url})`,
       path: path.join(researchDir, page.screenshots.viewport),
-    });
-    break; // one live capture is enough alongside the operator shots
+    };
+    if (existsSync(candidate.path)) {
+      live.push(candidate);
+      break; // one live capture is enough alongside the operator shots
+    }
   }
-  return images.filter((image) => existsSync(image.path));
+  const missing: ("operator-screenshots" | "live-site-capture")[] = [];
+  if (operator.length === 0) missing.push("operator-screenshots");
+  if (live.length === 0) missing.push("live-site-capture");
+  return { images: [...operator, ...live], missing };
 }
 
 export function buildFixPrompt(options: {
@@ -318,9 +345,19 @@ export async function runJudgeLoop(args: JudgeLoopArgs, io: JudgeLoopIo): Promis
 
   const researchDir = path.join(io.appDir, "RESEARCH");
   const report = JSON.parse(await readFile(path.join(researchDir, "research.json"), "utf8")) as ResearchReport;
-  const evidence = selectEvidenceImages(report, researchDir);
-  if (evidence.length === 0) {
-    throw new Error("Judge has no evidence images (no operator screenshots and no clean live capture) — cannot score fidelity");
+  const { images: evidence, missing } = selectEvidenceImages(report, researchDir);
+  if (missing.length > 0) {
+    // Criterion 36: every score is computed against BOTH operator screenshots
+    // and the live-site capture. A run without either class parks — it never
+    // ships on half the evidence.
+    const reportPath = path.join(researchDir, "FIDELITY.md");
+    await writeFile(reportPath, `# Fidelity report — ${args.prospect}
+
+Verdict: **PARKED — DO NOT SHIP.** The judge requires BOTH evidence classes and the run is missing: ${missing.join(", ")}.
+No dimension was scored; provide the missing evidence (operator screenshots via --screenshots; a clean live capture via demo:research) and re-run.
+`);
+    write(`[judge] PARKED: missing required evidence class(es): ${missing.join(", ")}`);
+    return { rounds: [], parked: true, reportPath, costUsd: 0 };
   }
   const routes = args.plan.screens.map((screen) => screen.route);
   const prompt = buildJudgePrompt({ prospect: args.prospect });
