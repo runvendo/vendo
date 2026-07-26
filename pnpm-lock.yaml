@@ -1323,6 +1323,9 @@ importers:
       '@vendoai/guard':
         specifier: workspace:*
         version: link:../guard
+      '@vendoai/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
       '@vendoai/mcp':
         specifier: workspace:*
         version: link:../mcp
