@@ -119,10 +119,18 @@ export interface McpDoorConfig {
    * never curated away: they are the product's plumbing, not the host's API.
    *
    * The provider form exists because composition is synchronous while resolving
-   * the menu is not (it reads the authored file through the registry). It is
-   * resolved ONCE, lazily, on the first listing or call, and memoized — the
-   * same shape `RegistryConfig.overrides` uses for the same reason. Resolving
-   * to `undefined` means unrestricted.
+   * the menu is not (it reads the authored file through the registry).
+   *
+   * The door calls it FRESH for every listing and every call, and deliberately
+   * does not memoize — not even the resolved value, and never a rejection. The
+   * bound registry grows at runtime (a lazy connector's `expandToolkits`, an
+   * `add()`), so a menu frozen at the first request would leave every
+   * late-arriving tool invisible AND uncallable until the process restarted;
+   * caching a failed read would freeze the door just as permanently. The
+   * registry memoizes its own load underneath, so re-asking costs a map lookup.
+   * Providers passed here must therefore be cheap and side-effect free.
+   *
+   * Resolving to `undefined` means unrestricted.
    */
   menuTools?: string[] | (() => string[] | undefined | Promise<string[] | undefined>);
   /**
