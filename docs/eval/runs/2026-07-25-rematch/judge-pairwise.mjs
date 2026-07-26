@@ -23,6 +23,17 @@ const CRITERIA = `You are judging which of two generated app screenshots is bett
 const b64 = (path) => readFileSync(path).toString("base64");
 
 async function judgeOnce(imageA, imageB) {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      return await judgeOnceInner(imageA, imageB);
+    } catch (error) {
+      if (attempt === 4) throw error;
+      await new Promise((res) => setTimeout(res, attempt * 3000));
+    }
+  }
+}
+
+async function judgeOnceInner(imageA, imageB) {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
