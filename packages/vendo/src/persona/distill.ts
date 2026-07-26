@@ -5,7 +5,7 @@ import {
   type StoreAdapter,
   type VendoRecord,
 } from "@vendoai/core";
-import { emptyPersona, loadPersona, mergeFacts, savePersona } from "./store.js";
+import { emptyPersona, mergeFacts, mutatePersona } from "./store.js";
 import type { Persona, PersonaFact, PersonaFactKind } from "./types.js";
 
 /** What a distill pass saw, before it is turned into facts and a summary. A
@@ -202,11 +202,13 @@ export const distillPersona = async (
   const facts = buildFacts(digest, at);
   const summary = options.summarize ? await options.summarize(digest) : defaultSummary(digest, facts);
 
-  const base = (await loadPersona(store, subject)) ?? emptyPersona(subject);
-  return savePersona(store, {
-    ...base,
-    summary,
-    facts: mergeFacts(base.facts, facts),
-    distilledFrom: { threads: threadRows.length, auditEvents: auditRows.length },
+  return mutatePersona(store, subject, (current) => {
+    const base = current ?? emptyPersona(subject);
+    return {
+      ...base,
+      summary,
+      facts: mergeFacts(base.facts, facts),
+      distilledFrom: { threads: threadRows.length, auditEvents: auditRows.length },
+    };
   });
 };

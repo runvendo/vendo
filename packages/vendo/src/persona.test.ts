@@ -1,5 +1,5 @@
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
-import type { AuditEvent, Json, Persona, RunContext, ToolCall, ToolOutcome } from "@vendoai/core";
+import type { AuditEvent, Json, Persona, RecordStore, RunContext, StoreAdapter, ToolCall, ToolOutcome } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
   MAX_PERSONA_FACTS,
@@ -107,6 +107,35 @@ describe("mergeFacts", () => {
     expect(merged).toHaveLength(MAX_PERSONA_FACTS);
     expect(merged.some((entry) => entry.text === `f_${MAX_PERSONA_FACTS + 9}`)).toBe(true);
     expect(merged.some((entry) => entry.text === "f_0")).toBe(false);
+  });
+});
+
+const withoutAtomic = (base: StoreAdapter): StoreAdapter => ({
+  ...base,
+  records(collection: string): RecordStore {
+    const inner = base.records(collection);
+    return {
+      get: (id) => inner.get(id),
+      put: (record) => inner.put(record),
+      delete: (id) => inner.delete(id),
+      list: (query) => inner.list(query),
+    };
+  },
+});
+
+describe("persona write concurrency", () => {
+  it("does not lose concurrent remembers (atomic read-modify-write)", async () => {
+    const store = memoryStoreAdapter();
+    const subject = "user_concurrent";
+    const kinds = ["workflow", "format", "domain", "preference", "approval-posture"] as const;
+    await Promise.all(kinds.map((kind, i) => rememberFact(store, subject, { kind, text: `fact ${i}` })));
+    const persona = await loadPersona(store, subject);
+    expect(persona?.facts).toHaveLength(kinds.length);
+  });
+
+  it("fails closed when the store omits the atomic capability", async () => {
+    const store = withoutAtomic(memoryStoreAdapter());
+    await expect(rememberFact(store, "user_x", { kind: "preference", text: "t" })).rejects.toThrow(/atomic/i);
   });
 });
 

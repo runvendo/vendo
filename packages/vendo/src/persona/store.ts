@@ -17,6 +17,10 @@ export const PERSONA_COLLECTION = "persona";
  *  the tail so one row can never grow without bound. */
 export const MAX_PERSONA_FACTS = 50;
 
+/** How many times a guarded write re-reads and re-applies after losing the CAS
+ *  race, before giving up. Mirrors thread persistence (03 §5). */
+const MAX_WRITE_ATTEMPTS = 5;
+
 const now = (): string => new Date().toISOString();
 
 const assertRealSubject = (subject: string): void => {
@@ -26,6 +30,11 @@ const assertRealSubject = (subject: string): void => {
   if (isReservedSubject(subject)) {
     throw new VendoError("validation", "persona is not tracked for reserved subjects");
   }
+};
+
+const parsePersona = (data: Json): Persona | null => {
+  const parsed = personaSchema.safeParse(data);
+  return parsed.success ? parsed.data : null;
 };
 
 const factKey = (fact: { kind: PersonaFactKind; text: string }): string =>
@@ -60,38 +69,66 @@ export const loadPersona = async (
 ): Promise<Persona | null> => {
   assertRealSubject(subject);
   const record = await store.records(PERSONA_COLLECTION).get(subject);
-  if (record === null) return null;
-  const parsed = personaSchema.safeParse(record.data);
-  return parsed.success ? parsed.data : null;
+  return record === null ? null : parsePersona(record.data);
 };
 
-/** Validate, stamp, and persist. `refs.subject` is set so a host can join the
- *  row against its own tables the same way every other Vendo row is joinable. */
-export const savePersona = async (
+/** The one write path: a bounded-retry, revision-guarded read-modify-write, so
+ *  two concurrent persona writers can never lose an update. Mirrors thread
+ *  persistence exactly (threads.ts, 02-store §4): insert-if-absent for a first
+ *  write, revision CAS for an existing row, and an adapter that omits `atomic`
+ *  fails closed rather than risking a blind overwrite. `mutate` receives the
+ *  current persona (or null) and returns the next one; it is re-run on each
+ *  attempt against the freshly re-read row, so the merge is never lost. */
+export const mutatePersona = async (
   store: StoreAdapter,
-  persona: Persona,
+  subject: string,
+  mutate: (current: Persona | null) => Persona,
 ): Promise<Persona> => {
-  assertRealSubject(persona.subject);
-  const next = personaSchema.parse({
-    ...persona,
-    facts: persona.facts.slice(0, MAX_PERSONA_FACTS),
-    updatedAt: now(),
-  });
-  await store.records(PERSONA_COLLECTION).put({
-    id: next.subject,
-    data: next as unknown as Json,
-    refs: { subject: next.subject },
-  });
-  return next;
+  assertRealSubject(subject);
+  const records = store.records(PERSONA_COLLECTION);
+  const atomic = records.atomic;
+  if (atomic === undefined) {
+    throw new VendoError(
+      "not-implemented",
+      "persona writes need a store with atomic record claims (02-store §4); this adapter omits the capability",
+    );
+  }
+  for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
+    const record = await records.get(subject);
+    const current = record === null ? null : parsePersona(record.data);
+    const draft = mutate(current);
+    const next = personaSchema.parse({
+      ...draft,
+      subject,
+      facts: draft.facts.slice(0, MAX_PERSONA_FACTS),
+      updatedAt: now(),
+    });
+    const input = { id: subject, data: next as unknown as Json, refs: { subject } };
+    const written = record === null
+      ? await atomic.insertIfAbsent(input)
+      : await atomic.compareAndSwap(input, record.revision!);
+    if (written !== null) return next;
+  }
+  throw new VendoError(
+    "conflict",
+    `persona ${subject} write lost the update race ${MAX_WRITE_ATTEMPTS} times`,
+  );
 };
 
-/** Append one durable fact, merging into the existing record (or a fresh one). */
+/** Validate and persist a full persona, replacing whatever is there. Atomic like
+ *  every write, but a deliberate blind set (used for seeding and tests), not a
+ *  merge. Prefer `rememberFact` / `distillPersona` for incremental updates. */
+export const savePersona = async (store: StoreAdapter, persona: Persona): Promise<Persona> =>
+  mutatePersona(store, persona.subject, () => persona);
+
+/** Append one durable fact, merging into the existing record (or a fresh one),
+ *  concurrency-safe. */
 export const rememberFact = async (
   store: StoreAdapter,
   subject: string,
   fact: { kind: PersonaFactKind; text: string; evidence?: string },
-): Promise<Persona> => {
-  const existing = (await loadPersona(store, subject)) ?? emptyPersona(subject);
-  const merged = mergeFacts(existing.facts, [{ ...fact, updatedAt: now() }]);
-  return savePersona(store, { ...existing, facts: merged });
-};
+): Promise<Persona> =>
+  mutatePersona(store, subject, (current) => {
+    const base = current ?? emptyPersona(subject);
+    return { ...base, facts: mergeFacts(base.facts, [{ ...fact, updatedAt: now() }]) };
+  });
