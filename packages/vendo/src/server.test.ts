@@ -1727,7 +1727,7 @@ describe("app design rules (spec 2026-07-20)", () => {
     },
   }) as unknown as LanguageModel;
 
-  const APP_WIRE = '<App name="Design check"><Text text="ok"/></App>';
+  const APP_WIRE = '<App name="Design check"><Text text="ok"/><Disclaimer reason="Fixture app."/></App>';
   const flatPrompt = (prompt: Array<{ content: string | Array<{ text?: string }> }>): string =>
     prompt.map((message) => typeof message.content === "string"
       ? message.content
@@ -2047,7 +2047,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
               {
                 type: "text-delta",
                 id: "generation",
-                delta: '<Text text="Ready"/></Stack></App>',
+                delta: '<Text text="Ready"/><Disclaimer reason="Fixture app."/></Stack></App>',
               },
               { type: "text-end", id: "generation" },
               { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
@@ -2109,7 +2109,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
     expect(views.length).toBeGreaterThanOrEqual(3);
     expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }, { id: "stack-1" }] });
     expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
-    expect(views.at(-1)?.data.payload.nodes).toHaveLength(3);
+    expect(views.at(-1)?.data.payload.nodes).toHaveLength(4);
     expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
   });
 });

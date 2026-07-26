@@ -127,7 +127,7 @@ describe("graduation 1→2 through the in-box agent", () => {
       tools,
       catalog: [],
       model: scriptedLanguageModel(
-        '<App name="Invoice watcher"><Text text="Invoices"/></App>',
+        '<App name="Invoice watcher"><Text text="Invoices"/><Disclaimer reason="Fixture app."/></App>',
         FN_BINDING_EDIT,
       ),
       experimentalMachines: true,

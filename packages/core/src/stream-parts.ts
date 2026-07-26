@@ -9,6 +9,7 @@ import {
   type GrantId,
   type IsoDateTime,
 } from "./ids.js";
+import { knowledgeKindSchema, knowledgeVisibilitySchema, type KnowledgeKind, type KnowledgeVisibility } from "./knowledge.js";
 import { riskLabelSchema, type RiskLabel } from "./tools.js";
 import type { ToolCall } from "./tools.js";
 import { uiPayloadSchema, type UIPayload } from "./tree.js";
@@ -191,6 +192,62 @@ export const vendoAutomationPartSchema = z.object({
   trigger: triggerSchema.optional(),
   description: z.string().optional(),
 }).passthrough() satisfies z.ZodType<VendoAutomationPart>;
+
+/** Knowledge K1 (additive — 01 §16 amendment parked, same footing as the
+ *  step-limit part): the envelope tag `vendo_knowledge_search` carries on its
+ *  ok-output. The agent tool-bridge keys on it to lift the FULL citation data
+ *  onto the citations part below BEFORE the tool-output cap can truncate
+ *  anything; named once here so producer (@vendoai/knowledge) and consumer
+ *  (@vendoai/agent) never string-match each other. */
+export const VENDO_KNOWLEDGE_RESULT_KIND = "vendo/knowledge-result@1" as const;
+
+/** Knowledge K1 — one citation as the UI receives it. `title` is required on
+ *  this surface (chips render titles); the bridge falls back to the docId
+ *  when an engine's hit carries none. `visibility` rides from
+ *  KnowledgeHit.visibility (checker round 1, pin amended by the conductor)
+ *  so the popover origin line can state it instead of guessing. */
+export interface VendoKnowledgeCitation {
+  docId: string;
+  chunkId?: string;
+  title: string;
+  source?: string;
+  kind: KnowledgeKind;
+  visibility: KnowledgeVisibility;
+  snippet: string;
+}
+
+/** Knowledge K1 */
+export const vendoKnowledgeCitationSchema = z.object({
+  docId: z.string().min(1),
+  chunkId: z.string().optional(),
+  title: z.string().min(1),
+  source: z.string().optional(),
+  kind: knowledgeKindSchema,
+  visibility: knowledgeVisibilitySchema,
+  snippet: z.string(),
+}).passthrough() satisfies z.ZodType<VendoKnowledgeCitation>;
+
+/** Knowledge K1 (additive — 01 §16 amendment parked): streamed beside the
+ *  native tool part when a knowledge search resolves, so the thread renders
+ *  citation chips (answered), the structured refusal line
+ *  (insufficient-evidence), or the knowledge-unavailable flag (unavailable)
+ *  from data — never from free text. Consumers that don't recognize it
+ *  ignore it (§15 forward-compat). */
+export interface VendoCitationsPart {
+  type: "data-vendo-citations";
+  /** The `vendo_knowledge_search` call, for placement beside its beat. */
+  toolCallId: string;
+  citations: VendoKnowledgeCitation[];
+  outcome: "answered" | "insufficient-evidence" | "unavailable";
+}
+
+/** Knowledge K1 */
+export const vendoCitationsPartSchema = z.object({
+  type: z.literal("data-vendo-citations"),
+  toolCallId: z.string(),
+  citations: z.array(vendoKnowledgeCitationSchema),
+  outcome: z.enum(["answered", "insufficient-evidence", "unavailable"]),
+}).passthrough() satisfies z.ZodType<VendoCitationsPart>;
 
 /** AGENT-10 — the nested wire envelope of {@link vendoViewPartSchema}. */
 export const vendoViewWirePartSchema = wirePartSchema(

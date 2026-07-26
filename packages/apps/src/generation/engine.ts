@@ -91,6 +91,15 @@ export interface PipelineConfig {
    *  `false` disables. Catches the crash classes the 2026-07-21 gate shipped
    *  (React #310 hooks-in-map, undefined names, unguarded-data throws). */
   smokeRender?: boolean;
+  /** The data-sighted verify's rebind arm (re-gate 2026-07-26: wrong-data-
+   *  binding is the top model-error class in every arm and the copy-only
+   *  verify caught none of them). Under `endPass` + this flag, the verify may
+   *  point a lying binding at the right field — but only through structured
+   *  repair's closed fix space (a strict enum of real, kind-compatible field
+   *  paths; at most 2 rebinds; full revalidation or the original ships).
+   *  Opt-in while the A/B (verify-with-rebind vs verify-without) is measured;
+   *  default OFF. */
+  rebind?: boolean;
 }
 
 /** Opt-in per-stage diagnostics: rounds, no-valid-fix take-rate,
@@ -100,7 +109,10 @@ export type PipelineEvent =
   | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; ms: number }
   | { stage: "region-parallel"; fallback?: "no-outline" | "sections-failed" | "assembly-invalid"; sectionsPlanned?: number; sectionsLanded?: number; ms: number }
   | { stage: "end-pass"; applied: boolean; ms: number }
-  | { stage: "data-verify"; applied: boolean; ms: number }
+  // data-verify: `relabels` counts ALL surviving copy-pass ops (Set/Unset/
+  // Remove/SetName — the ≤4-op budget), `rebinds` the strict-enum binding
+  // repoints (≤2) applied by the rebind arm (pipeline.rebind).
+  | { stage: "data-verify"; applied: boolean; relabels: number; rebinds: number; ms: number }
   // demo-latency lane — island-scoped repair: when EVERY validation issue is
   // island-scoped, only the offending island sources are rewritten (one small
   // model call) instead of regenerating the whole app (a full-lane attempt).

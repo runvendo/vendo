@@ -141,7 +141,8 @@ export type CommandName =
   | "playground"
   | "sync"
   | "cloud-init"
-  | "mcp";
+  | "mcp"
+  | "knowledge";
 
 /** Cloud-lane project identity (projectName + repoHost) for commands that
     have a target project dir. Anonymous-lane sends strip both keys. */

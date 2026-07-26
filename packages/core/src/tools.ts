@@ -48,6 +48,14 @@ export interface ToolDescriptor {
    *  `name`. Sync's AI enrichment proposes it; `.vendo/overrides.json`
    *  corrects it. */
   title?: string;
+  /** The connectable toolkit this tool belongs to (04-actions §3), present
+   *  only on connector tools whose usefulness is gated by a per-user connected
+   *  account (e.g. Composio's gmail/slack). Composition seams read it to skip
+   *  work that is pointless without a connection — the apps runtime's
+   *  create-time shape probes skip unconnected toolkits (re-gate 2026-07-26
+   *  finding 2). Metadata only: it never changes what the tool can do, and
+   *  execution still answers `connect-required` on its own. */
+  toolkit?: string;
 }
 
 /** 01-core §4 */
@@ -58,6 +66,7 @@ export const toolDescriptorSchema = z.object({
   risk: riskLabelSchema,
   critical: z.boolean().optional(),
   title: z.string().optional(),
+  toolkit: z.string().optional(),
 }).passthrough() satisfies z.ZodType<ToolDescriptor>;
 
 /** 01-core §4 */

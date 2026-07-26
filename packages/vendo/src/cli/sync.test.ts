@@ -602,6 +602,77 @@ describe("sync AI enrichment integration (cse lane 1c)", () => {
     expect(await readFile(toolsPath, "utf8")).toBe(before);
   });
 
+  it("resolves a model key that lives only in the sync dir's .env.local (#567)", async () => {
+    // The ONLY credential lives in the project's .env.local, exactly the case
+    // that previously fell through to structural-only. A sentinel var name
+    // keeps the assertion deterministic no matter what real ANTHROPIC_API_KEY /
+    // VENDO_API_KEY the developer/CI machine exports (which, with process env
+    // winning, would otherwise mask the .env.local value under test).
+    const { dir, toolsPath } = await hostWithTools();
+    await writeFile(join(dir, ".env.local"), "VENDO_TEST_ONLY_MODEL_KEY=sk-only-in-dotenv\n", "utf8");
+    const messages = captureOutput();
+    let seenKey: string | undefined;
+    const harness = {
+      id: "npx-engine",
+      availability: async ({ env }: { env: Record<string, string | undefined> }) =>
+        (typeof env.VENDO_TEST_ONLY_MODEL_KEY === "string" ? "byo (.env.local)" : null),
+      run: async () => `\`\`\`json\n${JSON.stringify({
+        tools: [{ name: "host_a", description: "Enriched via the .env.local key.", risk: "write" }],
+        narrative: "host_a mutates a counter.",
+      })}\n\`\`\``,
+    };
+    const exit = await runSync({
+      targetDir: dir,
+      output: messages.output,
+      fetchImpl: offline,
+      sync: async () => report(),
+      enrich: {
+        harnesses: [harness],
+        resolveCredential: async ({ env }) => {
+          seenKey = env.VENDO_TEST_ONLY_MODEL_KEY;
+          return typeof env.VENDO_TEST_ONLY_MODEL_KEY === "string"
+            ? { rung: "env-key", provider: "anthropic", envVar: "ANTHROPIC_API_KEY" }
+            : { rung: "none" };
+        },
+        treeHash: async () => "feedfacefeedfacefeedfacefeedfacefeedface",
+      },
+    });
+    expect(exit).toBe(0);
+    expect(seenKey).toBe("sk-only-in-dotenv");
+    const file = JSON.parse(await readFile(toolsPath, "utf8"));
+    expect(file.tools[0]).toMatchObject({ description: "Enriched via the .env.local key.", enriched: true });
+  });
+
+  it("no key in .env.local and none in process env stays structural-only (#567)", async () => {
+    // Sentinel var that only a .env.local could carry — kept out of process
+    // env so the "neither present" branch is deterministic regardless of the
+    // developer/CI machine's real ANTHROPIC_API_KEY / VENDO_API_KEY.
+    const { dir, toolsPath } = await hostWithTools();
+    const before = await readFile(toolsPath, "utf8");
+    const messages = captureOutput();
+    const exit = await runSync({
+      targetDir: dir,
+      output: messages.output,
+      fetchImpl: offline,
+      sync: async () => report(),
+      enrich: {
+        harnesses: [{
+          id: "npx-engine",
+          availability: async ({ env }: { env: Record<string, string | undefined> }) =>
+            (typeof env.VENDO_TEST_ONLY_MODEL_KEY === "string" ? "byo" : null),
+          run: async () => { throw new Error("must not run without a key"); },
+        }],
+        resolveCredential: async ({ env }) =>
+          (typeof env.VENDO_TEST_ONLY_MODEL_KEY === "string"
+            ? { rung: "env-key", provider: "anthropic", envVar: "ANTHROPIC_API_KEY" }
+            : { rung: "none" }),
+      },
+    });
+    expect(exit).toBe(0);
+    expect(messages.logs.join("\n")).toContain("enrichment: structural-only");
+    expect(await readFile(toolsPath, "utf8")).toBe(before);
+  });
+
   it("--json folds enrichment lines into notes, never stdout prose", async () => {
     const { dir } = await hostWithTools();
     const messages = captureOutput();

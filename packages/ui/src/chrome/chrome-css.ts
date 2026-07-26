@@ -2187,4 +2187,48 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   .fl-approvals-slide, .fl-auto-runs-dot, .fl-acct-severed { animation: none; opacity: 1; }
 }
 
+/* Knowledge K1 — the turn's knowledge trust surface (signed mockups,
+   Surface 2): the labelled SOURCES chip row with the snippet popover, the
+   muted searched-line refusal, and the amber knowledge-unavailable flag.
+   Mockup --v-* values map to brand tokens only (theme.ts rule). */
+.fl-cites { margin-top: 10px; }
+.fl-cites-label { font-size: 10.5px; font-weight: 600; color: var(--vendo-fg-muted);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.fl-cites-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.fl-cite { position: relative; display: inline-flex; }
+.fl-cite-btn { display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--vendo-border); background: var(--vendo-surface);
+  border-radius: var(--vendo-radius-sm); padding: 4.5px 10px; font-family: inherit;
+  font-size: 12px; font-weight: 500; color: var(--vendo-fg); cursor: pointer;
+  transition: border-color .12s ease, background .12s ease; }
+.fl-cite-btn svg { flex: none; color: var(--vendo-fg-muted); }
+.fl-cite-btn:hover, .fl-cite--open .fl-cite-btn { border-color: var(--vendo-border-strong); }
+/* The snippet popover: click-toggled everywhere, hover-revealed on pointer
+   devices (the mockup's chip:hover behavior). */
+.fl-cite-pop { position: absolute; left: 0; top: calc(100% + 8px); width: 292px; z-index: 5;
+  background: var(--vendo-surface); border: 1px solid var(--vendo-border); border-radius: 10px;
+  box-shadow: var(--vendo-shadow); padding: 12px 14px; text-align: left; cursor: default;
+  display: none; }
+.fl-cite--open .fl-cite-pop { display: block; }
+@media (hover: hover) { .fl-cite:hover .fl-cite-pop { display: block; } }
+.fl-cite-ptitle { font-size: 12.5px; font-weight: 600; color: var(--vendo-fg);
+  display: flex; align-items: center; gap: 6px; }
+.fl-cite-ptitle svg { color: var(--vendo-fg-muted); }
+.fl-cite-psnippet { display: block; font-size: 12px; color: var(--vendo-fg-muted); line-height: 1.6;
+  margin: 7px 0 9px; border-left: 2px solid var(--vendo-border); padding-left: 9px; }
+.fl-cite-porigin { font-size: 11px; color: var(--vendo-fg-muted);
+  display: flex; align-items: center; gap: 5px; }
+.fl-cite-sep { color: var(--vendo-border-strong); }
+.fl-know-searched { display: flex; align-items: center; gap: 7px; margin-top: 10px;
+  font-size: 11.5px; color: var(--vendo-fg-muted); }
+.fl-know-searched svg { flex: none; }
+.fl-know-unavail { display: flex; align-items: flex-start; gap: 9px; margin-top: 10px;
+  background: var(--vendo-warn-bg); border: 1px solid var(--vendo-warn-border);
+  border-radius: 10px; padding: 9px 12px; font-size: 12px; line-height: 1.55;
+  /* --vendo-warn, not the mockup's --vendo-warn-text tone: at 12px on the
+     warn wash the lighter tone measures 4.38:1 — under the 4.5:1 AA floor
+     (axe). The darker warn token keeps the amber register and passes. */
+  color: var(--vendo-warn); }
+.fl-know-unavail svg { flex: none; margin-top: 2px; }
+
 `;
