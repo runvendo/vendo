@@ -99,6 +99,23 @@
       "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
     },
     {
+      "name": "host_demo_chips_list",
+      "description": "GET /api/demo/chips",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/demo/chips",
+        "argsIn": "query"
+      },
+      "srcHash": "sha256:7945bac1c3e89bd8cc8a281d7959247c373c4ed4ec84d8d3df83425f91ce0e57"
+    },
+    {
       "name": "host_demo_pin_create",
       "description": "POST /api/demo/pin",
       "inputSchema": {
@@ -134,7 +151,7 @@
         "path": "/api/demo/reset",
         "argsIn": "body"
       },
-      "srcHash": "sha256:3a72ccc751598326643c77aea72c8d628012f6eee7ea38495d3b4090a0d9177f"
+      "srcHash": "sha256:3f7f5ad1b2866abc1333c37150ad0798424ca4708b223c4e700ef0f9cf05cf0e"
     },
     {
       "name": "host_getAccount",

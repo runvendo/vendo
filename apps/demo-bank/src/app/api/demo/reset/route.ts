@@ -1,6 +1,7 @@
 import { eraseStore } from "@vendoai/store";
 import type { HostedStore } from "@vendoai/vendo/server";
 import { seedDemoScript } from "@/demo-script/seed";
+import { pregenerateChips } from "@/vendo/chips-seed";
 import { __reseed } from "@/server/store";
 import { ok } from "@/server/http";
 import { mapleDemoUsers } from "@/server/users";
@@ -38,5 +39,10 @@ export async function POST(req: Request) {
   // Scripted demo: re-seed the fixture microapps + the weekly-summary
   // automation so the four scenario cards are replayable immediately.
   await seedDemoScript();
+  // Chip apps were just erased with the subject's state; regenerate them
+  // fire-and-forget (a reset must answer fast — generation takes minutes).
+  pregenerateChips().catch((error: unknown) => {
+    console.error("[maple] chip pre-generation failed:", error);
+  });
   return ok({ reset: true });
 }

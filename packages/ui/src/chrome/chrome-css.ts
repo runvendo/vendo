@@ -899,6 +899,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-greeting-intro { margin: 0; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
 .fl-greeting .fl-chips { justify-content: flex-start; }
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+/* Mixed suggestions (cards + chips): the chips are the second tier, under an
+   "Or try this" micro-label (demo-live-readiness mockup §1). */
+.fl-try-row { margin-top: 16px; }
+.fl-try-row .fl-chips { justify-content: flex-start; }
+.fl-try-label { display: block; margin-bottom: 9px; font-size: 11px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--vendo-fg-muted); }
 .fl-chip { border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
   -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
   border-radius: 999px; padding: 8px 14px; font-size: 12.5px; color: var(--vendo-fg); cursor: pointer;
