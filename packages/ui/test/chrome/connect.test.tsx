@@ -42,13 +42,65 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
 
     await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
     expect(opened).toHaveBeenCalledWith("https://connect.test/oauth/1", "_blank", "noopener");
-    expect(screen.getByRole("status").textContent).toContain("Connected — retrying");
+    // The card STAYS as a quiet Connected record — no "retrying" plumbing text.
+    expect(screen.getByRole("status").textContent).toContain("Connected");
+    expect(screen.queryByText(/retrying/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Connect Gmail" })).toBeNull();
     expect(wire.requests).toContainEqual(
       expect.objectContaining({ method: "POST", path: "/connections/initiate", body: { toolkit: "gmail", connector: "composio" } }),
     );
     expect(wire.requests).toContainEqual(
       expect.objectContaining({ method: "GET", path: "/connections/ca_new?connector=composio" }),
     );
+  });
+
+  it("shows the Connecting… loading state (disabled button) while the OAuth poll runs", async () => {
+    vi.stubGlobal("open", vi.fn());
+    // Pre-seed the initiated account as PENDING so the poll keeps waiting.
+    wire.state.connections.push({
+      id: "ca_new", connector: "composio", toolkit: "gmail",
+      status: "pending" as never, createdAt: "2026-07-23T00:00:00.000Z",
+    });
+    const onConnected = vi.fn();
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={onConnected} />
+      </VendoProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
+    const button = await screen.findByRole("button", { name: "Connect Gmail" });
+    await waitFor(() => expect(button.textContent).toContain("Connecting…"));
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(onConnected).not.toHaveBeenCalled();
+    // The OAuth completes: the broker flips the account active, the poll
+    // lands, the card settles into the Connected record.
+    const account = wire.state.connections.find(item => item.id === "ca_new")!;
+    (account as { status: string }).status = "active";
+    await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("status").textContent).toContain("Connected");
+  });
+
+  it("a stale card (live=false) renders the Connected record when the toolkit has an active account", async () => {
+    // Default wire state: gmail ca_1 is active.
+    render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} live={false} />
+      </VendoProvider>,
+    );
+    expect((await screen.findByRole("status")).textContent).toContain("Connected");
+    expect(screen.queryByRole("button", { name: "Connect Gmail" })).toBeNull();
+  });
+
+  it("a stale card whose toolkit was never connected renders nothing (no re-offer)", async () => {
+    wire.state.connections = [];
+    const { container } = render(
+      <VendoProvider client={client}>
+        <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={() => undefined} live={false} />
+      </VendoProvider>,
+    );
+    // Give the one-shot /connections read time to settle: still nothing.
+    await waitFor(() => expect(wire.requests.some(r => r.method === "GET" && r.path === "/connections")).toBe(true));
+    expect(container.querySelector(".fl-approval")).toBeNull();
   });
 
   it("surfaces an initiation failure inline and stays retryable", async () => {

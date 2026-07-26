@@ -2,6 +2,8 @@ import { join, resolve } from "node:path";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
+import { askYesNo } from "./extract/extraction.js";
+import { readPreviousToolsState, runSyncEnrichment, type SyncEnrichmentOptions } from "./enrich/pass.js";
 import { syncSemantics } from "./semantics.js";
 import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
@@ -25,6 +27,19 @@ export interface SyncOptions {
   json?: boolean;
   /** Injectable telemetry deps (matches init/doctor). */
   telemetry?: TelemetryOptions;
+  /** --review: show the AI enrichment narrative and confirm before writing. */
+  review?: boolean;
+  /** --full: force full re-enrichment (ignore the watermark diff). */
+  full?: boolean;
+  /** --no-watermark: workspace-internal sync — suppress the tools.json
+   *  watermark field and skip the AI enrichment pass entirely (the demo
+   *  apps' predev/prebuild hooks; committed files must not churn). */
+  noWatermark?: boolean;
+  /** --engine: pin the enrichment engine family (claude | codex | npx). */
+  engine?: string;
+  /** Enrichment seams (tests / init's chosen harness). */
+  enrich?: Pick<SyncEnrichmentOptions,
+    "harness" | "harnesses" | "resolveCredential" | "computeDiff" | "treeHash" | "confirm" | "onProgress">;
 }
 
 /** `sync --json` — the one machine-readable object printed on stdout. */
@@ -97,11 +112,16 @@ async function sync(options: SyncOptions): Promise<number> {
   const noteError = (message: string): void => { if (json) notes.push(message); else output.error(message); };
   try {
     const root = resolve(options.targetDir);
+    const vendoDir = join(root, ".vendo");
+    // Pre-sync snapshot for the AI pass: which srcHashes move and where the
+    // watermark stood — read BEFORE the structural sync rewrites the file.
+    const previousTools = options.noWatermark === true ? null : await readPreviousToolsState(vendoDir);
     const report: SyncReportWithWarnings = await (options.sync ?? vendoSync)({
       root,
-      out: join(root, ".vendo"),
+      out: vendoDir,
       // The CLI needs the report to compute exit 2 vs 3; it applies strictness below.
       strict: false,
+      ...(options.noWatermark === true ? { watermark: false } : {}),
     });
     if (!json) {
       for (const warning of report.warnings) output.error(`warning: ${warning}`);
@@ -144,6 +164,36 @@ async function sync(options: SyncOptions): Promise<number> {
       });
     } catch (error) {
       note(`semantics sync failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+
+    // The AI enrichment pass (cse lane 1c): diff since the watermark + the
+    // current catalog → restrictive-only updates to affected entries and a
+    // change narrative. Keyless resolves to structural-only with one line;
+    // --no-watermark (workspace-internal syncs) skips the pass entirely.
+    // Fail-soft like everything else in sync — the exit code never changes.
+    if (options.noWatermark !== true) {
+      try {
+        await runSyncEnrichment({
+          root,
+          vendoDir,
+          env: process.env,
+          note,
+          warn: noteError,
+          previous: previousTools,
+          ...(options.review === true ? { review: true } : {}),
+          ...(options.full === true ? { full: true } : {}),
+          ...(options.engine === undefined ? {} : { engine: options.engine }),
+          confirm: options.enrich?.confirm ?? askYesNo,
+          ...(options.enrich?.harness === undefined ? {} : { harness: options.enrich.harness }),
+          ...(options.enrich?.harnesses === undefined ? {} : { harnesses: options.enrich.harnesses }),
+          ...(options.enrich?.resolveCredential === undefined ? {} : { resolveCredential: options.enrich.resolveCredential }),
+          ...(options.enrich?.computeDiff === undefined ? {} : { computeDiff: options.enrich.computeDiff }),
+          ...(options.enrich?.treeHash === undefined ? {} : { treeHash: options.enrich.treeHash }),
+          ...(options.enrich?.onProgress === undefined ? {} : { onProgress: options.enrich.onProgress }),
+        });
+      } catch (error) {
+        note(`enrichment failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
+      }
     }
 
     const tools = [...new Set([

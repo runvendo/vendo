@@ -186,6 +186,9 @@ describe("generation engine through createApps", () => {
 
     expect(prompts[0]).toContain(`CURRENT DATE: ${today}`);
     expect(prompts.at(-1)).toContain(`CURRENT DATE: ${today}`);
+    // Design guidance (2026-07 demo feedback): the EDIT dialect also forbids
+    // emojis in any text an op introduces.
+    expect(prompts.at(-1)).toContain("No emojis, ever");
   });
 
   describe("data-sighted verification pass (pipeline.endPass at the runtime seam)", () => {
@@ -277,6 +280,11 @@ describe("generation engine through createApps", () => {
       expect(prompts[0]).toContain("<building_great_apps>");
       expect(prompts[0]).toContain("<examples>");
       expect(prompts[0]).toContain("Claims tell the truth");
+      // Design guidance (2026-07 demo feedback): generated UI text never
+      // carries emojis.
+      expect(prompts[0]).toContain("No emojis, ever");
+      expect(prompts[0]).toContain("a semantically wrong tool is worse than a disclaimer");
+      expect(prompts[0]).toContain("rows lacking the named series draws nothing");
       expect(prompts[0]).toContain(`CURRENT DATE: ${new Date().toISOString().slice(0, 10)}`);
       expect(prompts[1]).not.toContain("<building_great_apps>");
       expect(prompts[1]).toContain("WIRE DIALECT");
@@ -1201,6 +1209,59 @@ describe("v2 wire create", () => {
     expect(resolves).toBe(1);
   });
 
+  it("theme: unset is unchanged, an explicit value flows, and a provider form resolves per generation", async () => {
+    const run = async (theme: unknown): Promise<string> => {
+      let created = "";
+      const model = scriptedLanguageModel((call) => {
+        const prompt = promptText(call);
+        if (prompt.includes("THEME TOKENS:")) created = prompt;
+        return wireCreate();
+      });
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools,
+        catalog,
+        model,
+        ...(theme === undefined ? {} : { theme: theme as never }),
+      });
+      await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+      return created;
+    };
+    // (a) unset = today's behavior: null theme in the prompt.
+    expect(await run(undefined)).toContain("THEME TOKENS:\nnull");
+    // (b) an explicit value still wins.
+    expect(await run({ accent: "#5B21B6" })).toContain('"accent": "#5B21B6"');
+    // (c) a provider form resolves lazily — the same shape reaches the prompt.
+    expect(await run(() => ({ accent: "#1D4ED8" }))).toContain('"accent": "#1D4ED8"');
+  });
+
+  it("semantics and domains accept provider forms resolved per generation", async () => {
+    const semanticsProvider = vi.fn(() => ({ "invoices.list": { total: { kind: "money.cents" } } }));
+    let prompt = "";
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      if (text.includes("DATA DOMAINS")) prompt = text;
+      return wireCreate();
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model,
+      // Provider forms — resolved once per generation, never at compose.
+      domains: () => ({ has: ["invoices"], hasNot: ["shipments"] }),
+      semantics: semanticsProvider as never,
+    });
+    await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+    // domains provider resolved → its facts reach the prompt.
+    expect(prompt).toContain("This host HAS data for: invoices");
+    expect(prompt).toContain("This host has NO data for: shipments");
+    // semantics provider was invoked (resolved), proving the lazy path fires.
+    expect(semanticsProvider).toHaveBeenCalled();
+  });
+
   it("carries islands to document-level components, never on the tree", async () => {
     const wire = [
       '<App name="Noted"><RevenueNote/>',
@@ -1558,8 +1619,10 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
     expect(document.components?.Note).toContain("export default");
     expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain("REPAIR_THESE_ISSUES");
-    expect(prompts[1]).toContain("Note");
+    // demo-latency lane — an island-only failure rides the island-scoped
+    // repair (one small call rewriting just the island), not a full re-gen.
+    expect(prompts[1]).toContain("ISLANDS_TO_FIX: Note");
+    expect(prompts[1]).toContain("export default");
   });
 
   it("repairs a syntactically-broken island instead of persisting it", async () => {

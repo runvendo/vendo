@@ -12,6 +12,7 @@ import {
 import { riskLabelSchema, type RiskLabel } from "./tools.js";
 import type { ToolCall } from "./tools.js";
 import { uiPayloadSchema, type UIPayload } from "./tree.js";
+import { triggerSchema, type Trigger } from "./triggers.js";
 
 /** 01-core §16 */
 export interface VendoViewPart {
@@ -161,6 +162,35 @@ export const vendoBuildFailedPartSchema = z.object({
   toolCallId: z.string(),
   reason: z.string().min(1),
 }).passthrough() satisfies z.ZodType<VendoBuildFailedPart>;
+
+/** 2026-07 demo feedback (additive — 01 §16 amendment parked, same footing as
+ *  the step-limit part): streamed when a turn creates or arms an automation,
+ *  so the thread can render the automation AS an automation — name, trigger →
+ *  action flow, enabled state — instead of describing it in prose. The chrome
+ *  renders it with the same card vocabulary as the workspace Automations
+ *  panel. Consumers that don't recognize it ignore it (§15 forward-compat). */
+export interface VendoAutomationPart {
+  type: "data-vendo-automation";
+  appId: AppId;
+  /** The automation document's display name. */
+  name: string;
+  /** Whether the automations engine reports it enabled. */
+  enabled: boolean;
+  /** The document's trigger (schedule/event → run), for the flow nodes. */
+  trigger?: Trigger;
+  /** The document's one-line description, when it has one. */
+  description?: string;
+}
+
+/** 2026-07 demo feedback */
+export const vendoAutomationPartSchema = z.object({
+  type: z.literal("data-vendo-automation"),
+  appId: appIdSchema,
+  name: z.string().min(1),
+  enabled: z.boolean(),
+  trigger: triggerSchema.optional(),
+  description: z.string().optional(),
+}).passthrough() satisfies z.ZodType<VendoAutomationPart>;
 
 /** AGENT-10 — the nested wire envelope of {@link vendoViewPartSchema}. */
 export const vendoViewWirePartSchema = wirePartSchema(

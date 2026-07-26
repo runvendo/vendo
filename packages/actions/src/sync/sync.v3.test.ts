@@ -153,22 +153,100 @@ describe("vendo sync writes vendo/tools@3", () => {
     expect(byName.get("host_create_item")?.srcHash).toBe(sha256(action));
   });
 
-  it("sets the watermark to the repo's HEAD tree hash inside a git repo", async () => {
+  it("never invents a watermark: the structural pass carries the previous one; only enrichment advances it", async () => {
     const { root, out } = await temporaryHost();
     await writeHostFile(root, "openapi.json", SPEC);
     await run("git", ["init", "-q"], { cwd: root });
     await run("git", ["add", "."], { cwd: root });
     await run("git", ["-c", "user.email=t@t.t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-qm", "init"], { cwd: root });
-    const { stdout } = await run("git", ["rev-parse", "HEAD^{tree}"], { cwd: root });
 
+    // First sync, even inside a git repo: no watermark — the field means
+    // "tree at the last AI enrichment", and nothing was enriched yet.
     await vendoSync({ root, out });
     const file = await readJson(path.join(out, "tools.json"));
-    expect(file.watermark).toBe(stdout.trim());
+    expect(file.watermark).toBeUndefined();
 
-    // same tree → identical bytes on a re-run
-    const first = await fs.readFile(path.join(out, "tools.json"), "utf8");
+    // A watermark landed by the enrichment pass survives structural re-syncs.
+    file.watermark = "0123456789abcdef0123456789abcdef01234567";
+    await fs.writeFile(path.join(out, "tools.json"), `${JSON.stringify(file, null, 2)}\n`, "utf8");
     await vendoSync({ root, out });
-    expect(await fs.readFile(path.join(out, "tools.json"), "utf8")).toBe(first);
+    expect((await readJson(path.join(out, "tools.json"))).watermark).toBe("0123456789abcdef0123456789abcdef01234567");
+
+    // watermark: false strips it (workspace-internal syncs — the demo apps'
+    // predev/prebuild hooks — do no incremental-AI bookkeeping).
+    await vendoSync({ root, out, watermark: false });
+    expect((await readJson(path.join(out, "tools.json"))).watermark).toBeUndefined();
+  });
+
+  it("carries enriched entries (description, grades, marker) across structural syncs; a binding change drops the carry", async () => {
+    const { root, out } = await temporaryHost();
+    await writeHostFile(root, "openapi.json", SPEC);
+    await vendoSync({ root, out });
+
+    // simulate the CLI enrichment pass having landed judgment on both tools
+    const file = await readJson(path.join(out, "tools.json"));
+    for (const tool of file.tools) {
+      tool.description = `AI: ${tool.name}`;
+      tool.enriched = true;
+      if (tool.name === "host_createInvoice") {
+        tool.risk = "destructive";
+        tool.audience = "operator";
+        tool.disabled = true;
+      }
+    }
+    await fs.writeFile(path.join(out, "tools.json"), `${JSON.stringify(file, null, 2)}\n`, "utf8");
+
+    // byte-stable: once one sync normalized the hand-written fixture (zod
+    // orders keys), further structural re-syncs must not lose or churn the
+    // AI layer
+    await vendoSync({ root, out });
+    const enrichedBytes = await fs.readFile(path.join(out, "tools.json"), "utf8");
+    expect(enrichedBytes).toContain('"enriched": true');
+    await vendoSync({ root, out });
+    expect(await fs.readFile(path.join(out, "tools.json"), "utf8")).toBe(enrichedBytes);
+
+    // createInvoice keeps its NAME but moves to a different path — its
+    // carried judgment is about another handler and must drop (unenriched).
+    await writeHostFile(root, "openapi.json", `${JSON.stringify({
+      openapi: "3.1.0",
+      info: { title: "test", version: "1" },
+      paths: {
+        "/api/invoices": { get: operation("listInvoices") },
+        "/api/billing/invoices": { post: operation("createInvoice") },
+      },
+    }, null, 2)}\n`);
+    await vendoSync({ root, out });
+    const next = await readJson(path.join(out, "tools.json"));
+    const byName = new Map<string, any>(next.tools.map((tool: any) => [tool.name, tool]));
+    expect(byName.get("host_listInvoices")).toMatchObject({ description: "AI: host_listInvoices", enriched: true });
+    expect(byName.get("host_createInvoice")?.enriched).toBeUndefined();
+    expect(byName.get("host_createInvoice")?.description).not.toContain("AI:");
+    expect(byName.get("host_createInvoice")?.audience).toBeUndefined();
+  });
+
+  it("a fresh scan that got MORE restrictive wins over a stale carried grade", async () => {
+    const { root, out } = await temporaryHost();
+    const route = "export function GET() { return Response.json([]); }\n";
+    await writeHostFile(root, "package.json", JSON.stringify({ name: "host", dependencies: { next: "16.0.0" } }));
+    await writeHostFile(root, "app/api/items/route.ts", route);
+    await vendoSync({ root, out });
+
+    const file = await readJson(path.join(out, "tools.json"));
+    file.tools[0].enriched = true;
+    file.tools[0].risk = "read";
+    file.tools[0].description = "AI: read-only listing";
+    await fs.writeFile(path.join(out, "tools.json"), `${JSON.stringify(file, null, 2)}\n`, "utf8");
+
+    // the handler grows a mutation the scanner grades write — same binding
+    await writeHostFile(root, "app/api/items/route.ts", "export function GET() { return Response.json([]); }\nexport function POST() { return Response.json({}); }\n");
+    await vendoSync({ root, out });
+    const next = await readJson(path.join(out, "tools.json"));
+    const get = next.tools.find((tool: any) => tool.binding.method === "GET");
+    // carried description survives; the fresh scan regraded the module write
+    // and the stale carried read grade cannot undercut it
+    expect(get).toMatchObject({ description: "AI: read-only listing", enriched: true, risk: "write" });
+    const post = next.tools.find((tool: any) => tool.binding.method === "POST");
+    expect(post?.enriched).toBeUndefined();
   });
 
   it("carries per-tool semantics forward from the previous v3 file and drops entries for removed tools", async () => {

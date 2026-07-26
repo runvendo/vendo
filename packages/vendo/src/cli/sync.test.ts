@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -498,5 +498,123 @@ describe("telemetry project attribution + cloud-key sourcing (P1 review)", () =>
     dirs.push(tele.home);
     await runSync({ targetDir: dir, output: quiet, fetchImpl: offline, sync: async () => report(), telemetry: tele.telemetry });
     expect(tele.events()).toEqual([]);
+  });
+});
+
+describe("sync AI enrichment integration (cse lane 1c)", () => {
+  const offline = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+  const dirs: string[] = [];
+  afterEach(async () => {
+    await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  async function hostWithTools(): Promise<{ dir: string; toolsPath: string }> {
+    const dir = await mkdtemp(join(tmpdir(), "vendo-sync-enrich-"));
+    dirs.push(dir);
+    await mkdir(join(dir, ".vendo"), { recursive: true });
+    const toolsPath = join(dir, ".vendo", "tools.json");
+    await writeFile(toolsPath, `${JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [{
+        name: "host_a",
+        description: "Use this to call host_a.",
+        inputSchema: { type: "object", properties: {} },
+        risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/a", argsIn: "query" },
+        srcHash: "sha256:a",
+      }],
+    }, null, 2)}\n`, "utf8");
+    return { dir, toolsPath };
+  }
+
+  it("keyless: structural-only line, zero errors, exit 0, file untouched — CI needs no model", async () => {
+    const { dir, toolsPath } = await hostWithTools();
+    const before = await readFile(toolsPath, "utf8");
+    const messages = captureOutput();
+    const exit = await runSync({
+      targetDir: dir,
+      output: messages.output,
+      fetchImpl: offline,
+      sync: async () => report(),
+      enrich: {
+        resolveCredential: async () => ({ rung: "none" }),
+        // proof, not inference: ANY engine touchpoint (even the availability
+        // probe) throws and fails this test outright
+        harnesses: [{
+          id: "forbidden",
+          availability: async () => { throw new Error("keyless sync must never probe an engine"); },
+          run: async () => { throw new Error("keyless sync must never invoke a model"); },
+        }],
+      },
+    });
+    expect(exit).toBe(0);
+    expect(messages.errors.filter((line) => !line.startsWith("warning:"))).toEqual([]);
+    expect(messages.logs.join("\n")).toContain("enrichment: structural-only");
+    expect(await readFile(toolsPath, "utf8")).toBe(before);
+  });
+
+  it("keyed: applies the fake engine's proposals and prints the narrative (apply-then-show)", async () => {
+    const { dir, toolsPath } = await hostWithTools();
+    const messages = captureOutput();
+    const harness = {
+      id: "scripted",
+      availability: async () => "scripted engine",
+      run: async () => `\`\`\`json\n${JSON.stringify({
+        tools: [{ name: "host_a", description: "Enriched by the fake engine.", risk: "write" }],
+        narrative: "host_a mutates a counter.",
+      })}\n\`\`\``,
+    };
+    const exit = await runSync({
+      targetDir: dir,
+      output: messages.output,
+      fetchImpl: offline,
+      sync: async () => report(),
+      enrich: { harness, treeHash: async () => "feedfacefeedfacefeedfacefeedfacefeedface" },
+    });
+    expect(exit).toBe(0);
+    const file = JSON.parse(await readFile(toolsPath, "utf8"));
+    expect(file.tools[0]).toMatchObject({ description: "Enriched by the fake engine.", risk: "write", enriched: true });
+    expect(file.watermark).toBe("feedfacefeedfacefeedfacefeedfacefeedface");
+    expect(messages.logs.join("\n")).toContain("host_a mutates a counter.");
+  });
+
+  it("--no-watermark passes watermark: false to the engine and skips enrichment entirely", async () => {
+    const { dir, toolsPath } = await hostWithTools();
+    const before = await readFile(toolsPath, "utf8");
+    const messages = captureOutput();
+    const syncSeam = vi.fn(async () => report());
+    const harness = {
+      id: "never",
+      availability: async () => "never",
+      run: async () => { throw new Error("must not run"); },
+    };
+    const exit = await runSync({
+      targetDir: dir,
+      output: messages.output,
+      fetchImpl: offline,
+      sync: syncSeam as never,
+      noWatermark: true,
+      enrich: { harness },
+    });
+    expect(exit).toBe(0);
+    expect(syncSeam).toHaveBeenCalledWith(expect.objectContaining({ watermark: false }));
+    expect(messages.logs.join("\n")).not.toContain("enrichment");
+    expect(await readFile(toolsPath, "utf8")).toBe(before);
+  });
+
+  it("--json folds enrichment lines into notes, never stdout prose", async () => {
+    const { dir } = await hostWithTools();
+    const messages = captureOutput();
+    const exit = await runSync({
+      targetDir: dir,
+      output: messages.output,
+      fetchImpl: offline,
+      json: true,
+      sync: async () => report(),
+      enrich: { resolveCredential: async () => ({ rung: "none" }) },
+    });
+    expect(exit).toBe(0);
+    const result = JSON.parse(messages.logs[0]!);
+    expect(result.notes.join("\n")).toContain("enrichment: structural-only");
   });
 });

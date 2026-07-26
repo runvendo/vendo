@@ -18,6 +18,7 @@ import type {
   ToolDescriptor,
   ToolRegistry,
 } from "@vendoai/core";
+import type { LanguageModel } from "ai";
 import { z } from "zod";
 
 export interface PolicyRule {
@@ -92,6 +93,12 @@ export const policyFileSchema = z
   .strict() satisfies z.ZodType<PolicyFile>;
 
 export interface Judge {
+  /** The judge's own model, when it has one (vendoAutoJudge exposes the model
+   *  it was constructed with). Composition reads this so createVendo can bind
+   *  ITS OWN models.judge config onto a vendoModel-built instance — per
+   *  createVendo instance, no process-level registry. Custom judges may omit
+   *  it; the model is never invoked through this property. */
+  model?: LanguageModel;
   decide(input: {
     call: ToolCall;
     descriptor: ToolDescriptor;
@@ -149,6 +156,11 @@ export interface CreateGuardConfig {
   store: StoreAdapter;
   resolveRisk?: RiskResolver;
   policy?: PolicyConfig;
+  /** cse lane 3 — a source for a cloud-published policy.json body, consulted
+   *  by the PolicyResolver STRICTLY AFTER the local file and only when policy
+   *  is already configured (opt-in). The umbrella backs it with the hosted
+   *  config snapshot; this block never reads the key. Unset = no change. */
+  policyCloudFallback?: () => string | undefined;
   judge?: Judge;
   breakers?: {
     maxCallsPerMinute?: number;

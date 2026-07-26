@@ -232,6 +232,18 @@ catalog.json: 2 discovered, 2 registered
 A malformed existing `.vendo/catalog.json` fails sync loudly instead of
 being silently overwritten.
 
+After the structural scan, sync runs an AI enrichment pass over the tools the
+code diff affected: it reads `git diff` from the `tools.json` watermark (the
+tree at the last enrichment) plus the current catalog, rewrites descriptions,
+grades risk/audience, infers response-field semantics, and prints a change
+narrative (apply-then-show — the git diff of `.vendo/tools.json` is the
+review). The pass is restrictive-only: it can raise risk, narrow audience, or
+disable, never the reverse — loosening is a human edit in
+`.vendo/overrides.json`. Engines resolve like init's ladder: a BYO model key
+(`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`), then `VENDO_API_KEY` managed
+inference, then none — keyless syncs stay structural-only with entries left
+unmarked as enriched, and never fail.
+
 Options:
 
 - `--strict`: CI gate: exit 2 on breaking tool changes, exit 3 when a
@@ -246,6 +258,14 @@ Options:
   against a running dev server (`POST /sync/impact`).
 - `--report`: push the report to Vendo Cloud (requires `VENDO_API_KEY` or
   `--key`; `--api-url` overrides `VENDO_CLOUD_URL`).
+- `--review`: show the enrichment narrative and confirm before writing
+  (interactive; cannot combine with `--json`).
+- `--full`: force full re-enrichment instead of the watermark diff.
+- `--engine <name>`: pin the enrichment engine family (`claude`, `codex`,
+  `npx`); an unavailable pin skips loudly, never falls back.
+- `--no-watermark`: workspace-internal sync — suppress the `tools.json`
+  watermark field and skip the AI pass (used by the demo apps'
+  `predev`/`prebuild` hooks so committed files never churn).
 
 ```console
 $ vendo sync --strict --url http://127.0.0.1:3000/api/vendo

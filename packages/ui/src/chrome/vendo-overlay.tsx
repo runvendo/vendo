@@ -1,11 +1,24 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import type { UIPayload } from "@vendoai/core";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useVendoDiscoverability, useVendoTheme } from "../context.js";
+import { useVendoContext, useVendoDiscoverability, useVendoTheme } from "../context.js";
 import { useMobileTakeover } from "../hooks/use-mobile-takeover.js";
 import { themeCssVariables } from "../theme.js";
+import { PayloadView } from "../tree/renderer.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
-import { deliverPrefill, getConversationCommands, PrefillScopeContext, registerOverlayOpener, subscribeConversationCommands, type VendoCommand } from "./overlay-registry.js";
+import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
+import {
+  escapeIntent,
+  expandedStageRect,
+  featuredEmbed,
+  initialSplitViewState,
+  SplitViewContext,
+  splitViewReducer,
+  type MorphRect,
+  type SplitViewContextValue,
+} from "./split-view.js";
+import { appTitle } from "./thread/message-data.js";
 import { VendoThread, type VendoThreadProps } from "./thread/index.js";
 
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
@@ -69,26 +82,102 @@ export interface VendoOverlayProps {
  *  enough to stay ambient (~6s per the §6 decision). */
 const WHISPER_MS = 6000;
 
-/** The per-kind glyph on a command chip (mirrors the old palette row icons). */
-function CommandGlyph({ kind }: { kind: VendoCommand["kind"] }) {
+/* ------------------------------------------------------------------ */
+/* The expand/collapse embed morph (MorphToast's ghost pattern)        */
+/* ------------------------------------------------------------------ */
+
+const MORPH_MS = 450;
+/** The ghost keeps tracking its (still-moving) target while it fades. */
+const MORPH_FADE_MS = 160;
+
+/** easeOutQuint — the exact curve of the panel spring
+    `cubic-bezier(.22, 1, .36, 1)` (easings.net), so the ghost, the panes and
+    the panel arrive together. */
+function morphEase(t: number): number {
+  return 1 - (1 - t) ** 5;
+}
+
+/** The shared-element half of the split-view transition: a STATIC clone of
+    the embed frame flies between its rail-card rect and the stage rect while
+    the panel/rail springs run, so the microapp reads as GROWING out of the
+    conversation into the workspace (and shrinking back) rather than a pane
+    resizing around it. rAF-driven rather than a CSS transition because the
+    TARGET can move mid-flight — on collapse the rail card shifts and rewraps
+    as the panel contracts, so `target` is re-read every frame and the flight
+    converges on the card wherever it settles. Purely decorative —
+    aria-hidden, pointer-events none, unmounts after one flight; the LIVE
+    content underneath never remounts. */
+function EmbedMorphGhost({ from, target, clipTo, clone, mode, onDone }: {
+  from: MorphRect;
+  /** Live target rect, sampled per frame (constant on expand, where the
+      settled stage rect is computed up front; the card's rect on collapse). */
+  target(): MorphRect;
+  /** The panel's live rect: the ghost is fixed ABOVE the panel (which clips
+      its own overflow), so without this a flight to/from a card scrolled
+      partly out of the rail would overhang the panel onto the backdrop. */
+  clipTo(): MorphRect | undefined;
+  clone: HTMLElement;
+  mode: "in" | "out";
+  onDone(): void;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const scaleRef = useRef<HTMLDivElement>(null);
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
+  const targetRef = useRef(target);
+  targetRef.current = target;
+  const clipRef = useRef(clipTo);
+  clipRef.current = clipTo;
+  useEffect(() => {
+    const box = boxRef.current;
+    const scaleEl = scaleRef.current;
+    if (!box || !scaleEl) return;
+    scaleEl.appendChild(clone);
+    const started = performance.now();
+    let raf = requestAnimationFrame(function frame(now: number) {
+      const elapsed = now - started;
+      const p = morphEase(Math.min(1, elapsed / MORPH_MS));
+      const to = targetRef.current();
+      const mix = (a: number, b: number) => a + (b - a) * p;
+      box.style.top = `${mix(from.top, to.top)}px`;
+      box.style.left = `${mix(from.left, to.left)}px`;
+      box.style.width = `${mix(from.width, to.width)}px`;
+      box.style.height = `${mix(from.height, to.height)}px`;
+      scaleEl.style.transform = `scale(${mix(1, to.width / from.width)})`;
+      const clip = clipRef.current();
+      if (clip) {
+        const boxTop = mix(from.top, to.top);
+        const boxLeft = mix(from.left, to.left);
+        box.style.clipPath = `inset(${Math.max(0, clip.top - boxTop)}px `
+          + `${Math.max(0, boxLeft + mix(from.width, to.width) - (clip.left + clip.width))}px `
+          + `${Math.max(0, boxTop + mix(from.height, to.height) - (clip.top + clip.height))}px `
+          + `${Math.max(0, clip.left - boxLeft)}px round 14px)`;
+      }
+      // The ghost fades out over the landing so the live surface (stage
+      // frame or rail card) takes over without a hard swap.
+      const fade = (elapsed - (MORPH_MS - MORPH_FADE_MS / 2)) / MORPH_FADE_MS;
+      box.style.opacity = `${Math.min(1, Math.max(0, 1 - fade))}`;
+      if (elapsed < MORPH_MS + MORPH_FADE_MS / 2) {
+        raf = requestAnimationFrame(frame);
+      } else {
+        doneRef.current();
+      }
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      clone.remove();
+    };
+  }, [clone, from]);
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {kind === "new-conversation" ? (
-        <path d="M12 5v14M5 12h14" />
-      ) : kind === "open-app" ? (
-        <>
-          <rect width="7" height="7" x="3" y="3" rx="1" />
-          <rect width="7" height="7" x="14" y="3" rx="1" />
-          <rect width="7" height="7" x="3" y="14" rx="1" />
-          <rect width="7" height="7" x="14" y="14" rx="1" />
-        </>
-      ) : (
-        <>
-          <path d="M3 3v18h18" />
-          <path d="m7 16 4-5 4 3 4-7" />
-        </>
-      )}
-    </svg>
+    <div
+      className="fl-embed-ghost"
+      aria-hidden="true"
+      data-mode={mode}
+      ref={boxRef}
+      style={{ top: from.top, left: from.left, width: from.width, height: from.height }}
+    >
+      <div ref={scaleRef} className="fl-embed-ghost-scale" style={{ width: from.width }} />
+    </div>
   );
 }
 
@@ -128,6 +217,147 @@ export function VendoOverlay({
   const [conversationEpoch, setConversationEpoch] = useState(0);
   const theme = useVendoTheme();
   const takeover = useMobileTakeover();
+  const { client, components, onPin } = useVendoContext();
+
+  // 2026-07 demo feedback — the expandable split-view workspace (split-view.tsx
+  // owns the pure state machine). Expanded, the featured microapp renders
+  // large on a left stage and the conversation docks as the right rail; the
+  // mobile takeover is untouched (full-bleed already — expansion is a no-op
+  // below the breakpoint).
+  const [splitState, dispatchSplit] = useReducer(splitViewReducer, initialSplitViewState);
+  const expanded = splitState.expanded && !takeover.active;
+  const featured = featuredEmbed(splitState);
+  // The collapse ANIMATES: like the connect tray's exit walk, the stage stays
+  // mounted through expanded → collapsing → collapsed so the featured app
+  // doesn't blink out before the panes finish sliding. Render-phase state
+  // adjustment (an effect would commit one stage-less frame first).
+  const [stagePhase, setStagePhase] = useState<"collapsed" | "expanded" | "collapsing">(expanded ? "expanded" : "collapsed");
+  if (expanded && stagePhase !== "expanded") setStagePhase("expanded");
+  if (!expanded && stagePhase === "expanded") setStagePhase("collapsing");
+  useEffect(() => {
+    if (stagePhase !== "collapsing") return;
+    const timer = window.setTimeout(() => setStagePhase("collapsed"), 480);
+    return () => window.clearTimeout(timer);
+  }, [stagePhase]);
+  // The subtle auto-suggest: a NEW app embed rendering while the workspace is
+  // collapsed pulses the expand affordance once (never a modal, never a toast).
+  const [suggestExpand, setSuggestExpand] = useState(false);
+  const splitStateRef = useRef(splitState);
+  splitStateRef.current = splitState;
+  const suggestTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(suggestTimer.current), []);
+  useEffect(() => {
+    if (expanded) setSuggestExpand(false);
+  }, [expanded]);
+  // The register/remove/feature callbacks are IDENTITY-STABLE (refs +
+  // dispatch only): the thread's app cards key registration effects on them,
+  // so churning identities would re-run every card's cleanup on each
+  // expand/feature flip — remove-embed then clears the explicit pick the
+  // user just made.
+  const featureApp = useCallback((appId: string) => dispatchSplit({ type: "feature", appId }), []);
+  // The compact card's Expand affordance: expand the workspace with THAT app
+  // featured. Rides a ref to setWorkspace (defined below — it closes over
+  // per-render state for the ghost flight) so the identity stays stable.
+  const setWorkspaceRef = useRef<(next: boolean, featureAppId?: string) => void>(() => undefined);
+  const expandTo = useCallback((appId: string) => setWorkspaceRef.current(true, appId), []);
+  const registerEmbed = useCallback((appId: string, payload: unknown) => {
+    const state = splitStateRef.current;
+    if (!state.expanded && !state.embeds.some(embed => embed.appId === appId)) {
+      setSuggestExpand(true);
+      window.clearTimeout(suggestTimer.current);
+      suggestTimer.current = window.setTimeout(() => setSuggestExpand(false), 6_000);
+    }
+    dispatchSplit({ type: "embed", appId, payload });
+  }, []);
+  const removeEmbed = useCallback((appId: string) => dispatchSplit({ type: "remove-embed", appId }), []);
+  const featuredAppId = expanded ? featured?.appId : undefined;
+  const splitContextValue = useMemo<SplitViewContextValue>(() => ({
+    expanded,
+    featuredAppId,
+    feature: featureApp,
+    expandTo,
+    registerEmbed,
+    removeEmbed,
+  }), [expanded, featuredAppId, featureApp, expandTo, registerEmbed, removeEmbed]);
+
+  // Yousef polish (2026-07): the expand↔collapse must read as ONE continuous
+  // morph — a FLIP-style shared-element flight (EmbedMorphGhost above) of the
+  // featured embed between its rail card and the stage, riding the same
+  // spring as the panel/rail transitions. Measured start, computed target
+  // (expandedStageRect — a mid-transition DOM read would return the compact
+  // layout). Skipped under reduced motion (everything snaps), in the
+  // takeover, when there is no featured embed, and in layout-less
+  // environments (jsdom rects are 0).
+  const [embedGhost, setEmbedGhost] = useState<{
+    id: number;
+    mode: "in" | "out";
+    from: MorphRect;
+    target(): MorphRect;
+    clipTo(): MorphRect | undefined;
+    clone: HTMLElement;
+  } | null>(null);
+  const ghostSeq = useRef(0);
+  const setWorkspace = (next: boolean, featureAppId?: string) => {
+    if (next === splitState.expanded) {
+      return;
+    }
+    // The compact card's Expand affordance names WHICH app to stage; the
+    // feature dispatch below lands in the same commit as the expand, but the
+    // ghost flight must read the target NOW (state hasn't reduced yet).
+    const targetAppId = featureAppId
+      ?? (featured !== undefined ? featured.appId : undefined);
+    const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const rectOf = (element: Element | null | undefined): MorphRect | undefined => {
+      const rect = element?.getBoundingClientRect();
+      return rect !== undefined && rect.width > 0 && rect.height > 0
+        ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
+        : undefined;
+    };
+    const makeClone = (element: HTMLElement, width: number): HTMLElement => {
+      const clone = element.cloneNode(true) as HTMLElement;
+      clone.style.width = `${width}px`;
+      clone.style.margin = "0";
+      clone.style.pointerEvents = "none";
+      return clone;
+    };
+    if (!takeover.active && !reduced && targetAppId !== undefined && typeof window !== "undefined") {
+      const escaped = typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(targetAppId)
+        : targetAppId;
+      const cardEl = dialog.current?.querySelector<HTMLElement>(`[data-vendo-app-embed="${escaped}"]`);
+      const clipTo = () => rectOf(dialog.current);
+      if (next) {
+        const from = rectOf(cardEl);
+        if (cardEl && from) {
+          const to = expandedStageRect({ width: window.innerWidth, height: window.innerHeight });
+          setEmbedGhost({
+            id: ++ghostSeq.current,
+            mode: "in",
+            from,
+            target: () => to,
+            clipTo,
+            clone: makeClone(cardEl, from.width),
+          });
+        }
+      } else {
+        const stageEl = dialog.current?.querySelector<HTMLElement>(".fl-stage");
+        const from = rectOf(stageEl);
+        let last = rectOf(cardEl);
+        if (stageEl && cardEl && from && last) {
+          // Track the card LIVE: it shifts and rewraps while the panel
+          // contracts, and the flight must converge on wherever it settles.
+          const target = () => {
+            last = rectOf(cardEl) ?? last;
+            return last as MorphRect;
+          };
+          setEmbedGhost({ id: ++ghostSeq.current, mode: "out", from, target, clipTo, clone: makeClone(stageEl, from.width) });
+        }
+      }
+    }
+    if (featureAppId !== undefined) dispatchSplit({ type: "feature", appId: featureAppId });
+    dispatchSplit({ type: next ? "expand" : "collapse" });
+  };
+  setWorkspaceRef.current = setWorkspace;
   const providerDial = useVendoDiscoverability();
   const dial = discoverability ?? providerDial;
   // Launcher normalization: string forms keep their exact old meaning; the
@@ -142,19 +372,10 @@ export function VendoOverlay({
   // name (cubic PR#391 finding).
   const configuredLabel = launcherConfig.label === undefined ? "AI agent" : launcherConfig.label;
   const launcherLabel = configuredLabel !== null && configuredLabel.trim() === "" ? null : configuredLabel;
-  // The palette's command set renders as a chip strip above the composer —
-  // the one-surface replacement for the palette dialog (pick P-C).
-  const commandSet = useSyncExternalStore(subscribeConversationCommands, getConversationCommands, getConversationCommands);
-  const commandStrip = commandSet && commandSet.commands.length > 0 ? (
-    <div className="fl-cmdstrip" role="toolbar" aria-label="Commands">
-      {commandSet.commands.map(command => (
-        <button key={command.id} type="button" className="fl-cmd-chip" onClick={() => commandSet.select(command)}>
-          <CommandGlyph kind={command.kind} />
-          {command.label}
-        </button>
-      ))}
-    </div>
-  ) : null;
+  // Demo-refresh 2026-07-23: the palette's chip strip above the composer is
+  // gone (it read as clutter and duplicated app entry points). The command
+  // registry seam stays — the palette hotkey still opens this overlay and a
+  // host `onCommand` still routes — there is just no built-in strip UI.
   // ui-usage-dx §6 — the whisper: the first time a user actually faces the
   // pill, it pulses once and a small caption says the app can be reshaped,
   // then never again (fire-once store). Arming is REACTIVE, not mount-frozen
@@ -313,6 +534,13 @@ export function VendoOverlay({
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      // Split-view order: Escape collapses the workspace first, closes the
+      // overlay second (escapeIntent in split-view.tsx; the takeover ignores
+      // expansion, so below the breakpoint Escape closes as before).
+      if (!takeover.active && escapeIntent(splitState) === "collapse") {
+        setWorkspace(false);
+        return;
+      }
       close();
       return;
     }
@@ -358,6 +586,8 @@ export function VendoOverlay({
         ref={dialog}
         id="vendo-overlay-dialog"
         className={`fl-overlay-panel${takeover.active ? " fl-takeover" : ""}`}
+        {...(expanded ? { "data-vendo-expanded": "" } : {})}
+        {...(embedGhost ? { "data-vendo-ghost": embedGhost.mode } : {})}
         style={takeover.style}
         role="dialog"
         aria-modal="true"
@@ -365,6 +595,30 @@ export function VendoOverlay({
         onKeyDown={onKeyDown}
       >
         <strong className="fl-sr-only">Vendo</strong>
+        {/* The split-view expand/collapse affordance (2026-07). Hidden below
+            the breakpoint — the takeover is already full-bleed. A fresh app
+            embed landing while collapsed pulses it once (data-vendo-suggest). */}
+        {!takeover.active ? (
+          <button
+            className="fl-overlay-close fl-overlay-expand"
+            type="button"
+            aria-label={expanded ? "Collapse workspace" : "Expand workspace"}
+            aria-pressed={expanded}
+            {...(suggestExpand && !expanded ? { "data-vendo-suggest": "" } : {})}
+            onClick={() => setWorkspace(!splitState.expanded)}
+          >
+            {expanded ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+              </svg>
+            )}
+            <span className="fl-sr-only">{expanded ? "Collapse workspace" : "Expand workspace"}</span>
+          </button>
+        ) : null}
         {/* ENG-221: the explicit fresh-start affordance — closing never discards
             the conversation, so THIS is how a new one begins. Shares the close
             button's quiet header treatment; .fl-overlay-new only shifts it left. */}
@@ -380,10 +634,80 @@ export function VendoOverlay({
           </svg>
           <span className="fl-sr-only">Close</span>
         </button>
-        <PrefillScopeContext.Provider value={prefillScope.current}>
-          <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} discoverability={dial} firstRunGreeting={greeting} composerAccessory={commandStrip} />
-        </PrefillScopeContext.Provider>
+        {/* The split shell is ALWAYS in the tree with the thread in the same
+            slot, so expanding/collapsing never remounts the conversation
+            (the same invariant close/reopen honors, ENG-221). Collapsed, the
+            stage pane is width-0 and empty; the rail IS the whole panel. */}
+        <SplitViewContext.Provider value={splitContextValue}>
+          <div className="fl-split">
+            <div className="fl-split-stage" key="stage" {...(expanded ? {} : { "aria-hidden": true })}>
+              {stagePhase !== "collapsed" ? (
+                featured ? (
+                  <div className="fl-stage" key={featured.appId}>
+                    <div className="fl-stage-bar">
+                      <span className="fl-appcard-dot" aria-hidden="true" />
+                      <span className="fl-stage-name">{appTitle(featured.payload) ?? "Your app"}</span>
+                      {/* Pin from fullscreen (2026-07 demo feedback): the same
+                          host onPin seam the in-thread card bar uses. A pin
+                          from the stage CLOSES the whole overlay — the user
+                          lands back in the product with the app pinned. */}
+                      {onPin ? (
+                        <button
+                          type="button"
+                          className="fl-barpin fl-stage-pin"
+                          onClick={() => {
+                            onPin({ appId: featured.appId, payload: featured.payload });
+                            dispatchSplit({ type: "collapse" });
+                            setOpen(false);
+                          }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+                          </svg>
+                          Pin to dashboard
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="fl-stage-body">
+                      <PayloadView
+                        // Registrations come from the typed in-thread card
+                        // (ThreadAppCard receives VendoViewPart payloads).
+                        payload={featured.payload as UIPayload}
+                        components={components}
+                        onAction={({ action, payload: actionPayload }) =>
+                          client.apps.call(featured.appId, action, actionPayload ?? {})}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="fl-stage-empty" role="status">
+                    <p>Views you build land here.</p>
+                    <p>Ask for a view in the conversation and it renders large on this stage.</p>
+                  </div>
+                )
+              ) : null}
+            </div>
+            <div className="fl-split-rail" key="rail">
+              <PrefillScopeContext.Provider value={prefillScope.current}>
+                <Thread key={`${conversationKey ?? 0}:${conversationEpoch}`} discoverability={dial} firstRunGreeting={greeting} />
+              </PrefillScopeContext.Provider>
+            </div>
+          </div>
+        </SplitViewContext.Provider>
       </div>
+      {/* The embed's shared-element flight rides ABOVE the panel (the panel
+          clips overflow, and mid-flight the ghost straddles both panes). */}
+      {embedGhost ? (
+        <EmbedMorphGhost
+          key={embedGhost.id}
+          from={embedGhost.from}
+          target={embedGhost.target}
+          clipTo={embedGhost.clipTo}
+          clone={embedGhost.clone}
+          mode={embedGhost.mode}
+          onDone={() => setEmbedGhost(null)}
+        />
+      ) : null}
     </div>,
     document.body,
   ) : null;

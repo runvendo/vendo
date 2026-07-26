@@ -7,6 +7,7 @@ import { claudeHarness } from "./claude-harness.js";
 import { codexCliHarness } from "./codex-cli-harness.js";
 import { parseDraft, type ExtractionHarness } from "./harness.js";
 import { npxEngineHarness } from "./npx-engine-harness.js";
+import { applyDraftEnrichment, type DraftEnrichmentSummary } from "../enrich/pass.js";
 import { plainSelect, type SelectOption } from "../pretty.js";
 import {
   BRIEF_TEMPLATE,
@@ -164,13 +165,20 @@ export async function applyDraft(input: {
   // write is a bug and must fail loud, never land on disk.
   await writeText(overridesPath, `${JSON.stringify(overridesFileV3Schema.parse(overrides), null, 2)}\n`);
 
-  const briefPath = join(input.root, ".vendo", "brief.md");
-  const currentBrief = ((await readOptional(briefPath)) ?? "").trim();
-  if (input.force === true || currentBrief === "" || currentBrief === BRIEF_TEMPLATE) {
-    await writeText(briefPath, `${input.draft.brief.trim()}\n`);
-    summary.briefWritten = true;
-  }
+  summary.briefWritten = await applyBrief(input.root, input.draft.brief, input.force === true);
   return summary;
+}
+
+/** Write the drafted brief unless a human already wrote one (only the init
+ *  template or an empty file is replaceable without --force). */
+export async function applyBrief(root: string, brief: string, force: boolean): Promise<boolean> {
+  const briefPath = join(root, ".vendo", "brief.md");
+  const currentBrief = ((await readOptional(briefPath)) ?? "").trim();
+  if (force || currentBrief === "" || currentBrief === BRIEF_TEMPLATE) {
+    await writeText(briefPath, `${brief.trim()}\n`);
+    return true;
+  }
+  return false;
 }
 
 /** The one applied-polish summary both init's built-in pass and
@@ -202,6 +210,36 @@ export function reportApplied(input: {
     );
   }
   for (const missed of applied.missedSurfaces) output.log(`  missed surface (not extracted yet): ${missed}`);
+}
+
+/** init's enrichment-state line (cse lane 1c): ONE line for the applied
+ *  full-repo enrichment, then honest detail — clamp refusals, degradation
+ *  notes, missed surfaces, and the zero-live-tools warning. */
+export function reportDraftEnrichment(input: {
+  output: Output;
+  enriched: DraftEnrichmentSummary;
+  briefDrafted: boolean;
+  missedSurfaces: string[];
+  notes: string[];
+}): void {
+  const { output, enriched } = input;
+  const parts = [
+    `${enriched.applied} tools enriched`,
+    ...(enriched.clamped.length > 0 ? [`${enriched.clamped.length} proposals clamped restrictive-only`] : []),
+    ...(input.briefDrafted ? ["brief drafted"] : []),
+  ];
+  output.log(`enrichment: ${parts.join(" · ")} → .vendo/tools.json (stage artifacts: .vendo/data/extract/)`);
+  for (const note of input.notes) output.error(`  ${note}`);
+  for (const note of enriched.notes) output.error(`  ${note}`);
+  for (const refusal of enriched.clamped) output.error(`  clamped: ${refusal}`);
+  if (enriched.enabledAfter === 0) {
+    output.error(
+      "  WARNING: zero live tools after enrichment — every extracted tool is disabled or excluded, so the embedded "
+      + "agent cannot act on this product's API. Review .vendo/tools.json and re-enable the end-user surface in "
+      + ".vendo/overrides.json (disabled: false), or re-run extraction.",
+    );
+  }
+  for (const missed of input.missedSurfaces) output.log(`  missed surface (not extracted yet): ${missed}`);
 }
 
 /** Consent-style one-line prompt — shared machinery: the AI-polish consent
@@ -385,14 +423,27 @@ export async function runAiExtraction(
       ...(options.theme === undefined ? {} : { theme: options.theme }),
     });
     if (toolsAvailable) {
-      const applied = await applyDraft({ root, draft: staged.draft, tools, ...(options.force === undefined ? {} : { force: options.force }) });
-      reportApplied({
-        output,
-        applied,
-        briefDrafted: applied.briefWritten && staged.briefFromStage,
-        artifactsNote: " (stage artifacts: .vendo/data/extract/)",
-        notes: staged.notes,
-      });
+      // Format v3 (cse lane 1c): init's tool judgment is the ENRICHMENT
+      // channel — the staged draft applies to .vendo/tools.json through the
+      // same restrictive-only clamp sync uses (init = sync with no watermark;
+      // the full-repo draft is the degenerate diff). overrides.json stays
+      // human-written; loosening (waking a disabled tool) is a human edit
+      // there, and the clamp says so.
+      const enriched = await applyDraftEnrichment({ root, vendoDir: join(root, ".vendo"), draft: staged.draft });
+      const briefDrafted = staged.briefFromStage
+        && await applyBrief(root, staged.draft.brief, options.force === true);
+      if (enriched === null) {
+        output.error("  enrichment could not read .vendo/tools.json — extractor defaults stand");
+        for (const note of staged.notes) output.error(`  ${note}`);
+      } else {
+        reportDraftEnrichment({
+          output,
+          enriched,
+          briefDrafted,
+          missedSurfaces: staged.draft.missedSurfaces ?? [],
+          notes: staged.notes,
+        });
+      }
     } else {
       for (const note of staged.notes) output.error(`  ${note}`);
     }

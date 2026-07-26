@@ -380,6 +380,13 @@ export type ExtractedToolV3 = ExtractedTool & {
   /** Keyed by collapsed dot path into the response (core semantics.ts). */
   semantics?: Record<string, FieldSemantic>;
   srcHash?: string;
+  /** cse lane 1c — provenance marker: this entry's judgment fields
+   *  (description, risk, critical, disabled, audience, semantics) were
+   *  reviewed by sync's AI enrichment pass. Absent = unenriched (structural
+   *  defaults only). Carried across structural syncs; the enrichment pass
+   *  strips it when the tool's source changed and the model failed to
+   *  account for it (stale-unenriched → re-enriched next keyed sync). */
+  enriched?: boolean;
 };
 
 export const extractedToolV3Schema = toolDescriptorSchema.extend({
@@ -389,6 +396,7 @@ export const extractedToolV3Schema = toolDescriptorSchema.extend({
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
   srcHash: z.string().min(1).optional(),
+  enriched: z.boolean().optional(),
 }).superRefine((tool, context) => {
   if ((tool.binding as { kind?: string }).kind === "compound") {
     context.addIssue({

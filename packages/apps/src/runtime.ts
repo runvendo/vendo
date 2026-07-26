@@ -53,7 +53,9 @@ import {
   verifyDocumentAgainstData,
   type GenerationDependencies,
   type GenerationEngine,
+  type GenerationTimingEvent,
 } from "./engine.js";
+import type { PipelineEvent } from "./pipeline.js";
 import { planAutomation } from "./automation-plan.js";
 import { createAppHistory } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
@@ -172,9 +174,13 @@ export interface AppsConfig {
   /** W4 pipeline knobs, passed to the generation engine: structured repair
    *  (default on), outline+region-parallel tier-2 and the end pass (opt-in). */
   pipeline?: GenerationDependencies["pipeline"];
-  /** The composition-normalized catalog (01 §14): derived schemas included. */
+  /** The composition-normalized catalog (01 §14): derived schemas included.
+   *  The provider (function) form of theme/semantics/domains below mirrors
+   *  designRules: it is resolved lazily per create/edit (in
+   *  generationDependencies), never eagerly, so the umbrella can back it with a
+   *  first-request cloud read without doing I/O at compose time. */
   catalog: NormalizedCatalog;
-  theme?: VendoTheme;
+  theme?: VendoTheme | (() => VendoTheme | undefined);
   secrets?: SecretsProvider;
   /** Host design rules for generation prompts; the function form is re-read
    *  per create/edit (engine.ts GenerationDependencies). */
@@ -187,10 +193,11 @@ export interface AppsConfig {
   cloud?: CloudAppsClient;
   /** W3 — per-tool field semantics from `.vendo/semantics.json`, passed to
    *  the generation engine (annotated shape cards, law checks, Kit format
-   *  defaults). */
-  semantics?: Readonly<Record<string, ToolSemantics>>;
-  /** W3 — the host's domain manifest (has / has-NOT), generation fact. */
-  domains?: DomainManifest;
+   *  defaults). Provider form resolved per generation (see catalog note). */
+  semantics?: Readonly<Record<string, ToolSemantics>> | (() => Readonly<Record<string, ToolSemantics>> | undefined);
+  /** W3 — the host's domain manifest (has / has-NOT), generation fact.
+   *  Provider form resolved per generation (see catalog note). */
+  domains?: DomainManifest | (() => DomainManifest | undefined);
 }
 
 /** 06-apps §1 */
@@ -639,24 +646,56 @@ const rungFor = (
   return 1;
 };
 
+/** Resolve a value-or-provider config slot. The provider (function) form is
+ *  called ONCE here — generationDependencies runs once per create/edit — so
+ *  theme/semantics/domains match designRules' "re-read per generation" contract
+ *  and a first-request cloud-backed provider never does I/O at compose time. */
+const resolveProvider = <T>(slot: T | (() => T | undefined) | undefined): T | undefined =>
+  typeof slot === "function" ? (slot as () => T | undefined)() : slot;
+
+/** Latency instrumentation (demo-latency lane): every generation stage
+ *  narrates its wall-clock on the operator's terminal — the engine's opt-in
+ *  onTiming/onPipeline seams were previously wired only in bench code, so a
+ *  5-minute live create was unattributable. One short line per stage event;
+ *  no payloads, no prompts. */
+const logTiming = (event: GenerationTimingEvent): void => {
+  const usage = event.usage === undefined
+    ? ""
+    : ` tokens=${event.usage.inputTokens ?? "?"}→${event.usage.outputTokens ?? "?"}`;
+  console.info(`[vendo] gen ${event.lane} ${event.phase} at=${(event.atMs / 1000).toFixed(1)}s${usage}`);
+};
+
+const logPipeline = (event: PipelineEvent): void => {
+  const { stage, ms, ...rest } = event;
+  const detail = Object.entries(rest).map(([key, value]) => ` ${key}=${String(value)}`).join("");
+  console.info(`[vendo] gen pipeline ${stage}${detail} ms=${ms}`);
+};
+
 const generationDependencies = (
   config: AppsConfig,
   model: LanguageModel,
   toolContext: Pick<GenerationDependencies, "tools" | "toolShapes">,
   onPartial?: GenerationDependencies["onPartial"],
-): GenerationDependencies => ({
-  model,
-  catalog: config.catalog,
-  theme: config.theme,
-  designRules: config.designRules,
-  pinBaselines: config.pinBaselines,
-  ...(config.semantics === undefined ? {} : { semantics: config.semantics }),
-  ...(config.domains === undefined ? {} : { domains: config.domains }),
-  ...toolContext,
-  ...(config.paint === undefined ? {} : { paint: config.paint }),
-  ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
-  ...(onPartial === undefined ? {} : { onPartial }),
-});
+): GenerationDependencies => {
+  const theme = resolveProvider(config.theme);
+  const semantics = resolveProvider(config.semantics);
+  const domains = resolveProvider(config.domains);
+  return {
+    model,
+    catalog: config.catalog,
+    ...(theme === undefined ? {} : { theme }),
+    designRules: config.designRules,
+    pinBaselines: config.pinBaselines,
+    ...(semantics === undefined ? {} : { semantics }),
+    ...(domains === undefined ? {} : { domains }),
+    ...toolContext,
+    ...(config.paint === undefined ? {} : { paint: config.paint }),
+    ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
+    ...(onPartial === undefined ? {} : { onPartial }),
+    onTiming: logTiming,
+    onPipeline: logPipeline,
+  };
+};
 
 /** v2 spec §1 — assemble the emitted payload: the tree plus document islands
  *  at payload level (the v2 renderer lifts them into the shared walk). */
@@ -1061,8 +1100,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // accepted loading state — no v1 cover machinery).
         await requestAppWithBootRetry(machine, { method: "GET", path: "/" }).catch(() => undefined);
         const url = new URL(await machine.url());
-        if (config.theme !== undefined) {
-          url.searchParams.set("vendoTheme", JSON.stringify(config.theme));
+        // Resolve the theme provider (cse lane 3) before serializing it into the
+        // served-app URL — config.theme may now be a value OR a lazy provider.
+        const resolvedTheme = resolveProvider(config.theme);
+        if (resolvedTheme !== undefined) {
+          url.searchParams.set("vendoTheme", JSON.stringify(resolvedTheme));
         }
         return url.toString();
       },
@@ -1665,6 +1707,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
+      const createStartedAt = Date.now();
       // 0.4.5 E2E cert (defect D) — the build's dead-man switch. The catch
       // below persists a terminal failure when the build turn THROWS, but a
       // build task that hangs (a provider stream that never settles) or dies
@@ -1803,8 +1846,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           const { id: _verifyId, ...unidentified } = structuredClone(app);
           const verified = await verifyDocumentAgainstData(unidentified, input.prompt, verifiedData, generationDeps);
           app = { ...verified, id: appId };
-        } catch {
-          // The unverified app ships; open() resolves its data as always.
+        } catch (error) {
+          // The unverified app ships; open() resolves its data as always. But
+          // say so in the operator's terminal — a silently skipped verify pass
+          // is indistinguishable from a verify pass that found nothing.
+          console.warn(`[vendo] data-sighted verify skipped for ${appId} (the unverified app ships): ${safeErrorMessage(error)}`);
         }
       }
       let finalTree: TreeV2 | undefined;
@@ -1818,6 +1864,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       clearTimeout(watchdog);
       await reportLifecycle("create", app.id, ctx);
       if (finalTree !== undefined) emit(finalTree);
+      console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`);
       // execution-v2 Wave 9 — escalate on create when the prompt needs server
       // capability, walking the ladder: a steps/agentic automation (seconds,
       // no machine) before box graduation. The tree is already on screen; the

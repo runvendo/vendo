@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   toVendoWirePart,
   vendoApprovalPartSchema,
+  vendoAutomationPartSchema,
   vendoBuildFailedPartSchema,
   vendoStepLimitPartSchema,
   vendoConnectPartSchema,
@@ -175,6 +176,44 @@ describe("vendoBuildFailedPartSchema", () => {
       type: "data-vendo-build-failed",
       toolCallId: "call_1",
       reason: "",
+    }).success).toBe(false);
+  });
+});
+
+/** 2026-07 demo feedback (additive): the in-thread automation card part. */
+describe("vendoAutomationPartSchema", () => {
+  it("accepts an automation card with a trigger and enabled state", () => {
+    expect(vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-automation",
+      appId: "app_auto",
+      name: "Low balance alert",
+      enabled: true,
+      description: "Emails you when checking dips below $2,000.",
+      trigger: {
+        on: { kind: "schedule", cron: "0 8 * * *" },
+        run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
+      },
+    }).success).toBe(true);
+  });
+
+  it("trigger stays optional; a wrong type literal or empty name rejects", () => {
+    expect(vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-automation",
+      appId: "app_auto",
+      name: "Weekly digest",
+      enabled: false,
+    }).success).toBe(true);
+    expect(vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-view",
+      appId: "app_auto",
+      name: "Weekly digest",
+      enabled: true,
+    }).success).toBe(false);
+    expect(vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-automation",
+      appId: "app_auto",
+      name: "",
+      enabled: true,
     }).success).toBe(false);
   });
 });

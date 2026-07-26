@@ -11,19 +11,33 @@ import {
 } from "./resolve.js";
 
 /**
- * `devModel()` — the env-resolving model createVendo composes when the host
- * passes none (install-dx v1: `model` is optional; real keys only). It IS an
- * ai-SDK LanguageModel (BYO seam unchanged, 03-agent §1), resolving the
- * credential lazily on first use:
+ * `vendoModel(name?)` — the vendo model family entry (models spec 2026-07-22):
+ * a lazily-resolving ai-SDK LanguageModel bound to the app's credential
+ * ladder. It IS an ai-SDK LanguageModel (BYO seam unchanged, 03-agent §1),
+ * resolving the credential lazily on first use:
  *
  * - env-key rungs delegate to the host-installed @ai-sdk provider (^3, spec
  *   v3) with full native tool calling — works in production too.
  * - VENDO_API_KEY delegates to the Vendo Cloud model gateway: the
  *   host-installed @ai-sdk/anthropic pointed at `<console>/api/v1`, whose
- *   Anthropic-compatible /messages endpoint serves the metered dev-mode
- *   allowance under curated model aliases (vendo-default by default).
+ *   Anthropic-compatible /messages endpoint serves the metered allowance
+ *   under the vendo model family names (`vendo` by default).
  * - nothing available → every call fails with the exact instructions.
+ *
+ * Name strings pass through VERBATIM to whatever the resolved credential
+ * talks to — Cloud key → the gateway (vendo-* names are real model ids
+ * there), provider key → that provider, untouched. There is NO client-side
+ * name translation of any kind; an unknown name surfaces the provider's own
+ * error. The only "magic" is per-rung/per-slot DEFAULTS when no name is
+ * given, and per-slot env pins (precedence: explicit model object → env pin
+ * → configured string → per-rung default).
+ *
+ * `devModel()` is the deprecated pre-family alias of `vendoModel()`.
  */
+
+/** The model slots the runtime composes. `extract` never runs in-process —
+ *  it exists so the CLI extraction ladder shares the same pin names. */
+export type VendoModelSlot = "agent" | "paint" | "judge" | "extract";
 
 export interface DevModelOptions {
   /** Host app root; providers resolve from here. Default cwd. */
@@ -31,6 +45,14 @@ export interface DevModelOptions {
   env?: Record<string, string | undefined>;
   /** Test seam for host-module resolution (providers). */
   importModule?: (root: string, specifier: string) => Promise<Record<string, unknown>>;
+}
+
+export interface VendoModelOptions extends DevModelOptions {
+  /** Which slot's env pin + per-rung default applies. Normally inferred from
+   *  the family name (`vendo-paint` → paint, `vendo-judge` → judge,
+   *  `vendo-extract` → extract, anything else → agent); createVendo passes it
+   *  explicitly when composing internal slots. */
+  slot?: VendoModelSlot;
 }
 
 interface LanguageModelV3Like {
@@ -43,14 +65,27 @@ interface LanguageModelV3Like {
 }
 
 type Resolution =
-  | { mode: "delegate"; credential: DevCredential; model: LanguageModelV3Like }
-  | { mode: "unavailable"; credential: DevCredential; message: string };
+  | { mode: "delegate"; model: LanguageModelV3Like }
+  | { mode: "unavailable"; message: string };
 
-const DEFAULT_MODELS: Record<string, { module: string; factory: string; model: string; modelEnv: string; install: string }> = {
+interface ProviderSpec {
+  module: string;
+  factory: string;
+  /** Flagship default (agent/extract slots) when no name is given. */
+  model: string;
+  /** Family fast pick (paint/judge slots) when no name is given. */
+  fast: string;
+  /** DEPRECATED agent-slot pin, kept working as a fallback under VENDO_MODEL. */
+  modelEnv: string;
+  install: string;
+}
+
+const DEFAULT_MODELS: Record<string, ProviderSpec> = {
   anthropic: {
     module: "@ai-sdk/anthropic",
     factory: "createAnthropic",
     model: "claude-sonnet-4-6",
+    fast: "claude-haiku-4-5",
     modelEnv: "VENDO_DEV_ANTHROPIC_MODEL",
     install: "npm install ai@^6 @ai-sdk/anthropic@^3",
   },
@@ -58,6 +93,7 @@ const DEFAULT_MODELS: Record<string, { module: string; factory: string; model: s
     module: "@ai-sdk/openai",
     factory: "createOpenAI",
     model: "gpt-5",
+    fast: "gpt-5-mini",
     modelEnv: "VENDO_DEV_OPENAI_MODEL",
     install: "npm install ai@^6 @ai-sdk/openai@^3",
   },
@@ -65,30 +101,86 @@ const DEFAULT_MODELS: Record<string, { module: string; factory: string; model: s
     module: "@ai-sdk/google",
     factory: "createGoogleGenerativeAI",
     model: "gemini-2.5-flash",
+    fast: "gemini-2.5-flash-lite",
     modelEnv: "VENDO_DEV_GOOGLE_MODEL",
     install: "npm install ai@^6 @ai-sdk/google@^3",
   },
 };
 
-/** The Cloud gateway serves curated model aliases, never raw provider ids:
- *  `vendo-default` (Sonnet), `vendo-fast` (Haiku), `vendo-strong` (Opus).
- *  VENDO_CLOUD_MODEL picks among them; the gateway remaps any other value to
- *  vendo-default (with an `x-vendo-model-remapped` warning header) during the
- *  grace window, and will hard-reject non-aliases after it. Same module/
- *  factory/install as anthropic — the gateway speaks the Anthropic Messages
- *  wire. */
-const CLOUD_MODEL: (typeof DEFAULT_MODELS)[string] = {
+/** The Cloud gateway serves the vendo model family as literal model ids:
+ *  `vendo` (the agent), `vendo-paint`, `vendo-judge`, `vendo-extract`. The
+ *  console maps each name to a concrete model SERVER-SIDE — clients never see
+ *  or perform the mapping, so Cloud-keyed apps can be retuned without a
+ *  client release. VENDO_CLOUD_MODEL is the deprecated agent-slot pin (the
+ *  gateway grace-remaps unknown ids with an `x-vendo-model-remapped` warning
+ *  header during the alias transition). Same module/factory/install as
+ *  anthropic — the gateway speaks the Anthropic Messages wire. */
+const CLOUD_MODEL: ProviderSpec = {
   module: "@ai-sdk/anthropic",
   factory: "createAnthropic",
-  model: "vendo-default",
+  model: "vendo",
+  fast: "vendo",
   modelEnv: "VENDO_CLOUD_MODEL",
   install: "npm install ai@^6 @ai-sdk/anthropic@^3",
+};
+
+/** Cloud rung slot defaults — the family names, per slot. */
+const CLOUD_FAMILY: Record<VendoModelSlot, string> = {
+  agent: "vendo",
+  paint: "vendo-paint",
+  judge: "vendo-judge",
+  extract: "vendo-extract",
+};
+
+/** Env pins, one per slot (spec DX surface 5). Highest non-explicit
+ *  precedence: explicit model object → env pin → models string → default. */
+export const SLOT_PIN_ENV: Record<VendoModelSlot, string> = {
+  agent: "VENDO_MODEL",
+  paint: "VENDO_MODEL_PAINT",
+  judge: "VENDO_MODEL_JUDGE",
+  extract: "VENDO_MODEL_EXTRACT",
 };
 
 export const NO_CREDENTIAL_MESSAGE =
   "Vendo found no model key. Set ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY "
   + "in .env.local (with the matching @ai-sdk provider installed), or run `vendo login` for a "
   + "free dev key. Production always needs a real server-side key.";
+
+function nonBlank(value: string | undefined): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+/** Family names tag their slot so per-slot env pins and the models-block
+ *  config reach host-constructed instances (vendoAutoJudge(vendoModel(
+ *  "vendo-judge")) is pinnable via VENDO_MODEL_JUDGE). This is slot TAGGING,
+ *  never name mapping — the name itself still passes through verbatim. */
+function inferSlot(name: string | undefined): VendoModelSlot {
+  if (name === "vendo-paint") return "paint";
+  if (name === "vendo-judge") return "judge";
+  if (name === "vendo-extract") return "extract";
+  return "agent";
+}
+
+/** The controller behind each vendoModel()/devModel() instance, so composition
+ *  can bind per-instance slot config onto exactly the model the host handed it
+ *  (bindVendoModelSlots below). WeakMap: holding a model never leaks its
+ *  controller past the model's own lifetime. @internal */
+const controllersByModel = new WeakMap<object, DevModelController>();
+
+/** Bind createVendo's `models` slot config onto ONE vendoModel-built instance
+ *  (spec: models.judge is consumed only by a judge the host wired from
+ *  vendoModel("vendo-judge") — the model rides Judge.model so composition can
+ *  reach it). Per instance, replacing the former process-level registry whose
+ *  last createVendo won. A BYO model object (or anything else that is not a
+ *  vendoModel instance) is a deliberate no-op: explicit models never change
+ *  behavior. @internal — called by createVendo; not public API. */
+export function bindVendoModelSlots(
+  model: unknown,
+  models: { judge?: string | LanguageModel } | undefined,
+): void {
+  if (model === null || typeof model !== "object") return;
+  controllersByModel.get(model)?.configureSlots(models);
+}
 
 /** Bundler-proof dynamic import: this module runs inside the host's dev server
  *  bundle (Next/webpack/turbopack), where a computed `import(...)` becomes a
@@ -120,13 +212,27 @@ export class DevModelController {
   private readonly root: string;
   private readonly env: Record<string, string | undefined>;
   private readonly importModule: (root: string, specifier: string) => Promise<Record<string, unknown>>;
+  private readonly slot: VendoModelSlot;
+  private readonly name: string | undefined;
   private resolution: Promise<Resolution> | null = null;
   private announced = false;
+  /** Per-instance slot config bound by createVendo (bindVendoModelSlots). */
+  private slotModels: { judge?: string | LanguageModel } = {};
 
-  constructor(options: DevModelOptions = {}) {
+  constructor(options: VendoModelOptions & { name?: string } = {}) {
     this.root = options.root ?? process.cwd();
     this.env = options.env ?? process.env;
     this.importModule = options.importModule ?? importHostModule;
+    this.name = nonBlank(options.name);
+    this.slot = options.slot ?? inferSlot(this.name);
+  }
+
+  /** Bind createVendo's `models` slot config to THIS instance (see
+   *  bindVendoModelSlots). Composition runs before the first model call, so
+   *  the lazy resolution below always sees the bound config. */
+  configureSlots(models: { judge?: string | LanguageModel } | undefined): void {
+    if (models?.judge === undefined) delete this.slotModels.judge;
+    else this.slotModels.judge = models.judge;
   }
 
   /** Resolve the credential once per process; state it on the server log once.
@@ -141,18 +247,38 @@ export class DevModelController {
     return this.resolution;
   }
 
-  private announce(credential: DevCredential, suffix = ""): void {
+  private announce(line: string): void {
     if (this.announced) return;
     this.announced = true;
-    console.log(`[vendo] model: ${describeDevCredential(credential)}${suffix}`);
+    const slot = this.slot === "agent" ? "" : ` (${this.slot})`;
+    console.log(`[vendo] model${slot}: ${line}`);
+  }
+
+  /** The string-tier model id for the resolved rung. Precedence (spec §DX
+   *  surfaces): env pin → deprecated agent-slot pin → configured slot string
+   *  (models.judge) → the verbatim name → the per-rung slot default. */
+  private modelId(spec: ProviderSpec): string {
+    const pin = nonBlank(this.env[SLOT_PIN_ENV[this.slot]]);
+    if (pin !== undefined) return pin;
+    if (this.slot === "agent") {
+      const legacy = nonBlank(this.env[spec.modelEnv]);
+      if (legacy !== undefined) return legacy;
+    }
+    if (this.slot === "judge") {
+      const configured = this.slotModels.judge;
+      if (typeof configured === "string" && nonBlank(configured) !== undefined) return configured.trim();
+    }
+    if (this.name !== undefined) return this.name;
+    if (spec === CLOUD_MODEL) return CLOUD_FAMILY[this.slot];
+    return this.slot === "paint" || this.slot === "judge" ? spec.fast : spec.model;
   }
 
   /** The shared delegate rung: load the provider module (an install failure
    *  resolves unavailable with the exact install command), pick the model id
-   *  (env override or the spec default), and hand the factory-built model back. */
+   *  (per-slot precedence above), and hand the factory-built model back. */
   private async delegate(
     credential: DevCredential,
-    spec: (typeof DEFAULT_MODELS)[string],
+    spec: ProviderSpec,
     keyName: string,
     config: { apiKey: string; baseURL?: string },
     announceSuffix: string,
@@ -162,19 +288,29 @@ export class DevModelController {
       loaded = await this.importModule(this.root, spec.module);
     } catch {
       const message = `${keyName} is set but ${spec.module} is not installed in this app; install it (\`${spec.install}\`).`;
-      this.announce(credential, ` — but ${spec.module} is missing`);
-      return { mode: "unavailable", credential, message };
+      this.announce(`${describeDevCredential(credential)} — but ${spec.module} is missing`);
+      return { mode: "unavailable", message };
     }
     const factory = loaded[spec.factory] as (
       config: { apiKey: string; baseURL?: string },
     ) => (model: string) => LanguageModelV3Like;
-    const modelId = this.env[spec.modelEnv] ?? spec.model;
+    const modelId = this.modelId(spec);
     const model = factory(config)(modelId);
-    this.announce(credential, ` → ${modelId}${announceSuffix}`);
-    return { mode: "delegate", credential, model };
+    this.announce(`${describeDevCredential(credential)} → ${modelId}${announceSuffix}`);
+    return { mode: "delegate", model };
   }
 
   private async resolveOnce(): Promise<Resolution> {
+    // Explicit model object configured for this slot (models.judge) — the
+    // "explicit object wins" tier: no credential resolution, no pins.
+    if (this.slot === "judge") {
+      const configured = this.slotModels.judge;
+      if (configured !== undefined && typeof configured !== "string") {
+        this.announce("explicit models.judge model object");
+        return { mode: "delegate", model: configured as unknown as LanguageModelV3Like };
+      }
+    }
+
     const options: ResolveDevCredentialOptions = { env: this.env };
     const credential = await resolveDevCredential(options);
 
@@ -202,8 +338,8 @@ export class DevModelController {
       );
     }
 
-    this.announce(credential);
-    return { mode: "unavailable", credential, message: NO_CREDENTIAL_MESSAGE };
+    this.announce(describeDevCredential(credential));
+    return { mode: "unavailable", message: NO_CREDENTIAL_MESSAGE };
   }
 
   async doGenerate(callOptions: unknown): Promise<unknown> {
@@ -219,16 +355,31 @@ export class DevModelController {
   }
 }
 
-/** The env-resolving model (see module doc). */
-export function devModel(options: DevModelOptions = {}): LanguageModel {
-  const controller = new DevModelController(options);
+function lazyModel(controller: DevModelController, provider: string, modelId: string): LanguageModel {
   const model: LanguageModelV3Like = {
     specificationVersion: "v3",
-    provider: "vendo-dev",
-    modelId: "dev-env",
+    provider,
+    modelId,
     supportedUrls: {},
     doGenerate: (callOptions) => controller.doGenerate(callOptions),
     doStream: (callOptions) => controller.doStream(callOptions),
   };
+  // Registered so composition can bind per-instance slot config onto exactly
+  // this model (bindVendoModelSlots).
+  controllersByModel.set(model, controller);
   return model as unknown as LanguageModel;
+}
+
+/** The vendo model family entry (see module doc). No argument means the
+ *  agent slot: `vendo` on the Cloud rung, the provider's flagship default on
+ *  a BYO rung. A name is passed VERBATIM to the resolved rung. */
+export function vendoModel(name?: string, options: VendoModelOptions = {}): LanguageModel {
+  const controller = new DevModelController({ ...options, ...(name === undefined ? {} : { name }) });
+  return lazyModel(controller, "vendo", name ?? "vendo-env");
+}
+
+/** @deprecated Renamed `vendoModel()` (models spec 2026-07-22) — same ladder,
+ *  same behavior; this alias remains for one release. */
+export function devModel(options: DevModelOptions = {}): LanguageModel {
+  return lazyModel(new DevModelController(options), "vendo-dev", "dev-env");
 }

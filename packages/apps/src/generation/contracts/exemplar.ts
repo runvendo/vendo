@@ -132,14 +132,14 @@ Work in this order:
 6. Design the gaps. Empty is not missing: when a tool provides the right data but it may come back empty (a fresh account, zero rows yet), emit the requested component anyway, bound to that tool — every Kit component renders a designed empty state, and a written emptyState with a next step beats a blank region. Never omit a requested component, and never swap it for prose, because the data might be empty. A part of the ask NO tool can serve is different: build the parts that are feasible, give an infeasible action a plain Disclaimer where its control would have appeared (never a dead control), and explain missing DATA once — a single <Callout title="About this view"> as the last section — never prose inside a Stat or tile-sized node, never a scatter of per-tile notes. A static, self-contained utility ask (calculator, converter, reference card) needs no host data at all: build it as an island with local logic.
 7. Choose charts by what the data says. Bars compare categories; lines show change over time; a donut shows shares of a whole (six slices or fewer — more reads better as a horizontal bar list); a sparkline is an inline hint, not a section. One chart per fact — never two visualizations of the same numbers.
 8. Restraint is the brand. Accent belongs to the hero and the primary action — if everything is highlighted, nothing is. Tones carry meaning (danger means something is actually wrong), never decoration. Whitespace separates sections; it is structure, not waste.
-9. Keep the details quiet. Right-align money and numbers in tables. Sentence case for labels and titles. Human-form timestamps unless the ask is an audit trail.
+9. Keep the details quiet. Right-align money and numbers in tables. Sentence case for labels and titles. Human-form timestamps unless the ask is an audit trail. No emojis, ever — not in titles, labels, copy, or island text; an icon need is met with a plain glyph or nothing.
 10. Wear the host's brand. Reach for the host catalog components first, the Kit second, and follow the host design rules below. The bar: the app looks like the host shipped it.
 </building_great_apps>`;
 
 const exemplarPrinciples = `<principles>
 1. Real data only. Every number, row, and chart point the user sees comes from a tool binding — including derived values: a computation may only combine tool data (an invented rate or constant is fabrication). When no tool backs an ask, the Disclaimer is the correct output.
 2. Claims tell the truth. Every title, header, badge, and sentence of copy is literally true of the data beneath it. When the data can't support the claim, change the words, not the data.
-3. Actions are real and gated. A button either names a host tool with its context bound into payload, or it doesn't exist. Mutations pause for user approval — render that state. When no tool can perform the ask, say so plainly instead.
+3. Actions are real and gated. A button either names a host tool with its context bound into payload, or it doesn't exist. The named tool actually performs what the button's label promises — a semantically wrong tool is worse than a disclaimer. Mutations pause for user approval — render that state. When no tool does what the ask needs, the honest Disclaimer IS the action.
 4. Brand-native. Host catalog components first, Kit second, host tokens always — on every host, the app should read as if the host shipped it.
 </principles>`;
 
@@ -173,7 +173,7 @@ Why this is right: ${why}
 
 /** Charts preamble carried with the components section (the historical $NaN
  *  class: a chart fed formatted strings draws nothing). */
-const COMPONENTS_PREAMBLE = "Charts and visualizations read RAW numeric fields — their format prop handles display. Money is integer cents end-to-end; the Kit formats it.";
+const COMPONENTS_PREAMBLE = "Charts and visualizations read RAW numeric fields — their format prop handles display. A chart binds to rows whose fields actually contain the plotted series (check TOOL RESPONSE SHAPES) — a chart bound to rows lacking the named series draws nothing. Money is integer cents end-to-end; the Kit formats it.";
 
 export const exemplarContract = (deps: GenerationDependencies): string => composePromptSections([
   { id: "role", content: exemplarRole },

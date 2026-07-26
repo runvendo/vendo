@@ -55,6 +55,22 @@ async function ensureOk(response: Response): Promise<Response> {
   return response;
 }
 
+/** Browser event announced after approvals.decide lands, so EVERY consent
+ *  surface sharing the page (activity panel, workspace queue, voice stage)
+ *  resumes a thread parked on that approval — the thread chrome listens and
+ *  settles its matching in-thread card. Guarded for SSR. */
+export const APPROVALS_DECIDED_EVENT = "vendo:approvals-decided";
+
+export interface ApprovalsDecidedDetail {
+  ids: string[];
+  approved: boolean;
+}
+
+function announceApprovalsDecided(detail: ApprovalsDecidedDetail): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<ApprovalsDecidedDetail>(APPROVALS_DECIDED_EVENT, { detail }));
+}
+
 /** 08-ui §2 */
 export function createVendoClient(config: VendoClientConfig): VendoClient {
   const baseUrl = config.baseUrl ?? "/api/vendo";
@@ -104,7 +120,11 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
     },
     approvals: {
       pending: () => readJson("/approvals"),
-      decide: (ids, decision) => json("/approvals/decide", "POST", { ids: Array.isArray(ids) ? ids : [ids], decision }),
+      decide: async (ids, decision) => {
+        const idList = Array.isArray(ids) ? ids : [ids];
+        await json("/approvals/decide", "POST", { ids: idList, decision });
+        announceApprovalsDecided({ ids: idList, approved: decision.approve });
+      },
       get: id => readJson(`/approvals/${idPath(id)}`),
     },
     grants: {

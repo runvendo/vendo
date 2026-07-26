@@ -8,10 +8,10 @@ import { useEffect, useState } from "react";
 import type { ToolMetaMap } from "./humanize.js";
 import {
   describeActivity,
+  eventOutcomeLabel,
   formatAuditTime,
   formatRelativeAuditTime,
   kindGlyph,
-  outcomeLabel,
   type ActivityGlyph,
   type OutcomeTone,
 } from "./activity-semantics.js";
@@ -69,7 +69,7 @@ export function ActivityLedger({ events, tools }: { events: AuditEvent[]; tools?
     <ul className="fl-act-led" role="list">
       {events.map(event => {
         const { kindLabel, action } = describeActivity(event, tools);
-        const { label, tone } = outcomeLabel(event.outcome);
+        const { label, tone } = eventOutcomeLabel(event);
         return (
           <li className="fl-act-led-row" key={event.id}>
             <KindGlyph kind={event.kind} label={kindLabel} />

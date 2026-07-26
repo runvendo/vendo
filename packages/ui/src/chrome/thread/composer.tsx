@@ -239,10 +239,14 @@ export interface ComposerProps {
   errorMessage?: string;
   onStop: () => void;
   onVoice?: (() => void) | undefined;
+  /** The thread's jump-to-latest bar (.fl-newbar). Rendered inside the dock
+   * anchor so it seats flush on the bar's top border, tray-style — the bar
+   * and the banner read as one piece. */
+  jumpBar?: import("react").ReactNode;
 }
 
 /** The message composer (08-ui §4): attachments, drag-drop, queueing, dock. */
-export function Composer({ composer, busy, status, errorMessage, onStop, onVoice }: ComposerProps) {
+export function Composer({ composer, busy, status, errorMessage, onStop, onVoice, jumpBar }: ComposerProps) {
   const {
     draft, setDraft, files, setFiles,
     attachmentPreviews, attachmentReads, retryRead,
@@ -278,6 +282,10 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
           }}
         />
       ) : null}
+    {/* The jump-to-latest bar docks onto the bar edge here, BEFORE the form in
+        DOM order: both are positioned with auto z-index, so its entrance rises
+        from BEHIND the composer instead of sliding over its face. */}
+    {jumpBar}
     {/* Lane pick 2E — drag-drop moved UP to the whole thread surface (see
         VendoThread): the bar itself no longer owns enter/leave/drop. */}
     <form
@@ -404,14 +412,6 @@ export function Composer({ composer, busy, status, errorMessage, onStop, onVoice
           </svg>
           <span className="fl-sr-only">Send</span>
         </button>
-      </div>
-      {/* Lane pick 2C — focus bloom: a one-line hint row that exists only
-          while the composer holds focus (pure CSS via :focus-within). Teaches
-          the hidden powers exactly when attention is on the bar. */}
-      <div className="fl-hintrow" aria-hidden="true">
-        <span><kbd className="fl-kbd">⇧↵</kbd> new line</span>
-        <span><kbd className="fl-kbd">⌘K</kbd> commands</span>
-        <span>drop files anywhere</span>
       </div>
       <span role="status" aria-live="polite" className="fl-sr-only">
         {errorMessage !== undefined ? `error: ${errorMessage}` : status}

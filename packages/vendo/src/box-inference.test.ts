@@ -107,9 +107,10 @@ describe("boxInference ladder (the in-box agent's model door)", () => {
     const env = await provisionedEnv({ VENDO_API_KEY: "vnd_cloud_key" });
     expect(env["VENDO_INFERENCE_URL"]).toBe("https://console.vendo.run/api/v1");
     expect(env["VENDO_INFERENCE_KEY"]).toBe("vnd_cloud_key");
-    // The gateway serves curated aliases only; the box harness's raw claude-*
-    // default would be grace-remapped server-side, so the Cloud rung pins it.
-    expect(env["VENDO_INFERENCE_MODEL"]).toBe("vendo-default");
+    // The gateway serves the vendo model family; the box harness's raw
+    // claude-* default would be grace-remapped server-side, so the Cloud rung
+    // pins the flagship family name.
+    expect(env["VENDO_INFERENCE_MODEL"]).toBe("vendo");
   });
 
   it("VENDO_INFERENCE_MODEL still picks the Cloud alias on the Cloud rung", async () => {

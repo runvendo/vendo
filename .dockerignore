@@ -1,5 +1,6 @@
 .git
 .github
+node_modules
 **/node_modules
 **/.next
 **/dist
@@ -7,3 +8,12 @@
 **/.turbo
 corpus/.repos
 corpus/.logs
+
+# Demo deploys upload the working tree (railway up, repo-root context) —
+# secrets and per-demo runtime state must never land in an image. Note:
+# only .vendo/data is excluded; the committed .vendo/*.json contract files
+# (theme/tools/policy/catalog) MUST ship with the app.
+**/.env*
+**/.vendo/data
+apps/*/RESEARCH
+apps/*/docs/verification

@@ -27,11 +27,11 @@ import { migrateLegacyVendoDir } from "../migrate.js";
 import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged, type SourcedExtractedTool } from "./common.js";
 import { withGeneratedDescriptions } from "./describe.js";
 import { deriveDomains } from "./domains.js";
+import { carryEnrichment } from "./enrichment.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
 import { runExtractors } from "./extractors.js";
 import { capturePins } from "./pins.js";
-import { gitTreeHash } from "./watermark.js";
 
 export type SyncReportWithWarnings = SyncReport & {
   warnings: string[];
@@ -259,6 +259,9 @@ async function sourceHash(root: string, srcPath: string, cache: Map<string, stri
 interface VendoDirState {
   previousTools: Array<ExtractedTool | ExtractedToolV3>;
   previousDomains?: DomainManifest;
+  /** The tree hash of the last AI enrichment (v3 `watermark`) — carried
+   *  byte-for-byte by the structural pass; only the enrichment pass moves it. */
+  previousWatermark?: string;
   overrides: OverridesFileV3 | null;
   migration?: {
     /** overrides.json needs rewriting in the v3 format (fold result). */
@@ -337,6 +340,7 @@ async function loadVendoDir(out: string, warnings: string[]): Promise<VendoDirSt
     ...(toolsV3?.domains !== undefined || migrated.tools.domains !== undefined
       ? { previousDomains: toolsV3?.domains ?? migrated.tools.domains }
       : {}),
+    ...(toolsV3?.watermark === undefined ? {} : { previousWatermark: toolsV3.watermark }),
     overrides,
   };
   if (legacyPieces.length === 0) return state;
@@ -380,13 +384,18 @@ export async function vendoSync(options: {
   root: string;
   out?: string;
   strict?: boolean;
+  /** cse lane 1c — false suppresses the `watermark` field entirely
+   *  (workspace-internal syncs, e.g. the demo apps' predev/prebuild hooks,
+   *  do no incremental-AI bookkeeping and must not churn committed files).
+   *  Default true: carry whatever watermark the previous file had. */
+  watermark?: boolean;
 }): Promise<SyncReportWithWarnings> {
   const root = path.resolve(options.root);
   const out = path.resolve(options.out ?? path.join(root, ".vendo"));
   clearAliasCache(); // same-process re-runs (watch mode) must see tsconfig edits
   const warnings: string[] = [];
   const toolsPath = path.join(out, "tools.json");
-  const { previousTools, previousDomains, overrides, migration } = await loadVendoDir(out, warnings);
+  const { previousTools, previousDomains, previousWatermark, overrides, migration } = await loadVendoDir(out, warnings);
 
   // On-disk legacy migration (format v3): write the authored half of the pair
   // and retire capabilities.json/semantics.json before anything else — the
@@ -414,9 +423,16 @@ export async function vendoSync(options: {
   // binding changed serves a different response, so its stale shape hints
   // drop and the next dev-server pass re-infers.
   const semanticsByName = new Map<string, { semantics: ToolSemantics; identity: string }>();
+  const enrichedByName = new Map<string, { tool: ExtractedToolV3; identity: string }>();
   for (const tool of previousTools) {
     const semantics = (tool as ExtractedToolV3).semantics;
     if (semantics !== undefined) semanticsByName.set(tool.name, { semantics, identity: bindingIdentity(tool.binding) });
+    // cse lane 1c — the AI layer persists across structural regenerations the
+    // same way semantics do: keyed by name AND binding identity (a same-named
+    // tool whose binding changed is a different handler; stale judgment drops).
+    if ((tool as ExtractedToolV3).enriched === true) {
+      enrichedByName.set(tool.name, { tool: tool as ExtractedToolV3, identity: bindingIdentity(tool.binding) });
+    }
   }
   const hashCache = new Map<string, string | undefined>();
   const tools: ExtractedToolV3[] = [];
@@ -430,13 +446,23 @@ export async function vendoSync(options: {
     const semantics = carried !== undefined && carried.identity === bindingIdentity(tool.binding)
       ? carried.semantics
       : undefined;
-    tools.push({
+    let next: ExtractedToolV3 = {
       ...tool,
       ...(srcHash === undefined ? {} : { srcHash }),
       ...(semantics === undefined ? {} : { semantics }),
-    });
+    };
+    const enriched = enrichedByName.get(tool.name);
+    if (enriched !== undefined && enriched.identity === bindingIdentity(tool.binding)) {
+      // Re-apply the previous AI judgment through the restrictive clamp: a
+      // fresh scan that got MORE restrictive always beats the stale carry.
+      next = carryEnrichment(next, enriched.tool);
+    }
+    tools.push(next);
   }
-  const watermark = await gitTreeHash(root);
+  // The watermark records the tree at the last AI ENRICHMENT, not the last
+  // structural scan — the structural pass only carries it, so keyless syncs
+  // never advance it past changes the AI has not yet accounted for.
+  const watermark = options.watermark === false ? undefined : previousWatermark;
   const extracted = toolsFileV3Schema.parse({
     format: VENDO_TOOLS_FORMAT_V3,
     tools,

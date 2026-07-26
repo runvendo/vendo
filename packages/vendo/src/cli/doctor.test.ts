@@ -652,6 +652,40 @@ function probeFetchWithTurn(reply = "I can respond.", options: { errorFrame?: bo
 }
 
 describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () => {
+  it("states the winning model credential rung and any active VENDO_MODEL_* pins — nothing more", async () => {
+    const messages = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl: probeFetchWithTurn(),
+      env: {
+        ANTHROPIC_API_KEY: "sk-test",
+        VENDO_MODEL: "claude-opus-4-8",
+        VENDO_MODEL_PAINT: "claude-haiku-4-5",
+      },
+      interactive: false,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.logs).toContain("ok: model credential: explicit ANTHROPIC_API_KEY (anthropic)");
+    expect(messages.logs).toContain("ok: model pins: VENDO_MODEL=claude-opus-4-8, VENDO_MODEL_PAINT=claude-haiku-4-5");
+
+    // No pins → no pins line (and never a role/alias table: the client cannot
+    // know the gateway's server-side alias mappings).
+    const bare = output();
+    expect(await runDoctor({
+      targetDir: await healthy(),
+      fetchImpl: probeFetchWithTurn(),
+      env: { ANTHROPIC_API_KEY: "sk-test" },
+      interactive: false,
+      cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      output: bare.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(bare.logs.some((line) => line.includes("model pins:"))).toBe(false);
+    expect(bare.logs).toContain("ok: model credential: explicit ANTHROPIC_API_KEY (anthropic)");
+  });
+
   it("runs one real model turn over the wired route and exits 0 when it answers", async () => {
     const fetchImpl = probeFetchWithTurn("Yes, I can respond.");
     const messages = output();
@@ -1012,6 +1046,14 @@ describe("vendo doctor error codes + fix_refs", () => {
       expect(ids.length).toBeGreaterThan(0);
       expect([...new Set(ids)].sort()).toEqual([...ids].sort());
     }
+  });
+
+  it("reports per-surface ownership with the overrides enablement caveat (#557)", async () => {
+    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
+    const ownership = report.checks.find((check) => check.id === "config/ownership");
+    expect(ownership).toBeDefined();
+    expect(ownership!.message).toContain("#557");
+    expect(ownership!.message.toLowerCase()).toContain("enablement");
   });
 
   // #478 short-term — npm installs the ai@7 peer conflict without failing, the

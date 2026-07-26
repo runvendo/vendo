@@ -87,6 +87,23 @@ export function outcomeLabel(outcome: AuditEvent["outcome"]): { label: string; t
   return OUTCOMES[outcome] ?? { label: outcome, tone: "running" };
 }
 
+/** Event-aware outcome mapping. Approval-kind events record their resolution
+    in `detail` (the guard's decide writes `{ approved }`, revoke writes
+    `{ grantRevoked }`) with NO wire `outcome` — through the plain mapping
+    above they would read "Running" forever. Everything else defers to
+    {@link outcomeLabel}. */
+export function eventOutcomeLabel(
+  event: Pick<AuditEvent, "kind" | "outcome" | "detail">,
+): { label: string; tone: OutcomeTone } {
+  if (event.outcome === undefined && event.kind === "approval") {
+    const detail = (event.detail ?? {}) as { approved?: unknown; grantRevoked?: unknown };
+    if (detail.approved === true) return { label: "Approved", tone: "ok" };
+    if (detail.approved === false) return { label: "Denied", tone: "blocked" };
+    if (typeof detail.grantRevoked === "string") return { label: "Grant revoked", tone: "ok" };
+  }
+  return outcomeLabel(event.outcome);
+}
+
 const KIND_LABEL: Record<AuditEvent["kind"], string> = {
   "tool-call": "Tool",
   approval: "Approval",

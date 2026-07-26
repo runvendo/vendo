@@ -1271,9 +1271,11 @@ export async function runInit(options: InitOptions): Promise<number> {
       printThemeSummary(summary, output);
     }
 
-    if (polish.ran) {
-      const resynced = await vendoSync({ root, out: join(root, ".vendo") });
-      for (const warning of resynced.warnings) output.error(`warning: ${warning}`);
+    // Enrichment state, one line (cse lane 1c): when the polish ran, its
+    // full-repo enrichment already reported (reportDraftEnrichment wrote
+    // tools.json directly — no resync needed); otherwise say so honestly.
+    if (!polish.ran) {
+      output.log("enrichment: structural-only — extractor defaults stand (add a model key and run `vendo sync` to enrich tool docs)");
     }
 
     // Project-shape enrichment (posthog-analytics §3): bools, closed enums,

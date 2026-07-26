@@ -2,6 +2,7 @@ import type { AuditEvent } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
   describeActivity,
+  eventOutcomeLabel,
   formatAuditTime,
   formatRelativeAuditTime,
   kindGlyph,
@@ -72,6 +73,29 @@ describe("outcomeLabel", () => {
 
   it("treats a missing outcome as still running", () => {
     expect(outcomeLabel(undefined)).toEqual({ label: "Running", tone: "running" });
+  });
+});
+
+describe("eventOutcomeLabel", () => {
+  it("reads a decided approval's resolution from detail — never 'Running' forever", () => {
+    expect(eventOutcomeLabel({ kind: "approval", outcome: undefined, detail: { approved: true } }))
+      .toEqual({ label: "Approved", tone: "ok" });
+    expect(eventOutcomeLabel({ kind: "approval", outcome: undefined, detail: { approved: false } }))
+      .toEqual({ label: "Denied", tone: "blocked" });
+    expect(eventOutcomeLabel({ kind: "approval", outcome: undefined, detail: { grantRevoked: "grt_1" } }))
+      .toEqual({ label: "Grant revoked", tone: "ok" });
+  });
+
+  it("keeps the pending ask and every wire outcome exactly as outcomeLabel maps them", () => {
+    expect(eventOutcomeLabel({ kind: "approval", outcome: "pending-approval", detail: undefined }))
+      .toEqual({ label: "Awaiting approval", tone: "pending" });
+    expect(eventOutcomeLabel({ kind: "tool-call", outcome: "ok", detail: undefined }))
+      .toEqual({ label: "Succeeded", tone: "ok" });
+    // A genuinely in-flight event (no outcome, no decision detail) still runs.
+    expect(eventOutcomeLabel({ kind: "tool-call", outcome: undefined, detail: undefined }))
+      .toEqual({ label: "Running", tone: "running" });
+    expect(eventOutcomeLabel({ kind: "approval", outcome: undefined, detail: undefined }))
+      .toEqual({ label: "Running", tone: "running" });
   });
 });
 

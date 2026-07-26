@@ -195,6 +195,17 @@ interface WorkerModules {
   Worker: typeof import("node:worker_threads").Worker;
 }
 
+/** A resolved specifier the WORKER's plain-Node require can actually load: an
+ *  absolute filesystem path. Under a bundled dev server (Turbopack) the
+ *  bundler intercepts `createRequire(import.meta.url).resolve(...)` and
+ *  returns an externals WRAPPER id like `[externals]/jsdom [external] (…)` —
+ *  it does not throw, but plain require in the worker fails on it (live
+ *  2026-07-23: every island-bearing app failed validation on that message).
+ *  Only real paths may cross into the worker; anything else tries the next
+ *  resolver or skips the gate. */
+export const isWorkerLoadablePath = (path: string): boolean =>
+  /^(?:\/|[A-Za-z]:[\\/])/.test(path);
+
 /** Lazy module resolution, esbuild-pattern: unavailable → gate skips. The
  *  magic comments keep bundlers from walking into jsdom/react-dom. */
 const workerModules = (async (): Promise<WorkerModules | undefined> => {
@@ -208,15 +219,14 @@ const workerModules = (async (): Promise<WorkerModules | undefined> => {
     for (const make of resolvers) {
       try {
         const require_ = make();
-        return {
-          Worker,
-          paths: {
-            react: require_.resolve("react"),
-            reactDom: require_.resolve("react-dom"),
-            reactDomClient: require_.resolve("react-dom/client"),
-            jsdom: require_.resolve("jsdom"),
-          },
+        const paths = {
+          react: require_.resolve("react"),
+          reactDom: require_.resolve("react-dom"),
+          reactDomClient: require_.resolve("react-dom/client"),
+          jsdom: require_.resolve("jsdom"),
         };
+        if (!Object.values(paths).every(isWorkerLoadablePath)) continue;
+        return { Worker, paths };
       } catch {
         continue;
       }
@@ -291,7 +301,11 @@ const renderOne = async (
           return;
         }
         clearTimeout(timer);
-        resolve((message.errors ?? []).map((error) => renderIssue(island, error)));
+        // A result BEFORE ready means the environment setup itself failed
+        // (jsdom/react require) — the island's code never ran, so this is an
+        // environment skip, never an island fault (live 2026-07-23: a
+        // Turbopack externals wrapper here failed every island-bearing app).
+        resolve(ready ? (message.errors ?? []).map((error) => renderIssue(island, error)) : []);
       });
       worker.on("error", (error) => {
         clearTimeout(timer);

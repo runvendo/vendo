@@ -254,15 +254,46 @@ describe("connect dock + tray (ENG-225)", () => {
     await within(tray).findByRole("button", { name: /connect slack/i });
   });
 
-  it("renders no dock when the auto catalog resolves empty", async () => {
+  it("keeps the dock when the auto catalog resolves empty and the tray says so honestly", async () => {
+    // 2026-07 demo feedback — the dock used to vanish whenever the auto
+    // catalog came back empty, which also swallowed fetch failures. Only an
+    // explicit connectors={[]} hides the entry point now.
     wire.state.catalog = [];
-    const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     await screen.findByText("Existing thread");
-    // Poll until the catalog fetch has settled (the attach button renders
-    // regardless of the dock, so the composer being interactive is the
-    // "resolved" signal), then assert the dock stayed absent.
-    await screen.findByRole("button", { name: "Attach files" });
-    await waitFor(() => expect(view.container.querySelector(".fl-dock")).toBeNull());
+    const dock = await screen.findByRole("button", { name: "Connect tools" });
+    fireEvent.click(dock);
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+    await within(tray).findByText("No tools are available to connect yet.");
+  });
+
+  it("keeps the dock when the auto catalog fetch FAILS and the tray offers a retry", async () => {
+    // A failed fetch evicts itself from the per-client cache so every new
+    // consumer mount refetches; a deterministic always-failing catalog (until
+    // the test flips it) keeps the error state stable however many surfaces
+    // remount along the way.
+    let catalogHealthy = false;
+    const flaky: VendoClient = {
+      ...client,
+      connections: {
+        ...client.connections,
+        catalog: async () => {
+          if (!catalogHealthy) throw new Error("kaboom");
+          return [{ toolkit: "slack", connector: "conn_slack" }];
+        },
+      },
+    };
+    render(<VendoProvider client={flaky}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+    // The dock button no longer vanishes on a failed catalog fetch.
+    const dock = await screen.findByRole("button", { name: "Connect tools" });
+    fireEvent.click(dock);
+    const tray = await screen.findByRole("dialog", { name: "Connect tools" });
+    await within(tray).findByText(/Couldn.t load the available tools/);
+    // The retry refetches and the catalog lands.
+    catalogHealthy = true;
+    fireEvent.click(within(tray).getByRole("button", { name: "Try again" }));
+    await within(tray).findByRole("button", { name: /connect slack/i });
   });
 
   it("shows the dock with an active-count badge and opens the tray", async () => {

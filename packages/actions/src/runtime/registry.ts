@@ -122,6 +122,15 @@ interface RegistryConfig {
   fetch?: typeof fetch;
   /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
   capabilities?: CapabilitiesFile;
+  /** Inject the v3 overrides doc directly instead of reading
+   *  `.vendo/overrides.json` from `dir` — the hosted-config seam (cse lane 3):
+   *  the umbrella passes cloud-published overrides here when there is no local
+   *  file. Takes precedence over the file read (mirrors `tools`/`capabilities`).
+   *  The provider form is resolved ONCE through the memoized loadHost (boot-once,
+   *  no hot-swap) and MAY be async so the umbrella can await a first-request
+   *  cloud fetch; resolving to undefined falls back to the `dir` file read.
+   *  `tools.json` always comes from `dir`. */
+  overrides?: OverridesFileV3 | (() => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>);
   /**
    * 04 §6: the guard-bound execution seam every compound step routes through.
    * The umbrella assigns it AFTER `guard.bind(actions)` — read at execution
@@ -734,22 +743,37 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const configuredCapabilities = config.capabilities === undefined
         ? undefined
         : parseCapabilities(config.capabilities, "config.capabilities");
+      // cse lane 3 — an injected overrides doc (hosted config) resolved ONCE
+      // through this memoized loadHost. The provider form may be async so the
+      // umbrella can await a first-request cloud fetch (reliable for the
+      // security-relevant enablement path); it resolves to undefined when the
+      // surface is not cloud-owned, letting the dir read below handle the file.
+      const injectedOverrides = typeof config.overrides === "function"
+        ? await (config.overrides as () => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>)()
+        : config.overrides;
       if (!config.dir) {
         return {
           tools: configuredTools ?? [],
-          overrides: emptyOverrides,
-          compounds: configuredCapabilities?.tools ?? [],
-          briefs: configuredCapabilities?.briefs ?? [],
+          // An injected v3 overrides doc still applies without a .vendo dir
+          // (non-file / cloud-only hosts).
+          overrides: injectedOverrides ?? emptyOverrides,
+          compounds: configuredCapabilities?.tools ?? injectedOverrides?.compounds ?? [],
+          briefs: configuredCapabilities?.briefs ?? injectedOverrides?.briefs ?? [],
         };
       }
       // Format v3 (cse lane 1): each file parses per its own format tag — v1
       // keeps its exact v1 errors, everything else must be v3 and fails loud.
-      const [toolsFile, overridesFile] = await Promise.all([
+      // An injected overrides doc (cse lane 3 hosted config) wins over the
+      // overrides.json read; tools.json still comes from the dir.
+      const [toolsFile, overridesFileRead] = await Promise.all([
         readOptionalVendoJson(config.dir, "tools.json", (value) =>
           vendoFileVersion(value) === 1 ? toolsFileSchema.parse(value) : toolsFileV3Schema.parse(value)),
-        readOptionalVendoJson(config.dir, "overrides.json", (value) =>
-          vendoFileVersion(value) === 1 ? overridesFileSchema.parse(value) : overridesFileV3Schema.parse(value)),
+        injectedOverrides !== undefined
+          ? Promise.resolve(undefined)
+          : readOptionalVendoJson(config.dir, "overrides.json", (value) =>
+            vendoFileVersion(value) === 1 ? overridesFileSchema.parse(value) : overridesFileV3Schema.parse(value)),
       ]);
+      const overridesFile = injectedOverrides ?? overridesFileRead;
       const toolsV3 = toolsFile !== undefined && toolsFile.format === VENDO_TOOLS_FORMAT_V3 ? toolsFile : undefined;
       const overridesV3 = overridesFile !== undefined && overridesFile.format === VENDO_OVERRIDES_FORMAT_V3 ? overridesFile : undefined;
       const toolsV1 = toolsFile !== undefined && toolsFile.format !== VENDO_TOOLS_FORMAT_V3 ? toolsFile : undefined;

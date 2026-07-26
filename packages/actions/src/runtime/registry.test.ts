@@ -109,6 +109,44 @@ describe("createActions registry", () => {
     });
   });
 
+  describe("hosted-config overrides injection (cse lane 3)", () => {
+    const toolsV3 = { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_a"), routeTool("host_b")] };
+    const disable = (name: string) => ({ format: VENDO_OVERRIDES_FORMAT_V3, tools: { [name]: { disabled: true } } });
+    const liveNames = async (actions: ReturnType<typeof createActions>): Promise<string[]> =>
+      (await actions.descriptors()).map((d) => d.name).sort();
+
+    it("(a) unset — no injection reads .vendo/overrides.json exactly as today", async () => {
+      const root = await tempVendo(toolsV3, disable("host_b"));
+      const actions = createActions({ dir: root });
+      expect(await liveNames(actions)).toEqual(["host_a"]);
+    });
+
+    it("(b) injected overrides win over the overrides.json file read", async () => {
+      // The file would hide host_a; the injected doc hides host_b instead. The
+      // umbrella only injects when there is no local file, so at the block level
+      // the injection simply takes precedence and the file is not read.
+      const root = await tempVendo(toolsV3, disable("host_a"));
+      const actions = createActions({ dir: root, overrides: disable("host_b") });
+      expect(await liveNames(actions)).toEqual(["host_a"]);
+    });
+
+    it("(c) injected overrides apply when there is no local file (cloud-owned surface)", async () => {
+      const root = await tempVendo(toolsV3); // no overrides.json on disk
+      const actions = createActions({ dir: root, overrides: disable("host_b") });
+      expect(await liveNames(actions)).toEqual(["host_a"]);
+    });
+
+    it("accepts an async provider resolved once through the memoized loadHost", async () => {
+      const root = await tempVendo(toolsV3);
+      // Async provider — the umbrella awaits a first-request cloud fetch here.
+      const provider = vi.fn(async () => disable("host_b"));
+      const actions = createActions({ dir: root, overrides: provider });
+      expect(await liveNames(actions)).toEqual(["host_a"]);
+      await actions.descriptors(); // second call must reuse the memoized host
+      expect(provider).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("throws validation errors for malformed files", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-actions-bad-"));
     roots.push(root);
