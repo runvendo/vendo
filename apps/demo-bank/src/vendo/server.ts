@@ -40,22 +40,6 @@ export const vendo = createVendo({
     experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
-    // Gate candidate config (rematch gate, 2026-07-25): three measured arms,
-    // selected at boot by VENDO_GATE_ARM — the arm order is randomized PER
-    // PROMPT (committed schedule), so per-arm commits would force a rebuild
-    // between every create; one env-switched seam keeps the diff auditable.
-    //   A (unset) = production defaults: pipeline {}
-    //   B = { endPass: true } — current contract + data-sighted verify
-    //   C = { exemplarContract: true, endPass: true }
-    // Configuration selection, not tuning. REVERTED after the run.
-    pipeline: process.env.VENDO_GATE_ARM === "C"
-      ? { exemplarContract: true, endPass: true }
-      : process.env.VENDO_GATE_ARM === "B"
-        ? { endPass: true }
-        : {},
-    // Gate observability only — server-log per-stage diagnostics so the run
-    // ledger can report data-verify adoption and repair engagement per prompt.
-    onPipeline: (event) => console.log("[vendo pipeline]", JSON.stringify(event)),
   },
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
