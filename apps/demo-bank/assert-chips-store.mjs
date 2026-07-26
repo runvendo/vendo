@@ -1,7 +1,7 @@
 // Criterion 25 evidence: assert VIA THE STORE that each curated chip prompt
 // produced a real pipeline-generated app (not a fixture). Run from the host
 // app dir AFTER stopping its dev server (PGlite single-writer):
-//   node /tmp/assert-chips-store.mjs .vendo/data <collection> <subject>
+//   node assert-chips-store.mjs .vendo/data <collection> <subject>
 import { createStore } from "@vendoai/store";
 
 const [dataDir, collection, subject] = process.argv.slice(2);
@@ -23,17 +23,19 @@ for (const entry of entries) {
     continue;
   }
   const doc = appRow.data.doc ?? {};
-  const nodes = Array.isArray(doc.nodes) ? doc.nodes.length : 0;
-  const generated = Object.keys(doc.components ?? {}).length;
+  const tree = doc.tree ?? {};
+  const nodeCount = Object.keys(tree.nodes ?? {}).length;
+  const queryCount = Object.keys(tree.queries ?? {}).length;
   const fixture = String(entry.appId).startsWith("app_demo_");
   console.log(
     `${entry.key}: appId=${entry.appId} subject=${appRow.data.subject} name=${JSON.stringify(doc.name)} ` +
-    `nodes=${nodes} generatedComponents=${generated} fixture=${fixture}`,
+    `ui=${doc.ui} treeNodes=${nodeCount} treeQueries=${queryCount} fixture=${fixture}`,
   );
-  if (fixture || appRow.data.subject !== subject || nodes === 0) failures += 1;
+  if (fixture || appRow.data.subject !== subject || nodeCount === 0) failures += 1;
 }
 if (failures > 0) {
   console.error(`FAIL: ${failures} entries not real pipeline output`);
   process.exit(1);
 }
 console.log(`PASS: all ${entries.length} chip apps are real pipeline-generated store rows`);
+process.exit(0);
