@@ -5,6 +5,16 @@ import { cn } from "@/lib/cn"
  * green full stop as the entire brand device. The favicon (src/app/icon.svg)
  * mirrors it as "c." on an ink tile.
  */
+/** The brand device on its own — the ledger-green full stop — for tight spots
+ *  (launcher icon) where the wordmark doesn't fit. Sized by the caller. */
+export function CadenceMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="#1e7f53" />
+    </svg>
+  )
+}
+
 export function CadenceLogo({
   tone = "dark",
   size = 20,

@@ -1912,7 +1912,8 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     // The nested `body` wrapper is visible — flat args against this tool were
     // the live P3 failure (the host route read an empty JSON body and ran
     // with defaults).
-    expect(captured).toContain("host_createOrder [write] (input: {body: {merchant, amountCents}})");
+    // amountCents carries its unit annotation (re-gate 2026-07-26 I5-C).
+    expect(captured).toContain("host_createOrder [write] (input: {body: {merchant, amountCents (integer cents)}})");
     expect(captured).toContain("host_transfer [destructive] (input: {amount, recipient_name})");
   });
 

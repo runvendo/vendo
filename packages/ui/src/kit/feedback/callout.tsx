@@ -1,15 +1,19 @@
 /**
- * Callout — a toned info/success/warning/danger notice (W2 §The Kit).
+ * Callout — a toned info/accent/success/warning/danger notice (W2 §The Kit).
  * Distinct from Disclaimer: Callout highlights real information; Disclaimer is
  * the honesty arm for when no tool backs the ask.
  */
 import type { PropsWithChildren } from "react";
 import { font, t } from "../tokens.js";
 
-export type CalloutTone = "info" | "success" | "warning" | "danger";
+export type CalloutTone = "info" | "accent" | "success" | "warning" | "danger";
 
 const TONE: Record<CalloutTone, { accent: string; icon: string }> = {
   info: { accent: t.accent, icon: "ⓘ" },
+  // "accent" is the tone the sibling vocabularies teach (Badge/EnumBadge/
+  // Stat/Progress), so generated code reaches for it constantly — re-gate
+  // 2026-07-26 arm C crashed on it four times. First-class, brand-accented.
+  accent: { accent: t.accent, icon: "●" },
   success: { accent: "#1e7f53", icon: "✓" },
   warning: { accent: "#b8860b", icon: "▲" },
   danger: { accent: t.danger, icon: "✕" },
@@ -21,7 +25,13 @@ export interface CalloutProps {
 }
 
 export function Callout({ tone = "info", title, children }: PropsWithChildren<CalloutProps>) {
-  const { accent, icon } = TONE[tone];
+  // Unknown tone values fall back to info instead of crashing: generated
+  // island code passes arbitrary strings, and a themed notice with the wrong
+  // color always beats "Node could not render: Cannot destructure 'accent'".
+  // Object.hasOwn, not a bare index: an unvalidated tone like "constructor"
+  // or "toString" would otherwise pick up Object.prototype members instead
+  // of falling back (review 2026-07-26).
+  const { accent, icon } = Object.hasOwn(TONE, tone) ? TONE[tone] : TONE.info;
   return (
     <div
       data-kit="Callout"

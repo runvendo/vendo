@@ -65,7 +65,14 @@ export interface ToolConsequence {
   post: string;
 }
 
-export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta): ToolPresentation {
+export function toolPresentation(
+  name: string,
+  args?: unknown,
+  meta?: ToolMeta,
+  /** The descriptor's authored label, when the caller has the descriptor
+      (approval surfaces do; a bare tool beat does not). */
+  descriptorTitle?: string,
+): ToolPresentation {
   const toolkit = toolkitFromToolName(name);
   const logoUrl = toolkit ? toolkitLogoUrl(toolkit) : undefined;
   const flat = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
@@ -74,7 +81,7 @@ export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta):
     : typeof flat.schedule === "string" ? flat.schedule
     : undefined;
   const eyebrow = trigger ? "Automation · needs your approval" : "Needs your approval";
-  const title = toolTitle(name, meta);
+  const title = toolTitle(name, meta, descriptorTitle);
 
   let description = meta?.description;
   let sub: string | undefined;

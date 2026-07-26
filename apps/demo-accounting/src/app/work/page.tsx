@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowUpRight, CheckCircle2, ClipboardList, FileSearch, FileStack } from "lucide-react"
 import useSWR from "swr"
+import { openVendoConversation } from "@vendoai/ui/chrome"
 import { Avatar } from "@/components/clients/meta"
 import { BADGE_VARIANTS } from "@/components/ui/badge"
 import { Card, CardHeader } from "@/components/ui/card"
@@ -75,6 +76,24 @@ function TaskRow({ task }: { task: Task }) {
             <span className="truncate text-[12px] text-ink-soft">{task.client.assignee.name}</span>
           </div>
         )}
+        {/* demo-refresh Part 4 — quiet hover affordance: the same programmatic
+            seam VendoTrigger uses (openVendoConversation), custom-styled so it
+            reads as a Cadence text button. Prefills the overlay, never sends;
+            preventDefault keeps the row's navigation from firing. */}
+        <button
+          type="button"
+          aria-label={`Ask Cadence about ${task.client.businessName}`}
+          className="shrink-0 rounded-md px-2 py-1 text-[12px] font-medium text-ink-faint opacity-0 transition-opacity hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+          onClick={e => {
+            e.preventDefault()
+            e.stopPropagation()
+            openVendoConversation({
+              prompt: `What's the story with this client's documents, and should I follow up?\n\nWork item: ${task.title} · ${task.detail} · filing deadline ${formatDate(task.client.filingDeadline)} (${days < 0 ? `${-days}d overdue` : days === 0 ? "due today" : `in ${days} days`})`,
+            })
+          }}
+        >
+          Ask Cadence
+        </button>
         <div className="w-28 shrink-0 text-right">
           <p className="text-[12px] text-ink-soft tabular-nums">
             {formatDate(task.client.filingDeadline)}

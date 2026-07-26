@@ -99,6 +99,29 @@ describe("demoConfigSchema / parseDemoConfig", () => {
     const config = { ...validConfig(), caps: { ...validConfig().caps, extra: true } }
     expect(() => parseDemoConfig(config)).toThrow()
   })
+
+  it("accepts permanent: true with no expiresAt", () => {
+    const config: Record<string, unknown> = { ...validConfig(), permanent: true }
+    delete config.expiresAt
+    expect(parseDemoConfig(config)).toEqual(config)
+  })
+
+  it("accepts permanent: true alongside an expiresAt (permanence wins at runtime)", () => {
+    const config = { ...validConfig(), permanent: true }
+    expect(parseDemoConfig(config)).toEqual(config)
+  })
+
+  it("rejects a config with neither permanent: true nor expiresAt", () => {
+    const config: Record<string, unknown> = { ...validConfig() }
+    delete config.expiresAt
+    expect(() => parseDemoConfig(config)).toThrow(/expiresAt.*required unless permanent/i)
+    expect(() => parseDemoConfig({ ...config, permanent: false })).toThrow(/expiresAt.*required unless permanent/i)
+  })
+
+  it("rejects a non-boolean permanent", () => {
+    const config = { ...validConfig(), permanent: "yes" }
+    expect(() => parseDemoConfig(config)).toThrow(/permanent/i)
+  })
 })
 
 // Structural invariants over the checked-in demo.config.json. These must hold
@@ -203,5 +226,15 @@ describe("isExpired", () => {
     const config = { ...validConfig(), expiresAt: "2030-01-01T00:00:00Z" }
     expect(isExpired(config, new Date("2030-01-01T00:00:00Z"))).toBe(true)
     expect(isExpired(config, new Date("2030-01-01T00:00:01Z"))).toBe(true)
+  })
+
+  it("never expires a permanent demo, even past a stale expiresAt", () => {
+    const config = { ...validConfig(), permanent: true, expiresAt: "2020-01-01T00:00:00Z" }
+    expect(isExpired(config, new Date("2099-01-01T00:00:00Z"))).toBe(false)
+    expect(isExpired({ id: "x", permanent: true } as never, new Date("2099-01-01T00:00:00Z"))).toBe(false)
+  })
+
+  it("fails closed on a non-permanent config with no expiresAt", () => {
+    expect(isExpired({ permanent: false }, new Date("2020-01-01T00:00:00Z"))).toBe(true)
   })
 })

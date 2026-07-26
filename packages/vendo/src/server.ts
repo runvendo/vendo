@@ -6,7 +6,8 @@ import {
   type Connector,
   type ServerActionHandler,
 } from "@vendoai/actions";
-import { createAgent, type VendoAgent } from "@vendoai/agent";
+import { createAgent, VENDO_TOOL_PACK_PREFIX, type VendoAgent } from "@vendoai/agent";
+import { memoizedSurfaceMenu } from "./surface-menu.js";
 import {
   buildEnv,
   createApps,
@@ -31,6 +32,7 @@ import {
   type ComponentCatalog,
   type ComponentRegistry,
   type Json,
+  type KnowledgeAdapter,
   type PermissionGrant,
   type Principal,
   type RunContext,
@@ -42,6 +44,7 @@ import {
   type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
+import { createKnowledgeTools } from "@vendoai/knowledge";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
@@ -254,6 +257,10 @@ export interface CreateVendoConfig {
   brief?: string;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
+  /** Knowledge K1 — the product knowledge base seam (core's KnowledgeAdapter).
+      Configured, it composes the `vendo_knowledge_search` agent tool; unset,
+      the tool does not exist (precedence: selectKnowledge). */
+  knowledge?: KnowledgeAdapter;
   connectors?: Connector[];
   /** 04-actions §3 — an explicit connections adapter; always wins over the
       defaults (precedence: selectConnections). */
@@ -500,6 +507,15 @@ function selectConnectors(configured: Connector[] | undefined): Connector[] {
     return [cloudTools({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) })];
   }
   return [];
+}
+
+/** ADAPTER RULE, knowledge seam: which KnowledgeAdapter (if any) backs the
+    `vendo_knowledge_search` tool. v1 precedence: an explicitly passed adapter
+    or nothing — no VENDO_API_KEY cloud default yet (that arrives with the
+    hosted knowledge engine, K3); unconfigured means the tool simply does not
+    compose, so the agent never advertises a knowledge base the host lacks. */
+function selectKnowledge(configured: KnowledgeAdapter | undefined): KnowledgeAdapter | undefined {
+  return configured;
 }
 
 /** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
@@ -1464,6 +1480,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     semantics: () => hostSemanticsProvider()?.semantics,
     domains: () => hostSemanticsProvider()?.domains,
+    // Re-gate 2026-07-26 finding 2 — the create-time shape sampler skips
+    // connector tools whose toolkit is not connected for the caller. Backed by
+    // the same connections lookup (and per-subject cache) the agent's
+    // connected-toolkit loadout seed rides; `connectedToolkitsFor` is a
+    // hoisted function declaration defined next to that seed below.
+    connectedToolkits: (toolkitCtx) => connectedToolkitsFor(toolkitCtx),
     secrets,
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)
@@ -1483,6 +1505,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   });
   resolveAppToolRisk = apps.agentToolRisk;
   actions.add(apps.agentTools());
+  // Knowledge K1 — the tool exists exactly when an adapter is configured;
+  // no adapter, no `vendo_knowledge_search` in any descriptor surface.
+  const knowledge = selectKnowledge(config.knowledge);
+  if (knowledge !== undefined) actions.add(createKnowledgeTools(knowledge));
   const missSurface = actions.descriptors()
     .then(capabilitySurfaceSnapshot)
     .catch(() => capabilitySurfaceSnapshot([]));
@@ -1537,13 +1563,23 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // `vendo_tools_search`. The search seam is the SAME guard-bound registry the
     // agent executes through — a searched-in tool has no unguarded path.
     toolSearch: {
-      search: (query, options) => actions.search(query, options),
+      // A curated agent menu has to hold at BOTH doors into the toolset: the
+      // per-turn seed below and search, which materializes hits into the live
+      // toolset mid-turn. Filtering only the seed would let the model search
+      // its way back to an off-menu tool.
+      search: async (query, options) => onAgentMenu(await actions.search(query, options), (match) => match.name),
       // Connection-scoped loadout seed (spec 2026-07-20): each turn starts
       // with host tools + the principal's connected toolkits — never an
       // alphabetical slice of a lazy catalog. `connections` is declared below
       // this composition; turns only run after createVendo returns, so the
       // closure reference is safe.
       seed: (ctx) => loadoutSeedFor(ctx),
+      // The curated agent menu also binds an explicit `agent.loadout`: host
+      // config chooses WITHIN the menu, it does not escape it.
+      menu: async () => {
+        const menu = await agentMenu();
+        return menu === undefined ? undefined : [...menu];
+      },
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
       ...(config.agent?.loadout === undefined ? {} : { loadout: config.agent.loadout }),
     },
@@ -1553,27 +1589,52 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // only (warn, never the turn). Bounded so long-lived deployments don't grow.
   const CONNECTED_TOOLKITS_TTL_MS = 60_000;
   const connectedToolkitsCache = new Map<string, { at: number; toolkits: string[] }>();
-  async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
+  // `surfaces.agent` (.vendo/overrides.json): the host's curated agent menu.
+  // Enforced HERE, at the composition seam, and not inside the registry —
+  // `actions.descriptors()` is also what the MCP door and the host's own code
+  // read, and those surfaces have their own menus. Successes are cached for the
+  // process (a menu is boot config); failures are warned and never cached (see
+  // memoizedSurfaceMenu).
+  const agentMenu = memoizedSurfaceMenu(() => actions.surfaceMenu("agent"));
+  /** Keep only entries the agent menu offers. Vendo's OWN `vendo_*` runtime
+   *  tools are never curated away: surfaces curate a product's API surface, not
+   *  the runtime's plumbing (gating `vendo_apps_*` or `vendo_tools_search` out
+   *  would break the product, not trim it). */
+  async function onAgentMenu<T>(entries: T[], nameOf: (entry: T) => string): Promise<T[]> {
+    const menu = await agentMenu();
+    if (menu === undefined) return entries;
+    return entries.filter((entry) => {
+      const name = nameOf(entry);
+      return name.startsWith(VENDO_TOOL_PACK_PREFIX) || menu.has(name);
+    });
+  }
+  // Hoisted (function declaration): the apps composition above references it
+  // as the AppsConfig.connectedToolkits seam; `connections` is declared below
+  // and only read at request time (same pattern as loadoutSeedFor).
+  async function connectedToolkitsFor(ctx: RunContext): Promise<string[]> {
     const subject = ctx.principal.subject;
     const cached = connectedToolkitsCache.get(subject);
-    let toolkits: string[];
     if (cached !== undefined && Date.now() - cached.at < CONNECTED_TOOLKITS_TTL_MS) {
-      toolkits = cached.toolkits;
-    } else {
-      try {
-        const accounts = await connections.list(ctx.principal);
-        toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
-      } catch (error) {
-        console.warn(
-          "[vendo] connected-toolkits lookup failed; seeding host tools only:",
-          error instanceof Error ? error.message : error,
-        );
-        toolkits = [];
-      }
-      if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
-      connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+      return cached.toolkits;
     }
-    return actions.loadoutSeed(toolkits);
+    let toolkits: string[];
+    try {
+      const accounts = await connections.list(ctx.principal);
+      toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
+    } catch (error) {
+      console.warn(
+        "[vendo] connected-toolkits lookup failed; treating every toolkit as unconnected:",
+        error instanceof Error ? error.message : error,
+      );
+      toolkits = [];
+    }
+    if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
+    connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+    return toolkits;
+  }
+  async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
+    const toolkits = await connectedToolkitsFor(ctx);
+    return onAgentMenu(await actions.loadoutSeed(toolkits), (name) => name);
   }
   // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
   // disk rows, then cascade each swept subject into the agent's in-memory
@@ -1707,6 +1768,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       store,
       oauth: oauthSeam,
       apps: appsPort,
+      // The host's curated door menu (`surfaces.mcp`). Passed as a provider
+      // because composition is sync and resolving the authored file is not; the
+      // door resolves it once. The DOOR never reads `.vendo` itself — block
+      // layering keeps mcp off actions, so the file stays the umbrella's to
+      // read and the wire stays the door's to shape.
+      menuTools: () => actions.surfaceMenu("mcp"),
       mount: MCP_MOUNT,
       ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
       // 10-mcp §3.1/§3.2 — broker-fronted compositions: trust the external

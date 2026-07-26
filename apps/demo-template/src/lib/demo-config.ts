@@ -66,11 +66,30 @@ export const demoConfigSchema = z
     ctaUrl: z.string().url("must be a valid URL"),
     beats: z.array(demoBeatSchema).min(1, "must be a non-empty array"),
     caps: demoCapsSchema,
-    expiresAt: z.string().datetime({
-      message: 'must be a UTC ISO-8601 date-time ending in "Z" (e.g. 2026-01-01T00:00:00Z)',
-    }),
+    /**
+     * First-class permanence: a `permanent: true` demo never expires — the
+     * caps guard skips the expiry refusal, `demo:reap` skips the row, and the
+     * router routes it regardless of any `expiresAt`. Standing demos (Maple)
+     * declare this instead of faking a far-future expiry.
+     */
+    permanent: z.boolean().optional(),
+    expiresAt: z
+      .string()
+      .datetime({
+        message: 'must be a UTC ISO-8601 date-time ending in "Z" (e.g. 2026-01-01T00:00:00Z)',
+      })
+      .optional(),
   })
   .strict()
+  .superRefine((config, context) => {
+    if (config.permanent !== true && config.expiresAt === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["expiresAt"],
+        message: "is required unless permanent is true",
+      })
+    }
+  })
 
 export type DemoConfig = z.infer<typeof demoConfigSchema>
 
@@ -96,8 +115,13 @@ export function parseDemoConfig(input: unknown, source = "demo config"): DemoCon
 
 /**
  * Pure expiry check — `now` is explicit so callers (and tests) don't depend
- * on wall-clock time. A demo is expired at or after its `expiresAt` instant.
+ * on wall-clock time. A permanent demo never expires; otherwise a demo is
+ * expired at or after its `expiresAt` instant (and, fail closed, a
+ * non-permanent config with no `expiresAt` — unreachable through
+ * {@link parseDemoConfig} — reads as expired).
  */
-export function isExpired(config: Pick<DemoConfig, "expiresAt">, now: Date): boolean {
+export function isExpired(config: Pick<DemoConfig, "expiresAt" | "permanent">, now: Date): boolean {
+  if (config.permanent === true) return false
+  if (config.expiresAt === undefined) return true
   return now.getTime() >= new Date(config.expiresAt).getTime()
 }

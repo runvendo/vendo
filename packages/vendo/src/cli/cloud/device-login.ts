@@ -5,6 +5,7 @@ import { option } from "./args.js";
 import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
 import { deletePendingClaim, readPendingClaim, writePendingClaim } from "./pending-claim.js";
+import { writeCloudSession, type CloudSession } from "./session.js";
 import { upsertEnvLocal } from "../cloud-init.js";
 import { browserOpenCommand } from "../playground.js";
 import { CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
@@ -97,6 +98,25 @@ function ceremonyFrom(value: unknown): Ceremony {
     throw new Error("Vendo Cloud returned an invalid claim ceremony");
   }
   return body as Ceremony;
+}
+
+/**
+ * Unified auth: the device-claim (`oauth/token`) response may carry the
+ * account-level Supabase session ALONGSIDE the minted project key. The key is
+ * the top-level `access_token` (a `vnd_` string), so the session — whose own
+ * `access_token` is a Supabase JWT — arrives nested under `session` to avoid
+ * the name collision. Returns it only when well-formed (a string
+ * `access_token`); anything else (older console, absent, malformed) → null, so
+ * the caller stays key-only with no session file and no crash.
+ */
+function accountSessionFrom(body: unknown): CloudSession | null {
+  const session = (body as { session?: unknown } | null)?.session;
+  if (typeof session !== "object" || session === null) return null;
+  const candidate = session as Partial<CloudSession>;
+  if (typeof candidate.access_token !== "string") return null;
+  if (candidate.refresh_token !== undefined && typeof candidate.refresh_token !== "string") return null;
+  if (candidate.expires_at !== undefined && typeof candidate.expires_at !== "number") return null;
+  return candidate as CloudSession;
 }
 
 async function postJson(
@@ -308,6 +328,20 @@ export async function runDeviceLogin(
           );
         }
         await deletePendingClaim(claimCwd, pendingHome);
+        // Unified auth: one login establishes the account-level session too.
+        // When the claim response carries a Supabase session alongside the key,
+        // persist it so account-level `cloud` subcommands work immediately with
+        // no second ceremony (older consoles omit it — key-only). Best-effort:
+        // the key is the primary credential and is already saved, so a
+        // session-write failure must never turn a successful login into a fault.
+        const session = accountSessionFrom(poll.body);
+        if (session !== null) {
+          try {
+            await writeCloudSession(session, pendingHome);
+          } catch {
+            // A session-write failure must not strand a successful key login.
+          }
+        }
         // Never print the key itself — .env.local is the hand-off, last4 the
         // receipt. A resumed run names the full path: it may differ from cwd.
         output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to ${

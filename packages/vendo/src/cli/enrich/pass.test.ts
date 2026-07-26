@@ -118,6 +118,8 @@ describe("runSyncEnrichment", () => {
     expect(channel.notes.join("\n")).toContain("2 tools unenriched");
     expect(channel.warns).toEqual([]);
     expect(await readFile(fixture.toolsPath, "utf8")).toBe(before);
+    // titles are an AI-written label: the structural pass invents none
+    expect(before).not.toContain("title");
   });
 
   it("keyless but fully enriched and unchanged: says up to date, not structural-only", async () => {

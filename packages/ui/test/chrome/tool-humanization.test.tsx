@@ -159,6 +159,30 @@ describe("ApprovalCard humanization", () => {
     expect(screen.getByLabelText("Approval for Remove invoice")).toBeTruthy();
   });
 
+  it("prefers the descriptor's authored title over the prettified name", () => {
+    const titled: ApprovalRequest = {
+      ...approval,
+      descriptor: { ...approval.descriptor, title: "Delete this invoice for good" },
+    };
+    render(<VendoProvider client={client}><ApprovalCard approval={titled} onDecide={() => undefined} /></VendoProvider>);
+    const card = screen.getByLabelText("Approval for Delete this invoice for good");
+    expect(within(card).getByText("Delete this invoice for good")).toBeTruthy();
+    expect(screen.queryByText("Delete invoice")).toBeNull();
+  });
+
+  it("still lets a host-supplied label win over the authored title", () => {
+    const titled: ApprovalRequest = {
+      ...approval,
+      descriptor: { ...approval.descriptor, title: "Delete this invoice for good" },
+    };
+    render(
+      <VendoProvider client={client} tools={{ host_delete_invoice: { label: "Remove invoice" } }}>
+        <ApprovalCard approval={titled} onDecide={() => undefined} />
+      </VendoProvider>,
+    );
+    expect(screen.getByLabelText("Approval for Remove invoice")).toBeTruthy();
+  });
+
   it("shows the humanized context byline by default and hides it when showContext is false", () => {
     const view = render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={() => undefined} /></VendoProvider>);
     expect(screen.getByText(/Runs as you · asked in an app · app_1/)).toBeTruthy();

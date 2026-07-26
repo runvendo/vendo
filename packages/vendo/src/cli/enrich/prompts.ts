@@ -13,11 +13,16 @@ import type { EnrichmentDiff } from "./diff.js";
 export const ENRICHMENT_OUTPUT_RULES = [
   "Rules:",
   "- Reply with ONLY one fenced json block matching:",
-  '  { "tools": [{ "name", "description"?, "risk"?, "critical"?, "disabled"?, "audience"?, "semantics"?, "reasoning"? }], "narrative": string }',
+  '  { "tools": [{ "name", "title"?, "description"?, "risk"?, "critical"?, "disabled"?, "audience"?, "semantics"?, "reasoning"? }], "narrative": string }',
   "- tools: include ONLY names from the catalog above. You may not add, rename, or rebind tools;",
   "  bindings and input schemas are machine-owned and ignored if you send them.",
   "- description: rewrite so an agent choosing tools understands what the handler actually does",
   "  (read the source). <= 300 chars.",
+  '- title: the short human label a PERSON sees for this tool in an MCP client\'s menu or an',
+  '  approval card — imperative, sentence case, no tool name, no punctuation ("Send payment",',
+  '  "List recent transactions"). <= 60 chars. Describe only what the tool actually does; a',
+  "  title that promises more than the handler delivers is a lie, not a label. Write one for",
+  "  every tool you touch.",
   "- risk: you may RAISE risk (read->write->destructive) when the handler is more dangerous than",
   "  labeled; you can never lower it — a lower grade is ignored. Mark irreversible operations",
   "  critical: true.",
@@ -48,6 +53,7 @@ export function catalogFacts(tools: ExtractedToolV3[]): string {
     ...(tool.disabled === true ? { disabled: true } : {}),
     ...(tool.audience === undefined ? {} : { audience: tool.audience }),
     ...(tool.enriched === true ? { enriched: true } : {}),
+    ...(tool.title === undefined ? {} : { title: tool.title }),
     description: tool.description,
   })), null, 2);
 }

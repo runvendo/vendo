@@ -129,6 +129,22 @@ describe("buildRegistryPayload", () => {
     });
   });
 
+  it("carries permanent: true PLUS the compat expiry (2026-07-24 incident: a pre-permanent reaper treats a missing expiresAt as invalid-expiry and tears the demo down)", () => {
+    const { expiresAt: _expiresAt, ...permanentConfig } = { ...config, permanent: true };
+    expect(buildRegistryPayload(permanentConfig, "demo-maple.up.railway.app")).toEqual({
+      id: "linear",
+      url: "https://demo-maple.up.railway.app",
+      prospect: "Linear",
+      permanent: true,
+      expiresAt: "2126-01-01T00:00:00.000Z",
+    });
+  });
+
+  it("a permanent config's own expiresAt is superseded by the compat expiry (permanent wins)", () => {
+    expect(buildRegistryPayload({ ...config, permanent: true }, "demo-maple.up.railway.app").expiresAt)
+      .toBe("2126-01-01T00:00:00.000Z");
+  });
+
   it("normalizes a domain that arrives with protocol or trailing slash", () => {
     expect(buildRegistryPayload(config, "https://demo-linear.up.railway.app/").url)
       .toBe("https://demo-linear.up.railway.app");
