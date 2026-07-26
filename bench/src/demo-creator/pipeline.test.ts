@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  DemoParkedError,
   parseDemoPipelineArgs,
   runDemoPipeline,
   validateProspectUrl,
@@ -25,7 +26,13 @@ describe("parseDemoPipelineArgs", () => {
       screenshots: ["/tmp/a.png", "/tmp/b.png"],
       skipDeploy: true,
       targetDir: "apps",
+      port: 3150,
     });
+  });
+
+  it("refuses port 3000 (capture-harness lock)", () => {
+    expect(() => parseDemoPipelineArgs(["--id", "x", "--prospect", "X", "--url", "https://x.example", "--port", "3000"]))
+      .toThrow("3000");
   });
 
   it("requires --id, --prospect and --url", () => {
@@ -104,6 +111,12 @@ function stubStages(repoRoot: string, overrides: Partial<PipelineStages> = {}): 
         fonts: { families: [], faceSrcs: [], webfontLinks: [] },
       },
     })),
+    judge: vi.fn(async () => ({
+      rounds: [],
+      parked: false,
+      reportPath: path.join(appDir, "RESEARCH", "FIDELITY.md"),
+      costUsd: 0,
+    })),
     rewrite: vi.fn(async (_args, io) => {
       // Exercise the pipeline's stage runner passthrough like the real
       // rewrite does for its substages.
@@ -131,6 +144,7 @@ const pipelineArgs = {
   url: "https://linear.app",
   targetDir: "apps",
   skipDeploy: true,
+  port: 3150,
 };
 
 describe("runDemoPipeline", () => {
@@ -180,6 +194,26 @@ describe("runDemoPipeline", () => {
       exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
       write: () => {},
     })).rejects.toThrow("rewrite agent(s) failed");
+    expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(true);
+  });
+
+  it("parks (typed error, app dir kept, no deploy path) when the judge stays below the bar", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot, {
+      judge: vi.fn(async () => ({
+        rounds: [],
+        parked: true,
+        reportPath: path.join(repoRoot, "apps", "demo-linear", "RESEARCH", "FIDELITY.md"),
+        costUsd: 2,
+      })),
+    });
+    await expect(runDemoPipeline(pipelineArgs, {
+      repoRoot,
+      stages,
+      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      write: () => {},
+    })).rejects.toThrow(DemoParkedError);
     expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(true);
   });
 

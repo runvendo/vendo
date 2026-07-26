@@ -4,6 +4,7 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { runDemoCreate, type DemoCreateArgs, type DemoCreateResult } from "./create.js";
 import { defaultExec, type ExecFn } from "./deploy.js";
+import { runJudgeLoop, type JudgeLoopArgs, type JudgeLoopIo, type JudgeLoopResult } from "./judge.js";
 import { runDemoResearch, type DemoResearchArgs, type DemoResearchResult } from "./research.js";
 import { runRewrite, type RewriteArgs, type RewriteIo, type RewriteResult } from "./rewrite.js";
 
@@ -31,9 +32,11 @@ export interface DemoPipelineArgs {
   screenshots?: string[];
   /** Stop after the local stages (no Railway, no registry row). */
   skipDeploy: boolean;
+  /** Local port for the judge/gate boots — never 3000 (capture-harness lock). */
+  port: number;
 }
 
-const valueOptions = new Set(["--id", "--prospect", "--url", "--cta-url", "--target-dir", "--screenshots"]);
+const valueOptions = new Set(["--id", "--prospect", "--url", "--cta-url", "--target-dir", "--screenshots", "--port"]);
 const flagOptions = new Set(["--skip-deploy"]);
 
 export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
@@ -60,6 +63,10 @@ export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
   const url = options.get("--url");
   if (url === undefined) throw new Error("--url is required (the prospect site the pipeline researches)");
   const ctaUrl = options.get("--cta-url");
+  const rawPort = options.get("--port");
+  const port = rawPort === undefined ? 3150 : Number(rawPort);
+  if (!Number.isInteger(port) || port <= 0) throw new Error(`--port must be a positive integer (received ${rawPort})`);
+  if (port === 3000) throw new Error("--port 3000 is reserved for the capture harness's shared lock — pick another port");
   const rawScreenshots = options.get("--screenshots");
   let screenshots: string[] | undefined;
   if (rawScreenshots !== undefined) {
@@ -72,9 +79,22 @@ export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
     url,
     targetDir: options.get("--target-dir") ?? "apps",
     skipDeploy: flags.has("--skip-deploy"),
+    port,
     ...(ctaUrl === undefined ? {} : { ctaUrl }),
     ...(screenshots === undefined ? {} : { screenshots }),
   };
+}
+
+/** A parked run: fidelity stayed below the bar after every fix round. The
+ * evidence (FIDELITY.md, judge screenshots, the app dir) is kept; nothing is
+ * deployed. Callers exit non-zero but should NOT treat this as a crash. */
+export class DemoParkedError extends Error {
+  readonly reportPath: string;
+  constructor(message: string, reportPath: string) {
+    super(message);
+    this.name = "DemoParkedError";
+    this.reportPath = reportPath;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,12 +144,14 @@ export interface PipelineStages {
   create: (args: DemoCreateArgs, options: { repoRoot: string }) => Promise<DemoCreateResult>;
   research: (args: DemoResearchArgs, options: { repoRoot: string }) => Promise<DemoResearchResult>;
   rewrite: (args: RewriteArgs, io: RewriteIo) => Promise<RewriteResult>;
+  judge: (args: JudgeLoopArgs, io: JudgeLoopIo) => Promise<JudgeLoopResult>;
 }
 
 const defaultStages: PipelineStages = {
   create: runDemoCreate,
   research: runDemoResearch,
   rewrite: runRewrite,
+  judge: runJudgeLoop,
 };
 
 export interface PipelineIo {
@@ -145,6 +167,7 @@ export interface DemoPipelineResult {
   appPath: string;
   timings: StageTiming[];
   rewrite: RewriteResult;
+  judge: JudgeLoopResult;
 }
 
 export function timingsPath(appDir: string): string {
@@ -218,7 +241,26 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       },
     );
 
-    return { appDir, appPath: path.relative(io.repoRoot, appDir), timings, rewrite };
+    // The judge loop parks rather than throwing: a parked run is a verdict
+    // with evidence, not a crash — but it must never reach deploy.
+    const judge = await stages.judge(
+      { prospect: args.prospect, packageName: created.packageName, plan: rewrite.plan, port: args.port },
+      {
+        appDir,
+        repoRoot: io.repoRoot,
+        write,
+        runStage: stage,
+        ...(io.exec === undefined ? {} : { exec: io.exec }),
+      },
+    );
+    if (judge.parked) {
+      throw new DemoParkedError(
+        `PARKED below the fidelity bar — see ${judge.reportPath} for per-dimension scores. Nothing was deployed.`,
+        judge.reportPath,
+      );
+    }
+
+    return { appDir, appPath: path.relative(io.repoRoot, appDir), timings, rewrite, judge };
   } catch (error) {
     // Early-stage abort keeps the repo pristine. Later stages (rewrite, judge,
     // deploy, gate) park WITH evidence instead — the app dir stays.
