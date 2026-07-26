@@ -62,6 +62,14 @@ describe("modifiersOf", () => {
     expect(modifiersOf(realTs, statement)).toEqual([]);
     expect(modifiersOf(legacyTs(), statement)).toEqual([]);
   });
+
+  it("reads modifiers from a real TypeScript 4.7 compiler through the legacy path", () => {
+    const oldTs = createRequire(import.meta.url)("typescript47") as unknown as Ts;
+    const sf = oldTs.createSourceFile("probe.ts", "export default async function run() {}", oldTs.ScriptTarget.Latest, true);
+    const kinds = modifiersOf(oldTs, sf.statements[0]!).map((modifier) => modifier.kind);
+    expect(kinds).toContain(oldTs.SyntaxKind.ExportKeyword);
+    expect(kinds).toContain(oldTs.SyntaxKind.DefaultKeyword);
+  });
 });
 
 describe("isSatisfiesExpressionNode", () => {
@@ -79,10 +87,14 @@ describe("isSatisfiesExpressionNode", () => {
   });
 });
 
-describe("extraction against a pre-4.8 host TypeScript", () => {
-  it("extracts server actions without crashing when the host compiler lacks getModifiers", async () => {
+describe("extraction against a real TypeScript 4.7 host", () => {
+  it("extracts server actions with the genuine 4.7 compiler, which lacks the 4.8/4.9 APIs", async () => {
     const root = await temporaryHost();
-    const workspaceTs = createRequire(import.meta.url).resolve("typescript");
+    const oldTs = createRequire(import.meta.url).resolve("typescript47");
+    const loaded = createRequire(import.meta.url)("typescript47") as { version: string; getModifiers?: unknown };
+    expect(loaded.version).toBe("4.7.4");
+    expect(loaded.getModifiers).toBeUndefined();
+
     await writeFile(root, "package.json", JSON.stringify({
       name: "old-ts-host",
       dependencies: { next: "16.0.0", typescript: "4.7.4" },
@@ -92,16 +104,7 @@ describe("extraction against a pre-4.8 host TypeScript", () => {
       version: "4.7.4",
       main: "index.js",
     }));
-    await writeFile(root, "node_modules/typescript/index.js", `
-const real = require(${JSON.stringify(workspaceTs)});
-module.exports = {
-  ...real,
-  version: "4.7.4",
-  canHaveModifiers: undefined,
-  getModifiers: undefined,
-  isSatisfiesExpression: undefined,
-};
-`);
+    await writeFile(root, "node_modules/typescript/index.js", `module.exports = require(${JSON.stringify(oldTs)});\n`);
     await writeFile(root, "src/actions/tokens.ts", `
 "use server";
 
