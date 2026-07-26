@@ -1,0 +1,669 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "gs-welcome",
+      "question": "What is Vendo?",
+      "memoryQuery": "an agent that lives inside your product",
+      "expectedDocIds": ["welcome"],
+      "keyPoints": [
+        "Vendo is an agent embedded inside the host product",
+        "It calls the host's own API as the signed-in user",
+        "Users get views they own and pre-approved automations",
+        "Everything renders inside the host's brand and guardrails"
+      ]
+    },
+    {
+      "id": "gs-architecture",
+      "question": "How is Vendo put together architecturally?",
+      "memoryQuery": "nine packages behind one umbrella",
+      "expectedDocIds": ["how-vendo-works"],
+      "keyPoints": [
+        "Nine packages behind one umbrella, each with one job",
+        "The host owns two files that wire Vendo in",
+        "Requests flow from the browser through the guard to the host API"
+      ]
+    },
+    {
+      "id": "gs-quickstart",
+      "question": "How do I set up Vendo in my app?",
+      "memoryQuery": "vendo setup is one command",
+      "expectedDocIds": ["quickstart"],
+      "keyPoints": [
+        "Install @vendoai/vendo and run npx vendo init",
+        "Init scaffolds the server side and mounts the overlay in the layout",
+        "Start the dev server and send a first agent turn"
+      ]
+    },
+    {
+      "id": "gs-init",
+      "question": "What does vendo init actually do?",
+      "memoryQuery": "one-command, non-interactive scaffold",
+      "expectedDocIds": ["vendo-init-scan-scaffold-and-wire"],
+      "keyPoints": [
+        "Scans the app with deterministic analysis, no interview",
+        "Scaffolds the server surface and the .vendo contract",
+        "Theme is extracted automatically"
+      ]
+    },
+    {
+      "id": "gs-doctor-codes",
+      "question": "Where are all the doctor error codes documented?",
+      "memoryQuery": "vendo doctor --json` is the install gate",
+      "expectedDocIds": ["verify-every-doctor-error-code"],
+      "keyPoints": [
+        "npx vendo doctor --json is the install gate",
+        "Every check carries a stable id",
+        "Failing checks carry an error_code plus a fix_ref URL"
+      ]
+    },
+    {
+      "id": "gs-guard",
+      "question": "How does Vendo decide which tool calls run immediately and which need approval?",
+      "memoryQuery": "is the only sanctioned execution path",
+      "expectedDocIds": ["tools-and-safety-guard-bind-policy"],
+      "keyPoints": [
+        "guard.bind(tools) is the only sanctioned execution path",
+        "Risk grades are read, write, and destructive",
+        "Risk plus policy decides what runs immediately and what asks first"
+      ]
+    },
+    {
+      "id": "gs-compound",
+      "question": "What are compound tools?",
+      "memoryQuery": "bundles a short sequence of your existing host and connector",
+      "expectedDocIds": ["compound-tools"],
+      "keyPoints": [
+        "A compound tool bundles a sequence of existing tools into one capability",
+        "Each step still runs through guard.bind",
+        "Approvals, grants, breakers, and audit apply per step"
+      ]
+    },
+    {
+      "id": "gs-connected",
+      "question": "How do connected accounts like Gmail or Slack work?",
+      "memoryQuery": "composio brokers the credentials",
+      "expectedDocIds": ["connected-accounts"],
+      "keyPoints": [
+        "Each signed-in user connects their own account once",
+        "Later tool calls run as that user",
+        "Vendo never holds a token; Composio brokers the credentials"
+      ]
+    },
+    {
+      "id": "gs-mcp-door",
+      "question": "How do I expose my Vendo tools to Claude or Cursor?",
+      "memoryQuery": "installable in mcp clients such as claude",
+      "expectedDocIds": ["mcp-door-expose-vendo-tools-to"],
+      "keyPoints": [
+        "The MCP door makes the product an MCP server outside agents connect to",
+        "Clients connect over OAuth",
+        "Every door tool call runs through the same guard"
+      ]
+    },
+    {
+      "id": "gs-mcp-registry",
+      "question": "How do I publish my MCP door to the official registry?",
+      "memoryQuery": "registry.modelcontextprotocol.io",
+      "expectedDocIds": ["publish-your-vendo-mcp-door-to"],
+      "keyPoints": [
+        "Publish the deployed door to registry.modelcontextprotocol.io",
+        "The registry is in preview and its data may reset",
+        "If a listing disappears, authenticate and publish again"
+      ]
+    },
+    {
+      "id": "gs-genui",
+      "question": "What format are the apps Vendo generates?",
+      "memoryQuery": "with format `vendo/app@1",
+      "expectedDocIds": ["generated-ui-and-apps-vendo-app"],
+      "keyPoints": [
+        "Everything Vendo builds is an AppDocument with format vendo/app@1",
+        "Every user owns their own copy",
+        "Import, fork, sharing, and publishing mint a fresh copy"
+      ]
+    },
+    {
+      "id": "gs-in-client",
+      "question": "What is the in-client venue?",
+      "memoryQuery": "render inside a sandboxed iframe by default",
+      "expectedDocIds": ["in-client-venue-and-approvals"],
+      "keyPoints": [
+        "Generated apps render in a sandboxed iframe by default",
+        "Approving a specific app version lets it render in the host page",
+        "In-client apps share the page's authority and network"
+      ]
+    },
+    {
+      "id": "gs-host-components",
+      "question": "Can the agent compose apps from my own branded components?",
+      "memoryQuery": "register your branded components in a catalog",
+      "expectedDocIds": ["host-components-register-branded-ui-and"],
+      "keyPoints": [
+        "Hosts register branded components in a catalog",
+        "The agent composes generated apps from them alongside prewired primitives",
+        "Host components render natively, not in the sandboxed iframe"
+      ]
+    },
+    {
+      "id": "gs-theming",
+      "question": "How do I make Vendo surfaces match my brand?",
+      "memoryQuery": "covers how to set the theme and see it flow through",
+      "expectedDocIds": ["theme-your-vendo-surfaces"],
+      "keyPoints": [
+        "Theme lives in .vendo/theme.json or a runtime VendoProvider.theme override",
+        "Every Vendo surface and prewired primitive picks the theme up automatically"
+      ]
+    },
+    {
+      "id": "gs-prompts",
+      "question": "How do I customize the agent's system prompt?",
+      "memoryQuery": "company directions, host instructions",
+      "expectedDocIds": ["prompts-and-instructions"],
+      "keyPoints": [
+        "The system prompt assembles four channels",
+        "Channels are product brief, company directions, host instructions, and design rules",
+        "Each channel has one contracted place to live"
+      ]
+    },
+    {
+      "id": "gs-api-tools",
+      "question": "How does Vendo turn my existing API into agent tools?",
+      "memoryQuery": "extracts openapi operations, trpc procedures",
+      "expectedDocIds": ["tools-from-your-api"],
+      "keyPoints": [
+        "Sync extracts OpenAPI, tRPC, GraphQL, server actions, and host routes",
+        "Extraction writes .vendo/tools.json",
+        "Extracted tools are guarded"
+      ]
+    },
+    {
+      "id": "gs-dev-model",
+      "question": "How does Vendo resolve a model in development when I have not set an API key?",
+      "memoryQuery": "resolves a model through `devmodel()",
+      "expectedDocIds": ["dev-mode-credential-ladder-resolving-a"],
+      "keyPoints": [
+        "createVendo's model option is optional",
+        "When omitted, the runtime resolves through the devModel() ladder",
+        "Production should set an explicit provider API key"
+      ]
+    },
+    {
+      "id": "gs-auth-presets",
+      "question": "How do away automations authenticate to my API without a browser session?",
+      "memoryQuery": "seam because none of them carry a browser session",
+      "expectedDocIds": ["auth-presets-auth-js-supabase-clerk"],
+      "keyPoints": [
+        "Away runs and MCP calls reach host APIs through the actAs seam",
+        "Presets in @vendoai/actions/presets mint the right auth material",
+        "Presets cover Auth.js, Supabase, Clerk, and Auth0"
+      ]
+    },
+    {
+      "id": "gs-host-auth",
+      "question": "What identity seams does createVendo need from my auth system?",
+      "memoryQuery": "fills all three identity seams",
+      "expectedDocIds": ["host-auth-for-agents"],
+      "keyPoints": [
+        "One auth key fills all three identity seams",
+        "The seams are the request-to-principal resolver, the actAs seam, and the MCP door's auth"
+      ]
+    },
+    {
+      "id": "gs-principals",
+      "question": "How does Vendo know which user a request belongs to?",
+      "memoryQuery": "scopes threads, apps",
+      "expectedDocIds": ["principals-identity-anonymous-sessions-vendo-namespace"],
+      "keyPoints": [
+        "Every wire request resolves a Principal through the principal(req) seam",
+        "The returned subject scopes threads, apps, approvals, grants, and runs"
+      ]
+    },
+    {
+      "id": "gs-persistence",
+      "question": "What does Vendo persist and in which database?",
+      "memoryQuery": "embedded pglite database with the same schema",
+      "expectedDocIds": ["persistence-postgres-schema-and-pglite-for"],
+      "keyPoints": [
+        "One Postgres-compatible store holds threads, apps, grants, approvals, audit, and more",
+        "Local dev uses an embedded PGlite database",
+        "PGlite and Postgres share the same schema"
+      ]
+    },
+    {
+      "id": "gs-automations",
+      "question": "What can trigger an automation?",
+      "memoryQuery": "on a schedule, in response to a host event",
+      "expectedDocIds": ["automations-and-webhooks"],
+      "keyPoints": [
+        "Automations fire on a schedule, on a host event, or from a verified external webhook",
+        "Long-lived hosts call automations.start(); serverless hosts schedule the tick"
+      ]
+    },
+    {
+      "id": "gs-telemetry",
+      "question": "What telemetry does Vendo collect?",
+      "memoryQuery": "collects two separate streams",
+      "expectedDocIds": ["telemetry-and-capability-misses"],
+      "keyPoints": [
+        "Two separate streams: build/development telemetry and capability misses",
+        "Build telemetry never fires from a deployed production app",
+        "No end-user product data is collected"
+      ]
+    },
+    {
+      "id": "gs-troubleshoot",
+      "question": "My Vendo install seems broken — how do I debug it?",
+      "memoryQuery": "doctor checks local wiring and makes one live",
+      "expectedDocIds": ["troubleshooting-vendo-doctor-status-and-error"],
+      "keyPoints": [
+        "Doctor checks local wiring and makes one live /status round trip",
+        "Exit code 0 means the install is healthy",
+        "The verify page explains every doctor error code"
+      ]
+    },
+    {
+      "id": "gs-cloud",
+      "question": "What does Vendo Cloud actually host for me?",
+      "memoryQuery": "hosted backend for cloud-gated surfaces",
+      "expectedDocIds": ["vendo-cloud-hosted-sharing-publishing-and"],
+      "keyPoints": [
+        "Cloud hosts sharing of frozen app copies, publishing, sandboxes, store, and org keys",
+        "Every cloud capability keeps a bring-your-own path"
+      ]
+    },
+    {
+      "id": "gs-edge",
+      "question": "Does Vendo run on edge runtimes like Cloudflare Workers?",
+      "memoryQuery": "targets web-standard javascript, not node",
+      "expectedDocIds": ["edge-runtimes"],
+      "keyPoints": [
+        "The server targets Web-standard JavaScript, not Node",
+        "A CI gate bundles the server entry for a Worker target and boots it under workerd"
+      ]
+    },
+    {
+      "id": "gs-checklist",
+      "question": "What must be true before I ship Vendo to production?",
+      "memoryQuery": "once these eight things are true",
+      "expectedDocIds": ["production-checklist"],
+      "keyPoints": [
+        "Eight checklist items, worked through in order",
+        "Includes resolving every request to a stable Principal subject",
+        "Each item links to the page covering it in depth"
+      ]
+    },
+    {
+      "id": "gs-ai-sdk",
+      "question": "How do I add Vendo to my existing Vercel AI SDK chatbot?",
+      "memoryQuery": "keep your vercel ai sdk chatbot as it is",
+      "expectedDocIds": ["quickstart-ai-sdk"],
+      "keyPoints": [
+        "Keep the existing chatbot; three steps add Vendo",
+        "Init scaffolds the wire route and turns host actions into agent tools",
+        "The agent builds micro-apps in the chat and runs host actions guarded"
+      ]
+    },
+    {
+      "id": "gs-mastra",
+      "question": "How do I add Vendo to a Mastra agent?",
+      "memoryQuery": "keep your mastra agent as it is",
+      "expectedDocIds": ["quickstart-mastra"],
+      "keyPoints": [
+        "Keep the Mastra agent; three steps add Vendo",
+        "The agent builds micro-apps in the chat and runs host actions guarded"
+      ]
+    },
+    {
+      "id": "gs-tool-pack",
+      "question": "I already have an agent loop and chat UI — does Vendo replace them?",
+      "memoryQuery": "one tool pack, spread into your agent's",
+      "expectedDocIds": ["overview-and-tool-pack"],
+      "keyPoints": [
+        "Vendo replaces nothing: keep the loop, model, and chat UI",
+        "One tool pack spread into the agent's tools adds guarded host actions, micro-apps, and approvals"
+      ]
+    },
+    {
+      "id": "gs-embeds",
+      "question": "How do Vendo results reach my own chat UI?",
+      "memoryQuery": "one small envelope format",
+      "expectedDocIds": ["embeds-and-envelopes"],
+      "keyPoints": [
+        "vendo_* tools return one small envelope format",
+        "The host loop never needs to know what an app or approval is"
+      ]
+    },
+    {
+      "id": "gs-config",
+      "question": "Where is the full configuration reference for bring-your-own-agent setups?",
+      "memoryQuery": "needed for a first successful run; come back when you customize",
+      "expectedDocIds": ["configuration"],
+      "keyPoints": [
+        "The configuration page holds everything the quickstarts keep short",
+        "Nothing on it is needed for a first successful run"
+      ]
+    },
+    {
+      "id": "gs-two-files",
+      "question": "Which files make up Vendo's server wiring in my repo?",
+      "memoryQuery": "entire server wiring is two files",
+      "expectedDocIds": ["tools-and-the-catalog-for-agents"],
+      "keyPoints": [
+        "The entire server wiring is two files, both scaffolded by vendo init",
+        "The same registry object serves both sides"
+      ]
+    },
+    {
+      "id": "gs-install-playbook",
+      "question": "What is the playbook for a coding agent installing Vendo?",
+      "memoryQuery": "installs as one npm package plus a small",
+      "expectedDocIds": ["agent-install-playbook"],
+      "keyPoints": [
+        "Vendo installs as one npm package plus a small .vendo/ contract",
+        "Customers build views, act through the host's API as themselves, and automate work"
+      ]
+    },
+    {
+      "id": "gs-changelog",
+      "question": "Can I change the keyboard shortcut that opens the palette?",
+      "memoryQuery": "configurable palette keybinding",
+      "expectedDocIds": ["vendo-product-changelog"],
+      "keyPoints": [
+        "VendoPalette accepts an optional hotkey prop",
+        "Passing false disables the built-in opener entirely"
+      ]
+    },
+    {
+      "id": "gs-ui-surfaces",
+      "question": "What UI surfaces does Vendo ship?",
+      "memoryQuery": "ui surfaces",
+      "expectedDocIds": ["ui-surfaces"],
+      "keyPoints": [
+        "The UI package ships the overlay plus optional chrome",
+        "Headless hooks power bespoke surfaces"
+      ]
+    },
+    {
+      "id": "gd-away-scopes",
+      "question": "What limits apply to tool calls made while the user is away?",
+      "memoryQuery": "away-run scopes",
+      "intent": "deep",
+      "expectedDocIds": ["tools-and-safety-guard-bind-policy"],
+      "keyPoints": [
+        "Away runs execute under scoped grants",
+        "Risk and policy still decide run, ask, or block"
+      ]
+    },
+    {
+      "id": "gd-sync-timing",
+      "question": "At what point in my build does tool extraction actually run?",
+      "memoryQuery": "extraction runs during build and development",
+      "intent": "deep",
+      "expectedDocIds": ["tools-from-your-api"],
+      "keyPoints": [
+        "Extraction runs during build and development",
+        "Sync regenerates .vendo/tools.json"
+      ]
+    },
+    {
+      "id": "gd-webhooks",
+      "question": "How does Vendo make sure an incoming webhook is genuine?",
+      "memoryQuery": "verified external webhook",
+      "intent": "deep",
+      "expectedDocIds": ["automations-and-webhooks"],
+      "keyPoints": [
+        "External webhooks must be verified before they fire automations",
+        "Webhooks are one of three trigger kinds"
+      ]
+    },
+    {
+      "id": "gd-approved-version",
+      "question": "What exactly changes when I approve a specific version of a generated app?",
+      "memoryQuery": "that version can also render in the host page",
+      "intent": "deep",
+      "expectedDocIds": ["in-client-venue-and-approvals"],
+      "keyPoints": [
+        "The approved version can render in the host page instead of the iframe",
+        "It then shares the page's authority and network"
+      ]
+    },
+    {
+      "id": "gd-mcp-oauth",
+      "question": "How do outside agents authenticate when they connect to my MCP door?",
+      "memoryQuery": "connect to over oauth",
+      "intent": "deep",
+      "expectedDocIds": ["mcp-door-expose-vendo-tools-to"],
+      "keyPoints": [
+        "Outside agents connect to the MCP door over OAuth",
+        "Door tool calls run through the same guard as everything else"
+      ]
+    },
+    {
+      "id": "gd-anon",
+      "question": "How does Vendo handle users who are not signed in?",
+      "memoryQuery": "vendo: namespace",
+      "intent": "deep",
+      "expectedDocIds": ["principals-identity-anonymous-sessions-vendo-namespace"],
+      "keyPoints": [
+        "Anonymous sessions resolve to a principal like signed-in users",
+        "The vendo: namespace marks Vendo-internal actors"
+      ]
+    },
+    {
+      "id": "gd-workerd-gate",
+      "question": "How is edge-runtime compatibility enforced so it cannot silently regress?",
+      "memoryQuery": "boots it under workerd",
+      "intent": "deep",
+      "expectedDocIds": ["edge-runtimes"],
+      "keyPoints": [
+        "A CI gate bundles the server entry for a Worker target",
+        "The bundle is booted under workerd on every run"
+      ]
+    },
+    {
+      "id": "gd-capability-miss",
+      "question": "What happens when the agent is asked for something no tool can do?",
+      "memoryQuery": "capability misses",
+      "intent": "deep",
+      "expectedDocIds": ["telemetry-and-capability-misses"],
+      "keyPoints": [
+        "Capability misses are recorded as their own stream",
+        "Misses signal which tools the host is missing"
+      ]
+    },
+    {
+      "id": "sc-block",
+      "question": "What is a block?",
+      "memoryQuery": "one of the ten @vendoai/* packages",
+      "intent": "schema",
+      "kinds": ["glossary"],
+      "expectedDocIds": ["glossary-block"],
+      "keyPoints": [
+        "A block is one of the ten @vendoai/* packages behind the umbrella",
+        "Each block has one job and a well-defined seam"
+      ]
+    },
+    {
+      "id": "sc-wire",
+      "question": "Define the wire format.",
+      "memoryQuery": "compact jsx-like markup an agent emits",
+      "intent": "schema",
+      "kinds": ["glossary"],
+      "expectedDocIds": ["glossary-wire"],
+      "keyPoints": [
+        "The wire is the compact JSX-like markup an agent emits for a generated app",
+        "The runtime validates and renders it in the sandboxed surface"
+      ]
+    },
+    {
+      "id": "sc-guard-term",
+      "question": "What is the guard?",
+      "memoryQuery": "policy layer every tool call passes through",
+      "intent": "schema",
+      "kinds": ["glossary"],
+      "expectedDocIds": ["glossary-guard"],
+      "keyPoints": [
+        "The guard is the policy layer every tool call passes through",
+        "It grades calls by risk and decides run, ask, or block"
+      ]
+    },
+    {
+      "id": "sc-principal-term",
+      "question": "Define principal.",
+      "memoryQuery": "identity a vendo request acts as",
+      "intent": "schema",
+      "kinds": ["glossary"],
+      "expectedDocIds": ["glossary-principal"],
+      "keyPoints": [
+        "A principal is the identity a Vendo request acts as",
+        "Tenancy and permissions derive from it server-side"
+      ]
+    },
+    {
+      "id": "sc-adapter-term",
+      "question": "What is an adapter in Vendo?",
+      "memoryQuery": "single seam interface each block exposes",
+      "intent": "schema",
+      "kinds": ["glossary"],
+      "expectedDocIds": ["glossary-adapter"],
+      "keyPoints": [
+        "An adapter is the single seam interface a block exposes for a swappable capability",
+        "An explicitly passed adapter always wins over key-derived defaults"
+      ]
+    },
+    {
+      "id": "sc-intent-term",
+      "question": "What are the knowledge search intents?",
+      "memoryQuery": "knowledge search mode selector",
+      "intent": "schema",
+      "kinds": ["glossary"],
+      "expectedDocIds": ["glossary-intent"],
+      "keyPoints": [
+        "Chat is fast retrieval, deep is agentic search, schema is exact lookup",
+        "Schema lookups return an honest not-found, never a fuzzy fallback"
+      ]
+    },
+    {
+      "id": "sc-posture-term",
+      "question": "What is a posture?",
+      "memoryQuery": "declared capability surface",
+      "intent": "schema",
+      "kinds": ["glossary"],
+      "expectedDocIds": ["glossary-posture"],
+      "keyPoints": [
+        "A posture is an adapter's declared capability surface",
+        "Conformance tests verify the declaration instead of trusting it"
+      ]
+    },
+    {
+      "id": "sc-venue-term",
+      "question": "What is a venue?",
+      "memoryQuery": "where an agent surface runs",
+      "intent": "schema",
+      "kinds": ["glossary"],
+      "expectedDocIds": ["glossary-venue"],
+      "keyPoints": [
+        "A venue is where an agent surface runs: in-client, hosted, or automation",
+        "Policy and approvals are venue-aware"
+      ]
+    },
+    {
+      "id": "sc-citation-term",
+      "question": "What is a citation?",
+      "memoryQuery": "doc-id plus engine-scoped chunk-id",
+      "intent": "schema",
+      "kinds": ["glossary", "api"],
+      "expectedDocIds": ["glossary-citation"],
+      "keyPoints": [
+        "A citation is a doc-id plus engine-scoped chunk-id reference",
+        "Citations render as chips and resolve through the adapter's fetch"
+      ]
+    },
+    {
+      "id": "sc-cli",
+      "question": "What commands does the vendo CLI have?",
+      "memoryQuery": "the umbrella owns the `vendo` bin",
+      "intent": "schema",
+      "kinds": ["api"],
+      "expectedDocIds": ["cli-reference-vendo-init-login-doctor"],
+      "keyPoints": [
+        "The umbrella owns the vendo bin",
+        "Nine commands: init, login, doctor, sync, eject, extract, playground, mcp, cloud"
+      ]
+    },
+    {
+      "id": "sc-env-vars",
+      "question": "Which environment variables configure the Vendo host?",
+      "memoryQuery": "vendo_tick_secret",
+      "intent": "schema",
+      "kinds": ["api"],
+      "expectedDocIds": ["environment-variables-for-vendo-host-sandbox"],
+      "keyPoints": [
+        "VENDO_TICK_SECRET, VENDO_BASE_URL, VENDO_POSTHOG_KEY, and VENDO_BOX_* are implementation-level config",
+        "The frozen contracts define the corresponding bearer, route origin, and telemetry behavior"
+      ]
+    },
+    {
+      "id": "sc-handler-options",
+      "question": "Which createVendo options are required?",
+      "memoryQuery": "becomes required when `mcp` is enabled",
+      "intent": "schema",
+      "kinds": ["api"],
+      "expectedDocIds": ["handler-options-createvendo-config-and-fetch"],
+      "keyPoints": [
+        "Every key is optional; oauth becomes required when mcp is enabled",
+        "A bare createVendo() boots with an env-resolved model"
+      ]
+    },
+    {
+      "id": "sc-dot-vendo",
+      "question": "Which .vendo files are machine-written and which are hand-edited?",
+      "memoryQuery": "is the only\nhand-edited file",
+      "intent": "schema",
+      "kinds": ["api"],
+      "expectedDocIds": ["the-vendo-directory-tools-policy-theme"],
+      "keyPoints": [
+        "tools.json is the machine layer vendo sync regenerates wholesale",
+        "overrides.json is the only hand-edited file",
+        "Extraction can never overwrite reviewed risk answers"
+      ]
+    },
+    {
+      "id": "sc-hooks",
+      "question": "What headless hooks does the UI package expose?",
+      "memoryQuery": "exposes headless react hooks",
+      "intent": "schema",
+      "kinds": ["api"],
+      "expectedDocIds": ["headless-hooks"],
+      "keyPoints": [
+        "@vendoai/ui exposes headless React hooks reading the same wire as the built-in chrome",
+        "Pair them with your own UI for a bespoke surface"
+      ]
+    },
+    {
+      "id": "sc-http-routes",
+      "question": "What HTTP routes does the Vendo handler serve?",
+      "memoryQuery": "http routes: threads, approvals, mcp door",
+      "intent": "schema",
+      "kinds": ["api"],
+      "expectedDocIds": ["http-routes-threads-approvals-mcp-door"],
+      "keyPoints": [
+        "Routes cover threads, approvals, the MCP door, and OAuth",
+        "All routes mount under the single wire handler"
+      ]
+    },
+    {
+      "id": "sc-server-api",
+      "question": "Where is the server API for the composition documented?",
+      "memoryQuery": "server api reference for",
+      "intent": "schema",
+      "kinds": ["api"],
+      "expectedDocIds": ["server-api-reference-for-vendoai-vendo"],
+      "keyPoints": [
+        "The server API reference covers the @vendoai/vendo composition",
+        "createVendo is the composition entry point"
+      ]
+    }
+  ]
+}
