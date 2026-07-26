@@ -2,8 +2,10 @@ import {
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_APPS_CREATE_TOOL,
   VENDO_APPS_TOOL_PREFIX,
+  VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_VIEW_STREAM,
   toVendoWirePart,
+  vendoCitationsPartSchema,
   vendoViewStreamId,
   vendoViewPartSchema,
   type ApprovalId,
@@ -16,6 +18,7 @@ import {
   type ToolRegistry,
   type VendoApprovalPart,
   type VendoBuildFailedPart,
+  type VendoCitationsPart,
   type VendoConnectPart,
   type VendoViewPart,
   type VendoViewStreamingToolCall,
@@ -28,7 +31,7 @@ import {
   type UIMessageStreamWriter,
 } from "ai";
 
-type VendoPart = VendoApprovalPart | VendoBuildFailedPart | VendoConnectPart | VendoViewPart;
+type VendoPart = VendoApprovalPart | VendoBuildFailedPart | VendoCitationsPart | VendoConnectPart | VendoViewPart;
 
 /** 03-agent §2 */
 export interface ToolBridgeOptions {
@@ -78,6 +81,32 @@ function executionError(): ToolOutcome {
       message: "Tool execution failed.",
     },
   };
+}
+
+/** Knowledge K1 — lift a `vendo/knowledge-result@1` ok-output onto the
+ * citations part. Returns null when the output is not a knowledge envelope,
+ * when the outcome is model-facing only (`not-found`, and read-more results,
+ * which carry text but no citations), or when the candidate fails the part
+ * schema. `title` falls back to the docId — the part surface requires one. */
+function knowledgeCitationsPart(toolCallId: string, output: unknown): VendoCitationsPart | null {
+  if (typeof output !== "object" || output === null || Array.isArray(output)) return null;
+  const record = output as Record<string, unknown>;
+  if (record.kind !== VENDO_KNOWLEDGE_RESULT_KIND) return null;
+  const outcome = record.outcome;
+  if (outcome !== "answered" && outcome !== "insufficient-evidence" && outcome !== "unavailable") return null;
+  const hits = Array.isArray(record.hits) ? record.hits : [];
+  const citations = hits.map((hit) => {
+    const entry = (typeof hit === "object" && hit !== null ? hit : {}) as Record<string, unknown>;
+    return { ...entry, title: typeof entry.title === "string" && entry.title !== "" ? entry.title : entry.docId };
+  });
+  if (outcome === "answered" && citations.length === 0) return null;
+  const parsed = vendoCitationsPartSchema.safeParse({
+    type: "data-vendo-citations",
+    toolCallId,
+    citations,
+    outcome,
+  });
+  return parsed.success ? parsed.data : null;
 }
 
 function capOutcome(outcome: ToolOutcome, cap: number | undefined): ToolOutcome {
@@ -185,6 +214,15 @@ export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options
           toolCallId,
           reason: outcome.error.message,
         });
+      }
+
+      // Knowledge K1 — the FULL citation data reaches the client on its own
+      // part, written BEFORE capOutcome can touch the ok-output (mirrors the
+      // connect part above: the part is the UI's channel; the capped tool
+      // output is the model's).
+      if (outcome.status === "ok") {
+        const citations = knowledgeCitationsPart(toolCallId, outcome.output);
+        if (citations !== null) writePart(options.writer, citations);
       }
 
       const modelOutcome = capOutcome(outcome, options.toolOutputCap);
