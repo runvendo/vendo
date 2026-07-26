@@ -308,6 +308,22 @@ export default function SavingsGap() {
     expect(islandDerivedValueViolations(source)).toHaveLength(1);
   });
 
+  it("cent-scales fractional dollar amounts without float drift ($4.99 → 499)", () => {
+    const source = `
+export default function PriceGap() {
+  const PRICE_CENTS = 499;
+  const [balance, setBalance] = useState(0);
+  useEffect(() => {
+    tools.host_getBalance({}).then((res) => setBalance(res.balance_cents ?? 0));
+  }, []);
+  return <Stat label="After the subscription" value={fmt.money(balance - PRICE_CENTS)} />;
+}
+`;
+    expect(islandDerivedValueViolations(source, {
+      requestText: "what's left after my $4.99 subscription renews?",
+    })).toEqual([]);
+  });
+
   it("does not flag a bare literal that IS the user's number, unscaled", () => {
     const source = `
 export default function Threshold() {

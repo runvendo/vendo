@@ -60,7 +60,9 @@ const requestNumberValues = (requestText: string): Set<number> => {
     const value = Number(match[0].replaceAll(",", ""));
     if (!Number.isFinite(value)) continue;
     values.add(value);
-    values.add(value * 100);
+    // Rounded: cents are integers, and 4.99 * 100 is 498.99999999999994 in
+    // floating point — the island's hand-typed 499 must still match.
+    values.add(Math.round(value * 100));
   }
   return values;
 };
