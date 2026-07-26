@@ -30,17 +30,13 @@ export const vendo = createVendo({
     ].join("\n"),
   },
   apps: {
-    // RE-GATE 2026-07-26 CANDIDATE CONFIG — REVERTED after the run.
-    // Same VENDO_GATE_ARM seam as demo-bank (see that file for the full
-    // note): A (unset) = pipeline {} · B = { endPass: true } ·
-    // C = { exemplarContract: true, endPass: true }. Mirrors the 2026-07-25
-    // rematch arms for cross-run comparability; production main ships the
-    // full v4 pipeline. Configuration selection, not tuning.
-    pipeline: process.env.VENDO_GATE_ARM === "C"
-      ? { exemplarContract: true, endPass: true }
-      : process.env.VENDO_GATE_ARM === "B"
-        ? { endPass: true }
-        : {},
+    // demo-refresh Part 5 — the full v4 generation pipeline.
+    pipeline: {
+      exemplarContract: true,
+      structuredRepair: true,
+      regionParallel: true,
+      endPass: true,
+    },
   },
   connectors: composioApiKey
     ? [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "googlecalendar", "slack"] })]
