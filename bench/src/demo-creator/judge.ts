@@ -117,19 +117,29 @@ export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
     content.push({ type: "image", image: await readFile(image.path) });
   }
   const backoffsMs = [30_000, 60_000, 120_000];
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      const result = await generateText({
-        model: anthropic(modelId),
-        messages: [{ role: "user", content }],
-      });
-      return result.text;
-    } catch (error) {
-      const wait = backoffsMs[attempt];
-      if (wait === undefined) throw error;
-      await new Promise((resolve) => setTimeout(resolve, wait));
+  // Tier fallback after the backoff exhausts: a sustained opus overload must
+  // not kill a run that a sonnet judge can score (observed live: opus-5
+  // Overloaded for 6+ minutes straight).
+  const fallbackModelId = "claude-sonnet-5";
+  const models = modelId === fallbackModelId ? [modelId] : [modelId, fallbackModelId];
+  let lastError: unknown;
+  for (const model of models) {
+    for (let attempt = 0; attempt <= backoffsMs.length; attempt += 1) {
+      try {
+        const result = await generateText({
+          model: anthropic(model),
+          messages: [{ role: "user", content }],
+        });
+        return result.text;
+      } catch (error) {
+        lastError = error;
+        const wait = backoffsMs[attempt];
+        if (wait === undefined) break; // next model tier
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
     }
   }
+  throw lastError;
 };
 
 // ---------------------------------------------------------------------------
