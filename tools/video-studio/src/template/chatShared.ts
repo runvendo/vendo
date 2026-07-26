@@ -20,7 +20,13 @@ export const PANEL_SLIDE = 240;
 // Chat-local frame at which the whip overlay hands the dot to the panel.
 export const DOT_HANDOFF = 12;
 
-export const WIDGET = {x: CARD.x + 48, y: CARD.y + 236, w: 760, h: 508};
+// The generated view's rect. Width and position are the film's; the HEIGHT is
+// the real component's, measured off a render: inside the overlay the product
+// renders an in-thread view as a compact preview capped at
+// PREVIEW_MAX_HEIGHT = 300 (packages/ui/src/chrome/thread/parts.tsx), so the
+// real `.fl-appcard` is 760x342, not the prototype's invented 508. The flight
+// overlay picks the card up from exactly this rect.
+export const WIDGET = {x: CARD.x + 48, y: CARD.y + 236, w: 760, h: 342};
 
 // Chat-local frame at which the widget hands off to the flight overlay.
 export const LIFT_AT = 165;

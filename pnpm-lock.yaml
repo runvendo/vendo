@@ -1430,9 +1430,6 @@ importers:
       '@remotion/cli':
         specifier: 4.0.351
         version: 4.0.351(lightningcss@1.32.0)(postcss@8.5.22)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@remotion/google-fonts':
-        specifier: 4.0.351
-        version: 4.0.351(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -3752,9 +3749,6 @@ packages:
     resolution: {integrity: sha512-9PramB1bIWgOcdKy0vTuTrQ+LqyDSn0VyaFtduv0cTPzblu9+Q2ZlTybq7elH1MYZEDiBpR3UoOeGd8ayIkS3w==}
     cpu: [x64]
     os: [win32]
-
-  '@remotion/google-fonts@4.0.351':
-    resolution: {integrity: sha512-cwBYGp6k5XwyqVpov+BgnXxOMtMq/fig0/7b/mAwwc8+Qiyyhz6b+tn+O3i8pPam4Yd4+ALPxa2JX5EG1rUKCQ==}
 
   '@remotion/licensing@4.0.351':
     resolution: {integrity: sha512-MeqshZnRZpw6+ljsg1SLQEDcMZUCmNnMv0bRPORLN/SGtscl6x1yFlbWLYQp0eOAAm28h6O0iGl/TtZ906JvyQ==}
@@ -11046,13 +11040,6 @@ snapshots:
   '@remotion/compositor-win32-x64-msvc@4.0.351':
     optional: true
 
-  '@remotion/google-fonts@4.0.351(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
-    dependencies:
-      remotion: 4.0.351(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-    transitivePeerDependencies:
-      - react
-      - react-dom
-
   '@remotion/licensing@4.0.351': {}
 
   '@remotion/media-parser@4.0.351': {}
@@ -16306,7 +16293,7 @@ snapshots:
 
   term-size@2.2.1: {}
 
-  terser-webpack-plugin@5.6.1(esbuild@0.25.0)(lightningcss@1.32.0)(postcss@8.5.22)(webpack@5.96.1(esbuild@0.25.0)(lightningcss@1.32.0)(postcss@8.5.22)):
+  terser-webpack-plugin@5.6.1(esbuild@0.25.0)(lightningcss@1.32.0)(postcss@8.5.22)(webpack@5.96.1(esbuild@0.25.12)(lightningcss@1.32.0)(postcss@8.5.22)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
@@ -16902,7 +16889,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 3.3.0
       tapable: 2.3.3
-      terser-webpack-plugin: 5.6.1(esbuild@0.25.0)(lightningcss@1.32.0)(postcss@8.5.22)(webpack@5.96.1(esbuild@0.25.0)(lightningcss@1.32.0)(postcss@8.5.22))
+      terser-webpack-plugin: 5.6.1(esbuild@0.25.0)(lightningcss@1.32.0)(postcss@8.5.22)(webpack@5.96.1(esbuild@0.25.12)(lightningcss@1.32.0)(postcss@8.5.22))
       watchpack: 2.5.2
       webpack-sources: 3.5.1
     transitivePeerDependencies:

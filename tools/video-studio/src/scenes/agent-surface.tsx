@@ -1,6 +1,7 @@
 import React from 'react';
 import type {UIMessage} from 'ai';
 import type {TreeNode, UIPayload, VendoKnowledgeCitation} from '@vendoai/core';
+import {MessageList} from '../../../../packages/ui/src/chrome/thread/message-list';
 import {ThreadMessage} from '../../../../packages/ui/src/chrome/thread/message';
 
 /**
@@ -158,15 +159,71 @@ export function weeklyUsagePayload(
   } as UIPayload;
 }
 
-/** One real turn on camera. `restored` suppresses the components' own CSS
- *  entrance so the film's frame-driven motion is the only motion. */
+const noop = (): undefined => undefined;
+
+/**
+ * One real turn, on its own. Used where the film shows a generated view OUTSIDE
+ * a conversation — the shared-element ghost mid-flight, and the card once it is
+ * pinned to the host dashboard — so the transcript pane's own container chrome
+ * would be wrong there. Still the product's component all the way down:
+ * `ThreadMessage` → `ThreadPart` → `ThreadAppCard` → `PayloadView`.
+ */
 export const Turn: React.FC<{message: UIMessage}> = ({message}) => (
   <ThreadMessage
     message={message}
     restored
     risks={new Map()}
     busy={false}
-    onEditLast={() => undefined}
-    onRegenerateLast={() => undefined}
+    onEditLast={noop}
+    onRegenerateLast={noop}
+  />
+);
+
+/**
+ * A stretch of transcript on camera, rendered by the product's own transcript
+ * pane — `MessageList` ("the windowed message list … pure presentation over the
+ * thread-level state"), which fans out to `ThreadMessage` → `ThreadPart` →
+ * {Markdown, TurnCitations, ThreadAppCard → PayloadView}.
+ *
+ * Mounting the real list rather than hand-rolling `.fl-thread`/`.fl-msglist`
+ * means the studio authors ZERO product class names: every container, message,
+ * chip and card class on camera is emitted inside packages/ui.
+ *
+ * The props below are the live thread's state, at the value a settled turn
+ * carries: nothing is parked for approval, nothing is streaming its first
+ * chunk, the reader is at the bottom, and there is no older history to page in.
+ * `restored` (via `isRestored`) suppresses the components' own CSS entrance so
+ * the film's frame-driven motion is the only motion.
+ */
+export const Transcript: React.FC<{messages: UIMessage[]}> = ({messages}) => (
+  <MessageList
+    scroll={{
+      listRef: {current: null},
+      onScroll: noop,
+      jumpToLatest: noop,
+      showJump: false,
+      unseenCount: 0,
+      snippet: '',
+    }}
+    messageWindow={{
+      windowed: messages,
+      hasOlder: false,
+      olderCount: 0,
+      loadOlder: noop,
+      onNearTop: noop,
+    }}
+    busy={false}
+    risks={new Map()}
+    isRestored={() => true}
+    onEditLast={noop}
+    onRegenerateLast={noop}
+    approvals={[]}
+    guardApprovals={new Map()}
+    cardRefs={{current: new Map()}}
+    respond={noop}
+    onMorph={noop}
+    sendMessage={noop}
+    awaitingFirstChunk={false}
+    working={false}
   />
 );

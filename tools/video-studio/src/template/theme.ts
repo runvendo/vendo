@@ -14,12 +14,23 @@ export const C = {
   barFill: '#EEECF4',
 };
 
-export const cardStyle: React.CSSProperties = {
-  backgroundColor: C.white,
-  borderRadius: 12,
-  boxShadow: '0 4px 24px rgba(108,59,255,0.10)',
-  border: `1px solid ${C.border}`,
-};
+/**
+ * Film layers, above the real product panel.
+ *
+ * `VendoOverlay`'s panel portals to `document.body` and carries the product's
+ * own `z-index: 2147483001` (chrome-css.ts) — it has to beat any host page it
+ * opens over. The film draws over that panel (the orb whips onto it, the widget
+ * flies off it, the cursor moves across it), so its layers are offsets from that
+ * number. The relative order is exactly the prototype's: cursor, then widget
+ * flight, then orb whip, then the detonation on top of everything.
+ */
+const PANEL_Z = 2147483001;
+export const FILM_Z = {
+  cursor: PANEL_Z + 1,
+  flight: PANEL_Z + 2,
+  whip: PANEL_Z + 3,
+  detonation: PANEL_Z + 4,
+} as const;
 
 export const SPRING_CFG = {damping: 14, stiffness: 120, mass: 0.8};
 
@@ -49,8 +60,3 @@ export const pushIn = (frame: number, dur: number, from = 1, to = 1.03) => {
   return from + (to - from) * t;
 };
 
-// Card shadow that deepens ~30%+ while the card is in motion (motion 0..1).
-export const cardShadow = (motion = 0) =>
-  `0 ${4 + 10 * motion}px ${24 + 14 * motion}px rgba(108,59,255,${
-    0.1 + 0.07 * motion
-  })`;

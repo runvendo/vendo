@@ -7,12 +7,12 @@ import {
   useVideoConfig,
 } from 'remotion';
 import type {VendoKnowledgeCitation} from '@vendoai/core';
-import {C, cardShadow, cardStyle, snap, snapStyle} from '../template/theme';
+import {C, FILM_Z, snap} from '../template/theme';
 import {Cursor} from '../template/Cursor';
+import {OverlayPanel} from '../template/OverlayPanel';
 import {VendoStage} from '../template/VendoStage';
 import {
   CARD,
-  DOT_HANDOFF,
   FADE0,
   FADE1,
   LIFT_AT,
@@ -22,7 +22,7 @@ import {
   panelRise,
 } from '../template/chatShared';
 import {
-  Turn,
+  Transcript,
   answerTurn,
   typedText,
   userTurn,
@@ -31,11 +31,12 @@ import {
 } from './agent-surface';
 
 // Frames 75-252 (177 local). ONE continuous chat panel, two proofs, rendered
-// by the REAL agent surface: every message, the Sources chip row and the
-// in-thread app card come from packages/ui. The film supplies the state and
-// the motion; packages/ui supplies the pixels.
+// by the REAL agent surface: the panel is the product's own VendoOverlay, the
+// transcript is the product's own MessageList, and the keep affordance is the
+// product's own "Pin to dashboard" control. The film supplies the state, the
+// geometry and the motion; packages/ui supplies every pixel.
 //
-// The orb-whip overlay lands on the header dot while the panel slides up;
+// The orb-whip overlay lands on the panel's top-left while the panel slides up;
 // proof A (the SSO answer) plays, the camera pushes in as the answer lands,
 // then the content scrolls up (old messages blur out the top) and proof B (the
 // weekly report view) streams into the same panel as successive payload
@@ -57,19 +58,27 @@ const B_FRAME = 118;
 const B_STATS = 118;
 const B_CHART = 128;
 const B_PILL = 150;
-const B_KEEP = 148;
 const B_CLICK = 154;
 
-/** Where the cursor visits the real Sources chip. Calibrated against a
- *  rendered frame, never guessed — see docs/verification/video-harness. */
-const CHIP = {x: CARD.x + 90, y: CARD.y + 253};
+/** The centre of the real `.fl-cite-btn` in the Sources row, and the centre of
+ *  the real `.fl-barpin` "Pin to dashboard" button on the app card's bar. Both
+ *  are MEASURED off `getBoundingClientRect()` in a real render and divided back
+ *  through the scene camera — never guessed. See the evidence README. */
+const CHIP = {x: CARD.x + 88, y: CARD.y + 236};
+const PIN = {x: CARD.x + 731, y: CARD.y + 256};
 
-const KEEP = {
-  x: WIDGET.x + WIDGET.w - 150,
-  y: WIDGET.y + WIDGET.h - 76,
-  w: 118,
-  h: 54,
-};
+/**
+ * The transcript pane's padding, from `.fl-msglist { padding: 18px 16px 10px }`
+ * in packages/ui/src/chrome/chrome-css.ts. The film positions BY the message
+ * rather than by the pane, so the pinned rects (CARD-relative message top,
+ * WIDGET for the flight pickup) stay exactly where the prototype put them.
+ */
+const PANE_PAD = {top: 18, left: 16};
+
+/** An assistant turn's own leading offset inside the pane (`.fl-turn-assistant`
+ *  vs `.fl-msglist` top, measured: 11px). Subtracted so the app card lands on
+ *  the pinned WIDGET rect the flight overlay lifts from. */
+const TURN_TOP = 11;
 
 export interface SceneChatProps {
   /** The question the user types first. */
@@ -79,46 +88,13 @@ export interface SceneChatProps {
   citations: VendoKnowledgeCitation[];
   /** The build request that produces the in-thread view. */
   askB: string;
-  /** Label on the button that keeps the generated view. */
-  keepLabel?: string;
 }
-
-/** The panel header the orb-whip match-cuts into. Its violet status dot is the
- *  landing target of a pinned transition, so this geometry is film grammar —
- *  see PARKED.md on why the real overlay panel shell cannot sit here. */
-const PanelHeader: React.FC<{dotVisible: boolean}> = ({dotVisible}) => (
-  <div
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      padding: '22px 32px',
-      borderBottom: '1px solid rgba(14,11,26,0.07)',
-      backgroundColor: C.white,
-      borderRadius: '12px 12px 0 0',
-      position: 'relative',
-      zIndex: 5,
-    }}
-  >
-    <div
-      style={{
-        width: 12,
-        height: 12,
-        borderRadius: '50%',
-        backgroundColor: C.violet,
-        opacity: dotVisible ? 1 : 0,
-      }}
-    />
-    <div style={{fontSize: 21, fontWeight: 600, color: C.body}}>Assistant</div>
-  </div>
-);
 
 export const SceneChat: React.FC<SceneChatProps> = ({
   askA,
   answer,
   citations,
   askB,
-  keepLabel = 'Keep',
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -141,18 +117,14 @@ export const SceneChat: React.FC<SceneChatProps> = ({
 
   // Phase B: the view streams in as payload revisions, exactly the way a live
   // build arrives — the real app card narrates building → ready off the
-  // payload's own `streaming` flag.
+  // payload's own `streaming` flag, and reveals its own pin control when the
+  // build settles (which is what the cursor then clicks).
   const frameSnap = snap(frame, fps, B_FRAME);
   const reveal = {
     stats: frame >= B_STATS,
     chart: frame >= B_CHART,
     schedule: frame >= B_PILL,
   };
-  const keepSnap = snap(frame, fps, B_KEEP);
-  const keepOut = interpolate(frame, [B_CLICK + 4, B_CLICK + 10], [1, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
 
   // Camera + scene fade-back under the incoming dashboard.
   const cam = chatCam(frame);
@@ -169,24 +141,20 @@ export const SceneChat: React.FC<SceneChatProps> = ({
   const askBTyped = typedText(askB, frame - B_TYPE);
 
   return (
-    <AbsoluteFill style={{opacity: out}}>
-      <AbsoluteFill style={{backgroundColor: C.bg}} />
-      <AbsoluteFill style={{transform: `scale(${cam * outScale})`}}>
-        <VendoStage>
-          {/* The chat panel — slides up under the arriving orb-dot */}
-          <div
-            style={{
-              ...cardStyle,
-              position: 'absolute',
-              left: CARD.x,
-              top: CARD.y,
-              width: CARD.w,
-              height: CARD.h,
-              transform: `translateY(${rise}px)`,
-              boxShadow: cardShadow(panelMotion),
-              overflow: 'hidden',
-            }}
-          >
+    <AbsoluteFill>
+      <AbsoluteFill style={{backgroundColor: C.bg, opacity: out}} />
+      <VendoStage>
+        <OverlayPanel
+          rect={CARD}
+          rise={rise}
+          cam={cam * outScale}
+          opacity={out}
+          motion={panelMotion}
+        >
+          {/* Everything below is film layout INSIDE the real panel: where the
+              transcript sits and how it moves on the beat. No product surface
+              is drawn here — every visible element comes out of packages/ui. */}
+          <div style={{position: 'absolute', inset: 0, overflow: 'hidden'}}>
             <div
               style={{
                 position: 'absolute',
@@ -195,38 +163,45 @@ export const SceneChat: React.FC<SceneChatProps> = ({
               }}
             >
               {/* ---- Proof A ---- */}
+              {/* The answer's pinned spring entrance (rise 26px + scale
+                  overshoot). The turn is a child of the real message list, so
+                  the film cannot wrap it — it addresses it instead, through a
+                  rule scoped to this film wrapper and re-emitted every frame,
+                  which keeps the motion frame-driven. */}
+              {reply.o > 0 ? (
+                <style>{`.vs-proof-a .fl-msglist > *:last-child {
+                  opacity: ${reply.o};
+                  transform: translateY(${(1 - reply.s) * 26}px)
+                    scale(${0.85 + 0.15 * reply.s});
+                  transform-origin: left top;
+                }`}</style>
+              ) : null}
               <div
+                className="vs-proof-a"
                 style={{
                   position: 'absolute',
-                  top: 78,
+                  top: 78 - PANE_PAD.top,
                   left: 0,
                   right: 0,
                   filter: aBlur > 0.05 ? `blur(${aBlur}px)` : undefined,
                 }}
               >
-                <div className="fl-thread">
-                  <div className="fl-msglist" style={{overflow: 'visible'}}>
-                    {frame >= A_TYPE - 2 ? (
-                      <Turn message={userTurn('a-user', askATyped)} />
-                    ) : null}
-                    {reply.o > 0 ? (
-                      <div
-                        style={{
-                          ...snapStyle(reply.s, reply.o, 26),
-                          transformOrigin: 'left top',
-                        }}
-                      >
-                        <Turn
-                          message={answerTurn(
+                <Transcript
+                  messages={[
+                    ...(frame >= A_TYPE - 2
+                      ? [userTurn('a-user', askATyped)]
+                      : []),
+                    ...(reply.o > 0
+                      ? [
+                          answerTurn(
                             'a-answer',
                             answer,
                             frame >= A_CHIP ? citations : undefined,
-                          )}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
+                          ),
+                        ]
+                      : []),
+                  ]}
+                />
               </div>
 
               {/* ---- Proof B user turn (rides up with the scroll) ---- */}
@@ -234,76 +209,59 @@ export const SceneChat: React.FC<SceneChatProps> = ({
                 <div
                   style={{
                     position: 'absolute',
-                    top: 78 + SCROLL,
+                    top: 78 - PANE_PAD.top + SCROLL,
                     left: 0,
                     right: 0,
                   }}
                 >
-                  <div className="fl-thread">
-                    <div className="fl-msglist" style={{overflow: 'visible'}}>
-                      <Turn message={userTurn('b-user', askBTyped)} />
-                    </div>
-                  </div>
+                  <Transcript messages={[userTurn('b-user', askBTyped)]} />
                 </div>
               ) : null}
             </div>
 
-            <PanelHeader dotVisible={frame >= DOT_HANDOFF} />
+            {/* The generated view: the REAL in-thread app card, streaming its
+                payload revisions and carrying its own "Pin to dashboard"
+                control. Held at the pinned rect the flight overlay picks it
+                up from. */}
+            {frame >= B_FRAME && frame < LIFT_AT ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: WIDGET.x - CARD.x - PANE_PAD.left,
+                  top: WIDGET.y - CARD.y - PANE_PAD.top - TURN_TOP,
+                  width: WIDGET.w + PANE_PAD.left * 2,
+                  opacity: frameSnap.o,
+                  transform: `translateY(${(1 - frameSnap.s) * 34}px) scale(${
+                    0.88 + 0.12 * frameSnap.s
+                  })`,
+                  transformOrigin: 'center top',
+                }}
+              >
+                <Transcript
+                  messages={[
+                    viewTurn(
+                      'b-view',
+                      'weekly-usage',
+                      weeklyUsagePayload(reveal, !reveal.schedule),
+                    ),
+                  ]}
+                />
+              </div>
+            ) : null}
           </div>
+        </OverlayPanel>
+      </VendoStage>
 
-          {/* The generated view: the REAL in-thread app card, streaming its
-              payload revisions. Held at the pinned rect the flight overlay
-              picks it up from. */}
-          {frame >= B_FRAME && frame < LIFT_AT ? (
-            <div
-              style={{
-                position: 'absolute',
-                left: WIDGET.x,
-                top: WIDGET.y,
-                width: WIDGET.w,
-                opacity: frameSnap.o,
-                transform: `translateY(${(1 - frameSnap.s) * 34}px) scale(${
-                  0.88 + 0.12 * frameSnap.s
-                })`,
-                transformOrigin: 'center top',
-              }}
-            >
-              <Turn
-                message={viewTurn(
-                  'b-view',
-                  'weekly-usage',
-                  weeklyUsagePayload(reveal, !reveal.schedule),
-                )}
-              />
-            </div>
-          ) : null}
-
-          {/* Keep button — ink, never violet */}
-          {keepOut > 0 && frame < LIFT_AT ? (
-            <div
-              style={{
-                position: 'absolute',
-                left: KEEP.x,
-                top: KEEP.y,
-                width: KEEP.w,
-                height: KEEP.h,
-                borderRadius: 10,
-                backgroundColor: C.ink,
-                color: C.white,
-                fontSize: 22,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 16px rgba(14,11,26,0.22)',
-                ...snapStyle(keepSnap.s, keepSnap.o * keepOut, 16),
-              }}
-            >
-              {keepLabel}
-            </div>
-          ) : null}
-        </VendoStage>
-
+      {/* The cursor rides the same camera as the scene, on its own layer — the
+          real panel portals to document.body above the film, so the film's
+          layers carry explicit z-indexes over it (FILM_Z). */}
+      <AbsoluteFill
+        style={{
+          transform: `scale(${cam * outScale})`,
+          opacity: out,
+          zIndex: FILM_Z.cursor,
+        }}
+      >
         <Cursor
           path={[
             {frame: 0, x: 1560, y: 920},
@@ -313,16 +271,12 @@ export const SceneChat: React.FC<SceneChatProps> = ({
             {frame: 130, x: 1050, y: 600, bulge: -70},
             {
               frame: B_CLICK,
-              x: KEEP.x + KEEP.w / 2 + 8,
-              y: KEEP.y + KEEP.h / 2 + 4,
+              x: PIN.x,
+              y: PIN.y,
               click: true,
               bulge: 60,
             },
-            {
-              frame: 174,
-              x: KEEP.x + KEEP.w / 2 + 16,
-              y: KEEP.y + KEEP.h / 2 + 12,
-            },
+            {frame: 174, x: PIN.x + 12, y: PIN.y + 14},
           ]}
         />
       </AbsoluteFill>

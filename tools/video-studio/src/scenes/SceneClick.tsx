@@ -1,15 +1,47 @@
 import React from 'react';
 import {AbsoluteFill, Easing, interpolate, useCurrentFrame} from 'remotion';
-import {C, cardStyle} from '../template/theme';
+import {CAD} from '../cadence/tokens';
+import {
+  CADENCE_COL_WIDTH,
+  CADENCE_TOGGLE_INSET,
+  CadenceSettingsCard,
+} from '../cadence/settings';
 import {Cursor} from '../template/Cursor';
-import {Toggle, VendoMark} from '../template/ui';
+import {VendoMark} from '../template/ui';
 
-// Frames 0-24. Cold open, zoomed close on a settings card.
-// Cursor is mid-descent at frame 0, clicks the toggle at frame 8.
+// Frames 0-24. Cold open, camera zoomed close on the host's own settings page:
+// Cadence's real `max-w-3xl` settings column at its real 13px/12px row
+// typography, its real Card/CardHeader/Row markup and its real ink toggle.
+// See ../cadence/settings.tsx for the line-by-line provenance.
+//
+// Cursor is mid-descent at frame 0 and clicks the toggle at frame 8, which is
+// where the detonation is pinned (Detonation.tsx CLICK).
+const FLIP_AT = 8;
+
+/** The pinned click point, in screen px. The camera's origin is this point, so
+ *  the toggle stays here at any zoom and the detonation still starts on it. */
 const TOGGLE = {x: 1560, y: 512};
 
+/**
+ * The camera. Cadence is authored for a browser column — 13px body text — so a
+ * 1080p frame of it at 1:1 would be unreadable from a feed. The film solves that
+ * the way a screen recording does: it zooms in. The magnification lives ENTIRELY
+ * here, in a CSS scale, so every value inside the card stays the host's own.
+ *
+ * The camera law from the prototype is unchanged in shape: a slow drift across
+ * the scene (the same +1.3%) times a 6-frame punch-in on the click.
+ */
+const ZOOM_FROM = 2.0;
+const ZOOM_TO = 2.027;
+
+/** Column placement, so the toggle's centre lands exactly on TOGGLE. */
+const COL_LEFT = TOGGLE.x - (CADENCE_COL_WIDTH - CADENCE_TOGGLE_INSET);
+/** Calibrated against a render: the offset from the column's top to the centre
+ *  of the first row's toggle (page header + card header + half a row). */
+const COL_TOP = TOGGLE.y - 152;
+
 export interface SceneClickProps {
-  /** The settings section the row lives under. */
+  /** The settings card the row lives under (its `CardHeader` title). */
   sectionLabel: string;
   /** The agent capability being switched on — this is the episode's subject. */
   feature: {title: string; subtitle: string};
@@ -24,142 +56,45 @@ export const SceneClick: React.FC<SceneClickProps> = ({
 }) => {
   const frame = useCurrentFrame();
 
-  // Camera punch-in on click: 6 frames, 1.0 -> 1.08, centered on the click.
-  // Base zoom drifts 1.12 -> 1.135 across the scene (camera law: never static).
   const punch =
-    interpolate(frame, [0, 18], [1.12, 1.135], {
+    interpolate(frame, [0, 18], [ZOOM_FROM, ZOOM_TO], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     }) *
-    interpolate(frame, [8, 14], [1, 1.08], {
+    interpolate(frame, [FLIP_AT, FLIP_AT + 6], [1, 1.08], {
       easing: Easing.out(Easing.cubic),
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
 
   return (
-    <AbsoluteFill style={{backgroundColor: C.bg}}>
+    <AbsoluteFill style={{backgroundColor: CAD.surface}}>
       <AbsoluteFill
         style={{
           transform: `scale(${punch})`,
           transformOrigin: `${TOGGLE.x}px ${TOGGLE.y}px`,
         }}
       >
-        {/* Settings card, zoomed close */}
-        <div
-          style={{
-            ...cardStyle,
-            position: 'absolute',
-            left: 190,
-            top: 268,
-            width: 1540,
-            height: 640,
-          }}
-        >
-          {/* Section header, partially establishing a real settings page */}
-          <div
-            style={{
-              position: 'absolute',
-              left: 84,
-              top: 62,
-              fontSize: 26,
-              fontWeight: 600,
-              color: C.muted,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-            }}
-          >
-            {sectionLabel}
-          </div>
-
-          {/* The Knowledge row */}
-          <div style={{position: 'absolute', left: 84, top: 176}}>
-            <div style={{display: 'flex', alignItems: 'center', gap: 22}}>
-              <VendoMark size={56} />
-              <div
-                style={{
-                  fontSize: 64,
-                  fontWeight: 700,
-                  color: C.ink,
-                  letterSpacing: '-0.03em',
-                }}
-              >
-                {feature.title}
-              </div>
-            </div>
-            <div
-              style={{
-                marginTop: 16,
-                fontSize: 30,
-                fontWeight: 400,
-                color: C.muted,
-              }}
-            >
-              {feature.subtitle}
-            </div>
-          </div>
-
-          {/* Enable label + toggle */}
-          <div
-            style={{
-              position: 'absolute',
-              right: 96,
-              top: 208,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 28,
-            }}
-          >
-            <div style={{fontSize: 28, fontWeight: 500, color: C.body}}>
-              Enable
-            </div>
-            <Toggle flipAt={8} scale={1.6} />
-          </div>
-
-          {/* Divider + hint of the next row (cropped feel) */}
-          <div
-            style={{
-              position: 'absolute',
-              left: 84,
-              right: 84,
-              top: 400,
-              height: 1,
-              backgroundColor: 'rgba(14,11,26,0.07)',
-            }}
+        <div style={{position: 'absolute', left: COL_LEFT, top: COL_TOP}}>
+          <CadenceSettingsCard
+            sectionLabel={sectionLabel}
+            feature={feature}
+            nextFeature={nextFeature}
+            flipAt={FLIP_AT}
+            mark={<VendoMark size={13} />}
           />
-          <div style={{position: 'absolute', left: 84, top: 452}}>
-            <div
-              style={{
-                fontSize: 44,
-                fontWeight: 700,
-                color: C.ink,
-                letterSpacing: '-0.03em',
-                opacity: 0.35,
-              }}
-            >
-              {nextFeature.title}
-            </div>
-            <div
-              style={{
-                marginTop: 12,
-                fontSize: 26,
-                color: C.muted,
-                opacity: 0.55,
-              }}
-            >
-              {nextFeature.subtitle}
-            </div>
-          </div>
         </div>
-
-        <Cursor
-          path={[
-            {frame: -7, x: 1760, y: 310},
-            {frame: 8, x: TOGGLE.x, y: TOGGLE.y, click: true, bulge: 46},
-            {frame: 24, x: TOGGLE.x + 14, y: TOGGLE.y + 16, bulge: -14},
-          ]}
-        />
       </AbsoluteFill>
+
+      {/* The cursor lives OUTSIDE the camera: its path is in screen px and its
+          glyph is a real pointer, so a 2x camera must not draw a 2x cursor. */}
+      <Cursor
+        path={[
+          {frame: -7, x: 1760, y: 310},
+          {frame: FLIP_AT, x: TOGGLE.x, y: TOGGLE.y, click: true, bulge: 46},
+          {frame: 24, x: TOGGLE.x + 14, y: TOGGLE.y + 16, bulge: -14},
+        ]}
+      />
     </AbsoluteFill>
   );
 };

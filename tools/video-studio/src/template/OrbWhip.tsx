@@ -6,7 +6,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
-import {C, pushIn} from './theme';
+import {C, FILM_Z, pushIn} from './theme';
 import {
   CHAT_START,
   DOT,
@@ -83,7 +83,7 @@ export const OrbWhip: React.FC = () => {
   const glow = Math.max(0, 1 - p * 1.3);
 
   return (
-    <AbsoluteFill style={{zIndex: 190, pointerEvents: 'none'}}>
+    <AbsoluteFill style={{zIndex: FILM_Z.whip, pointerEvents: 'none'}}>
       <div
         style={{
           position: 'absolute',

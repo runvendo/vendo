@@ -5,9 +5,13 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
-import {C, cardStyle, pushIn, snap, snapStyle} from '../template/theme';
+import {C, pushIn, snap, snapStyle} from '../template/theme';
 import {Cursor} from '../template/Cursor';
-import {DocIcon, Toggle, Bar, VendoMark} from '../template/ui';
+import {DocIcon, VendoMark} from '../template/ui';
+import {
+  CADENCE_COL_WIDTH,
+  CadenceSettingsCard,
+} from '../cadence/settings';
 
 // Frames 18-75 (57 local). The console pulled back; file chips get
 // inhaled into a glowing violet orb; kinetic type punches in bottom-left.
@@ -293,6 +297,9 @@ const KineticWord: React.FC<{text: string; start: number}> = ({
   );
 };
 
+/** The corner slot the pulled-back settings page is framed into. */
+const ERUPTION_CARD = {w: 620, h: 470};
+
 export interface SceneEruptionProps {
   /** The two kinetic-type lines, bottom-left. Line 2 carries the blank. */
   lines: [string, string];
@@ -313,67 +320,33 @@ export const SceneEruption: React.FC<SceneEruptionProps> = ({
   return (
     <AbsoluteFill style={{backgroundColor: C.bg}}>
       <AbsoluteFill style={{transform: `scale(${pushIn(frame, 57)})`}}>
-        {/* The same console, pulled back: settings card upper-left */}
+        {/* The same page, pulled back into the console's corner: Cadence's
+            real settings column (../cadence/settings.tsx), the capability now
+            switched on. Scaled and clipped to the corner slot — the film frames
+            it; the host still owns every pixel inside. */}
         <div
           style={{
-            ...cardStyle,
             position: 'absolute',
             left: 110,
             top: 110,
-            width: 560,
-            height: 330,
-            padding: 34,
+            width: ERUPTION_CARD.w,
+            height: ERUPTION_CARD.h,
+            overflow: 'hidden',
           }}
         >
           <div
             style={{
-              fontSize: 15,
-              fontWeight: 600,
-              color: C.muted,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
+              width: CADENCE_COL_WIDTH,
+              transform: `scale(${ERUPTION_CARD.w / CADENCE_COL_WIDTH})`,
+              transformOrigin: 'top left',
             }}
           >
-            Workspace settings
-          </div>
-          <div
-            style={{
-              marginTop: 26,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <div>
-              <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
-                <VendoMark size={27} />
-                <div
-                  style={{
-                    fontSize: 30,
-                    fontWeight: 700,
-                    color: C.ink,
-                    letterSpacing: '-0.03em',
-                  }}
-                >
-                  {feature.title}
-                </div>
-              </div>
-              <div style={{marginTop: 6, fontSize: 16, color: C.muted}}>
-                {feature.subtitle}
-              </div>
-            </div>
-            <Toggle flipAt={-100} scale={0.62} />
-          </div>
-          <div
-            style={{
-              marginTop: 26,
-              height: 1,
-              backgroundColor: 'rgba(14,11,26,0.07)',
-            }}
-          />
-          <div style={{marginTop: 24, opacity: 0.4}}>
-            <Bar w={190} h={16} />
-            <Bar w={300} h={11} style={{marginTop: 12}} />
+            <CadenceSettingsCard
+              sectionLabel="Workspace settings"
+              feature={feature}
+              flipAt={-100}
+              mark={<VendoMark size={13} />}
+            />
           </div>
         </div>
 

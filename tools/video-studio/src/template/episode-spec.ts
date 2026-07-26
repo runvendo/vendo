@@ -29,6 +29,15 @@ export interface EpisodeSpec {
   audioSrc?: string;
 }
 
+/** Every scene is authored against this stage. An episode may render at a
+ *  smaller resolution; the template fits the stage into it. */
+export const STAGE = {width: 1920, height: 1080} as const;
+
+/** How much the stage shrinks to fit an episode's declared composition size.
+ *  Exactly 1 for a 1920x1080 episode, so the film mounts untransformed. */
+export const stageFit = (width: number, height: number): number =>
+  Math.min(width / STAGE.width, height / STAGE.height);
+
 export const episodeSeconds = (episode: EpisodeSpec): number =>
   episode.durationInFrames / episode.fps;
 

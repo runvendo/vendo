@@ -125,62 +125,69 @@ is the source-true rendered background.
 
 # PARKED — video-system harness (lane: factory/video-harness)
 
-Two genuine conflicts between the contract's amendment A2 ("zero visual
-imitations — every agent-surface element must be the actual component") and
-its pinned CANON motion / its own task-3 wording. Both are parked rather
-than faked, and both have a reversible default in place so the lane could
-continue.
+## Round 2 (2026-07-26): P1 is RESOLVED, not parked
 
-## P1 — the real overlay panel shell cannot host the film's pinned geometry
+The round-1 park of the real overlay panel was rejected by the checker as
+disguised weakening, and the checker was right. The real `VendoOverlay` panel,
+its real header controls, the real `MessageList` transcript and the real
+`.fl-barpin` "Pin to dashboard" control are all now mounted and on camera. See
+`docs/verification/video-harness/README.md` §"The panel is real" for the
+mechanism and the measured proof. P2 (Cadence's Next-coupled components) stands
+below, unchanged and still the contract's own authorised branch — but the
+settings surface it covers has been rebuilt from the host's real markup.
 
-**What is real anyway:** every message, the `Sources` citation row, the
-in-thread app card and the generated view ARE the real components
-(`packages/ui/src/chrome/thread/message.tsx`, `.../turn-citations.tsx`,
-`.../parts.tsx` → `packages/ui/src/tree/renderer.tsx`), mounted on the real
-`VendoProvider` + `ChromeRoot`, inside the real `.fl-thread`/`.fl-msglist`
-containers. What is NOT real is the rounded panel *frame* around them and
-its "Assistant" header row, which the film draws.
+## Q1 — the orb whip now lands on nothing real. A design call for Yousef.
 
-**Why the real one cannot be used.** The product's panel is `VendoOverlay`
-→ `.fl-overlay-panel`. Command:
+**Not a blocker.** The criterion ("zero hand-drawn agent-surface JSX") is met and
+the pinned motion is untouched. This is a film-grammar question the code cannot
+answer, recorded because the checker's instruction was that the header question
+goes to Yousef rather than back into film grammar.
 
-    grep -n "^\.fl-overlay-panel { position: fixed" -A 7 \
-      packages/ui/src/chrome/chrome-css.ts
+**The situation.** `OrbWhip.tsx` is CANON: the agent orb, having absorbed the
+corpus, whips across frame and shrinks to a 6px violet dot at `DOT` — the
+top-left of the chat panel — then hard-cuts at `DOT_HANDOFF`, where the
+prototype's drawn "Assistant" header row took over with its violet status dot.
 
-Output (chrome-css.ts:1021-1028):
+That header row was an invention. Evidence that the product has no counterpart:
 
-    .fl-overlay-panel { position: fixed; left: 50%; top: 50%;
-      transform: translate(-50%, -50%); z-index: 2147483001;
-      width: min(620px, 94vw); height: min(680px, 86vh); ...
-      transform-origin: center;
-      animation: fl-overlay-stretch .5s cubic-bezier(.22, 1.2, .36, 1) both; }
+    grep -o "\.fl-[a-z-]*\(dot\|blob\|avatar\)[a-z-]*" \
+      packages/ui/src/chrome/chrome-css.ts | sort -u
 
-Three blockers, each independently fatal for this film:
+Output — the only agent marks in the product are the launcher orb and the app
+card's own dot; there is no panel-header dot and no panel title row at all:
 
-1. `position: fixed` at 50%/50% with `width: min(620px, 94vw)` /
-   `height: min(680px, 86vh)` pins it to 620x680 dead-centre. The film's
-   panel is 1120x860 at (400, 110) — `CARD` in
-   `tools/video-studio/src/template/chatShared.ts`. Those coordinates are
-   not decoration: `OrbWhip` match-cuts the agent orb into the header dot
-   at `DOT`, and `WidgetFlight` picks the view up from `WIDGET`, both
-   derived from `CARD`. The contract pins those transitions as CANON and
-   forbids redesigning the motion.
-2. `animation: fl-overlay-stretch .5s` is a wall-clock CSS animation.
-   Remotion steps frames; wall-clock animation makes the render
-   non-reproducible. (The film disables the components' other motion via
-   `motion: "reduced"`, but a keyframe `animation` is not covered by
-   `--vendo-motion-duration`.)
-3. `z-index: 2147483001` would paint the panel above the detonation, the
-   orb whip and the widget flight — every overlay the film depends on.
+    .fl-appcard-dot
+    .fl-approvals-dot
+    .fl-approvals-dot--on
+    .fl-approvals-dots
+    .fl-auto-runs-dot
+    .fl-connect-done-dot
+    .fl-glass-dot
+    .fl-launcher-blob
+    .fl-voice-blob
+    .fl-voice-dots
 
-Overriding all three would mean restyling the real component until nothing
-of its own layout survived, which is a fake wearing the component's name.
+`VendoOverlay`'s panel children, in source order, are: an `fl-sr-only` "Vendo"
+label, the expand button, the new-conversation button, the close button, then
+`.fl-split`. Its header IS that control cluster.
 
-**Default taken (reversible):** the panel frame and its header row are film
-grammar — `PanelHeader` in `tools/video-studio/src/scenes/SceneChat.tsx`,
-~25 lines — and everything inside it is the real agent surface. Reversible
-because the day `VendoOverlay` grows a positioning/geometry seam (or a
-`static` variant), the frame swaps out without touching the scene's motion.
+**What ships (the reversible default).** The invented row is deleted rather than
+replaced, and the whip is left byte-identical: the orb condenses onto the real
+panel's own top-left corner while the panel springs up beneath it, then hands
+off. It reads as the orb becoming the panel. Frame 84 of the render
+(`docs/verification/video-harness`) shows the landing.
+
+**The three options, for whoever decides:**
+1. Ship as-is — the orb dissolves into the panel's corner.
+2. Land the whip on the product's REAL agent orb (`launcher={{label: null}}`
+   renders `.fl-launcher-blob`, the blob-only orb) film-placed at `DOT`. Real
+   pixels, but placed somewhere the product never puts it, and it is ~44px where
+   the whip ends at 6px.
+3. Give `VendoOverlay` a real title row in `packages/ui` — a product change, out
+   of this lane's scope, and the only option that makes the shot true by
+   construction.
+
+Rejected outright: drawing a dot again.
 
 ## P2 — Cadence's own components are Next.js-coupled and cannot mount in Remotion
 

@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@remotion/cli": "4.0.351",
-    "@remotion/google-fonts": "4.0.351",
     "@vendoai/core": "workspace:*",
     "@vendoai/ui": "workspace:*",
     "ai": "6.0.28",

@@ -7,7 +7,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
-import {pushIn} from './theme';
+import {FILM_Z, pushIn} from './theme';
 import {VendoMark} from './ui';
 
 // THE PURPLE DETONATION. Global-frame overlay rendered above all scenes.
@@ -119,7 +119,7 @@ export const Detonation: React.FC = () => {
   });
 
   return (
-    <AbsoluteFill style={{zIndex: 200, pointerEvents: 'none'}}>
+    <AbsoluteFill style={{zIndex: FILM_Z.detonation, pointerEvents: 'none'}}>
       {contract === 0 && (
         <>
           <Circle cx={CLICK.x} cy={CLICK.y} r={rLilac} background="#A78BFA" />

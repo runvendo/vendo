@@ -7,7 +7,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
-import {C, SPRING_CFG} from './theme';
+import {C} from './theme';
 
 // The real vendo blob mark (imported asset — never redrawn).
 // `white` recolors the violet fills to pure white via CSS filter.
@@ -27,53 +27,6 @@ export const VendoMark: React.FC<{
     }}
   />
 );
-
-// Animated toggle. `flipAt` = frame (scene-local) at which it turns on.
-// Sized via `scale` (base: 88x50 track).
-export const Toggle: React.FC<{flipAt: number; scale?: number}> = ({
-  flipAt,
-  scale = 1,
-}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const s =
-    frame < flipAt
-      ? 0
-      : spring({frame: frame - flipAt, fps, config: SPRING_CFG});
-  const w = 88 * scale;
-  const h = 50 * scale;
-  const pad = 5 * scale;
-  const knob = h - pad * 2;
-  const knobX = pad + s * (w - knob - pad * 2);
-  const trackOn = interpolate(s, [0, 0.5], [0, 1], {
-    extrapolateRight: 'clamp',
-  });
-  return (
-    <div
-      style={{
-        width: w,
-        height: h,
-        borderRadius: h / 2,
-        backgroundColor: trackOn > 0.5 ? C.violet : '#E4E2EC',
-        position: 'relative',
-        transition: 'none',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: pad,
-          left: knobX,
-          width: knob,
-          height: knob,
-          borderRadius: '50%',
-          backgroundColor: C.white,
-          boxShadow: '0 2px 6px rgba(14,11,26,0.18)',
-        }}
-      />
-    </div>
-  );
-};
 
 export const DocIcon: React.FC<{size?: number; color?: string}> = ({
   size = 18,
@@ -97,20 +50,3 @@ export const DocIcon: React.FC<{size?: number; color?: string}> = ({
   </svg>
 );
 
-// Gray placeholder bar for fake UI content.
-export const Bar: React.FC<{
-  w: number;
-  h?: number;
-  color?: string;
-  style?: React.CSSProperties;
-}> = ({w, h = 12, color = C.barFill, style}) => (
-  <div
-    style={{
-      width: w,
-      height: h,
-      borderRadius: h / 2,
-      backgroundColor: color,
-      ...style,
-    }}
-  />
-);

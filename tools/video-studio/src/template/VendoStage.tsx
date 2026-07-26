@@ -46,11 +46,22 @@ ensureChromeStyles();
  * `automaticPolicyNotice={false}` matters — the notice subscribes to
  * useVendoStatus, which calls client.status() on mount. The film has no wire,
  * and the notice is host-configuration chrome that has no place in the film.
+ *
+ * `onPin` is the host seam that makes the app card's REAL keep affordance
+ * render: `ThreadAppCard` shows `.fl-barpin` "Pin to dashboard" on the card bar
+ * only when a host has wired `onPin` (packages/ui/src/chrome/thread/parts.tsx).
+ * That button is the one the film's cursor clicks — the film draws no button of
+ * its own. The handler itself is inert: the pin's consequence (the card landing
+ * on the dashboard) is the next scene, not a state change.
  */
 export const VendoStage: React.FC<{children: React.ReactNode}> = ({
   children,
 }) => (
-  <VendoProvider client={offlineClient} theme={videoVendoTheme}>
+  <VendoProvider
+    client={offlineClient}
+    theme={videoVendoTheme}
+    onPin={() => undefined}
+  >
     <ChromeRoot automaticPolicyNotice={false}>{children}</ChromeRoot>
   </VendoProvider>
 );

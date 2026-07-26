@@ -1,6 +1,7 @@
 import React from 'react';
 import {AbsoluteFill, Easing, interpolate, useCurrentFrame} from 'remotion';
 import {CHAT_START, LIFT_AT, WIDGET, widgetPickup} from './chatShared';
+import {FILM_Z} from './theme';
 import {VendoStage} from './VendoStage';
 import {Turn, viewTurn, weeklyUsagePayload} from '../scenes/agent-surface';
 
@@ -79,7 +80,7 @@ export const WidgetFlight: React.FC = () => {
   const flyBlur = p > 0.25 && p < 0.75 ? 2 : 0;
 
   return (
-    <AbsoluteFill style={{zIndex: 180, pointerEvents: 'none'}}>
+    <AbsoluteFill style={{zIndex: FILM_Z.flight, pointerEvents: 'none'}}>
       <div
         style={{
           position: 'absolute',
