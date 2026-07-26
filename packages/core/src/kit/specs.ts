@@ -374,9 +374,13 @@ export const KIT_SPECS: KitComponentSpec[] = [
   {
     name: "Callout",
     group: "feedback",
-    summary: "A toned info/success/warning/danger notice highlighting real information. For 'no tool' honesty use Disclaimer.",
+    summary: "A toned info/accent/success/warning/danger notice highlighting real information. For 'no tool' honesty use Disclaimer.",
     props: {
-      tone: config(z.enum(["info", "success", "warning", "danger"]), "notice tone"),
+      // "accent" is first-class (re-gate 2026-07-26): the sibling tone
+      // vocabularies (Badge/EnumBadge/Stat/Progress) teach it, so generated
+      // code writes it whether or not this enum admits it — the spec and the
+      // ui component (@vendoai/ui kit/feedback/callout.tsx) must agree.
+      tone: config(z.enum(["info", "accent", "success", "warning", "danger"]), "notice tone"),
       title: copy(z.string(), "notice heading"),
     },
     examples: ['<Callout tone="warning" title="Heads up">Three invoices are overdue.</Callout>'],

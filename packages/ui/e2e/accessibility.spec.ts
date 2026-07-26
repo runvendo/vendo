@@ -4,6 +4,7 @@ import { openScenario } from "./helpers.js";
 
 const chromeScenarios = [
   "thread",
+  "thread-citations",
   "overlay",
   "page",
   "palette",
@@ -25,6 +26,12 @@ for (const scenario of chromeScenarios) {
   test(`${scenario} has zero WCAG 2.1 A/AA axe violations`, async ({ page }) => {
     await openScenario(page, scenario);
     if (scenario === "thread") await expect(page.getByLabel("Approval for Email send")).toBeVisible();
+    if (scenario === "thread-citations") {
+      // Audit all three Surface-2 trust states, popover expanded.
+      await expect(page.locator("[data-vendo-knowledge-unavailable]")).toBeVisible();
+      await page.locator(".fl-cite-btn").first().click();
+      await expect(page.locator(".fl-cite--open .fl-cite-pop")).toBeVisible();
+    }
     if (scenario === "overlay") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();
     if (scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
     if (scenario === "palette") await expect(page.getByRole("dialog", { name: "Vendo assistant" })).toBeVisible();

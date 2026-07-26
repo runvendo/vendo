@@ -95,7 +95,7 @@ function explicitGenerationModel(): LanguageModel {
           {
             type: "text-delta",
             id: "g1",
-            delta: `<App name="Adapter rule"><Stack><Text text="${EXPLICIT_MODEL_MARKER}"/></Stack></App>`,
+            delta: `<App name="Adapter rule"><Stack><Text text="${EXPLICIT_MODEL_MARKER}"/><Disclaimer reason="Fixture app."/></Stack></App>`,
           } as const,
           { type: "text-end", id: "g1" } as const,
           finish("stop"),

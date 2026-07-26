@@ -336,6 +336,10 @@ export function composioConnector(config: {
           : undefined;
         descriptors.push({
           name,
+          // The connectable toolkit gating this tool's usefulness (01-core §4
+          // `ToolDescriptor.toolkit`): downstream seams skip work for
+          // unconnected toolkits (the apps runtime's create-time shape probes).
+          toolkit,
           description: typeof item.description === "string" ? item.description : raw,
           inputSchema:
             item.input_parameters && typeof item.input_parameters === "object" && !Array.isArray(item.input_parameters)

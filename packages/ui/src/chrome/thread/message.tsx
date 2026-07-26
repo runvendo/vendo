@@ -5,6 +5,7 @@ import { useCopyFeedback } from "../clipboard.js";
 import { SentAttachment, type FilePart } from "./attachments.js";
 import { assistantText, collapseToolRuns, userText } from "./message-data.js";
 import { ThreadPart } from "./parts.js";
+import { TurnCitations } from "./turn-citations.js";
 
 // 2026-07 demo feedback — the settled turn's "sources" chip row (lane pick 8C)
 // is GONE: the little read-call pills under assistant messages read as clutter
@@ -94,6 +95,12 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
               sendMessage={sendMessage}
             />
           ))}
+          {/* Knowledge K1 — the turn's knowledge trust surface (citation
+              chips / refusal line / unavailable flag) renders at the BOTTOM
+              of the turn, under the answer it grounds (signed mockups,
+              Surface 2) — not at the citations part's transcript position,
+              which precedes the streamed answer text. */}
+          {message.role === "assistant" && !streamingTurn ? <TurnCitations message={message} /> : null}
           {showActions ? (
             <div className="fl-turn-actions">
               {bubbleText.length > 0 ? <CopyTurnButton text={bubbleText} /> : null}

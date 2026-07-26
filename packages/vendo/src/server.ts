@@ -34,6 +34,7 @@ import {
   type ComponentCatalog,
   type ComponentRegistry,
   type Json,
+  type KnowledgeAdapter,
   type PermissionGrant,
   type Principal,
   type RunContext,
@@ -45,6 +46,7 @@ import {
   type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
+import { createKnowledgeTools } from "@vendoai/knowledge";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
@@ -258,6 +260,10 @@ export interface CreateVendoConfig {
   brief?: string;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
+  /** Knowledge K1 — the product knowledge base seam (core's KnowledgeAdapter).
+      Configured, it composes the `vendo_knowledge_search` agent tool; unset,
+      the tool does not exist (precedence: selectKnowledge). */
+  knowledge?: KnowledgeAdapter;
   connectors?: Connector[];
   /** 04-actions §3 — an explicit connections adapter; always wins over the
       defaults (precedence: selectConnections). */
@@ -504,6 +510,15 @@ function selectConnectors(configured: Connector[] | undefined): Connector[] {
     return [cloudTools({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) })];
   }
   return [];
+}
+
+/** ADAPTER RULE, knowledge seam: which KnowledgeAdapter (if any) backs the
+    `vendo_knowledge_search` tool. v1 precedence: an explicitly passed adapter
+    or nothing — no VENDO_API_KEY cloud default yet (that arrives with the
+    hosted knowledge engine, K3); unconfigured means the tool simply does not
+    compose, so the agent never advertises a knowledge base the host lacks. */
+function selectKnowledge(configured: KnowledgeAdapter | undefined): KnowledgeAdapter | undefined {
+  return configured;
 }
 
 /** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
@@ -1506,6 +1521,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
     semantics: () => hostSemanticsProvider()?.semantics,
     domains: () => hostSemanticsProvider()?.domains,
+    // Re-gate 2026-07-26 finding 2 — the create-time shape sampler skips
+    // connector tools whose toolkit is not connected for the caller. Backed by
+    // the same connections lookup (and per-subject cache) the agent's
+    // connected-toolkit loadout seed rides; `connectedToolkitsFor` is a
+    // hoisted function declaration defined next to that seed below.
+    connectedToolkits: (toolkitCtx) => connectedToolkitsFor(toolkitCtx),
     secrets,
     // execution-v2 — the machine lifecycle's seams: the selected v2 adapter
     // (every provider speaks the canonical seam since the Wave 5 Cloud port)
@@ -1525,6 +1546,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   });
   resolveAppToolRisk = apps.agentToolRisk;
   actions.add(apps.agentTools());
+  // Knowledge K1 — the tool exists exactly when an adapter is configured;
+  // no adapter, no `vendo_knowledge_search` in any descriptor surface.
+  const knowledge = selectKnowledge(config.knowledge);
+  if (knowledge !== undefined) actions.add(createKnowledgeTools(knowledge));
   // #557 — the capability-miss surface is DEFERRED to first use behind a
   // memoized promise. Building it eagerly at compose would call
   // actions.descriptors() → loadHost → the cloud overrides fetch at module
@@ -1634,26 +1659,32 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return name.startsWith(VENDO_TOOL_PACK_PREFIX) || menu.has(name);
     });
   }
-  async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
+  // Hoisted (function declaration): the apps composition above references it
+  // as the AppsConfig.connectedToolkits seam; `connections` is declared below
+  // and only read at request time (same pattern as loadoutSeedFor).
+  async function connectedToolkitsFor(ctx: RunContext): Promise<string[]> {
     const subject = ctx.principal.subject;
     const cached = connectedToolkitsCache.get(subject);
-    let toolkits: string[];
     if (cached !== undefined && Date.now() - cached.at < CONNECTED_TOOLKITS_TTL_MS) {
-      toolkits = cached.toolkits;
-    } else {
-      try {
-        const accounts = await connections.list(ctx.principal);
-        toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
-      } catch (error) {
-        console.warn(
-          "[vendo] connected-toolkits lookup failed; seeding host tools only:",
-          error instanceof Error ? error.message : error,
-        );
-        toolkits = [];
-      }
-      if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
-      connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+      return cached.toolkits;
     }
+    let toolkits: string[];
+    try {
+      const accounts = await connections.list(ctx.principal);
+      toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
+    } catch (error) {
+      console.warn(
+        "[vendo] connected-toolkits lookup failed; treating every toolkit as unconnected:",
+        error instanceof Error ? error.message : error,
+      );
+      toolkits = [];
+    }
+    if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
+    connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+    return toolkits;
+  }
+  async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
+    const toolkits = await connectedToolkitsFor(ctx);
     return onAgentMenu(await actions.loadoutSeed(toolkits), (name) => name);
   }
   // 02-store §4 (kill-list B3) TTL sweep: erase every idle ephemeral session's
