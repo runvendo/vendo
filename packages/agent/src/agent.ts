@@ -2,6 +2,8 @@ import {
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_APPS_CREATE_TOOL,
   VendoError,
+  formatMeterExhausted,
+  meterExhaustedFromError,
   toVendoWirePart,
   type AgentRunner,
   type ApprovalId,
@@ -370,6 +372,17 @@ function wireErrorMessage(error: unknown): string {
     const { message, code } = error as { message: string; code: string };
     return `Vendo: ${message} (${code})`;
   }
+  // Pricing v3 (spec §5): the Cloud model gateway's meter refusal reaches this
+  // gate as a provider APICallError (statusCode 402, the structured refusal as
+  // its response body), never as a VendoError. Only OUR formatter's sentence —
+  // meter, figures, reset date, the two exits, all from the parsed structured
+  // fields — travels; the raw body/provider internals still never do, so the
+  // ENG-214 policy holds. The refusal body is the only source of truth (no
+  // client-side entitlement checks); any other 402 stays the generic string.
+  const refusal = meterExhaustedFromError(error);
+  if (refusal !== undefined) {
+    return `Vendo: ${formatMeterExhausted(refusal)} (cloud-required)`;
+  }
   return "An error occurred while generating the response.";
 }
 
@@ -458,6 +471,17 @@ export function createAgent(config: AgentConfig): VendoAgent {
               seedNames = undefined;
             }
           }
+          // The host's curated surface menu, resolved beside the seed. A failure
+          // degrades to unrestricted (the composition seam owns the warning);
+          // an empty menu is a real answer and must not read as "unrestricted".
+          let menuNames: readonly string[] | undefined;
+          if (config.toolSearch?.menu !== undefined) {
+            try {
+              menuNames = await config.toolSearch.menu(input.ctx);
+            } catch {
+              menuNames = undefined;
+            }
+          }
           const bridgeOptions = {
             registry: config.tools,
             guard: config.guard,
@@ -475,6 +499,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
                 descriptors: await config.tools.descriptors(),
                 loaded: loadedFor(thread.id),
                 ...(seedNames === undefined ? {} : { seedNames }),
+                ...(menuNames === undefined ? {} : { menuNames }),
                 // Search hits expanded mid-turn resolve to full descriptors and
                 // materialize into the LIVE toolset — prepareStep re-reads the
                 // active names each step, so they are callable next step.

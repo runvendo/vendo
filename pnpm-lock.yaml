@@ -44,9 +44,6 @@ importers:
 
   apps/demo-accounting:
     dependencies:
-      '@ai-sdk/anthropic':
-        specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
       '@vendoai/actions':
         specifier: workspace:*
         version: link:../../packages/actions
@@ -162,6 +159,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@vendoai/guard':
+        specifier: workspace:*
+        version: link:../../packages/guard
       '@vendoai/store':
         specifier: workspace:*
         version: link:../../packages/store
@@ -241,9 +241,6 @@ importers:
       '@vendoai/automations':
         specifier: workspace:*
         version: link:../../packages/automations
-      '@vendoai/guard':
-        specifier: workspace:*
-        version: link:../../packages/guard
       eslint:
         specifier: ^9
         version: 9.39.5(jiti@2.7.0)
@@ -429,6 +426,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@vendoai/knowledge':
+        specifier: workspace:*
+        version: link:../../packages/knowledge
       '@vendoai/vendo':
         specifier: workspace:*
         version: link:../../packages/vendo
@@ -445,6 +445,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
+      '@vitest/coverage-v8':
+        specifier: ^2.1.0
+        version: 2.1.9(vitest@2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0))
       ai:
         specifier: '>=6.0.0 <7'
         version: 6.0.28(zod@3.25.76)
@@ -1163,6 +1166,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -1320,6 +1326,9 @@ importers:
       '@vendoai/guard':
         specifier: workspace:*
         version: link:../guard
+      '@vendoai/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
       '@vendoai/mcp':
         specifier: workspace:*
         version: link:../mcp

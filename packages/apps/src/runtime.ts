@@ -53,7 +53,9 @@ import {
   verifyDocumentAgainstData,
   type GenerationDependencies,
   type GenerationEngine,
+  type GenerationTimingEvent,
 } from "./engine.js";
+import type { PipelineEvent } from "./pipeline.js";
 import { planAutomation } from "./automation-plan.js";
 import { createAppHistory } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
@@ -196,6 +198,17 @@ export interface AppsConfig {
   /** W3 — the host's domain manifest (has / has-NOT), generation fact.
    *  Provider form resolved per generation (see catalog note). */
   domains?: DomainManifest | (() => DomainManifest | undefined);
+  /** Re-gate 2026-07-26 finding 2 — the caller's CONNECTED toolkits, resolved
+   *  per create/edit. The create-time shape sampler probes every no-arg read
+   *  tool once; a connector tool (descriptor.toolkit set, 01-core §4) whose
+   *  toolkit is not in this set is never probed — on the gate hosts, ~159
+   *  unconnected Slack/Gmail probes piled up at the approval gate and the
+   *  burst tripped the call-rate breaker under real creates. The umbrella
+   *  backs this with the connections seam (connections.list, active accounts).
+   *  Unset or failing = treat every toolkit as unconnected: connector probes
+   *  skip, host tools are unaffected, and the tools stay LISTED for
+   *  generation (execution still answers `connect-required` on its own). */
+  connectedToolkits?: (ctx: RunContext) => Promise<string[]>;
 }
 
 /** 06-apps §1 */
@@ -651,6 +664,24 @@ const rungFor = (
 const resolveProvider = <T>(slot: T | (() => T | undefined) | undefined): T | undefined =>
   typeof slot === "function" ? (slot as () => T | undefined)() : slot;
 
+/** Latency instrumentation (demo-latency lane): every generation stage
+ *  narrates its wall-clock on the operator's terminal — the engine's opt-in
+ *  onTiming/onPipeline seams were previously wired only in bench code, so a
+ *  5-minute live create was unattributable. One short line per stage event;
+ *  no payloads, no prompts. */
+const logTiming = (event: GenerationTimingEvent): void => {
+  const usage = event.usage === undefined
+    ? ""
+    : ` tokens=${event.usage.inputTokens ?? "?"}→${event.usage.outputTokens ?? "?"}`;
+  console.info(`[vendo] gen ${event.lane} ${event.phase} at=${(event.atMs / 1000).toFixed(1)}s${usage}`);
+};
+
+const logPipeline = (event: PipelineEvent): void => {
+  const { stage, ms, ...rest } = event;
+  const detail = Object.entries(rest).map(([key, value]) => ` ${key}=${String(value)}`).join("");
+  console.info(`[vendo] gen pipeline ${stage}${detail} ms=${ms}`);
+};
+
 const generationDependencies = (
   config: AppsConfig,
   model: LanguageModel,
@@ -672,6 +703,8 @@ const generationDependencies = (
     ...(config.paint === undefined ? {} : { paint: config.paint }),
     ...(config.pipeline === undefined ? {} : { pipeline: config.pipeline }),
     ...(onPartial === undefined ? {} : { onPartial }),
+    onTiming: logTiming,
+    onPipeline: logPipeline,
   };
 };
 
@@ -1183,6 +1216,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   // tool's shape unknown (defensive `json` per the spec).
   const sampledShapes = new Map<string, ShapeType>();
   const settledSamples = new Set<string>();
+  // connect-required settles PER SUBJECT and PER TTL (review 2026-07-26): a
+  // shape is host-level, but a missing account connection is one principal's
+  // state — settling it globally would stop ever sampling the tool for a
+  // DIFFERENT subject whose account is fine, and settling it forever would
+  // never recover the shape after the SAME subject reconnects mid-boot (the
+  // broker lists the toolkit as active both before and after, so the
+  // connected set cannot signal the repair). Within the TTL the dead probe
+  // stays quiet; after it, one probe per tool retries. Bounded like the
+  // umbrella's toolkit cache.
+  const CONNECT_SETTLE_TTL_MS = 10 * 60_000;
+  const connectRequiredSettled = new Map<string, number>();
+  const connectSettleKey = (subject: string, tool: string): string => `${subject} ${tool}`;
+  const connectSettled = (subject: string, tool: string): boolean => {
+    const at = connectRequiredSettled.get(connectSettleKey(subject, tool));
+    return at !== undefined && Date.now() - at < CONNECT_SETTLE_TTL_MS;
+  };
   const requiresInput = (descriptor: ToolDescriptor): boolean => {
     const required = (descriptor.inputSchema as { required?: unknown }).required;
     return Array.isArray(required) && required.length > 0;
@@ -1191,9 +1240,25 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ctx: RunContext,
   ): Promise<Pick<GenerationDependencies, "tools" | "toolShapes">> => {
     const descriptors = await config.tools.descriptors().catch(() => []);
-    await Promise.all(descriptors
-      .filter((descriptor) =>
-        descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name))
+    const candidates = descriptors.filter((descriptor) =>
+      descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name)
+      && !connectSettled(ctx.principal.subject, descriptor.name));
+    // Re-gate 2026-07-26 finding 2: a connector tool (descriptor.toolkit,
+    // 01-core §4) is probed ONLY when its toolkit is connected for this
+    // caller — an unconnected toolkit's probe can never yield a shape (the
+    // account is missing), and on the gate hosts the ~50-tool probe burst
+    // per create parked at the approval gate and tripped the call-rate
+    // breaker under the create's own host reads. The connected set is
+    // resolved lazily (only when a connector candidate exists) and degrades
+    // to empty on failure or when the seam is not composed: probes skip,
+    // the tools stay listed below.
+    const connectorCandidates = candidates.filter((descriptor) => typeof descriptor.toolkit === "string");
+    let connected: ReadonlySet<string> = new Set();
+    if (connectorCandidates.length > 0 && config.connectedToolkits !== undefined) {
+      connected = new Set(await config.connectedToolkits(ctx).catch(() => []));
+    }
+    await Promise.all(candidates
+      .filter((descriptor) => typeof descriptor.toolkit !== "string" || connected.has(descriptor.toolkit))
       .map(async (descriptor) => {
         try {
           const outcome = await config.tools.execute(
@@ -1207,6 +1272,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             // The policy gates this read: never re-ask on later creates (one
             // parked approval per boot at most), and leave the shape unknown.
             settledSamples.add(descriptor.name);
+          } else if (outcome.status === "connect-required") {
+            // The broker listed the toolkit as connected but the provider has
+            // no account (expired/foreign): settle for THIS subject only (and
+            // only for the TTL), so the dead probe stays quiet on their next
+            // creates while a different, properly connected subject still gets
+            // sampled and a mid-boot reconnect recovers after the TTL.
+            if (connectRequiredSettled.size > 10_000) connectRequiredSettled.clear();
+            connectRequiredSettled.set(connectSettleKey(ctx.principal.subject, descriptor.name), Date.now());
           }
           // Transient errors (e.g. an unauthenticated caller) retry on the
           // next create with that caller's own authority.
@@ -1685,6 +1758,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
+      const createStartedAt = Date.now();
       // 0.4.5 E2E cert (defect D) — the build's dead-man switch. The catch
       // below persists a terminal failure when the build turn THROWS, but a
       // build task that hangs (a provider stream that never settles) or dies
@@ -1823,8 +1897,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           const { id: _verifyId, ...unidentified } = structuredClone(app);
           const verified = await verifyDocumentAgainstData(unidentified, input.prompt, verifiedData, generationDeps);
           app = { ...verified, id: appId };
-        } catch {
-          // The unverified app ships; open() resolves its data as always.
+        } catch (error) {
+          // The unverified app ships; open() resolves its data as always. But
+          // say so in the operator's terminal — a silently skipped verify pass
+          // is indistinguishable from a verify pass that found nothing.
+          console.warn(`[vendo] data-sighted verify skipped for ${appId} (the unverified app ships): ${safeErrorMessage(error)}`);
         }
       }
       let finalTree: TreeV2 | undefined;
@@ -1838,6 +1915,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       clearTimeout(watchdog);
       await reportLifecycle("create", app.id, ctx);
       if (finalTree !== undefined) emit(finalTree);
+      console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`);
       // execution-v2 Wave 9 — escalate on create when the prompt needs server
       // capability, walking the ladder: a steps/agentic automation (seconds,
       // no machine) before box graduation. The tree is already on screen; the

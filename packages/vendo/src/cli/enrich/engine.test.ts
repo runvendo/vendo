@@ -111,6 +111,18 @@ describe("runEnrichment", () => {
     expect(result.outcome.clamped[0]!.refusals.length).toBeGreaterThanOrEqual(3);
   });
 
+  it("writes a proposed human title into the tools.json entry and asks for one in the instructions", async () => {
+    const { harness, calls } = scriptedHarness([reply({
+      tools: [{ name: "host_transferMoney", title: "Send money", description: "Move money between the customer's accounts." }],
+      narrative: "labelled the transfer endpoint",
+    })]);
+    const result = await runEnrichment(runInput({ harness, file: file([tool("host_transferMoney")]) }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.outcome.file.tools[0]).toMatchObject({ title: "Send money", enriched: true });
+    expect(calls[0]).toContain("title");
+  });
+
   it("returns ok: false on unparseable model output (never corrupts the file)", async () => {
     const { harness } = scriptedHarness(["I could not really figure out the JSON, sorry."]);
     const result = await runEnrichment(runInput({ harness, file: file([tool("host_a")]) }));

@@ -1479,6 +1479,117 @@ function ExtremeThreadScenario() {
   );
 }
 
+/** Knowledge K1 — one thread seeding all three Surface-2 trust states from
+ *  the signed mockups: a grounded answer with citation chips, a structured
+ *  refusal (searched-line), and an engine outage (unavailable flag). The
+ *  citations ride `data-vendo-citations` parts exactly as the agent tool
+ *  bridge writes them. */
+const citationsThread: Thread = {
+  id: "thr_citations",
+  subject: "browser-user",
+  createdAt: NOW,
+  updatedAt: NOW,
+  messages: [
+    {
+      id: "cit_u1",
+      role: "user",
+      parts: [{ type: "text", text: "Can I get a refund if I cancel mid-cycle?" }],
+    },
+    {
+      id: "cit_a1",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-vendo-citations",
+          data: {
+            toolCallId: "call_cit_1",
+            outcome: "answered",
+            citations: [
+              {
+                docId: "doc-refunds",
+                chunkId: "doc-refunds#2",
+                title: "Refunds & cancellations",
+                source: "docs.acmebilling.com",
+                kind: "docs",
+                visibility: "public",
+                snippet: "If you cancel mid-cycle we do not charge again, and any metered overage "
+                  + "already accrued is billed on the final invoice. Seats removed mid-cycle are credited…",
+              },
+              {
+                docId: "doc-billing-faq",
+                title: "Billing FAQ",
+                source: "docs.acmebilling.com",
+                kind: "docs",
+                visibility: "public",
+                snippet: "Annual plans refund in full within 30 days of purchase; after that, unused "
+                  + "months refund pro-rata via support.",
+              },
+            ],
+          },
+        },
+        {
+          type: "text",
+          text: "Yes — it depends on your plan. On a **monthly plan**, canceling mid-cycle stops future "
+            + "charges but the current month isn't refunded; any metered overage you've already used is "
+            + "billed on your final invoice, and seats you remove are credited to it.\n\nOn an **annual "
+            + "plan**, you get a full automatic refund within 30 days of purchase, and a pro-rata refund "
+            + "of unused months after that if you contact support.",
+        },
+      ],
+    },
+    {
+      id: "cit_u2",
+      role: "user",
+      parts: [{ type: "text", text: "Do you integrate with QuickBooks Desktop?" }],
+    },
+    {
+      id: "cit_a2",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-vendo-citations",
+          data: { toolCallId: "call_cit_2", outcome: "insufficient-evidence", citations: [] },
+        },
+        {
+          type: "text",
+          text: "I don't have anything in the documentation about QuickBooks Desktop, so I'd rather not "
+            + "guess. The docs do cover the QuickBooks **Online** integration — happy to walk you through "
+            + "that instead.",
+        },
+      ],
+    },
+    {
+      id: "cit_u3",
+      role: "user",
+      parts: [{ type: "text", text: "Which plans include SSO?" }],
+    },
+    {
+      id: "cit_a3",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-vendo-citations",
+          data: { toolCallId: "call_cit_3", outcome: "unavailable", citations: [] },
+        },
+        {
+          type: "text",
+          text: "From what I can see in your account, SSO is typically part of higher tiers — for most "
+            + "billing products that means the Enterprise plan, and your workspace settings show an SSO "
+            + "section that's currently locked.",
+        },
+      ],
+    },
+  ],
+};
+
+function ThreadCitationsScenario() {
+  return (
+    <VendoProvider client={threadClient(baseClient, citationsThread)} components={components}>
+      <VendoThread threadId={citationsThread.id} />
+    </VendoProvider>
+  );
+}
+
 /** ENG-215 — a clean two-turn thread (no tools/approvals) so the composer's
  *  edit-last / regenerate / autogrow / queued-send behaviors read without the
  *  approval clutter of the canned wire turn. */
@@ -1670,6 +1781,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/thread-extreme": return { title: "Thread — extreme content", content: <ExtremeThreadScenario />, ownProvider: true };
     case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
     case "/thread-humanized": return { title: "Thread — humanized (host metadata)", content: <HumanizedThreadScenario />, ownProvider: true };
+    case "/thread-citations": return { title: "Thread — knowledge citations (K1)", content: <ThreadCitationsScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
     case "/overlay-manual": return { title: "Overlay — manual launcher", content: <VendoOverlay /> };
     case "/concurrent": return { title: "Concurrent surfaces", content: <ConcurrentScenario />, ownProvider: true };

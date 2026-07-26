@@ -9,7 +9,7 @@ export { useConnectorCatalog } from "./use-connector-catalog.js";
 export { useGrants } from "./use-grants.js";
 // Deliberately public (lane pick 1-H): the ejected thread surface imports it,
 // and hosts placing their own approval chrome need the same breakpoint truth.
-export { useMobileTakeover, type MobileTakeover } from "./use-mobile-takeover.js";
+export { useApprovalSheetPresentation, useMobileTakeover, type MobileTakeover } from "./use-mobile-takeover.js";
 export { type PollOptions } from "./use-resource.js";
 export { useSlotApp } from "./use-slot-app.js";
 export { useThreads } from "./use-threads.js";

@@ -1,8 +1,9 @@
 import { isToolUIPart } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { APPROVALS_DECIDED_EVENT, type ApprovalsDecidedDetail } from "../../client-impl.js";
 import { useVendoDiscoverability, useVendoGreeting } from "../../context.js";
 import { useVendoThread } from "../../hooks/use-vendo-thread.js";
-import { StatusRibbon } from "../build-beat.js";
+import { StatusRibbon, WorkingRibbon } from "../build-beat.js";
 import { ChromeRoot } from "../chrome-root.js";
 import { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "../discoverability.js";
 import { MorphToast, type MorphToastProps } from "../morph-toast.js";
@@ -152,6 +153,43 @@ export function VendoThread({
   const { setDraft, setQueued, textareaRef, send } = composerApi;
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);
+  // Approve-anywhere resume: a consent decided on ANY surface sharing the page
+  // (activity panel, workspace queue, voice stage — they all decide through
+  // client.approvals.decide, which announces the decided guard-approval ids)
+  // must resume a thread parked on that approval, exactly like the in-thread
+  // card's own Approve/Deny. When an announced id matches a still-parked
+  // in-thread card, the same native approval response goes out — the server
+  // resume already keys off the approval decision, not the clicking surface.
+  // respondOnce dedupes the two paths racing (card click → decide → event →
+  // this listener → the card's own respond) into a single response.
+  const respondedRef = useRef(new Set<string>());
+  const respondOnce = (response: { id: string; approved: boolean }) => {
+    if (respondedRef.current.has(response.id)) return;
+    respondedRef.current.add(response.id);
+    thread.addToolApprovalResponse(response);
+  };
+  const decidedElsewhereRef = useRef<(detail: ApprovalsDecidedDetail) => void>(() => undefined);
+  decidedElsewhereRef.current = detail => {
+    const decided = new Set(detail.ids);
+    for (const message of thread.messages) {
+      for (const part of message.parts) {
+        if (!isToolUIPart(part) || part.state !== "approval-requested") continue;
+        const nativeId = (part as { approval?: { id?: string } }).approval?.id;
+        if (nativeId === undefined) continue;
+        const guardId = guardApprovals.get(part.toolCallId)?.approvalId;
+        if (guardId === undefined || !decided.has(guardId)) continue;
+        respondOnce({ id: nativeId, approved: detail.approved });
+      }
+    }
+  };
+  useEffect(() => {
+    const onDecided = (event: Event) => {
+      const detail = (event as CustomEvent<ApprovalsDecidedDetail>).detail;
+      if (detail !== undefined && Array.isArray(detail.ids)) decidedElsewhereRef.current(detail);
+    };
+    window.addEventListener(APPROVALS_DECIDED_EVENT, onDecided);
+    return () => window.removeEventListener(APPROVALS_DECIDED_EVENT, onDecided);
+  }, []);
   const landing = thread.messages.length === 0;
   const activeAssistant = thread.messages.at(-1)?.role === "assistant" ? thread.messages.at(-1) : undefined;
   const assistantHasVisibleText = activeAssistant?.parts.some(
@@ -245,6 +283,26 @@ export function VendoThread({
     </div>
   ) : null;
 
+  // Lane picks 3A + 6B — the jump affordance is a bar with a COUNT and snippet
+  // ("2 new replies · …") docked flush onto the composer's top edge (rendered
+  // inside its .fl-dock-anchor, tray-style, so the two read as one piece); at
+  // mobile widths the same element re-clothes as a bottom-center pill (pure
+  // CSS, see the lane block in chrome-css). Activating it re-sticks as before.
+  const jumpBar = scroll.showJump ? (
+    <button
+      type="button"
+      className="fl-newbar"
+      aria-label={`Jump to latest — ${scroll.unseenCount === 1 ? "1 new reply" : `${scroll.unseenCount} new replies`}`}
+      onClick={scroll.jumpToLatest}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
+      </svg>
+      {scroll.unseenCount === 1 ? "1 new reply" : `${scroll.unseenCount} new replies`}
+      {scroll.snippet ? <small>{scroll.snippet}</small> : null}
+    </button>
+  ) : null;
+
   const composer = (
     <Composer
       composer={composerApi}
@@ -253,16 +311,20 @@ export function VendoThread({
       errorMessage={thread.status === "error" && thread.error ? thread.error.message : undefined}
       onStop={() => void thread.stop()}
       onVoice={onVoice}
+      jumpBar={jumpBar}
     />
   );
 
   const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart).filter(part => part.state === "approval-requested");
 
   // Lane pick C1 — the live status ribbon: while the turn works through tool
-  // calls (and no text has started flowing), the ACTIVE call narrates above
-  // the composer — label · elapsed · step N of M. The transcript stays
-  // beat-free (parts.tsx renders only errored calls). Once text streams the
-  // ribbon yields the floor to the caret choreography.
+  // calls, the ACTIVE call narrates above the composer — label · elapsed ·
+  // step N of M. The transcript stays beat-free (parts.tsx renders only
+  // errored calls). A RUNNING call always narrates, even after prose has
+  // streamed (the agent often narrates a plan, then works the tools — hiding
+  // the ribbon behind any visible text left minutes of dead air, the observed
+  // demo class). Only while text is actively streaming (all tool parts
+  // settled) does the caret choreography own the floor.
   const activeToolParts = (activeAssistant?.parts ?? []).filter(isToolUIPart);
   const liveToolPart = [...activeToolParts].reverse()
     .find(part => part.state !== "output-available" && part.state !== "output-error");
@@ -270,9 +332,20 @@ export function VendoThread({
   // pause still narrates: the ribbon holds "— waiting for your approval" while
   // the card sits in the transcript.
   const awaitingApprovalPart = activeToolParts.find(part => part.state === "approval-requested");
-  const activeToolPart = busy && !assistantHasVisibleText
-    ? liveToolPart ?? (activeToolParts.length > 0 && !caretShowing ? activeToolParts.at(-1) : undefined)
+  const activeToolPart = busy
+    ? liveToolPart
+      ?? (!assistantHasVisibleText && activeToolParts.length > 0 && !caretShowing ? activeToolParts.at(-1) : undefined)
     : awaitingApprovalPart;
+  // 2026-07 loading-state audit — the between-steps gap: a busy turn whose
+  // prose has already streamed and whose tool parts have all settled had NO
+  // indicator anywhere (the ribbon needs a live part, the caret needs
+  // streaming text, FluidThinking stands down once text exists). Only while
+  // text deltas are actively flowing does the caret own the floor; every
+  // other busy moment narrates through the quiet Working ribbon.
+  const textActivelyStreaming = lastPart?.type === "text" && lastPart.state === "streaming"
+    && lastPart.text.trim().length > 0;
+  const quietBusy = busy && !awaitingFirstChunk && activeToolPart === undefined
+    && !textActivelyStreaming && !caretShowing && !working;
   const ribbon = activeToolPart ? (
     <StatusRibbon
       part={activeToolPart}
@@ -280,7 +353,7 @@ export function VendoThread({
       stepTotal={activeToolParts.length}
       risk={risks.get(activeToolPart.toolCallId) ?? "read"}
     />
-  ) : null;
+  ) : quietBusy ? <WorkingRibbon /> : null;
 
   // Lane pick 2E — the WHOLE thread surface is the drop target (the composer
   // bar no longer owns drag): a huge, overshoot-proof zone with a centered
@@ -318,6 +391,10 @@ export function VendoThread({
   ) : null;
 
   if (landing) {
+    // Landing layout (2026-07 fix): the COMPOSER is pinned to the panel bottom
+    // — the exact slot it occupies in an active conversation — so sending the
+    // first message never relocates it. The greeting + starter cards flow in
+    // the scrollable .fl-landing area above it.
     return (
       <ChromeRoot>
         <div className="fl-thread" role="region" aria-label="Vendo conversation" {...dropProps}>
@@ -348,9 +425,6 @@ export function VendoThread({
             ) : (
               <h1 className="fl-greet">{greeting}</h1>
             )}
-            {errorBanner}
-            {composerAccessory}
-            <div className="fl-landing-composer">{composer}</div>
             {!tutorialActive && suggestions.length > 0 ? (
               // Lane pick 4B — object suggestions render as two-line starter
               // cards (title + concrete outcome, optional host icon); plain
@@ -386,6 +460,9 @@ export function VendoThread({
               </>
             ) : null}
           </div>
+          {errorBanner}
+          {composerAccessory}
+          {composer}
         </div>
       </ChromeRoot>
     );
@@ -409,9 +486,8 @@ export function VendoThread({
           approvals={approvals}
           guardApprovals={guardApprovals}
           cardRefs={approvalCardRefs}
-          respond={response => thread.addToolApprovalResponse(response)}
+          respond={respondOnce}
           onMorph={setMorph}
-          messages={thread.messages}
           sendMessage={message => thread.sendMessage(message)}
           awaitingFirstChunk={awaitingFirstChunk}
           working={working}

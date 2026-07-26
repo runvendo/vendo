@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowLeft, SearchX } from "lucide-react"
 import useSWR from "swr"
+import { VendoTrigger } from "@vendoai/ui/chrome"
 import { ClientMark } from "@/components/clients/client-marks"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
@@ -142,6 +143,15 @@ export function ClientDetail({ id }: { id: string }) {
                 </div>
                 <ProgressBar value={client.progress.received} max={client.progress.total} className="mt-1.5" />
               </div>
+              {/* demo-refresh Part 4 — contextual entry: opens the overlay with
+                  the question prefilled (never auto-sent) plus this client's
+                  visible summary as context. */}
+              <VendoTrigger
+                prompt="What's the story with this client, and should I follow up?"
+                context={`Client: ${client.businessName} (${entityLabel(client.entityType)}) · ${client.contactName} · ${status.label} · documents ${client.progress.received} of ${client.progress.total} · filing deadline ${formatDate(client.filingDeadline)} (${urgency.label})`}
+              >
+                Ask Cadence about this client
+              </VendoTrigger>
             </div>
           </div>
         </div>

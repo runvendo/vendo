@@ -22,9 +22,15 @@ password), exists to demonstrate per-user isolation.
 ```bash
 cd apps/demo-bank
 cp .env.example .env.local
-# Fill in ANTHROPIC_API_KEY; OPENAI_API_KEY enables realtime voice.
+# Fill in VENDO_API_KEY (+ VENDO_DEV_CREDENTIAL=vendo-cloud, MAPLE_STORE=local
+# — the standing local posture; see "Store posture") or ANTHROPIC_API_KEY for
+# a BYO model key. OPENAI_API_KEY enables realtime voice.
 pnpm dev
 ```
+
+A bare `pnpm dev` with that `.env.local` boots the full posture — Cloud model
+gateway (`[vendo] model: VENDO_API_KEY (Vendo Cloud)` on first model use),
+Cloud connections broker, local PGlite store — with no shell exports.
 
 Open http://localhost:3000. Run `pnpm test` for the host API suite (it
 includes the ENG-260 away drill, which boots a real Maple instance).
@@ -36,7 +42,8 @@ provider — no external services. Two demo users are seeded so per-user
 isolation is demonstrable: `yousef@maple.com` and `mia@maple.com`, both with
 password `maple-demo` outside production (`MAPLE_DEMO_PASSWORD` overrides;
 required in production, as is `AUTH_SECRET`). Sign in at `/login`; sign out at
-`/api/auth/signout`. Pages redirect to `/login` and the bank API answers 401
+`POST /logout` (the account menu's Sign out — it clears the Auth.js session
+cookie). Pages redirect to `/login` and the bank API answers 401
 without a session (`src/proxy.ts`).
 
 The Auth.js session is the identity for everything, wired with one config key
@@ -70,13 +77,31 @@ documented at its migration site.
 
 Cmd/Ctrl+K opens Vendo. Cmd/Ctrl+Shift+. restores Maple's deterministic seed.
 
+## Store posture
+
+The Vendo store slot is an explicit demo decision, wired in
+`src/vendo/server.ts`:
+
+- **Deployed (Railway): the Cloud hosted store.** The slot stays unset, so the
+  `VENDO_API_KEY` env ladder composes Vendo Cloud's hosted store. Railway's
+  container filesystem is ephemeral — a container-local store would silently
+  wipe demo threads, pins, and grants on every redeploy; hosted state
+  survives, and Cloud stays the single firing authority for the demo's
+  schedule automations. Do not set `MAPLE_STORE` on the service.
+- **Local dev: a local PGlite store.** `.env.local` sets `MAPLE_STORE=local`,
+  which pins `createStore()` (data under `.vendo/data/`, gitignored) so a
+  laptop never shares the deployed demo's Cloud tenant. Unset it (while
+  keeping `VENDO_API_KEY`) to run locally against the hosted store — the
+  scripted seeding, beats, and reset all go through the store-agnostic
+  records door and work identically on both.
+
 ## Railway and public-origin configuration
 
 Railway builds `apps/demo-bank/Dockerfile` from the monorepo root. Configure the
-service with `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `VENDO_BASE_URL`,
-`AUTH_SECRET`, `MAPLE_DEMO_EMAIL`, and `MAPLE_DEMO_PASSWORD`. The
-Postgres URL keeps Vendo's OAuth, approval, audit, and app state across
-redeploys. `VENDO_BASE_URL` is the one public-origin switch: set it to the
+service with `VENDO_API_KEY` (composes the hosted store and Cloud model
+gateway — see "Store posture"), `VENDO_BASE_URL`, `AUTH_SECRET`,
+`MAPLE_DEMO_EMAIL`, and `MAPLE_DEMO_PASSWORD`.
+`VENDO_BASE_URL` is the one public-origin switch: set it to the
 default Railway origin first, then change it to `https://maple.vendo.run` after
 DNS is live and redeploy.
 

@@ -61,7 +61,10 @@ export interface RegistryPayload {
   id: string;
   url: string;
   prospect: string;
-  expiresAt: string;
+  /** Absent on permanent demos (the router requires it otherwise). */
+  expiresAt?: string;
+  /** First-class permanence — the router never expires the row, demo:reap skips it. */
+  permanent?: boolean;
 }
 
 /** Marks docker files we generated; a file without it is hand-edited and is never overwritten. */
@@ -170,13 +173,26 @@ export function parseRailwayDomain(output: string): string | undefined {
   return match?.[1];
 }
 
-export function buildRegistryPayload(config: Pick<DemoConfig, "id" | "prospect" | "expiresAt">, domain: string): RegistryPayload {
+/** Deployed-reaper compat: reap clients that predate `permanent` treat a row
+ *  with no parseable `expiresAt` as reapable ("invalid-expiry") — exactly how
+ *  the maple row got torn down on 2026-07-24. Until every deployed reaper is
+ *  permanent-aware, a permanent row also carries a far-future expiry the OLD
+ *  logic parses as unexpired. Permanent-aware code ignores expiry entirely,
+ *  so this is inert under the new contract. */
+export const PERMANENT_COMPAT_EXPIRY = "2126-01-01T00:00:00.000Z";
+
+export function buildRegistryPayload(
+  config: Pick<DemoConfig, "id" | "prospect" | "expiresAt" | "permanent">,
+  domain: string,
+): RegistryPayload {
   const bare = domain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
   return {
     id: config.id,
     url: `https://${bare}`,
     prospect: config.prospect,
-    expiresAt: config.expiresAt,
+    ...(config.permanent === true
+      ? { permanent: true, expiresAt: PERMANENT_COMPAT_EXPIRY }
+      : config.expiresAt === undefined ? {} : { expiresAt: config.expiresAt }),
   };
 }
 
@@ -417,7 +433,7 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
   if (!response.ok) {
     throw new Error(`Router registration failed: ${response.status} ${await response.text()}`);
   }
-  write(`Registered: ${args.routerUrl.replace(/\/+$/, "")}/${config.id} -> ${registryPayload.url} (expires ${registryPayload.expiresAt})`);
+  write(`Registered: ${args.routerUrl.replace(/\/+$/, "")}/${config.id} -> ${registryPayload.url} (${registryPayload.permanent === true ? "permanent" : `expires ${registryPayload.expiresAt}`})`);
   return { serviceName, appPath, dryRun: false, domain, registryPayload };
 }
 

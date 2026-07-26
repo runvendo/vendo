@@ -28,8 +28,9 @@ const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [
     label: null,
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
-      // The embedded Vendo page surface (host-named Vendo in this demo).
-      { href: "/assistant", label: "Vendo", icon: Sparkles },
+      // The embedded assistant page surface — one brand name with the
+      // launcher pill (demo-refresh Part 4).
+      { href: "/assistant", label: "Ask Cadence", icon: Sparkles },
     ],
   },
   {

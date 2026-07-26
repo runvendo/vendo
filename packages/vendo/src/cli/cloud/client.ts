@@ -1,4 +1,9 @@
 import {
+  METER_EXHAUSTED_CODE,
+  formatMeterExhausted,
+  parseMeterExhausted,
+} from "@vendoai/core";
+import {
   isSessionExpired,
   readCloudSession,
   writeCloudSession,
@@ -70,6 +75,15 @@ async function responseBody(response: Response): Promise<unknown> {
 }
 
 function errorFrom(response: Response, body: unknown): CloudError {
+  // Pricing v3 (spec §5): a meter refusal (HTTP 402, stable code
+  // meter-exhausted, structured body) prints as ONE crafted sentence — the
+  // meter, the figures and reset date, and the two exits — instead of the
+  // raw envelope. Same formatter the thread banner uses; the refusal body
+  // stays the only source of truth (no client-side entitlement checks).
+  const refusal = parseMeterExhausted(body);
+  if (refusal !== undefined) {
+    return new CloudError(METER_EXHAUSTED_CODE, formatMeterExhausted(refusal), response.status);
+  }
   const envelope = body as ErrorEnvelope | null;
   const code = typeof envelope?.error?.code === "string" ? envelope.error.code : `http-${response.status}`;
   const message = typeof envelope?.error?.message === "string"

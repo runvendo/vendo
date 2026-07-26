@@ -22,6 +22,7 @@ bench/demo-capture/output/
 
 # Vendo demo runtime state (PGlite) — never committed.
 apps/*/.vendo/data/
+apps/*/.vendo/data-*/
 fixtures/*/.vendo/data/
 examples/*/.vendo/data/
 

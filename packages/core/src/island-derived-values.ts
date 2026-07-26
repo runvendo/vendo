@@ -21,12 +21,58 @@
  *   - style/layout math (anything inside a `style` object) and constants with
  *     layout/timing names (width/height/size/padding/gap/radius/timeout/…),
  *   - array-index arithmetic (`rows[rows.length - 1]`),
- *   - setTimeout/setInterval delay arguments.
+ *   - setTimeout/setInterval delay arguments,
+ *   - numbers the USER typed in the request (and their cent-scaled ×100
+ *     forms) — a $200 budget the user asked for is the user's parameter,
+ *     not invented data (rematch 2026-07-25 rows H12/H14),
+ *   - unit-conversion constants (7, 12, 24, 52, 60, 365, 4.33, 1000 and
+ *     their products, e.g. 86400000 ms/day) in MULTIPLICATIVE chains —
+ *     "per month" and date-difference math is conversion, not invention
+ *     (rematch rows H3/H16/H17/H24); an additive `+ 12` still flags.
  */
 import { blankNonCode } from "./island-ambient.js";
 
 /** Values that are unit math / percent scaling, never invented data. */
 const EXEMPT_VALUES = new Set([0, 1, 100]);
+
+/** Time/calendar conversion factors. A value equal to one of these — or to a
+ *  product of them, like 1000*60*60*24 = 86400000 — is a unit conversion
+ *  when it participates MULTIPLICATIVELY (never when added/subtracted). */
+const UNIT_CONVERSION_FACTORS = [1000, 365, 60, 52, 24, 12, 7];
+const WEEKS_PER_MONTH = 4.33;
+
+const isUnitConversionValue = (value: number): boolean => {
+  const magnitude = Math.abs(value);
+  if (Math.abs(magnitude - WEEKS_PER_MONTH) < 1e-9) return true;
+  if (!Number.isInteger(magnitude) || magnitude <= 1) return false;
+  let rest = magnitude;
+  for (const factor of UNIT_CONVERSION_FACTORS) {
+    while (rest % factor === 0) rest /= factor;
+  }
+  return rest === 1;
+};
+
+/** Every number the user typed in the request, plus its cent-scaled ×100
+ *  form ("a $200 budget" arrives in the island as 20000 integer cents). */
+const requestNumberValues = (requestText: string): Set<number> => {
+  const values = new Set<number>();
+  for (const match of requestText.matchAll(/\d[\d,]*(?:\.\d+)?/g)) {
+    const value = Number(match[0].replaceAll(",", ""));
+    if (!Number.isFinite(value)) continue;
+    values.add(value);
+    // Rounded: cents are integers, and 4.99 * 100 is 498.99999999999994 in
+    // floating point — the island's hand-typed 499 must still match.
+    values.add(Math.round(value * 100));
+  }
+  return values;
+};
+
+export interface DerivedValueScanOptions {
+  /** The user's request text. Numbers present in it (and their cent-scaled
+   *  forms) are the user's own parameters, exempt from law 1. Absent →
+   *  no carve-out (the API-compatible default). */
+  requestText?: string;
+}
 
 /** Constant names that declare layout, sizing, or timing intent. */
 const EXEMPT_NAME =
@@ -297,6 +343,24 @@ const arithmeticAdjacent = (code: string, start: number, end: number): boolean =
   return /[\w$)\]]/.test(left);
 };
 
+/** Whether the occurrence joins the surrounding expression through `*` or `/`
+ *  on either side — the shape of a unit CONVERSION chain. Additive joins
+ *  (`total + 12`) stay flaggable: adding a magic number invents data. */
+const multiplicativeAdjacent = (code: string, start: number, end: number): boolean => {
+  let after = end;
+  while (after < code.length && /[ \t]/.test(code[after] as string)) after += 1;
+  const operatorAfter = code[after];
+  if ((operatorAfter === "*" || operatorAfter === "/")
+    && code[after + 1] !== operatorAfter && code[after + 1] !== "=") {
+    return true;
+  }
+  let before = start - 1;
+  while (before >= 0 && /[ \t]/.test(code[before] as string)) before -= 1;
+  const operatorBefore = code[before];
+  return (operatorBefore === "*" || operatorBefore === "/")
+    && code[before - 1] !== operatorBefore && code[before - 1] !== "=";
+};
+
 /** The declared variable an expression at `index` is assigned to, if the
  *  enclosing declaration's init covers it. */
 const assignmentTarget = (declarationList: readonly Declaration[], index: number): Declaration | undefined =>
@@ -340,7 +404,10 @@ const reachesRender = (
  * arithmetic with tool-derived values that flow into rendered output. One
  * violation per constant/literal, message written to teach the repair.
  */
-export function islandDerivedValueViolations(source: string): string[] {
+export function islandDerivedValueViolations(source: string, options?: DerivedValueScanOptions): string[] {
+  const userNumbers = options?.requestText === undefined
+    ? new Set<number>()
+    : requestNumberValues(options.requestText);
   const code = blankNonCode(source);
   const exempt = [...styleSpans(code), ...timerSpans(code), ...indexSpans(code)];
   const display = [...renderSpans(code), ...fmtSpans(code)];
@@ -352,7 +419,7 @@ export function islandDerivedValueViolations(source: string): string[] {
   // Suspect constants: `const NAME = <number>` — or a hand-typed rate TABLE
   // (`const RATES = { EUR: 0.92, GBP: 0.79 }` / `[0.92, 1.08]`) — with a
   // non-exempt name and at least one non-exempt numeric value.
-  const constants = new Map<string, string>();
+  const constants = new Map<string, { described: string; value?: number }>();
   for (const declaration of declarationList) {
     const name = declaration.names.length >= 1 ? (declaration.names[0] as string) : undefined;
     if (name === undefined || EXEMPT_NAME.test(name)) continue;
@@ -360,8 +427,10 @@ export function islandDerivedValueViolations(source: string): string[] {
     const literal = /^(-?\d+(?:\.\d+)?)$/.exec(init);
     if (literal !== null) {
       const value = Number(literal[1]);
-      if (EXEMPT_VALUES.has(Math.abs(value))) continue;
-      constants.set(name, `${name} = ${literal[1]}`);
+      // The user's own number (H12: "$200 budget" → BUDGET_CENTS = 20000) is
+      // a request parameter, never invented data.
+      if (EXEMPT_VALUES.has(Math.abs(value)) || userNumbers.has(Math.abs(value))) continue;
+      constants.set(name, { described: `${name} = ${literal[1]}`, value });
       continue;
     }
     // Object/array literals whose values are ALL hand-typed numbers. The
@@ -376,7 +445,7 @@ export function islandDerivedValueViolations(source: string): string[] {
     const values = entries.map((entry) => /^(?:(?:["'][^"']*["']|[\w$]+)\s*:\s*)?(-?\d+(?:\.\d+)?)$/.exec(entry));
     if (values.some((match) => match === null)) continue;
     if (!values.some((match) => !EXEMPT_VALUES.has(Math.abs(Number(match?.[1]))))) continue;
-    constants.set(name, `${name} = ${init.length > 60 ? `${init.slice(0, 57)}…` : init}`);
+    constants.set(name, { described: `${name} = ${init.length > 60 ? `${init.slice(0, 57)}…` : init}` });
   }
 
   const violations: string[] = [];
@@ -408,10 +477,14 @@ export function islandDerivedValueViolations(source: string): string[] {
       }
     }
   };
-  const checkOccurrence = (key: string, described: string, start: number, rawEnd: number): void => {
+  const checkOccurrence = (key: string, described: string, start: number, rawEnd: number, value?: number): void => {
     if (flagged.has(key)) return;
     if (inSpans(exempt, start)) return;
     const end = extendPastChain(rawEnd);
+    // Unit-conversion factors joined by * or / are conversion chains
+    // (per-month math, ms/day date differences — rematch H3/H16), not
+    // invented data; the same value ADDED to tool data still flags.
+    if (value !== undefined && isUnitConversionValue(value) && multiplicativeAdjacent(code, start, end)) return;
     if (!arithmeticAdjacent(code, start, end)) return;
     // The other side of the math must trace to tool/props data — checked on
     // the surrounding line so unrelated tainted code never triggers it.
@@ -427,17 +500,17 @@ export function islandDerivedValueViolations(source: string): string[] {
     flag(key, described);
   };
 
-  for (const [name, described] of constants) {
+  for (const [name, constant] of constants) {
     for (const match of code.matchAll(new RegExp(`\\b${name}\\b`, "g"))) {
       if (code[match.index - 1] === ".") continue;
-      checkOccurrence(name, described, match.index, match.index + name.length);
+      checkOccurrence(name, constant.described, match.index, match.index + name.length, constant.value);
     }
   }
   // Bare numeric literals in arithmetic with tainted data (`total * 0.92`).
   for (const match of code.matchAll(/(?<![\w$.])(\d+(?:\.\d+)?)(?![\w$.])/g)) {
     const value = Number(match[1]);
-    if (EXEMPT_VALUES.has(Math.abs(value))) continue;
-    checkOccurrence(`literal:${match[1]}`, `${match[1]}`, match.index, match.index + (match[1] as string).length);
+    if (EXEMPT_VALUES.has(Math.abs(value)) || userNumbers.has(Math.abs(value))) continue;
+    checkOccurrence(`literal:${match[1]}`, `${match[1]}`, match.index, match.index + (match[1] as string).length, value);
   }
   return violations;
 }

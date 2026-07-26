@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   toVendoWirePart,
   vendoApprovalPartSchema,
+  vendoAutomationPartSchema,
   vendoBuildFailedPartSchema,
+  vendoCitationsPartSchema,
   vendoStepLimitPartSchema,
   vendoConnectPartSchema,
   vendoViewPartSchema,
@@ -175,6 +177,108 @@ describe("vendoBuildFailedPartSchema", () => {
       type: "data-vendo-build-failed",
       toolCallId: "call_1",
       reason: "",
+    }).success).toBe(false);
+  });
+});
+
+/** 2026-07 demo feedback (additive): the in-thread automation card part. */
+describe("vendoAutomationPartSchema", () => {
+  it("accepts an automation card with a trigger and enabled state", () => {
+    expect(vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-automation",
+      appId: "app_auto",
+      name: "Low balance alert",
+      enabled: true,
+      description: "Emails you when checking dips below $2,000.",
+      trigger: {
+        on: { kind: "schedule", cron: "0 8 * * *" },
+        run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
+      },
+    }).success).toBe(true);
+  });
+
+  it("trigger stays optional; a wrong type literal or empty name rejects", () => {
+    expect(vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-automation",
+      appId: "app_auto",
+      name: "Weekly digest",
+      enabled: false,
+    }).success).toBe(true);
+    expect(vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-view",
+      appId: "app_auto",
+      name: "Weekly digest",
+      enabled: true,
+    }).success).toBe(false);
+    expect(vendoAutomationPartSchema.safeParse({
+      type: "data-vendo-automation",
+      appId: "app_auto",
+      name: "",
+      enabled: true,
+    }).success).toBe(false);
+  });
+});
+
+/** Knowledge K1 (additive): the citation-chips part `vendo_knowledge_search`
+    results ride to the UI. */
+describe("vendoCitationsPartSchema", () => {
+  it("accepts a grounded answer and round-trips through the wire envelope", () => {
+    const part = {
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "answered",
+      citations: [{
+        docId: "doc-transfers",
+        chunkId: "doc-transfers#0",
+        title: "Wire transfer limits",
+        source: "docs/transfers.md",
+        kind: "docs",
+        visibility: "public",
+        snippet: "Maple caps outbound wire transfers at $25,000 per business day.",
+      }],
+    };
+    const parsed = vendoCitationsPartSchema.safeParse(part);
+    expect(parsed.success).toBe(true);
+    const wire = toVendoWirePart(parsed.success ? parsed.data : (part as never));
+    expect(wire.type).toBe("data-vendo-citations");
+    expect(vendoCitationsPartSchema.safeParse({ type: wire.type, ...wire.data }).success).toBe(true);
+  });
+
+  it("accepts refusal and unavailable outcomes with empty citations", () => {
+    for (const outcome of ["insufficient-evidence", "unavailable"]) {
+      expect(vendoCitationsPartSchema.safeParse({
+        type: "data-vendo-citations",
+        toolCallId: "call_k1",
+        outcome,
+        citations: [],
+      }).success).toBe(true);
+    }
+  });
+
+  it("rejects a not-found outcome, a missing title, a wrong kind, and a missing visibility", () => {
+    expect(vendoCitationsPartSchema.safeParse({
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "not-found",
+      citations: [],
+    }).success).toBe(false);
+    expect(vendoCitationsPartSchema.safeParse({
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "answered",
+      citations: [{ docId: "d1", kind: "docs", visibility: "public", snippet: "s" }],
+    }).success).toBe(false);
+    expect(vendoCitationsPartSchema.safeParse({
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "answered",
+      citations: [{ docId: "d1", title: "T", kind: "notes", visibility: "public", snippet: "s" }],
+    }).success).toBe(false);
+    expect(vendoCitationsPartSchema.safeParse({
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "answered",
+      citations: [{ docId: "d1", title: "T", kind: "docs", snippet: "s" }],
     }).success).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { ChevronLeft, Pencil, Check, Flag, Split, ReceiptText, FileQuestion } from "lucide-react"
+import { VendoTrigger } from "@vendoai/ui/chrome"
 import type { Category } from "@/server/types"
 import { useTransaction, useAccounts } from "@/lib/hooks"
 import { formatAmount } from "@/lib/money"
@@ -200,6 +201,14 @@ export default function TransactionDetailPage() {
           <ReceiptText className="h-4 w-4" />
           Download receipt
         </Button>
+        {/* demo-refresh Part 4 — contextual entry: opens the overlay with the
+            question prefilled (never auto-sent) plus this record as context. */}
+        <VendoTrigger
+          prompt="What is this charge, and how does it compare to my usual spending with this merchant?"
+          context={`Transaction: ${t.merchant} · ${formatAmount(t.amount)} · ${formatDate(t.timestamp, { month: "long", day: "numeric", year: "numeric" })} · ${categoryLabel(cat)}`}
+        >
+          Ask Maple
+        </VendoTrigger>
       </div>
     </div>
   )

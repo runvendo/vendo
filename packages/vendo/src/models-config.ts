@@ -9,8 +9,9 @@ import { vendoModel, type VendoModelOptions } from "#dev-creds/model";
  * or an explicit ai-SDK LanguageModel object (wins as-is). Supersedes the
  * deprecated top-level `model` and `paint.model` knobs; `paint.disabled`
  * survives as the single-lane switch. `judge` is consumed by
- * configureVendoModelSlots (see dev-creds/model.ts) — it only feeds a judge
- * the host wired from a string, i.e. vendoAutoJudge(vendoModel("vendo-judge")).
+ * bindVendoModelSlots (see dev-creds/model.ts) — composition binds it, per
+ * createVendo instance, onto the model of a judge the host wired from a
+ * string, i.e. vendoAutoJudge({ model: vendoModel("vendo-judge") }).
  */
 export interface ModelsConfig {
   agent?: string | LanguageModel;

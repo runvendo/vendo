@@ -970,6 +970,60 @@ describe("dry runs, run visibility, agentic execution, and stopping", () => {
     expect((await store.records("automations:captures").list()).records).toHaveLength(0);
   });
 
+  it("surfaces a scheduler-refused run (pricing v3 §5) as a failed run carrying the blocked reason", async () => {
+    // Under a hosted store, Cloud's scheduler is the firing authority for
+    // schedule/external automations and writes run rows with the same shape
+    // this engine writes (writeRun). A run it refused at the meter gate must
+    // read back as a plain failed run — the refusal's own reason and code
+    // intact — wherever OSS renders run status. No client-side checks: the
+    // record is the truth.
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    const doc = app("app_blocked", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [{ id: "read", tool: readTool.name }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const blockedReason =
+      "blocked by allowance: Vendo Cloud paused automation runs — the allowance for this billing "
+      + "period is used up (1,050 of 1,000 used; resets 2026-08-01). "
+      + "Upgrade your plan (https://console.vendo.run/billing) "
+      + "or bring your own infrastructure (https://docs.vendo.run/byo).";
+    const record = {
+      id: "run_blocked",
+      appId: doc.id,
+      trigger: { kind: "schedule" as const },
+      status: "error" as const,
+      startedAt: NOW.toISOString(),
+      finishedAt: NOW.toISOString(),
+      steps: [],
+      summary: "blocked by allowance",
+      error: { code: "meter-exhausted", message: blockedReason },
+    };
+    await store.records("vendo_runs").put({
+      id: record.id,
+      data: {
+        appId: record.appId,
+        trigger: record.trigger,
+        status: record.status,
+        record,
+        startedAt: record.startedAt,
+        finishedAt: record.finishedAt,
+      },
+      refs: { app_id: record.appId, status: record.status },
+    });
+    const engine = createAutomations({ apps: appsDouble(), tools: registry([readTool]), guard, store, now: () => NOW });
+
+    expect(await engine.runs.get("run_blocked", ctx())).toMatchObject({
+      status: "error",
+      error: { code: "meter-exhausted", message: blockedReason },
+    });
+    const listed = await engine.runs.list({ appId: doc.id, status: "error" }, ctx());
+    expect(listed.runs).toMatchObject([{ id: "run_blocked", error: { code: "meter-exhausted" } }]);
+    // Still owner-scoped like any other run.
+    expect(await engine.runs.get("run_blocked", ctx("other"))).toBeNull();
+  });
+
   it("runs agentic work with default budget 50, scopes records to owners, and reports unavailable runners", async () => {
     const store = memoryStoreAdapter();
     const guard = new GuardDouble();
