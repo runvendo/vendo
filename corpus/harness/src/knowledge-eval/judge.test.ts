@@ -93,6 +93,15 @@ describe("createKnowledgeAnswerJudge", () => {
     expect(model.doGenerateCalls.length).toBe(2);
   });
 
+  it("treats gateway errors (502/503/504) as transient too", async () => {
+    for (const message of ["502 Bad Gateway", "503 Service Unavailable", "504 Gateway Timeout"]) {
+      const { model, judge } = judgeWith({ error: new Error(message) }, { json: goodJudgement });
+      const result = await judge(input);
+      expect(result.degraded, message).toBe(false);
+      expect(model.doGenerateCalls.length, message).toBe(2);
+    }
+  });
+
   it("floors a persistent hard error with the message preserved", async () => {
     const { judge } = judgeWith({ error: new Error("judge model unavailable") });
     const result = await judge(input);

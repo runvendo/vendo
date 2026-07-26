@@ -8,11 +8,10 @@ import { loadFixtureCorpus, loadGoldenSet, loadRefusalSet } from "./data.js";
 /**
  * T4 — the spec's trust behaviors through the REAL `vendo_knowledge_search`
  * tool from `createKnowledgeTools` (lane K1), not just the policy predicate.
- * K1 is in flight: the factory is feature-detected at runtime and these legs
- * `describe.skipIf` until it lands — the skip is LOUD (the announcer test
- * below always runs and puts the reason in CI output). No unskip edit is
- * needed: the detection flips the moment `@vendoai/knowledge` exports the
- * factory.
+ * K1 is on main (2026-07-26) and these legs run for real. The runtime
+ * feature-detect stays as a guard: if the export ever disappears, the legs
+ * skip LOUDLY instead of erroring (the announcer test below always runs and
+ * puts the gate's state in CI output).
  *
  * Everything here is written against the pinned interfaces (HANDOFF §Pinned):
  * tool input `{ query, lookup?, readMore? }`; ok-envelope
@@ -40,7 +39,7 @@ const createKnowledgeTools = (knowledge as Record<string, unknown>)["createKnowl
 
 const factoryAvailable = typeof createKnowledgeTools === "function";
 const SKIP_REASON =
-  "[knowledge-eval] tool-level legs SKIPPED: @vendoai/knowledge does not export createKnowledgeTools yet (lane K1 in flight); they unskip automatically when K1 lands.";
+  "[knowledge-eval] tool-level legs SKIPPED: @vendoai/knowledge no longer exports createKnowledgeTools (it did at K1 landing, 2026-07-26 — this is a regression to investigate); they unskip automatically once the export is back.";
 
 const envelopeSchema = z
   .object({

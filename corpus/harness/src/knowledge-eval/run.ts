@@ -22,7 +22,7 @@ import {
 } from "./data.js";
 import { createEngine as defaultCreateEngine, EVAL_CONTEXT } from "./engines.js";
 import { aggregateRetrievalMetrics, recallAtK, reciprocalRank, type RetrievalOutcome } from "./metrics.js";
-import type { KnowledgeAnswerJudge } from "./judge.js";
+import { KNOWLEDGE_JUDGE_AXES, type KnowledgeAnswerJudge } from "./judge.js";
 
 /**
  * The knowledge eval runner (docs/eval/KNOWLEDGE.md): load the fixture corpus
@@ -58,16 +58,20 @@ function isWeak(result: KnowledgeSearchResult, threshold: number): boolean {
 }
 
 /** The tool-policy refusal predicate: chat by default, exactly ONE deep
-    retry on weakness, still weak → insufficient-evidence. */
+    retry on weakness, still weak → insufficient-evidence. Mirrors the
+    shipped tool's search calls exactly — createKnowledgeTools passes NO
+    `limit` (the engine default), so this probe must not either: a limit
+    could only shrink the hit list and manufacture refusals the real tool
+    would never produce. */
 export async function probeRefusal(
   engine: KnowledgeAdapter,
   question: string,
   ctx: KnowledgeContext,
   threshold = WEAK_SCORE_THRESHOLD,
 ): Promise<RefusalProbe> {
-  const first = await engine.search({ text: question, intent: "chat", limit: RETRIEVAL_K }, ctx);
+  const first = await engine.search({ text: question, intent: "chat" }, ctx);
   if (!isWeak(first, threshold)) return { outcome: "answered", hits: first.hits.length };
-  const retry = await engine.search({ text: question, intent: "deep", limit: RETRIEVAL_K }, ctx);
+  const retry = await engine.search({ text: question, intent: "deep" }, ctx);
   if (!isWeak(retry, threshold)) return { outcome: "answered", hits: retry.hits.length };
   return { outcome: "insufficient-evidence", hits: retry.hits.length };
 }
@@ -103,6 +107,16 @@ export interface KnowledgeEvalDeps {
 }
 
 const EPSILON = 1e-9;
+
+/** Every metric id the runner can ever emit. Bars files may only use these:
+    a misspelled key would otherwise sit unmeasured forever and pass as
+    "skipped", silently gating nothing. */
+export const SUPPORTED_BAR_KEYS: ReadonlySet<string> = new Set([
+  `recall@${RETRIEVAL_K}`,
+  "mrr",
+  ...(["chat", "deep", "schema"] as const).flatMap((intent) => [`recall@${RETRIEVAL_K}.${intent}`, `mrr.${intent}`]),
+  ...KNOWLEDGE_JUDGE_AXES.map((axis) => `judge.${axis}`),
+]);
 
 /** Engine columns, metric rows — the per-engine comparison table. */
 export function formatMetricsComparison(metricsByEngine: Record<string, Record<string, number>>): string {
@@ -217,7 +231,21 @@ async function runEngine(input: EngineRunInput): Promise<EngineRunResult> {
         perAxis[axis]!.verdicts.push(judgement[axis].verdict);
       }
     }
-    const judgeChecks: ScorecardCheck[] = Object.entries(perAxis).map(([axis, data]) => {
+    // Coverage first: a golden item silently missing from the answers map
+    // would shrink the denominator and inflate every axis. Missing answers
+    // are a failing check (a hard failure under strict), never a skip.
+    const missingAnswers = golden.items
+      .filter((item) => input.judgeLeg!.answers[item.id] === undefined)
+      .map((item) => item.id);
+    const listed = missingAnswers.slice(0, 12).join(", ");
+    const judgeChecks: ScorecardCheck[] = [{
+      id: "judge.coverage",
+      pass: missingAnswers.length === 0,
+      detail: missingAnswers.length === 0
+        ? `answers provided for all ${golden.items.length} golden items`
+        : `${missingAnswers.length} golden item(s) have no answer entry: ${listed}${missingAnswers.length > 12 ? ", …" : ""}`,
+    }];
+    judgeChecks.push(...Object.entries(perAxis).map(([axis, data]) => {
       const mean = data.scores.length === 0 ? 0 : data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
       metrics[`judge.${axis}`] = Number(mean.toFixed(6));
       const passed = data.verdicts.filter(Boolean).length;
@@ -226,7 +254,7 @@ async function runEngine(input: EngineRunInput): Promise<EngineRunResult> {
         pass: data.verdicts.length > 0 && passed === data.verdicts.length,
         detail: `mean score ${mean.toFixed(2)}/5; verdicts ${passed}/${data.verdicts.length}${degraded > 0 ? `; ${degraded} degraded judgement(s)` : ""}`,
       };
-    });
+    }));
     judgeLayer = { layer: 3, name: "judge", checks: judgeChecks };
   }
 
@@ -241,7 +269,12 @@ async function runEngine(input: EngineRunInput): Promise<EngineRunResult> {
   } else {
     const breaches: string[] = [];
     const unmeasured: string[] = [];
+    const unknown: string[] = [];
     for (const [key, floor] of Object.entries(bars.bars)) {
+      if (!SUPPORTED_BAR_KEYS.has(key)) {
+        unknown.push(key);
+        continue;
+      }
       const measured = metrics[key];
       if (measured === undefined) {
         unmeasured.push(key);
@@ -249,11 +282,20 @@ async function runEngine(input: EngineRunInput): Promise<EngineRunResult> {
         breaches.push(`${key}: measured ${measured.toFixed(3)} < bar ${floor}`);
       }
     }
+    // A key the runner can never emit is a misspelling, not a skip: it would
+    // otherwise gate nothing forever while looking configured.
+    if (unknown.length > 0) {
+      barsChecks.push({
+        id: "bars.unknown",
+        pass: false,
+        detail: `bars file uses unsupported metric key(s): ${unknown.join(", ")} — supported: ${[...SUPPORTED_BAR_KEYS].join(", ")}`,
+      });
+    }
     barsChecks.push({
       id: "bars.regression",
       pass: breaches.length === 0,
       detail: breaches.length === 0
-        ? `all ${Object.keys(bars.bars).length - unmeasured.length} measured bars met`
+        ? `all ${Object.keys(bars.bars).length - unmeasured.length - unknown.length} measured bars met`
         : breaches.join("; "),
     });
     if (unmeasured.length > 0) {

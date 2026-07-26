@@ -23,7 +23,7 @@ export function judgeModelId(env: NodeJS.ProcessEnv = process.env): string {
   return env[JUDGE_MODEL_ENV] ?? DEFAULT_JUDGE_MODEL;
 }
 
-const TRANSIENT = /429|overloaded|529|rate|ECONNRESET|timeout|fetch failed/i;
+const TRANSIENT = /429|502|503|504|overloaded|529|rate|ECONNRESET|timeout|fetch failed/i;
 
 export interface RunJudgeOptions<Schema extends z.ZodTypeAny> {
   model: LanguageModel;

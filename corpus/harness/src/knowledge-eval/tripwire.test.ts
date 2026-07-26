@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { createRunContext } from "../run-context.js";
+import { loadGoldenSet } from "./data.js";
 import { createKnowledgeAnswerJudge } from "./judge.js";
-import { runKnowledgeEval } from "./run.js";
+import { runKnowledgeEval, type JudgeLeg } from "./run.js";
 import { asLanguageModel, scriptedJudgeModel } from "./scripted-judge-model.test-util.js";
 
 /**
@@ -34,23 +35,23 @@ async function runSeeded(judgement: {
     delayMs: () => 0,
   });
 
+  // Every golden item gets an answer (the judge.coverage check demands full
+  // coverage); the scripted judge hands each one the seeded judgement. The
+  // seeded answer deliberately cites the WRONG document, so a bad judgement
+  // here is what an honest judge would say.
+  const golden = await loadGoldenSet();
+  const answers: JudgeLeg["answers"] = Object.fromEntries(golden.items.map((item) => [item.id, {
+    answer: "Vendo is a hosted CRM that stores your customer data in its own cloud.",
+    citations: [{ docId: "glossary-venue", snippet: "a venue is where an agent surface runs" }],
+  }]));
+
   const exitCode = await runKnowledgeEval(
     { engines: ["memory"], json: true, strict: true },
     {
       stdout: (line) => { lines.push(line); },
       stderr: (line) => { lines.push(line); },
       createContext: () => createRunContext({ corpusRoot }),
-      judgeLeg: {
-        judge,
-        // One seeded answer is enough to trip the wire: the fabricated claim
-        // cites the WRONG document on purpose.
-        answers: {
-          "gs-welcome": {
-            answer: "Vendo is a hosted CRM that stores your customer data in its own cloud.",
-            citations: [{ docId: "glossary-venue", snippet: "a venue is where an agent surface runs" }],
-          },
-        },
-      },
+      judgeLeg: { judge, answers },
     },
   );
   return { exitCode, output: lines.join("\n") };

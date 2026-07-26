@@ -254,6 +254,19 @@ describe("bars", () => {
     expect(run.exitCode).toBe(1);
   });
 
+  it("an unsupported (misspelled) bar key is rejected, never skipped", async () => {
+    const run = await runJson({
+      loadGolden: async () => ({ version: 1, items: [tinyGolden.items[0]!] }),
+      loadBars: async () => bars({ "recal@5": 1, mrr: 1 }),
+    });
+    const barsLayer = layer(run, "bars");
+    const unknownCheck = barsLayer.checks.find((entry) => entry.id === "bars.unknown");
+    expect(unknownCheck?.pass).toBe(false);
+    expect(unknownCheck?.detail).toContain("recal@5");
+    expect(barsLayer.checks.find((entry) => entry.id === "bars.skipped")).toBeUndefined();
+    expect(run.exitCode).toBe(1);
+  });
+
   it("bars the run did not measure are skipped LOUDLY, never silently", async () => {
     const run = await runJson({
       loadGolden: async () => ({ version: 1, items: [tinyGolden.items[0]!] }),
@@ -291,12 +304,36 @@ describe("judge leg", () => {
       },
     });
     const judgeLayer = layer(judged, "judge");
+    expect(judgeLayer.checks.find((check) => check.id === "judge.coverage")?.pass).toBe(true);
     expect(judgeLayer.checks.find((check) => check.id === "judge.faithfulness")?.pass).toBe(true);
     expect(judgeLayer.checks.find((check) => check.id === "judge.completeness")?.pass).toBe(false);
     const metrics = judged.scorecard.metrics["memory"]!;
     expect(metrics["judge.faithfulness"]).toBe(5);
     expect(metrics["judge.citationCorrectness"]).toBe(4);
     expect(metrics["judge.completeness"]).toBe(3);
+  });
+
+  it("a golden item missing from the answers map FAILS coverage instead of inflating results", async () => {
+    const run = await runJson({
+      loadGolden: async () => ({ version: 1, items: [tinyGolden.items[0]!, tinyGolden.items[1]!] }),
+      judgeLeg: {
+        judge: async () => ({
+          faithfulness: { score: 5, verdict: true, note: "grounded" },
+          citationCorrectness: { score: 5, verdict: true, note: "supported" },
+          completeness: { score: 5, verdict: true, note: "covered" },
+          degraded: false,
+        }),
+        // t-widget deliberately absent.
+        answers: {
+          "t-sky": { answer: "The sky is blue.", citations: [{ docId: "alpha", snippet: "the sky is blue" }] },
+        },
+      },
+    });
+    const coverage = layer(run, "judge").checks.find((check) => check.id === "judge.coverage");
+    expect(coverage?.pass).toBe(false);
+    expect(coverage?.detail).toContain("t-widget");
+    expect(run.exitCode).toBe(1);
+    expect(run.scorecard.summary.hardFailureCount).toBeGreaterThan(0);
   });
 });
 

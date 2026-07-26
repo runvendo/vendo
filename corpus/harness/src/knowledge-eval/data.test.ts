@@ -118,13 +118,17 @@ describe("knowledge-eval data files", () => {
     }
   });
 
-  it("every bars/<engine>.json parses strictly", async () => {
+  it("every bars/<engine>.json parses strictly and uses only supported metric keys", async () => {
+    const { SUPPORTED_BAR_KEYS } = await import("./run.js");
     const barsDir = path.join(knowledgeEvalDataDir(), "bars");
     const files = (await readdir(barsDir)).filter((file) => file.endsWith(".json"));
     expect(files.length).toBeGreaterThanOrEqual(1);
     for (const file of files) {
       const raw: unknown = JSON.parse(await readFile(path.join(barsDir, file), "utf8"));
-      expect(() => engineBarsSchema.parse(raw), `${file} must parse strictly`).not.toThrow();
+      const parsed = engineBarsSchema.parse(raw);
+      for (const key of Object.keys(parsed.bars)) {
+        expect(SUPPORTED_BAR_KEYS.has(key), `${file}: unsupported bar key "${key}"`).toBe(true);
+      }
     }
   });
 });
