@@ -22,6 +22,7 @@ import {
   type Ts,
   type ZodSchemaResult,
 } from "./static-ts.js";
+import { isSatisfiesExpressionNode, modifiersOf } from "./ts-compat.js";
 
 /**
  * Static Next.js server-action extraction (04 §1, additive within
@@ -100,7 +101,7 @@ type FunctionNode = TS.FunctionDeclaration | TS.FunctionExpression | TS.ArrowFun
 
 function unwrapExpression(ts: Ts, expr: TS.Expression): TS.Expression {
   let current = expr;
-  while (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
+  while (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || isSatisfiesExpressionNode(ts, current)) {
     current = current.expression;
   }
   return current;
@@ -326,7 +327,7 @@ async function collectModuleActions(
   };
 
   for (const statement of module.sf.statements) {
-    const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) ?? [] : [];
+    const modifiers = modifiersOf(ts, statement);
     const isExported = modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
     const isDefault = modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
 

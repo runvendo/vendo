@@ -95,9 +95,18 @@ function declarationOf(mod: BoundModule, node: TS.Node): TS.Declaration | undefi
   return symbol?.valueDeclaration ?? symbol?.declarations?.[0];
 }
 
+/** `ts.isSatisfiesExpression` appeared in TS 4.9; the compiler here is the
+ * host's own, so probe before use (#551). */
+function isSatisfiesExpressionNode(ts: typeof TS, node: TS.Node): node is TS.SatisfiesExpression {
+  const modern = ts as unknown as {
+    isSatisfiesExpression?: (node: TS.Node) => node is TS.SatisfiesExpression;
+  };
+  return modern.isSatisfiesExpression ? modern.isSatisfiesExpression(node) : false;
+}
+
 function unwrapExpression(ts: typeof TS, expression: TS.Expression): TS.Expression {
   let current = expression;
-  while (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
+  while (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || isSatisfiesExpressionNode(ts, current)) {
     current = current.expression;
   }
   return current;

@@ -25,6 +25,7 @@ import {
   type FileModule,
   type StaticExtraction,
 } from "./static-ts.js";
+import { isSatisfiesExpressionNode } from "./ts-compat.js";
 
 /**
  * Static tRPC extraction (04 §1, additive within vendo/tools@1).
@@ -120,7 +121,7 @@ async function evaluateRouterExpression(
     if (!resolved) return null;
     return evaluateRouterExpression(extraction, resolved.module, resolved.expr, depth + 1, contextPath);
   }
-  if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) || ts.isSatisfiesExpression(expr)) {
+  if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) || isSatisfiesExpressionNode(ts, expr)) {
     return evaluateRouterExpression(extraction, module, expr.expression, depth + 1, contextPath);
   }
   if (!ts.isCallExpression(expr)) return null;

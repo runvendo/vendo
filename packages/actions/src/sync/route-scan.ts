@@ -16,6 +16,7 @@ import {
   type SourcedExtractedTool,
 } from "./common.js";
 import { createRouteScanState, inferRouteInput, type RouteInputResult } from "./route-schema.js";
+import { modifiersOf } from "./ts-compat.js";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 const HTTP_METHOD_SET = new Set<string>(HTTP_METHODS);
@@ -111,8 +112,7 @@ function isStringLike(ts: typeof TS, node: TS.Node): node is TS.StringLiteral | 
 }
 
 function hasModifier(ts: typeof TS, statement: TS.Statement, kind: TS.SyntaxKind): boolean {
-  return ts.canHaveModifiers(statement) === true
-    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === kind);
+  return modifiersOf(ts, statement).some((modifier) => modifier.kind === kind);
 }
 
 function bindingNames(ts: typeof TS, name: TS.BindingName): string[] {

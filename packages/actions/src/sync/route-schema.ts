@@ -10,6 +10,7 @@ import {
   type FileModule,
   type StaticExtraction,
 } from "./static-ts.js";
+import { isSatisfiesExpressionNode, modifiersOf } from "./ts-compat.js";
 
 /**
  * Route-scan input-schema inference (PR 2, 04 §1): a collector seam asked
@@ -149,8 +150,7 @@ export async function inferRouteInput(
 
 /** True when `statement` carries an `export` modifier. */
 function hasExportKeyword(ts: typeof TS, statement: TS.Statement): boolean {
-  return ts.canHaveModifiers(statement) === true
-    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+  return modifiersOf(ts, statement).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
 }
 
 /** A discovered handler: its body plus the identifier name of its first
@@ -213,7 +213,7 @@ function unwrapJsonCandidate(ts: typeof TS, node: TS.Node): TS.Node {
       current = current.expression;
     } else if (ts.isParenthesizedExpression(current)) {
       current = current.expression;
-    } else if (ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
+    } else if (ts.isAsExpression(current) || isSatisfiesExpressionNode(ts, current)) {
       current = current.expression;
     } else if (ts.isNonNullExpression(current)) {
       current = current.expression;

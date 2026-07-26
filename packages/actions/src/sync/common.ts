@@ -4,6 +4,7 @@ import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
 import type TS from "typescript";
 import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
+import { modifiersOf } from "./ts-compat.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
 // Hidden directories are never route sources; alternate Next dist dirs
@@ -201,13 +202,11 @@ export function visitNodes(ts: typeof TS, root: TS.Node, visit: (node: TS.Node) 
 }
 
 function hasExportModifier(ts: typeof TS, statement: TS.Statement): boolean {
-  return ts.canHaveModifiers(statement) === true
-    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+  return modifiersOf(ts, statement).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
 }
 
 function hasDefaultModifier(ts: typeof TS, statement: TS.Statement): boolean {
-  return ts.canHaveModifiers(statement) === true
-    && (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+  return modifiersOf(ts, statement).some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
 }
 
 function bindingDeclaresName(ts: typeof TS, name: TS.BindingName, exportedName: string): boolean {

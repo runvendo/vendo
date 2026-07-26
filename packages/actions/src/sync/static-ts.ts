@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type TS from "typescript";
 import { resolveImportSource } from "./common.js";
+import { isSatisfiesExpressionNode } from "./ts-compat.js";
 
 /**
  * Shared static TypeScript-source machinery for the compiler-API extractors
@@ -295,7 +296,7 @@ export async function zodFromExpression(
     if (!resolved) return unrecognized(`schema reference "${expr.text}" could not be statically resolved`);
     return zodFromExpression(extraction, resolved.module, resolved.expr, depth + 1);
   }
-  if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) || ts.isSatisfiesExpression(expr)) {
+  if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) || isSatisfiesExpressionNode(ts, expr)) {
     return zodFromExpression(extraction, module, expr.expression, depth + 1);
   }
   if (!ts.isCallExpression(expr)) return unrecognized("schema expression is not a zod call");

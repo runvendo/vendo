@@ -5,6 +5,7 @@ import type tsTypes from "typescript";
 import type { CatalogEntry } from "../formats.js";
 import { walk } from "./common.js";
 import { parseModule, resolveIdentifier, zodFromExpression, type FileModule, type StaticExtraction } from "./static-ts.js";
+import { isSatisfiesExpressionNode } from "./ts-compat.js";
 
 let ts: typeof tsTypes;
 
@@ -76,7 +77,7 @@ function unwrapExpression(expression: tsTypes.Expression): tsTypes.Expression {
     ts.isAsExpression(current)
     || ts.isTypeAssertionExpression(current)
     || ts.isParenthesizedExpression(current)
-    || ts.isSatisfiesExpression(current)
+    || isSatisfiesExpressionNode(ts, current)
     || ts.isNonNullExpression(current)
   ) current = current.expression;
   return current;
