@@ -92,6 +92,10 @@ const CHECK_ORDER: StructuralCheckId[] = [
 ];
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+// Any import statement whose binding list names VendoRoot (possibly aliased,
+// as in the generated wrapper's `VendoRoot as VendoClientRoot`), capturing
+// the module specifier.
+const VENDO_ROOT_IMPORT = /import\s+(?:type\s+)?\{[^}]*\bVendoRoot\b[^}]*\}\s*from\s*["']([^"']+)["']/g;
 const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
 
 export function corpusHostCommandEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -257,6 +261,32 @@ function hasFunctionalExpressVendoMount(server: string): boolean {
   return false;
 }
 
+function vendoRootImportSpecifiers(source: string): string[] {
+  return [...source.matchAll(VENDO_ROOT_IMPORT)].map((match) => match[1]!);
+}
+
+/** The layout wraps children with the @vendoai/vendo/react provider either
+ * directly or through the ONE generated wrapper hop: since 0.4.1's
+ * visible-surface wiring (init-scaffolds.ts's vendoRootWrapperSource), a
+ * by-the-book init mounts <VendoRoot> imported from the repo-local
+ * `vendo/vendo-root` module — the layout itself never names the package.
+ * The wrapper must itself import VendoRoot from @vendoai/vendo/react, so a
+ * layout mounting some unrelated local VendoRoot still fails. */
+async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layout: string): Promise<boolean> {
+  if (!layout.includes("<VendoRoot")) return false;
+  const specifiers = vendoRootImportSpecifiers(layout);
+  if (specifiers.includes("@vendoai/vendo/react")) return true;
+  for (const specifier of specifiers) {
+    if (!specifier.startsWith(".")) continue;
+    const base = path.posix.join(path.posix.dirname(app.layoutRel), specifier);
+    for (const candidate of [base, `${base}.tsx`, `${base}.ts`, `${base}.jsx`, `${base}.js`]) {
+      const source = await readText(repoDir, candidate);
+      if (source !== null && vendoRootImportSpecifiers(source).includes("@vendoai/vendo/react")) return true;
+    }
+  }
+  return false;
+}
+
 async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<StructuralCheckResult> {
   const framework = ctx.framework ?? "next";
   const { files, app } = await defaultExpectedFilesForFramework(ctx.repoDir, framework);
@@ -293,8 +323,8 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
     } else {
       const layout = await readText(ctx.repoDir, app.layoutRel);
       const route = await readText(ctx.repoDir, routeRel(app));
-      if (layout && (!layout.includes("@vendoai/vendo/react") || !layout.includes("<VendoRoot"))) {
-        wiringProblems.push(`${app.layoutRel} does not wrap children with @vendoai/vendo/react VendoRoot`);
+      if (layout && !await layoutReachesVendoReact(ctx.repoDir, app, layout)) {
+        wiringProblems.push(`${app.layoutRel} does not wrap children with @vendoai/vendo/react VendoRoot (directly or via a local VendoRoot wrapper module)`);
       }
       if (route && (!route.includes("createVendo") || !route.includes("nextVendoHandler"))) {
         wiringProblems.push(`${routeRel(app)} does not compose createVendo() with nextVendoHandler()`);
