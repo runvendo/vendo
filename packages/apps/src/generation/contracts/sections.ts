@@ -132,23 +132,43 @@ ${prewiredSchemaPrompt()}`;
  *  stand. */
 export const islandContract = (): string => `- <Island name="PascalName">TSX with an \`export default\` component</Island> defines a generated component, referenced as <PascalName/> — plain source, never wrapped in braces, template literals, or fences. The island's name must be DISTINCT from every host catalog, Kit, and prewired component name (name resolution prefers those, so a colliding island never renders). Use a host catalog or Kit/prewired component when it covers the need (faster, brand-native); write an island for custom visuals, novel interactions, or client-side logic they cannot express (search-as-you-type, derived calculations). A CHART is not a custom visual: a bar/line/donut/sparkline/progress belongs in the Kit chart (BarChart, LineChart, DonutChart, Sparkline, Progress) — those render a designed empty state on empty data for free, so never hand-roll a chart island (an SVG donut, a bespoke bars grid). Never put the whole app or its layout inside one island: compose regions so the app streams in progressively.
 - Islands have NO import statements — everything is already in scope: React and its hooks (useState, useEffect, useMemo, useCallback, useRef), the entire Kit (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}), and \`fmt\` value helpers (fmt.money(cents), fmt.dateTime(iso), fmt.percent(ratio), fmt.num(n)). Never write an import: known react/kit imports are stripped, and anything else (recharts, d3, lodash…) cannot load in the network-denied sandbox — the ambient Kit charts cover charting. Host catalog and prewired components are NOT in island scope (they live in the host page): compose them in the tree, and inside an island use only the ambient Kit and your own local components. This holds even when a host catalog component matches the visualization — inside an island, its ambient Kit equivalent (LineChart, BarChart, DonutChart, Sparkline, Progress) is the correct choice.
-- Islands call host tools directly with the ambient tools API: \`const result = await tools.<tool_name>(args)\`, where <tool_name> is a HOST TOOLS name written as a LITERAL member access — never tools[expr], never aliasing or passing \`tools\` around. args must match that tool's (input: …) sketch exactly — field names AND nesting. The sandbox has NO network — fetch/XHR/WebSocket are blocked by CSP; the ambient tools API is the only way an island reads or acts. A read tool resolves with the tool's output. A MUTATING tool pauses at the user approval gate: the call resolves {status:"pending-approval"} and its effect lands after the user approves — render a pending/awaiting-approval state, never treat it as a failure. An island can only reach the tools its own source literally names.
+- Islands call host tools directly with the ambient tools API: \`const result = await tools.<tool_name>(args)\`, where <tool_name> is a HOST TOOLS name written as a LITERAL member access — never tools[expr], never aliasing or passing \`tools\` around. args must match that tool's (input: …) sketch exactly — field names, nesting, AND units: a money field marked (integer cents) takes minor units, so a dollar amount the user typed or a form collected is multiplied by 100 before the call (e.g. $25 → amount: 2500, fmt.money(2500) renders $25.00); sending the raw dollar number to a cents field moves 100× less money than the user asked. The sandbox has NO network — fetch/XHR/WebSocket are blocked by CSP; the ambient tools API is the only way an island reads or acts. A read tool resolves with the tool's output. A MUTATING tool pauses at the user approval gate: the call resolves {status:"pending-approval"} and its effect lands after the user approves — render a pending/awaiting-approval state, never treat it as a failure. An island can only reach the tools its own source literally names.
 - Data honesty holds inside islands: every number or row an island renders comes from its props (bound to a tool reference) or from an ambient tools read — never hand-typed. A labeled field whose value is empty renders an em dash (—) in the value position — never a bare label with nothing after it.
 - Empty data must never crash an island. A tool read can resolve with an empty array, an absent field, or undefined on a fresh account — so default every list before you use it (\`const rows = result.data ?? []\`) and never call .map/.length/.reduce on a value that might be undefined. Render a short, specific empty state (or defer to a Kit component, which already does) instead of throwing.`;
+
+/** Re-gate 2026-07-26 I5-C — the money-unit annotation for one input field.
+ *  The unit lives in the property DESCRIPTION ("Amount to send in cents…"),
+ *  which the sketch used to drop entirely, so an island model sent the
+ *  user's dollar number to a cents field ($25 → amount: 25 = $0.25). */
+const unitAnnotation = (field: string, schema: Record<string, unknown> | null | undefined): string => {
+  const description = typeof schema?.description === "string" ? schema.description : "";
+  const cents = /cents$/i.test(field) || /\bcents\b|\bminor units?\b/i.test(description);
+  const dollars = /\bdollars\b/i.test(description);
+  // Contradictory metadata (a *cents field DESCRIBED as dollars) teaches
+  // nothing — annotating either way would be a coin flip, and the runtime
+  // guard skips such fields for the same reason (call.ts, review 2026-07-26).
+  if (cents && dollars) return "";
+  if (cents) return " (integer cents)";
+  if (dollars) return " (dollars)";
+  return "";
+};
 
 /** A one-line sketch of a tool's INPUT (top-level fields, one nesting level
  *  deep). Without it the model guesses arg shapes: a live island called a
  *  body-nested tool with flat args, the host route read an empty JSON body,
- *  and the approved mutation ran on defaults. */
+ *  and the approved mutation ran on defaults. Money fields carry their unit
+ *  (see unitAnnotation). */
 const toolInputSketch = (inputSchema: Record<string, unknown> | undefined): string => {
   const properties = inputSchema?.properties;
   if (typeof properties !== "object" || properties === null) return "";
   const fields = Object.entries(properties as Record<string, unknown>).map(([field, schema]) => {
     const child = (schema as Record<string, unknown> | null)?.properties;
     if (typeof child === "object" && child !== null) {
-      return `${field}: {${Object.keys(child).join(", ")}}`;
+      const nested = Object.entries(child as Record<string, unknown>)
+        .map(([name, nestedSchema]) => `${name}${unitAnnotation(name, nestedSchema as Record<string, unknown> | null)}`);
+      return `${field}: {${nested.join(", ")}}`;
     }
-    return field;
+    return `${field}${unitAnnotation(field, schema as Record<string, unknown> | null)}`;
   });
   return fields.length === 0 ? "" : ` (input: {${fields.join(", ")}})`;
 };
@@ -159,7 +179,7 @@ const toolInputSketch = (inputSchema: Record<string, unknown> | undefined): stri
 export const hostToolSections = (deps: GenerationDependencies): GenerationPromptSection[] => [
   ...(deps.tools === undefined || deps.tools.length === 0 ? [] : [{
     id: "catalog" as const,
-    content: `HOST TOOLS (the ONLY tools a binding — inline reference or <Query> — or an action may name; anything else is a validation error). Every call's args MUST match the tool's (input: …) sketch exactly — same field names, same nesting (a field shown as {body: {…}} means the args object carries a "body" object):\n${deps.tools.map(({ name, description, risk, inputSchema }) => `- ${name} [${risk}]${toolInputSketch(inputSchema)}: ${description}`).join("\n")}`,
+    content: `HOST TOOLS (the ONLY tools a binding — inline reference or <Query> — or an action may name; anything else is a validation error). Every call's args MUST match the tool's (input: …) sketch exactly — same field names, same nesting (a field shown as {body: {…}} means the args object carries a "body" object), and same UNITS: a field marked (integer cents) takes minor units — multiply a user-typed dollar amount by 100 (e.g. $25 → 2500) and send a whole number; a field marked (dollars) takes the dollar amount itself. Never send the raw dollar number to a cents field:\n${deps.tools.map(({ name, description, risk, inputSchema }) => `- ${name} [${risk}]${toolInputSketch(inputSchema)}: ${description}`).join("\n")}`,
   }]),
   // The domain manifest is FACT derived at sync, not guidance: it tells the
   // model what data exists at all, so an out-of-domain ask becomes an honest
