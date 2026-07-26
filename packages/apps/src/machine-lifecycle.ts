@@ -118,6 +118,17 @@ export interface MachineLifecycle {
    * loop (Lane E's env-baked-at-provision gap).
    */
   buildAppEnv(app: AppDocument): Promise<Record<string, string>>;
+  /**
+   * issue #566 — the secret values that were successfully INJECTED into this
+   * box, keyed by secret name, as last assembled by the buildEnv seam
+   * (provision, stale-rebuild, or pre-edit re-injection). The redaction guard
+   * reuses these so a value that entered the box is always redactable WITHOUT a
+   * refetch that could fail. In-memory and per-app: it is populated only for
+   * apps this process built env for, dropped when the machine is destroyed, and
+   * never keyed across apps — so it cannot outlive or cross a box boundary.
+   * Empty map when nothing was injected (or nothing is cached in this process).
+   */
+  injectedSecretValues(appId: AppId): ReadonlyMap<string, string>;
 }
 
 interface LiveEntry {
@@ -140,6 +151,26 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
   const live = new Map<AppId, LiveEntry>();
   const waking = new Map<AppId, Promise<SandboxMachine>>();
   const provisioning = new Map<AppId, Promise<AppDocument>>();
+  // issue #566 — per-box cache of the secret values that entered the box, keyed
+  // by app id and refreshed on every env assembly (provision / stale-rebuild /
+  // pre-edit re-injection). Redaction reads it so a successfully injected value
+  // never depends on a refetch that could fail. In-memory and per-app: dropped
+  // on machine destroy and never shared across apps, so it cannot outlive or
+  // cross a box boundary.
+  const injectedValues = new Map<AppId, Map<string, string>>();
+
+  /** Capture the secret values a freshly assembled env carries into the box.
+   *  A declared secret injects as its own name=value env entry (box-env's
+   *  contract; reserved boundary vars can never be a declared secret name), so
+   *  the values are exactly the declared names present in the built env. */
+  const rememberInjected = (doc: AppDocument, env: Record<string, string>): void => {
+    const values = new Map<string, string>();
+    for (const name of new Set(doc.secrets ?? [])) {
+      const value = env[name];
+      if (typeof value === "string" && value.length > 0) values.set(name, value);
+    }
+    injectedValues.set(doc.id, values);
+  };
 
   const requireAdapter = (): SandboxAdapter => {
     if (config.sandbox === undefined) {
@@ -293,9 +324,11 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       // Lane E — the egress policy gates provisioning BEFORE any provider
       // call: an unapproved declared domain throws here and no machine exists.
       const allowlist = await config.allowedDomains?.(doc);
+      const env = await buildEnv(doc);
+      rememberInjected(doc, env);
       const machine = await adapter.create({
         ...(config.template === undefined ? {} : { template: config.template }),
-        env: await buildEnv(doc),
+        env,
         ...(allowlist === undefined ? {} : { allowedDomains: allowlist }),
       });
       try {
@@ -344,7 +377,9 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     const staleAt = doc.machine?.envStaleAt;
     if (staleAt === undefined || config.injectEnv === undefined) return;
     try {
-      await config.injectEnv(machine, await buildEnv(doc));
+      const env = await buildEnv(doc);
+      await config.injectEnv(machine, env);
+      rememberInjected(doc, env);
     } catch (error) {
       throw new VendoError(
         "sandbox-unavailable",
@@ -459,11 +494,19 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       return rest;
     });
     if (clearedRef !== undefined) await adapter.destroy(clearedRef);
+    // De-graduation: the box is gone, so its injected-value cache must go too.
+    injectedValues.delete(app.id);
     return updated;
   };
 
-  const buildAppEnv = async (app: AppDocument): Promise<Record<string, string>> =>
-    buildEnv(await currentDocument(app.id));
+  const buildAppEnv = async (app: AppDocument): Promise<Record<string, string>> => {
+    const doc = await currentDocument(app.id);
+    const env = await buildEnv(doc);
+    // Pre-edit re-injection pushes this same env to the live box, so refresh the
+    // cache with what is about to enter it.
+    rememberInjected(doc, env);
+    return env;
+  };
 
   const destroyResources = async (app: AppDocument): Promise<void> => {
     const entry = await takeLive(app.id);
@@ -474,6 +517,8 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     const doc = await currentDocument(app.id).catch(() => app);
     const ref = doc.machine?.snapshotRef;
     if (ref !== undefined) await config.sandbox?.destroy(ref).catch(() => undefined);
+    // The app's provider resources are reaped (delete path) — drop its cache.
+    injectedValues.delete(app.id);
   };
 
   return {
@@ -486,5 +531,6 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
     destroyMachine,
     destroyResources,
     buildAppEnv,
+    injectedSecretValues: (appId) => injectedValues.get(appId) ?? new Map(),
   };
 };

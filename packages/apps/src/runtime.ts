@@ -2605,8 +2605,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // Lane E redaction guard — a box may echo its own env (fn responses
         // are host-side artifacts that reach clients and logs): scrub every
         // known secret value out of the response, and out of any error
-        // message crossing this seam.
-        const secretValues = await collectSecretValues(app.secrets, config.secrets);
+        // message crossing this seam. issue #566 — prefer the values already
+        // injected into THIS box (the lifecycle's per-box cache) so a value
+        // that entered the box is always redactable without a refetch that
+        // could fail; only names NOT injected fall back to a best-effort read.
+        const secretValues = await collectSecretValues(
+          app.secrets,
+          config.secrets,
+          lifecycle.injectedSecretValues(appId),
+        );
         try {
           const answer = await machine.request(request);
           if (secretValues.size === 0) return answer;
@@ -2634,9 +2641,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async redact(appId, value) {
         const record = await apps.get(appId);
         if (record === null) return value;
+        // issue #566 — same per-box cache preference as box.request: an
+        // injected value redacts without a refetch that could fail.
         const secretValues = await collectSecretValues(
           documentFromRecord(record).secrets,
           config.secrets,
+          lifecycle.injectedSecretValues(appId),
         );
         return redactSecretJson(value, secretValues);
       },
