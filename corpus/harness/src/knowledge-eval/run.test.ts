@@ -124,8 +124,12 @@ describe("runKnowledgeEval retrieval metrics", () => {
     expect(retrieval.checks.find((check) => check.id === "retrieval.t-sky")?.pass).toBe(true);
     expect(retrieval.checks.find((check) => check.id === "retrieval.t-widget")?.pass).toBe(true);
     expect(retrieval.checks.find((check) => check.id === "retrieval.t-miss")?.pass).toBe(false);
-    // A retrieval miss is a hard failure under strict.
-    expect(run.exitCode).toBe(1);
+    // Per-item misses are diagnostics (the layer shows FAIL) but the strict
+    // gate for retrieval quality is the bars layer — with no bars recorded,
+    // this run exits 0. The bars tests below prove the red path.
+    expect(retrieval.status).toBe("fail");
+    expect(run.exitCode).toBe(0);
+    expect(run.scorecard.summary.hardFailureCount).toBe(0);
   });
 });
 
@@ -189,9 +193,32 @@ describe("refusal hard-fails", () => {
         return { docs: 1 };
       },
     };
-    const probe = await probeRefusal(weakEngine, "anything", EVAL_CONTEXT);
+    // Explicit nonzero threshold: the score-based weakness path.
+    const probe = await probeRefusal(weakEngine, "anything", EVAL_CONTEXT, 0.35);
     expect(probe.outcome).toBe("insufficient-evidence");
     expect(queries.map((query) => query.intent)).toEqual(["chat", "deep"]);
+  });
+
+  it("the default threshold mirrors the shipped tool policy: hits with any score are an answer", async () => {
+    const weakScores: KnowledgeAdapter = {
+      posture: { fetch: false, write: false, visibility: "public-only" },
+      async search(): Promise<KnowledgeSearchResult> {
+        return {
+          hits: [{
+            ref: { docId: "alpha" },
+            snippet: "weak but present",
+            kind: "docs",
+            visibility: "public",
+            score: 0.01,
+          }],
+        };
+      },
+      async status() {
+        return { docs: 1 };
+      },
+    };
+    const probe = await probeRefusal(weakScores, "anything", EVAL_CONTEXT);
+    expect(probe.outcome).toBe("answered");
   });
 
   it("internal fixture docs never answer: the context leaves includeInternal unset", async () => {
@@ -314,6 +341,15 @@ describe("engine registry", () => {
     expect(exitCode).toBe(1);
     expect(err.lines.join("\n")).toContain('Unknown knowledge engine "nope"');
     expect(err.lines.join("\n")).toContain("memory");
+  });
+
+  it("the lexical registry engine is writable and searchable offline", async () => {
+    const { createEngine } = await import("./engines.js");
+    const engine = createEngine("lexical");
+    expect(engine.upsert).toBeDefined();
+    await engine.upsert!([doc("lex-doc", "the quarterly report ships in october")]);
+    const result = await engine.search({ text: "quarterly report", limit: 5 }, EVAL_CONTEXT);
+    expect(result.hits.map((hit) => hit.ref.docId)).toContain("lex-doc");
   });
 
   it("the memory registry engine enforces the public-only default", async () => {

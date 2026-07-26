@@ -69,7 +69,9 @@ rewrites:
    without them).
 2. Calibrate and commit `bars/<engine>.json` from its first honest run.
 
-Planned: `memory` (now, per-PR) · `lexical` (lane K7, per-PR once landed) ·
+In the matrix: `memory` (per-PR CI) · `lexical` (joined 2026-07-26 at K7
+landing; deterministic over an in-memory store, but NOT in the per-PR
+workflow — its refusal layer is red at baseline, see the ledger). Planned:
 `cloud` (lane K3, nightly). Real engines are measured on the natural
 `question`; only the memory engine uses `memoryQuery`.
 
@@ -113,3 +115,4 @@ calibration runs are).
 | Date | Engine | recall@5 | MRR | judge.faithfulness | Notes |
 |---|---|---|---|---|---|
 | 2026-07-25 | memory | 1.000 | 1.000 | — (offline) | Calibration run at authoring time; bars seeded at measured values |
+| 2026-07-26 | lexical | 0.100 | 0.055 | — (offline) | Calibration at K7 landing, natural questions. Retrieval baseline is weak (unnormalized term-frequency scoring; long common-token docs dominate; schema lookup honestly empty for question-shaped text) and the REFUSAL LAYER IS RED: off-corpus questions return junk hits, so the shipped zero-hits weakness policy answers them (6/60 golden items retrieved; 0/15 refusal items refused). Bars seeded at measured floors; lexical stays out of the per-PR gate until refusals go honest — this row is the suite catching a real quality gap, not noise |

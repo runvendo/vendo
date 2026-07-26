@@ -24,7 +24,15 @@ import { loadFixtureCorpus, loadGoldenSet, loadRefusalSet } from "./data.js";
  * K1's UI side; these legs assert the envelope only.
  */
 
-type ToolFactory = (adapter: KnowledgeAdapter, options?: unknown) => Record<string, unknown>;
+/** K1's factory returns core's ToolRegistry ({ descriptors, execute }) —
+    duck-typed here so these legs compile and skip cleanly even if the
+    factory disappears again. */
+interface ToolRegistryLike {
+  descriptors(): Promise<{ name: string; risk?: string }[]>;
+  execute(call: { id: string; tool: string; args: unknown }, ctx: unknown): Promise<unknown>;
+}
+
+type ToolFactory = (adapter: KnowledgeAdapter, options?: unknown) => ToolRegistryLike;
 
 const createKnowledgeTools = (knowledge as Record<string, unknown>)["createKnowledgeTools"] as
   | ToolFactory
@@ -62,17 +70,29 @@ function citedDocIds(envelope: Envelope): string[] {
   return ids;
 }
 
+/** The eval's RunContext fixture — principal-carrying chat venue, so the
+    tool layer never sets includeInternal (R5). */
+const RUN_CTX = {
+  principal: { kind: "user", subject: "knowledge-eval" },
+  venue: "chat",
+  presence: "present",
+  sessionId: "knowledge-eval",
+};
+
+const okOutcomeSchema = z.object({ status: z.literal("ok"), output: z.unknown() }).passthrough();
+
 async function callSearch(
-  tools: Record<string, unknown>,
+  tools: ToolRegistryLike,
   input: { query: string; lookup?: boolean; readMore?: { docId: string; chunkId?: string } },
 ): Promise<Envelope> {
-  const tool = tools["vendo_knowledge_search"] as
-    | { execute?: (input: unknown, options?: unknown) => Promise<unknown> }
-    | undefined;
-  expect(tool, "createKnowledgeTools must expose vendo_knowledge_search").toBeDefined();
-  expect(typeof tool?.execute).toBe("function");
-  const raw = await tool!.execute!(input, { toolCallId: "knowledge-eval", messages: [] });
-  return envelopeSchema.parse(raw);
+  const raw = await tools.execute(
+    { id: "knowledge-eval-call", tool: "vendo_knowledge_search", args: input },
+    RUN_CTX,
+  );
+  // Every knowledge outcome — including refusals and a dead engine — is a
+  // structured ok envelope, never a tool-layer error.
+  const outcome = okOutcomeSchema.parse(raw);
+  return envelopeSchema.parse(outcome.output);
 }
 
 const throwingAdapter = (): KnowledgeAdapter => ({
@@ -98,6 +118,14 @@ describe("knowledge tool legs — K1 gate", () => {
       console.warn("[knowledge-eval] createKnowledgeTools detected: tool-level legs are ACTIVE.");
     }
     expect(typeof factoryAvailable).toBe("boolean");
+  });
+
+  it.skipIf(!factoryAvailable)("the tool descriptor matches the pins: vendo_knowledge_search, risk read", async () => {
+    const tools = createKnowledgeTools!(memoryKnowledgeAdapter());
+    const descriptors = await tools.descriptors();
+    const search = descriptors.find((entry) => entry.name === "vendo_knowledge_search");
+    expect(search).toBeDefined();
+    expect(search?.risk).toBe("read");
   });
 });
 

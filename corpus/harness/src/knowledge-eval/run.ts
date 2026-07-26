@@ -39,9 +39,12 @@ import type { KnowledgeAnswerJudge } from "./judge.js";
 export const RETRIEVAL_K = 5;
 
 /** The pinned tool policy's weakness threshold (K1 pins: weakness = zero
-    hits OR all score < threshold). The memory engine always scores 1, so
-    offline refusal mechanics reduce to zero-hits — by design. */
-export const WEAK_SCORE_THRESHOLD = 0.35;
+    hits OR all score < threshold). Mirrors createKnowledgeTools' SHIPPED
+    default (weakScoreThreshold: 0 — score-based weakness disabled, zero
+    hits is the only weakness signal), so the eval measures the real
+    product policy. Scores are engine-relative (knowledge.ts), so any
+    nonzero default here would silently diverge per engine. */
+export const WEAK_SCORE_THRESHOLD = 0;
 
 export interface RefusalProbe {
   outcome: "answered" | "insufficient-evidence";
@@ -50,6 +53,7 @@ export interface RefusalProbe {
 
 function isWeak(result: KnowledgeSearchResult, threshold: number): boolean {
   if (result.hits.length === 0) return true;
+  if (threshold <= 0) return false;
   return result.hits.every((hit) => typeof hit.score === "number" && hit.score < threshold);
 }
 
@@ -265,7 +269,16 @@ async function runEngine(input: EngineRunInput): Promise<EngineRunResult> {
     repo: {
       repo: `knowledge-${engineName}`,
       layers: [
-        { layer: 1, name: `retrieval (${engineName})`, checks: retrievalChecks },
+        {
+          layer: 1,
+          name: `retrieval (${engineName})`,
+          checks: retrievalChecks,
+          // Per-item misses are diagnostics, not the gate: real engines are
+          // lossy by nature and their regression gate is the calibrated bars
+          // layer (spec §Evals 2 — recall/MRR against STORED pass bars).
+          // Refusals and judge verdicts stay hard below.
+          hardFailure: false,
+        },
         { layer: 2, name: "refusals", checks: refusalChecks },
         judgeLayer,
         { layer: 4, name: "bars", checks: barsChecks },
