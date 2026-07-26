@@ -1,0 +1,595 @@
+{
+  "data": {
+    "data": [
+      {
+        "id": "txn_doordash_87",
+        "logo": "D",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-24T20:14:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-26T08:14:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "cardId": "card_physical",
+        "merchant": "DoorDash",
+        "descriptor": "DOORDASH*ORDER 8742 CA",
+        "amount": -8700,
+        "timestamp": "2026-07-26T08:14:00.000Z",
+        "category": "dining",
+        "status": "posted",
+        "location": "San Francisco, CA"
+      },
+      {
+        "id": "txn_0119",
+        "logo": "TB",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-24T15:52:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-26T03:52:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Tartine Bakery",
+        "descriptor": "TARTINE",
+        "amount": -3939,
+        "timestamp": "2026-07-26T03:52:00.000Z",
+        "category": "dining",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0140",
+        "logo": "WF",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-24T13:40:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-26T01:40:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Whole Foods Market",
+        "descriptor": "WHOLEFDS SFO",
+        "amount": -5218,
+        "timestamp": "2026-07-26T01:40:00.000Z",
+        "category": "groceries",
+        "status": "posted"
+      },
+      {
+        "id": "txn_0120",
+        "logo": "AS",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-24T06:31:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-25T18:31:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Apple Store",
+        "descriptor": "APPLE STORE R052",
+        "amount": -20004,
+        "timestamp": "2026-07-25T18:31:00.000Z",
+        "category": "shopping",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0141",
+        "logo": "UA",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-25T18:05:00.000Z"
+          }
+        ],
+        "accountId": "acc_credit",
+        "merchant": "United Airlines",
+        "descriptor": "UNITED 016",
+        "amount": -41800,
+        "timestamp": "2026-07-25T18:05:00.000Z",
+        "category": "transport",
+        "status": "authorized",
+        "cardId": "card_virtual"
+      },
+      {
+        "id": "txn_0118",
+        "logo": "TB",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-23T11:00:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-24T23:00:00.000Z"
+          }
+        ],
+        "accountId": "acc_credit",
+        "merchant": "Tartine Bakery",
+        "descriptor": "TARTINE",
+        "amount": -1621,
+        "timestamp": "2026-07-24T23:00:00.000Z",
+        "category": "dining",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0143",
+        "logo": "L",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-20T21:18:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-22T09:18:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "cardId": "card_physical",
+        "merchant": "Lyft",
+        "descriptor": "LYFT *RIDE",
+        "amount": -2340,
+        "timestamp": "2026-07-22T09:18:00.000Z",
+        "category": "transport",
+        "status": "posted",
+        "location": "San Francisco, CA"
+      },
+      {
+        "id": "txn_0142",
+        "logo": "UE",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-20T19:42:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-22T07:42:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "cardId": "card_physical",
+        "merchant": "Uber Eats",
+        "descriptor": "UBER EATS SF",
+        "amount": -3460,
+        "timestamp": "2026-07-22T07:42:00.000Z",
+        "category": "dining",
+        "status": "posted",
+        "location": "San Francisco, CA"
+      },
+      {
+        "id": "txn_0116",
+        "logo": "S",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-20T10:24:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-21T22:24:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Shell",
+        "descriptor": "SHELL OIL",
+        "amount": -6617,
+        "timestamp": "2026-07-21T22:24:00.000Z",
+        "category": "transport",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0117",
+        "logo": "AS",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-20T03:31:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-21T15:31:00.000Z"
+          }
+        ],
+        "accountId": "acc_credit",
+        "merchant": "Apple Store",
+        "descriptor": "APPLE STORE R052",
+        "amount": -7125,
+        "timestamp": "2026-07-21T15:31:00.000Z",
+        "category": "shopping",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0114",
+        "logo": "AS",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-18T14:42:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-20T02:42:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Apple Store",
+        "descriptor": "APPLE STORE R052",
+        "amount": -17607,
+        "timestamp": "2026-07-20T02:42:00.000Z",
+        "category": "shopping",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0139",
+        "logo": "A",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-18T09:22:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-19T21:22:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Amazon",
+        "descriptor": "AMZN Refund",
+        "amount": 3499,
+        "timestamp": "2026-07-19T21:22:00.000Z",
+        "category": "shopping",
+        "status": "posted"
+      },
+      {
+        "id": "txn_0115",
+        "logo": "BB",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-18T07:12:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-19T19:12:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Blue Bottle Coffee",
+        "descriptor": "BLUE BOTTLE",
+        "amount": -810,
+        "timestamp": "2026-07-19T19:12:00.000Z",
+        "category": "coffee",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0112",
+        "logo": "U",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-16T10:07:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-17T22:07:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Uber",
+        "descriptor": "UBER *TRIP",
+        "amount": -1429,
+        "timestamp": "2026-07-17T22:07:00.000Z",
+        "category": "transport",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0113",
+        "logo": "SC",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-16T07:12:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-17T19:12:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Sightglass Coffee",
+        "descriptor": "SIGHTGLASS",
+        "amount": -537,
+        "timestamp": "2026-07-17T19:12:00.000Z",
+        "category": "coffee",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0144",
+        "logo": "A",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-15T21:33:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-17T09:33:00.000Z"
+          }
+        ],
+        "accountId": "acc_credit",
+        "cardId": "card_virtual",
+        "merchant": "Amazon",
+        "descriptor": "AMZN MKTP US",
+        "amount": -6499,
+        "timestamp": "2026-07-17T09:33:00.000Z",
+        "category": "shopping",
+        "status": "posted",
+        "location": "San Francisco, CA"
+      },
+      {
+        "id": "txn_0110",
+        "logo": "AS",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-15T15:22:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-17T03:22:00.000Z"
+          }
+        ],
+        "accountId": "acc_credit",
+        "merchant": "Apple Store",
+        "descriptor": "APPLE STORE R052",
+        "amount": -3078,
+        "timestamp": "2026-07-17T03:22:00.000Z",
+        "category": "shopping",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0111",
+        "logo": "A",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-15T04:33:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-16T16:33:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Amazon",
+        "descriptor": "AMZN MKTP US",
+        "amount": -7436,
+        "timestamp": "2026-07-16T16:33:00.000Z",
+        "category": "shopping",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_virtual"
+      },
+      {
+        "id": "txn_0109",
+        "logo": "U",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-14T08:36:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-15T20:36:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Uber",
+        "descriptor": "UBER *TRIP",
+        "amount": -2531,
+        "timestamp": "2026-07-15T20:36:00.000Z",
+        "category": "transport",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0108",
+        "logo": "TJ",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-14T03:49:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-15T15:49:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Trader Joe's",
+        "descriptor": "TRADER JOE'S #182",
+        "amount": -2720,
+        "timestamp": "2026-07-15T15:49:00.000Z",
+        "category": "groceries",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0107",
+        "logo": "BB",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-13T06:20:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-14T18:20:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Blue Bottle Coffee",
+        "descriptor": "BLUE BOTTLE",
+        "amount": -1075,
+        "timestamp": "2026-07-14T18:20:00.000Z",
+        "category": "coffee",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_virtual"
+      },
+      {
+        "id": "txn_0145",
+        "logo": "TB",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-12T20:50:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-14T08:50:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "cardId": "card_physical",
+        "merchant": "Taco Bell",
+        "descriptor": "TACO BELL 7042",
+        "amount": -1820,
+        "timestamp": "2026-07-14T08:50:00.000Z",
+        "category": "dining",
+        "status": "posted",
+        "location": "San Francisco, CA"
+      },
+      {
+        "id": "txn_0106",
+        "logo": "L",
+        "method": "Maple Debit ·· 4471",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-12T05:25:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-13T17:25:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Lyft",
+        "descriptor": "LYFT *RIDE",
+        "amount": -1489,
+        "timestamp": "2026-07-13T17:25:00.000Z",
+        "category": "transport",
+        "status": "posted",
+        "location": "San Francisco, CA",
+        "cardId": "card_physical"
+      },
+      {
+        "id": "txn_0104",
+        "logo": "TT",
+        "method": "Internal transfer",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-11T04:05:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-12T16:05:00.000Z"
+          }
+        ],
+        "accountId": "acc_checking",
+        "merchant": "Transfer to Savings",
+        "descriptor": "INTERNAL XFER",
+        "amount": -100000,
+        "timestamp": "2026-07-12T16:05:00.000Z",
+        "category": "transfer",
+        "status": "posted"
+      },
+      {
+        "id": "txn_0105",
+        "logo": "TF",
+        "method": "Internal transfer",
+        "statusTimeline": [
+          {
+            "state": "Authorized",
+            "at": "2026-07-11T04:05:00.000Z"
+          },
+          {
+            "state": "Posted",
+            "at": "2026-07-12T16:05:00.000Z"
+          }
+        ],
+        "accountId": "acc_savings",
+        "merchant": "Transfer from Checking",
+        "descriptor": "INTERNAL XFER",
+        "amount": 100000,
+        "timestamp": "2026-07-12T16:05:00.000Z",
+        "category": "transfer",
+        "status": "posted"
+      }
+    ],
+    "nextCursor": "txn_0103",
+    "total": 153
+  }
+}

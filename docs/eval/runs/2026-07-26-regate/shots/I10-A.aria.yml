@@ -1,0 +1,196 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+    - button "Reset demo"
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "PG&E Autopay & Payment History"
+      - button "Remove PG&E Autopay & Payment History": ×
+    - listitem:
+      - button "PG&E Autopay & Payment History"
+      - button "Remove PG&E Autopay & Payment History": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Sweep to savings"
+      - button "Remove Sweep to savings": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Your four accounts"
+      - button "Remove Your four accounts": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming costs this year"
+      - button "Remove Streaming costs this year": ×
+    - listitem:
+      - button "Send $25 to mom"
+      - button "Remove Send $25 to mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Monthly cash flow report"
+      - button "Remove Monthly cash flow report": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Spending check"
+      - button "Remove Spending check": ×
+    - listitem:
+      - button "Spending vs Budget"
+      - button "Remove Spending vs Budget": ×
+    - listitem:
+      - button "Spending vs budgets"
+      - button "Remove Spending vs budgets": ×
+    - listitem:
+      - button "Low balance alert"
+      - button "Remove Low balance alert": ×
+    - listitem:
+      - button "Weekly spending summary"
+      - button "Remove Weekly spending summary": ×
+    - listitem:
+      - button "Money HQ"
+      - button "Remove Money HQ": ×
+    - listitem:
+      - button "Spending This Month"
+      - button "Remove Spending This Month": ×
+  - heading "Set up autopay" [level=3]
+  - text: Schedule a recurring payment to PG&E from your checking account. Payee
+  - combobox "Payee":
+    - option "Select payee" [selected]
+    - option "Jordan Avery"
+    - option "Mission St Property"
+    - option "PG&E"
+    - option "Mom"
+  - text: Monthly amount
+  - spinbutton "Monthly amount Enter your typical monthly bill amount in dollars"
+  - text: Enter your typical monthly bill amount in dollars Memo
+  - textbox "Memo":
+    - /placeholder: PG&E autopay
+    - text: PG&E monthly autopay
+  - button "Schedule payment"
+  - status: One-time transfer This sends a single payment now. Fully automated recurring autopay requires setting up autopay directly on the PG&E website at pgande.com — this host does not support scheduling future recurring payments.
+  - heading "Upcoming scheduled payments" [level=3]
+  - searchbox "Search table"
+  - table:
+    - rowgroup:
+      - row "Payee Amount Next date Cadence":
+        - columnheader "Payee"
+        - columnheader "Amount"
+        - columnheader "Next date"
+        - columnheader "Cadence"
+    - rowgroup:
+      - row "Mission St Property -$2,850.00 Aug 1, 2026 monthly":
+        - cell "Mission St Property"
+        - cell "-$2,850.00"
+        - cell "Aug 1, 2026"
+        - cell "monthly"
+      - row "PG&E -$86.40 Aug 15, 2026 monthly":
+        - cell "PG&E"
+        - cell "-$86.40"
+        - cell "Aug 15, 2026"
+        - cell "monthly"
+  - heading "PG&E payments this year" [level=3]
+  - searchbox "Search table"
+  - table:
+    - rowgroup:
+      - row "Date ▼ Description Amount Status":
+        - columnheader "Date ▼"
+        - columnheader "Description"
+        - columnheader "Amount"
+        - columnheader "Status"
+    - rowgroup:
+      - row "No PG&E transactions found for this year.":
+        - cell "No PG&E transactions found for this year."
+  - status: About this view Recurring autopay scheduling is not available through this host — only one-time transfers can be initiated here. To set up true autopay, visit pgande.com and link your bank account directly. Payment history above is filtered by searching "PG&E" across all transactions.
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- button "Ask Maple"
+- alert

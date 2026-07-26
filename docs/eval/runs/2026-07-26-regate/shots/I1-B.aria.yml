@@ -1,0 +1,104 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+    - button "Reset demo"
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Spending vs budgets"
+      - button "Remove Spending vs budgets": ×
+    - listitem:
+      - button "Low balance alert"
+      - button "Remove Low balance alert": ×
+    - listitem:
+      - button "Weekly spending summary"
+      - button "Remove Weekly spending summary": ×
+    - listitem:
+      - button "Money HQ"
+      - button "Remove Money HQ": ×
+    - listitem:
+      - button "Spending This Month"
+      - button "Remove Spending This Month": ×
+  - article:
+    - text: Total balance $9,412.20 Current balance
+    - button "1W"
+    - button "1M"
+    - button "3M"
+    - button "1Y"
+    - button "All"
+  - heading "Spending this period" [level=3]
+  - application
+  - text: Total $4,992.08
+  - table:
+    - rowgroup:
+      - row "Category Spent":
+        - columnheader "Category"
+        - columnheader "Spent"
+    - rowgroup:
+      - row "housing $2,850.00":
+        - cell "housing"
+        - cell "$2,850.00"
+      - row "shopping $617.49":
+        - cell "shopping"
+        - cell "$617.49"
+      - row "transport $591.81":
+        - cell "transport"
+        - cell "$591.81"
+      - row "dining $357.09":
+        - cell "dining"
+        - cell "$357.09"
+      - row "subscriptions $335.47":
+        - cell "subscriptions"
+        - cell "$335.47"
+      - row "groceries $176.09":
+        - cell "groceries"
+        - cell "$176.09"
+      - row "coffee $64.13":
+        - cell "coffee"
+        - cell "$64.13"
+  - heading "Budget health" [level=3]
+  - iframe
+  - heading "Cash flow" [level=3]
+  - text: No cash flow data available
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- button "Ask Maple"
+- alert

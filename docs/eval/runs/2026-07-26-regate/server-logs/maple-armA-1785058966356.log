@@ -1,0 +1,15 @@
+=== boot maple arm A at 2026-07-26T09:42:46.356Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 222ms
+
+=== create I8 arm A start ===
+
+=== create I8 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=23.1s tokens=20175→1646
+[vendo] gen full invalid (1 issue): island "TransferCalculator" renders <Skeleton>
+[vendo] gen repair complete at=43.0s
+[vendo] gen pipeline island-repair islands=1 repaired=true ms=20371
+[vendo] gen create complete app=app_b56c9cf1-e06c-43c3-adad-c93656f58b69 total=44.5s

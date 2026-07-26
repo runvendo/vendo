@@ -1,0 +1,20 @@
+=== boot maple arm C at 2026-07-26T09:27:47.183Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 270ms
+
+=== create I1 arm C start ===
+
+=== create I1 arm C end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=15.8s tokens=21790→1077
+[vendo] gen full invalid (2 issues): wire malformed-expression: unexpected trailing content at index 26 | wire malformed-expression: unexpected trailing content at index 26
+[vendo] gen full complete at=39.2s tokens=21815→1866
+[vendo] gen full invalid (2 issues): wire shape-mismatch: node "stat-1" prop "value" (/hostGetBudgets/data/length): "length" indexes into an array in the tool's response shape (expected a numeric index) | binding /hostGetBudgets/data/length on node "stat-1" prop "value": "length" indexes into an array in the tool's response shape (expected a numeric index)
+[vendo] gen repair complete at=45.3s
+[vendo] gen repair complete at=47.3s
+[vendo] gen pipeline repair rounds=2 repaired=true noValidFix=1 ms=8874
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=true ms=846
+[vendo] gen create complete app=app_4444b872-0f82-42e0-869d-f0c3ff284e25 total=49.9s

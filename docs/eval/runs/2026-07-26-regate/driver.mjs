@@ -291,6 +291,46 @@ if (command === "setup") {
     }
   });
   reportErrors(rest[1]);
+} else if (command === "fireframe") {
+  // Same as fire, but the control lives inside an island IFRAME (the plain
+  // fire command's surface locator cannot reach into frames). Added during
+  // the 2026-07-26 re-gate action-evidence pass; harness fix, not tuning.
+  const [appId, label, pattern] = rest;
+  await withPage(async (page) => {
+    await gotoApps(page);
+    if (host === "maple") await mapleSelectApp(page, appId);
+    else await cadenceOpenApp(page, appId);
+    await settleSurface(page);
+    const re = new RegExp(pattern, "i");
+    let clicked = false;
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      const buttons = frame.getByRole("button");
+      const count = await buttons.count().catch(() => 0);
+      for (let i = 0; i < count; i += 1) {
+        const name = (await buttons.nth(i).textContent().catch(() => "")) ?? "";
+        if (re.test(name) && await buttons.nth(i).isEnabled().catch(() => false)) {
+          await buttons.nth(i).click();
+          console.log(`clicked: ${name.trim()}`);
+          clicked = true;
+          break;
+        }
+      }
+      if (clicked) break;
+    }
+    if (!clicked) console.log("clicked: NONE (no matching enabled button in any frame)");
+    await page.waitForTimeout(6000);
+    await capture(page, label);
+    const deny = page.getByRole("button", { name: /deny|reject|cancel request|decline/i }).first();
+    if (await deny.count() && await deny.isVisible().catch(() => false)) {
+      await deny.click().catch(() => {});
+      console.log("denied: yes");
+      await page.waitForTimeout(1500);
+    } else {
+      console.log("denied: no gate visible");
+    }
+  });
+  reportErrors(rest[1]);
 } else if (command === "hostjson") {
   // Ground truth for honest judging: fetch the HOST's own REST API as the
   // logged-in user (e.g. /api/accounts) and dump it as run evidence.

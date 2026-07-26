@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "id": "pay_jordan",
+      "name": "Jordan Avery",
+      "kind": "person",
+      "mask": "venmo"
+    },
+    {
+      "id": "pay_landlord",
+      "name": "Mission St Property",
+      "kind": "biller",
+      "mask": "ACH"
+    },
+    {
+      "id": "pay_pge",
+      "name": "PG&E",
+      "kind": "biller",
+      "mask": "utility"
+    },
+    {
+      "id": "pay_mom",
+      "name": "Mom",
+      "kind": "person"
+    }
+  ]
+}

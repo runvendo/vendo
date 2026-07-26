@@ -1,0 +1,12 @@
+=== boot maple arm A at 2026-07-26T09:51:17.565Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 317ms
+
+=== create I12 arm A start ===
+
+=== create I12 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=5.5s tokens=20174→119
+[vendo] gen create complete app=app_3b065364-f721-48d6-b05b-fd5f7fc689db total=6.8s

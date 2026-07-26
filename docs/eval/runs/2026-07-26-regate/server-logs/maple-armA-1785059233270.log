@@ -1,0 +1,14 @@
+=== boot maple arm A at 2026-07-26T09:47:13.270Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 172ms
+
+=== create I9 arm A start ===
+
+=== create I9 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=20.5s tokens=20175→1291
+[vendo] gen full invalid (2 issues): wire unknown-reference: "steamTxns.data.data" does not name a declared <Query> or state | island "DisputeForm" must be plain TSX with an `export default` component
+[vendo] gen full complete at=38.4s tokens=20246→1056
+[vendo] gen create complete app=app_866006df-4a7b-495f-88bc-97ed8c8741ff total=39.6s

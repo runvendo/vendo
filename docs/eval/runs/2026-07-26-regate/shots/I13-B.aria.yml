@@ -1,0 +1,210 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+    - button "Reset demo"
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Dining vs. groceries"
+      - button "Remove Dining vs. groceries": ×
+    - listitem:
+      - button "Tax forms — not available"
+      - button "Remove Tax forms — not available": ×
+    - listitem:
+      - button "Tax documents"
+      - button "Remove Tax documents": ×
+    - listitem:
+      - button "Tax documents"
+      - button "Remove Tax documents": ×
+    - listitem:
+      - button "Maple Invest holdings"
+      - button "Remove Maple Invest holdings": ×
+    - listitem:
+      - button "Maple Invest holdings"
+      - button "Remove Maple Invest holdings": ×
+    - listitem:
+      - button "Maple Invest holdings"
+      - button "Remove Maple Invest holdings": ×
+    - listitem:
+      - button "PG&E payments & autopay"
+      - button "Remove PG&E payments & autopay": ×
+    - listitem:
+      - button "PG&E Autopay & Payment History"
+      - button "Remove PG&E Autopay & Payment History": ×
+    - listitem:
+      - button "PG&E Autopay & Payment History"
+      - button "Remove PG&E Autopay & Payment History": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Sweep to savings"
+      - button "Remove Sweep to savings": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Your four accounts"
+      - button "Remove Your four accounts": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming costs this year"
+      - button "Remove Streaming costs this year": ×
+    - listitem:
+      - button "Send $25 to mom"
+      - button "Remove Send $25 to mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Monthly cash flow report"
+      - button "Remove Monthly cash flow report": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Spending check"
+      - button "Remove Spending check": ×
+    - listitem:
+      - button "Spending vs Budget"
+      - button "Remove Spending vs Budget": ×
+    - listitem:
+      - button "Spending vs budgets"
+      - button "Remove Spending vs budgets": ×
+    - listitem:
+      - button "Low balance alert"
+      - button "Remove Low balance alert": ×
+    - listitem:
+      - button "Weekly spending summary"
+      - button "Remove Weekly spending summary": ×
+    - listitem:
+      - button "Money HQ"
+      - button "Remove Money HQ": ×
+    - listitem:
+      - button "Spending This Month"
+      - button "Remove Spending This Month": ×
+  - heading "Spending by category" [level=3]
+  - text: Current period
+  - application
+  - text: Total $4,992.08 Dining out
+  - article "Dining":
+    - text: Dining
+    - strong: $2,850.00
+  - text: Groceries
+  - article "Groceries":
+    - text: Groceries
+    - strong: $617.49
+  - table "All categories this period":
+    - caption: All categories this period
+    - rowgroup:
+      - row "Category Amount ▼":
+        - columnheader "Category"
+        - columnheader "Amount ▼"
+    - rowgroup:
+      - row "housing $2,850.00":
+        - cell "housing"
+        - cell "$2,850.00"
+      - row "shopping $617.49":
+        - cell "shopping"
+        - cell "$617.49"
+      - row "transport $591.81":
+        - cell "transport"
+        - cell "$591.81"
+      - row "dining $357.09":
+        - cell "dining"
+        - cell "$357.09"
+      - row "subscriptions $335.47":
+        - cell "subscriptions"
+        - cell "$335.47"
+      - row "groceries $176.09":
+        - cell "groceries"
+        - cell "$176.09"
+      - row "coffee $64.13":
+        - cell "coffee"
+        - cell "$64.13"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- button "Ask Maple"
+- alert

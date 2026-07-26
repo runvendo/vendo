@@ -1,0 +1,32 @@
+{
+  "data": [
+    {
+      "category": "housing",
+      "amount": 285000
+    },
+    {
+      "category": "shopping",
+      "amount": 61749
+    },
+    {
+      "category": "transport",
+      "amount": 59181
+    },
+    {
+      "category": "dining",
+      "amount": 35709
+    },
+    {
+      "category": "subscriptions",
+      "amount": 33547
+    },
+    {
+      "category": "groceries",
+      "amount": 17609
+    },
+    {
+      "category": "coffee",
+      "amount": 6413
+    }
+  ]
+}

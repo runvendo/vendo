@@ -1,0 +1,14 @@
+=== boot maple arm C at 2026-07-26T09:49:11.211Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3100
+- Network:       http://10.0.0.188:3100
+✓ Ready in 245ms
+
+=== create I10 arm C start ===
+
+=== create I10 arm C end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=21.2s tokens=21801→1628
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=true ms=1589
+[vendo] gen create complete app=app_db40e620-1521-4017-b76e-ddd04574299a total=24.5s

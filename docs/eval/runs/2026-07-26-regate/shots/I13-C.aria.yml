@@ -1,0 +1,346 @@
+- complementary:
+  - text: Maple
+  - navigation:
+    - link "Home":
+      - /url: /
+    - link "Accounts":
+      - /url: /accounts
+    - link "Transactions":
+      - /url: /transactions
+    - link "Cards":
+      - /url: /cards
+    - link "Payments":
+      - /url: /payments
+    - link "Insights":
+      - /url: /insights
+    - link "Ask Maple":
+      - /url: /vendo
+    - link "Apps":
+      - /url: /vendo/apps
+    - link "Activity":
+      - /url: /activity
+    - link "Settings":
+      - /url: /settings
+    - button "Reset demo"
+  - button "YH Yousef Helal Personal"
+- banner:
+  - heading "Apps" [level=1]
+  - button "Search… ⌘K"
+  - button "Send"
+  - button "Request"
+  - button "Move money"
+  - button "Notifications"
+- main:
+  - heading "Apps" [level=1]
+  - paragraph: Personal apps built with Vendo, running on Maple.
+  - form "Create app":
+    - textbox "Describe a new app"
+    - button "Create" [disabled]
+  - list "Your apps":
+    - listitem:
+      - button "Dining vs. groceries"
+      - button "Remove Dining vs. groceries": ×
+    - listitem:
+      - button "Dining vs. groceries"
+      - button "Remove Dining vs. groceries": ×
+    - listitem:
+      - button "Tax forms — not available"
+      - button "Remove Tax forms — not available": ×
+    - listitem:
+      - button "Tax documents"
+      - button "Remove Tax documents": ×
+    - listitem:
+      - button "Tax documents"
+      - button "Remove Tax documents": ×
+    - listitem:
+      - button "Maple Invest holdings"
+      - button "Remove Maple Invest holdings": ×
+    - listitem:
+      - button "Maple Invest holdings"
+      - button "Remove Maple Invest holdings": ×
+    - listitem:
+      - button "Maple Invest holdings"
+      - button "Remove Maple Invest holdings": ×
+    - listitem:
+      - button "PG&E payments & autopay"
+      - button "Remove PG&E payments & autopay": ×
+    - listitem:
+      - button "PG&E Autopay & Payment History"
+      - button "Remove PG&E Autopay & Payment History": ×
+    - listitem:
+      - button "PG&E Autopay & Payment History"
+      - button "Remove PG&E Autopay & Payment History": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Steam charges & dispute"
+      - button "Remove Steam charges & dispute": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Sweep to savings"
+      - button "Remove Sweep to savings": ×
+    - listitem:
+      - button "Transfer excess to savings"
+      - button "Remove Transfer excess to savings": ×
+    - listitem:
+      - button "Your four accounts"
+      - button "Remove Your four accounts": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Account overview"
+      - button "Remove Account overview": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming subscriptions this year"
+      - button "Remove Streaming subscriptions this year": ×
+    - listitem:
+      - button "Streaming costs this year"
+      - button "Remove Streaming costs this year": ×
+    - listitem:
+      - button "Send $25 to mom"
+      - button "Remove Send $25 to mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Send $25 to Mom"
+      - button "Remove Send $25 to Mom": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Japan trip goal"
+      - button "Remove Japan trip goal": ×
+    - listitem:
+      - button "Monthly cash flow report"
+      - button "Remove Monthly cash flow report": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Monthly report card 2026"
+      - button "Remove Monthly report card 2026": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Pending card charges"
+      - button "Remove Pending card charges": ×
+    - listitem:
+      - button "Spending check"
+      - button "Remove Spending check": ×
+    - listitem:
+      - button "Spending vs Budget"
+      - button "Remove Spending vs Budget": ×
+    - listitem:
+      - button "Spending vs budgets"
+      - button "Remove Spending vs budgets": ×
+    - listitem:
+      - button "Low balance alert"
+      - button "Remove Low balance alert": ×
+    - listitem:
+      - button "Weekly spending summary"
+      - button "Remove Weekly spending summary": ×
+    - listitem:
+      - button "Money HQ"
+      - button "Remove Money HQ": ×
+    - listitem:
+      - button "Spending This Month"
+      - button "Remove Spending This Month": ×
+  - application
+  - text: Total $4,992.08
+  - article "Dining out (not in spending insights)":
+    - text: Dining out (not in spending insights)
+    - strong: $617.49
+  - article "Groceries (not in spending insights)":
+    - text: Groceries (not in spending insights)
+    - strong: $2,850.00
+  - iframe
+  - note "Action pending approval": Action is waiting for approval (apr_fd396248-196a-4dc2-9d7d-d7949395080b).
+  - searchbox "Search table"
+  - table "Recent dining transactions":
+    - caption: Recent dining transactions
+    - rowgroup:
+      - row "Merchant Date ▼ Amount":
+        - columnheader "Merchant"
+        - columnheader "Date ▼"
+        - columnheader "Amount"
+    - rowgroup:
+      - row "DoorDash Jul 26, 2026 -$87.00":
+        - cell "DoorDash"
+        - cell "Jul 26, 2026"
+        - cell "-$87.00"
+      - row "Tartine Bakery Jul 25, 2026 -$39.39":
+        - cell "Tartine Bakery"
+        - cell "Jul 25, 2026"
+        - cell "-$39.39"
+      - row "Tartine Bakery Jul 24, 2026 -$16.21":
+        - cell "Tartine Bakery"
+        - cell "Jul 24, 2026"
+        - cell "-$16.21"
+      - row "Uber Eats Jul 22, 2026 -$34.60":
+        - cell "Uber Eats"
+        - cell "Jul 22, 2026"
+        - cell "-$34.60"
+      - row "Taco Bell Jul 14, 2026 -$18.20":
+        - cell "Taco Bell"
+        - cell "Jul 14, 2026"
+        - cell "-$18.20"
+      - row "DoorDash Jul 8, 2026 -$41.30":
+        - cell "DoorDash"
+        - cell "Jul 8, 2026"
+        - cell "-$41.30"
+      - row "Chipotle Jul 7, 2026 -$19.14":
+        - cell "Chipotle"
+        - cell "Jul 7, 2026"
+        - cell "-$19.14"
+      - row "Tartine Bakery Jul 6, 2026 -$45.61":
+        - cell "Tartine Bakery"
+        - cell "Jul 6, 2026"
+        - cell "-$45.61"
+      - row "Tartine Bakery Jul 3, 2026 -$17.18":
+        - cell "Tartine Bakery"
+        - cell "Jul 3, 2026"
+        - cell "-$17.18"
+      - row "Tartine Bakery Jul 1, 2026 -$38.46":
+        - cell "Tartine Bakery"
+        - cell "Jul 1, 2026"
+        - cell "-$38.46"
+      - row "Tartine Bakery Jun 29, 2026 -$46.15":
+        - cell "Tartine Bakery"
+        - cell "Jun 29, 2026"
+        - cell "-$46.15"
+      - row "Tartine Bakery Jun 27, 2026 -$29.46":
+        - cell "Tartine Bakery"
+        - cell "Jun 27, 2026"
+        - cell "-$29.46"
+      - row "Tartine Bakery Jun 25, 2026 -$41.35":
+        - cell "Tartine Bakery"
+        - cell "Jun 25, 2026"
+        - cell "-$41.35"
+      - row "Chipotle Jun 25, 2026 -$18.76":
+        - cell "Chipotle"
+        - cell "Jun 25, 2026"
+        - cell "-$18.76"
+      - row "Uber Eats Jun 23, 2026 -$27.80":
+        - cell "Uber Eats"
+        - cell "Jun 23, 2026"
+        - cell "-$27.80"
+      - row "Chipotle Jun 9, 2026 -$14.31":
+        - cell "Chipotle"
+        - cell "Jun 9, 2026"
+        - cell "-$14.31"
+      - row "Tartine Bakery Jun 8, 2026 -$16.26":
+        - cell "Tartine Bakery"
+        - cell "Jun 8, 2026"
+        - cell "-$16.26"
+      - row "McDonald's Jun 8, 2026 -$14.85":
+        - cell "McDonald's"
+        - cell "Jun 8, 2026"
+        - cell "-$14.85"
+      - row "Chipotle Jun 4, 2026 -$15.25":
+        - cell "Chipotle"
+        - cell "Jun 4, 2026"
+        - cell "-$15.25"
+      - row "Chipotle Jun 4, 2026 -$14.05":
+        - cell "Chipotle"
+        - cell "Jun 4, 2026"
+        - cell "-$14.05"
+  - searchbox "Search table"
+  - table "Recent grocery transactions":
+    - caption: Recent grocery transactions
+    - rowgroup:
+      - row "Merchant Date ▼ Amount":
+        - columnheader "Merchant"
+        - columnheader "Date ▼"
+        - columnheader "Amount"
+    - rowgroup:
+      - row "Whole Foods Market Jul 25, 2026 -$52.18":
+        - cell "Whole Foods Market"
+        - cell "Jul 25, 2026"
+        - cell "-$52.18"
+      - row "Trader Joe's Jul 15, 2026 -$27.20":
+        - cell "Trader Joe's"
+        - cell "Jul 15, 2026"
+        - cell "-$27.20"
+      - row "Whole Foods Market Jul 10, 2026 -$47.23":
+        - cell "Whole Foods Market"
+        - cell "Jul 10, 2026"
+        - cell "-$47.23"
+      - row "Trader Joe's Jul 7, 2026 -$22.14":
+        - cell "Trader Joe's"
+        - cell "Jul 7, 2026"
+        - cell "-$22.14"
+      - row "Whole Foods Market Jul 2, 2026 -$27.34":
+        - cell "Whole Foods Market"
+        - cell "Jul 2, 2026"
+        - cell "-$27.34"
+      - row "Whole Foods Market Jun 22, 2026 -$48.74":
+        - cell "Whole Foods Market"
+        - cell "Jun 22, 2026"
+        - cell "-$48.74"
+      - row "Whole Foods Market Jun 21, 2026 -$55.48":
+        - cell "Whole Foods Market"
+        - cell "Jun 21, 2026"
+        - cell "-$55.48"
+      - row "7-Eleven Jun 15, 2026 -$12.40":
+        - cell "7-Eleven"
+        - cell "Jun 15, 2026"
+        - cell "-$12.40"
+      - row "Trader Joe's Jun 12, 2026 -$55.85":
+        - cell "Trader Joe's"
+        - cell "Jun 12, 2026"
+        - cell "-$55.85"
+      - row "Whole Foods Market Jun 9, 2026 -$24.20":
+        - cell "Whole Foods Market"
+        - cell "Jun 9, 2026"
+        - cell "-$24.20"
+      - row "Trader Joe's May 28, 2026 -$42.46":
+        - cell "Trader Joe's"
+        - cell "May 28, 2026"
+        - cell "-$42.46"
+      - row "Trader Joe's May 16, 2026 -$56.82":
+        - cell "Trader Joe's"
+        - cell "May 16, 2026"
+        - cell "-$56.82"
+      - row "Whole Foods Market May 10, 2026 -$55.98":
+        - cell "Whole Foods Market"
+        - cell "May 10, 2026"
+        - cell "-$55.98"
+      - row "Trader Joe's May 1, 2026 -$54.65":
+        - cell "Trader Joe's"
+        - cell "May 1, 2026"
+        - cell "-$54.65"
+      - row "Whole Foods Market Apr 29, 2026 -$58.95":
+        - cell "Whole Foods Market"
+        - cell "Apr 29, 2026"
+        - cell "-$58.95"
+      - row "Trader Joe's Apr 28, 2026 -$24.70":
+        - cell "Trader Joe's"
+        - cell "Apr 28, 2026"
+        - cell "-$24.70"
+  - form "Edit app":
+    - textbox "Ask Vendo to change this app (e.g. “Remix the net worth card”)"
+    - button "Edit" [disabled]
+    - button "Refresh"
+  - heading "Ship review" [level=3]
+  - button "Load ship-diff"
+  - paragraph: The reviewable delta between captured host source and what this app ships.
+- button "Ask Maple"
+- alert
