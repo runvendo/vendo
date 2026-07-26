@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { CONFIG_SURFACES, isConfigSurface, OVERRIDES_ENABLEMENT_CAVEAT, type ConfigSurfaceName } from "../config-surface.js";
+import { CONFIG_SURFACES, isConfigSurface, OVERRIDES_ENABLEMENT_NOTE, type ConfigSurfaceName } from "../config-surface.js";
 import { option, positionals } from "./cloud/args.js";
 import type { CloudFetchOptions } from "./cloud/client.js";
 import {
@@ -170,7 +170,7 @@ async function runStatus(args: string[], context: {
   }
   output.log("Config surface owners:\n" + rows.join("\n"));
   output.log("\n(A programmatic `explicit` override in createVendo wins over both file and cloud but is not visible to the CLI.)");
-  output.log(`\n${OVERRIDES_ENABLEMENT_CAVEAT}`);
+  output.log(`\n${OVERRIDES_ENABLEMENT_NOTE}`);
   return 0;
 }
 
@@ -201,9 +201,10 @@ async function runPush(args: string[], context: {
   const nextDraft = { ...(current.draft ?? {}), [surface]: body };
   await fetcher(DRAFT_PATH, { ...keyOpts, method: "PUT", body: { draft: nextDraft } });
   output.log(`Pushed ${surface} to the config draft. Publish it from the console to make it live.`);
-  // #557 — warn before the delete offer that a cloud overrides.json does not
-  // disable tools at runtime, so removing the local file is not a tool-disable.
-  if (surface === "overrides.json") output.log(OVERRIDES_ENABLEMENT_CAVEAT);
+  // #557 (landed) — before the delete offer, note that a cloud overrides.json
+  // now gates tool enablement too (boot-once), so making cloud the source of
+  // truth and removing the local file DOES carry the tool-disable/audience.
+  if (surface === "overrides.json") output.log(OVERRIDES_ENABLEMENT_NOTE);
   const confirm = options.confirm ?? askYesNo;
   const remove = options.yes === true
     || args.includes("--yes")

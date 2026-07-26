@@ -242,7 +242,7 @@ describe("vendo_tools_search meta-tool", () => {
       model,
       tools,
       guard,
-      capabilityMiss: { hostId: "host_x", surface: Promise.resolve(missSurface), emit: (e) => misses.push(e) },
+      capabilityMiss: { hostId: "host_x", surface: () => Promise.resolve(missSurface), emit: (e) => misses.push(e) },
       toolSearch: { search: registrySearch(tools), loadout: [] },
     });
 

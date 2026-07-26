@@ -46,7 +46,7 @@ function directivePrologueEnd(lines: readonly string[]): number {
 }
 
 /** The block init prints (see packages/vendo/src/cli/init.ts's
- * vendoRootPasteLines, wrapped by output.log under the "Last steps are
+ * manualWiringLines, wrapped by output.log under the "Last steps are
  * yours:" header): everything from that header up to the next blank line. */
 function extractPasteBlock(output: string): string[] | null {
   const lines = output.split(/\r?\n/);
@@ -63,7 +63,7 @@ function extractPasteBlock(output: string): string[] | null {
 
 /** Deliberately dumb string surgery that mirrors the ONE paste `vendo init`
  * prints and no longer performs itself (init dropped its layout codemod —
- * see f2c23568; init.ts's vendoRootPasteLines is the source of truth for
+ * see f2c23568; init.ts's manualWiringLines is the source of truth for
  * what a human is told to paste). The corpus harness plays that human: it
  * reads the exact lines init printed to stdout this run and pastes them,
  * so a green corpus run still means the app is wired end to end, not just

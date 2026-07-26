@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { HostFramework } from "./framework.js";
 
 /**
@@ -53,12 +53,42 @@ function bareVersion(range: unknown): string | undefined {
  * dependency story belongs to the wiring checks, not this reader).
  */
 export async function installedAiVersion(root: string): Promise<string | null> {
-  try {
-    const manifest = JSON.parse(await readFile(join(root, "node_modules", "ai", "package.json"), "utf8")) as { version?: unknown };
-    return typeof manifest.version === "string" ? manifest.version : null;
-  } catch {
-    return null;
+  return installedVersion(root, "ai");
+}
+
+/**
+ * The HOST's installed `zod` version (FINDINGS F2): ai@6 imports the
+ * `zod/v3` + `zod/v4` subpaths that arrive in zod 3.25, and the host's own
+ * pin wins the installed tree — so the floor must be resolved from the
+ * TARGET app's require context (hoisted workspaces keep it at the workspace
+ * root), exactly like `installedAiVersion`. Non-throwing: an absent install
+ * returns null (a host without zod resolves ai's own copy).
+ */
+export async function installedZodVersion(root: string): Promise<string | null> {
+  return installedVersion(root, "zod");
+}
+
+/** Resolve the package the way the HOST RUNTIME does — walking the app's
+ * node_modules chain upward, node's own resolution order for a bare
+ * specifier — so hoisted workspace installs (the package at the workspace
+ * root, the app nested with no node_modules of its own) are seen exactly
+ * where `ai` sees them at runtime. Never a fixed path. A direct manifest
+ * read rather than require.resolve, deliberately: exports maps may hide
+ * ./package.json, and in-process resolver patches (test runners, loaders)
+ * must not change what we report about the host's tree. */
+async function installedVersion(root: string, name: string): Promise<string | null> {
+  for (let dir = resolve(root); ; dir = dirname(dir)) {
+    try {
+      return versionOf(await readFile(join(dir, "node_modules", ...name.split("/"), "package.json"), "utf8"));
+    } catch {
+      if (dirname(dir) === dir) return null;
+    }
   }
+}
+
+function versionOf(manifestSource: string): string | null {
+  const manifest = JSON.parse(manifestSource) as { version?: unknown };
+  return typeof manifest.version === "string" ? manifest.version : null;
 }
 
 /**

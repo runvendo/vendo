@@ -25,6 +25,7 @@ import {
 } from "../formats.js";
 import { migrateLegacyVendoDir } from "../migrate.js";
 import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged, type SourcedExtractedTool } from "./common.js";
+import { compilerFloorWarning } from "./compiler-gate.js";
 import { withGeneratedDescriptions } from "./describe.js";
 import { deriveDomains } from "./domains.js";
 import { carryEnrichment } from "./enrichment.js";
@@ -495,6 +496,10 @@ export async function vendoSync(options: {
   await writeCatalog(out, catalogScan.entries);
   const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []));
   warnings.push(...pins.warnings);
+  // One report-level warning when any loader rejected a too-old host compiler
+  // (the per-extractor "skipped" lines say what degraded; this says why).
+  const floorWarning = compilerFloorWarning();
+  if (floorWarning !== null) warnings.push(floorWarning);
   const report: SyncReportWithWarnings = {
     ...comparison,
     pins: { captured: pins.captured, drifted: pins.drifted },

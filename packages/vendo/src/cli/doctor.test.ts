@@ -40,9 +40,12 @@ async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number>
   });
 }
 
-async function healthy(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "vendo-doctor-"));
-  cleanup.push(() => rm(root, { recursive: true, force: true }));
+async function healthy(base?: string): Promise<string> {
+  // A caller-supplied base nests the fixture (e.g. inside a workspace dir the
+  // caller creates and cleans up); the default is a standalone temp root.
+  const root = base ?? (await mkdtemp(join(tmpdir(), "vendo-doctor-")));
+  if (base === undefined) cleanup.push(() => rm(root, { recursive: true, force: true }));
+  else await mkdir(root, { recursive: true });
   const write = async (relative: string, body: string): Promise<void> => {
     const path = join(root, relative);
     await mkdir(join(path, ".."), { recursive: true });
@@ -1048,12 +1051,12 @@ describe("vendo doctor error codes + fix_refs", () => {
     }
   });
 
-  it("reports per-surface ownership with the overrides enablement caveat (#557)", async () => {
+  it("reports per-surface ownership with the overrides enablement note (#557 landed)", async () => {
     const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
     const ownership = report.checks.find((check) => check.id === "config/ownership");
     expect(ownership).toBeDefined();
-    expect(ownership!.message).toContain("#557");
     expect(ownership!.message.toLowerCase()).toContain("enablement");
+    expect(ownership!.message).toContain("boot-once");
   });
 
   // #478 short-term — npm installs the ai@7 peer conflict without failing, the
@@ -1104,6 +1107,82 @@ describe("vendo doctor error codes + fix_refs", () => {
     });
     expect(exit).toBe(0);
     expect(report.checks.some((entry) => entry.id === "deps/ai-sdk-major")).toBe(false);
+  });
+
+  it("fails with E-DEP-003 when the installed zod predates the AI SDK's subpaths", async () => {
+    // FINDINGS F2 (skateshop): ai@6 imports zod/v3 + zod/v4, which arrive in
+    // zod 3.25 — a host pinning older zod builds red the moment the vendo
+    // wiring pulls ai into the bundle.
+    const root = await healthy();
+    await mkdir(join(root, "node_modules", "zod"), { recursive: true });
+    await writeFile(join(root, "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version: "3.23.8" }));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "deps/zod-floor");
+    expect(check).toMatchObject({
+      status: "broken",
+      error_code: "E-DEP-003",
+      fix_ref: doctorFixRef("E-DEP-003"),
+    });
+    expect(check?.message).toContain("zod@3.23.8");
+    expect(check?.message).toContain("3.25");
+    expect(check?.message).toContain("npm install zod@^3.25.0");
+  });
+
+  it("passes the zod floor check on a 3.25+ or zod 4 host", async () => {
+    for (const version of ["3.25.76", "4.1.8"]) {
+      const root = await healthy();
+      await mkdir(join(root, "node_modules", "zod"), { recursive: true });
+      await writeFile(join(root, "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version }));
+      const { exit, report } = await jsonChecks({
+        targetDir: root,
+        fetchImpl: successfulProbeFetch(),
+      });
+      expect(exit).toBe(0);
+      const check = report.checks.find((entry) => entry.id === "deps/zod-floor");
+      expect(check).toMatchObject({ status: "ok" });
+      expect(check?.message).toContain(`zod@${version}`);
+    }
+  });
+
+  it("fails E-DEP-003 when the workspace root hoists an old zod above the app", async () => {
+    // Hoisted pnpm/yarn workspaces keep zod at the workspace root and the app
+    // nested with no node_modules of its own — the version must be resolved
+    // the way the host runtime resolves it, and the bump command must match
+    // the workspace's package manager.
+    const workspace = await mkdtemp(join(tmpdir(), "vendo-doctor-workspace-"));
+    cleanup.push(() => rm(workspace, { recursive: true, force: true }));
+    await writeFile(join(workspace, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    await writeFile(join(workspace, "pnpm-lock.yaml"), "");
+    await mkdir(join(workspace, "node_modules", "zod"), { recursive: true });
+    await writeFile(join(workspace, "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version: "3.23.8" }));
+    const root = await healthy(join(workspace, "apps", "web"));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "deps/zod-floor");
+    expect(check).toMatchObject({
+      status: "broken",
+      error_code: "E-DEP-003",
+      fix_ref: doctorFixRef("E-DEP-003"),
+    });
+    expect(check?.message).toContain("zod@3.23.8");
+    expect(check?.message).toContain("pnpm add zod@^3.25.0");
+  });
+
+  it("skips the zod floor check silently when zod is not installed", async () => {
+    // A host without its own zod resolves ai's copy, which always satisfies.
+    const { exit, report } = await jsonChecks({
+      targetDir: await healthy(),
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(0);
+    expect(report.checks.some((entry) => entry.id === "deps/zod-floor")).toBe(false);
   });
 
   it("exits nonzero while any single check fails", async () => {

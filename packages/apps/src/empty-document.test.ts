@@ -114,4 +114,55 @@ describe("empty-document validity gate", () => {
 
     expect(calls).toBe(1);
   });
+
+  it("counts a static body-variant Text as content (real copy is not a bare-heading shell)", async () => {
+    // The @vendoai-corpus/express-host e2e regression: a scripted app whose
+    // body is default-variant Text copy 400'd at create. The gate's target
+    // class is the heading(+caption)-only shell; BODY copy is content.
+    let calls = 0;
+    const bodyCopy =
+      '<App name="Relay priority board"><Stack><Text text="Priority board"/><Text text="High-priority Relay tasks"/></Stack></App>';
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return bodyCopy;
+    });
+    const runtime = createApps({ store: memoryStore(), guard: guardFixture(), tools, catalog: [], model });
+
+    const app = await runtime.create({ prompt: "Build a Relay priority board" }, ctx);
+
+    expect(calls).toBe(1);
+    expect(app.name).toBe("Relay priority board");
+  });
+
+  it("still routes a heading + caption + label shell to repair (no body copy)", async () => {
+    const prompts: string[] = [];
+    const shell =
+      '<App name="Spending"><Stack gap={12}><Text text="Spending" variant="heading"/><Text text="Jan - Jul 2026" variant="caption"/><Text text="Overview" variant="label"/></Stack></App>';
+    const model = scriptedLanguageModel((call, index) => {
+      prompts.push(promptText(call));
+      return index === 0 ? shell : titleWithDisclaimer;
+    });
+    const runtime = createApps({ store: memoryStore(), guard: guardFixture(), tools, catalog: [], model });
+
+    await runtime.create({ prompt: "How am I spending?" }, ctx);
+
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(prompts[1]).toContain("title and no content");
+  });
+
+  it("does not count an empty-string body Text as content", async () => {
+    const prompts: string[] = [];
+    const blank =
+      '<App name="Spending"><Stack gap={12}><Text text="Spending" variant="heading"/><Text text=""/></Stack></App>';
+    const model = scriptedLanguageModel((call, index) => {
+      prompts.push(promptText(call));
+      return index === 0 ? blank : titleWithDisclaimer;
+    });
+    const runtime = createApps({ store: memoryStore(), guard: guardFixture(), tools, catalog: [], model });
+
+    await runtime.create({ prompt: "How am I spending?" }, ctx);
+
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(prompts[1]).toContain("title and no content");
+  });
 });

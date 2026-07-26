@@ -1,8 +1,8 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { detectDepVersions } from "./dep-versions.js";
+import { detectDepVersions, installedZodVersion } from "./dep-versions.js";
 
 const cleanup: string[] = [];
 afterEach(async () => {
@@ -82,5 +82,46 @@ describe("detectDepVersions", () => {
     expect(await detectDepVersions(await fixture(undefined), "next")).toEqual({});
     expect(await detectDepVersions(await fixture("{ not json"), "next")).toEqual({});
     expect(await detectDepVersions(await fixture({ dependencies: ["not-an-object"] }), "next")).toEqual({});
+  });
+});
+
+describe("installedZodVersion", () => {
+  it("reads the TARGET dir's installed zod, null when absent", async () => {
+    const root = await fixture({ dependencies: { zod: "^3.23.8" } });
+    // The declared range is not the evidence — the installed tree is.
+    expect(await installedZodVersion(root)).toBeNull();
+    await mkdir(join(root, "node_modules", "zod"), { recursive: true });
+    await writeFile(join(root, "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version: "3.23.8" }));
+    expect(await installedZodVersion(root)).toBe("3.23.8");
+  });
+});
+
+describe("installedZodVersion in a hoisted workspace (checker round 1)", () => {
+  it("resolves zod at the workspace root from the nested app's resolution chain", async () => {
+    const workspace = await fixture(undefined);
+    // exports map WITHOUT ./package.json — the manifest must still be read
+    // (require.resolve would throw ERR_PACKAGE_PATH_NOT_EXPORTED here).
+    await mkdir(join(workspace, "node_modules", "zod"), { recursive: true });
+    await writeFile(
+      join(workspace, "node_modules", "zod", "package.json"),
+      JSON.stringify({ name: "zod", version: "3.23.8", exports: { ".": "./index.js" } }),
+    );
+    const app = join(workspace, "apps", "web");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "web" }));
+    expect(await installedZodVersion(app)).toBe("3.23.8");
+  });
+
+  it("resolves an exports-mapped zod that does expose ./package.json", async () => {
+    const workspace = await fixture(undefined);
+    await mkdir(join(workspace, "node_modules", "zod"), { recursive: true });
+    await writeFile(
+      join(workspace, "node_modules", "zod", "package.json"),
+      JSON.stringify({ name: "zod", version: "3.25.76", exports: { ".": "./index.js", "./package.json": "./package.json" } }),
+    );
+    const app = join(workspace, "apps", "web");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "web" }));
+    expect(await installedZodVersion(app)).toBe("3.25.76");
   });
 });

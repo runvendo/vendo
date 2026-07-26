@@ -344,10 +344,30 @@ export const DISCLAIMER_TEXT = "This part of the request isn't available on this
  *  a deliberate repair outcome, and the runtime's disclaimer-only gate
  *  (isDisclaimerOnlyTree, 0.4.5 defect D) already fails a build whose EVERY
  *  region was disclaimed away with the sharper host-capability reason —
- *  bouncing those trees back to repair here would fight that mechanism. */
+ *  bouncing those trees back to repair here would fight that mechanism.
+ *
+ *  Text is variant-aware: the shell class this gate targets is the bare
+ *  heading (sometimes plus a caption/label) — so only the heading/caption/
+ *  label variants count as shell material. A static Text carrying real BODY
+ *  copy (default variant, non-empty string) IS content: purely informational
+ *  apps are legitimate, and the @vendoai-corpus/express-host e2e's scripted
+ *  body-copy app 400'ing at create was this gate's first false positive. */
 const COPY_ONLY_COMPONENTS: ReadonlySet<string> = new Set([
   "Stack", "Row", "Grid", "Surface", "Divider", "Skeleton", "Card", "Text", "Badge",
 ]);
+
+/** Text variants that read as chrome, not body copy. */
+const SHELL_TEXT_VARIANTS: ReadonlySet<string> = new Set(["heading", "caption", "label"]);
+
+/** A Text node whose static string is real body copy (default/body variant,
+ *  non-empty text). Bound values are handled by the binding check instead. */
+const isBodyCopyText = (node: TreeV2["nodes"][number]): boolean => {
+  if (node.component !== "Text") return false;
+  const variant = node.props?.["variant"];
+  if (typeof variant === "string" && SHELL_TEXT_VARIANTS.has(variant)) return false;
+  const text = node.props?.["text"];
+  return typeof text === "string" && text.trim().length > 0;
+};
 
 /** Any data/state/action binding reachable in a props value. */
 const hasRuntimeBinding = (value: unknown): boolean => {
@@ -374,6 +394,7 @@ const emptyDocumentIssues = (tree: TreeV2): string[] => {
     // nodes, so a disclaimed region can arrive embedded in a longer string.
     if (node.component === "Text" && typeof node.props?.["text"] === "string"
       && node.props["text"].includes(DISCLAIMER_TEXT)) return [];
+    if (isBodyCopyText(node)) return [];
     if (node.props !== undefined && Object.values(node.props).some(hasRuntimeBinding)) return [];
   }
   return [
