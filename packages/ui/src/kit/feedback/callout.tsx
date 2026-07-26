@@ -1,5 +1,5 @@
 /**
- * Callout — a toned info/success/warning/danger notice (W2 §The Kit).
+ * Callout — a toned info/accent/success/warning/danger notice (W2 §The Kit).
  * Distinct from Disclaimer: Callout highlights real information; Disclaimer is
  * the honesty arm for when no tool backs the ask.
  */
@@ -28,7 +28,10 @@ export function Callout({ tone = "info", title, children }: PropsWithChildren<Ca
   // Unknown tone values fall back to info instead of crashing: generated
   // island code passes arbitrary strings, and a themed notice with the wrong
   // color always beats "Node could not render: Cannot destructure 'accent'".
-  const { accent, icon } = TONE[tone] ?? TONE.info;
+  // Object.hasOwn, not a bare index: an unvalidated tone like "constructor"
+  // or "toString" would otherwise pick up Object.prototype members instead
+  // of falling back (review 2026-07-26).
+  const { accent, icon } = Object.hasOwn(TONE, tone) ? TONE[tone] : TONE.info;
   return (
     <div
       data-kit="Callout"

@@ -45,6 +45,14 @@ describe("Callout", () => {
     expect(screen.getByRole("status")).toBeTruthy();
     expect(screen.getByText("Still visible.")).toBeTruthy();
   });
+
+  it("does not pick up Object.prototype members for tones like 'constructor' (review)", () => {
+    render(<Callout tone={"constructor" as never} title="Proto">Prototype-safe.</Callout>);
+    const el = screen.getByRole("status");
+    expect(screen.getByText("Prototype-safe.")).toBeTruthy();
+    // The info fallback's accent color applied — not an undefined style.
+    expect((el as HTMLElement).style.borderLeft).not.toContain("undefined");
+  });
 });
 
 describe("Accordion (self-managing)", () => {
