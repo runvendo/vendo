@@ -17,6 +17,19 @@
  */
 export type { KnowledgeAdapter } from "@vendoai/core";
 
+/** Knowledge K1 — the `vendo_knowledge_search` agent tool (tool-layer intent
+    policy, structured refusal, read-more) over any adapter. */
+export {
+  createKnowledgeTools,
+  toCitation,
+  VENDO_KNOWLEDGE_RESULT_KIND,
+  VENDO_KNOWLEDGE_SEARCH_TOOL,
+  type KnowledgeCitation,
+  type KnowledgeResultEnvelope,
+  type KnowledgeResultOutcome,
+  type KnowledgeToolsOptions,
+} from "./agent-tools.js";
+
 /**
  * The store record collections backing the built-in local engine, created by
  * the store DDL (ENG-356). The local engine reads/writes documents and their

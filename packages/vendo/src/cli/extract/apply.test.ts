@@ -66,12 +66,15 @@ describe("vendo extract --apply (the delegation surface)", () => {
       { tools: Record<string, Record<string, unknown>> };
     expect(overrides.tools["host_invoices_list"]).toEqual({ description: "List invoices, filterable by status." });
     expect(overrides.tools["host_invoices_create"]).toMatchObject({ risk: "destructive", critical: true });
-    expect(overrides.tools["host_admin_unclassified"]).toMatchObject({ disabled: false, risk: "destructive" });
+    // Restrictive-only (#553): the description lands, but the enable attempt is
+    // refused — extract --apply never wakes a scanner-disabled tool.
+    expect(overrides.tools["host_admin_unclassified"]).toEqual({ description: "Reset all demo data." });
     expect(await readFile(join(root, ".vendo", "brief.md"), "utf8")).toContain("consumer bank");
 
     expect(sync).toHaveBeenCalledWith({ root, out: join(root, ".vendo") });
     const logs = sink.logs.join("\n");
-    expect(logs).toContain("AI polish applied: 3 descriptions · 1 risk raises · 1 critical marks · 1 tools woken · brief drafted");
+    expect(logs).toContain("AI polish applied: 3 descriptions · 1 risk raises · 1 critical marks · brief drafted");
+    expect(sink.errors.join("\n")).toContain("refused: host_admin_unclassified: enabling a disabled tool refused");
     expect(logs).toContain("missed surface (not extracted yet): /api/webhooks");
   });
 

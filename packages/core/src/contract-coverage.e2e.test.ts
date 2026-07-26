@@ -536,7 +536,7 @@ describe("public export surface — every contracted camelCaseName schema is pre
       "treeV2Schema", "treeNodeSchema", "treeQueryV2Schema", "appDocumentSchema", "storageDeclSchema",
       "pinSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
       "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",
-      "vendoThemeSchema", "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoErrorCodeSchema",
+      "vendoThemeSchema", "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoCitationsPartSchema", "vendoErrorCodeSchema",
       "capabilityMissToolFailureSchema", "capabilityMissTriggerSchema", "capabilityMissEventSchema",
       "appIdSchema", "grantIdSchema", "approvalIdSchema", "runIdSchema", "threadIdSchema",
       "isoDateTimeSchema", "jsonSchemaSchema",
