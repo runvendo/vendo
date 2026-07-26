@@ -63,13 +63,13 @@ async function createOnce(apps: CreateVendoConfig["apps"]): Promise<string> {
   return prompts.join("\n");
 }
 
-// The v4 create contract's distinctive section tag (engine.ts v4GreatApps);
-// the legacy contract never emits it.
+// The exemplar create contract's distinctive section tag; the legacy
+// contract never emits it.
 const V4_MARKER = "<building_great_apps>";
 
 describe("createVendo({ apps: { pipeline } }) threads the W4/v4 flags to the engine", () => {
-  it("promptRewrite reaches generation: the v4 contract is sent to the model", async () => {
-    const sent = await createOnce({ pipeline: { promptRewrite: true } });
+  it("exemplarContract reaches generation: the exemplar contract is sent to the model", async () => {
+    const sent = await createOnce({ pipeline: { exemplarContract: true } });
     expect(sent).toContain(V4_MARKER);
   });
 

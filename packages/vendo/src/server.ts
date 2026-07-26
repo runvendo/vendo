@@ -354,7 +354,7 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
-    /** W4/v4 generation-pipeline flags (promptRewrite, structuredRepair,
+    /** Generation-pipeline flags (exemplarContract, structuredRepair,
         regionParallel, endPass) — opt-in while the A/B is measured; threaded
         verbatim to the apps engine. */
     pipeline?: AppsConfig["pipeline"];
