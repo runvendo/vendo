@@ -1,12 +1,37 @@
+import { eraseStore } from "@vendoai/store";
+import type { HostedStore } from "@vendoai/vendo/server";
+import { seedDemoScript } from "@/demo-script/seed";
 import { __reseed } from "@/server/store";
 import { ok } from "@/server/http";
+import { mapleDemoUsers } from "@/server/users";
+import { demoRequestAllowed } from "@/vendo/request";
+import { vendo } from "@/vendo/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+/** The store's erase cascade, store-implementation-agnostic: the Cloud hosted
+ *  store carries its own erase door (the cascade runs server-side with
+ *  eraseStore parity); a local store goes through eraseStore's SQL cascade. */
+function eraseDoor(): Pick<HostedStore["erase"], "bySubject"> {
+  const hosted = vendo.store as Partial<HostedStore>;
+  return typeof hosted.erase?.bySubject === "function" ? hosted.erase : eraseStore(vendo.store);
+}
+
+export async function POST(req: Request) {
+  if (!demoRequestAllowed(req)) {
+    return Response.json({ error: "reset is restricted to the demo's own origin" }, { status: 403 });
+  }
   __reseed(new Date());
-  // VENDO-MIGRATION: the v0 wire owns grants, threads, and connector state;
-  // it does not expose the legacy demo-only connection reset hook.
+  // Demo-refresh 2026-07-23: reset also erases the demo subjects' Vendo state
+  // (threads, generated apps, pins, grants) through the store's sanctioned
+  // erase cascade, so slots and conversations return to out-of-the-box.
+  const erase = eraseDoor();
+  for (const user of mapleDemoUsers()) {
+    await erase.bySubject(user.subject);
+  }
+  // Scripted demo: re-seed the fixture microapps + the weekly-summary
+  // automation so the four scenario cards are replayable immediately.
+  await seedDemoScript();
   return ok({ reset: true });
 }

@@ -225,6 +225,75 @@ export default function SpendBars(props) {
   });
 });
 
+describe("law 1 in islands — the user's numbers and unit conversions (rematch 2026-07-25 carve-outs)", () => {
+  const budget = `<App name="Budget"><Island name="BudgetTracker">
+export default function BudgetTracker() {
+  const BUDGET_CENTS = 20000;
+  const [total, setTotal] = useState(0);
+  useEffect(() => { tools.host_metric({}).then((res) => setTotal(res.totalCents ?? 0)); }, []);
+  return <Stat label="Left this month" value={fmt.money(BUDGET_CENTS - total)} />;
+}
+</Island><BudgetTracker/></App>`;
+
+  it("ships the user's own $200 budget (BUDGET_CENTS = 20000) in ONE call — H12: no refusal, no repair", async () => {
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return budget;
+    });
+    const document = await modelEngine.create(
+      { prompt: "keep my entertainment spending under a $200 monthly budget" },
+      deps(model, { pipeline: { structuredRepair: false } }),
+    );
+    expect(calls).toBe(1);
+    expect(document.components?.BudgetTracker).toContain("BUDGET_CENTS = 20000");
+  });
+
+  it("still routes the same constant to repair when the request never mentioned the number", async () => {
+    const honest = `<App name="Budget"><Island name="BudgetTracker">
+export default function BudgetTracker() {
+  const [total, setTotal] = useState(0);
+  useEffect(() => { tools.host_metric({}).then((res) => setTotal(res.totalCents ?? 0)); }, []);
+  return <Stack><Stat label="Spent" value={fmt.money(total)} /><Disclaimer reason="No budget amount is available on this host." /></Stack>;
+}
+</Island><BudgetTracker/></App>`;
+    const prompts: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      prompts.push(promptText(call));
+      return prompts.length === 1 ? budget : honest;
+    });
+    await modelEngine.create(
+      { prompt: "track my entertainment spending" },
+      deps(model, { pipeline: { structuredRepair: false } }),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("BUDGET_CENTS = 20000");
+    expect(prompts[1]).toContain("a constant feeding displayed math is invented data (law 1)");
+  });
+
+  it("ships per-month conversion math (÷ 12, × 4.33) in one call — H3", async () => {
+    const recurring = `<App name="Recurring"><Island name="MonthlyView">
+export default function MonthlyView() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { tools.host_metric({}).then((res) => setRows(res.rows ?? [])); }, []);
+  const monthly = rows.reduce((sum, row) => sum + (row.amountCents / 12) + (row.amountCents * 4.33), 0);
+  return <Stat label="Per month" value={fmt.money(monthly)} />;
+}
+</Island><MonthlyView/></App>`;
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return recurring;
+    });
+    const document = await modelEngine.create(
+      { prompt: "what do my recurring charges add up to per month?" },
+      deps(model, { pipeline: { structuredRepair: false } }),
+    );
+    expect(calls).toBe(1);
+    expect(document.components?.MonthlyView).toContain("4.33");
+  });
+});
+
 describe("law 2 — actions ground in the real tool surface", () => {
   it("rejects an action naming a tool absent from the registry", async () => {
     const invented = '<App name="Act"><Query id="metric" tool="host_metric"/><DataTable rows={metric.rows}/><Button label="Send reminder" onClick="host_invented"/></App>';

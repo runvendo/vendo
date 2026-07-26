@@ -31,12 +31,14 @@ injection. Pass `--json` to print the machine-readable scorecard, and
 `--strict` to make hard failures return a nonzero exit code. Without `--strict`,
 the sweep reports all repo failures and exits 0.
 
-The sweep always consents to init's AI extraction pass (`--ai-polish`), so the
-theme stage's LLM fallback runs through the staged extraction pipeline instead
-of silently skipping — the only reason nightly theme coverage stays honest.
-That pass needs `ANTHROPIC_API_KEY` in the environment plus a `claude` binary
-on `PATH` (the harness does not ship the Agent SDK); without either, init
-degrades gracefully and the deterministic checks still run.
+The sweep always consents to init's AI extraction pass (`--ai-polish`). That
+pass needs `ANTHROPIC_API_KEY` in the environment plus a `claude` binary on
+`PATH` (the harness does not ship the Agent SDK); without either, init
+degrades gracefully — the AI pass self-skips, init exits green, and the
+deterministic structural checks still run. The nightly split leans on exactly
+that: GitHub runs the structural clean room (layer 1, zero model
+credentials), and the full AI sweep (layer 2 scoring + AI polish) runs
+nightly on the Mac mini instead.
 
 ## Local Vendo injection
 
@@ -94,13 +96,18 @@ the orchestrating environment; Vendo-specific wiring never belongs here.
 
 ## Continuous integration
 
-The `Corpus Nightly` workflow (`.github/workflows/corpus-nightly.yml`) runs the
-development sweep on a schedule (08:00 UTC daily) and on demand via
-`workflow_dispatch` (inputs: `repos` space-separated filter, `layer` 1/2). It builds the
-workspace, runs `pnpm corpus run --json`, writes the scorecard to the job
-summary, appends a trend delta versus the previous run
+The `Corpus Nightly` workflow (`.github/workflows/corpus-nightly.yml`) is the
+structural clean room: it runs the layer 1 sweep across all manifest repos
+with zero model credentials, on a schedule (08:00 UTC daily) and on demand
+via `workflow_dispatch` (input: `repos` space-separated filter — there is no
+layer input; GH is layer 1 only). It builds the workspace, runs
+`pnpm corpus run --layer 1 --json --strict` (`--strict` makes any hard
+structural failure fail the job), writes the scorecard to the job summary,
+appends a trend delta versus the previous run
 (`corpus/scripts/corpus-trend.mjs`), and uploads `scorecard.json` + `.md` +
-per-repo logs as the `corpus-scorecard` artifact (30-day retention).
+per-repo logs as the `corpus-scorecard` artifact (30-day retention). The AI
+half — layer 2 scoring and the init AI polish pass — runs nightly on the Mac
+mini, not on GitHub.
 
 ## AI extraction matrix
 
@@ -252,11 +259,12 @@ PR CI is untouched — no LLM cost or flakiness is added to the merge path.
 
 Required secrets (Settings → Secrets and variables → Actions):
 
-- `ANTHROPIC_API_KEY` (required) — real `vendo init` extraction needs an LLM
-  key. The workflow fails fast if it is missing.
-- `OPENAI_API_KEY` (optional) — alternate provider.
 - `CORPUS_<REPO>_<KEY>` — per-repo bootstrap secrets referenced as
   `${CORPUS_<REPO>_<KEY>}` placeholders in a manifest `envTemplate`.
+- No model credentials: the GitHub nightly is the structural clean room and
+  deliberately carries no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`. LLM-costed
+  runs (layer 2, `corpus ai`, gallery, install-eval) happen on the Mac mini
+  or on demand locally.
 
 Run a filtered sweep on demand from the Actions tab → Corpus Nightly → Run
-workflow, e.g. `repos: umami taxonomy`, `layer: 1`.
+workflow, e.g. `repos: umami taxonomy` (always layer 1 on GitHub).

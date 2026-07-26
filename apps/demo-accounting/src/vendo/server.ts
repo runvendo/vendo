@@ -1,17 +1,14 @@
-import { anthropic } from "@ai-sdk/anthropic";
 import { composioConnector } from "@vendoai/actions";
 import { vendoAutoJudge } from "@vendoai/guard";
-import { createVendo } from "@vendoai/vendo/server";
+import { createVendo, vendoModel } from "@vendoai/vendo/server";
 import { cadenceAuth } from "./auth";
 import { cadenceRegistry } from "./registry";
 
-const model = anthropic(process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6");
-const judgeModelName = process.env.VENDO_JUDGE_MODEL;
 const composioApiKey = process.env.COMPOSIO_API_KEY;
-const judge = judgeModelName ? vendoAutoJudge({ model: anthropic(judgeModelName) }) : undefined;
 
 export const vendo = createVendo({
-  model,
+  // The model slot stays UNSET (demo-refresh Part 2): the env ladder resolves
+  // it — locally ANTHROPIC_API_KEY, deployed VENDO_API_KEY.
   // One preset fills all three identity seams (09-vendo §2.1) — the shipped
   // supabase() preset, hybrid HS256 + ES256/JWKS like ../server/session.ts;
   // see ./auth for the Cadence-specific configuration.
@@ -20,7 +17,27 @@ export const vendo = createVendo({
   // <VendoRoot> takes the same object and reads only component references.
   catalog: cadenceRegistry,
   policy: { file: ".vendo/policy.json" },
-  ...(judge ? { judge } : {}),
+  // Guard auto-judge on unconditionally (demo-refresh Part 2): run/ask/block
+  // rulings on tool calls ride the vendo model family's judge lane —
+  // vendo-judge on the Cloud gateway, the provider's fast pick on BYO rungs.
+  judge: vendoAutoJudge({ model: vendoModel("vendo-judge") }),
+  // The Cadence voice (03 §3 agent.instructions) — rides the agent prompt every turn.
+  agent: {
+    instructions: [
+      "You are Cadence's built-in assistant for the firm's staff. Professional and precise; plain prose, no emoji.",
+      "Be exact with client names, document kinds, and filing deadlines.",
+      "When you render a view, let it carry the data — don't restate it in prose.",
+    ].join("\n"),
+  },
+  apps: {
+    // demo-refresh Part 5 — the full v4 generation pipeline.
+    pipeline: {
+      exemplarContract: true,
+      structuredRepair: true,
+      regionParallel: true,
+      endPass: true,
+    },
+  },
   connectors: composioApiKey
     ? [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "googlecalendar", "slack"] })]
     : [],

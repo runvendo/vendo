@@ -367,7 +367,7 @@ export const verifyDocumentAgainstData = async (
   deps,
   hostComponents: deps.catalog.map(({ name }) => name),
   startedAt: Date.now(),
-  validate: (compiled) => validateCompiledCreate(compiled, deps),
+  validate: (compiled) => validateCompiledCreate(compiled, deps, userRequest),
 });
 
 const withoutId = (app: AppDocument): GeneratedAppDocument => {
@@ -620,10 +620,13 @@ const editTree = async (
           model: Object.fromEntries(Object.entries(all).filter((entry) => !isPinned(entry))),
         });
         const patchedIslands = splitIslands(patched.components);
-        const prepared = await prepareIslands(patchedIslands.model, deps.tools, hostComponents);
+        // The edit instruction is the user text in scope here; both prepares
+        // get the SAME text so a carried-over issue stays byte-identical for
+        // the pre-existing-issue filter below.
+        const prepared = await prepareIslands(patchedIslands.model, deps.tools, hostComponents, input.instruction);
         // Pre-existing island issues never block an unrelated edit (same
         // filtering rule as catalog/action issues in validateEditedApp).
-        const sourcePrepared = await prepareIslands(splitIslands(input.app.components ?? {}).model, deps.tools, hostComponents);
+        const sourcePrepared = await prepareIslands(splitIslands(input.app.components ?? {}).model, deps.tools, hostComponents, input.instruction);
         const sourceIslandIssues = new Set(sourcePrepared.issues);
         const islandIssues = prepared.issues.filter((issue) => !sourceIslandIssues.has(issue));
         const nextComponents = { ...patchedIslands.pinned, ...prepared.components };
@@ -729,7 +732,7 @@ export const modelEngine: GenerationEngine = {
       deps,
       hostComponents,
       startedAt,
-      validate: (compiled) => validateCompiledCreate(compiled, deps),
+      validate: (compiled) => validateCompiledCreate(compiled, deps, input.prompt),
       repairIslands: (compiled, repairIssues) => {
         logInvalidLane("assembly", repairIssues);
         return repairIslandsScoped(compiled, repairIssues, input.prompt, pipelineContext);
@@ -765,7 +768,7 @@ export const modelEngine: GenerationEngine = {
         const paintDeps = deps.paint?.model === undefined ? gatedDeps : { ...gatedDeps, model: deps.paint.model };
         const paint = await streamWire(paintDeps, tier0Contract(deps), basePrompt, hostComponents, { lane: "paint", thinking: false, startedAt });
         if (paint.compiled !== undefined) {
-          const validated = await validateCompiledCreate(paint.compiled, deps);
+          const validated = await validateCompiledCreate(paint.compiled, deps, input.prompt);
           if (validated.document !== undefined) {
             resident = validated.document;
             residentLayout = layoutHeader(paint.compiled);
@@ -832,7 +835,7 @@ export const modelEngine: GenerationEngine = {
       );
       issues = distinctIssues(issues, output.issues);
       if (output.compiled !== undefined) {
-        const validated = await validateCompiledCreate(output.compiled, deps);
+        const validated = await validateCompiledCreate(output.compiled, deps, input.prompt);
         if (validated.document !== undefined) return finish(validated.document);
         logInvalidLane("full", validated.issues);
         issues = distinctIssues(issues, validated.issues);
