@@ -50,13 +50,23 @@ export const vendo = createVendo({
     experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
-    // demo-refresh Part 5 — the full v4 generation pipeline.
-    pipeline: {
-      exemplarContract: true,
-      structuredRepair: true,
-      regionParallel: true,
-      endPass: true,
-    },
+    // RE-GATE 2026-07-26 CANDIDATE CONFIG — REVERTED after the run.
+    // Selected at boot by VENDO_GATE_ARM (arm order randomized PER PROMPT by
+    // the committed schedule; one env-switched seam avoids a rebuild between
+    // creates). Replaces the production full-v4 pipeline block FOR THE RUN
+    // ONLY, mirroring the 2026-07-25 rematch arms exactly:
+    //   A (unset) = the rematch's production-defaults arm: pipeline {}
+    //   B = { endPass: true } — current contract + data-sighted verify
+    //   C = { exemplarContract: true, endPass: true }
+    // NOTE: production on main now ships the FULL v4 pipeline (demo-refresh
+    // Part 5), so arm A is the rematch control, not today's shipped config —
+    // kept identical for cross-run comparability of the healed mechanisms.
+    // Configuration selection, not tuning. REVERTED after the run.
+    pipeline: process.env.VENDO_GATE_ARM === "C"
+      ? { exemplarContract: true, endPass: true }
+      : process.env.VENDO_GATE_ARM === "B"
+        ? { endPass: true }
+        : {},
   },
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
