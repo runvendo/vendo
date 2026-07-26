@@ -92,10 +92,10 @@ const CHECK_ORDER: StructuralCheckId[] = [
 ];
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-// Any import statement whose binding list names VendoRoot (possibly aliased,
-// as in the generated wrapper's `VendoRoot as VendoClientRoot`), capturing
-// the module specifier.
-const VENDO_ROOT_IMPORT = /import\s+(?:type\s+)?\{[^}]*\bVendoRoot\b[^}]*\}\s*from\s*["']([^"']+)["']/g;
+// Any named-import statement, capturing the binding list and the module
+// specifier — filtered for VendoRoot (possibly aliased, as in the generated
+// wrapper's `VendoRoot as VendoClientRoot`) by vendoRootImports below.
+const NAMED_IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
 const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
 
 export function corpusHostCommandEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -261,8 +261,28 @@ function hasFunctionalExpressVendoMount(server: string): boolean {
   return false;
 }
 
-function vendoRootImportSpecifiers(source: string): string[] {
-  return [...source.matchAll(VENDO_ROOT_IMPORT)].map((match) => match[1]!);
+interface VendoRootImport {
+  /** The local JSX tag the module binds VendoRoot to (alias or VendoRoot). */
+  localTag: string;
+  specifier: string;
+}
+
+function vendoRootImports(source: string): VendoRootImport[] {
+  const imports: VendoRootImport[] = [];
+  for (const match of source.matchAll(NAMED_IMPORT)) {
+    const named = match[1]!.match(/\bVendoRoot\b(?:\s+as\s+([\w$]+))?/);
+    if (named === null) continue;
+    imports.push({ localTag: named[1] ?? "VendoRoot", specifier: match[2]! });
+  }
+  return imports;
+}
+
+/** `{children}` sits INSIDE a `<tag …>…</tag>` element — a self-closing
+ * `<tag />` rendered beside `{children}` is not a wrap, it leaves children
+ * outside the provider. Not a JSX parser; exact enough for the wiring
+ * shapes init writes and the harness pastes. */
+function nestsChildrenInside(source: string, tag: string): boolean {
+  return new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?\\{\\s*children\\s*\\}[\\s\\S]*?</${tag}>`).test(source);
 }
 
 /** The layout wraps children with the @vendoai/vendo/react provider either
@@ -270,18 +290,21 @@ function vendoRootImportSpecifiers(source: string): string[] {
  * visible-surface wiring (init-scaffolds.ts's vendoRootWrapperSource), a
  * by-the-book init mounts <VendoRoot> imported from the repo-local
  * `vendo/vendo-root` module — the layout itself never names the package.
- * The wrapper must itself import VendoRoot from @vendoai/vendo/react, so a
- * layout mounting some unrelated local VendoRoot still fails. */
+ * "Wraps" means `{children}` is NESTED inside the VendoRoot element (a
+ * self-closing sibling fails), and the wrapper's own JSX must nest its
+ * children inside the package's VendoRoot (aliased or not) — so a layout
+ * mounting some unrelated local VendoRoot still fails. */
 async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layout: string): Promise<boolean> {
-  if (!layout.includes("<VendoRoot")) return false;
-  const specifiers = vendoRootImportSpecifiers(layout);
-  if (specifiers.includes("@vendoai/vendo/react")) return true;
-  for (const specifier of specifiers) {
+  for (const { localTag, specifier } of vendoRootImports(layout)) {
+    if (!nestsChildrenInside(layout, localTag)) continue;
+    if (specifier === "@vendoai/vendo/react") return true;
     if (!specifier.startsWith(".")) continue;
     const base = path.posix.join(path.posix.dirname(app.layoutRel), specifier);
     for (const candidate of [base, `${base}.tsx`, `${base}.ts`, `${base}.jsx`, `${base}.js`]) {
       const source = await readText(repoDir, candidate);
-      if (source !== null && vendoRootImportSpecifiers(source).includes("@vendoai/vendo/react")) return true;
+      if (source === null) continue;
+      const packageImport = vendoRootImports(source).find((entry) => entry.specifier === "@vendoai/vendo/react");
+      if (packageImport !== undefined && nestsChildrenInside(source, packageImport.localTag)) return true;
     }
   }
   return false;

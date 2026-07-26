@@ -279,6 +279,55 @@ describe("runStructuralLayer", () => {
     expect(results["files.expected"]).toMatchObject({ pass: true });
   });
 
+  it("still fails a self-closing <VendoRoot /> rendered BESIDE {children} — children never inside the provider", async () => {
+    const repoDir = await makeTempRepo();
+    // Direct package import, but the provider is a sibling of children.
+    await writeFile(
+      path.join(repoDir, "app/layout.tsx"),
+      [
+        'import { VendoRoot } from "@vendoai/vendo/react";',
+        "",
+        "export default function RootLayout({ children }: { children: React.ReactNode }) {",
+        "  return <html><body><VendoRoot />{children}</body></html>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
+
+    const direct = byId(await runStructuralLayer(passingContext(repoDir, runner)));
+    expect(direct["files.expected"]).toMatchObject({ pass: false });
+    expect(direct["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoRoot");
+
+    // Same sibling shape through the generated wrapper import.
+    await mkdir(path.join(repoDir, "vendo"), { recursive: true });
+    await writeFile(
+      path.join(repoDir, "app/layout.tsx"),
+      [
+        'import { VendoRoot } from "../vendo/vendo-root";',
+        "",
+        "export default function RootLayout({ children }: { children: React.ReactNode }) {",
+        "  return <html><body><VendoRoot />{children}</body></html>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(repoDir, "vendo/vendo-root.tsx"),
+      [
+        '"use client";',
+        'import { VendoOverlay, VendoRoot as VendoClientRoot } from "@vendoai/vendo/react";',
+        'import { registry } from "./registry";',
+        "export function VendoRoot({ children }: { children: React.ReactNode }) {",
+        "  return <VendoClientRoot components={registry}>{children}<VendoOverlay /></VendoClientRoot>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const viaWrapper = byId(await runStructuralLayer(passingContext(repoDir, runner)));
+    expect(viaWrapper["files.expected"]).toMatchObject({ pass: false });
+  });
+
   it("still fails a Next layout that never mounts VendoRoot", async () => {
     const repoDir = await makeTempRepo();
     await writeFile(
