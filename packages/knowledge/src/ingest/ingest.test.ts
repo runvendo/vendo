@@ -29,6 +29,15 @@ describe("knowledgeConfigSchema", () => {
     })).toThrow(/unrecognized/i);
   });
 
+  it("rejects globs that could escape the project root (checker round 1 fix 1 — security)", () => {
+    for (const glob of ["../outside/*.md", "docs/../../x/*.md", "/etc/*.conf", "\\\\share\\docs\\*.md", "C:/secrets/*.md"]) {
+      expect(() => knowledgeConfigSchema.parse({
+        ...valid,
+        sources: [{ ...valid.sources[0], glob }],
+      }), glob).toThrow(/project root/);
+    }
+  });
+
   it("rejects duplicate source names and non-slug names", () => {
     expect(() => knowledgeConfigSchema.parse({
       ...valid,
@@ -147,5 +156,23 @@ describe("ingestSources", () => {
   it("rejects an invalid config loudly instead of ingesting a subset", async () => {
     await expect(ingestSources({ ...config, sources: [{ ...config.sources[0]!, typo: 1 } as never] }, { root }))
       .rejects.toThrow(/unrecognized/i);
+  });
+
+  it("never ingests files outside the root — the checker's ../outside/secret.md probe (fix 1)", async () => {
+    // Sibling of the project root, exactly the checker's layout.
+    const parent = await mkdtemp(join(tmpdir(), "vendo-knowledge-escape-"));
+    const projectRoot = join(parent, "project");
+    await mkdir(join(parent, "outside"), { recursive: true });
+    await mkdir(projectRoot, { recursive: true });
+    await writeFile(join(parent, "outside", "secret.md"), "# Secret\ntop secret\n");
+    try {
+      const escaping: KnowledgeConfig = {
+        format: VENDO_KNOWLEDGE_CONFIG_FORMAT,
+        sources: [{ name: "evil", glob: "../outside/secret.md", kind: "docs", visibility: "public" }],
+      };
+      await expect(ingestSources(escaping, { root: projectRoot })).rejects.toThrow(/project root/);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
   });
 });

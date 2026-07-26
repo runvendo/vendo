@@ -52,6 +52,15 @@ describe("vendo knowledge — option validation (ENG-335)", () => {
     expect(await runKnowledge(["add", "docs/**", dir, "--kind", "prose"], { output: cap.output })).toBe(1);
     expect(cap.errors.join("\n")).toContain("--kind must be one of docs, glossary, api");
   });
+
+  it("refuses root-escaping and absolute source globs at add time (checker round 1 fix 1)", async () => {
+    const dir = await tempProject();
+    const cap = capture();
+    expect(await runKnowledge(["add", "../outside/*.md", dir], { output: cap.output })).toBe(1);
+    expect(await runKnowledge(["add", "/etc/*.conf", dir], { output: cap.output })).toBe(1);
+    expect(cap.errors.join("\n")).toContain("project root");
+    await expect(readFile(join(dir, ".vendo", "knowledge.json"), "utf8")).rejects.toThrow();
+  });
 });
 
 describe("vendo knowledge add/list/remove", () => {

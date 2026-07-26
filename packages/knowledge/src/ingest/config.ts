@@ -29,12 +29,26 @@ export interface KnowledgeConfig {
   sources: KnowledgeSourceConfig[];
 }
 
+/** Checker round 1 fix 1 (SECURITY): a source glob must stay inside the
+    project root — ingestion runs with the developer's filesystem rights, so
+    an absolute or `..`-escaping pattern would sync arbitrary readable files
+    into the corpus. Rejected loudly here (the CLI's `add` and every
+    ingestSources call validate through this schema); the directory walk
+    clamps to root as a second layer. */
+const rootRelativeGlob = z.string().min(1)
+  .refine((glob) => !/^([/\\]|[A-Za-z]:)/.test(glob), {
+    message: "source globs must be relative to the project root, not absolute paths",
+  })
+  .refine((glob) => !glob.split(/[/\\]/).includes(".."), {
+    message: "source globs must not escape the project root ('..' segments are not allowed)",
+  });
+
 /** Names are id namespaces, so they keep to a slug grammar and must be
     unique. Strict because hand edits must fail loudly rather than disappear
     on parse (the catalog-file rule). */
 export const knowledgeSourceConfigSchema = z.object({
   name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, "source names are lowercase slugs (a-z, 0-9, -)"),
-  glob: z.string().min(1),
+  glob: rootRelativeGlob,
   kind: knowledgeKindSchema,
   visibility: knowledgeVisibilitySchema,
 }).strict() satisfies z.ZodType<KnowledgeSourceConfig>;

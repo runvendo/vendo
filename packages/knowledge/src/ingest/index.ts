@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import type { KnowledgeDoc } from "@vendoai/core";
 import { knowledgeConfigSchema, type KnowledgeConfig, type KnowledgeSourceConfig } from "./config.js";
 import { parseSourceFile } from "./parse.js";
@@ -49,13 +49,18 @@ const staticPrefix = (glob: string): string[] => {
 };
 
 /** Sorted recursive file walk. Dotfiles and node_modules never match — a
-    knowledge glob is for authored content, not vendored trees. */
+    knowledge glob is for authored content, not vendored trees. The walk is
+    clamped to `root` (checker round 1 fix 1's second layer: even a pattern
+    that slipped past schema validation can never read outside the root). */
 async function walkFiles(root: string, prefix: string[]): Promise<string[]> {
+  const rootPath = resolve(root);
   const files: string[] = [];
   const visit = async (relative: string[]): Promise<void> => {
+    const dir = resolve(rootPath, ...relative);
+    if (dir !== rootPath && !dir.startsWith(rootPath + sep)) return;
     let entries;
     try {
-      entries = await readdir(join(root, ...relative), { withFileTypes: true });
+      entries = await readdir(dir, { withFileTypes: true });
     } catch {
       return; // A prefix that doesn't exist matches nothing.
     }

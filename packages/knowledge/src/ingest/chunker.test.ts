@@ -58,6 +58,56 @@ describe("structuralChunker", () => {
     expect(chunks[0]!.text).toContain("still fenced");
   });
 
+  it("tracks fences opened inside list items — the checker's `- ```md` probe (fix 2)", () => {
+    const chunks = structuralChunker.chunk(doc([
+      "# Guide",
+      "- ```md",
+      "  # not a heading (fenced inside a list item)",
+      "  ```",
+      "# Real",
+      "Body after the list fence.",
+    ].join("\n")));
+    expect(chunks.map((chunk) => chunk.heading)).toEqual(["Guide", "Real"]);
+    expect(chunks[0]!.text).toContain("# not a heading");
+    expect(chunks[1]!.text).toContain("Body after the list fence.");
+  });
+
+  it("a list marker inside an open fence is content, never a closer", () => {
+    const chunks = structuralChunker.chunk(doc([
+      "# Guide",
+      "```",
+      "- ``` this line is fence content",
+      "# still fenced",
+      "```",
+      "tail",
+    ].join("\n")));
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]!.text).toContain("# still fenced");
+  });
+
+  it("subdivides oversized blocks so a heading-free huge doc never becomes one giant chunk (fix 3)", () => {
+    const sentence = "This corpus sentence carries a fixed amount of retrievable text for the checker probe. ";
+    const monolith = sentence.repeat(120).trim(); // ~10k chars, ONE block, no headings
+    const chunks = structuralChunker.chunk(doc(monolith));
+    expect(chunks.length).toBeGreaterThan(5);
+    for (const chunk of chunks) expect(chunk.text.length).toBeLessThanOrEqual(1200);
+    // Nothing lost: the pieces reassemble the full text.
+    expect(chunks.map((chunk) => chunk.text).join(" ")).toBe(monolith);
+
+    // No sentence boundaries at all → still bounded via hard split.
+    const unbroken = "x".repeat(5000);
+    const hard = structuralChunker.chunk(doc(unbroken));
+    expect(hard.every((chunk) => chunk.text.length <= 1200)).toBe(true);
+    expect(hard.map((chunk) => chunk.text).join("")).toBe(unbroken);
+  });
+
+  it("caps even fenced blocks — nothing is unbounded", () => {
+    const giantFence = ["```", ...Array.from({ length: 400 }, (_, i) => `line ${i} ${"y".repeat(20)}`), "```"].join("\n");
+    const chunks = structuralChunker.chunk(doc(`# Big\n\n${giantFence}`));
+    for (const chunk of chunks) expect(chunk.text.length).toBeLessThanOrEqual(4800);
+    expect(chunks.length).toBeGreaterThan(1);
+  });
+
   it("applies the size budget at blank-line boundaries, keeping fences whole", () => {
     const paragraph = "word ".repeat(100).trim(); // ~500 chars
     const fence = ["```ts", `const x = "${"y".repeat(600)}";`, "", `const z = "${"w".repeat(600)}";`, "```"].join("\n");
