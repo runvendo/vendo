@@ -1048,12 +1048,12 @@ describe("vendo doctor error codes + fix_refs", () => {
     }
   });
 
-  it("reports per-surface ownership with the overrides enablement caveat (#557)", async () => {
+  it("reports per-surface ownership with the overrides enablement note (#557 landed)", async () => {
     const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
     const ownership = report.checks.find((check) => check.id === "config/ownership");
     expect(ownership).toBeDefined();
-    expect(ownership!.message).toContain("#557");
     expect(ownership!.message.toLowerCase()).toContain("enablement");
+    expect(ownership!.message).toContain("boot-once");
   });
 
   // #478 short-term — npm installs the ai@7 peer conflict without failing, the

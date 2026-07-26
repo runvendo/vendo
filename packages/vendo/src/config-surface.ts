@@ -27,18 +27,19 @@ export function isConfigSurface(name: string): name is ConfigSurfaceName {
   return (CONFIG_SURFACES as readonly string[]).includes(name);
 }
 
-/** Safety-UX caveat for the overrides surface (#557): a cloud-published
- * overrides.json currently feeds app GENERATION (field semantics + the domain
- * manifest) only — it does NOT gate tool ENABLEMENT (disabled / audience) at
- * runtime, because the actions registry resolves enablement from the local
- * `.vendo` at compose. So pushing overrides.json to cloud and deleting the
- * local file does NOT disable tools at runtime. Surfaced by `config status`,
- * `config push <overrides>`, and doctor so a host cannot silently lose an
- * intended tool-disable (a security downgrade). */
-export const OVERRIDES_ENABLEMENT_CAVEAT =
-  "Note: hosted overrides.json currently gates app GENERATION (semantics/domains) only, NOT tool enablement "
-  + "(disabled/audience) — pushing it to cloud and deleting the local .vendo/overrides.json does not disable "
-  + "tools at runtime. Keep tool-disable/audience overrides in the local file until this lands (see #557).";
+/** Informational note for the overrides surface (#557, now landed): a
+ * cloud-published overrides.json gates BOTH app GENERATION (field semantics +
+ * the domain manifest) and tool ENABLEMENT (disabled / audience) at runtime.
+ * Enablement resolves boot-once — the actions registry consults the published
+ * overrides on the first request after boot — so pushing overrides.json to
+ * cloud and deleting the local file DOES disable tools at runtime (it applies
+ * on the next restart; app generation picks it up live per generation).
+ * Surfaced by `config status`, `config push <overrides>`, and doctor. */
+export const OVERRIDES_ENABLEMENT_NOTE =
+  "Note: hosted overrides.json gates BOTH app generation (semantics/domains) and tool enablement "
+  + "(disabled/audience) at runtime. Enablement resolves boot-once on the first request, so a console "
+  + "publish (or deleting the local .vendo/overrides.json) applies on the next restart; app generation "
+  + "picks it up live per generation.";
 
 /** Which layer owns a surface's resolved value — surfaced by `vendo config
  * status` and doctor. */

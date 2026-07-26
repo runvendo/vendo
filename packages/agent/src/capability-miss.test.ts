@@ -47,7 +47,7 @@ describe("capability-miss detection", () => {
       guard,
       capabilityMiss: {
         hostId: "host_maple",
-        surface: Promise.resolve(surface),
+        surface: () => Promise.resolve(surface),
         emit: (event) => misses.push(event),
       },
     });
@@ -99,7 +99,7 @@ describe("capability-miss detection", () => {
       guard,
       capabilityMiss: {
         hostId: "host_maple",
-        surface: Promise.resolve(surface),
+        surface: () => Promise.resolve(surface),
         emit: (event) => misses.push(event),
       },
     });
@@ -153,7 +153,7 @@ describe("capability-miss detection", () => {
       guard,
       capabilityMiss: {
         hostId: "host_maple",
-        surface: Promise.resolve(surface),
+        surface: () => Promise.resolve(surface),
         emit: (event) => misses.push(event),
       },
     });

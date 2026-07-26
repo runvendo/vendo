@@ -1821,11 +1821,14 @@ describe("app design rules (spec 2026-07-20)", () => {
     expect(sections.every((section) => section.startsWith("File rules: airy layouts."))).toBe(true);
   });
 
-  it("re-resolves cloud overrides semantics/domains per generation — a cold snapshot that warms is NOT locked (cse lane 3, #557 review)", async () => {
-    // The trap: a local tools.json contributes a DEFINED merge (domains here),
-    // so a boot-once memoize would lock the local-only result on the first
-    // (cold-snapshot) generation and drop cloud-owned overrides for the process
-    // lifetime. Live per-generation resolution picks up cloud on the next gen.
+  it("re-resolves cloud overrides semantics/domains per generation — merged live, not locked (cse lane 3, #557)", async () => {
+    // The trap: memoizing the semantics provider would lock its first result for
+    // the process lifetime. It must re-resolve per generation so both a local
+    // tools.json edit AND the cloud-owned overrides keep applying. NOTE (#557):
+    // enablement now resolves the overrides surface AUTHORITATIVELY on the first
+    // request (the generation's own descriptors() read awaits it), which also
+    // warms the shared config snapshot — so the cloud-owned domains are picked
+    // up as soon as the first generation, no longer only after a cold window.
     const root = await mkdtemp(join(tmpdir(), "vendo-cloud-overrides-"));
     await mkdir(join(root, ".vendo"), { recursive: true });
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
@@ -1842,15 +1845,9 @@ describe("app design rules (spec 2026-07-20)", () => {
     vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
     vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-overrides.test");
     const cloudOverrides = { format: "vendo/overrides@3", tools: {}, domains: { has: ["cloud_ledger"], hasNot: [] } };
-    // Gate the config fetch so the snapshot stays COLD through the first
-    // generation and warms only before the second — a deterministic cold start
-    // (an instant mock would race the generation's own awaits).
-    let releaseFetch = (): void => undefined;
-    const fetchGate = new Promise<void>((resolve) => { releaseFetch = resolve; });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/api/v1/config")) {
-        await fetchGate;
         return Response.json(
           { version: "rel_1", config: { "overrides.json": JSON.stringify(cloudOverrides) } },
           { headers: { etag: '"rel_1"' } },
@@ -1870,21 +1867,146 @@ describe("app design rules (spec 2026-07-20)", () => {
     const domainsLine = (all: string[]): string =>
       all.filter((p) => p.includes("DATA DOMAINS")).join("\n");
 
-    // First generation: cold snapshot (fetch gated) → local-only domains.
+    // First generation: local domains always apply; this generation's own
+    // descriptors() read also resolves the cloud-owned overrides (enablement,
+    // #557) and warms the shared config snapshot for what follows.
     await vendo.apps.create({ prompt: "Build a dashboard" }, ctx);
     expect(domainsLine(prompts)).toContain("local_ledger");
-    expect(domainsLine(prompts)).not.toContain("cloud_ledger");
 
-    // Release the config fetch and let it settle, then generate again.
-    releaseFetch();
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    // Edit the LOCAL tools.json and generate again: the change is reflected,
+    // proving the semantics provider is re-resolved live per generation (not
+    // memoized), and the cloud-owned overrides still merge in.
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [],
+      domains: { has: ["local_ledger_v2"], hasNot: [] },
+    }));
     prompts.length = 0;
     await vendo.apps.create({ prompt: "Build another dashboard" }, ctx);
 
-    // The SECOND generation reflects the cloud-owned overrides — proving the
-    // provider is re-resolved live, not locked on the cold first read.
+    expect(domainsLine(prompts)).toContain("local_ledger_v2");
     expect(domainsLine(prompts)).toContain("cloud_ledger");
-    expect(domainsLine(prompts)).toContain("local_ledger");
+  });
+});
+
+describe("#557 cloud overrides tool ENABLEMENT (disabled/audience)", () => {
+  const toolsFileV3 = (names: string[]) => ({
+    format: "vendo/tools@3",
+    tools: names.map((name) => ({
+      name,
+      description: name,
+      inputSchema: { type: "object" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: `/${name}`, argsIn: "query" },
+    })),
+  });
+  const overridesDoc = (tools: Record<string, unknown>) =>
+    JSON.stringify({ format: "vendo/overrides@3", tools });
+
+  async function composeWithCloud(options: {
+    tools: string[];
+    localOverrides?: unknown;
+    cloudConfigDoc?: Record<string, string> | null;
+    gate?: boolean;
+  }): Promise<{ vendo: Vendo; fetchMock: ReturnType<typeof vi.fn>; releaseFetch: () => void }> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-557-"));
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify(toolsFileV3(options.tools)));
+    if (options.localOverrides !== undefined) {
+      await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(options.localOverrides));
+    }
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    cleanups.push(async () => { process.chdir(originalCwd); await rm(root, { recursive: true, force: true }); });
+
+    vi.stubEnv("E2B_API_KEY", "");
+    vi.stubEnv("VENDO_API_KEY", "vnd_557_key");
+    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-557.test");
+
+    let releaseFetch = (): void => undefined;
+    const gate = new Promise<void>((resolve) => { releaseFetch = resolve; });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/config")) {
+        if (options.gate) await gate;
+        return Response.json(
+          { version: "rel_1", config: options.cloudConfigDoc ?? null },
+          { headers: { etag: '"rel_1"' } },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const store = await tempStore("vendo-557-store-");
+    await store.ensureSchema();
+    // connectors:[] avoids the cloud tools connector's descriptor fetch — the
+    // only config fetch under test is /api/v1/config (the overrides read).
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store, connectors: [] });
+    cleanups.push(async () => { await vendo.store.close(); });
+    return { vendo, fetchMock, releaseFetch };
+  }
+
+  it("constructs with a key WITHOUT any config fetch at compose (deferred missSurface — portability)", async () => {
+    const { fetchMock } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { disabled: true } }) },
+    });
+    // Nothing has served a tool yet, so no compose-time console I/O happened.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a cloud-published overrides.json disabling a tool removes it from the served surface", async () => {
+    const { vendo, fetchMock } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { disabled: true } }) },
+    });
+    const names = (await vendo.actions.descriptors()).map((d) => d.name).filter((n) => n.startsWith("host_")).sort();
+    expect(names).toEqual(["host_a"]);
+    expect(fetchMock).toHaveBeenCalled();
+    const outcome = await vendo.actions.execute({ id: "c1", tool: "host_b", args: {} }, ctx);
+    expect(outcome).toMatchObject({ status: "error", error: { code: "not-found" } });
+  });
+
+  it("NEVER serves a cloud-disabled tool on a cold first load — the first serve AWAITS the overrides fetch", async () => {
+    const { vendo, releaseFetch } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      gate: true,
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { disabled: true } }) },
+    });
+    // The very first serve must not resolve before the cloud overrides fetch
+    // does — no tool is exposed on a cold boot ahead of the override.
+    const pending = vendo.actions.descriptors();
+    const raced = await Promise.race([
+      pending.then(() => "resolved" as const),
+      new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 50)),
+    ]);
+    expect(raced).toBe("pending");
+    releaseFetch();
+    const names = (await pending).map((d) => d.name).filter((n) => n.startsWith("host_")).sort();
+    expect(names).toEqual(["host_a"]); // host_b never became live
+  });
+
+  it("narrows a tool's audience via cloud overrides (default MCP door drops non-end-user tools)", async () => {
+    const { vendo } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { audience: "internal" } }) },
+    });
+    const menu = await vendo.actions.surfaceMenu("mcp");
+    expect(menu).toContain("host_a");
+    expect(menu).not.toContain("host_b");
+  });
+
+  it("a local .vendo/overrides.json wins — enablement is decided from the file, not a cloud fetch", async () => {
+    const { vendo, fetchMock } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      localOverrides: { format: "vendo/overrides@3", tools: { host_a: { disabled: true } } },
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { disabled: true } }) },
+    });
+    const names = (await vendo.actions.descriptors()).map((d) => d.name).filter((n) => n.startsWith("host_")).sort();
+    // The LOCAL file decides (host_a disabled); the cloud doc is not consulted.
+    expect(names).toEqual(["host_b"]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
