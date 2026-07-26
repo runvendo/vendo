@@ -13,8 +13,10 @@ import {
   ingestSources,
   knowledgeConfigSchema,
   knowledgeSourceConfigSchema,
+  lexicalKnowledge,
   type KnowledgeConfig,
 } from "@vendoai/knowledge";
+import { createStore } from "@vendoai/store";
 import { formatTable } from "../cloud/output.js";
 import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
 
@@ -273,37 +275,41 @@ async function runSyncVerb(
     return 0;
   }
 
-  const adapter = options.adapter ?? defaultSyncAdapter();
-  if (adapter === undefined) {
-    failure.failedStep = "no-engine";
-    output.error("vendo knowledge sync: no knowledge engine available — the local lexical engine lands with ENG-363; until then pass options.adapter programmatically");
-    return 1;
+  const resolved = options.adapter === undefined ? await defaultSyncAdapter(dir) : { adapter: options.adapter };
+  const adapter = resolved.adapter;
+  try {
+    if (!adapter.posture.write || adapter.upsert === undefined || adapter.remove === undefined) {
+      failure.failedStep = "read-only-engine";
+      output.error("vendo knowledge sync: the configured engine is read-only (posture.write: false) — sync cannot push documents to it. Point sync at a writable engine or manage this corpus at its source.");
+      return 1;
+    }
+    if (upserts.length > 0) await adapter.upsert(upserts);
+    if (removes.length > 0) await adapter.remove(removes);
+    // Manifest write comes LAST: the engine has confirmed searchability, so a
+    // crash before this line re-syncs the same docs instead of dropping them.
+    await mkdir(join(dir, ".vendo"), { recursive: true });
+    const next: KnowledgeHashManifest = {
+      format: VENDO_KNOWLEDGE_HASH_FORMAT,
+      docs: Object.fromEntries(hashes),
+      updatedAt: new Date().toISOString(),
+    };
+    await writeFile(manifestPath(dir), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    output.log(`Synced: ${upserts.length} upserted, ${removes.length} removed, ${unchanged} unchanged.`);
+    return 0;
+  } finally {
+    await resolved.close?.();
   }
-  if (!adapter.posture.write || adapter.upsert === undefined || adapter.remove === undefined) {
-    failure.failedStep = "read-only-engine";
-    output.error("vendo knowledge sync: the configured engine is read-only (posture.write: false) — sync cannot push documents to it. Point sync at a writable engine or manage this corpus at its source.");
-    return 1;
-  }
-  if (upserts.length > 0) await adapter.upsert(upserts);
-  if (removes.length > 0) await adapter.remove(removes);
-  // Manifest write comes LAST: the engine has confirmed searchability, so a
-  // crash before this line re-syncs the same docs instead of dropping them.
-  await mkdir(join(dir, ".vendo"), { recursive: true });
-  const next: KnowledgeHashManifest = {
-    format: VENDO_KNOWLEDGE_HASH_FORMAT,
-    docs: Object.fromEntries(hashes),
-    updatedAt: new Date().toISOString(),
-  };
-  await writeFile(manifestPath(dir), `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  output.log(`Synced: ${upserts.length} upserted, ${removes.length} removed, ${unchanged} unchanged.`);
-  return 0;
 }
 
-/** The zero-config engine sync targets when none is injected. Lands with the
-    local lexical engine (ENG-363); null object here keeps T2's surface
-    honest — sync fails loudly rather than pretending to push. */
-function defaultSyncAdapter(): KnowledgeAdapter | undefined {
-  return undefined;
+/** The zero-config engine when none is injected: the local lexical engine
+    over the project's local store (`.vendo/data`, the same createStore
+    default the composed server uses when no store is configured — ENG-351
+    single-writer discipline applies, so a running dev server on the same
+    data dir makes this fail loudly rather than corrupt). */
+async function defaultSyncAdapter(dir: string): Promise<{ adapter: KnowledgeAdapter; close?: () => Promise<void> }> {
+  const store = createStore({ dataDir: join(dir, ".vendo", "data") });
+  await store.ensureSchema();
+  return { adapter: lexicalKnowledge({ store }), close: () => store.close() };
 }
 
 export async function runKnowledge(args: string[], options: KnowledgeCliOptions = {}): Promise<number> {
