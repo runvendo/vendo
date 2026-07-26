@@ -23,7 +23,7 @@ import {
   type VendoTheme,
   type WireCompileResult,
 } from "@vendoai/core";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "../pins.js";
 import { createContract } from "./contracts/create.js";
 import { editContract } from "./contracts/edit.js";
@@ -270,6 +270,25 @@ const extractWire = (text: string): string => {
   return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
 };
 
+// Anthropic prompt-caching breakpoint (mirrors packages/agent/src/agent.ts's
+// CACHE_BREAKPOINT). providerOptions.anthropic is ignored by every other
+// provider and by the test mocks, so marking the breakpoint degrades to a
+// no-op off-Anthropic.
+const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } as const;
+
+/** The generation prompt as a two-message model prompt with the stable prefix
+ *  (the contract: role, tree/edit dialect, component catalog, host tool +
+ *  field semantics, design rules) marked cacheable. The system message is the
+ *  END of the stable prefix — identical across back-to-back generations for a
+ *  deployment — so Anthropic re-reads it from cache instead of re-billing it.
+ *  The user message is the per-request variable tail (the request / the app
+ *  being edited / repair issues) and is deliberately left OUT of the cached
+ *  prefix. WHAT the model sees is unchanged — only the prefix is marked. */
+const cacheableGenerationMessages = (system: string, prompt: string): ModelMessage[] => [
+  { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
+  { role: "user", content: prompt },
+];
+
 /** Stream the wire, compiling each accumulated prefix (throttled) into a
  *  valid-while-partial tree for the onPartial seam. */
 const streamWire = async (
@@ -335,8 +354,7 @@ const streamWire = async (
     let streamError: unknown;
     const result = streamText({
       model: deps.model,
-      system,
-      prompt,
+      messages: cacheableGenerationMessages(system, prompt),
       temperature: 0,
       maxRetries: 0,
       onError: ({ error }) => { streamError = error; },
@@ -418,8 +436,7 @@ const generateWireText = async (
     const { streamText } = await import("ai");
     const result = streamText({
       model: deps.model,
-      system,
-      prompt,
+      messages: cacheableGenerationMessages(system, prompt),
       temperature: 0,
       maxRetries: 0,
     });
