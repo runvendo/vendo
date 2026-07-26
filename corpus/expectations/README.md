@@ -103,6 +103,30 @@ the uncertainty in the repo's labeling notes when Task 11 adds real labels.
 Layer 2 scores each dimension as one point. Hex colors compare
 case-insensitively. Radius `8` and `"8px"` are treated as equivalent.
 
+### Known expected-misses (labels stay source-true; not extraction bugs)
+
+These dimensions are labeled from source truth the deterministic
+extractor deliberately cannot reach; a nightly miss here is expected and
+needs no triage (analysis: extraction-quality-1 lane, 2026-07-26):
+
+- **invoify `background` (#f1f5f9):** the token sheet declares
+  `--background: 0 0% 100%` (#ffffff, `app/globals.css:7`) but the app
+  paints `bg-slate-100` on the body of a nested locale layout
+  (`app/[locale]/layout.tsx:90`). The exact read is faithful to the
+  token; overriding exact reads with a nested-layout utility scan would
+  break the exact-read precedence law on one repo's evidence.
+- **umami `radius` (6):** the control radius lives in the vendor package
+  `@umami/react-zen`'s stylesheet, not the host tree; the gatherer
+  deliberately does not chase package CSS (host brand tokens live in the
+  host's own tree). The extractor reports the slot as defaulted —
+  a visible miss, not a silent wrong value.
+- **vercel-commerce `accent` (#000000) and `radius` (8):** the repo has
+  no token sheet; brand evidence lives in utility classes where the
+  primary CTAs are `bg-blue-600` and `rounded-full`. The labels record a
+  monochrome-brand judgment the utilities do not state; no deterministic
+  rule reproduces them without inventing counter-example failures
+  elsewhere.
+
 ## Tools
 
 Derive the expected inventory from the app's source-owned API surface:
