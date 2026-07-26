@@ -432,12 +432,15 @@ function exportedFunctionNode(mod: BoundModule, exportName: string): TS.Node | n
  * the package's VendoRoot. Fails closed when the TypeScript compiler is
  * unavailable.
  *
- * Precision boundary (conductor ruling 2026-07-26): symbol-correct
- * scope-aware resolution is the contract's boundary. Shapes beyond it —
- * eval/require-time indirection, dynamic component maps, runtime
- * re-assignment — are documented limitations of this check, not detected:
+ * Precision boundary (conductor ruling + Yousef ruling, 2026-07-26):
+ * symbol-correct import + nesting + direct JSX usage is the required depth.
+ * Shapes beyond it are documented limitations of this check, not detected —
  * it is a drift detector for honest codebases, not a defense against
- * adversarial hosts. */
+ * adversarial hosts:
+ * - eval/require-time indirection, dynamic component maps, runtime
+ *   re-assignment;
+ * - render-graph reachability: a provider element inside a component that
+ *   is imported but never actually rendered by the route tree. */
 async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layout: string): Promise<boolean> {
   const layoutModule = boundModule(layout, app.layoutRel);
   if (layoutModule === null) return false;

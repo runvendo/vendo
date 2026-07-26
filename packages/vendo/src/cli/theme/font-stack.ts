@@ -21,6 +21,16 @@ import type TS from "typescript";
  * located through the exported config object, never by scanning for a
  * `fontFamily` key anywhere in the file. Anything unprovable — including an
  * unavailable compiler — fails CLOSED to the staged model pass.
+ *
+ * Precision boundary (Yousef ruling 2026-07-26): symbol-correct import +
+ * direct JSX usage is the required depth. Documented limitations, out of
+ * scope by ruling (each fails closed to the model rather than guessing):
+ * - fonts referenced only via non-class JSX attributes (e.g. a style prop
+ *   carrying the variable) are not counted as applied;
+ * - a tailwind-config font stack whose head font is configured but never
+ *   applied in the layout is trusted as declared (no render-graph check);
+ * - require() provenance shadowed through re-exported/aliased intermediate
+ *   modules is not chased past the one declaring statement.
  */
 
 // The TypeScript compiler, resolved lazily through this package's own
