@@ -66,6 +66,32 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "POST", path: "/automations/app_auto/disable" }));
   });
 
+  it("renders a scheduler-refused run as failed with its blocked reason in run history (pricing v3 §5)", async () => {
+    const blockedReason =
+      "blocked by allowance: Vendo Cloud paused automation runs — the allowance for this billing "
+      + "period is used up (resets 2026-08-01). Upgrade your plan (https://console.vendo.run/billing) "
+      + "or bring your own infrastructure (https://docs.vendo.run/byo).";
+    wire.state.runs.push({
+      id: "run_blocked",
+      appId: "app_auto",
+      trigger: { kind: "schedule" },
+      status: "error",
+      startedAt: "2026-07-11T12:00:00.000Z",
+      finishedAt: "2026-07-11T12:00:05.000Z",
+      steps: [],
+      error: { code: "meter-exhausted", message: blockedReason },
+    });
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run history" }));
+    // The refused run reads as a plain failed run: error status row + the
+    // refusal's own code and reason on the run's alert line.
+    const reason = await screen.findByText(`meter-exhausted: ${blockedReason}`);
+    expect(reason.getAttribute("role")).toBe("alert");
+    expect(reason.closest("article")?.textContent).toContain("error");
+  });
+
   it("contains activity wire errors in an alert without an unhandled rejection", async () => {
     const unhandled = vi.fn();
     window.addEventListener("unhandledrejection", unhandled);

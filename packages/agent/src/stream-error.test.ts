@@ -39,6 +39,53 @@ describe("mid-stream turn errors", () => {
     expect(logged.some((args) => String(args[0]).includes("[vendo] turn stream error"))).toBe(true);
   });
 
+  it("the gateway's meter-exhausted 402 travels as OUR crafted refusal sentence (pricing v3 §5)", async () => {
+    // The Cloud model gateway refuses exhausted meters with HTTP 402 and the
+    // structured body; @ai-sdk providers surface that as an APICallError-shaped
+    // throw carrying the raw body — never a VendoError.
+    const { parts, logged } = await streamWithThrowingModel(Object.assign(new Error("Payment Required"), {
+      statusCode: 402,
+      responseBody: JSON.stringify({
+        code: "meter-exhausted",
+        meter: "ai_tokens",
+        used: 1_204_000,
+        limit: 1_000_000,
+        resets_at: "2026-08-01T00:00:00.000Z",
+        reason: "allowance",
+        exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
+      }),
+    }));
+    const errorPart = parts.find((part) => part.type === "error");
+    expect(errorPart?.errorText).toBe(
+      "Vendo: Vendo Cloud paused AI tokens — the allowance for this billing period is used up "
+      + "(1,204,000 of 1,000,000 used; resets 2026-08-01). "
+      + "Upgrade your plan (https://console.vendo.run/billing) "
+      + "or bring your own infrastructure (https://docs.vendo.run/byo). (cloud-required)",
+    );
+    expect(logged.some((args) => String(args[0]).includes("[vendo] turn stream error"))).toBe(true);
+  });
+
+  it("an unknown meter still renders honestly under the raw-id fallback", async () => {
+    const { parts } = await streamWithThrowingModel(Object.assign(new Error("Payment Required"), {
+      statusCode: 402,
+      responseBody: JSON.stringify({ code: "meter-exhausted", meter: "holo_decks" }),
+    }));
+    const errorPart = parts.find((part) => part.type === "error");
+    expect(errorPart?.errorText).toBe(
+      "Vendo: Vendo Cloud paused holo_decks — the allowance for this billing period is used up. "
+      + "Upgrade your plan or bring your own infrastructure. (cloud-required)",
+    );
+  });
+
+  it("a non-refusal 402 body stays the fixed generic string (no raw provider text leaks)", async () => {
+    const { parts } = await streamWithThrowingModel(Object.assign(new Error("Payment Required at key=sk-123"), {
+      statusCode: 402,
+      responseBody: JSON.stringify({ error: { code: "insufficient_quota", message: "internal key=sk-123" } }),
+    }));
+    const errorPart = parts.find((part) => part.type === "error");
+    expect(errorPart?.errorText).toBe("An error occurred while generating the response.");
+  });
+
   it("an unknown error stays the fixed generic string (raw internals never reach the wire) but still logs", async () => {
     const { parts, logged } = await streamWithThrowingModel(new Error("ECONNRESET at https://provider.internal/key=sk-123"));
     const errorPart = parts.find((part) => part.type === "error");

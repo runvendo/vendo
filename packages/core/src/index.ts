@@ -18,6 +18,7 @@ export * from "./jail-modules.js";
 export * from "./jcs.js";
 export * from "./knowledge.js";
 export * from "./knowledge-wire.js";
+export * from "./meter-exhausted.js";
 export * from "./kit/index.js";
 export * from "./principal.js";
 export * from "./reshape.js";
