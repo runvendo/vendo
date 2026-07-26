@@ -443,7 +443,15 @@ export const isDisclaimerOnlyTree = (tree: TreeV2): boolean => {
     if (node === undefined) continue;
     pending.push(...(node.children ?? []));
     if (node.source === "generated" || node.source === "host") return false;
-    if (node.component === "Text" && node.props?.["text"] === DISCLAIMER_TEXT) {
+    // Containment, not equality (review 2026-07-26): repair recompilation
+    // merges adjacent Text nodes, so a disclaimed region can arrive embedded
+    // in a longer string ("Overview\n  This part…"). A merged heading+
+    // disclaimer is still a disclaimer — static copy does not rescue the
+    // tree either way (see doc above) — and equality let exactly those
+    // all-disclaimed builds persist instead of failing with the
+    // host-capability reason.
+    if (node.component === "Text" && typeof node.props?.["text"] === "string"
+      && node.props["text"].includes(DISCLAIMER_TEXT)) {
       disclaimers += 1;
       continue;
     }

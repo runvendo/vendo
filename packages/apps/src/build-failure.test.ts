@@ -261,6 +261,17 @@ describe("isDisclaimerOnlyTree", () => {
     ]))).toBe(true);
   });
 
+  it("a disclaimer MERGED into adjacent copy by the repair recompile still counts (containment, review 2026-07-26)", () => {
+    expect(isDisclaimerOnlyTree(tree([
+      {
+        id: "text-1",
+        component: "Text",
+        source: "prewired",
+        props: { text: `Overview\n    ${DISCLAIMER_TEXT}` },
+      } as TreeV2["nodes"][number],
+    ]))).toBe(true);
+  });
+
   it("a data binding beside a disclaimer is real content — not degenerate", () => {
     expect(isDisclaimerOnlyTree(tree([
       disclaimer("text-1"),
