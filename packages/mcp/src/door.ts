@@ -20,6 +20,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { connectPage } from "./connect-page.js";
 import type { HostOAuthAdapter } from "./oauth/adapter.js";
 import type { AppsPort } from "./apps-port.js";
 import { handleFederation } from "./oauth/federation.js";
@@ -261,6 +262,17 @@ class Door {
         && (this.#config.oauth.authorize !== undefined || this.#config.oauth.session !== undefined)
         ? handleFederation(req, resourceUri(origin, mount), this.#config.federation.secret, this.#config.oauth)
         : notFound();
+    }
+    if (endpoint.kind === "connect") {
+      // The one door page for PEOPLE: no session, no token, nothing a client
+      // could not already read off the public server card.
+      if (req.method !== "GET") return notFound();
+      const identity = await this.#hostIdentity();
+      return connectPage({
+        productName: identity.name,
+        mcpUrl: resourceUri(origin, this.#config.mount ?? mount),
+        ...(this.#config.theme === undefined ? {} : { theme: this.#config.theme }),
+      });
     }
     if (!["GET", "POST", "DELETE"].includes(req.method)) return notFound();
     return this.#handleMcp(req, mount);
@@ -663,7 +675,7 @@ class Door {
 }
 
 function endpointFor(path: string): {
-  kind: "mcp" | "authorize" | "token" | "revoke" | "register" | "federate";
+  kind: "mcp" | "authorize" | "token" | "revoke" | "register" | "federate" | "connect";
   mount: string;
 } {
   for (const [suffix, kind] of [
@@ -672,6 +684,7 @@ function endpointFor(path: string): {
     ["/revoke", "revoke"],
     ["/register", "register"],
     ["/federate", "federate"],
+    ["/connect", "connect"],
   ] as const) {
     if (path.endsWith(suffix)) return { kind, mount: path.slice(0, -suffix.length) };
   }

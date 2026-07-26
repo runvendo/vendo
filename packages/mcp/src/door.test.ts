@@ -1614,6 +1614,52 @@ describe("createMcpDoor MCP protocol", () => {
   });
 });
 
+describe("createMcpDoor connect page", () => {
+  const get = (door: McpDoor, path = `${BASE}/connect`) => door.handler(new Request(path));
+
+  it("serves a themed, unauthenticated page naming the product and the exact MCP URL", async () => {
+    const harness = makeHarness({ theme: MAPLE_THEME, mount: "/api/vendo/mcp" });
+    const response = await get(harness.door);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    const html = await response.text();
+
+    // The URL a client must paste — absolute, and the door's real mount.
+    expect(html).toContain("https://product.example/api/vendo/mcp");
+    // Host identity, and the theme applied as --vendo-* variables like consent.
+    expect(html).toContain("--vendo-color-accent:#0A7CFF");
+    expect(html).toContain("Maple Sans");
+    // No session was consulted to render it.
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("gives working per-client instructions for Claude, ChatGPT, and Cursor", async () => {
+    const html = await (await get(makeHarness().door)).text();
+    expect(html).toContain("Claude");
+    expect(html).toContain("Connectors");
+    expect(html).toContain("ChatGPT");
+    expect(html).toContain("developer mode");
+    expect(html).toContain("Cursor");
+    // A real one-click Cursor deeplink: base64 of {"url":"<mcp url>"}.
+    const config = Buffer.from(JSON.stringify({ url: "https://product.example/api/vendo/mcp" })).toString("base64");
+    expect(html).toContain("cursor://anysphere.cursor-deeplink/mcp/install");
+    expect(html).toContain(encodeURIComponent(config));
+  });
+
+  it("carries the same locked-down CSP posture as the consent page, and no script at all", async () => {
+    const response = await get(makeHarness().door);
+    const csp = response.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).not.toContain("script-src");
+    expect(await response.text()).not.toContain("<script");
+  });
+
+  it("is GET-only and 404s every other method", async () => {
+    const response = await makeHarness().door.handler(new Request(`${BASE}/connect`, { method: "POST" }));
+    expect(response.status).toBe(404);
+  });
+});
+
 describe("createMcpDoor tool menu, titles, and annotations", () => {
   const surfaceDescriptors = [
     { name: "host_pay", description: "Pay a payee", inputSchema: { type: "object" }, risk: "write" as const, title: "Send payment" },
