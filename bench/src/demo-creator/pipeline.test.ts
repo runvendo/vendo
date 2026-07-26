@@ -104,6 +104,23 @@ function stubStages(repoRoot: string, overrides: Partial<PipelineStages> = {}): 
         fonts: { families: [], faceSrcs: [], webfontLinks: [] },
       },
     })),
+    rewrite: vi.fn(async (_args, io) => {
+      // Exercise the pipeline's stage runner passthrough like the real
+      // rewrite does for its substages.
+      await io.runStage?.("rewrite:agents", async () => undefined);
+      return {
+        plan: {
+          entity: { name: "Issue", stem: "issues", action: "closeIssue", fields: [], sampleRecordNames: ["x"] },
+          screens: [{ slug: "board", route: "/", title: "Board", purpose: "clone" }],
+          nav: ["Inbox"],
+          copyTone: "terse",
+        },
+        agents: [],
+        fencedViolations: [],
+        buildRounds: 1,
+        costUsd: 0,
+      };
+    }),
     ...overrides,
   };
 }
@@ -151,6 +168,21 @@ describe("runDemoPipeline", () => {
     expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(false);
   });
 
+  it("keeps the app dir when the rewrite fails — evidence for the park report", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot, {
+      rewrite: vi.fn(async () => { throw new Error("2 rewrite agent(s) failed"); }),
+    });
+    await expect(runDemoPipeline(pipelineArgs, {
+      repoRoot,
+      stages,
+      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      write: () => {},
+    })).rejects.toThrow("rewrite agent(s) failed");
+    expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(true);
+  });
+
   it("writes per-stage timings and one-line progress markers", async () => {
     const repoRoot = await makeRepoRoot();
     const stages = stubStages(repoRoot);
@@ -164,7 +196,7 @@ describe("runDemoPipeline", () => {
     });
     const timings = JSON.parse(await readFile(path.join(result.appDir, "timings.json"), "utf8"));
     expect(timings.map((row: { stage: string }) => row.stage))
-      .toEqual(["validate", "create", "install", "research"]);
+      .toEqual(["validate", "create", "install", "research", "rewrite:agents"]);
     for (const row of timings) {
       expect(row).toMatchObject({
         stage: expect.any(String),

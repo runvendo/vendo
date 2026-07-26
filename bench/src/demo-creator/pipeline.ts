@@ -5,6 +5,7 @@ import { performance } from "node:perf_hooks";
 import { runDemoCreate, type DemoCreateArgs, type DemoCreateResult } from "./create.js";
 import { defaultExec, type ExecFn } from "./deploy.js";
 import { runDemoResearch, type DemoResearchArgs, type DemoResearchResult } from "./research.js";
+import { runRewrite, type RewriteArgs, type RewriteIo, type RewriteResult } from "./rewrite.js";
 
 /**
  * `demo:pipeline` — the one-command drive of the whole demo-creator flow:
@@ -122,11 +123,13 @@ export interface StageTiming {
 export interface PipelineStages {
   create: (args: DemoCreateArgs, options: { repoRoot: string }) => Promise<DemoCreateResult>;
   research: (args: DemoResearchArgs, options: { repoRoot: string }) => Promise<DemoResearchResult>;
+  rewrite: (args: RewriteArgs, io: RewriteIo) => Promise<RewriteResult>;
 }
 
 const defaultStages: PipelineStages = {
   create: runDemoCreate,
   research: runDemoResearch,
+  rewrite: runRewrite,
 };
 
 export interface PipelineIo {
@@ -141,6 +144,7 @@ export interface DemoPipelineResult {
   appDir: string;
   appPath: string;
   timings: StageTiming[];
+  rewrite: RewriteResult;
 }
 
 export function timingsPath(appDir: string): string {
@@ -154,6 +158,10 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
 
   const timings: StageTiming[] = [];
   let appDir: string | undefined;
+  // Failures in create/install/research abort clean (nothing worth keeping);
+  // once the creative rewrite starts, the evidence trail is the point — later
+  // failures leave the app dir in place for the park report.
+  let cleanupOnAbort = true;
 
   const stage = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
     const startedAt = new Date().toISOString();
@@ -198,11 +206,23 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       { repoRoot: io.repoRoot },
     ));
 
-    return { appDir, appPath: path.relative(io.repoRoot, appDir), timings };
+    cleanupOnAbort = false;
+    const rewrite = await stages.rewrite(
+      { prospect: args.prospect, url: args.url, packageName: created.packageName },
+      {
+        repoRoot: io.repoRoot,
+        appDir,
+        write,
+        runStage: stage,
+        ...(io.exec === undefined ? {} : { exec: io.exec }),
+      },
+    );
+
+    return { appDir, appPath: path.relative(io.repoRoot, appDir), timings, rewrite };
   } catch (error) {
     // Early-stage abort keeps the repo pristine. Later stages (rewrite, judge,
-    // deploy, gate) park WITH evidence instead — they must not land here.
-    if (appDir !== undefined) {
+    // deploy, gate) park WITH evidence instead — the app dir stays.
+    if (appDir !== undefined && cleanupOnAbort) {
       await rm(appDir, { recursive: true, force: true }).catch(() => undefined);
     }
     throw error;
