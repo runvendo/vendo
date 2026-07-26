@@ -52,7 +52,7 @@ export const vendo = createVendo({
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     // demo-refresh Part 5 — the full v4 generation pipeline.
     pipeline: {
-      promptRewrite: true,
+      exemplarContract: true,
       structuredRepair: true,
       regionParallel: true,
       endPass: true,

@@ -32,7 +32,7 @@ export const vendo = createVendo({
   apps: {
     // demo-refresh Part 5 — the full v4 generation pipeline.
     pipeline: {
-      promptRewrite: true,
+      exemplarContract: true,
       structuredRepair: true,
       regionParallel: true,
       endPass: true,
