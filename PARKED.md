@@ -120,3 +120,111 @@ evidence. Stays a documented limitation, recorded in
 corpus/expectations/invoify/notes.md so the nightly reader stops
 counting it as a surprise. The expected value was NOT edited — #f1f5f9
 is the source-true rendered background.
+
+---
+
+# PARKED — video-system harness (lane: factory/video-harness)
+
+Two genuine conflicts between the contract's amendment A2 ("zero visual
+imitations — every agent-surface element must be the actual component") and
+its pinned CANON motion / its own task-3 wording. Both are parked rather
+than faked, and both have a reversible default in place so the lane could
+continue.
+
+## P1 — the real overlay panel shell cannot host the film's pinned geometry
+
+**What is real anyway:** every message, the `Sources` citation row, the
+in-thread app card and the generated view ARE the real components
+(`packages/ui/src/chrome/thread/message.tsx`, `.../turn-citations.tsx`,
+`.../parts.tsx` → `packages/ui/src/tree/renderer.tsx`), mounted on the real
+`VendoProvider` + `ChromeRoot`, inside the real `.fl-thread`/`.fl-msglist`
+containers. What is NOT real is the rounded panel *frame* around them and
+its "Assistant" header row, which the film draws.
+
+**Why the real one cannot be used.** The product's panel is `VendoOverlay`
+→ `.fl-overlay-panel`. Command:
+
+    grep -n "^\.fl-overlay-panel { position: fixed" -A 7 \
+      packages/ui/src/chrome/chrome-css.ts
+
+Output (chrome-css.ts:1021-1028):
+
+    .fl-overlay-panel { position: fixed; left: 50%; top: 50%;
+      transform: translate(-50%, -50%); z-index: 2147483001;
+      width: min(620px, 94vw); height: min(680px, 86vh); ...
+      transform-origin: center;
+      animation: fl-overlay-stretch .5s cubic-bezier(.22, 1.2, .36, 1) both; }
+
+Three blockers, each independently fatal for this film:
+
+1. `position: fixed` at 50%/50% with `width: min(620px, 94vw)` /
+   `height: min(680px, 86vh)` pins it to 620x680 dead-centre. The film's
+   panel is 1120x860 at (400, 110) — `CARD` in
+   `tools/video-studio/src/template/chatShared.ts`. Those coordinates are
+   not decoration: `OrbWhip` match-cuts the agent orb into the header dot
+   at `DOT`, and `WidgetFlight` picks the view up from `WIDGET`, both
+   derived from `CARD`. The contract pins those transitions as CANON and
+   forbids redesigning the motion.
+2. `animation: fl-overlay-stretch .5s` is a wall-clock CSS animation.
+   Remotion steps frames; wall-clock animation makes the render
+   non-reproducible. (The film disables the components' other motion via
+   `motion: "reduced"`, but a keyframe `animation` is not covered by
+   `--vendo-motion-duration`.)
+3. `z-index: 2147483001` would paint the panel above the detonation, the
+   orb whip and the widget flight — every overlay the film depends on.
+
+Overriding all three would mean restyling the real component until nothing
+of its own layout survived, which is a fake wearing the component's name.
+
+**Default taken (reversible):** the panel frame and its header row are film
+grammar — `PanelHeader` in `tools/video-studio/src/scenes/SceneChat.tsx`,
+~25 lines — and everything inside it is the real agent surface. Reversible
+because the day `VendoOverlay` grows a positioning/geometry seam (or a
+`static` variant), the frame swaps out without touching the scene's motion.
+
+## P2 — Cadence's own components are Next.js-coupled and cannot mount in Remotion
+
+Contract task 3 says to import real `apps/demo-accounting` components "if
+importable into the studio without hacks; else compose from packages/ui
+primitives + the Cadence design tokens". This records which branch each
+component landed on and why. Command:
+
+    grep -rn "from \"next/" apps/demo-accounting/src/components/
+
+Output:
+
+    clients/client-table.tsx:4:   import Link from "next/link"
+    clients/client-table.tsx:5:   import { useRouter, useSearchParams } from "next/navigation"
+    clients/client-detail.tsx:3:  import Link from "next/link"
+    shell/topbar.tsx:4:           import { useRouter } from "next/navigation"
+    shell/sidebar.tsx:3:          import Link from "next/link"
+    shell/sidebar.tsx:4:          import { usePathname } from "next/navigation"
+    shell/app-shell.tsx:1:        import { headers } from "next/headers"
+    vendo/VendoLayer.tsx:4:       import { usePathname, useRouter } from "next/navigation";
+    dashboard/deadline-list.tsx:3:import Link from "next/link"
+
+`app-shell.tsx` is additionally an async server component. Mounting these
+would mean aliasing `next/link`, `next/navigation` and `next/headers` to
+studio stubs — the "hacks" branch the contract rules out. A second blocker
+is styling: Cadence is Tailwind v4 CSS-first with **no config file**
+(`apps/demo-accounting/postcss.config.mjs` is the whole build), so every
+one of these components is a bag of utility classes that resolve only
+through Cadence's own PostCSS pipeline, which Remotion does not run. A
+third: `stat-row`, `deadline-list`, `activity-feed`, `client-panel` are all
+`useSWR` + relative `fetch`, so in the studio they would render their
+skeletons forever — and the contract forbids network calls in compositions.
+
+**Default taken (the contract's own "else" branch):**
+- `MissingDocsHero` IS imported for real — it is pure React with inline
+  styles and zero imports, so it mounts unchanged. See the import at
+  `tools/video-studio/src/scenes/SceneProofC.tsx`.
+- The rest of the console is composed from
+  `tools/video-studio/src/cadence/tokens.ts`, which quotes Cadence's own
+  `src/app/globals.css` `@theme` blocks and `.vendo/theme.json` verbatim —
+  real tokens, not eyeballed values — plus the host's real nav labels, firm
+  name, season and seeded client/activity copy.
+
+Note the asymmetry with A2 deliberately: A2's "zero imitations" law is
+scoped to the *agent surface* (task 2), where the contract demands real
+components unconditionally and where they are used. Task 3 explicitly
+authorises token-composition for host chrome.
