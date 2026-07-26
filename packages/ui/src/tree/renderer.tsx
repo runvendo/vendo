@@ -150,6 +150,12 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
 function VendoTreeV2Renderer({ payload, ...props }: PayloadRendererProps) {
   const converted = useMemo(() => convertV2Payload(payload), [payload]);
   if (!converted.ok) {
+    // A mid-stream partial legitimately passes through shapes the validator
+    // has not admitted yet — hold the forming skeleton; the notice is a
+    // verdict reserved for FINAL payloads.
+    if ((payload as { streaming?: unknown }).streaming === true) {
+      return <FormingSkeleton name="StreamingTree" />;
+    }
     return (
       <ContainedNotice label="Invalid UI tree" code={converted.error.code}>
         {`${converted.error.code}: ${converted.error.message}`}
@@ -257,12 +263,17 @@ function bindProps(
 }
 
 /** v2 spec §3 — the contained data-shape notice: the region says the data
- *  didn't match instead of mounting the component with garbage props. */
-const dataShapeNotice = (mismatch: string): ReactNode => (
-  <ContainedNotice label="Data shape">
-    {`The data didn't match this component's binding — ${mismatch}.`}
-  </ContainedNotice>
-);
+ *  didn't match instead of mounting the component with garbage props. While
+ *  the payload is a mid-stream partial the mismatch is a transient (the
+ *  binding may still be rewritten before ship), so the region holds the
+ *  forming skeleton instead — the notice is a verdict for FINAL payloads. */
+const dataShapeNotice = (mismatch: string, streaming: boolean, name: string): ReactNode => streaming
+  ? <FormingSkeleton name={name} />
+  : (
+    <ContainedNotice label="Data shape">
+      {`The data didn't match this component's binding — ${mismatch}.`}
+    </ContainedNotice>
+  );
 
 function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
   if (!outcome || outcome.status === "ok") return null;
@@ -369,7 +380,7 @@ function NodeRenderer(props: NodeRendererProps) {
   ancestry.add(node.id);
   const invoke = (action: string, payload?: Json) => props.runAction(node.id, action, payload);
   const children = node.children?.map((childId) => (
-    <NodeErrorBoundary key={childId} nodeId={childId} retryKey={props.data}>
+    <NodeErrorBoundary key={childId} nodeId={childId} retryKey={props.data} streaming={props.streaming}>
       <NodeRenderer {...props} nodeId={childId} ancestry={ancestry} />
     </NodeErrorBoundary>
   ));
@@ -403,7 +414,7 @@ function NodeRenderer(props: NodeRendererProps) {
       // Reshape mismatches are mode-independent, so both binds report the same one.
       const mismatch = hostBind.mismatch;
       if (mismatch !== null) {
-        content = <>{dataShapeNotice(mismatch)}{children}</>;
+        content = <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>;
       } else {
         const jailFallback = (
           <JailedComponent
@@ -413,6 +424,7 @@ function NodeRenderer(props: NodeRendererProps) {
             furnishing={props.furnishings[node.component]}
             themeVars={props.themeVars}
             toolManifest={toolManifest}
+            streaming={props.streaming}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
@@ -434,7 +446,7 @@ function NodeRenderer(props: NodeRendererProps) {
       }
     } else {
       const { bound, mismatch } = bindProps(node.props, "jail", props.data, props.state, invoke);
-      content = mismatch !== null ? <>{dataShapeNotice(mismatch)}{children}</> : (
+      content = mismatch !== null ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</> : (
         <>
           <JailedComponent
             name={node.component}
@@ -443,6 +455,7 @@ function NodeRenderer(props: NodeRendererProps) {
             furnishing={props.furnishings[node.component]}
             themeVars={props.themeVars}
             toolManifest={toolManifest}
+            streaming={props.streaming}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
@@ -475,7 +488,14 @@ function NodeRenderer(props: NodeRendererProps) {
     // primitive-first order.
     const Implementation = node.source === "host" ? host ?? primitive : primitive ?? host;
     if (!Implementation) {
-      content = (
+      // Mid-stream, an unresolved name is a transient (the defining island or
+      // a corrected reference may still arrive) — hold the silhouette; the
+      // notice is a verdict for FINAL payloads.
+      content = props.streaming ? (
+        <span data-streaming-component={node.component} style={{ display: "block", width: "100%" }}>
+          <FormingSkeleton name={node.component} />
+        </span>
+      ) : (
         <ContainedNotice label="Unknown component">
           {`Unknown component "${node.component}".`}
         </ContainedNotice>
@@ -486,7 +506,7 @@ function NodeRenderer(props: NodeRendererProps) {
       // a container (Stack/Grid) with one bad prop must not swallow its valid
       // children (same containment scope as the generated paths above).
       content = mismatch !== null
-        ? <>{dataShapeNotice(mismatch)}{children}</>
+        ? <>{dataShapeNotice(mismatch, props.streaming, node.component)}{children}</>
         : <Implementation {...bound}>{children}</Implementation>;
     }
   }
@@ -585,6 +605,12 @@ function StatefulTreeView({
   }
 
   if (!hasRenderableTreeContent(validation.tree)) {
+    // A partial stream legitimately passes through content-less shapes on its
+    // way to the full tree — hold a quiet skeleton; the notice is a verdict
+    // reserved for FINAL payloads.
+    if (streaming) {
+      return <FormingSkeleton name="StreamingTree" />;
+    }
     return (
       <ContainedNotice label="Empty UI tree">
         The app view has no renderable content.
@@ -614,7 +640,7 @@ function StatefulTreeView({
     : null;
 
   return (
-    <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data}>
+    <NodeErrorBoundary nodeId={validation.tree.root} retryKey={data ?? validation.tree.data} streaming={streaming}>
       {dropBackNotice}
       {driftNotice}
       <NodeRenderer

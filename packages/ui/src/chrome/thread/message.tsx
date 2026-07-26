@@ -1,41 +1,16 @@
 import type { RiskLabel } from "@vendoai/core";
-import { isToolUIPart, type UIMessage } from "ai";
+import { type UIMessage } from "ai";
 import { Fragment } from "react";
-import { useVendoContext } from "../../context.js";
 import { useCopyFeedback } from "../clipboard.js";
-import { toolTitle } from "../humanize.js";
 import { SentAttachment, type FilePart } from "./attachments.js";
-import { assistantText, collapseToolRuns, toolName, userText } from "./message-data.js";
+import { assistantText, collapseToolRuns, userText } from "./message-data.js";
 import { ThreadPart } from "./parts.js";
 
-/** Lane pick 8C — the settled turn's quiet sources row: every completed tool
-    call the turn drew on, as informational chips ("what did it read?"). The
-    full mechanical record stays in the Activity panel; these are the in-place
-    scent. Only read-risk calls qualify — writes are actions, not sources. */
-function TurnSources({ message, risks }: { message: UIMessage; risks: Map<string, RiskLabel> }) {
-  const { tools } = useVendoContext();
-  // Identical repeated calls collapse to one chip with a ×N count — the same
-  // ENG-216 run-collapse identity (name + args) the old beat stack used.
-  const sources = collapseToolRuns(message.parts).filter(({ part }) =>
-    isToolUIPart(part) && part.state === "output-available"
-    && (risks.get(part.toolCallId) ?? "read") === "read");
-  if (sources.length === 0) return null;
-  return (
-    <div className="fl-sources" aria-label="Sources">
-      {sources.map(({ part, count }) => {
-        const toolPart = part as Extract<UIMessage["parts"][number], { toolCallId: string }>;
-        const name = toolName(toolPart);
-        return (
-          <span className="fl-source" key={toolPart.toolCallId} title="Recorded in Activity">
-            <i aria-hidden="true" />
-            {toolTitle(name, tools[name])}
-            {count > 1 ? <span className="fl-source-count" aria-label={`repeated ${count} times`}>×{count}</span> : null}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
+// 2026-07 demo feedback — the settled turn's "sources" chip row (lane pick 8C)
+// is GONE: the little read-call pills under assistant messages read as clutter
+// and duplicated the Activity panel, which remains the mechanical record.
+// Settled tool calls now leave no transcript trace at all (parts.tsx renders
+// only errored calls; live progress narrates in the status ribbon).
 
 /** ENG-225 — the copy turn action (.fl-turn-actions design). */
 function CopyTurnButton({ text }: { text: string }) {
@@ -60,7 +35,7 @@ function CopyTurnButton({ text }: { text: string }) {
     (ENG-225), the article with its stream parts, and the settled-turn
     actions (Copy always; Edit on the last user turn, Regenerate on the
     last assistant turn — ENG-215). */
-export function ThreadMessage({ message, restored, risks, busy, activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast }: {
+export function ThreadMessage({ message, restored, risks, busy, activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast, sendMessage }: {
   message: UIMessage;
   restored: boolean;
   risks: Map<string, RiskLabel>;
@@ -70,6 +45,8 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
   lastAssistantId?: string | undefined;
   onEditLast: () => void;
   onRegenerateLast: () => void;
+  /** The thread's send — connect cards use it for the post-connect continuation. */
+  sendMessage?: (message: { text: string }) => unknown;
 }) {
   // ENG-225 — a user turn's attachments render BESIDE the bubble
   // (the designed .fl-turn-user-att block), not inside it; a
@@ -111,11 +88,12 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
               restored={restored}
               count={count}
               risks={risks}
+              // A connect ask is actionable only in the LATEST assistant turn;
+              // older cards settle into the Connected record (or nothing).
+              connectLive={message.role === "assistant" && message.id === lastAssistantId}
+              sendMessage={sendMessage}
             />
           ))}
-          {!streamingTurn && message.role === "assistant" ? (
-            <TurnSources message={message} risks={risks} />
-          ) : null}
           {showActions ? (
             <div className="fl-turn-actions">
               {bubbleText.length > 0 ? <CopyTurnButton text={bubbleText} /> : null}

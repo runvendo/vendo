@@ -65,6 +65,68 @@ describe("VendoThread and VendoOverlay exports", () => {
     });
   });
 
+  // Demo-latency lane — the observed dead-air class: the agent streams a
+  // couple of prose paragraphs, THEN works through host tools. The old gate
+  // (`busy && !assistantHasVisibleText`) hid the ribbon the moment any text
+  // existed, so the thread showed nothing while tools ran. A running call must
+  // keep a live activity row (humanized name + clock) whatever text precedes it.
+  it("keeps the status ribbon narrating a running tool call after text has streamed", { timeout: 20_000 }, async () => {
+    let release = () => undefined;
+    wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    expect(await screen.findByText("Existing thread")).toBeTruthy();
+
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(composer, { target: { value: "[tool-after-text] build it" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+
+    // The prose landed…
+    expect(await screen.findByText(/Here is the plan/)).toBeTruthy();
+    // …and the RUNNING tool call still narrates on the ribbon (not dead air).
+    await waitFor(() => {
+      const ribbon = document.querySelector("[data-vendo-tool='host_list_transactions']");
+      expect(ribbon).toBeTruthy();
+      expect(ribbon?.classList.contains("fl-ribbon")).toBe(true);
+      expect(ribbon?.textContent).toContain("List transactions");
+    });
+
+    await act(async () => release());
+    expect(await screen.findByText("All done.")).toBeTruthy();
+    // The settled turn drops the ribbon (no stale "running" affordance).
+    await waitFor(() => expect(document.querySelector(".fl-ribbon")).toBeNull());
+  });
+
+  // 2026-07 loading-state audit — the remaining dead-air class: prose has
+  // streamed AND the turn's tool calls have all SETTLED, but the turn is still
+  // busy (the model deciding its next step). No live part → no StatusRibbon;
+  // no streaming text → no caret; text exists → no FluidThinking. The quiet
+  // Working ribbon must hold that moment, then stand down when text resumes.
+  it("shows the Working ribbon in the settled-tools busy gap and drops it when the turn closes", { timeout: 20_000 }, async () => {
+    let release = () => undefined;
+    wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    expect(await screen.findByText("Existing thread")).toBeTruthy();
+
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(composer, { target: { value: "[settled-gap] build it" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+
+    // The prose landed and the tool settled…
+    expect(await screen.findByText(/Here is the plan/)).toBeTruthy();
+    // …and the busy gap narrates through the generic Working ribbon.
+    await waitFor(() => {
+      const working = document.querySelector(".fl-ribbon--working");
+      expect(working).toBeTruthy();
+      expect(working?.textContent).toContain("Working");
+    });
+    // No stale tool ribbon poses as running (the call already settled).
+    expect(document.querySelector("[data-vendo-tool='host_list_transactions']")).toBeNull();
+
+    await act(async () => release());
+    expect(await screen.findByText("All done.")).toBeTruthy();
+    await waitFor(() => expect(document.querySelector(".fl-ribbon--working")).toBeNull());
+  });
+
   it("opens as a modal, traps focus, closes on Escape, and restores launcher focus", async () => {
     render(<VendoProvider client={client}><VendoOverlay /></VendoProvider>);
     const launcher = screen.getByRole("button", { name: "AI agent" });
@@ -78,9 +140,10 @@ describe("VendoThread and VendoOverlay exports", () => {
     expect(launcher.getAttribute("aria-expanded")).toBe("true");
 
     // Tab from the last focusable (the composer) wraps to the first — the
-    // new-conversation header button (ENG-221), which precedes the close X.
+    // expand-workspace header button (split view, 2026-07), which precedes
+    // new-conversation and the close X.
     fireEvent.keyDown(dialog, { key: "Tab" });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "New conversation" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Expand workspace" }));
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(textarea);
     expect(close).toBeTruthy(); // still present, after the new-conversation affordance
