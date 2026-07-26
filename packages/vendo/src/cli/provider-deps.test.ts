@@ -46,9 +46,32 @@ describe("providerModuleFor", () => {
 describe("installCommandFor", () => {
   it("sniffs the lockfile, npm as the fallback", async () => {
     const root = await tempRoot();
-    expect(await installCommandFor(root)).toEqual({ command: "npm", args: ["install"] });
+    expect(await installCommandFor(root)).toEqual({ command: "npm", args: ["install"], cwd: root });
     await writeFile(join(root, "pnpm-lock.yaml"), "");
-    expect(await installCommandFor(root)).toEqual({ command: "pnpm", args: ["add"] });
+    expect(await installCommandFor(root)).toEqual({ command: "pnpm", args: ["add"], cwd: root });
+  });
+
+  it("walks up to the workspace's pnpm marker from a nested app dir", async () => {
+    // A nested workspace app has no lockfile of its own; sniffing only the
+    // app dir used to fall back to npm and mint a conflicting package-lock.
+    const workspace = await tempRoot();
+    await writeFile(join(workspace, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    await writeFile(join(workspace, "pnpm-lock.yaml"), "");
+    const app = join(workspace, "apps", "web");
+    await mkdir(app, { recursive: true });
+    expect(await installCommandFor(app)).toEqual({ command: "pnpm", args: ["add"], cwd: app });
+  });
+
+  it("targets a nested npm-workspace app from the lockfile root", async () => {
+    const workspace = await tempRoot();
+    await writeFile(join(workspace, "package-lock.json"), "{}");
+    const app = join(workspace, "apps", "web");
+    await mkdir(app, { recursive: true });
+    expect(await installCommandFor(app)).toEqual({
+      command: "npm",
+      args: ["install", "--workspace", join("apps", "web")],
+      cwd: workspace,
+    });
   });
 });
 
@@ -273,5 +296,53 @@ describe("ensureZodFloor", () => {
     });
     expect(messages.errors.join("\n")).toContain(`npm install ${ZOD_FLOOR_SPEC}`);
     expect(messages.errors.join("\n")).toContain("E-DEP-003");
+  });
+});
+
+describe("ensureZodFloor in a hoisted workspace (checker round 1)", () => {
+  /** pnpm workspace root hoisting zod@3.23.8, app nested with no
+      node_modules or lockfile of its own — where most real hosts live. */
+  async function hoistedWorkspaceApp(): Promise<{ workspace: string; app: string }> {
+    const workspace = await tempRoot();
+    await writeFile(join(workspace, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    await writeFile(join(workspace, "pnpm-lock.yaml"), "");
+    await installZodVersion(workspace, "3.23.8");
+    const app = join(workspace, "apps", "web");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "web", dependencies: { zod: "^3.23.8" } }));
+    return { workspace, app };
+  }
+
+  it("detects the hoisted zod and prints the workspace's pnpm command, never npm", async () => {
+    const { app } = await hoistedWorkspaceApp();
+    const calls: unknown[] = [];
+    const messages = output();
+    await ensureZodFloor({
+      root: app,
+      output: messages.sink,
+      run: async (...call) => {
+        calls.push(call);
+        return 0;
+      },
+    });
+    expect(calls).toEqual([]);
+    expect(messages.errors.join("\n")).toContain("zod@3.23.8");
+    expect(messages.errors.join("\n")).toContain("pnpm add zod@^3.25.0");
+    expect(messages.errors.join("\n")).not.toContain("npm install");
+  });
+
+  it("performs the --yes bump with the workspace's package manager from the app dir", async () => {
+    const { app } = await hoistedWorkspaceApp();
+    const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
+    await ensureZodFloor({
+      root: app,
+      output: output().sink,
+      yes: true,
+      run: async (command, args, cwd) => {
+        calls.push({ command, args, cwd });
+        return 0;
+      },
+    });
+    expect(calls).toEqual([{ command: "pnpm", args: ["add", ZOD_FLOOR_SPEC], cwd: app }]);
   });
 });

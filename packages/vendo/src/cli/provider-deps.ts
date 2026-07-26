@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import type { DevCredential, EnvKeyProvider } from "../dev-creds/resolve.js";
 import { installedZodVersion } from "./dep-versions.js";
 import type { Output } from "./shared.js";
@@ -51,14 +51,52 @@ async function fileExists(root: string, name: string): Promise<boolean> {
   }
 }
 
-/** Lockfile-sniffed installer; npm is the fallback. */
-export async function installCommandFor(root: string): Promise<{ command: string; args: string[] }> {
-  if (await fileExists(root, "pnpm-lock.yaml")) return { command: "pnpm", args: ["add"] };
-  if (await fileExists(root, "yarn.lock")) return { command: "yarn", args: ["add"] };
-  if ((await fileExists(root, "bun.lockb")) || (await fileExists(root, "bun.lock"))) {
-    return { command: "bun", args: ["add"] };
+export interface InstallCommand {
+  command: string;
+  args: string[];
+  /** Where to run it. The app dir for pnpm/yarn/bun (they locate their own
+      workspace root); the lockfile root for a nested npm-workspace app. */
+  cwd: string;
+}
+
+/** Lockfile-sniffed installer, resolved the way package managers resolve
+    their own root: walk UP from the app dir to the NEAREST lockfile or
+    workspace marker. A nested workspace app usually carries neither in its
+    own dir — sniffing only there fell back to npm and the printed/run
+    command would mint a conflicting package-lock.json inside the app.
+    npm stays the no-evidence fallback. */
+export async function installCommandFor(root: string): Promise<InstallCommand> {
+  const appRoot = resolve(root);
+  for (let dir = appRoot; ; dir = dirname(dir)) {
+    if ((await fileExists(dir, "pnpm-lock.yaml")) || (await fileExists(dir, "pnpm-workspace.yaml"))) {
+      return { command: "pnpm", args: ["add"], cwd: appRoot };
+    }
+    if (await fileExists(dir, "yarn.lock")) return { command: "yarn", args: ["add"], cwd: appRoot };
+    if ((await fileExists(dir, "bun.lockb")) || (await fileExists(dir, "bun.lock"))) {
+      return { command: "bun", args: ["add"], cwd: appRoot };
+    }
+    if (await fileExists(dir, "package-lock.json")) {
+      // npm workspaces: install from the lockfile root targeting the app
+      // package, or npm writes a second, conflicting lockfile in the app dir.
+      return dir === appRoot
+        ? { command: "npm", args: ["install"], cwd: appRoot }
+        : { command: "npm", args: ["install", "--workspace", relative(dir, appRoot)], cwd: dir };
+    }
+    if (dirname(dir) === dir) return { command: "npm", args: ["install"], cwd: appRoot };
   }
-  return { command: "npm", args: ["install"] };
+}
+
+/** The exact command line a human can paste — prefixed with a `cd` when the
+    install must run somewhere other than the app dir. */
+function invocationFor(install: InstallCommand, specs: string[], appRoot: string): string {
+  const line = `${install.command} ${[...install.args, ...specs].join(" ")}`;
+  return resolve(install.cwd) === resolve(appRoot) ? line : `(cd ${install.cwd} && ${line})`;
+}
+
+/** The paste-ready zod bump for this host's package manager and workspace
+    shape — shared by init's print path and doctor's E-DEP-003 story. */
+export async function zodBumpInvocation(root: string): Promise<string> {
+  return invocationFor(await installCommandFor(root), [ZOD_FLOOR_SPEC], root);
 }
 
 /** Test seam: resolves to the child's exit code (null on spawn error). */
@@ -102,10 +140,10 @@ export async function ensureProviderDeps(options: EnsureProviderDepsOptions): Pr
   if (!(await isInstalled(options.root, provider.module))) specs.push(provider.spec);
   if (specs.length === 0) return;
 
-  const { command, args } = await installCommandFor(options.root);
-  const invocation = `${command} ${[...args, ...specs].join(" ")}`;
-  options.output.log(`Installing the model provider this credential uses: ${specs.join(" ")} (${command})…`);
-  const code = await (options.run ?? defaultRunner)(command, [...args, ...specs], options.root);
+  const install = await installCommandFor(options.root);
+  const invocation = invocationFor(install, specs, options.root);
+  options.output.log(`Installing the model provider this credential uses: ${specs.join(" ")} (${install.command})…`);
+  const code = await (options.run ?? defaultRunner)(install.command, [...install.args, ...specs], install.cwd);
   if (code === 0) {
     options.output.log(`Installed ${specs.join(" ")}.`);
   } else {
@@ -154,8 +192,8 @@ export async function ensureZodFloor(options: EnsureZodFloorOptions): Promise<vo
   const version = await installedZodVersion(options.root);
   if (version === null || !zodBelowAiSdkFloor(version)) return;
 
-  const { command, args } = await installCommandFor(options.root);
-  const invocation = `${command} ${[...args, ZOD_FLOOR_SPEC].join(" ")}`;
+  const install = await installCommandFor(options.root);
+  const invocation = invocationFor(install, [ZOD_FLOOR_SPEC], options.root);
   const problem = `installed zod@${version} predates the zod/v3 + zod/v4 subpaths the AI SDK imports (needs >=3.25), so the app build fails inside ai@6`;
   if (options.yes !== true) {
     if (options.confirm === undefined) {
@@ -167,8 +205,8 @@ export async function ensureZodFloor(options: EnsureZodFloorOptions): Promise<vo
       return;
     }
   }
-  options.output.log(`Bumping zod to the AI SDK floor: ${ZOD_FLOOR_SPEC} (${command})…`);
-  const code = await (options.run ?? defaultRunner)(command, [...args, ZOD_FLOOR_SPEC], options.root);
+  options.output.log(`Bumping zod to the AI SDK floor: ${ZOD_FLOOR_SPEC} (${install.command})…`);
+  const code = await (options.run ?? defaultRunner)(install.command, [...install.args, ZOD_FLOOR_SPEC], install.cwd);
   if (code === 0) {
     options.output.log(`Installed ${ZOD_FLOOR_SPEC}.`);
   } else {

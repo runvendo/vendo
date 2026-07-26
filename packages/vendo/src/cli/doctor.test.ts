@@ -40,9 +40,12 @@ async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number>
   });
 }
 
-async function healthy(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "vendo-doctor-"));
-  cleanup.push(() => rm(root, { recursive: true, force: true }));
+async function healthy(base?: string): Promise<string> {
+  // A caller-supplied base nests the fixture (e.g. inside a workspace dir the
+  // caller creates and cleans up); the default is a standalone temp root.
+  const root = base ?? (await mkdtemp(join(tmpdir(), "vendo-doctor-")));
+  if (base === undefined) cleanup.push(() => rm(root, { recursive: true, force: true }));
+  else await mkdir(root, { recursive: true });
   const write = async (relative: string, body: string): Promise<void> => {
     const path = join(root, relative);
     await mkdir(join(path, ".."), { recursive: true });
@@ -1143,6 +1146,33 @@ describe("vendo doctor error codes + fix_refs", () => {
       expect(check).toMatchObject({ status: "ok" });
       expect(check?.message).toContain(`zod@${version}`);
     }
+  });
+
+  it("fails E-DEP-003 when the workspace root hoists an old zod above the app", async () => {
+    // Hoisted pnpm/yarn workspaces keep zod at the workspace root and the app
+    // nested with no node_modules of its own — the version must be resolved
+    // the way the host runtime resolves it, and the bump command must match
+    // the workspace's package manager.
+    const workspace = await mkdtemp(join(tmpdir(), "vendo-doctor-workspace-"));
+    cleanup.push(() => rm(workspace, { recursive: true, force: true }));
+    await writeFile(join(workspace, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    await writeFile(join(workspace, "pnpm-lock.yaml"), "");
+    await mkdir(join(workspace, "node_modules", "zod"), { recursive: true });
+    await writeFile(join(workspace, "node_modules", "zod", "package.json"), JSON.stringify({ name: "zod", version: "3.23.8" }));
+    const root = await healthy(join(workspace, "apps", "web"));
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "deps/zod-floor");
+    expect(check).toMatchObject({
+      status: "broken",
+      error_code: "E-DEP-003",
+      fix_ref: doctorFixRef("E-DEP-003"),
+    });
+    expect(check?.message).toContain("zod@3.23.8");
+    expect(check?.message).toContain("pnpm add zod@^3.25.0");
   });
 
   it("skips the zod floor check silently when zod is not installed", async () => {

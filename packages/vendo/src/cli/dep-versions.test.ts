@@ -95,3 +95,33 @@ describe("installedZodVersion", () => {
     expect(await installedZodVersion(root)).toBe("3.23.8");
   });
 });
+
+describe("installedZodVersion in a hoisted workspace (checker round 1)", () => {
+  it("resolves zod at the workspace root from the nested app's resolution chain", async () => {
+    const workspace = await fixture(undefined);
+    // exports map WITHOUT ./package.json — the manifest must still be read
+    // (require.resolve would throw ERR_PACKAGE_PATH_NOT_EXPORTED here).
+    await mkdir(join(workspace, "node_modules", "zod"), { recursive: true });
+    await writeFile(
+      join(workspace, "node_modules", "zod", "package.json"),
+      JSON.stringify({ name: "zod", version: "3.23.8", exports: { ".": "./index.js" } }),
+    );
+    const app = join(workspace, "apps", "web");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "web" }));
+    expect(await installedZodVersion(app)).toBe("3.23.8");
+  });
+
+  it("resolves an exports-mapped zod that does expose ./package.json", async () => {
+    const workspace = await fixture(undefined);
+    await mkdir(join(workspace, "node_modules", "zod"), { recursive: true });
+    await writeFile(
+      join(workspace, "node_modules", "zod", "package.json"),
+      JSON.stringify({ name: "zod", version: "3.25.76", exports: { ".": "./index.js", "./package.json": "./package.json" } }),
+    );
+    const app = join(workspace, "apps", "web");
+    await mkdir(app, { recursive: true });
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "web" }));
+    expect(await installedZodVersion(app)).toBe("3.25.76");
+  });
+});

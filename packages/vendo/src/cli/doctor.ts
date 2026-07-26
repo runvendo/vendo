@@ -11,7 +11,7 @@ import {
   type LiveTurnResult,
 } from "./doctor-live.js";
 import { installedAiVersion, installedZodVersion } from "./dep-versions.js";
-import { zodBelowAiSdkFloor } from "./provider-deps.js";
+import { zodBelowAiSdkFloor, zodBumpInvocation } from "./provider-deps.js";
 import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
 // build deliberately does not export the pin map.
@@ -259,7 +259,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   // host without its own zod resolves ai's copy, which always satisfies.
   const zodVersion = await installedZodVersion(root);
   if (zodVersion !== null && zodBelowAiSdkFloor(zodVersion)) {
-    fail("deps/zod-floor", "E-DEP-003", `installed zod@${zodVersion} predates the zod/v3 + zod/v4 subpaths the AI SDK imports (needs >=3.25) — the app build fails inside ai@6; bump within zod 3: npm install zod@^3.25.0`);
+    fail("deps/zod-floor", "E-DEP-003", `installed zod@${zodVersion} predates the zod/v3 + zod/v4 subpaths the AI SDK imports (needs >=3.25) — the app build fails inside ai@6; bump within zod 3: ${await zodBumpInvocation(root)}`);
   } else if (zodVersion !== null) {
     pass("deps/zod-floor", `installed zod@${zodVersion} exposes the AI SDK's zod/v3 + zod/v4 subpaths (>=3.25)`);
   }
