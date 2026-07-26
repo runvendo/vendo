@@ -4,7 +4,7 @@ import type { JsonSchema } from "@vendoai/core";
 import type tsTypes from "typescript";
 import type { CatalogEntry } from "../formats.js";
 import { walk } from "./common.js";
-import { noteRejectedCompiler, unsupportedCompilerVersion } from "./compiler-gate.js";
+import { COMPILER_FLOOR, noteRejectedCompiler, unsupportedCompiler } from "./compiler-gate.js";
 import { parseModule, resolveIdentifier, zodFromExpression, type FileModule, type StaticExtraction } from "./static-ts.js";
 
 let ts: typeof tsTypes;
@@ -656,12 +656,12 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
       registered: 0,
     };
   }
-  const tooOld = unsupportedCompilerVersion(ts);
+  const tooOld = unsupportedCompiler(ts);
   if (tooOld !== null) {
     noteRejectedCompiler(tooOld);
     return {
       entries: [],
-      warnings: [`component catalog scan skipped: host typescript ${tooOld} is older than the >=4.8 extraction floor`],
+      warnings: [`component catalog scan skipped: host typescript ${tooOld.version} is older than the >=${COMPILER_FLOOR} extraction floor`],
       discovered: 0,
       registered: 0,
     };

@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { sha256Hex } from "@vendoai/core";
 import type TS from "typescript";
-import { noteRejectedCompiler, unsupportedCompilerVersion } from "./compiler-gate.js";
+import { noteRejectedCompiler, unsupportedCompiler } from "./compiler-gate.js";
 import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
@@ -170,7 +170,7 @@ function loadCompiler(): typeof TS | null {
   if (compilerModule === undefined) {
     try {
       const candidate = createRequire(import.meta.url)("typescript") as typeof TS;
-      const tooOld = unsupportedCompilerVersion(candidate);
+      const tooOld = unsupportedCompiler(candidate);
       if (tooOld !== null) noteRejectedCompiler(tooOld);
       compilerModule = tooOld === null ? candidate : null;
     } catch {

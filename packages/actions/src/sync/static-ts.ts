@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type TS from "typescript";
 import { resolveImportSource } from "./common.js";
-import { noteRejectedCompiler, unsupportedCompilerVersion } from "./compiler-gate.js";
+import { noteRejectedCompiler, unsupportedCompiler, type RejectedCompiler } from "./compiler-gate.js";
 
 /**
  * Shared static TypeScript-source machinery for the compiler-API extractors
@@ -22,7 +22,7 @@ export const MAX_RESOLVE_DEPTH = 16;
  * probe (compiler-gate.ts) degrades exactly like a load failure. */
 export function loadTypescript(root: string): Ts | null {
   const requireFrom = [path.join(root, "package.json"), import.meta.url];
-  let rejectedVersion: string | null = null;
+  let rejected: RejectedCompiler | null = null;
   for (const base of requireFrom) {
     let candidate: Ts;
     try {
@@ -30,11 +30,11 @@ export function loadTypescript(root: string): Ts | null {
     } catch {
       continue; // Try the next resolution base.
     }
-    const tooOld = unsupportedCompilerVersion(candidate);
+    const tooOld = unsupportedCompiler(candidate);
     if (tooOld === null) return candidate;
-    rejectedVersion = tooOld;
+    rejected = tooOld;
   }
-  if (rejectedVersion !== null) noteRejectedCompiler(rejectedVersion);
+  if (rejected !== null) noteRejectedCompiler(rejected);
   return null;
 }
 
