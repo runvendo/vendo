@@ -18,6 +18,11 @@ import type { ExtractedToolV3 } from "../formats.js";
 
 export interface EnrichmentFields {
   description?: string;
+  /** The short human label (see ToolDescriptor.title). PRESENTATION, not
+   *  judgment: there is no loose/tight direction to a label, so the clamp lets
+   *  it through freely — the only thing it can do wrong is read badly, and a
+   *  human `overrides.json` title is the last word either way. */
+  title?: string;
   risk?: ExtractedToolV3["risk"];
   critical?: boolean;
   disabled?: boolean;
@@ -47,6 +52,12 @@ export function clampEnrichment(current: ExtractedToolV3, proposal: EnrichmentFi
 
   if (proposal.description !== undefined && proposal.description !== current.description) {
     fields.description = proposal.description;
+  }
+
+  // Presentation, not judgment — accepted like a description rewrite, with no
+  // restrictive direction to enforce.
+  if (proposal.title !== undefined && proposal.title !== current.title) {
+    fields.title = proposal.title;
   }
 
   if (proposal.risk !== undefined && proposal.risk !== current.risk) {
@@ -109,6 +120,7 @@ export function applyEnrichmentFields(tool: ExtractedToolV3, fields: EnrichmentF
 export function carryEnrichment(fresh: ExtractedToolV3, previous: ExtractedToolV3): ExtractedToolV3 {
   const { fields } = clampEnrichment(fresh, {
     description: previous.description,
+    ...(previous.title === undefined ? {} : { title: previous.title }),
     risk: previous.risk,
     ...(previous.critical === true ? { critical: true } : {}),
     ...(previous.disabled === true ? { disabled: true } : {}),
