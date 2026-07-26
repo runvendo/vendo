@@ -109,6 +109,9 @@ export type PipelineEvent =
   | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; ms: number }
   | { stage: "region-parallel"; fallback?: "no-outline" | "sections-failed" | "assembly-invalid"; sectionsPlanned?: number; sectionsLanded?: number; ms: number }
   | { stage: "end-pass"; applied: boolean; ms: number }
+  // data-verify: `relabels` counts ALL surviving copy-pass ops (Set/Unset/
+  // Remove/SetName — the ≤4-op budget), `rebinds` the strict-enum binding
+  // repoints (≤2) applied by the rebind arm (pipeline.rebind).
   | { stage: "data-verify"; applied: boolean; relabels: number; rebinds: number; ms: number }
   // demo-latency lane — island-scoped repair: when EVERY validation issue is
   // island-scoped, only the offending island sources are rewritten (one small
