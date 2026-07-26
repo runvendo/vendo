@@ -199,10 +199,24 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
     await record("generation-sent", true, `sent the "${generationBeat.key}" beat prompt through the composer`, sentShot);
 
     await page.locator("[data-vendo-node-id]").first().waitFor({ state: "attached", timeout: generationTimeoutMs });
+    // Completion, not just first paint: the turn settles when the composer is
+    // idle again and no busy/thinking indicators remain (same markers the
+    // demo-beats capture keys on).
+    const settleDeadline = Date.now() + generationTimeoutMs;
+    for (;;) {
+      const idle = await messageBox.isEnabled().catch(() => false);
+      const busy = !idle
+        || await page.locator('.fl-msglist[aria-busy="true"], .fl-thinking, .fl-act-pulse').count() > 0;
+      if (!busy) break;
+      if (Date.now() > settleDeadline) {
+        await record("generation-complete", false, "the generation never settled (composer stayed busy)");
+      }
+      await page.waitForTimeout(500);
+    }
     const viewShot = path.join(args.outDir, "gate-4-generated.png");
     await page.waitForTimeout(2_000);
     await page.screenshot({ path: viewShot });
-    await record("generation-complete", true, "a generated Vendo view painted ([data-vendo-node-id])", viewShot);
+    await record("generation-complete", true, "a generated Vendo view painted and the turn settled", viewShot);
   } catch (error) {
     // Give failures a terminal screenshot + report row before rethrowing.
     if (steps.every((step) => step.ok)) {
