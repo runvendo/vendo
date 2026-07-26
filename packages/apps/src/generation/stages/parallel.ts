@@ -196,5 +196,15 @@ export const regionParallelCreate = async (
       return finish({ document: repaired.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
     }
   }
+  // demo-latency lane — an assembly whose ONLY failures are island-scoped
+  // (the observed live class: one fabricating island) is rescued by rewriting
+  // just those islands instead of abandoning ~90s of landed sections for a
+  // full single-stream re-generation.
+  if (context.repairIslands !== undefined) {
+    const islandRepaired = await context.repairIslands(compiled, validated.issues);
+    if (islandRepaired.document !== undefined) {
+      return finish({ document: islandRepaired.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
+    }
+  }
   return finish({ fallback: "assembly-invalid", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
 };

@@ -1613,8 +1613,10 @@ describe("v2 create integration guards (verify-v2 findings)", () => {
     const document = await modelEngine.create({ prompt: "Build it" }, guardDeps(model));
     expect(document.components?.Note).toContain("export default");
     expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain("REPAIR_THESE_ISSUES");
-    expect(prompts[1]).toContain("Note");
+    // demo-latency lane — an island-only failure rides the island-scoped
+    // repair (one small call rewriting just the island), not a full re-gen.
+    expect(prompts[1]).toContain("ISLANDS_TO_FIX: Note");
+    expect(prompts[1]).toContain("export default");
   });
 
   it("repairs a syntactically-broken island instead of persisting it", async () => {
