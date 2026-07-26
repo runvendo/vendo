@@ -39,12 +39,17 @@ describe("chip pre-generation", () => {
     const apps = fakeApps();
     const manifests = memoryRecords();
 
-    const entries = await pregenerate(apps, manifests, "vendo-demo", CHIPS);
+    const entries = await pregenerate(apps, manifests, "vendo-demo", CHIPS, { cookie: "authjs.session-token=seeded" });
 
     expect(apps.create).toHaveBeenCalledTimes(2);
+    // The minted away session rides the ctx so the pipeline's host-data
+    // captures pass Maple's session wall.
     expect(apps.create).toHaveBeenCalledWith(
       { prompt: "Build me a subscriptions tracker" },
-      expect.objectContaining({ principal: { kind: "user", subject: "vendo-demo" } }),
+      expect.objectContaining({
+        principal: { kind: "user", subject: "vendo-demo" },
+        requestHeaders: { cookie: "authjs.session-token=seeded" },
+      }),
     );
     expect(entries.map((entry) => entry.key)).toEqual(["subs", "dining"]);
     const row = await manifests.get(chipManifestRowId("vendo-demo"));

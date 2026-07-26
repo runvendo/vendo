@@ -12,9 +12,9 @@
  * Spend posture: generation runs for the PRIMARY demo user only (~5 apps per
  * seed, the accepted budget); other subjects fall through to live generation.
  */
-import type { AppDocument, RecordStore, RunContext } from "@vendoai/core";
+import type { AppDocument, PermissionGrant, RecordStore, RunContext } from "@vendoai/core";
 import { mapleDemoUsers } from "@/server/users";
-import { vendo } from "@/vendo/server";
+import { mapleAuth, vendo } from "@/vendo/server";
 import {
   CHIP_MANIFEST_COLLECTION,
   chipManifestRowId,
@@ -35,12 +35,14 @@ export async function pregenerate(
   manifests: RecordStore,
   subject: string,
   chips: TryThisChip[],
+  requestHeaders?: Record<string, string>,
 ): Promise<ChipManifestEntry[]> {
   const ctx: RunContext = {
     principal: { kind: "user", subject },
     venue: "chat",
     presence: "present",
     sessionId: "demo-chips-seed",
+    ...(requestHeaders === undefined ? {} : { requestHeaders }),
   };
   const rowId = chipManifestRowId(subject);
   const record = await manifests.get(rowId);
@@ -79,5 +81,31 @@ export async function pregenerateChips(): Promise<void> {
     vendo.store.records(CHIP_MANIFEST_COLLECTION),
     primary.subject,
     mapleChips,
+    await seedSessionHeaders(primary.subject),
   );
+}
+
+/** A background seed has no request, but the generated apps' data captures
+ * need Maple's session-walled host API — mint the SAME away session the
+ * automations path mints (authJs actAs; see auth.test.ts "mints an away
+ * session Maple's own session reads accept"). Failure degrades to headerless
+ * generation rather than blocking the seed. */
+async function seedSessionHeaders(subject: string): Promise<Record<string, string> | undefined> {
+  const grant: PermissionGrant = {
+    id: "grt_demo_chips_seed",
+    subject,
+    tool: "host_*",
+    descriptorHash: "sha256:demo-chips-seed",
+    scope: { kind: "tool" },
+    duration: "standing",
+    source: "automation",
+    grantedAt: new Date().toISOString(),
+  };
+  try {
+    const material = await mapleAuth.actAs?.({ kind: "user", subject }, grant);
+    return material?.headers;
+  } catch (error) {
+    console.warn("demo chips: minting the seed session failed; generating without host auth", error);
+    return undefined;
+  }
 }
