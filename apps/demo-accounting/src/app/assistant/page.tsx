@@ -10,7 +10,8 @@ function PageSurface() {
   const [activityOpen, setActivityOpen] = useState(false);
   // "Try this" chips (demo-hygiene): pre-generated prompts as pill chips one
   // tier below the scenario cards; absent entirely while the cache is empty.
-  const chips = useTryThisChips();
+  const chips = useTryThisChips()
+  const suggestions = chips.length === 0 ? cadenceScenarios : [...cadenceScenarios, ...chips]
   return (
     <div className="fl-page">
       <div className="fl-tabbar">
@@ -28,7 +29,7 @@ function PageSurface() {
         <div className="fl-page-pane">
           {/* demo-refresh Part 6 — the scenario ladder as starter cards on the
               empty landing (same set the overlay's thread shows). */}
-          <VendoThread suggestions={[...cadenceScenarios, ...chips]} />
+          <VendoThread suggestions={suggestions} />
         </div>
       </div>
       {activityOpen ? (

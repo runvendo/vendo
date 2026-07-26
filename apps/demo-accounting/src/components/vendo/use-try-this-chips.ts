@@ -12,7 +12,10 @@ export function useTryThisChips(): string[] {
     void fetch("/api/demo/chips")
       .then(response => (response.ok ? response.json() : null))
       .then((body: { data?: { chips?: { prompt: string }[] } } | null) => {
-        if (!cancelled) setChips((body?.data?.chips ?? []).map(chip => chip.prompt))
+        const prompts = (body?.data?.chips ?? []).map(chip => chip.prompt)
+        // An empty manifest keeps the initial [] state — no state write means
+        // NO re-render, so the landing renders exactly once with the cards.
+        if (!cancelled && prompts.length > 0) setChips(prompts)
       })
       .catch(() => undefined)
     return () => { cancelled = true }

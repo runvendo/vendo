@@ -28,6 +28,14 @@ anything that would improve the result. Append every Q&A here.
 ### Orientation Q&A
 <!-- append here -->
 
+**2026-07-26 conductor update:** PR #575 MERGED ⇒ base is now origin/main; rebase.
+
+**2026-07-26 checker verdict FAIL (3 findings), fixes ordered:**
+- F1: restore the original first-visit regression test verbatim (single render + reference identity); make the chips change satisfy it or park.
+- F2: criterion-26 evidence must be IN lane commits (PNGs were gitignored); screenshots with visible measured timings + cache-miss progress sequence under docs/verification/demo-live-readiness/hygiene/.
+- F3: committed store-assertion script reads obsolete doc.nodes/doc.components; fix to doc.tree.nodes and commit passing output.
+
+
 ## Operating loop
 1. GATHER: read progress.md + this file. Pick the first unfinished,
    unblocked task. Search the codebase before implementing anything.
