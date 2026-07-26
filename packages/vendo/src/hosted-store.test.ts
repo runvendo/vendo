@@ -223,6 +223,25 @@ describe("hostedStore error mapping", () => {
     });
   });
 
+  it("renders the pricing-v3 meter-exhausted refusal as the crafted spec-§5 sentence", async () => {
+    const store = adapterFor(respond("meter-exhausted", "meter exhausted", 402, {
+      meter: "storage_gb",
+      used: 12,
+      limit: 10,
+      resets_at: "2026-08-01T00:00:00.000Z",
+      reason: "allowance",
+      exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
+    }));
+    await expect(store.records("invoices").put({ id: "r", data: {} })).rejects.toMatchObject({
+      code: "cloud-required",
+      message: "Vendo Cloud paused storage — the allowance for this billing period is used up "
+        + "(12 of 10 used; resets 2026-08-01). "
+        + "Upgrade your plan (https://console.vendo.run/billing) "
+        + "or bring your own infrastructure (https://docs.vendo.run/byo).",
+      detail: { meter: "storage_gb" },
+    });
+  });
+
   it("maps a rejected key (401) to cloud-required with the server's message", async () => {
     const store = adapterFor(respond("unauthorized", "Valid API key required.", 401));
     await expect(store.records("invoices").get("r")).rejects.toMatchObject({

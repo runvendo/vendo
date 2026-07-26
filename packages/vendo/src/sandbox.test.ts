@@ -555,6 +555,30 @@ describe("cloudSandbox", () => {
       .rejects.toMatchObject({ code: "cloud-required" });
   });
 
+  it("renders the pricing-v3 meter-exhausted refusal as the crafted spec-§5 sentence", async () => {
+    const refused = vi.fn(async () => Response.json(
+      {
+        error: { code: "meter-exhausted", message: "meter exhausted" },
+        meter: "sandbox_minutes",
+        used: 5_400,
+        limit: 5_000,
+        resets_at: "2026-08-01T00:00:00.000Z",
+        reason: "allowance",
+        exits: { upgrade_url: "https://console.vendo.run/billing", byo_docs_url: "https://docs.vendo.run/byo" },
+      },
+      { status: 402 },
+    ));
+    const adapter = cloudSandbox({ apiKey: "vnd_secret", baseUrl: "https://cloud.test", fetch: refused as unknown as typeof fetch });
+    await expect(adapter.create({ env: {} })).rejects.toMatchObject({
+      code: "cloud-required",
+      message: "Vendo Cloud paused sandbox minutes — the allowance for this billing period is used up "
+        + "(5,400 of 5,000 used; resets 2026-08-01). "
+        + "Upgrade your plan (https://console.vendo.run/billing) "
+        + "or bring your own infrastructure (https://docs.vendo.run/byo).",
+      detail: { meter: "sandbox_minutes", used: 5_400, limit: 5_000 },
+    });
+  });
+
   it("maps a rejected key (401) to cloud-required with the server's message", async () => {
     const denied = vi.fn(async () => Response.json(
       { error: { code: "unauthorized", message: "Invalid API key." } },

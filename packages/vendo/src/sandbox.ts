@@ -1,6 +1,7 @@
 import type { SandboxAdapter, SandboxMachine, SandboxResumePolicy } from "@vendoai/apps";
-import { defaultFetch, VendoError, type VendoErrorCode } from "@vendoai/core";
+import { defaultFetch, VendoError } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
+import { raiseCloudError } from "./cloud-console.js";
 import {
   CLOUD_BOX_PORT,
   CLOUD_SANDBOX_PATH,
@@ -8,19 +9,6 @@ import {
   CLOUD_SNAPSHOTS_SUBPATH,
   CONSOLE_SNAPSHOT_REF_PREFIX,
 } from "./sandbox-wire.js";
-
-/** Console error codes forwarded as-is when they are wire-legal VendoError
- * codes (same posture as the apps block's cloud share/publish client). The
- * console's "unavailable"/"quota-exhausted" have no VendoError twin; they fall
- * to sandbox-unavailable and the 402 → cloud-required mapping respectively. */
-const CLOUD_ERROR_CODES: ReadonlySet<string> = new Set([
-  "validation",
-  "blocked",
-  "not-implemented",
-  "cloud-required",
-  "not-found",
-  "conflict",
-] satisfies VendoErrorCode[]);
 
 /** Same default as the e2b adapter and the retired ENG-295 broker client:
  * generous enough for a slow machine boot, small enough that a hung console
@@ -65,32 +53,15 @@ function decodeBase64(value: string): Uint8Array {
   }
 }
 
-async function raiseCloudError(response: Response): Promise<never> {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await response.text());
-  } catch {
-    payload = undefined;
-  }
-  const error = typeof payload === "object" && payload !== null && "error" in payload
-    ? (payload as { error?: { code?: unknown; message?: unknown } }).error
-    : undefined;
-  const message = typeof error?.message === "string"
-    ? error.message
-    : `Vendo Cloud sandbox request failed with ${response.status}`;
-  // The console's meter gate (quota-exhausted) rides HTTP 402 — the one
-  // "pay/upgrade to proceed" signal, same mapping as cloudConnections. 401
-  // (bad/revoked key) is the same "fix your Cloud standing" story for the
-  // host operator, so it keeps the ENG-295 client's cloud-required mapping —
-  // with the server's own message preserved.
-  if (response.status === 402 || response.status === 401) {
-    throw new VendoError("cloud-required", message);
-  }
-  const code = typeof error?.code === "string" && CLOUD_ERROR_CODES.has(error.code)
-    ? (error.code as VendoErrorCode)
-    : "sandbox-unavailable";
-  throw new VendoError(code, message);
-}
+/** The shared console error table (cloud-console.ts): 401/402 → cloud-required
+ * (a meter-exhausted refusal body rides it as the crafted spec-§5 sentence),
+ * wire-legal envelope codes forward as VendoErrors, and anything else —
+ * unknown codes ("unavailable"), 5xx, non-JSON bodies — falls to
+ * sandbox-unavailable with the server's message preserved. */
+const raiseSandboxError = (response: Response): Promise<never> =>
+  raiseCloudError(response, "sandbox", (_code, message) => {
+    throw new VendoError("sandbox-unavailable", message);
+  });
 
 /** The adapter-minted composite snapshot ref payload (sandbox-wire.ts): the
  * console ref alone cannot serve the seam — destroy-by-ref needs the machine
@@ -207,7 +178,7 @@ export function cloudSandbox(options: CloudSandboxOptions): SandboxAdapter {
       },
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!response.ok) await raiseCloudError(response);
+    if (!response.ok) await raiseSandboxError(response);
     return response;
   };
 
