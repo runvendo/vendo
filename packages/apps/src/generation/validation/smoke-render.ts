@@ -196,42 +196,71 @@ interface WorkerModules {
 }
 
 /** A resolved specifier the WORKER's plain-Node require can actually load: an
- *  absolute filesystem path. Under a bundled dev server (Turbopack) the
- *  bundler intercepts `createRequire(import.meta.url).resolve(...)` and
- *  returns an externals WRAPPER id like `[externals]/jsdom [external] (…)` —
- *  it does not throw, but plain require in the worker fails on it (live
- *  2026-07-23: every island-bearing app failed validation on that message).
- *  Only real paths may cross into the worker; anything else tries the next
- *  resolver or skips the gate. */
-export const isWorkerLoadablePath = (path: string): boolean =>
-  /^(?:\/|[A-Za-z]:[\\/])/.test(path);
+ *  absolute filesystem path STRING. A bundler that intercepts
+ *  `createRequire(import.meta.url).resolve(...)` does not throw — it returns
+ *  something plain require cannot load:
+ *   - Turbopack DEV servers return an externals WRAPPER id like
+ *     `[externals]/jsdom [external] (…)` (live 2026-07-23: every
+ *     island-bearing app failed validation on that message);
+ *   - Turbopack PRODUCTION servers (`next start`) return the bundler's
+ *     NUMERIC module id (rematch gate 2026-07-25: constant 429302 on both
+ *     hosts; `require(429302)` crashed the worker, every island-bearing app
+ *     was refused — 65/90 creates).
+ *  Only real path strings may cross into the worker; anything else tries the
+ *  next resolver or skips the gate. */
+export const isWorkerLoadablePath = (path: unknown): path is string =>
+  typeof path === "string" && /^(?:\/|[A-Za-z]:[\\/])/.test(path);
 
-/** Lazy module resolution, esbuild-pattern: unavailable → gate skips. The
- *  magic comments keep bundlers from walking into jsdom/react-dom. */
+/** The resolve surface `resolveWorkerModulePaths` needs. `resolve` returns
+ *  `unknown` on purpose: at RUNTIME a bundler-shimmed require hands back
+ *  numeric module ids despite NodeJS.Require's `string` claim. */
+export interface WorkerPathResolver {
+  resolve: (specifier: string) => unknown;
+}
+
+/** Resolve the worker's module paths through the first resolver whose EVERY
+ *  result is a worker-loadable absolute path. Non-string results (Turbopack
+ *  numeric ids), wrapper ids, and thrown resolutions fall through to the
+ *  next resolver — and to `undefined` (gate skips, the esbuild precedent)
+ *  when none qualifies. An environment failure is never an island refusal. */
+export const resolveWorkerModulePaths = (
+  resolvers: ReadonlyArray<() => WorkerPathResolver>,
+): WorkerModules["paths"] | undefined => {
+  for (const make of resolvers) {
+    try {
+      const require_ = make();
+      const paths = {
+        react: require_.resolve("react"),
+        reactDom: require_.resolve("react-dom"),
+        reactDomClient: require_.resolve("react-dom/client"),
+        jsdom: require_.resolve("jsdom"),
+      };
+      if (!Object.values(paths).every(isWorkerLoadablePath)) continue;
+      return paths as WorkerModules["paths"];
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+};
+
+/** Lazy module resolution, esbuild-pattern: unavailable → gate skips (logged
+ *  once — a silent skip hid the 2026-07-25 Turbopack signature for a full
+ *  gate run). The magic comments keep bundlers from walking into
+ *  jsdom/react-dom. */
 const workerModules = (async (): Promise<WorkerModules | undefined> => {
   try {
     const { Worker } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "node:worker_threads");
     const { createRequire } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "node:module");
-    const resolvers: Array<() => NodeJS.Require> = [
+    const paths = resolveWorkerModulePaths([
       () => createRequire(import.meta.url),
       () => createRequire(`${process.cwd()}/package.json`),
-    ];
-    for (const make of resolvers) {
-      try {
-        const require_ = make();
-        const paths = {
-          react: require_.resolve("react"),
-          reactDom: require_.resolve("react-dom"),
-          reactDomClient: require_.resolve("react-dom/client"),
-          jsdom: require_.resolve("jsdom"),
-        };
-        if (!Object.values(paths).every(isWorkerLoadablePath)) continue;
-        return { Worker, paths };
-      } catch {
-        continue;
-      }
+    ]);
+    if (paths === undefined) {
+      console.warn("[vendo] smoke-render gate skipped: react/jsdom did not resolve to filesystem paths in this environment (bundled server); islands ship without the crash gate");
+      return undefined;
     }
-    return undefined;
+    return { Worker, paths };
   } catch {
     return undefined;
   }
