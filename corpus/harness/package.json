@@ -8,6 +8,7 @@
     "corpus": "node --import tsx src/cli.ts",
     "ui-parity": "node --import tsx src/ui-parity-nightly.ts",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
