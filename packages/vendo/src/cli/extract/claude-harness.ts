@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ExtractionHarness, ExtractionRunInput } from "./harness.js";
+import { extractionModelPin, type ExtractionHarness, type ExtractionRunInput } from "./harness.js";
 
 /**
  * V1 extraction harness: the Claude Agent SDK driven headless with READ-ONLY
@@ -88,7 +88,7 @@ export function claudeHarness(options: ClaudeHarnessOptions = {}): ExtractionHar
     async run(input: ExtractionRunInput): Promise<string> {
       const sdk = await load(input.root);
       if (sdk === null) throw new Error(`${SDK_PACKAGE} is not available`);
-      const model = input.env["VENDO_EXTRACTION_MODEL"];
+      const model = extractionModelPin(input.env);
       const stream = sdk.query({
         prompt: input.instructions,
         options: {
