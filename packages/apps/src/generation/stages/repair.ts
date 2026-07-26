@@ -123,7 +123,18 @@ interface LiteralDataFix {
   options: string[];
 }
 
-type RepairFix = BindingFix | QueryToolFix | ActionDisclaimFix | ActionPayloadFix | ActionToolFix | LiteralDataFix;
+/** speed-core (criterion 3) — the island-disclaim arm: an island whose
+ *  source-scoped repair budget exhausted without converging. Island
+ *  validation issues are invisible to the compile-derived fix space, so the
+ *  engine passes the offending island NAMES in explicitly, and the only
+ *  legal fix is the honest disclaimer (every node rendering the island is
+ *  disclaimed and its source dropped). */
+interface IslandDisclaimFix {
+  kind: "island-disclaim";
+  island: string;
+}
+
+type RepairFix = BindingFix | QueryToolFix | ActionDisclaimFix | ActionPayloadFix | ActionToolFix | LiteralDataFix | IslandDisclaimFix;
 
 const hostPropRequirement = (
   deps: GenerationDependencies,
@@ -162,8 +173,16 @@ const contextPaths = (tree: TreeV2, deps: GenerationDependencies): string[] => {
 const deriveFixes = (
   compiled: WireCompileResult,
   deps: GenerationDependencies,
+  islandDisclaimNames?: readonly string[],
 ): RepairFix[] => {
   const fixes: RepairFix[] = [];
+  // speed-core (criterion 3) — engine-supplied non-converging islands; only
+  // those still present in the compiled output are disclaimable.
+  for (const island of islandDisclaimNames ?? []) {
+    if (typeof compiled.components[island] === "string") {
+      fixes.push({ kind: "island-disclaim", island });
+    }
+  }
   const nodes = new Map(compiled.tree.nodes.map((node) => [node.id, node]));
   const seenBindings = new Set<string>();
   for (const error of compiled.bindingErrors) {
@@ -538,6 +557,12 @@ const buildFixSchema = (fixes: RepairFix[]): Record<string, unknown> => {
         }])),
         description: `Node "${fix.nodeId}" prop "${fix.prop}" invokes mutating tool "${fix.action}" with no payload. Bind the context it acts on: choose a data path for each payload field. Omitting every field replaces the control with an honest disclaimer.`,
       };
+    } else if (fix.kind === "island-disclaim") {
+      properties[fixKey(index)] = {
+        type: "string",
+        enum: [NO_VALID_FIX],
+        description: `Island "${fix.island}" failed validation repeatedly and its source-scoped repair budget is exhausted; confirm ${NO_VALID_FIX} to replace it with an honest disclaimer.`,
+      };
     } else {
       properties[fixKey(index)] = {
         type: "string",
@@ -732,9 +757,17 @@ const spliceFixes = (
 ): { tree: TreeV2; components: Record<string, string>; name?: string } => {
   const tree = structuredClone(compiled.tree);
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
+  const disclaimedIslands = new Set<string>();
   fixes.forEach((fix, index) => {
     const value = chosen[fixKey(index)];
-    if (fix.kind === "binding") {
+    if (fix.kind === "island-disclaim") {
+      // The only legal value is the disclaimer arm: every node rendering the
+      // island becomes an honest disclaimer and the source is dropped.
+      disclaimedIslands.add(fix.island);
+      for (const node of tree.nodes) {
+        if (node.component === fix.island) disclaimNode(tree, node.id);
+      }
+    } else if (fix.kind === "binding") {
       const node = nodes.get(fix.nodeId);
       if (node?.props === undefined) return;
       const pick = typeof value === "string" && fix.options.includes(value) ? value : NO_VALID_FIX;
@@ -823,7 +856,9 @@ const spliceFixes = (
   pruneUnreachable(tree);
   return {
     tree,
-    components: structuredClone(compiled.components),
+    components: Object.fromEntries(
+      Object.entries(structuredClone(compiled.components)).filter(([name]) => !disclaimedIslands.has(name)),
+    ),
     ...(compiled.name === undefined ? {} : { name: compiled.name }),
   };
 };
@@ -848,6 +883,9 @@ export const structuredRepair = async (
   userRequest: string,
   context: PipelineContext,
   maxRounds = 2,
+  /** speed-core (criterion 3) — islands whose scoped-repair budget exhausted
+   *  without converging: adds the island-disclaim arm to the fix space. */
+  islandDisclaimNames?: readonly string[],
 ): Promise<StructuredRepairResult> => {
   const repairStart = Date.now();
   const finish = (result: StructuredRepairResult): StructuredRepairResult => {
@@ -867,7 +905,7 @@ export const structuredRepair = async (
   let issues: string[] = [];
   let noValidFixCount = 0;
   for (let round = 0; round < maxRounds; round += 1) {
-    const fixes = deriveFixes(current, deps);
+    const fixes = deriveFixes(current, deps, islandDisclaimNames);
     if (fixes.length === 0) return finish({ rounds: round, issues, noValidFixCount });
     const schema = buildFixSchema(fixes);
     const wire = printWireV2(
@@ -886,7 +924,7 @@ export const structuredRepair = async (
     if (chosen === undefined) return finish({ rounds: round + 1, issues, noValidFixCount });
     fixes.forEach((fix, index) => {
       const value = chosen[fixKey(index)];
-      if (fix.kind === "action-disclaim") { noValidFixCount += 1; return; }
+      if (fix.kind === "action-disclaim" || fix.kind === "island-disclaim") { noValidFixCount += 1; return; }
       if (fix.kind === "action-payload") {
         const picks = isRecord(value) ? value : {};
         if (!fix.fields.some((field) => typeof picks[field] === "string" && fix.options.includes(picks[field] as string))) noValidFixCount += 1;

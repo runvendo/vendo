@@ -1,41 +1,40 @@
-# speed-core — AFTER evidence (fixed 8-prompt set, criteria 5-6)
+# speed-core — AFTER evidence (fixed 8-prompt set, criteria 5-6) — CANONICAL: the AMENDED demo config
 
-- Date: 2026-07-26 · harness: `SPEED_MODE=set` (representative demo-bank deps — see before.md) · engine includes the speed-core changes (island-repair-first ×2 rounds, bounded worst case).
-- Raw events: `samples.ndjson` (labels `before`, `after` = faithful demo config, `after-default` = default pipeline). An earlier non-faithful fast run (endPass in-engine, no exemplarContract) is archived as `samples-after-v1-nonrepresentative.ndjson`.
-- "Faithful demo config" = what the demo hosts hand the engine: `{ exemplarContract: true, structuredRepair: true, regionParallel: true, endPass: false }` (the runtime owns endPass as its data-sighted verify; the engine's blind end pass never runs in a real demo create — that runtime verify call is additive on top of these numbers).
+- Date: 2026-07-26 · harness: `SPEED_MODE=set` (representative demo-bank deps — see before.md) · engine includes ALL speed-core changes (island-repair-first ×2 shared-budget rounds, bounded worst case with the island-disclaim structured round, `full` pipeline events).
+- **Amended demo config** (conductor ruling 2026-07-26): hosts set `apps.pipeline: { endPass: true }`; as the engine sees it from the runtime that is `{ endPass: false }` + defaults (the runtime owns endPass as its data-sighted verify — that extra runtime call is additive on top of these numbers). `SPEED_LABEL=after-amended` in `samples.ndjson`.
 
-## Per-prompt totals (ms → s)
+## Canonical table (amended config)
 
-| prompt | class | before (default, old ordering) | after (FAST demo config) | after-default (default, new ordering) |
-|---|---|---|---|---|
-| net-worth | happy | 8.3s | 73.0s | **9.2s** |
-| subscriptions | happy | 13.1s | 120.7s (assembly-invalid → full ladder) | **32.4s** |
-| budgets | happy | 25.2s | 33.3s | **43.2s** |
-| goals-cashflow | happy | 22.8s | 45.8s | **30.4s** |
-| card-spending | happy | 40.4s | 45.6s | **50.8s** |
-| upcoming-bills | happy | 12.2s | 15.8s | **12.8s** |
-| fab-portfolio | fabricating-island | 33.4s | 64.2s | **23.5s** |
-| fab-fx | fabricating-island | 32.3s | 148.5s (assembly-invalid → full ladder) | **32.5s** |
+| prompt | class | first paint | pipeline stages | total | before (old ordering) |
+|---|---|---|---|---|---|
+| net-worth | happy | 1.24s | full | **9.3s** | 8.3s |
+| subscriptions | happy | 0.62s | full, repair | **19.0s** | 13.1s |
+| budgets | happy | 0.61s | full, repair | **26.7s** | 25.2s |
+| goals-cashflow | happy | 1.31s | full, repair | **20.5s** | 22.8s |
+| card-spending | happy | 1.55s | full, repair | **13.6s** | 40.4s |
+| upcoming-bills | happy | 0.72s | full, repair | **12.3s** | 12.2s |
+| fab-portfolio | fabricating-island | 0.82s | full, repair | **26.4s** | 33.4s |
+| fab-fx | fabricating-island | 0.57s | full (single clean attempt) | **41.2s** | 32.3s |
 
-All 24 runs succeeded (no failed creates). First paint p50 ≈ 0.6-1.4s in every configuration (two-lane paint is untouched by the pipeline flags).
+All 8 succeeded; first paint p50 0.77s.
 
-## Criteria verdicts
+## Criteria verdicts (amended config)
 
-| criterion | fast demo config (`after`) | default pipeline (`after-default`) |
+- **#5 p50 create-complete ≤ 45s: PASS — 19.8s.** p95 (n=8 → max) ≤ 120s: **PASS — 41.2s.**
+- **#6 fabricating prompt ≤ 2× happy-path p50 (32.6s this run):** fab-portfolio **PASS (26.4s)**; **fab-fx MISS (41.2s)** — parked per the ruling, see PARKED.md. The miss is NOT the multiplicative failure path the criterion targets: fab-fx validated on its FIRST full attempt with zero repair/retry activity (pipeline events: one `full`, valid) — it is one long clean generation, and the bound tightened because this run's happy p50 nearly halved (16.3s vs 31.4s in the prior run of the identical engine-visible config, where fab-fx passed at 32.5s vs a 62.8s bound).
+- Corroborating run (`after-default` label — identical engine-visible pipeline, pre-checker engine code): p50 31.4s, max 50.8s, fab 23.5s/32.5s — **all thresholds pass**.
+
+## Appendix — REJECTED config (pre-ruling `regionParallel: true`, label `after`)
+
+| prompt | rejected fast config | dominant cost |
 |---|---|---|
-| #5 p50 create-complete ≤ 45s | **55.0s — MISS** | **31.4s — PASS** |
-| #5 p95 (n=8 → max) ≤ 120s | **148.5s — MISS** | **50.8s — PASS** |
-| #6 fabricating prompt ≤ 2× happy p50 | fab-fx 148.5s vs 91.4s — **MISS** (fab-portfolio 64.2s passes) | 23.5s / 32.5s vs 62.8s — **PASS** |
+| net-worth | 73.0s | serial outline + island-repair rescue |
+| subscriptions | 120.7s | assembly-invalid → full-ladder cascade |
+| budgets | 33.3s | — |
+| goals-cashflow | 45.8s | — |
+| card-spending | 45.6s | — |
+| upcoming-bills | 15.8s | — |
+| fab-portfolio | 64.2s | island-repair rescue after slow sections |
+| fab-fx | 148.5s | assembly-invalid → full-ladder cascade |
 
-Two independent fast-config runs missed (the archived v1 run: p50 50.8s, max 107s, fab-portfolio 107s), so this is not single-run flake.
-
-## Dominant-stage analysis (why the fast config misses)
-
-1. **The outline is a serial prefix.** Region-parallel spends 8-14s on the outline call before any section streams; on this catalog most apps need 2-3 sections whose parallel wins don't repay the outline cost. (Timing events: `outline complete` at 8.3-14.3s in every `after` sample.)
-2. **`assembly-invalid` fallback is a cliff, and it multiplies the fabricating class.** When the assembled sections fail validation with NON-island issues, the engine falls back to the full single-stream ladder — after ~30s already spent in parallel. subscriptions (120.7s) and fab-fx (148.5s) both walked this path: parallel ~30s → full ladder with repairs. This is the same multiplicative shape the island fix killed, one layer up.
-3. **Island-repair-first works and is visible live**: `budgets`/`net-worth`/`fab-portfolio` in the `after` runs were rescued by `island-repair` events (region-parallel assembly rescue), and in `after-default` the fabricating prompts dropped from the worst rows to the BEST rows (23.5s / 32.5s) — the failure path is no longer multiplicative at the island layer.
-4. The engine end pass (v1 run) added 1.4-2.2s and rarely applied; moot in real demos (runtime suppresses it) but worth knowing for engine-level benchmarks.
-
-## Recommendation (for the conductor — not applied; criterion pinned to the fast config)
-
-The speed goal is met by the engine-side fixes with the DEFAULT pipeline; `regionParallel` as shipped makes the demos slower, not faster, on this surface. Either drop `regionParallel: true` from the demo hosts' pipeline block, or fund a follow-up on the two dominant costs (outline latency; island-style scoped rescue for non-island assembly failures instead of the full-ladder fallback).
+p50 55.0s / max 148.5s — missed #5 and #6 in two independent runs (second run archived in `samples-after-v1-nonrepresentative.ndjson`): the serial outline costs 8-14s before any section streams, and the `assembly-invalid` fallback re-enters the full single-stream ladder after ~30s of parallel work. This is why the ruling dropped `regionParallel` from the demo hosts. Follow-up backlog (not this lane): outline latency; island-style scoped rescue for non-island assembly failures.

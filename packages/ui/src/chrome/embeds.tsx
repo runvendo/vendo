@@ -340,7 +340,10 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
             <AppFrame
               surface={surface}
               components={components}
-              onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})}
+              // Actions bind to the app actually being SHOWN: after a retry
+              // that is the replacement build's id, never the original failed
+              // record (checker F5).
+              onAction={({ action, payload }) => client.apps.call(activeAppId, action, payload ?? {})}
             />
           ) : failed !== undefined ? (
             <>

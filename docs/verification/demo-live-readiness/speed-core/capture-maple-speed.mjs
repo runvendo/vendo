@@ -2,8 +2,9 @@
 // REAL demo-bank surface: login → open Vendo (launcher) → type an off-script
 // prompt → record until the app completes. The recording must show first
 // visual paint ≤ 5s and staged progress (never a static spinner).
-// Prereqs: demo-bank dev on :3000 (MAPLE_STORE=local) + ffmpeg for the gif.
-// Usage: node scripts/capture-maple-speed.mjs [out.webm] ["prompt text"]
+// Prereqs: demo-bank dev on :3000 (MAPLE_STORE=local); run FROM THE REPO ROOT
+// (module + output paths resolve from cwd).
+// Usage: node docs/verification/demo-live-readiness/speed-core/capture-maple-speed.mjs [out.webm] ["prompt text"]
 import { copyFileSync, mkdtempSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";

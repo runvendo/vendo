@@ -634,7 +634,18 @@ export async function createWireServer(options: WireServerOptions = {}) {
       }
       if (url.pathname === "/apps" && method === "GET") return json(response, state.apps);
       if (url.pathname === "/apps" && method === "POST") {
-        const created = app(`app_${state.apps.length + 1}`, (parsedBody as { prompt: string }).prompt);
+        const prompt = (parsedBody as { prompt: string }).prompt;
+        const created = app(`app_${state.apps.length + 1}`, prompt);
+        // speed-core F5 — a prompt tagged [with-button] builds an app whose
+        // root is an action-bound Button, so embed tests can click THROUGH
+        // the served app and assert which app id the call targets.
+        if (prompt.includes("[with-button]")) {
+          created.tree = {
+            formatVersion: "vendo-genui/v2",
+            root: "root",
+            nodes: [{ id: "root", component: "Button", props: { label: "Refresh data", onClick: { $action: "host_refresh" } } }],
+          } as AppDocument["tree"];
+        }
         state.apps.push(created);
         return json(response, created);
       }

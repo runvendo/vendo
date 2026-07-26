@@ -116,7 +116,11 @@ export type PipelineEvent =
   // demo-latency lane — island-scoped repair: when EVERY validation issue is
   // island-scoped, only the offending island sources are rewritten (one small
   // model call) instead of regenerating the whole app (a full-lane attempt).
-  | { stage: "island-repair"; islands: number; repaired: boolean; ms: number };
+  | { stage: "island-repair"; islands: number; repaired: boolean; ms: number }
+  // speed-core (criterion 1) — one event per FULL-lane attempt in the create
+  // loop, so the full→island-repair ordering is provable from the pipeline
+  // event stream alone. Additive; existing stages never renamed.
+  | { stage: "full"; attempt: number; valid: boolean; ms: number };
 
 export interface GenerationDependencies {
   model: LanguageModel;
@@ -737,6 +741,11 @@ export const modelEngine: GenerationEngine = {
     const startedAt = Date.now();
     const hostComponents = deps.catalog.map(({ name }) => name);
     const basePrompt = `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}`;
+    // Island-scoped repair budget, shared by EVERY path that rewrites islands
+    // (the region-parallel assembly rescue and the create loop below), so the
+    // bounded worst case holds whichever path spends it (checker F3): at most
+    // 2 island rewrites per create, then one full retry + a structured round.
+    let islandRepairRounds = 2;
     // Pipeline context: structured repair / region-parallel / end pass all
     // validate through the ONE create validator; the island-scoped repair
     // rides along so the region-parallel path can rescue island-only failures.
@@ -747,6 +756,8 @@ export const modelEngine: GenerationEngine = {
       validate: (compiled) => validateCompiledCreate(compiled, deps, input.prompt),
       repairIslands: (compiled, repairIssues) => {
         logInvalidLane("assembly", repairIssues);
+        if (islandRepairRounds <= 0) return Promise.resolve({});
+        islandRepairRounds -= 1;
         return repairIslandsScoped(compiled, repairIssues, input.prompt, pipelineContext);
       },
     };
@@ -832,15 +843,20 @@ export const modelEngine: GenerationEngine = {
     // Structured repair budget: at most 2 strict rounds per create, then the
     // free-form regeneration loop takes over. Island-scoped repair is the
     // FIRST resort (speed-core): when EVERY issue is island-scoped and
-    // source-fixable, up to 2 island rewrites (one small call each) run
-    // before any ~60s full-lane regeneration; a budget that exhausts without
-    // converging caps the ladder at ONE further full retry (bounded worst
-    // case) — regenerating the whole app kept reproducing the same island
-    // class in the 5-9 minute live failures.
+    // source-fixable, the shared island budget (declared with the pipeline
+    // context above) is drained before any ~60s full-lane regeneration; a
+    // budget that exhausts without converging caps the ladder at ONE further
+    // full-lane retry whose structured round gains the island-disclaim arm —
+    // the signed bounded worst case: exhaustion → one retry → a structured
+    // repair round. Regenerating the whole app kept reproducing the same
+    // island class in the 5-9 minute live failures.
     let repairRounds = deps.pipeline?.structuredRepair === false ? 0 : 2;
-    let islandRepairRounds = 2;
     let attemptCap = 3;
     for (let attempt = 0; attempt < attemptCap; attempt += 1) {
+      const attemptStart = Date.now();
+      const emitFull = (valid: boolean): void => {
+        deps.onPipeline?.({ stage: "full", attempt, valid, ms: Date.now() - attemptStart });
+      };
       const output = await streamWire(
         gatedDeps,
         createContract(deps),
@@ -853,30 +869,44 @@ export const modelEngine: GenerationEngine = {
       issues = distinctIssues(issues, output.issues);
       if (output.compiled !== undefined) {
         const validated = await validateCompiledCreate(output.compiled, deps, input.prompt);
+        emitFull(validated.document !== undefined);
         if (validated.document !== undefined) return finish(validated.document);
         logInvalidLane("full", validated.issues);
         issues = distinctIssues(issues, validated.issues);
         // speed-core — when EVERY issue is island-scoped, rewrite just those
         // islands (one small call per round, before any full-lane retry)
         // instead of burning another ~60s full-lane attempt on the same
-        // failure class.
-        if (islandIssueNames(validated.issues) !== undefined) {
-          while (islandRepairRounds > 0) {
-            islandRepairRounds -= 1;
-            const islandRepaired = await repairIslandsScoped(output.compiled, validated.issues, input.prompt, pipelineContext);
-            if (islandRepaired.document !== undefined) return finish(islandRepaired.document);
+        // failure class. Island issues are invisible to the structured
+        // repair's closed fix space (it derives from the compile result
+        // alone), so they only reach it through the disclaim arm below.
+        let islandDisclaimNames: string[] | undefined;
+        const islandNames = islandIssueNames(validated.issues);
+        if (islandNames !== undefined) {
+          if (islandRepairRounds > 0) {
+            while (islandRepairRounds > 0) {
+              islandRepairRounds -= 1;
+              const islandRepaired = await repairIslandsScoped(output.compiled, validated.issues, input.prompt, pipelineContext);
+              if (islandRepaired.document !== undefined) return finish(islandRepaired.document);
+            }
+            // Exhausted without converging: at most ONE further full-lane
+            // retry, never the remaining attempt ladder.
+            attemptCap = Math.min(attemptCap, attempt + 2);
+          } else {
+            // The post-exhaustion attempt reproduced the island class: this
+            // attempt's structured round runs WITH the island-disclaim arm —
+            // the bounded sequence's terminal round.
+            islandDisclaimNames = islandNames;
+            attemptCap = Math.min(attemptCap, attempt + 2);
           }
-          // The island budget exhausted without converging: at most ONE
-          // further full-lane retry (plus its structured repair round), never
-          // the remaining attempt ladder — the class reproduces itself.
-          attemptCap = Math.min(attemptCap, attempt + 2);
         }
         if (repairRounds > 0) {
-          const repaired = await structuredRepair(output.compiled, input.prompt, pipelineContext, repairRounds);
+          const repaired = await structuredRepair(output.compiled, input.prompt, pipelineContext, repairRounds, islandDisclaimNames);
           repairRounds -= repaired.rounds;
           if (repaired.document !== undefined) return finish(repaired.document);
           issues = distinctIssues(issues, repaired.issues);
         }
+      } else {
+        emitFull(false);
       }
     }
     // Never a white box: a failed full lane falls back to the resident

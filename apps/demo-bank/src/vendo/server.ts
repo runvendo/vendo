@@ -59,11 +59,14 @@ export const vendo = createVendo({
     experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
-    // demo-refresh Part 5 — the full v4 generation pipeline.
+    // speed-core ruling (2026-07-26, supersedes demo-refresh Part 5):
+    // regionParallel is OFF for the demos — live evidence
+    // (docs/verification/demo-live-readiness/speed-core/after.md) showed its
+    // serial outline + assembly-invalid fallback made creates SLOWER on this
+    // surface (p50 55s vs 31.4s without it). endPass stays on: the runtime
+    // rides it as the data-sighted verify. structuredRepair and smokeRender
+    // are default-on and island repair is the engine's first resort.
     pipeline: {
-      exemplarContract: true,
-      structuredRepair: true,
-      regionParallel: true,
       endPass: true,
     },
   },

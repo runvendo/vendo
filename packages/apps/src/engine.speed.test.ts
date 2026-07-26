@@ -129,7 +129,7 @@ interface SetSample {
   label: string;
   id: string;
   class: string;
-  pipeline: "default" | "fast";
+  pipeline: "amended" | "fast";
   firstPaintMs: number | null;
   completeMs: number | null;
   failed?: string;
@@ -141,7 +141,7 @@ const runPrompt = async (
   deps: GenerationDependencies,
   spec: PromptSpec,
   label: string,
-  pipeline: "default" | "fast",
+  pipeline: "amended" | "fast",
   out: string,
 ): Promise<void> => {
   const timing: GenerationTimingEvent[] = [];
@@ -181,21 +181,26 @@ describe.runIf(mode !== undefined && mode !== "")("speed harness (live)", () => 
       const out = process.env.SPEED_OUT
         ?? resolve(repoRoot, "docs/verification/demo-live-readiness/speed-core/samples.ndjson");
       const label = process.env.SPEED_LABEL ?? "run";
-      const pipeline = process.env.SPEED_PIPELINE === "fast" ? "fast" as const : "default" as const;
+      // Pipeline variants, always AS THE ENGINE SEES THEM from the runtime
+      // (the runtime owns the endPass flag — data-sighted verify at its own
+      // seam — and hands the engine endPass:false, so the engine's blind end
+      // pass never runs in a real demo create; the runtime's data-verify call
+      // is NOT reproduced here, noted in the evidence tables):
+      //   amended (default) — the demo hosts' AMENDED config (speed-core
+      //     ruling 2026-07-26): apps.pipeline { endPass: true } → engine
+      //     sees { endPass: false } + defaults.
+      //   fast — the REJECTED pre-ruling config (regionParallel on), kept
+      //     runnable so the rejection evidence stays reproducible.
+      const pipeline = process.env.SPEED_PIPELINE === "fast" ? "fast" as const : "amended" as const;
       const { prompts } = JSON.parse(readFileSync(promptsFile, "utf8")) as { prompts: PromptSpec[] };
       const deps = await baseDeps(variant);
-      // "fast" mirrors the demo hosts' pipeline AS THE ENGINE SEES IT from the
-      // runtime: the hosts set { exemplarContract, structuredRepair,
-      // regionParallel, endPass } all true, but the runtime owns the endPass
-      // flag (data-sighted verify at its own seam) and hands the engine
-      // endPass:false — the engine's blind end pass never runs in a real demo
-      // create. The runtime's data-verify call is NOT reproduced here (it
-      // needs resolved query data); noted in the evidence tables.
       const wired: GenerationDependencies = {
         ...deps,
         tools: loadDemoBankTools(),
         toolShapes: demoBankToolShapes,
-        ...(pipeline === "fast" ? { pipeline: { exemplarContract: true, structuredRepair: true, regionParallel: true, endPass: false } } : {}),
+        pipeline: pipeline === "fast"
+          ? { exemplarContract: true, structuredRepair: true, regionParallel: true, endPass: false }
+          : { endPass: false },
       };
       await prewarm(wired.model);
       if (wired.paint?.model !== undefined) await prewarm(wired.paint.model);

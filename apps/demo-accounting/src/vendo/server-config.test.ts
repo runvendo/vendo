@@ -10,10 +10,12 @@ vi.mock("@vendoai/vendo/server", () => ({
 }));
 
 describe("Cadence vendo server config (speed-core)", () => {
-  it("builds with the fast generation pipeline: regionParallel and endPass on", async () => {
+  it("builds with the AMENDED demo pipeline (speed-core ruling): endPass on, regionParallel OFF", async () => {
     await import("./server");
     expect(createVendoSpy).toHaveBeenCalledTimes(1);
     const config = createVendoSpy.mock.calls[0]![0] as { apps?: { pipeline?: Record<string, unknown> } };
-    expect(config.apps?.pipeline).toMatchObject({ regionParallel: true, endPass: true });
+    expect(config.apps?.pipeline).toMatchObject({ endPass: true });
+    // The rejected config (live evidence: speed-core after.md) must not creep back.
+    expect(config.apps?.pipeline?.["regionParallel"]).toBeUndefined();
   }, 60_000); // the server module's import graph (umbrella + blocks) costs seconds cold
 });

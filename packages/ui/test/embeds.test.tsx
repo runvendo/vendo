@@ -220,6 +220,26 @@ describe("existing-agents embeds", () => {
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     });
 
+    it("actions on the retried app target the REPLACEMENT app id, never the dead record (checker F5)", async () => {
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_dead", title: "Refresh board" };
+      wire.state.failedApps.set("app_dead", {
+        reason: "the build never finished",
+        retryable: true,
+        prompt: "Refresh board [with-button]",
+      });
+      mount(<VendoAppEmbed refValue={doomed} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+      // The replacement build serves an action-bound button; click THROUGH it.
+      const refresh = await screen.findByRole("button", { name: "Refresh data" }, { timeout: 5000 });
+      fireEvent.click(refresh);
+      await waitFor(() => {
+        const calls = wire.requests.filter((item) => item.method === "POST" && item.path.endsWith("/call"));
+        expect(calls.length).toBeGreaterThan(0);
+        for (const call of calls) expect(call.path).not.toContain("app_dead");
+        expect(calls.at(-1)?.path).toMatch(/^\/apps\/app_\d+\/call$/);
+      });
+    });
+
     it("retry falls back to the embed title when the failed record predates the prompt field", async () => {
       const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry3", title: "Budget board" };
       wire.state.failedApps.set("app_retry3", { reason: "generation failed", retryable: true });
