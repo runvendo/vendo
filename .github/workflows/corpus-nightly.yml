@@ -88,12 +88,14 @@ jobs:
             fi
             repos+=("$repo")
           done
-          # No `|| true`: a sweep failure (regression, crash) must fail this job
-          # loudly. The scorecard/trend/upload steps below run on `always()` so
-          # the evidence is still published before the job is marked red.
+          # Fail closed: `--strict` is what turns a hard structural failure
+          # into a nonzero exit — without it the harness reports failures and
+          # still exits 0 — and there is no `|| true` to swallow that exit.
+          # The scorecard/trend/upload steps below run on `always()` so the
+          # evidence is still published before the job is marked red.
           # --layer 1 is hardcoded: GH is the structural clean room; layer 2
           # (AI-scored) runs on the mini only.
-          pnpm corpus run "${repos[@]}" --layer 1 --json
+          pnpm corpus run "${repos[@]}" --layer 1 --json --strict
 
       - name: Diagnose scorecard artifact path
         if: always()

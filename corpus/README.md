@@ -101,7 +101,8 @@ structural clean room: it runs the layer 1 sweep across all manifest repos
 with zero model credentials, on a schedule (08:00 UTC daily) and on demand
 via `workflow_dispatch` (input: `repos` space-separated filter — there is no
 layer input; GH is layer 1 only). It builds the workspace, runs
-`pnpm corpus run --layer 1 --json`, writes the scorecard to the job summary,
+`pnpm corpus run --layer 1 --json --strict` (`--strict` makes any hard
+structural failure fail the job), writes the scorecard to the job summary,
 appends a trend delta versus the previous run
 (`corpus/scripts/corpus-trend.mjs`), and uploads `scorecard.json` + `.md` +
 per-repo logs as the `corpus-scorecard` artifact (30-day retention). The AI
