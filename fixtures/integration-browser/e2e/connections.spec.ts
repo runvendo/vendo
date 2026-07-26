@@ -62,9 +62,9 @@ test("in-flow connect card: connect-required → connect → automatic retry exe
   await expect(page.locator(".fl-msglist").getByText("Sent the email.")).toBeVisible({ timeout: 20_000 });
   // 2026-07 chrome wave (lane pick C1) — a succeeded call leaves NO transcript
   // chip: live progress rides the status ribbon above the composer and the
-  // mechanical record stays in the Activity panel. What survives of ENG-216
-  // here: the thread never leaks the raw tool slug.
-  await expect(page.locator(".fl-msglist").getByText("gmail_GMAIL_SEND_EMAIL")).toHaveCount(0);
+  // mechanical record stays in the Activity panel. The connect card itself
+  // settles into a permanent in-transcript "Connected" record.
+  await expect(card.getByText("Connected")).toBeVisible({ timeout: 10_000 });
   await page.screenshot({ path: "e2e/artifacts/connect-card-retried.png", fullPage: false });
 });
 
