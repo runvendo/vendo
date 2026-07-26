@@ -71,6 +71,9 @@ export async function pregenerate(
 export async function pregenerateChips(): Promise<void> {
   const primary = mapleDemoUsers()[0];
   if (primary === undefined) return;
+  // Idempotent migration guard — the boot path usually ran seedDemoScript
+  // first, but reset/manual callers shouldn't depend on that ordering.
+  await vendo.store.ensureSchema();
   await pregenerate(
     vendo.apps,
     vendo.store.records(CHIP_MANIFEST_COLLECTION),

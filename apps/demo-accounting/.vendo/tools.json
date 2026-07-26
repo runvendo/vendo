@@ -15,24 +15,7 @@
         "method": "POST",
         "path": "/api/voice"
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
-    },
-    {
-      "name": "host_demo_chips_list",
-      "description": "GET /api/demo/chips",
-      "inputSchema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": true
-      },
-      "risk": "write",
-      "binding": {
-        "kind": "route",
-        "method": "GET",
-        "path": "/api/demo/chips",
-        "argsIn": "query"
-      },
-      "srcHash": "sha256:63fff65eaf08ba777dd55458c2270a346de99bc61196249a257d342a4b1127bb"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_getClient",
@@ -56,7 +39,7 @@
         "method": "GET",
         "path": "/api/clients/{id}"
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_getDashboard",
@@ -85,7 +68,7 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_listActivity",
@@ -129,7 +112,7 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_listClientDocuments",
@@ -153,7 +136,7 @@
         "method": "GET",
         "path": "/api/clients/{id}/documents"
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_listClientMessages",
@@ -177,7 +160,7 @@
         "method": "GET",
         "path": "/api/clients/{id}/messages"
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_listClients",
@@ -238,7 +221,7 @@
           "kind": "id"
         }
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_listDeadlines",
@@ -287,7 +270,23 @@
           "kind": "id"
         }
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+    },
+    {
+      "name": "host_listDemoChips",
+      "description": "Demo control: the signed-in user's pre-generated \"try this\" chip prompts. Empty until chip pre-generation has run for this user.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listDemoChips",
+        "method": "GET",
+        "path": "/api/demo/chips"
+      },
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_resetDemo",
@@ -303,7 +302,7 @@
         "method": "POST",
         "path": "/api/demo/reset"
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_sendClientMessage",
@@ -344,7 +343,7 @@
         "method": "POST",
         "path": "/api/clients/{id}/messages"
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_setDocumentStatus",
@@ -399,7 +398,7 @@
         "method": "POST",
         "path": "/api/clients/{id}/documents/{docId}/status"
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
       "name": "host_simulateClientUpload",
@@ -449,7 +448,7 @@
         "method": "POST",
         "path": "/api/demo/simulate/upload"
       },
-      "srcHash": "sha256:021825c5bfa50b393d47b310e5aff88a66fdc4793ded7bf9e52763eeca33245e"
+      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     }
   ],
   "domains": {
