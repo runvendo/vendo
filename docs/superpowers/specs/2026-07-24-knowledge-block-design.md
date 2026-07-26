@@ -37,7 +37,7 @@ Rulings (2026-07-25): both doors confirmed for v1. Freshness v1 = per-source sta
 
 ## Agent experience and trust
 
-One `knowledge_search` tool. Tool-layer policy owns intent: chat default, auto-escalate to deep on weak results, schema for glossary/api-targeted queries. Snippets first, fetch read-more only when needed. Sources attach to messages as structured data; the UI renders citation chips. Refusal is per-engine calibrated (engine-relative scores): the tool returns an explicit insufficient-evidence outcome and the agent says it does not know. Engine outage = knowledge-unavailable, said out loud, never silent. Wave 2 reserves the verifier pass (cheap model checks answer-is-entailed-by-citations before send).
+One `knowledge_search` tool (ships as `vendo_knowledge_search` — conductor ruling 2026-07-25: the agent runtime keeps only `vendo_`-prefixed tools always-active in large-host tool loadouts). Tool-layer policy owns intent: chat default, auto-escalate to deep on weak results, schema for glossary/api-targeted queries. Snippets first, fetch read-more only when needed. Sources attach to messages as structured data; the UI renders citation chips. Refusal is per-engine calibrated (engine-relative scores): the tool returns an explicit insufficient-evidence outcome and the agent says it does not know. Engine outage = knowledge-unavailable, said out loud, never silent. Wave 2 reserves the verifier pass (cheap model checks answer-is-entailed-by-citations before send).
 
 ## Console knowledge product (scope B, added 2026-07-25)
 
