@@ -1216,6 +1216,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   // tool's shape unknown (defensive `json` per the spec).
   const sampledShapes = new Map<string, ShapeType>();
   const settledSamples = new Set<string>();
+  // connect-required settles PER SUBJECT (review 2026-07-26): a shape is
+  // host-level, but a missing account connection is one principal's state —
+  // settling it globally would stop ever sampling the tool for a DIFFERENT
+  // subject whose account is fine. Bounded like the umbrella's toolkit cache.
+  const connectRequiredSettled = new Set<string>();
+  const connectSettleKey = (subject: string, tool: string): string => `${subject} ${tool}`;
   const requiresInput = (descriptor: ToolDescriptor): boolean => {
     const required = (descriptor.inputSchema as { required?: unknown }).required;
     return Array.isArray(required) && required.length > 0;
@@ -1225,7 +1231,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   ): Promise<Pick<GenerationDependencies, "tools" | "toolShapes">> => {
     const descriptors = await config.tools.descriptors().catch(() => []);
     const candidates = descriptors.filter((descriptor) =>
-      descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name));
+      descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name)
+      && !connectRequiredSettled.has(connectSettleKey(ctx.principal.subject, descriptor.name)));
     // Re-gate 2026-07-26 finding 2: a connector tool (descriptor.toolkit,
     // 01-core §4) is probed ONLY when its toolkit is connected for this
     // caller — an unconnected toolkit's probe can never yield a shape (the
@@ -1251,15 +1258,17 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           if (outcome.status === "ok") {
             settledSamples.add(descriptor.name);
             sampledShapes.set(descriptor.name, deriveShapeCard(descriptor.name, [outcome.output]).output);
-          } else if (
-            outcome.status === "pending-approval"
-            || outcome.status === "blocked"
-            || outcome.status === "connect-required"
-          ) {
-            // The policy gates this read, or its account connection is
-            // missing/expired at the provider: never re-ask on later creates
-            // (one probe per boot at most), and leave the shape unknown.
+          } else if (outcome.status === "pending-approval" || outcome.status === "blocked") {
+            // The policy gates this read: never re-ask on later creates (one
+            // parked approval per boot at most), and leave the shape unknown.
             settledSamples.add(descriptor.name);
+          } else if (outcome.status === "connect-required") {
+            // The broker listed the toolkit as connected but the provider has
+            // no account (expired/foreign): settle for THIS subject only, so
+            // the dead probe never re-fires on their next create while a
+            // different, properly connected subject still gets sampled.
+            if (connectRequiredSettled.size > 10_000) connectRequiredSettled.clear();
+            connectRequiredSettled.add(connectSettleKey(ctx.principal.subject, descriptor.name));
           }
           // Transient errors (e.g. an unauthenticated caller) retry on the
           // next create with that caller's own authority.

@@ -137,6 +137,36 @@ describe("generation tool sampling and connector connectedness", () => {
     expect(tools.executed.filter((tool) => tool === "gmail_FETCH_EMAILS")).toHaveLength(1);
   });
 
+  it("a connect-required settle is per subject: another connected subject still gets probed", async () => {
+    const tools = new RecordingTools([
+      readDescriptor("gmail_FETCH_EMAILS", { toolkit: "gmail" }),
+    ]);
+    tools.setOutcome("gmail_FETCH_EMAILS", {
+      status: "connect-required",
+      connect: { connector: "composio", toolkit: "gmail", message: "Connect gmail first." },
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+      connectedToolkits: async () => ["gmail"],
+    });
+
+    await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    // A different principal with a WORKING account: the probe now succeeds
+    // and must not have been suppressed by the first subject's dead probe.
+    tools.setOutcome("gmail_FETCH_EMAILS", { status: "ok", output: { emails: [] } });
+    await runtime.create({ prompt: "Build a dashboard" }, {
+      ...ctx,
+      principal: { kind: "user", subject: "user_sampling_2" },
+      sessionId: "session_sampling_2",
+    });
+
+    expect(tools.executed.filter((tool) => tool === "gmail_FETCH_EMAILS")).toHaveLength(2);
+  });
+
   it("a failing connectedToolkits lookup degrades to host-tools-only sampling", async () => {
     const tools = new RecordingTools([
       readDescriptor("host_listAccounts"),
