@@ -29,7 +29,7 @@ export const BASE_PATH = "/api/vendo";
 export type SandboxVenue = "e2b" | "cloud" | "custom" | false;
 
 /** How inference is served: "custom" (a host-passed model) or "ladder" (the
-    composed devModel default — provider env key, then VENDO_API_KEY via the
+    composed vendoModel default — provider env key, then VENDO_API_KEY via the
     Cloud model gateway, then the honest keyless failure; the ladder resolves
     lazily, so /status cannot name the rung without forcing a resolution). */
 export type ModelVenue = "custom" | "ladder";

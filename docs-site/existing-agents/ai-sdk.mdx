@@ -91,17 +91,37 @@ case "dynamic-tool":
 
 ## Try it
 
-1. **"What's the weather in Paris?"** — a guarded read; your model narrates
-   the result.
+<Warning>
+  Two models are in play, on two separate credentials. Your agent's OWN loop
+  keeps its own key (here `ANTHROPIC_API_KEY` for `claude-sonnet-4-6`) — no
+  Vendo key replaces it. Vendo's internal turns (app builds, the delegate)
+  resolve their model through the
+  [dev-mode credential ladder](/connect/dev-mode), where an explicit provider
+  key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GOOGLE_GENERATIVE_AI_API_KEY`) always beats `VENDO_API_KEY` — explicit
+  keys win over implicit ones. With a provider key in the environment for
+  your loop, Vendo's builds ride that key too, NOT your Cloud key; to force
+  builds through the Vendo Cloud gateway, set
+  `VENDO_DEV_CREDENTIAL=vendo-cloud` (the gateway rides the stock
+  `@ai-sdk/anthropic` provider, so that package must be installed). No
+  `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
+  straight into `.env.local`. If your loop's model has no key on this
+  machine, either set one or point your `model` at `vendoModel()` from
+  `@vendoai/vendo/server` to ride the same ladder. The done-criterion is a
+  REAL chat turn that renders a Vendo tool output — run ask 2 yourself
+  before calling the install done; doctor cannot check your loop's model.
+</Warning>
+
+One thread, three asks:
+
+1. **"What's the weather in Paris?"** A guarded read: the guard runs it,
+   audits it, and returns plain data your model narrates.
 2. **"Make me a dashboard comparing the weather in Paris, London and
    Tokyo."** — a micro-app builds live, inline in your chat.
 3. **Ask for a destructive action** from `.vendo/tools.json` in plain
    language — it parks as an approval card; Approve runs it in place.
 
-Your loop keeps its own model key; Vendo's app builds resolve theirs through
-the [dev-mode credential ladder](/connect/dev-mode). No key? `npx vendo
-login` mints a free one. Details and knobs:
-[Configuration](/existing-agents/configuration).
+Details and knobs: [Configuration](/existing-agents/configuration).
 
 ## The full example
 

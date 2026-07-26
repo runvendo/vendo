@@ -1,0 +1,52 @@
+{
+  "name": "demo-template",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "exports": {
+    "./demo-config": "./src/lib/demo-config.ts"
+  },
+  "scripts": {
+    "predev": "vendo sync .",
+    "dev": "next dev",
+    "prebuild": "vendo sync .",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@vendoai/actions": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/store": "workspace:*",
+    "@vendoai/ui": "workspace:*",
+    "@vendoai/vendo": "workspace:*",
+    "ai": "6.0.28",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.40.0",
+    "lucide-react": "^1.21.0",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "3.0.2",
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/react": "^16.0.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vendoai/apps": "workspace:*",
+    "@vendoai/automations": "workspace:*",
+    "@vendoai/guard": "workspace:*",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}
