@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "id": "msg_017",
+      "clientId": "cl_patel",
+      "direction": "firm",
+      "author": "Maya Alvarez",
+      "body": "Hi Anjali, your W-2 and prior-year return are verified. Last items are the 1099-NEC from your consulting work and donation receipts if you want to itemize.",
+      "sentAt": "2026-07-20T13:25:00-07:00"
+    },
+    {
+      "id": "msg_018",
+      "clientId": "cl_patel",
+      "direction": "client",
+      "author": "Anjali Patel",
+      "body": "The consulting platform says 1099s are available mid-month, I will download it as soon as it posts. Gathering donation receipts now.",
+      "sentAt": "2026-07-21T08:48:00-07:00"
+    }
+  ]
+}

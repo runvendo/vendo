@@ -291,6 +291,31 @@ if (command === "setup") {
     }
   });
   reportErrors(rest[1]);
+} else if (command === "openaria") {
+  // Open an app and capture aria snapshots of EVERY frame (islands live in
+  // iframes, invisible to the page-level snapshot). Value-level judging aid
+  // added during the 2026-07-26 re-gate; read-only, harness fix not tuning.
+  const [appId, label] = rest;
+  await withPage(async (page) => {
+    await gotoApps(page);
+    if (host === "maple") await mapleSelectApp(page, appId);
+    else await cadenceOpenApp(page, appId);
+    await settleSurface(page);
+    await capture(page, label);
+    let i = 0;
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      i += 1;
+      try {
+        const aria = await frame.locator("body").ariaSnapshot();
+        writeFileSync(join(SHOTS, `${label}.frame${i}.aria.yml`), aria);
+      } catch (error) {
+        console.log(`frame ${i} aria failed: ${error}`);
+      }
+    }
+    console.log(`frames captured: ${i}`);
+  });
+  reportErrors(rest[1]);
 } else if (command === "fireframe") {
   // Same as fire, but the control lives inside an island IFRAME (the plain
   // fire command's surface locator cannot reach into frames). Added during

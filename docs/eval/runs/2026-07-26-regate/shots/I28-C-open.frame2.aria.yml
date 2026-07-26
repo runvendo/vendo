@@ -1,0 +1,22 @@
+- text: Outstanding documents3 items
+- table:
+  - rowgroup:
+    - row "Document Status Note":
+      - columnheader "Document"
+      - columnheader "Status"
+      - columnheader "Note"
+  - rowgroup:
+    - row "Needs review —":
+      - cell
+      - cell "Needs review"
+      - cell "—"
+    - row "Outstanding —":
+      - cell
+      - cell "Outstanding"
+      - cell "—"
+    - row "Outstanding —":
+      - cell
+      - cell "Outstanding"
+      - cell "—"
+- text: Already received (3)
+- button "Draft checklist message to client"

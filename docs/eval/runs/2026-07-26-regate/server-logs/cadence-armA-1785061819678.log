@@ -1,0 +1,16 @@
+=== boot cadence arm A at 2026-07-26T10:30:19.678Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 183ms
+
+=== create I17 arm A start ===
+
+=== create I17 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=41.3s tokens=21982→3325
+[vendo] gen full invalid (3 issues): wire unknown-reference: "clients.data" does not name a declared <Query> or state | island "NeedsReviewTable" renders <CadenceStatusBadge> | island "NeedsReviewTable" renders <Skeleton>
+[vendo] gen full complete at=71.8s tokens=22168→2395
+[vendo] gen full invalid (2 issues): wire nested-query: <Query> belongs at App level; the query was still hoisted | island "NeedsReviewTable" must be plain TSX with an `export default` component
+[vendo] gen full complete at=102.9s tokens=22224→2507
+[vendo] gen create complete app=app_28bc8a55-c768-4896-ba44-f36c1c18b9ea total=104.2s

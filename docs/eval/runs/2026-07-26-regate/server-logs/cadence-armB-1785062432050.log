@@ -1,0 +1,59 @@
+=== boot cadence arm B at 2026-07-26T10:40:32.051Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 179ms
+
+=== create I18 arm B start ===
+
+=== create I18 arm B end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=37.2s tokens=21994→3046
+[vendo] gen full invalid (1 issue): island "AnjaliClientView" must be plain TSX with an `export default` component
+[vendo] gen repair complete at=37.2s
+[vendo] gen pipeline island-repair islands=1 repaired=false ms=40
+[vendo] gen full complete at=68.0s tokens=22053→2314
+[vendo] gen full invalid (4 issues): App name="Anjali Patel | island "AnjaliClientView" renders <CadenceStatusBadge> | island "AnjaliClientView" renders <CadenceDocProgress>
+Error [AI_APICallError]: Cannot connect to API: other side closed
+    at ignore-listed frames {
+  url: 'https://api.anthropic.com/v1/messages',
+  requestBodyValues: {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 64000,
+    temperature: 0,
+    top_k: undefined,
+    top_p: undefined,
+    stop_sequences: undefined,
+    system: [ [Object] ],
+    messages: [ [Object] ],
+    tools: undefined,
+    tool_choice: undefined,
+    stream: true
+  },
+  statusCode: undefined,
+  responseHeaders: undefined,
+  responseBody: undefined,
+  isRetryable: true,
+  data: undefined,
+  [cause]: Error [SocketError]: other side closed
+      at ignore-listed frames {
+    code: 'UND_ERR_SOCKET',
+    socket: {
+      localAddress: '2601:645:8400:630:f57f:b69f:e92c:9dd1',
+      localPort: 63081,
+      remoteAddress: undefined,
+      remotePort: undefined,
+      remoteFamily: undefined,
+      timeout: undefined,
+      bytesWritten: 150673,
+      bytesRead: 7408
+    }
+  }
+}
+[vendo] app build failed (app_752015ef-7802-45b2-a49f-5032bb8f81ef): generation failed
+  - island "AnjaliClientView" must be plain TSX with an `export default` component — no braces, template literals, or fences around the source
+  - model generation failed: Cannot connect to API: other side closed
+  - App name="Anjali Patel — document status & messages" is 41 characters — name is the app's display title (at most 40 characters); write a short human title, never the request echoed back
+  - island "AnjaliClientView" renders <CadenceStatusBadge> — <CadenceStatusBadge> renders on the host page and cannot exist inside an island (the name is undefined in the sandbox): use the ambient Kit equivalent (EnumBadge) inside the island, or move it to a tree node.
+  - island "AnjaliClientView" renders <CadenceDocProgress> — <CadenceDocProgress> renders on the host page and cannot exist inside an island (the name is undefined in the sandbox): use the ambient Kit equivalent (Progress) inside the island, or move it to a tree node.
+  - island "AnjaliClientView" renders <Skeleton> — <Skeleton> renders on the host page and cannot exist inside an island (the name is undefined in the sandbox): islands render against live tool data — replace it with a brief loading state (e.g. <Text text="Loading…"/> until the data arrives), or move it to a tree node.

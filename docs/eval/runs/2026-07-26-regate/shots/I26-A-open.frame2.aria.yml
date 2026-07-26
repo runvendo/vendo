@@ -1,0 +1,120 @@
+- heading "No conflicts detected" [level=3]
+- text: Clear
+- heading [level=3]
+- heading [level=3]
+- heading [level=3]
+- heading [level=3]
+- heading [level=3]
+- text: Search all clients
+- textbox "Search all clients":
+  - /placeholder: Filter by name, contact, or entity type…
+- heading [level=3]
+- text: 0 flagged
+- heading [level=3]
+- text: 12 clear
+- table:
+  - rowgroup:
+    - row "Client Contact Entity Assigned to Status Filing deadline":
+      - columnheader "Client"
+      - columnheader "Contact"
+      - columnheader "Entity"
+      - columnheader "Assigned to"
+      - columnheader "Status"
+      - columnheader "Filing deadline"
+  - rowgroup:
+    - row "Blue Bottle Coffee Marisol Rivera s_corp Maya Alvarez missing_docs Jul 28, 2026":
+      - cell "Blue Bottle Coffee"
+      - cell "Marisol Rivera"
+      - cell "s_corp"
+      - cell "Maya Alvarez"
+      - cell "missing_docs"
+      - cell "Jul 28, 2026"
+    - row "Linear Wei Chen sole_prop Maya Alvarez missing_docs Jul 29, 2026":
+      - cell "Linear"
+      - cell "Wei Chen"
+      - cell "sole_prop"
+      - cell "Maya Alvarez"
+      - cell "missing_docs"
+      - cell "Jul 29, 2026"
+    - row "Sweetgreen Antonio Delgado partnership Maya Alvarez missing_docs Aug 16, 2026":
+      - cell "Sweetgreen"
+      - cell "Antonio Delgado"
+      - cell "partnership"
+      - cell "Maya Alvarez"
+      - cell "missing_docs"
+      - cell "Aug 16, 2026"
+    - row "Equinox Dana Kowalski s_corp Priya Natarajan missing_docs Aug 20, 2026":
+      - cell "Equinox"
+      - cell "Dana Kowalski"
+      - cell "s_corp"
+      - cell "Priya Natarajan"
+      - cell "missing_docs"
+      - cell "Aug 20, 2026"
+    - row "TaskRabbit Greg Foster sole_prop Tomas Okafor missing_docs Aug 24, 2026":
+      - cell "TaskRabbit"
+      - cell "Greg Foster"
+      - cell "sole_prop"
+      - cell "Tomas Okafor"
+      - cell "missing_docs"
+      - cell "Aug 24, 2026"
+    - row "Anjali Patel Anjali Patel individual Maya Alvarez missing_docs Aug 28, 2026":
+      - cell "Anjali Patel"
+      - cell "Anjali Patel"
+      - cell "individual"
+      - cell "Maya Alvarez"
+      - cell "missing_docs"
+      - cell "Aug 28, 2026"
+    - row "Compass Susan Kim partnership Priya Natarajan missing_docs Sep 2, 2026":
+      - cell "Compass"
+      - cell "Susan Kim"
+      - cell "partnership"
+      - cell "Priya Natarajan"
+      - cell "missing_docs"
+      - cell "Sep 2, 2026"
+    - row "Jiffy Lube Luis Cortez sole_prop Tomas Okafor missing_docs Sep 7, 2026":
+      - cell "Jiffy Lube"
+      - cell "Luis Cortez"
+      - cell "sole_prop"
+      - cell "Tomas Okafor"
+      - cell "missing_docs"
+      - cell "Sep 7, 2026"
+    - row "Banfield Pet Hospital Emily Rhodes c_corp Priya Natarajan complete Sep 13, 2026":
+      - cell "Banfield Pet Hospital"
+      - cell "Emily Rhodes"
+      - cell "c_corp"
+      - cell "Priya Natarajan"
+      - cell "complete"
+      - cell "Sep 13, 2026"
+    - row "Figma Jonah Whitfield sole_prop Daniel Hartwell complete Sep 19, 2026":
+      - cell "Figma"
+      - cell "Jonah Whitfield"
+      - cell "sole_prop"
+      - cell "Daniel Hartwell"
+      - cell "complete"
+      - cell "Sep 19, 2026"
+    - row "LegalZoom Alice Mercer partnership Daniel Hartwell complete Sep 26, 2026":
+      - cell "LegalZoom"
+      - cell "Alice Mercer"
+      - cell "partnership"
+      - cell "Daniel Hartwell"
+      - cell "complete"
+      - cell "Sep 26, 2026"
+    - row "Grant Ellison Grant Ellison individual Maya Alvarez complete Oct 4, 2026":
+      - cell "Grant Ellison"
+      - cell "Grant Ellison"
+      - cell "individual"
+      - cell "Maya Alvarez"
+      - cell "complete"
+      - cell "Oct 4, 2026"
+- heading [level=3]
+- text: Resolution
+- combobox "Resolution":
+  - option "Select a resolution…" [selected]
+  - option "No conflict — cleared to engage"
+  - option "Conflict identified — engagement declined"
+  - option "Conflict identified — waiver obtained"
+  - option "Referred to partner for review"
+- text: Notes
+- textbox "Notes":
+  - /placeholder: Summarise the screen findings and any steps taken…
+- button "Record resolution" [disabled]

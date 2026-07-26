@@ -1,0 +1,26 @@
+=== boot cadence arm B at 2026-07-26T11:49:31.027Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 258ms
+
+=== create I28 arm B start ===
+
+=== create I28 arm B end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=30.1s tokens=21985→2110
+[vendo] gen full invalid (2 issues): wire unknown-reference: "clients.data" does not name a declared <Query> or state | node "clientmessageisland-1" references unknown component "ClientMessageIsland"
+[vendo] gen full complete at=67.7s tokens=22038→2737
+[vendo] gen full invalid (2 issues): wire unknown-reference: "clients.data" does not name a declared <Query> or state | node "antoniochecklist-1" references unknown component "AntonioChecklist"
+[vendo] gen full complete at=90.9s tokens=22059→1574
+[vendo] gen full invalid (7 issues): wire unknown-reference: "clients.data.0.id" does not name a declared <Query> or state | wire unknown-reference: "clients.data.0.filingDeadline" does not name a declared <Query> or state | wire unknown-reference: "clients.data.0.status" does not name a declared <Query> or state
+[vendo] app build failed (app_4b196080-26cd-4ba2-9dfa-a9dc295b729e): generation failed
+  - wire unknown-reference: "clients.data" does not name a declared <Query> or state
+  - node "clientmessageisland-1" references unknown component "ClientMessageIsland"
+  - node "antoniochecklist-1" references unknown component "AntonioChecklist"
+  - wire unknown-reference: "clients.data.0.id" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.filingDeadline" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.status" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.contactName" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.businessName" does not name a declared <Query> or state
+  - node "checklistmessagecomposer-1" references unknown component "ChecklistMessageComposer"

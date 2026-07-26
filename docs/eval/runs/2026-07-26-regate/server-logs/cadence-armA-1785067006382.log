@@ -1,0 +1,15 @@
+=== boot cadence arm A at 2026-07-26T11:56:46.385Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 156ms
+
+=== create I28 arm A start ===
+
+=== create I28 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=37.6s tokens=21985→2757
+[vendo] gen full invalid (1 issue): island "AntonioChasePanel" must be plain TSX with an `export default` component
+[vendo] gen repair complete at=68.6s
+[vendo] gen pipeline island-repair islands=1 repaired=true ms=31760
+[vendo] gen create complete app=app_aaf55e82-0f34-4d52-8330-bda7e923a7e0 total=69.9s

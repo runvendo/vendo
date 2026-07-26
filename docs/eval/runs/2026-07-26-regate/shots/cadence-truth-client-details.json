@@ -1,0 +1,242 @@
+{
+ "cl_rivera": {
+  "id": "cl_rivera",
+  "businessName": "Blue Bottle Coffee",
+  "entityType": "s_corp",
+  "contactName": "Marisol Rivera",
+  "contactEmail": "yousef+rivera@vendo.run",
+  "assigneeId": "st_maya",
+  "filingDeadline": "2026-07-28T17:00:00-07:00",
+  "progress": {
+   "received": 3,
+   "total": 6
+  },
+  "status": "missing_docs",
+  "assignee": {
+   "id": "st_maya",
+   "name": "Maya Alvarez",
+   "role": "Account Manager",
+   "initials": "MA"
+  }
+ },
+ "cl_chen": {
+  "id": "cl_chen",
+  "businessName": "Linear",
+  "entityType": "sole_prop",
+  "contactName": "Wei Chen",
+  "contactEmail": "yousef+chen@vendo.run",
+  "assigneeId": "st_maya",
+  "filingDeadline": "2026-07-29T17:00:00-07:00",
+  "progress": {
+   "received": 3,
+   "total": 5
+  },
+  "status": "missing_docs",
+  "assignee": {
+   "id": "st_maya",
+   "name": "Maya Alvarez",
+   "role": "Account Manager",
+   "initials": "MA"
+  }
+ },
+ "cl_delgado": {
+  "id": "cl_delgado",
+  "businessName": "Sweetgreen",
+  "entityType": "partnership",
+  "contactName": "Antonio Delgado",
+  "contactEmail": "yousef+delgado@vendo.run",
+  "assigneeId": "st_maya",
+  "filingDeadline": "2026-08-16T17:00:00-07:00",
+  "progress": {
+   "received": 4,
+   "total": 6
+  },
+  "status": "missing_docs",
+  "assignee": {
+   "id": "st_maya",
+   "name": "Maya Alvarez",
+   "role": "Account Manager",
+   "initials": "MA"
+  }
+ },
+ "cl_harborview": {
+  "id": "cl_harborview",
+  "businessName": "Equinox",
+  "entityType": "s_corp",
+  "contactName": "Dana Kowalski",
+  "contactEmail": "yousef+harborview@vendo.run",
+  "assigneeId": "st_priya",
+  "filingDeadline": "2026-08-20T17:00:00-07:00",
+  "progress": {
+   "received": 3,
+   "total": 5
+  },
+  "status": "missing_docs",
+  "assignee": {
+   "id": "st_priya",
+   "name": "Priya Natarajan",
+   "role": "Senior Accountant",
+   "initials": "PN"
+  }
+ },
+ "cl_foster": {
+  "id": "cl_foster",
+  "businessName": "TaskRabbit",
+  "entityType": "sole_prop",
+  "contactName": "Greg Foster",
+  "contactEmail": "yousef+foster@vendo.run",
+  "assigneeId": "st_tomas",
+  "filingDeadline": "2026-08-24T17:00:00-07:00",
+  "progress": {
+   "received": 1,
+   "total": 4
+  },
+  "status": "missing_docs",
+  "assignee": {
+   "id": "st_tomas",
+   "name": "Tomas Okafor",
+   "role": "Bookkeeper",
+   "initials": "TO"
+  }
+ },
+ "cl_patel": {
+  "id": "cl_patel",
+  "businessName": "Anjali Patel",
+  "entityType": "individual",
+  "contactName": "Anjali Patel",
+  "contactEmail": "yousef+patel@vendo.run",
+  "assigneeId": "st_maya",
+  "filingDeadline": "2026-08-28T17:00:00-07:00",
+  "progress": {
+   "received": 2,
+   "total": 4
+  },
+  "status": "missing_docs",
+  "assignee": {
+   "id": "st_maya",
+   "name": "Maya Alvarez",
+   "role": "Account Manager",
+   "initials": "MA"
+  }
+ },
+ "cl_kim": {
+  "id": "cl_kim",
+  "businessName": "Compass",
+  "entityType": "partnership",
+  "contactName": "Susan Kim",
+  "contactEmail": "yousef+kim@vendo.run",
+  "assigneeId": "st_priya",
+  "filingDeadline": "2026-09-02T17:00:00-07:00",
+  "progress": {
+   "received": 2,
+   "total": 5
+  },
+  "status": "missing_docs",
+  "assignee": {
+   "id": "st_priya",
+   "name": "Priya Natarajan",
+   "role": "Senior Accountant",
+   "initials": "PN"
+  }
+ },
+ "cl_cortez": {
+  "id": "cl_cortez",
+  "businessName": "Jiffy Lube",
+  "entityType": "sole_prop",
+  "contactName": "Luis Cortez",
+  "contactEmail": "yousef+cortez@vendo.run",
+  "assigneeId": "st_tomas",
+  "filingDeadline": "2026-09-07T17:00:00-07:00",
+  "progress": {
+   "received": 1,
+   "total": 5
+  },
+  "status": "missing_docs",
+  "assignee": {
+   "id": "st_tomas",
+   "name": "Tomas Okafor",
+   "role": "Bookkeeper",
+   "initials": "TO"
+  }
+ },
+ "cl_lakeside": {
+  "id": "cl_lakeside",
+  "businessName": "Banfield Pet Hospital",
+  "entityType": "c_corp",
+  "contactName": "Emily Rhodes",
+  "contactEmail": "yousef+lakeside@vendo.run",
+  "assigneeId": "st_priya",
+  "filingDeadline": "2026-09-13T17:00:00-07:00",
+  "progress": {
+   "received": 6,
+   "total": 6
+  },
+  "status": "complete",
+  "assignee": {
+   "id": "st_priya",
+   "name": "Priya Natarajan",
+   "role": "Senior Accountant",
+   "initials": "PN"
+  }
+ },
+ "cl_whitfield": {
+  "id": "cl_whitfield",
+  "businessName": "Figma",
+  "entityType": "sole_prop",
+  "contactName": "Jonah Whitfield",
+  "contactEmail": "yousef+whitfield@vendo.run",
+  "assigneeId": "st_daniel",
+  "filingDeadline": "2026-09-19T17:00:00-07:00",
+  "progress": {
+   "received": 4,
+   "total": 4
+  },
+  "status": "complete",
+  "assignee": {
+   "id": "st_daniel",
+   "name": "Daniel Hartwell",
+   "role": "Partner",
+   "initials": "DH"
+  }
+ },
+ "cl_mercer": {
+  "id": "cl_mercer",
+  "businessName": "LegalZoom",
+  "entityType": "partnership",
+  "contactName": "Alice Mercer",
+  "contactEmail": "yousef+mercer@vendo.run",
+  "assigneeId": "st_daniel",
+  "filingDeadline": "2026-09-26T17:00:00-07:00",
+  "progress": {
+   "received": 5,
+   "total": 5
+  },
+  "status": "complete",
+  "assignee": {
+   "id": "st_daniel",
+   "name": "Daniel Hartwell",
+   "role": "Partner",
+   "initials": "DH"
+  }
+ },
+ "cl_ellison": {
+  "id": "cl_ellison",
+  "businessName": "Grant Ellison",
+  "entityType": "individual",
+  "contactName": "Grant Ellison",
+  "contactEmail": "yousef+ellison@vendo.run",
+  "assigneeId": "st_maya",
+  "filingDeadline": "2026-10-04T17:00:00-07:00",
+  "progress": {
+   "received": 4,
+   "total": 4
+  },
+  "status": "complete",
+  "assignee": {
+   "id": "st_maya",
+   "name": "Maya Alvarez",
+   "role": "Account Manager",
+   "initials": "MA"
+  }
+ }
+}

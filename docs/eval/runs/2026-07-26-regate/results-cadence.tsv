@@ -1,0 +1,45 @@
+I16	C	app_6f4a9a8e-f047-428a-afe0-b63ce8ae1400	Entity type trouble comparison	52.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785061547838.log
+I16	B	app_9c8cc758-516c-4616-9cef-05e886bbe60d	Entity type trouble report	75.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785061615316.log
+I16	A	app_4222f083-eed1-48f4-91c2-881240473000	Entity type trouble comparison	32.3	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785061704662.log
+I17	B	app_c636679f-02cd-4141-8d9b-5c7335ca1814	Documents needing review	54.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785061751032.log
+I17	A	app_28bc8a55-c768-4896-ba44-f36c1c18b9ea	Documents needing review	105.5	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785061819678.log
+I17	C	app_08869561-e969-4e2c-8fd7-492a3510550d	Documents needing review	45.1	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785061939458.log
+I18	C	UNKNOWN	?	421.3	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785061939458.log
+I18	B	UNKNOWN	?	421.3	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785062432050.log
+I18	A	app_5c5a0a95-d2f7-4b95-b74d-f258961a6e44	Anjali Patel — document & message status	90.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785062867242.log
+I19	B	app_ad68a46c-88ef-4c25-8ff0-66d26a08553c	Figma — rejected documents	59.1	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785062971860.log
+I19	A	app_cea1ead3-e2e2-463e-bbe3-018d6cdc9d32	Figma — rejected documents	64.8	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785063045986.log
+I19	C	app_72a519a9-019c-436b-828d-2be286b59d46	Figma — rejected documents	79.5	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785063124562.log
+I20	B	app_b2348998-2085-4a54-9b4b-44fde47b7e4f	Clients by deadline proximity	84.9	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785063218736.log
+I20	C	app_c9385108-5dfe-47dc-9a45-0b005f8b4f2d	Clients by deadline	40.9	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785063318634.log
+I20	A	app_d6f2f63e-8d3e-4dac-afc8-0c238a2617da	Clients by deadline proximity	65.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785063374674.log
+I21	C	app_a762fe78-a7f1-443a-a8e8-2494b9ed6fe1	Document review turnaround	129.9	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785063454597.log
+I21	A	UNKNOWN	?	421.5	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785063599297.log
+I21	B	app_b31a13fb-5ca6-44f1-ad37-be954b86bea3	Document review turnaround	75.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785064036813.log
+I22	C	app_cc687704-c49f-4b41-a8d4-ef8af9f7f1cb	Your Monday morning brief	34.5	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785064125401.log
+I22	A	app_3d038d06-3e88-4edf-8e24-a8d9dca286f3	Monday morning priorities	30.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785064173615.log
+I22	B	app_31154d41-9e3a-4c2b-8f62-c9355851cc86	Monday morning priorities	16.2	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785064218102.log
+I23	C	app_31f38f5e-01de-4bc5-b5f7-05fd7f7c872a	Unacknowledged uploads this week	40.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785064247736.log
+I23	B	app_5d4595bb-a52e-424a-ad77-4f9bb0b2a582	Unacknowledged uploads this week	103.6	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785064301869.log
+I23	A	app_564713ca-e0ff-42cb-a63e-55c56ae9d659	Unacknowledged uploads this week	75.0	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785064419296.log
+I24	B	app_32198630-7c08-49e7-bedb-c176a9309793	Equinox Friday reminder	101.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785064507779.log
+I24	C	app_90ffff05-551d-497c-89dc-2a2cc51c5974	Equinox Friday reminder setup	101.5	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785064623389.log
+I24	A	UNKNOWN	?	421.8	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785065172995.log
+I25	A	app_4a590352-054d-41ac-ba90-91483879a661	Archive Jiffy Lube & send goodbye	93.3	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785065172995.log
+I25	B	UNKNOWN	?	420.4	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785065712147.log
+I25	C	app_2a5f5fe4-5d07-4d75-acd6-04d28124f42e	Archive Jiffy Lube & send goodbye	29.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785066146157.log
+I26	A	app_26be4c23-4591-4151-8814-8d54ef2296db	Conflict of interest screen — Allbirds	84.2	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785066190955.log
+I26	B	app_919f196e-9d09-4d4f-9d4a-13991048ea14	Conflict of interest — Allbirds	96.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785066289474.log
+I26	C	app_228370f8-f26b-4af1-9389-6a9a380a7880	Conflict-of-interest screen — Allbirds	40.4	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785066400223.log
+I27	B	app_d1181aae-4c3f-47bd-889e-835b3c63e7d6	Engagement letter status	17.1	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785066455386.log
+I27	A	app_7ba61d7c-8d6f-4062-b92f-6812fe8ab906	Engagement letter status	14.8	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785066488129.log
+I27	C	app_5792f0ee-3512-465a-8327-a65a159230ae	Engagement letter status	37.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785066518255.log
+I28	B	UNKNOWN	?	420.3	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785066571027.log
+I28	A	app_aaf55e82-0f34-4d52-8330-bda7e923a7e0	Chase Antonio Delgado — missing docs	71.5	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785067006382.log
+I28	C	app_e100106a-75ee-4e26-9b47-51a5b98529df	Chase Antonio Delgado — missing docs	42.9	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785067091441.log
+I29	C	app_9fe87253-e5ae-485a-a6dd-12d4825e4da6	Document collection: week over week	47.1	1	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785067091441.log
+I29	A	app_9b53f5d6-c303-4eb1-bcaa-2a2c186af039	Week-over-week document collection	77.9	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785067206187.log
+I29	B	app_d7005231-6b04-49d1-a4c1-e48fe05ca3b1	Week-over-week document collection	83.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785067301284.log
+I30	B	app_13ad828c-00a6-443b-a335-f3654b1aed84	Filing deadline readiness	116.6	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armB-1785067301284.log
+I30	A	app_4b242cab-6ad2-4a22-8048-6b6973f0d921	Filing deadline readiness	63.3	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armA-1785067526298.log
+I30	C	app_1a459752-0df1-48f2-8e9d-ceb2cbc7cd51	Filing deadline readiness	71.7	0	/tmp/vendo-regate/docs/eval/runs/2026-07-26-regate/server-logs/cadence-armC-1785067603185.log

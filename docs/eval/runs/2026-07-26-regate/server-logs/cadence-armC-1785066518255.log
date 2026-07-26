@@ -1,0 +1,14 @@
+=== boot cadence arm C at 2026-07-26T11:48:38.255Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 269ms
+
+=== create I27 arm C start ===
+
+=== create I27 arm C end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=32.2s tokens=23571→2455
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=false ms=1908
+[vendo] gen create complete app=app_5792f0ee-3512-465a-8327-a65a159230ae total=35.6s

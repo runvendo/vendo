@@ -1,0 +1,16 @@
+- text: View document checklist for a client
+- combobox:
+  - option "Choose a client…" [selected]
+  - option "Blue Bottle Coffee — S-Corp"
+  - option "Linear — Sole Prop"
+  - option "Sweetgreen — Partnership"
+  - option "Equinox — S-Corp"
+  - option "TaskRabbit — Sole Prop"
+  - option "Anjali Patel — Individual"
+  - option "Compass — Partnership"
+  - option "Jiffy Lube — Sole Prop"
+  - option "Banfield Pet Hospital — C-Corp"
+  - option "Figma — Sole Prop"
+  - option "LegalZoom — Partnership"
+  - option "Grant Ellison — Individual"
+- text: Select a client above to inspect their document checklist.

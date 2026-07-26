@@ -1,0 +1,533 @@
+{
+ "Blue Bottle Coffee": [
+  {
+   "id": "doc_rivera_prior_return",
+   "clientId": "cl_rivera",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "bluebottle-2024-return.pdf",
+    "uploadedAt": "2026-07-05T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_rivera_bank",
+   "clientId": "cl_rivera",
+   "kind": "Bank statements (2025)",
+   "status": "received",
+   "file": {
+    "name": "boa-business-statements-jan-jun.pdf",
+    "uploadedAt": "2026-07-23T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_rivera_payroll",
+   "clientId": "cl_rivera",
+   "kind": "Payroll summary",
+   "status": "needs_review",
+   "file": {
+    "name": "gusto-payroll-summary-2025.pdf",
+    "uploadedAt": "2026-07-24T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_rivera_w2",
+   "clientId": "cl_rivera",
+   "kind": "W-2",
+   "status": "missing"
+  },
+  {
+   "id": "doc_rivera_1099",
+   "clientId": "cl_rivera",
+   "kind": "1099-NEC",
+   "status": "missing"
+  },
+  {
+   "id": "doc_rivera_receipts",
+   "clientId": "cl_rivera",
+   "kind": "Receipts",
+   "status": "missing"
+  }
+ ],
+ "Linear": [
+  {
+   "id": "doc_chen_prior_return",
+   "clientId": "cl_chen",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "linear-2024-return.pdf",
+    "uploadedAt": "2026-07-12T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_chen_1099",
+   "clientId": "cl_chen",
+   "kind": "1099-NEC",
+   "status": "received",
+   "file": {
+    "name": "linear-1099-nec-clients.pdf",
+    "uploadedAt": "2026-07-22T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_chen_mileage",
+   "clientId": "cl_chen",
+   "kind": "Mileage log",
+   "status": "verified",
+   "file": {
+    "name": "chen-2025-mileage-log.xlsx",
+    "uploadedAt": "2026-07-16T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_chen_bank",
+   "clientId": "cl_chen",
+   "kind": "Bank statements (2025)",
+   "status": "missing"
+  },
+  {
+   "id": "doc_chen_receipts",
+   "clientId": "cl_chen",
+   "kind": "Receipts",
+   "status": "missing"
+  }
+ ],
+ "Sweetgreen": [
+  {
+   "id": "doc_delgado_prior_return",
+   "clientId": "cl_delgado",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "sweetgreen-2024-1065.pdf",
+    "uploadedAt": "2026-07-08T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_delgado_bank",
+   "clientId": "cl_delgado",
+   "kind": "Bank statements (2025)",
+   "status": "verified",
+   "file": {
+    "name": "chase-business-statements-h1.pdf",
+    "uploadedAt": "2026-07-17T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_delgado_payroll",
+   "clientId": "cl_delgado",
+   "kind": "Payroll summary",
+   "status": "received",
+   "file": {
+    "name": "adp-payroll-summary-q1-q2.pdf",
+    "uploadedAt": "2026-07-25T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_delgado_receipts",
+   "clientId": "cl_delgado",
+   "kind": "Receipts",
+   "status": "needs_review",
+   "file": {
+    "name": "vendor-receipts-scan-batch2.pdf",
+    "uploadedAt": "2026-07-25T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_delgado_1099",
+   "clientId": "cl_delgado",
+   "kind": "1099-NEC",
+   "status": "missing"
+  },
+  {
+   "id": "doc_delgado_w2",
+   "clientId": "cl_delgado",
+   "kind": "W-2",
+   "status": "missing"
+  }
+ ],
+ "Equinox": [
+  {
+   "id": "doc_harborview_prior_return",
+   "clientId": "cl_harborview",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "equinox-2024-1120s.pdf",
+    "uploadedAt": "2026-07-14T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_harborview_payroll",
+   "clientId": "cl_harborview",
+   "kind": "Payroll summary",
+   "status": "verified",
+   "file": {
+    "name": "equinox-payroll-2025.pdf",
+    "uploadedAt": "2026-07-18T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_harborview_receipts",
+   "clientId": "cl_harborview",
+   "kind": "Receipts",
+   "status": "received",
+   "file": {
+    "name": "equipment-receipts-2025.pdf",
+    "uploadedAt": "2026-07-24T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_harborview_bank",
+   "clientId": "cl_harborview",
+   "kind": "Bank statements (2025)",
+   "status": "missing"
+  },
+  {
+   "id": "doc_harborview_w2",
+   "clientId": "cl_harborview",
+   "kind": "W-2",
+   "status": "missing"
+  }
+ ],
+ "TaskRabbit": [
+  {
+   "id": "doc_foster_prior_return",
+   "clientId": "cl_foster",
+   "kind": "Prior-year return",
+   "status": "received",
+   "file": {
+    "name": "taskrabbit-2024-return-scan.pdf",
+    "uploadedAt": "2026-07-21T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_foster_1099",
+   "clientId": "cl_foster",
+   "kind": "1099-NEC",
+   "status": "missing"
+  },
+  {
+   "id": "doc_foster_bank",
+   "clientId": "cl_foster",
+   "kind": "Bank statements (2025)",
+   "status": "missing"
+  },
+  {
+   "id": "doc_foster_receipts",
+   "clientId": "cl_foster",
+   "kind": "Receipts",
+   "status": "missing"
+  }
+ ],
+ "Anjali Patel": [
+  {
+   "id": "doc_patel_w2",
+   "clientId": "cl_patel",
+   "kind": "W-2",
+   "status": "verified",
+   "file": {
+    "name": "patel-w2-northgate-medical.pdf",
+    "uploadedAt": "2026-07-10T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_patel_prior_return",
+   "clientId": "cl_patel",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "patel-2024-1040.pdf",
+    "uploadedAt": "2026-07-10T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_patel_1099",
+   "clientId": "cl_patel",
+   "kind": "1099-NEC",
+   "status": "missing"
+  },
+  {
+   "id": "doc_patel_receipts",
+   "clientId": "cl_patel",
+   "kind": "Receipts",
+   "status": "missing"
+  }
+ ],
+ "Compass": [
+  {
+   "id": "doc_kim_prior_return",
+   "clientId": "cl_kim",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "compass-2024-1065.pdf",
+    "uploadedAt": "2026-07-06T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_kim_bank",
+   "clientId": "cl_kim",
+   "kind": "Bank statements (2025)",
+   "status": "received",
+   "file": {
+    "name": "wells-fargo-statements-jan-jun.pdf",
+    "uploadedAt": "2026-07-20T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_kim_payroll",
+   "clientId": "cl_kim",
+   "kind": "Payroll summary",
+   "status": "missing"
+  },
+  {
+   "id": "doc_kim_1099",
+   "clientId": "cl_kim",
+   "kind": "1099-NEC",
+   "status": "missing"
+  },
+  {
+   "id": "doc_kim_receipts",
+   "clientId": "cl_kim",
+   "kind": "Receipts",
+   "status": "missing"
+  }
+ ],
+ "Jiffy Lube": [
+  {
+   "id": "doc_cortez_receipts",
+   "clientId": "cl_cortez",
+   "kind": "Receipts",
+   "status": "received",
+   "file": {
+    "name": "shop-receipts-2025-resubmitted.pdf",
+    "uploadedAt": "2026-07-22T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_cortez_prior_return",
+   "clientId": "cl_cortez",
+   "kind": "Prior-year return",
+   "status": "missing"
+  },
+  {
+   "id": "doc_cortez_bank",
+   "clientId": "cl_cortez",
+   "kind": "Bank statements (2025)",
+   "status": "missing",
+   "note": "Personal checking statement was uploaded; need the business account."
+  },
+  {
+   "id": "doc_cortez_1099",
+   "clientId": "cl_cortez",
+   "kind": "1099-NEC",
+   "status": "missing"
+  },
+  {
+   "id": "doc_cortez_payroll",
+   "clientId": "cl_cortez",
+   "kind": "Payroll summary",
+   "status": "missing"
+  }
+ ],
+ "Banfield Pet Hospital": [
+  {
+   "id": "doc_lakeside_prior_return",
+   "clientId": "cl_lakeside",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "banfield-2024-1120.pdf",
+    "uploadedAt": "2026-06-21T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_lakeside_bank",
+   "clientId": "cl_lakeside",
+   "kind": "Bank statements (2025)",
+   "status": "verified",
+   "file": {
+    "name": "banfield-usbank-statements-h1.pdf",
+    "uploadedAt": "2026-07-15T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_lakeside_payroll",
+   "clientId": "cl_lakeside",
+   "kind": "Payroll summary",
+   "status": "verified",
+   "file": {
+    "name": "banfield-adp-payroll-2025.pdf",
+    "uploadedAt": "2026-07-15T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_lakeside_w2",
+   "clientId": "cl_lakeside",
+   "kind": "W-2",
+   "status": "verified",
+   "file": {
+    "name": "banfield-w2-batch-2025.pdf",
+    "uploadedAt": "2026-07-13T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_lakeside_1099",
+   "clientId": "cl_lakeside",
+   "kind": "1099-NEC",
+   "status": "verified",
+   "file": {
+    "name": "banfield-1099-nec-contractors.pdf",
+    "uploadedAt": "2026-07-13T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_lakeside_receipts",
+   "clientId": "cl_lakeside",
+   "kind": "Receipts",
+   "status": "verified",
+   "file": {
+    "name": "banfield-expense-receipts-2025.pdf",
+    "uploadedAt": "2026-07-16T10:24:00-07:00"
+   }
+  }
+ ],
+ "Figma": [
+  {
+   "id": "doc_whitfield_prior_return",
+   "clientId": "cl_whitfield",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "figma-2024-return.pdf",
+    "uploadedAt": "2026-06-28T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_whitfield_bank",
+   "clientId": "cl_whitfield",
+   "kind": "Bank statements (2025)",
+   "status": "verified",
+   "file": {
+    "name": "mercury-statements-jan-jun.pdf",
+    "uploadedAt": "2026-07-09T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_whitfield_1099",
+   "clientId": "cl_whitfield",
+   "kind": "1099-NEC",
+   "status": "verified",
+   "file": {
+    "name": "figma-1099s-2025.pdf",
+    "uploadedAt": "2026-07-09T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_whitfield_receipts",
+   "clientId": "cl_whitfield",
+   "kind": "Receipts",
+   "status": "verified",
+   "file": {
+    "name": "studio-expense-receipts.pdf",
+    "uploadedAt": "2026-07-11T10:24:00-07:00"
+   }
+  }
+ ],
+ "LegalZoom": [
+  {
+   "id": "doc_mercer_prior_return",
+   "clientId": "cl_mercer",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "legalzoom-2024-1065.pdf",
+    "uploadedAt": "2026-06-26T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_mercer_bank",
+   "clientId": "cl_mercer",
+   "kind": "Bank statements (2025)",
+   "status": "verified",
+   "file": {
+    "name": "legalzoom-statements-h1.pdf",
+    "uploadedAt": "2026-07-07T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_mercer_payroll",
+   "clientId": "cl_mercer",
+   "kind": "Payroll summary",
+   "status": "verified",
+   "file": {
+    "name": "legalzoom-payroll-2025.pdf",
+    "uploadedAt": "2026-07-07T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_mercer_w2",
+   "clientId": "cl_mercer",
+   "kind": "W-2",
+   "status": "verified",
+   "file": {
+    "name": "legalzoom-w2s.pdf",
+    "uploadedAt": "2026-07-04T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_mercer_receipts",
+   "clientId": "cl_mercer",
+   "kind": "Receipts",
+   "status": "verified",
+   "file": {
+    "name": "firm-expense-receipts-2025.pdf",
+    "uploadedAt": "2026-07-08T10:24:00-07:00"
+   }
+  }
+ ],
+ "Grant Ellison": [
+  {
+   "id": "doc_ellison_w2",
+   "clientId": "cl_ellison",
+   "kind": "W-2",
+   "status": "verified",
+   "file": {
+    "name": "ellison-w2-meridian-labs.pdf",
+    "uploadedAt": "2026-06-30T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_ellison_prior_return",
+   "clientId": "cl_ellison",
+   "kind": "Prior-year return",
+   "status": "verified",
+   "file": {
+    "name": "ellison-2024-1040.pdf",
+    "uploadedAt": "2026-06-30T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_ellison_1099",
+   "clientId": "cl_ellison",
+   "kind": "1099-NEC",
+   "status": "verified",
+   "file": {
+    "name": "ellison-1099-nec-consulting.pdf",
+    "uploadedAt": "2026-07-02T10:24:00-07:00"
+   }
+  },
+  {
+   "id": "doc_ellison_receipts",
+   "clientId": "cl_ellison",
+   "kind": "Receipts",
+   "status": "verified",
+   "file": {
+    "name": "ellison-donation-receipts.pdf",
+    "uploadedAt": "2026-07-03T10:24:00-07:00"
+   }
+  }
+ ]
+}

@@ -1,0 +1,28 @@
+=== boot cadence arm B at 2026-07-26T12:01:41.284Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 196ms
+
+=== create I29 arm B start ===
+
+=== create I29 arm B end ===
+
+=== create I30 arm B start ===
+
+=== create I30 arm B end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=44.0s tokens=21985→2771
+[vendo] gen full invalid (1 issue): island "WoWDocCollection" must be plain TSX with an `export default` component
+[vendo] gen repair complete at=80.4s
+[vendo] gen pipeline island-repair islands=1 repaired=true ms=36790
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=false ms=1191
+[vendo] gen create complete app=app_d7005231-6b04-49d1-a4c1-e48fe05ca3b1 total=83.6s
+[vendo] gen full complete at=48.2s tokens=21988→3895
+[vendo] gen full invalid (1 issue): island "DeadlineReadinessTable" computes displayed values from the hand-typed constant 2
+[vendo] gen repair complete at=82.8s
+[vendo] gen pipeline island-repair islands=1 repaired=false ms=34602
+[vendo] gen full complete at=113.4s tokens=22065→2429
+[vendo] gen pipeline data-verify applied=false ms=1906
+[vendo] gen create complete app=app_13ad828c-00a6-443b-a335-f3654b1aed84 total=116.5s

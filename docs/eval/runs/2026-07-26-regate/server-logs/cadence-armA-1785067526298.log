@@ -1,0 +1,15 @@
+=== boot cadence arm A at 2026-07-26T12:05:26.298Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 204ms
+
+=== create I30 arm A start ===
+
+=== create I30 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=37.6s tokens=21988→3068
+[vendo] gen full invalid (3 issues): island "DeadlineReadinessTable" renders <Skeleton> | island "ActivityFeed" renders <CadenceStatusBadge> | island "ActivityFeed" renders <Skeleton>
+[vendo] gen repair complete at=62.0s
+[vendo] gen pipeline island-repair islands=2 repaired=true ms=24893
+[vendo] gen create complete app=app_4b242cab-6ad2-4a22-8048-6b6973f0d921 total=63.1s

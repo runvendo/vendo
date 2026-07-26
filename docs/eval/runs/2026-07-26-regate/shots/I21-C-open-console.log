@@ -1,0 +1,11 @@
+TypeError: Cannot destructure property 'accent' of 'Oq[e]' as it is undefined.
+    at Callout (http://localhost:3300/_next/static/chunks/3kuiu386cb6q3.js:147:455294)
+    at ay (http://localhost:3300/_next/static/chunks/2_4tc33r3-dym.js:1:56839)
+    at oZ (http://localhost:3300/_next/static/chunks/2_4tc33r3-dym.js:1:77096)
+    at iu (http://localhost:3300/_next/static/chunks/2_4tc33r3-dym.js:1:88698)
+    at sd (http://localhost:3300/_next/static/chunks/2_4tc33r3-dym.js:1:131938)
+    at http://localhost:3300/_next/static/chunks/2_4tc33r3-dym.js:1:131783
+    at sf (http://localhost:3300/_next/static/chunks/2_4tc33r3-dym.js:1:131791)
+    at se (http://localhost:3300/_next/static/chunks/2_4tc33r3-dym.js:1:127712)
+    at sH (http://localhost:3300/_next/static/chunks/2_4tc33r3-dym.js:1:153489)
+    at MessagePort._ (http://localhost:3300/_next/static/chunks/2_4tc33r3-dym.js:1:1647)

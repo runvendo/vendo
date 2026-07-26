@@ -1,0 +1,14 @@
+=== boot cadence arm A at 2026-07-26T11:09:33.616Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 234ms
+
+=== create I22 arm A start ===
+
+=== create I22 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=16.7s tokens=21981→1075
+[vendo] gen full invalid (1 issue): node "text-8" prop "text" embeds a binding inside a string
+[vendo] gen full complete at=28.2s tokens=22036→724
+[vendo] gen create complete app=app_3d038d06-3e88-4edf-8e24-a8d9dca286f3 total=28.9s

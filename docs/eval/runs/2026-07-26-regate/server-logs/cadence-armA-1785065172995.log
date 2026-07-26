@@ -1,0 +1,37 @@
+=== boot cadence arm A at 2026-07-26T11:26:12.996Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 151ms
+
+=== create I24 arm A start ===
+
+=== create I24 arm A end ===
+
+=== create I25 arm A start ===
+
+=== create I25 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=57.3s tokens=21984→4407
+[vendo] gen full invalid (2 issues): wire nested-query: <Query> belongs at App level; the query was still hoisted | wire nested-query: <Query> belongs at App level; the query was still hoisted
+[vendo] gen full complete at=84.4s tokens=22015→1553
+[vendo] gen full invalid (8 issues): wire unknown-reference: "clients.data" does not name a declared <Query> or state | wire unknown-reference: "clients.data.0.id" does not name a declared <Query> or state | wire unknown-reference: "clients.data.0.businessName" does not name a declared <Query> or state
+[vendo] gen full complete at=113.4s tokens=22222→2058
+[vendo] gen full invalid (9 issues): wire unknown-reference: "clients.data.0.progress.received" does not name a declared <Query> or state | wire unknown-reference: "clients.data.0.progress.total" does not name a declared <Query> or state | wire unknown-reference: "clients.data.0.filingDeadline" does not name a declared <Query> or state
+[vendo] gen full complete at=34.1s tokens=21987→1756
+[vendo] gen full invalid (2 issues): wire nested-query: <Query> belongs at App level; the query was still hoisted | node "jiffylubeactions-1" references unknown component "JiffyLubeActions"
+[vendo] gen full complete at=68.6s tokens=22042→1754
+[vendo] gen full invalid (1 issue): island "JiffyLubeOffboard" must be plain TSX with an `export default` component
+[vendo] gen repair complete at=91.0s
+[vendo] gen pipeline island-repair islands=1 repaired=true ms=22820
+[vendo] gen create complete app=app_4a590352-054d-41ac-ba90-91483879a661 total=91.9s
+[vendo] app build failed (app_a9cf82ba-6baf-4246-a804-c0f04795b785): generation failed
+  - wire nested-query: <Query> belongs at App level; the query was still hoisted
+  - wire unknown-reference: "clients.data" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.id" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.businessName" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.contactName" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.progress.received" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.progress.total" does not name a declared <Query> or state
+  - wire unknown-reference: "clients.data.0.filingDeadline" does not name a declared <Query> or state
+  - node "equinoxreminderform-1" references unknown component "EquinoxReminderForm"

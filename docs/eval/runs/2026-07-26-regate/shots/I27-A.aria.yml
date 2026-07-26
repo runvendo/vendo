@@ -1,0 +1,355 @@
+- complementary:
+  - link "Cadence dashboard":
+    - /url: /
+    - text: cadence .
+  - navigation "Main":
+    - list:
+      - listitem:
+        - link "Dashboard":
+          - /url: /
+      - listitem:
+        - link "Ask Cadence":
+          - /url: /assistant
+    - paragraph: Workspace
+    - list:
+      - listitem:
+        - link "Clients":
+          - /url: /clients
+      - listitem:
+        - link "Work":
+          - /url: /work
+      - listitem:
+        - link "Calendar":
+          - /url: /calendar
+      - listitem:
+        - link "Inbox":
+          - /url: /inbox
+    - paragraph: Firm
+    - list:
+      - listitem:
+        - link "Team":
+          - /url: /team
+      - listitem:
+        - link "Integrations":
+          - /url: /integrations
+      - listitem:
+        - link "Settings":
+          - /url: /settings
+  - paragraph: Hartwell & Associates
+  - paragraph: Tax season 2026
+- banner:
+  - search:
+    - searchbox "Search"
+    - text: ⌘K
+  - text: Hartwell & Associates
+  - button "Notifications"
+  - button "MA Maya Alvarez"
+- main:
+  - main "Vendo workspace":
+    - tablist "Workspace sections":
+      - tab "Chat"
+      - tab "Apps" [selected]
+      - tab "Automations"
+      - tab "Accounts"
+      - tab "Activity"
+    - tabpanel "Apps":
+      - form "Create app":
+        - text: Describe a new app
+        - textbox "Describe a new app"
+        - button "Create" [disabled]
+      - article:
+        - strong: Engagement letter status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Engagement letter status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Conflict-of-interest screen — Allbirds
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Conflict of interest — Allbirds
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Conflict of interest screen — Allbirds
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Archive Jiffy Lube & send goodbye
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Archive Jiffy Lube & send goodbye
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Equinox Friday reminder setup
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Equinox Friday reminder
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Unacknowledged uploads this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Unacknowledged uploads this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Unacknowledged uploads this week
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Monday morning priorities
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Monday morning priorities
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Your Monday morning brief
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document review turnaround
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Document review turnaround
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline proximity
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Clients by deadline proximity
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Figma — rejected documents
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Anjali Patel — document & message status
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Documents needing review
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble comparison
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble report
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - article:
+        - strong: Entity type trouble comparison
+        - button "Open"
+        - button "Fork"
+        - button "Remove"
+      - region "Open app":
+        - heading "Engagement letter status" [level=3]
+        - text: Signed and outstanding engagement letters across all active clients for the current filing season.
+        - status: About this view Engagement letters and e-signature data are not available through this practice's connected tools. The host exposes document checklists, filing deadlines, and client progress — but engagement letter signing status is not part of that data. To track signed letters, consider adding engagement letters as a document type in each client's checklist.
+        - heading "Client document checklist status" [level=3]
+        - text: All active clients with their document collection progress and current status. Use this as a proxy for engagement readiness until letter tracking is available.
+        - searchbox "Search table"
+        - combobox "Filter by Status":
+          - option "All Status" [selected]
+          - option "complete"
+          - option "missing_docs"
+        - combobox "Filter by Assigned to":
+          - option "All Assigned to" [selected]
+          - option "Daniel Hartwell"
+          - option "Maya Alvarez"
+          - option "Priya Natarajan"
+          - option "Tomas Okafor"
+        - combobox "Filter by Entity type":
+          - option "All Entity type" [selected]
+          - option "c_corp"
+          - option "individual"
+          - option "partnership"
+          - option "s_corp"
+          - option "sole_prop"
+        - table:
+          - rowgroup:
+            - row "Client Contact Entity type Status Docs received Docs total Filing deadline ▲ Assigned to":
+              - columnheader "Client"
+              - columnheader "Contact"
+              - columnheader "Entity type"
+              - columnheader "Status"
+              - columnheader "Docs received"
+              - columnheader "Docs total"
+              - columnheader "Filing deadline ▲"
+              - columnheader "Assigned to"
+          - rowgroup:
+            - row "Blue Bottle Coffee Marisol Rivera s_corp missing_docs 3 6 Jul 28, 2026 Maya Alvarez":
+              - cell "Blue Bottle Coffee"
+              - cell "Marisol Rivera"
+              - cell "s_corp"
+              - cell "missing_docs"
+              - cell "3"
+              - cell "6"
+              - cell "Jul 28, 2026"
+              - cell "Maya Alvarez"
+            - row "Linear Wei Chen sole_prop missing_docs 3 5 Jul 29, 2026 Maya Alvarez":
+              - cell "Linear"
+              - cell "Wei Chen"
+              - cell "sole_prop"
+              - cell "missing_docs"
+              - cell "3"
+              - cell "5"
+              - cell "Jul 29, 2026"
+              - cell "Maya Alvarez"
+            - row "Sweetgreen Antonio Delgado partnership missing_docs 4 6 Aug 16, 2026 Maya Alvarez":
+              - cell "Sweetgreen"
+              - cell "Antonio Delgado"
+              - cell "partnership"
+              - cell "missing_docs"
+              - cell "4"
+              - cell "6"
+              - cell "Aug 16, 2026"
+              - cell "Maya Alvarez"
+            - row "Equinox Dana Kowalski s_corp missing_docs 3 5 Aug 20, 2026 Priya Natarajan":
+              - cell "Equinox"
+              - cell "Dana Kowalski"
+              - cell "s_corp"
+              - cell "missing_docs"
+              - cell "3"
+              - cell "5"
+              - cell "Aug 20, 2026"
+              - cell "Priya Natarajan"
+            - row "TaskRabbit Greg Foster sole_prop missing_docs 1 4 Aug 24, 2026 Tomas Okafor":
+              - cell "TaskRabbit"
+              - cell "Greg Foster"
+              - cell "sole_prop"
+              - cell "missing_docs"
+              - cell "1"
+              - cell "4"
+              - cell "Aug 24, 2026"
+              - cell "Tomas Okafor"
+            - row "Anjali Patel Anjali Patel individual missing_docs 2 4 Aug 28, 2026 Maya Alvarez":
+              - cell "Anjali Patel"
+              - cell "Anjali Patel"
+              - cell "individual"
+              - cell "missing_docs"
+              - cell "2"
+              - cell "4"
+              - cell "Aug 28, 2026"
+              - cell "Maya Alvarez"
+            - row "Compass Susan Kim partnership missing_docs 2 5 Sep 2, 2026 Priya Natarajan":
+              - cell "Compass"
+              - cell "Susan Kim"
+              - cell "partnership"
+              - cell "missing_docs"
+              - cell "2"
+              - cell "5"
+              - cell "Sep 2, 2026"
+              - cell "Priya Natarajan"
+            - row "Jiffy Lube Luis Cortez sole_prop missing_docs 1 5 Sep 7, 2026 Tomas Okafor":
+              - cell "Jiffy Lube"
+              - cell "Luis Cortez"
+              - cell "sole_prop"
+              - cell "missing_docs"
+              - cell "1"
+              - cell "5"
+              - cell "Sep 7, 2026"
+              - cell "Tomas Okafor"
+            - row "Banfield Pet Hospital Emily Rhodes c_corp complete 6 6 Sep 13, 2026 Priya Natarajan":
+              - cell "Banfield Pet Hospital"
+              - cell "Emily Rhodes"
+              - cell "c_corp"
+              - cell "complete"
+              - cell "6"
+              - cell "6"
+              - cell "Sep 13, 2026"
+              - cell "Priya Natarajan"
+            - row "Figma Jonah Whitfield sole_prop complete 4 4 Sep 19, 2026 Daniel Hartwell":
+              - cell "Figma"
+              - cell "Jonah Whitfield"
+              - cell "sole_prop"
+              - cell "complete"
+              - cell "4"
+              - cell "4"
+              - cell "Sep 19, 2026"
+              - cell "Daniel Hartwell"
+            - row "LegalZoom Alice Mercer partnership complete 5 5 Sep 26, 2026 Daniel Hartwell":
+              - cell "LegalZoom"
+              - cell "Alice Mercer"
+              - cell "partnership"
+              - cell "complete"
+              - cell "5"
+              - cell "5"
+              - cell "Sep 26, 2026"
+              - cell "Daniel Hartwell"
+            - row "Grant Ellison Grant Ellison individual complete 4 4 Oct 4, 2026 Maya Alvarez":
+              - cell "Grant Ellison"
+              - cell "Grant Ellison"
+              - cell "individual"
+              - cell "complete"
+              - cell "4"
+              - cell "4"
+              - cell "Oct 4, 2026"
+              - cell "Maya Alvarez"
+- button "Ask Cadence"
+- alert

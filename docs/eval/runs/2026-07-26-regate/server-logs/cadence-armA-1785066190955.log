@@ -1,0 +1,15 @@
+=== boot cadence arm A at 2026-07-26T11:43:10.956Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 174ms
+
+=== create I26 arm A start ===
+
+=== create I26 arm A end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=47.9s tokens=21983→3726
+[vendo] gen full invalid (1 issue): island "ConflictScreen" renders <Skeleton>
+[vendo] gen repair complete at=82.5s
+[vendo] gen pipeline island-repair islands=1 repaired=true ms=35009
+[vendo] gen create complete app=app_26be4c23-4591-4151-8814-8d54ef2296db total=83.7s

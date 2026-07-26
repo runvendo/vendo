@@ -1,0 +1,54 @@
+- heading "4" [level=3]
+- text: clients uploaded this week with no acknowledgement
+- heading "Clients awaiting acknowledgement" [level=3]
+- table:
+  - rowgroup:
+    - row "Client Entity Assigned to Latest upload Uploads this week Filing deadline Progress":
+      - columnheader "Client"
+      - columnheader "Entity"
+      - columnheader "Assigned to"
+      - columnheader "Latest upload"
+      - columnheader "Uploads this week"
+      - columnheader "Filing deadline"
+      - columnheader "Progress"
+  - rowgroup:
+    - row "Sweetgreen Antonio Delgado Partnership Maya Alvarez Sat, Jul 25 at 12:10 PM Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf) 1 Aug 16, 2026 22d away 4 of 6 received 67% 67":
+      - cell "Sweetgreen Antonio Delgado"
+      - cell "Partnership"
+      - cell "Maya Alvarez"
+      - cell "Sat, Jul 25 at 12:10 PM Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf)"
+      - cell "1"
+      - cell "Aug 16, 2026 22d away"
+      - cell "4 of 6 received 67% 67":
+        - text: 4 of 6 received 67%
+        - progressbar
+    - row "Blue Bottle Coffee Marisol Rivera S-Corp Maya Alvarez Fri, Jul 24 at 10:24 AM Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf) 2 Jul 28, 2026 3d away 3 of 6 received 50% 50":
+      - cell "Blue Bottle Coffee Marisol Rivera"
+      - cell "S-Corp"
+      - cell "Maya Alvarez"
+      - cell "Fri, Jul 24 at 10:24 AM Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf)"
+      - cell "2"
+      - cell "Jul 28, 2026 3d away"
+      - cell "3 of 6 received 50% 50":
+        - text: 3 of 6 received 50%
+        - progressbar
+    - row "Equinox Dana Kowalski S-Corp Priya Natarajan Fri, Jul 24 at 10:24 AM Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf) 1 Aug 20, 2026 26d away 3 of 5 received 60% 60":
+      - cell "Equinox Dana Kowalski"
+      - cell "S-Corp"
+      - cell "Priya Natarajan"
+      - cell "Fri, Jul 24 at 10:24 AM Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf)"
+      - cell "1"
+      - cell "Aug 20, 2026 26d away"
+      - cell "3 of 5 received 60% 60":
+        - text: 3 of 5 received 60%
+        - progressbar
+    - row "Jiffy Lube Luis Cortez Sole Prop Tomas Okafor Wed, Jul 22 at 1:15 PM Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf) 1 Sep 7, 2026 44d away 1 of 5 received 20% 20":
+      - cell "Jiffy Lube Luis Cortez"
+      - cell "Sole Prop"
+      - cell "Tomas Okafor"
+      - cell "Wed, Jul 22 at 1:15 PM Luis Cortez re-uploaded Receipts (shop-receipts-2025-resubmitted.pdf)"
+      - cell "1"
+      - cell "Sep 7, 2026 44d away"
+      - cell "1 of 5 received 20% 20":
+        - text: 1 of 5 received 20%
+        - progressbar

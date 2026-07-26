@@ -1,0 +1,46 @@
+- text: Overall readiness 33% 4 of 12 clients fully documented 8 clients still missing documents 5 clients at risk — deadline within 30 days, documents outstanding
+- table:
+  - rowgroup:
+    - row "Client Entity Assigned to Deadline Days left Docs in / total":
+      - columnheader "Client"
+      - columnheader "Entity"
+      - columnheader "Assigned to"
+      - columnheader "Deadline"
+      - columnheader "Days left"
+      - columnheader "Docs in / total"
+  - rowgroup:
+    - row "Blue Bottle Coffee S-Corp Maya Alvarez Jul 28, 2026 3 days 3 / 6":
+      - cell "Blue Bottle Coffee"
+      - cell "S-Corp"
+      - cell "Maya Alvarez"
+      - cell "Jul 28, 2026"
+      - cell "3 days"
+      - cell "3 / 6"
+    - row "Linear Sole Prop Maya Alvarez Jul 29, 2026 4 days 3 / 5":
+      - cell "Linear"
+      - cell "Sole Prop"
+      - cell "Maya Alvarez"
+      - cell "Jul 29, 2026"
+      - cell "4 days"
+      - cell "3 / 5"
+    - row "Sweetgreen Partnership Maya Alvarez Aug 16, 2026 22 days 4 / 6":
+      - cell "Sweetgreen"
+      - cell "Partnership"
+      - cell "Maya Alvarez"
+      - cell "Aug 16, 2026"
+      - cell "22 days"
+      - cell "4 / 6"
+    - row "Equinox S-Corp Priya Natarajan Aug 20, 2026 26 days 3 / 5":
+      - cell "Equinox"
+      - cell "S-Corp"
+      - cell "Priya Natarajan"
+      - cell "Aug 20, 2026"
+      - cell "26 days"
+      - cell "3 / 5"
+    - row "TaskRabbit Sole Prop Tomas Okafor Aug 24, 2026 30 days 1 / 4":
+      - cell "TaskRabbit"
+      - cell "Sole Prop"
+      - cell "Tomas Okafor"
+      - cell "Aug 24, 2026"
+      - cell "30 days"
+      - cell "1 / 4"

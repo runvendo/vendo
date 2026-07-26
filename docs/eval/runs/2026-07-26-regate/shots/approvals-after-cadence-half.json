@@ -1,0 +1,2866 @@
+[
+  {
+    "id": "apr_e8293510-e1e0-41e4-9460-51606c2db327",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_e864b27c-b8bc-4f29-a275-578330c801c3",
+      "args": {},
+      "tool": "slack_SLACK_START_REAL_TIME_MESSAGING_SESSION"
+    },
+    "createdAt": "2026-07-26T11:59:09.016Z",
+    "descriptor": {
+      "name": "slack_SLACK_START_REAL_TIME_MESSAGING_SESSION",
+      "risk": "read",
+      "description": "Initiates a slack rtm session providing a single-use websocket url (valid 30s) for event streaming; does not set initial presence status.",
+      "inputSchema": {
+        "type": "object",
+        "title": "StartRealTimeMessagingSessionRequest",
+        "properties": {
+          "presence_sub": {
+            "type": "boolean",
+            "title": "Presence Sub",
+            "default": null,
+            "examples": [
+              "True",
+              "False"
+            ],
+            "nullable": true,
+            "description": "Delivers presence events only for explicitly subscribed users if `True`. See Slack's [presence subscriptions](https://slack.dev) documentation."
+          },
+          "batch_presence_aware": {
+            "type": "boolean",
+            "title": "Batch Presence Aware",
+            "default": null,
+            "examples": [
+              "True",
+              "False"
+            ],
+            "nullable": true,
+            "description": "Enables batching of presence status deliveries for subscribed users if `True`, altering `presence_change` event structure. See Slack's [batch presence](https://slack.dev) documentation."
+          }
+        },
+        "description": "Request schema for `StartRealTimeMessagingSession`."
+      }
+    },
+    "inputPreview": "slack_SLACK_START_REAL_TIME_MESSAGING_SESSION {}"
+  },
+  {
+    "id": "apr_aedbb4b6-d8d6-4143-8cc2-ecb363f248ea",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_55677750-d079-461e-9d74-82841c9c238a",
+      "args": {},
+      "tool": "slack_SLACK_RETRIEVE_USER_PROFILE_INFORMATION"
+    },
+    "createdAt": "2026-07-26T11:59:09.015Z",
+    "descriptor": {
+      "name": "slack_SLACK_RETRIEVE_USER_PROFILE_INFORMATION",
+      "risk": "read",
+      "description": "Retrieves profile information for a specified slack user (defaults to the authenticated user if `user` id is omitted); a provided `user` id must be valid.",
+      "inputSchema": {
+        "type": "object",
+        "title": "RetrieveUserProfileInformationRequest",
+        "properties": {
+          "user": {
+            "type": "string",
+            "title": "User",
+            "default": null,
+            "examples": [
+              "U012A3CDE",
+              "W1234567890"
+            ],
+            "nullable": true,
+            "description": "User ID to retrieve profile information for; defaults to the authenticated user."
+          },
+          "include_labels": {
+            "type": "boolean",
+            "title": "Include Labels",
+            "default": null,
+            "examples": [
+              true,
+              false
+            ],
+            "nullable": true,
+            "description": "Include human-readable labels for custom profile fields. API defaults to false."
+          }
+        },
+        "description": "Specifies the user and options for retrieving their profile."
+      }
+    },
+    "inputPreview": "slack_SLACK_RETRIEVE_USER_PROFILE_INFORMATION {}"
+  },
+  {
+    "id": "apr_fff2bab2-7465-4021-9deb-b8c9d52addb4",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_a14e15fd-e06f-490d-bcf3-527b9060f69e",
+      "args": {},
+      "tool": "slack_SLACK_RETRIEVE_DETAILED_USER_INFORMATION"
+    },
+    "createdAt": "2026-07-26T11:59:09.014Z",
+    "descriptor": {
+      "name": "slack_SLACK_RETRIEVE_DETAILED_USER_INFORMATION",
+      "risk": "read",
+      "description": "Retrieves comprehensive information for a valid slack user id, excluding message history and channel memberships.",
+      "inputSchema": {
+        "type": "object",
+        "title": "RetrieveDetailedUserInformationRequest",
+        "properties": {
+          "user": {
+            "type": "string",
+            "title": "User",
+            "default": null,
+            "examples": [
+              "U012ABCDEF",
+              "W021XYZABC"
+            ],
+            "nullable": true,
+            "description": "The ID of the user to retrieve information for."
+          },
+          "include_locale": {
+            "type": "boolean",
+            "title": "Include Locale",
+            "default": null,
+            "nullable": true,
+            "description": "Set to `true` to include the user's locale (e.g., `en-US`) in the response. Defaults to `false`."
+          }
+        },
+        "description": "Request schema for `RetrieveDetailedUserInformation`"
+      }
+    },
+    "inputPreview": "slack_SLACK_RETRIEVE_DETAILED_USER_INFORMATION {}"
+  },
+  {
+    "id": "apr_cf35aba1-1a4a-49a5-99e0-3a8f39439b50",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_1b4ef682-a8df-46d6-8f26-b0932409aaea",
+      "args": {},
+      "tool": "slack_SLACK_RETRIEVE_TEAM_PROFILE_DETAILS"
+    },
+    "createdAt": "2026-07-26T11:59:09.014Z",
+    "descriptor": {
+      "name": "slack_SLACK_RETRIEVE_TEAM_PROFILE_DETAILS",
+      "risk": "read",
+      "description": "Retrieves all profile field definitions for a slack team, optionally filtered by visibility, to understand the team's profile structure.",
+      "inputSchema": {
+        "type": "object",
+        "title": "RetrieveTeamProfileDetailsRequest",
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "title": "Visibility",
+            "default": null,
+            "examples": [
+              "all",
+              "visible",
+              "hidden"
+            ],
+            "nullable": true,
+            "description": "Filters profile fields by visibility. Use 'all' for all fields (default if unspecified), 'visible' for fields where 'is_hidden' is false/unset, or 'hidden' for fields where 'is_hidden' is true."
+          }
+        },
+        "description": "Request schema to fetch team profile settings."
+      }
+    },
+    "inputPreview": "slack_SLACK_RETRIEVE_TEAM_PROFILE_DETAILS {}"
+  },
+  {
+    "id": "apr_3b258266-e1bf-41ce-9e6e-9c61ac4536c9",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_d71a37bb-53a2-4d68-8d23-03327371c9da",
+      "args": {},
+      "tool": "slack_SLACK_RETRIEVE_REMOTE_FILE_INFO_IN_SLACK"
+    },
+    "createdAt": "2026-07-26T11:59:09.014Z",
+    "descriptor": {
+      "name": "slack_SLACK_RETRIEVE_REMOTE_FILE_INFO_IN_SLACK",
+      "risk": "read",
+      "description": "Deprecated: retrieve information about a remote file added to slack. use `get remote file` instead.",
+      "inputSchema": {
+        "type": "object",
+        "title": "GetRemoteFileRequest",
+        "properties": {
+          "file": {
+            "type": "string",
+            "title": "File",
+            "examples": [
+              "F2147483862"
+            ],
+            "description": "Specify a file by providing its ID."
+          },
+          "external_id": {
+            "type": "string",
+            "title": "External Id",
+            "examples": [
+              "123456"
+            ],
+            "description": "Creator defined GUID for the file."
+          }
+        },
+        "description": "Request schema for `GetRemoteFile`"
+      }
+    },
+    "inputPreview": "slack_SLACK_RETRIEVE_REMOTE_FILE_INFO_IN_SLACK {}"
+  },
+  {
+    "id": "apr_71593d4a-9d45-4f46-ab81-4935c90a0f37",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_fb015d93-44f3-4819-84bc-fc6e9bee9840",
+      "args": {},
+      "tool": "slack_SLACK_RETRIEVE_CONVERSATION_INFORMATION"
+    },
+    "createdAt": "2026-07-26T11:59:09.013Z",
+    "descriptor": {
+      "name": "slack_SLACK_RETRIEVE_CONVERSATION_INFORMATION",
+      "risk": "read",
+      "description": "Retrieves metadata for a slack conversation by id (e.g., name, purpose, creation date, with options for member count/locale), excluding message content; requires a valid channel id.",
+      "inputSchema": {
+        "type": "object",
+        "title": "RetrieveConversationInformationRequest",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "title": "Channel",
+            "examples": [
+              "C1234567890",
+              "D0G9QPYHR",
+              "G01234567"
+            ],
+            "description": "The ID of the conversation (channel, direct message, or multi-person direct message) to retrieve information for."
+          },
+          "include_locale": {
+            "type": "boolean",
+            "title": "Include Locale",
+            "description": "If true, the response will include the locale setting for the conversation. Defaults to false."
+          },
+          "include_num_members": {
+            "type": "boolean",
+            "title": "Include Num Members",
+            "description": "If true, the response will include the number of members in the conversation. Defaults to false."
+          }
+        },
+        "description": "Request schema for `RetrieveConversationInformation`"
+      }
+    },
+    "inputPreview": "slack_SLACK_RETRIEVE_CONVERSATION_INFORMATION {}"
+  },
+  {
+    "id": "apr_417bb48e-181a-433b-8462-9ca7eb4d8312",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_c3be3726-5829-484b-a05b-2c594546a3ca",
+      "args": {},
+      "tool": "slack_SLACK_RETRIEVE_CONVERSATION_MEMBERS_LIST"
+    },
+    "createdAt": "2026-07-26T11:59:09.013Z",
+    "descriptor": {
+      "name": "slack_SLACK_RETRIEVE_CONVERSATION_MEMBERS_LIST",
+      "risk": "read",
+      "description": "Retrieves a paginated list of active member ids for a specified slack public channel, private channel, direct message (dm), or multi-person direct message (mpim).",
+      "inputSchema": {
+        "type": "object",
+        "title": "RetrieveConversationMembersListRequest",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "examples": [
+              "100",
+              "200"
+            ],
+            "description": "The maximum number of members to return per page. Fewer items may be returned than the requested limit, even if more members exist and the end of the list hasn't been reached."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcj1VMEc5V0ZYTlo=",
+              "bmV4dF90czoxNTEyMDg1ODYxMDAwNTZa"
+            ],
+            "description": "Pagination cursor value for fetching specific pages of results. To retrieve the next page, provide the `next_cursor` value obtained from the `response_metadata` of the previous API call. If omitted or empty, the first page of members is fetched. For more details on pagination, refer to Slack API documentation."
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel",
+            "examples": [
+              "C1234567890",
+              "G0987654321",
+              "D12345ABCDE"
+            ],
+            "description": "ID of the conversation (public channel, private channel, direct message, or multi-person direct message) for which to retrieve the member list. Public channel IDs typically start with 'C', private channels or multi-person direct messages (MPIMs) with 'G', and direct messages (DMs) with 'D'."
+          }
+        },
+        "description": "Request schema for `RetrieveConversationMembersList`"
+      }
+    },
+    "inputPreview": "slack_SLACK_RETRIEVE_CONVERSATION_MEMBERS_LIST {}"
+  },
+  {
+    "id": "apr_2915d979-1557-4e96-91f9-0c5ceca49176",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_3d21968c-2051-4e40-9783-93dfc5d37c2b",
+      "args": {},
+      "tool": "slack_SLACK_RETRIEVE_DETAILED_INFORMATION_ABOUT_A_FILE"
+    },
+    "createdAt": "2026-07-26T11:59:09.013Z",
+    "descriptor": {
+      "name": "slack_SLACK_RETRIEVE_DETAILED_INFORMATION_ABOUT_A_FILE",
+      "risk": "read",
+      "description": "Retrieves detailed metadata and paginated comments for a specific slack file id; does not download file content.",
+      "inputSchema": {
+        "type": "object",
+        "title": "RetrieveDetailedInformationAboutAFileRequest",
+        "properties": {
+          "file": {
+            "type": "string",
+            "title": "File",
+            "default": null,
+            "examples": [
+              "F123ABCDEF0"
+            ],
+            "nullable": true,
+            "description": "ID of the file to retrieve information for. This is a required field."
+          },
+          "page": {
+            "type": "string",
+            "title": "Page",
+            "default": null,
+            "examples": [
+              "1",
+              "3"
+            ],
+            "nullable": true,
+            "description": "Page number of comment results to retrieve. Expects a string representing an integer (e.g., '2'). Used for comment pagination. Slack's default is 1 if not provided. `cursor`-based pagination is generally preferred."
+          },
+          "count": {
+            "type": "string",
+            "title": "Count",
+            "default": null,
+            "examples": [
+              "20",
+              "100"
+            ],
+            "nullable": true,
+            "description": "Number of comments to retrieve per page. Expects a string representing an integer (e.g., '20'). Used for comment pagination. Slack's default is 100 if not provided."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": null,
+            "examples": [
+              "10",
+              "50"
+            ],
+            "nullable": true,
+            "description": "The maximum number of comments to retrieve. This is an upper limit, not a guarantee of how many will be returned. Primarily used for comment pagination."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "default": null,
+            "examples": [
+              "dXNlcjpVMDYxRkExNDIK",
+              "bmV4dF90czoxNTEyMDg2NDE1MDAwOTc2"
+            ],
+            "nullable": true,
+            "description": "Pagination cursor for retrieving comments. Set to `next_cursor` from a previous response's `response_metadata` to fetch the next page of comments. Essential for navigating through large sets of comments. See [pagination](https://slack.dev) for more details."
+          }
+        },
+        "description": "Request model for retrieving detailed information about a specific file, including parameters for comment pagination."
+      }
+    },
+    "inputPreview": "slack_SLACK_RETRIEVE_DETAILED_INFORMATION_ABOUT_A_FILE {}"
+  },
+  {
+    "id": "apr_21d630fa-d01d-4611-9506-f365bb32f28d",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_5fff6afc-24bc-4e24-a8ed-2296422c64cc",
+      "args": {},
+      "tool": "slack_SLACK_RETRIEVE_CURRENT_USER_DND_STATUS"
+    },
+    "createdAt": "2026-07-26T11:59:09.013Z",
+    "descriptor": {
+      "name": "slack_SLACK_RETRIEVE_CURRENT_USER_DND_STATUS",
+      "risk": "read",
+      "description": "Retrieves a slack user's current do not disturb (dnd) status to determine their availability before interaction; any specified user id must be a valid slack user id.",
+      "inputSchema": {
+        "type": "object",
+        "title": "RetrieveCurrentUserDndStatusRequest",
+        "properties": {
+          "user": {
+            "type": "string",
+            "title": "User",
+            "default": null,
+            "examples": [
+              "U012ABCDEF",
+              "W12345678"
+            ],
+            "nullable": true,
+            "description": "User ID to fetch DND status for. If not provided, fetches the DND status for the authenticated user."
+          }
+        },
+        "description": "Request schema for retrieving the current Do Not Disturb (DND) status of a user."
+      }
+    },
+    "inputPreview": "slack_SLACK_RETRIEVE_CURRENT_USER_DND_STATUS {}"
+  },
+  {
+    "id": "apr_779fd63c-e7ce-470c-a4bb-0e2280d14967",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_83525837-9ae2-422e-815a-ba08b7193b09",
+      "args": {},
+      "tool": "slack_SLACK_LIST_USER_REACTIONS"
+    },
+    "createdAt": "2026-07-26T11:59:09.012Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_USER_REACTIONS",
+      "risk": "read",
+      "description": "Lists all reactions added by a specific user to messages, files, or file comments in slack, useful for engagement analysis when the item content itself is not required.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListUserReactionsRequest",
+        "properties": {
+          "full": {
+            "type": "boolean",
+            "title": "Full",
+            "description": "If true, return the complete reaction list, which may include reactions to deleted items."
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "examples": [
+              "1"
+            ],
+            "description": "Page number of results to return."
+          },
+          "user": {
+            "type": "string",
+            "title": "User",
+            "examples": [
+              "U012A3CDEFG"
+            ],
+            "description": "Reactions made by this user. Defaults to the authed user."
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "examples": [
+              "20"
+            ],
+            "description": "Number of items to return per page."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "examples": [
+              "100"
+            ],
+            "description": "Maximum number of items to return; fewer items may be returned. Use with cursor-based pagination."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxTkZ0NUI="
+            ],
+            "description": "Pagination cursor. Set to `next_cursor` from a previous response's `response_metadata`. See Slack API pagination documentation for details."
+          }
+        },
+        "description": "Request schema for `ListUserReactions`"
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_USER_REACTIONS {}"
+  },
+  {
+    "id": "apr_67a945a8-e6a8-40da-851d-1e1f46c0b44e",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_a20b1b31-035f-42b4-a3af-2e2bf6098de4",
+      "args": {},
+      "tool": "slack_SLACK_LIST_USER_REMINDERS_WITH_DETAILS"
+    },
+    "createdAt": "2026-07-26T11:59:09.012Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_USER_REMINDERS_WITH_DETAILS",
+      "risk": "read",
+      "description": "Deprecated: lists all reminders with their details for the authenticated slack user. use `list reminders` instead.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListRemindersRequest",
+        "properties": {},
+        "description": "Request schema for `ListReminders`"
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_USER_REMINDERS_WITH_DETAILS {}"
+  },
+  {
+    "id": "apr_5e02171e-764c-4925-b199-68a89ebac6cc",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_4fd3f46a-5477-4df5-9edb-18eb15389804",
+      "args": {},
+      "tool": "slack_SLACK_RETRIEVE_A_USER_S_IDENTITY_DETAILS"
+    },
+    "createdAt": "2026-07-26T11:59:09.012Z",
+    "descriptor": {
+      "name": "slack_SLACK_RETRIEVE_A_USER_S_IDENTITY_DETAILS",
+      "risk": "read",
+      "description": "Retrieves the authenticated user's and their team's identity, with details varying based on oauth scopes (e.g., `identity.basic`, `identity.email`, `identity.avatar`).",
+      "inputSchema": {
+        "type": "object",
+        "title": "RetrieveAUserSIdentityDetailsRequest",
+        "properties": {},
+        "description": "User identification is based on the provided authentication token; no request body parameters are needed."
+      }
+    },
+    "inputPreview": "slack_SLACK_RETRIEVE_A_USER_S_IDENTITY_DETAILS {}"
+  },
+  {
+    "id": "apr_40b4cc6f-0998-42ce-bf43-0a2766e59d7a",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_57db1649-846f-4140-a7af-c5450e9d15c7",
+      "args": {},
+      "tool": "slack_SLACK_LIST_USER_GROUPS_FOR_TEAM_WITH_OPTIONS"
+    },
+    "createdAt": "2026-07-26T11:59:09.012Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_USER_GROUPS_FOR_TEAM_WITH_OPTIONS",
+      "risk": "read",
+      "description": "Lists user groups in a slack workspace, including user-created and default groups; results for large workspaces may be paginated.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListUserGroupsForTeamWithOptionsRequest",
+        "properties": {
+          "include_count": {
+            "type": "boolean",
+            "title": "Include Count",
+            "examples": [
+              "true",
+              "false"
+            ],
+            "description": "Include the number of users in each user group. Defaults to false."
+          },
+          "include_users": {
+            "type": "boolean",
+            "title": "Include Users",
+            "examples": [
+              "true",
+              "false"
+            ],
+            "description": "Include the list of user IDs for each user group. Defaults to false."
+          },
+          "include_disabled": {
+            "type": "boolean",
+            "title": "Include Disabled",
+            "examples": [
+              "true",
+              "false"
+            ],
+            "description": "Include disabled user groups in the results. Defaults to false."
+          }
+        },
+        "description": "Request model for listing user groups in a Slack team, providing options to customize the retrieved information."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_USER_GROUPS_FOR_TEAM_WITH_OPTIONS {}"
+  },
+  {
+    "id": "apr_b8b2b5ae-f143-4146-bc5d-2d8ebcbd4626",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_09570b01-1c96-41c6-8359-d676fbc726a0",
+      "args": {},
+      "tool": "slack_SLACK_LIST_SLACK_S_REMOTE_FILES_WITH_FILTERS"
+    },
+    "createdAt": "2026-07-26T11:59:09.011Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_SLACK_S_REMOTE_FILES_WITH_FILTERS",
+      "risk": "read",
+      "description": "Deprecated: retrieve information about a team's remote files. use `list remote files` instead.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListRemoteFilesRequest",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "examples": [
+              20
+            ],
+            "description": "The maximum number of items to return."
+          },
+          "ts_to": {
+            "type": "number",
+            "title": "Ts To",
+            "examples": [
+              123456789.012345
+            ],
+            "description": "Filter files created before this timestamp (inclusive)."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxTkZUVDI="
+            ],
+            "description": "Paginate through collections of data by setting the cursor parameter to a next_cursor attribute returned by a previous request's response_metadata. Default value fetches the first 'page' of the collection. See pagination for more detail."
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel",
+            "examples": [
+              "C1234567890"
+            ],
+            "description": "Filter files appearing in a specific channel, indicated by its ID."
+          },
+          "ts_from": {
+            "type": "number",
+            "title": "Ts From",
+            "examples": [
+              123456789.012345
+            ],
+            "description": "Filter files created after this timestamp (inclusive)."
+          }
+        },
+        "description": "Request schema for `ListRemoteFiles`"
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_SLACK_S_REMOTE_FILES_WITH_FILTERS {}"
+  },
+  {
+    "id": "apr_16f52acd-d22e-433f-8254-faae450ae067",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_c8709c4c-3f5c-4218-80a4-c26c3b2e9920",
+      "args": {},
+      "tool": "slack_SLACK_LIST_TEAM_CUSTOM_EMOJIS"
+    },
+    "createdAt": "2026-07-26T11:59:09.011Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_TEAM_CUSTOM_EMOJIS",
+      "risk": "read",
+      "description": "Retrieves all custom emojis for the slack workspace (image urls or aliases), not standard unicode emojis; does not include usage statistics or creation dates.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListTeamCustomEmojisRequest",
+        "properties": {},
+        "description": "Request model for the `ListTeamCustomEmojis` action. This action does not require any request parameters."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_TEAM_CUSTOM_EMOJIS {}"
+  },
+  {
+    "id": "apr_0ef7770b-4229-484a-94eb-9ae5739962df",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_5b5c9e77-c364-4ff5-b224-57904272114e",
+      "args": {},
+      "tool": "slack_SLACK_LIST_STARRED_ITEMS"
+    },
+    "createdAt": "2026-07-26T11:59:09.011Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_STARRED_ITEMS",
+      "risk": "read",
+      "description": "Lists items starred by a user.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListStarredItemsRequest",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "default": null,
+            "examples": [
+              2
+            ],
+            "nullable": true,
+            "description": "Page number of results to return."
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "default": null,
+            "examples": [
+              20
+            ],
+            "nullable": true,
+            "description": "Number of items to return per page."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": null,
+            "examples": [
+              20
+            ],
+            "nullable": true,
+            "description": "The maximum number of items to return. Fewer than the requested number of items may be returned, even if the end of the list hasn't been reached."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "default": null,
+            "examples": [
+              "dXNlcjpVMDYxTkZUVDI="
+            ],
+            "nullable": true,
+            "description": "Parameter for pagination. Set cursor to the next_cursor attribute returned by the previous request's response_metadata."
+          }
+        },
+        "description": "Request schema for `ListStarredItems`"
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_STARRED_ITEMS {}"
+  },
+  {
+    "id": "apr_808c1b24-34b1-40cd-b560-4a112364b6bf",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_a8536c92-8545-4923-b7b7-4c92333c8fc6",
+      "args": {},
+      "tool": "slack_SLACK_LIST_SCHEDULED_MESSAGES_IN_A_CHANNEL"
+    },
+    "createdAt": "2026-07-26T11:59:09.010Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_SCHEDULED_MESSAGES_IN_A_CHANNEL",
+      "risk": "read",
+      "description": "Deprecated: retrieves a list of pending (not yet delivered) messages scheduled in a specific slack channel. use `list scheduled messages` instead.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListScheduledMessagesRequest",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "examples": [
+              "100",
+              "50"
+            ],
+            "description": "Maximum messages per page (1-1000). Defaults to 100."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxREk0STM=",
+              "bmV4dF9wYWdlX2N1cnNvcg=="
+            ],
+            "description": "Pagination cursor from `response_metadata.next_cursor` of a previous response. Omit for the first page."
+          },
+          "latest": {
+            "type": "string",
+            "title": "Latest",
+            "default": null,
+            "examples": [
+              "1678886400.000000",
+              "1678972800.000000"
+            ],
+            "nullable": true,
+            "description": "Latest UNIX timestamp (exclusive) for messages. Defaults to the current time if omitted."
+          },
+          "oldest": {
+            "type": "string",
+            "title": "Oldest",
+            "default": null,
+            "examples": [
+              "1678800000.000000",
+              "1678880000.000000"
+            ],
+            "nullable": true,
+            "description": "Earliest UNIX timestamp (inclusive) for messages. Defaults to 0 if omitted."
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel",
+            "examples": [
+              "C1234567890",
+              "general"
+            ],
+            "description": "ID or name of the channel (public, private, or DM) to list messages for. If omitted, lists for all accessible channels in the workspace."
+          }
+        },
+        "description": "Request schema for listing scheduled messages in a channel or workspace."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_SCHEDULED_MESSAGES_IN_A_CHANNEL {}"
+  },
+  {
+    "id": "apr_87f41438-43ba-4ab3-9a5e-d3c8a75cfe36",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_0be701d1-94ef-4998-859a-5cdf7d7097e6",
+      "args": {},
+      "tool": "slack_SLACK_LIST_SCHEDULED_MESSAGES"
+    },
+    "createdAt": "2026-07-26T11:59:09.009Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_SCHEDULED_MESSAGES",
+      "risk": "read",
+      "description": "Retrieves a list of pending (not yet delivered) messages scheduled in a specific slack channel, or across all accessible channels if no channel id is provided, optionally filtered by time and paginated.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListScheduledMessagesRequest",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "examples": [
+              "100",
+              "50"
+            ],
+            "description": "Maximum messages per page (1-1000). Defaults to 100."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxREk0STM=",
+              "bmV4dF9wYWdlX2N1cnNvcg=="
+            ],
+            "description": "Pagination cursor from `response_metadata.next_cursor` of a previous response. Omit for the first page."
+          },
+          "latest": {
+            "type": "string",
+            "title": "Latest",
+            "default": null,
+            "examples": [
+              "1678886400.000000",
+              "1678972800.000000"
+            ],
+            "nullable": true,
+            "description": "Latest UNIX timestamp (exclusive) for messages. Defaults to the current time if omitted."
+          },
+          "oldest": {
+            "type": "string",
+            "title": "Oldest",
+            "default": null,
+            "examples": [
+              "1678800000.000000",
+              "1678880000.000000"
+            ],
+            "nullable": true,
+            "description": "Earliest UNIX timestamp (inclusive) for messages. Defaults to 0 if omitted."
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel",
+            "examples": [
+              "C1234567890",
+              "general"
+            ],
+            "description": "ID or name of the channel (public, private, or DM) to list messages for. If omitted, lists for all accessible channels in the workspace."
+          }
+        },
+        "description": "Request schema for listing scheduled messages in a channel or workspace."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_SCHEDULED_MESSAGES {}"
+  },
+  {
+    "id": "apr_11ac09fb-181c-406d-8ac7-e9633a901596",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_eb2773b2-486c-4c96-88f6-5c96d5f49fc7",
+      "args": {},
+      "tool": "slack_SLACK_LIST_REMOTE_FILES"
+    },
+    "createdAt": "2026-07-26T11:59:09.008Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_REMOTE_FILES",
+      "risk": "read",
+      "description": "Retrieve information about a team's remote files.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListRemoteFilesRequest",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "examples": [
+              20
+            ],
+            "description": "The maximum number of items to return."
+          },
+          "ts_to": {
+            "type": "number",
+            "title": "Ts To",
+            "examples": [
+              123456789.012345
+            ],
+            "description": "Filter files created before this timestamp (inclusive)."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxTkZUVDI="
+            ],
+            "description": "Paginate through collections of data by setting the cursor parameter to a next_cursor attribute returned by a previous request's response_metadata. Default value fetches the first 'page' of the collection. See pagination for more detail."
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel",
+            "examples": [
+              "C1234567890"
+            ],
+            "description": "Filter files appearing in a specific channel, indicated by its ID."
+          },
+          "ts_from": {
+            "type": "number",
+            "title": "Ts From",
+            "examples": [
+              123456789.012345
+            ],
+            "description": "Filter files created after this timestamp (inclusive)."
+          }
+        },
+        "description": "Request schema for `ListRemoteFiles`"
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_REMOTE_FILES {}"
+  },
+  {
+    "id": "apr_734a5f4e-4f6e-4cc8-b7e5-c69c0939298a",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_48654690-72b3-4e28-9849-1e3007cc256c",
+      "args": {},
+      "tool": "slack_SLACK_LIST_REMINDERS"
+    },
+    "createdAt": "2026-07-26T11:59:09.007Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_REMINDERS",
+      "risk": "read",
+      "description": "Lists all reminders with their details for the authenticated slack user; returns an empty list if no reminders exist.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListRemindersRequest",
+        "properties": {},
+        "description": "Request schema for `ListReminders`"
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_REMINDERS {}"
+  },
+  {
+    "id": "apr_306dd496-747c-4e34-b2a6-4311f22ff0a2",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_7d86078a-17c5-4c9a-84fe-c1c88b6c8887",
+      "args": {},
+      "tool": "slack_SLACK_LIST_FILES_WITH_FILTERS_IN_SLACK"
+    },
+    "createdAt": "2026-07-26T11:59:09.006Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_FILES_WITH_FILTERS_IN_SLACK",
+      "risk": "read",
+      "description": "Lists files and their metadata within a slack workspace, filterable by user, channel, timestamp, or type; this action returns metadata only, not file content.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListFilesWithFiltersInSlackRequest",
+        "properties": {
+          "page": {
+            "type": "string",
+            "title": "Page",
+            "examples": [
+              "1",
+              "2"
+            ],
+            "description": "Specifies the page number of the results to retrieve when paginating. Default is 1."
+          },
+          "user": {
+            "type": "string",
+            "title": "User",
+            "examples": [
+              "W1234567890",
+              "U0abcdef0"
+            ],
+            "description": "Filter files created by a single user. Provide the Slack User ID."
+          },
+          "count": {
+            "type": "string",
+            "title": "Count",
+            "examples": [
+              "100",
+              "50",
+              "1000"
+            ],
+            "description": "Specifies the number of files to return per page. Default is 100, maximum is 1000."
+          },
+          "ts_to": {
+            "type": "integer",
+            "title": "Ts To",
+            "examples": [
+              "1678972800"
+            ],
+            "description": "Filter files created before this Unix timestamp (inclusive)."
+          },
+          "types": {
+            "type": "string",
+            "title": "Types",
+            "examples": [
+              "images",
+              "pdfs",
+              "images,pdfs",
+              "all",
+              "spaces,snippets"
+            ],
+            "description": "Filter files by types (comma-separated: 'images,pdfs'). Default 'all' for all types. Common: `all`, `spaces` (posts), `snippets`, `images`, `gdocs`, `zips`, `pdfs`."
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel",
+            "examples": [
+              "C1234567890",
+              "G0abcdef0"
+            ],
+            "description": "Filter files appearing in a specific channel, indicated by its Slack Channel ID."
+          },
+          "ts_from": {
+            "type": "integer",
+            "title": "Ts From",
+            "examples": [
+              "1678886400"
+            ],
+            "description": "Filter files created after this Unix timestamp (inclusive)."
+          },
+          "show_files_hidden_by_limit": {
+            "type": "boolean",
+            "title": "Show Files Hidden By Limit",
+            "examples": [
+              "True",
+              "False"
+            ],
+            "description": "Show truncated file info for files hidden due to being too old or if the team owning the file is over the storage limit."
+          }
+        },
+        "description": "Request schema for `ListFilesWithFiltersInSlack`"
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_FILES_WITH_FILTERS_IN_SLACK {}"
+  },
+  {
+    "id": "apr_d5f39f04-2b46-4e99-9868-e0f4f708bba7",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_c1bdee66-0229-453c-b147-48c689db1dd9",
+      "args": {},
+      "tool": "slack_SLACK_LIST_ALL_SLACK_TEAM_USERS_WITH_PAGINATION"
+    },
+    "createdAt": "2026-07-26T11:59:09.004Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_ALL_SLACK_TEAM_USERS_WITH_PAGINATION",
+      "risk": "read",
+      "description": "Deprecated: retrieves a paginated list of all users in a slack workspace. use `list all users` instead.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListAllUsersRequest",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": 1,
+            "examples": [
+              "20",
+              "100",
+              "200"
+            ],
+            "description": "Maximum number of items to return per page; fewer may be returned if the end of the list is reached. Recommended to set a value (e.g., 100) as Slack may error for large workspaces if omitted."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxREk0STM=",
+              "dXNlcjpVMDYxREk0STQ="
+            ],
+            "description": "Pagination cursor for fetching subsequent pages. Set to `next_cursor` from a previous response's `response_metadata`. Omit for the first page."
+          },
+          "include_locale": {
+            "type": "boolean",
+            "title": "Include Locale",
+            "examples": [
+              "true",
+              "false"
+            ],
+            "description": "Include the `locale` field for each user. Defaults to `false`."
+          }
+        },
+        "description": "Request schema for `ListAllUsers`."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_ALL_SLACK_TEAM_USERS_WITH_PAGINATION {}"
+  },
+  {
+    "id": "apr_bdb46279-f9f2-4af2-b74c-908f59fd1c23",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_bd835329-2ffc-4a3e-beeb-44c218b0df97",
+      "args": {},
+      "tool": "slack_SLACK_LIST_CONVERSATIONS"
+    },
+    "createdAt": "2026-07-26T11:59:09.004Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_CONVERSATIONS",
+      "risk": "read",
+      "description": "Retrieves conversations accessible to a specified user (or the authenticated user if no user id is provided), respecting shared membership for non-public channels.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListAccessibleConversationsForAUserRequest",
+        "properties": {
+          "user": {
+            "type": "string",
+            "title": "User",
+            "examples": [
+              "U123ABC456",
+              "W012A3BCD"
+            ],
+            "description": "The ID of the user whose conversations will be listed. If not provided, conversations for the authenticated user are returned. Non-public channels are restricted to those where the calling user (authenticating user) shares membership."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "examples": [
+              "100",
+              "500",
+              "1000"
+            ],
+            "description": "The maximum number of items to return per page. Must be an integer, typically between 1 and 1000 (e.g., 100). If omitted, the API's default limit (often 100) applies. Fewer items than the limit may be returned."
+          },
+          "types": {
+            "type": "string",
+            "title": "Types",
+            "examples": [
+              "public_channel,private_channel",
+              "im,mpim",
+              "public_channel"
+            ],
+            "description": "A comma-separated list of conversation types to include. Valid types are `public_channel`, `private_channel`, `mpim` (multi-person direct message), and `im` (direct message). If omitted, all types are included."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxREk0Nlc=",
+              "bmV4dF90czoxNTEyMDg1ODYxMDAwNTQz"
+            ],
+            "description": "Pagination cursor for retrieving the next set of results. Obtain this from the `next_cursor` field in a previous response's `response_metadata`. If omitted, the first page is fetched."
+          },
+          "exclude_archived": {
+            "type": "boolean",
+            "title": "Exclude Archived",
+            "examples": [
+              "true",
+              "false"
+            ],
+            "description": "Set to `true` to exclude archived channels from the list. If `false` or omitted, archived channels are typically included (the API's default behavior for omission will apply, usually including them)."
+          }
+        },
+        "description": "Request model for listing conversations accessible to a user, with options for pagination and filtering."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_CONVERSATIONS {}"
+  },
+  {
+    "id": "apr_325b7df3-3998-4da8-b77f-f42544b84b3c",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_0019228c-8e20-4a5b-baaa-9f787475c891",
+      "args": {},
+      "tool": "slack_SLACK_LIST_ALL_USERS"
+    },
+    "createdAt": "2026-07-26T11:59:09.004Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_ALL_USERS",
+      "risk": "read",
+      "description": "Retrieves a paginated list of all users, including comprehensive details, profile information, status, and team memberships, in a slack workspace; data may not be real-time.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListAllUsersRequest",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": 1,
+            "examples": [
+              "20",
+              "100",
+              "200"
+            ],
+            "description": "Maximum number of items to return per page; fewer may be returned if the end of the list is reached. Recommended to set a value (e.g., 100) as Slack may error for large workspaces if omitted."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxREk0STM=",
+              "dXNlcjpVMDYxREk0STQ="
+            ],
+            "description": "Pagination cursor for fetching subsequent pages. Set to `next_cursor` from a previous response's `response_metadata`. Omit for the first page."
+          },
+          "include_locale": {
+            "type": "boolean",
+            "title": "Include Locale",
+            "examples": [
+              "true",
+              "false"
+            ],
+            "description": "Include the `locale` field for each user. Defaults to `false`."
+          }
+        },
+        "description": "Request schema for `ListAllUsers`."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_ALL_USERS {}"
+  },
+  {
+    "id": "apr_a96746ac-f21d-4324-bcad-25d4d9a70a4f",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_983d9739-d15b-4209-b8ea-8db8b61eaec4",
+      "args": {},
+      "tool": "slack_SLACK_LIST_ALL_CHANNELS"
+    },
+    "createdAt": "2026-07-26T11:59:09.003Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_ALL_CHANNELS",
+      "risk": "read",
+      "description": "Lists conversations available to the user with various filters and search options.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListAllChannelsRequest",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": 1,
+            "examples": [
+              100,
+              500,
+              1000
+            ],
+            "description": "Maximum number of channels to return per page (1 to 1000). Fewer channels may be returned than requested. This schema defaults to 1 if omitted."
+          },
+          "types": {
+            "type": "string",
+            "title": "Types",
+            "examples": [
+              "public_channel,private_channel",
+              "im,mpim"
+            ],
+            "description": "Comma-separated list of channel types to include: `public_channel`, `private_channel`, `mpim` (multi-person direct message), `im` (direct message). The API defaults to `public_channel` if this parameter is omitted."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxTkZUVDI=",
+              "bmV4dF90czoxNTEyMDg1ODYxMDAwNTQ5"
+            ],
+            "description": "Pagination cursor (from a previous response's `next_cursor`) for the next page of results. Omit for the first page."
+          },
+          "channel_name": {
+            "type": "string",
+            "title": "Channel Name",
+            "examples": [
+              "general",
+              "announcements"
+            ],
+            "description": "Filter channels by name (case-insensitive substring match). This is a client-side filter applied after fetching from the API."
+          },
+          "exclude_archived": {
+            "type": "boolean",
+            "title": "Exclude Archived",
+            "examples": [
+              true,
+              false
+            ],
+            "description": "Excludes archived channels if true. The API defaults to false (archived channels are included)."
+          }
+        },
+        "description": "Request schema for listing Slack team channels with various filtering options."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_ALL_CHANNELS {}"
+  },
+  {
+    "id": "apr_a3685e31-7417-4046-b382-1be4cc500433",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_4d78c6c5-9a04-4904-9490-a10f72664564",
+      "args": {},
+      "tool": "slack_SLACK_GET_USER_PRESENCE_INFO"
+    },
+    "createdAt": "2026-07-26T11:59:09.003Z",
+    "descriptor": {
+      "name": "slack_SLACK_GET_USER_PRESENCE_INFO",
+      "risk": "read",
+      "description": "Retrieves a slack user's current real-time presence (e.g., 'active', 'away') to determine their availability, noting this action does not provide historical data or status reasons.",
+      "inputSchema": {
+        "type": "object",
+        "title": "GetUserPresenceInfoRequest",
+        "properties": {
+          "user": {
+            "type": "string",
+            "title": "User",
+            "examples": [
+              "U012A3CDE",
+              "W012A3CDE"
+            ],
+            "description": "The ID of the user to query for presence information. This is a string identifier, typically starting with 'U' or 'W' (e.g., 'U123ABC456'). If not provided, presence information for the authenticated user will be returned."
+          }
+        },
+        "description": "Request schema for `GetUserPresenceInfo`"
+      }
+    },
+    "inputPreview": "slack_SLACK_GET_USER_PRESENCE_INFO {}"
+  },
+  {
+    "id": "apr_61cf46f1-11cd-449f-a1a2-376193609142",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_5c6a9f27-4cbe-484d-ae44-6b79e395a6c1",
+      "args": {},
+      "tool": "slack_SLACK_LIST_ACCESSIBLE_CONVERSATIONS_FOR_A_USER"
+    },
+    "createdAt": "2026-07-26T11:59:09.003Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_ACCESSIBLE_CONVERSATIONS_FOR_A_USER",
+      "risk": "read",
+      "description": "Deprecated: retrieves conversations accessible to a specified user. use `list conversations` instead.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListAccessibleConversationsForAUserRequest",
+        "properties": {
+          "user": {
+            "type": "string",
+            "title": "User",
+            "examples": [
+              "U123ABC456",
+              "W012A3BCD"
+            ],
+            "description": "The ID of the user whose conversations will be listed. If not provided, conversations for the authenticated user are returned. Non-public channels are restricted to those where the calling user (authenticating user) shares membership."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "examples": [
+              "100",
+              "500",
+              "1000"
+            ],
+            "description": "The maximum number of items to return per page. Must be an integer, typically between 1 and 1000 (e.g., 100). If omitted, the API's default limit (often 100) applies. Fewer items than the limit may be returned."
+          },
+          "types": {
+            "type": "string",
+            "title": "Types",
+            "examples": [
+              "public_channel,private_channel",
+              "im,mpim",
+              "public_channel"
+            ],
+            "description": "A comma-separated list of conversation types to include. Valid types are `public_channel`, `private_channel`, `mpim` (multi-person direct message), and `im` (direct message). If omitted, all types are included."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxREk0Nlc=",
+              "bmV4dF90czoxNTEyMDg1ODYxMDAwNTQz"
+            ],
+            "description": "Pagination cursor for retrieving the next set of results. Obtain this from the `next_cursor` field in a previous response's `response_metadata`. If omitted, the first page is fetched."
+          },
+          "exclude_archived": {
+            "type": "boolean",
+            "title": "Exclude Archived",
+            "examples": [
+              "true",
+              "false"
+            ],
+            "description": "Set to `true` to exclude archived channels from the list. If `false` or omitted, archived channels are typically included (the API's default behavior for omission will apply, usually including them)."
+          }
+        },
+        "description": "Request model for listing conversations accessible to a user, with options for pagination and filtering."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_ACCESSIBLE_CONVERSATIONS_FOR_A_USER {}"
+  },
+  {
+    "id": "apr_31a493e3-c756-4f78-9200-e7dfd9a83c02",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_fb1aa601-4190-4aee-b70f-6f2fe6a6933b",
+      "args": {},
+      "tool": "slack_SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_VARIOUS_FILTERS"
+    },
+    "createdAt": "2026-07-26T11:59:09.003Z",
+    "descriptor": {
+      "name": "slack_SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_VARIOUS_FILTERS",
+      "risk": "read",
+      "description": "Deprecated: lists conversations available to the user with various filters and search options. use `list channels` instead.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListAllChannelsRequest",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": 1,
+            "examples": [
+              100,
+              500,
+              1000
+            ],
+            "description": "Maximum number of channels to return per page (1 to 1000). Fewer channels may be returned than requested. This schema defaults to 1 if omitted."
+          },
+          "types": {
+            "type": "string",
+            "title": "Types",
+            "examples": [
+              "public_channel,private_channel",
+              "im,mpim"
+            ],
+            "description": "Comma-separated list of channel types to include: `public_channel`, `private_channel`, `mpim` (multi-person direct message), `im` (direct message). The API defaults to `public_channel` if this parameter is omitted."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMDYxTkZUVDI=",
+              "bmV4dF90czoxNTEyMDg1ODYxMDAwNTQ5"
+            ],
+            "description": "Pagination cursor (from a previous response's `next_cursor`) for the next page of results. Omit for the first page."
+          },
+          "channel_name": {
+            "type": "string",
+            "title": "Channel Name",
+            "examples": [
+              "general",
+              "announcements"
+            ],
+            "description": "Filter channels by name (case-insensitive substring match). This is a client-side filter applied after fetching from the API."
+          },
+          "exclude_archived": {
+            "type": "boolean",
+            "title": "Exclude Archived",
+            "examples": [
+              true,
+              false
+            ],
+            "description": "Excludes archived channels if true. The API defaults to false (archived channels are included)."
+          }
+        },
+        "description": "Request schema for listing Slack team channels with various filtering options."
+      }
+    },
+    "inputPreview": "slack_SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_VARIOUS_FILTERS {}"
+  },
+  {
+    "id": "apr_dba21dea-5347-4830-9212-a37367193c63",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_52b5f57e-1740-40b5-97f4-42e6e48be0b4",
+      "args": {},
+      "tool": "slack_SLACK_FETCH_TEAM_INFO"
+    },
+    "createdAt": "2026-07-26T11:59:09.002Z",
+    "descriptor": {
+      "name": "slack_SLACK_FETCH_TEAM_INFO",
+      "risk": "read",
+      "description": "Fetches comprehensive metadata about the current slack team, or a specified team if the provided id is accessible.",
+      "inputSchema": {
+        "type": "object",
+        "title": "FetchTeamInfoRequest",
+        "properties": {
+          "team": {
+            "type": "string",
+            "title": "Team",
+            "default": null,
+            "examples": [
+              "T12345678",
+              "E87654321"
+            ],
+            "nullable": true,
+            "description": "The ID of the team to retrieve information for. If omitted, information for the current team (associated with the authentication token) is returned. The token must have permissions to view the specified team, especially for teams accessible via external shared channels."
+          }
+        },
+        "description": "Request schema for `FetchTeamInfo`"
+      }
+    },
+    "inputPreview": "slack_SLACK_FETCH_TEAM_INFO {}"
+  },
+  {
+    "id": "apr_c823ca8a-fc8b-44df-8f09-b38bf1e344d7",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_0fb5902d-2bf5-4ff8-856e-b8b5e80f5b88",
+      "args": {},
+      "tool": "slack_SLACK_GET_REMOTE_FILE"
+    },
+    "createdAt": "2026-07-26T11:59:09.002Z",
+    "descriptor": {
+      "name": "slack_SLACK_GET_REMOTE_FILE",
+      "risk": "read",
+      "description": "Retrieve information about a remote file added to slack.",
+      "inputSchema": {
+        "type": "object",
+        "title": "GetRemoteFileRequest",
+        "properties": {
+          "file": {
+            "type": "string",
+            "title": "File",
+            "examples": [
+              "F2147483862"
+            ],
+            "description": "Specify a file by providing its ID."
+          },
+          "external_id": {
+            "type": "string",
+            "title": "External Id",
+            "examples": [
+              "123456"
+            ],
+            "description": "Creator defined GUID for the file."
+          }
+        },
+        "description": "Request schema for `GetRemoteFile`"
+      }
+    },
+    "inputPreview": "slack_SLACK_GET_REMOTE_FILE {}"
+  },
+  {
+    "id": "apr_86ebed8c-4efc-4971-8c58-570853bf2a89",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_6e9893b9-5a53-4342-a487-b888425a032f",
+      "args": {},
+      "tool": "slack_SLACK_FETCH_MESSAGE_THREAD_FROM_A_CONVERSATION"
+    },
+    "createdAt": "2026-07-26T11:59:09.002Z",
+    "descriptor": {
+      "name": "slack_SLACK_FETCH_MESSAGE_THREAD_FROM_A_CONVERSATION",
+      "risk": "read",
+      "description": "Retrieves replies to a specific parent message in a slack conversation, using the channel id and the parent message's timestamp (`ts`).",
+      "inputSchema": {
+        "type": "object",
+        "title": "FetchMessageThreadFromAConversationRequest",
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts",
+            "examples": [
+              "1234567890.123456"
+            ],
+            "description": "Timestamp of the parent message in the thread. Must be an existing message. If no replies, only the parent message itself is returned."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "examples": [
+              100
+            ],
+            "description": "Maximum number of messages to return. Fewer may be returned even if more are available."
+          },
+          "cursor": {
+            "type": "string",
+            "title": "Cursor",
+            "examples": [
+              "dXNlcjpVMEc5V0ZYTlo="
+            ],
+            "description": "Pagination cursor from `response_metadata.next_cursor` of a previous response to get subsequent pages. If omitted, fetches the first page."
+          },
+          "latest": {
+            "type": "string",
+            "title": "Latest",
+            "default": null,
+            "examples": [
+              "1678886400.000000"
+            ],
+            "nullable": true,
+            "description": "Latest message timestamp in the time range to include results."
+          },
+          "oldest": {
+            "type": "string",
+            "title": "Oldest",
+            "default": null,
+            "examples": [
+              "1678836000.000000"
+            ],
+            "nullable": true,
+            "description": "Oldest message timestamp in the time range to include results."
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel",
+            "examples": [
+              "C0123456789"
+            ],
+            "description": "ID of the conversation (channel, direct message, etc.) to fetch the thread from."
+          },
+          "inclusive": {
+            "type": "boolean",
+            "title": "Inclusive",
+            "examples": [
+              true
+            ],
+            "description": "Whether to include messages with `latest` or `oldest` timestamps in results. Effective only if `latest` or `oldest` is specified."
+          }
+        },
+        "description": "Request schema for `FetchMessageThreadFromAConversation`"
+      }
+    },
+    "inputPreview": "slack_SLACK_FETCH_MESSAGE_THREAD_FROM_A_CONVERSATION {}"
+  },
+  {
+    "id": "apr_7c9a4a6a-10a8-4093-98d5-d3e473f63c84",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_12e23268-731a-4ad2-9649-e0bab2525fa6",
+      "args": {},
+      "tool": "slack_SLACK_GET_REMINDER_INFORMATION"
+    },
+    "createdAt": "2026-07-26T11:59:09.002Z",
+    "descriptor": {
+      "name": "slack_SLACK_GET_REMINDER_INFORMATION",
+      "risk": "read",
+      "description": "Retrieves detailed information for an existing slack reminder specified by its id; this is a read-only operation.",
+      "inputSchema": {
+        "type": "object",
+        "title": "GetReminderInformationRequest",
+        "properties": {
+          "reminder": {
+            "type": "string",
+            "title": "Reminder",
+            "examples": [
+              "Rm12345678"
+            ],
+            "description": "The unique identifier of the reminder to retrieve information for. This ID typically starts with 'Rm'."
+          }
+        },
+        "description": "Request schema for `GetReminderInformation` action. Specifies the reminder to be retrieved."
+      }
+    },
+    "inputPreview": "slack_SLACK_GET_REMINDER_INFORMATION {}"
+  },
+  {
+    "id": "apr_aff273b8-530d-49e4-8883-cfc525b208ab",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_b2105340-a2a4-4692-8a8e-2b3612a05792",
+      "args": {},
+      "tool": "googlecalendar_GOOGLECALENDAR_SYNC_EVENTS"
+    },
+    "createdAt": "2026-07-26T11:59:09.001Z",
+    "descriptor": {
+      "name": "googlecalendar_GOOGLECALENDAR_SYNC_EVENTS",
+      "risk": "read",
+      "description": "Synchronizes google calendar events, performing a full sync if no `sync token` is provided or if a 410 gone error (due to an expired token) necessitates it, otherwise performs an incremental sync for events changed since the `sync token` was issued.",
+      "inputSchema": {
+        "type": "object",
+        "title": "SyncEventsRequest",
+        "properties": {
+          "pageToken": {
+            "type": "string",
+            "title": "Page Token",
+            "default": null,
+            "examples": [
+              "RANDOM_PAGE_TOKEN_STRING"
+            ],
+            "nullable": true,
+            "description": "Token for paginating results, from a previous response's `nextPageToken`."
+          },
+          "sync_token": {
+            "type": "string",
+            "title": "Sync Token",
+            "default": null,
+            "examples": [
+              "RANDOM_SYNC_TOKEN_STRING_FROM_PREVIOUS_CALL"
+            ],
+            "nullable": true,
+            "description": "Token for incremental sync, retrieving only changes since issued. A 410 GONE response indicates an expired token, requiring a full sync."
+          },
+          "calendar_id": {
+            "type": "string",
+            "title": "Calendar Id",
+            "default": "primary",
+            "examples": [
+              "primary",
+              "your.email@example.com",
+              "xxxxxxxxxx@group.calendar.google.com"
+            ],
+            "description": "Google Calendar identifier; 'primary' refers to the authenticated user's main calendar."
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "properties": {}
+            },
+            "title": "Event Types",
+            "default": null,
+            "examples": [
+              "['default', 'focusTime']",
+              "['outOfOffice']",
+              "['default']"
+            ],
+            "nullable": true,
+            "description": "Filters events by specified types (e.g., 'default', 'focusTime', 'outOfOffice', 'workingLocation'). All types returned if omitted."
+          },
+          "max_results": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": null,
+            "examples": [
+              "100",
+              "2500"
+            ],
+            "nullable": true,
+            "description": "Max events per page (max 2500); Google Calendar's default is used if unspecified."
+          },
+          "single_events": {
+            "type": "boolean",
+            "title": "Single Events",
+            "default": null,
+            "examples": [
+              "True",
+              "False"
+            ],
+            "nullable": true,
+            "description": "If True, expands recurring events into individual instances (excluding master event); otherwise, Google's default handling applies."
+          }
+        }
+      }
+    },
+    "inputPreview": "googlecalendar_GOOGLECALENDAR_SYNC_EVENTS {}"
+  },
+  {
+    "id": "apr_8de17883-c2ba-4d79-80bc-b51949d49087",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_253a5126-6ee7-431b-8ccd-8701ab1ec99f",
+      "args": {},
+      "tool": "slack_SLACK_FETCH_BOT_USER_INFORMATION"
+    },
+    "createdAt": "2026-07-26T11:59:09.001Z",
+    "descriptor": {
+      "name": "slack_SLACK_FETCH_BOT_USER_INFORMATION",
+      "risk": "read",
+      "description": "Fetches information for a specified, existing slack bot user; will not work for regular user accounts or other integration types.",
+      "inputSchema": {
+        "type": "object",
+        "title": "FetchBotUserInformationRequest",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "title": "Bot",
+            "examples": [
+              "B0123456789"
+            ],
+            "description": "The ID of the bot user to retrieve information for. This typically starts with 'B'."
+          }
+        },
+        "description": "Request schema for `FetchBotUserInformation`"
+      }
+    },
+    "inputPreview": "slack_SLACK_FETCH_BOT_USER_INFORMATION {}"
+  },
+  {
+    "id": "apr_85e2733b-7571-486d-8935-60d2290800f0",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_84d5ca61-f4df-4c04-b29b-0319f2354b4a",
+      "args": {},
+      "tool": "slack_SLACK_FETCH_CURRENT_TEAM_INFO_WITH_OPTIONAL_TEAM_SCOPE"
+    },
+    "createdAt": "2026-07-26T11:59:09.001Z",
+    "descriptor": {
+      "name": "slack_SLACK_FETCH_CURRENT_TEAM_INFO_WITH_OPTIONAL_TEAM_SCOPE",
+      "risk": "read",
+      "description": "Deprecated: fetches comprehensive metadata about the current slack team. use `fetch team info` instead.",
+      "inputSchema": {
+        "type": "object",
+        "title": "FetchTeamInfoRequest",
+        "properties": {
+          "team": {
+            "type": "string",
+            "title": "Team",
+            "default": null,
+            "examples": [
+              "T12345678",
+              "E87654321"
+            ],
+            "nullable": true,
+            "description": "The ID of the team to retrieve information for. If omitted, information for the current team (associated with the authentication token) is returned. The token must have permissions to view the specified team, especially for teams accessible via external shared channels."
+          }
+        },
+        "description": "Request schema for `FetchTeamInfo`"
+      }
+    },
+    "inputPreview": "slack_SLACK_FETCH_CURRENT_TEAM_INFO_WITH_OPTIONAL_TEAM_SCOPE {}"
+  },
+  {
+    "id": "apr_77582078-683f-4cd6-868e-0f5302e6b702",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_d890cba6-d0ac-4955-9b25-9f7377e2e0a8",
+      "args": {},
+      "tool": "slack_SLACK_FETCH_ITEM_REACTIONS"
+    },
+    "createdAt": "2026-07-26T11:59:09.001Z",
+    "descriptor": {
+      "name": "slack_SLACK_FETCH_ITEM_REACTIONS",
+      "risk": "read",
+      "description": "Fetches reactions for a slack message, file, or file comment, requiring one of: channel and timestamp; file id; or file comment id.",
+      "inputSchema": {
+        "type": "object",
+        "title": "FetchItemReactionsRequest",
+        "properties": {
+          "file": {
+            "type": "string",
+            "title": "File",
+            "examples": [
+              "F1234567890",
+              "F2147483002"
+            ],
+            "description": "File ID. Use instead of channel/timestamp or file comment ID."
+          },
+          "full": {
+            "type": "boolean",
+            "title": "Full",
+            "description": "If true, returns the complete list of users for each reaction."
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel",
+            "examples": [
+              "C1234567890",
+              "C061F7XAZ"
+            ],
+            "description": "Channel ID. Required if `timestamp` is provided and no file or file comment ID is given."
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "examples": [
+              "1234567890.123456",
+              "1629876543.000100"
+            ],
+            "description": "Message timestamp (e.g., '1234567890.123456'). Required if `channel` is provided and no file or file comment ID is given."
+          },
+          "file_comment": {
+            "type": "string",
+            "title": "File Comment",
+            "examples": [
+              "Fc1234567890",
+              "Fc789123456"
+            ],
+            "description": "File comment ID. Use instead of channel/timestamp or file ID."
+          }
+        },
+        "description": "Request schema for `FetchItemReactions` action. It specifies the item (message, file, or file comment) for which to retrieve reactions."
+      }
+    },
+    "inputPreview": "slack_SLACK_FETCH_ITEM_REACTIONS {}"
+  },
+  {
+    "id": "apr_c267dc93-627c-4a00-8ce7-5e66317098a4",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_208bc677-d0ce-46bb-b5b9-b0bc2d57227c",
+      "args": {},
+      "tool": "googlecalendar_GOOGLECALENDAR_LIST_CALENDARS"
+    },
+    "createdAt": "2026-07-26T11:59:09.000Z",
+    "descriptor": {
+      "name": "googlecalendar_GOOGLECALENDAR_LIST_CALENDARS",
+      "risk": "read",
+      "description": "Retrieves calendars from the user's google calendar list, with options for pagination and filtering.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListCalendarsRequest",
+        "properties": {
+          "page_token": {
+            "type": "string",
+            "title": "Page Token",
+            "default": null,
+            "examples": [
+              " nextPageToken123"
+            ],
+            "nullable": true,
+            "description": "Token for the page of results to return, from a previous response."
+          },
+          "sync_token": {
+            "type": "string",
+            "title": "Sync Token",
+            "default": null,
+            "examples": [
+              "syncToken123"
+            ],
+            "nullable": true,
+            "description": "Sync token from a previous list request to get only changed entries; showDeleted, showHidden, and pageToken are ignored if provided."
+          },
+          "max_results": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": 10,
+            "examples": [
+              25,
+              100
+            ],
+            "description": "Maximum number of calendars to return per page. Max 250."
+          },
+          "show_hidden": {
+            "type": "boolean",
+            "title": "Show Hidden",
+            "default": false,
+            "examples": [
+              true,
+              false
+            ],
+            "description": "Include calendars not typically shown in the UI."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "title": "Show Deleted",
+            "default": false,
+            "examples": [
+              true,
+              false
+            ],
+            "description": "Include deleted calendars in the result."
+          },
+          "min_access_role": {
+            "type": "string",
+            "title": "Min Access Role",
+            "default": null,
+            "examples": [
+              "reader",
+              "owner"
+            ],
+            "nullable": true,
+            "description": "Minimum access role for calendars returned. Valid values: 'freeBusyReader', 'owner', 'reader', 'writer'."
+          }
+        }
+      }
+    },
+    "inputPreview": "googlecalendar_GOOGLECALENDAR_LIST_CALENDARS {}"
+  },
+  {
+    "id": "apr_751e7b05-3612-4155-98cd-a684fe0662ca",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_de4a5689-7bf6-4d6f-9add-8ab6d38a6704",
+      "args": {},
+      "tool": "googlecalendar_GOOGLECALENDAR_GET_CALENDAR"
+    },
+    "createdAt": "2026-07-26T11:59:09.000Z",
+    "descriptor": {
+      "name": "googlecalendar_GOOGLECALENDAR_GET_CALENDAR",
+      "risk": "read",
+      "description": "Retrieves a specific google calendar, identified by `calendar id`, to which the authenticated user has access.",
+      "inputSchema": {
+        "type": "object",
+        "title": "GetCalendarRequest",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "title": "Calendar Id",
+            "default": "primary",
+            "examples": [
+              "primary",
+              "user@example.com",
+              "en.usa#holiday@group.v.calendar.google.com"
+            ],
+            "description": "Identifier of the Google Calendar to retrieve. 'primary' (the default) represents the user's main calendar; other valid identifiers include the calendar's email address."
+          }
+        }
+      }
+    },
+    "inputPreview": "googlecalendar_GOOGLECALENDAR_GET_CALENDAR {}"
+  },
+  {
+    "id": "apr_6c6a516c-1b6a-4739-9108-a61fe147b8ad",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_15f13fe6-125f-4e81-87b7-62ebce4508a9",
+      "args": {},
+      "tool": "googlecalendar_GOOGLECALENDAR_GET_CURRENT_DATE_TIME"
+    },
+    "createdAt": "2026-07-26T11:59:09.000Z",
+    "descriptor": {
+      "name": "googlecalendar_GOOGLECALENDAR_GET_CURRENT_DATE_TIME",
+      "risk": "read",
+      "description": "Gets the current date and time, allowing for a specific timezone offset.",
+      "inputSchema": {
+        "type": "object",
+        "title": "GetCurrentDateTimeRequest",
+        "properties": {
+          "timezone": {
+            "type": "number",
+            "title": "Timezone",
+            "default": 0,
+            "examples": [
+              "6",
+              "-9",
+              "0",
+              "5.5"
+            ],
+            "description": "Timezone offset from UTC in hours (e.g., 6 for UTC+6, -9 for UTC-9, 5.5 for UTC+5:30). Default 0 is UTC."
+          }
+        }
+      }
+    },
+    "inputPreview": "googlecalendar_GOOGLECALENDAR_GET_CURRENT_DATE_TIME {}"
+  },
+  {
+    "id": "apr_555cddbd-febb-44d1-8ec4-43d333b13961",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_cca4a27d-acc7-41b8-886f-9afa0ee21ec4",
+      "args": {},
+      "tool": "googlecalendar_GOOGLECALENDAR_SETTINGS_LIST"
+    },
+    "createdAt": "2026-07-26T11:59:09.000Z",
+    "descriptor": {
+      "name": "googlecalendar_GOOGLECALENDAR_SETTINGS_LIST",
+      "risk": "read",
+      "description": "Returns all user settings for the authenticated user.",
+      "inputSchema": {
+        "type": "object",
+        "title": "SettingsListRequest",
+        "properties": {
+          "pageToken": {
+            "type": "string",
+            "title": "Page Token",
+            "default": null,
+            "nullable": true,
+            "description": "Token specifying which result page to return."
+          },
+          "syncToken": {
+            "type": "string",
+            "title": "Sync Token",
+            "default": null,
+            "nullable": true,
+            "description": "Token obtained from the nextSyncToken field returned on the last page of results from the previous list request. It makes the result of this list request contain only entries that have changed since then. If the syncToken expires, the server will respond with a 410 GONE response code and the client should clear its storage and perform a full synchronization without any syncToken."
+          },
+          "maxResults": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": null,
+            "maximum": 250,
+            "minimum": 1,
+            "nullable": true,
+            "description": "Maximum number of entries returned on one result page. By default the value is 100 entries. The page size can never be larger than 250 entries."
+          }
+        }
+      }
+    },
+    "inputPreview": "googlecalendar_GOOGLECALENDAR_SETTINGS_LIST {}"
+  },
+  {
+    "id": "apr_f21922bb-ae3e-4734-b1f9-c7cbc39aac07",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_87617b60-6a92-4fcc-9163-ba888b048e1b",
+      "args": {},
+      "tool": "googlecalendar_GOOGLECALENDAR_FIND_EVENT"
+    },
+    "createdAt": "2026-07-26T11:59:08.999Z",
+    "descriptor": {
+      "name": "googlecalendar_GOOGLECALENDAR_FIND_EVENT",
+      "risk": "read",
+      "description": "Finds events in a specified google calendar using text query, time ranges (event start/end, last modification), and event types; ensure `timemin` is not chronologically after `timemax` if both are provided.",
+      "inputSchema": {
+        "type": "object",
+        "title": "FindEventRequest",
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query",
+            "default": null,
+            "examples": [
+              "Project Alpha Review",
+              "Birthday Party",
+              "Q3 Planning session"
+            ],
+            "nullable": true,
+            "description": "Free-text search terms to find events. This query is matched against various event fields including summary, description, location, attendees' details (displayName, email), and organizer's details."
+          },
+          "timeMax": {
+            "type": "string",
+            "title": "Time Max",
+            "default": null,
+            "examples": [
+              "2024-12-31T23:59:59Z",
+              "2025-01-01 10:00:00"
+            ],
+            "nullable": true,
+            "description": "Upper bound (exclusive) for an event's start time to filter by. Only events starting before this time are included. Accepts multiple formats:\n1. RFC3339 timestamp (e.g., '2024-12-06T13:00:00Z')\n2. Comma-separated date/time parts (e.g., '2024,12,06,13,00,00')\n3. Simple datetime string (e.g., '2024-12-06 13:00:00')"
+          },
+          "timeMin": {
+            "type": "string",
+            "title": "Time Min",
+            "default": null,
+            "examples": [
+              "2024-01-01T00:00:00Z",
+              "2024-06-15 09:00:00"
+            ],
+            "nullable": true,
+            "description": "Lower bound (exclusive) for an event's end time to filter by. Only events ending after this time are included. Accepts multiple formats:\n1. RFC3339 timestamp (e.g., '2024-12-06T13:00:00Z')\n2. Comma-separated date/time parts (e.g., '2024,12,06,13,00,00')\n3. Simple datetime string (e.g., '2024-12-06 13:00:00')"
+          },
+          "order_by": {
+            "type": "string",
+            "title": "Order By",
+            "default": null,
+            "examples": [
+              "startTime",
+              "updated"
+            ],
+            "nullable": true,
+            "description": "Order of events: 'startTime' (ascending by start time) or 'updated' (ascending by last modification time)."
+          },
+          "page_token": {
+            "type": "string",
+            "title": "Page Token",
+            "default": null,
+            "nullable": true,
+            "description": "Token from a previous response's `nextPageToken` to fetch the subsequent page of results."
+          },
+          "calendar_id": {
+            "type": "string",
+            "title": "Calendar Id",
+            "default": "primary",
+            "examples": [
+              "primary",
+              "user@example.com",
+              "abc...@group.calendar.google.com"
+            ],
+            "description": "Identifier of the Google Calendar to query. Use 'primary' for the primary calendar of the authenticated user, an email address for a specific user's calendar, or a calendar ID for other calendars."
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "birthday",
+                "default",
+                "focusTime",
+                "outOfOffice",
+                "workingLocation"
+              ],
+              "type": "string",
+              "title": "EventType",
+              "properties": {}
+            },
+            "title": "Event Types",
+            "default": [
+              "birthday",
+              "default",
+              "focusTime",
+              "outOfOffice",
+              "workingLocation"
+            ],
+            "examples": [
+              "default",
+              "focusTime",
+              "outOfOffice"
+            ],
+            "description": "Event types to include: 'default' (regular event), 'focusTime' (focused work time), 'outOfOffice' (out-of-office time)."
+          },
+          "max_results": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": 10,
+            "description": "Maximum number of events per page (1-2500)."
+          },
+          "updated_min": {
+            "type": "string",
+            "title": "Updated Min",
+            "default": null,
+            "examples": [
+              "2024-07-01T00:00:00Z"
+            ],
+            "nullable": true,
+            "description": "Lower bound (exclusive) for an event's last modification time to filter by. Only events updated after this time are included. When specified, events deleted since this time are also included, regardless of the `show_deleted` parameter. Accepts multiple formats:\n1. RFC3339 timestamp (e.g., '2024-12-06T13:00:00Z')\n2. Comma-separated date/time parts (e.g., '2024,12,06,13,00,00')\n3. Simple datetime string (e.g., '2024-12-06 13:00:00')"
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "title": "Show Deleted",
+            "default": null,
+            "nullable": true,
+            "description": "Include deleted events (status 'cancelled') in the result."
+          },
+          "single_events": {
+            "type": "boolean",
+            "title": "Single Events",
+            "default": true,
+            "description": "Expand recurring events into individual instances. If false, returns master recurring events."
+          }
+        }
+      }
+    },
+    "inputPreview": "googlecalendar_GOOGLECALENDAR_FIND_EVENT {}"
+  },
+  {
+    "id": "apr_b02506c7-3802-4067-ae4f-486eed5f74bf",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_3727f9fd-531e-469e-803b-af7b718f65d7",
+      "args": {},
+      "tool": "googlecalendar_GOOGLECALENDAR_FIND_FREE_SLOTS"
+    },
+    "createdAt": "2026-07-26T11:59:08.999Z",
+    "descriptor": {
+      "name": "googlecalendar_GOOGLECALENDAR_FIND_FREE_SLOTS",
+      "risk": "read",
+      "description": "Finds free/busy time slots in google calendars for specified calendars within a defined time range (defaults to the current day utc if `time min`/`time max` are omitted), enhancing busy intervals with event details; `time min` must precede `time max` if both are provided.",
+      "inputSchema": {
+        "type": "object",
+        "title": "FindFreeSlotsRequest",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "properties": {}
+            },
+            "title": "Items",
+            "default": [
+              "primary"
+            ],
+            "examples": [
+              "primary",
+              "user@example.com",
+              "unique_calendar_id@group.calendar.google.com"
+            ],
+            "description": "List of calendar identifiers (primary ID 'primary', user/calendar email, or unique calendar ID) to query for free/busy information."
+          },
+          "time_max": {
+            "type": "string",
+            "title": "Time Max",
+            "default": null,
+            "examples": [
+              "2024-12-06T18:00:00Z",
+              "2024,12,06,18,00,00",
+              "2024-12-06 18:00:00"
+            ],
+            "nullable": true,
+            "description": "End datetime for the query interval. Accepts ISO, comma-separated, or simple datetime formats."
+          },
+          "time_min": {
+            "type": "string",
+            "title": "Time Min",
+            "default": null,
+            "examples": [
+              "2024-12-06T13:00:00Z",
+              "2024,12,06,13,00,00",
+              "2024-12-06 13:00:00"
+            ],
+            "nullable": true,
+            "description": "Start datetime for the query interval. Accepts ISO, comma-separated, or simple datetime formats."
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone",
+            "default": "UTC",
+            "examples": [
+              "UTC",
+              "America/New_York",
+              "Europe/Berlin"
+            ],
+            "description": "IANA timezone identifier (e.g., 'America/New_York', 'Europe/London') for interpreting `time_min` and `time_max` if they lack timezone info, and for expanding recurring events."
+          },
+          "group_expansion_max": {
+            "type": "integer",
+            "title": "Group Expansion Max",
+            "default": 100,
+            "description": "Maximum calendar identifiers to return for a single group; exceeding this causes an error. Max allowed: 100."
+          },
+          "calendar_expansion_max": {
+            "type": "integer",
+            "title": "Calendar Expansion Max",
+            "default": 50,
+            "description": "Maximum calendars for which FreeBusy information is provided. Max allowed: 50."
+          }
+        }
+      }
+    },
+    "inputPreview": "googlecalendar_GOOGLECALENDAR_FIND_FREE_SLOTS {}"
+  },
+  {
+    "id": "apr_f2972a19-333b-4dde-8336-447a5bdb37a7",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_558359e3-cde6-40d6-ab50-0e506fa23259",
+      "args": {},
+      "tool": "gmail_GMAIL_LIST_THREADS"
+    },
+    "createdAt": "2026-07-26T11:59:08.998Z",
+    "descriptor": {
+      "name": "gmail_GMAIL_LIST_THREADS",
+      "risk": "read",
+      "description": "Retrieves a list of email threads from a gmail account, identified by `user id` (email address or 'me'), supporting filtering and pagination.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListThreadsRequest",
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query",
+            "default": "",
+            "examples": [
+              "is:unread",
+              "from:john.doe@example.com",
+              "subject:important"
+            ],
+            "description": "Filter for threads, using Gmail search query syntax (e.g., 'from:user@example.com is:unread')."
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "default": "me",
+            "examples": [
+              "me",
+              "user@example.com"
+            ],
+            "description": "The user's email address or 'me' to specify the authenticated Gmail account."
+          },
+          "verbose": {
+            "type": "boolean",
+            "title": "Verbose",
+            "default": false,
+            "examples": [
+              "True",
+              "False"
+            ],
+            "description": "If false, returns threads with basic fields (id, snippet, historyId). If true, returns threads with complete message details including headers, body, attachments, and metadata for each message in the thread."
+          },
+          "page_token": {
+            "type": "string",
+            "title": "Page Token",
+            "default": "",
+            "examples": [
+              "abcPageToken123"
+            ],
+            "description": "Token from a previous response to retrieve a specific page of results; omit for the first page."
+          },
+          "max_results": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": 10,
+            "maximum": 500,
+            "minimum": 1,
+            "examples": [
+              "10",
+              "50",
+              "100"
+            ],
+            "description": "Maximum number of threads to return."
+          }
+        }
+      }
+    },
+    "inputPreview": "gmail_GMAIL_LIST_THREADS {}"
+  },
+  {
+    "id": "apr_0f02021a-3717-47f2-8e65-516afb8c9fd0",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_dfc53db6-d822-4dad-a70e-dfe2e5afa5cb",
+      "args": {},
+      "tool": "gmail_GMAIL_LIST_LABELS"
+    },
+    "createdAt": "2026-07-26T11:59:08.997Z",
+    "descriptor": {
+      "name": "gmail_GMAIL_LIST_LABELS",
+      "risk": "read",
+      "description": "Retrieves a list of all system and user-created labels for the specified gmail account.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListLabelsRequest",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "default": "me",
+            "examples": [
+              "me",
+              "user@example.com"
+            ],
+            "description": "Identifies the Gmail account (owner's email or 'me' for authenticated user) for which labels will be listed."
+          }
+        }
+      }
+    },
+    "inputPreview": "gmail_GMAIL_LIST_LABELS {}"
+  },
+  {
+    "id": "apr_6301df5d-258a-4ed2-b8b3-f98db1db3866",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_b7d743c7-dd51-45a5-9c2f-3e88dbfd4f29",
+      "args": {},
+      "tool": "gmail_GMAIL_LIST_DRAFTS"
+    },
+    "createdAt": "2026-07-26T11:59:08.996Z",
+    "descriptor": {
+      "name": "gmail_GMAIL_LIST_DRAFTS",
+      "risk": "read",
+      "description": "Retrieves a paginated list of email drafts from a user's gmail account. use verbose=true to get full draft details including subject, body, sender, and timestamp.",
+      "inputSchema": {
+        "type": "object",
+        "title": "ListDraftsRequest",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "default": "me",
+            "examples": [
+              "me",
+              "user@example.com"
+            ],
+            "description": "User's mailbox ID; use 'me' for the authenticated user."
+          },
+          "verbose": {
+            "type": "boolean",
+            "title": "Verbose",
+            "default": false,
+            "examples": [
+              true,
+              false
+            ],
+            "description": "If true, fetches full draft details including subject, sender, recipient, body, and timestamp. If false, returns only draft IDs (faster)."
+          },
+          "page_token": {
+            "type": "string",
+            "title": "Page Token",
+            "default": "",
+            "examples": [
+              "CiaKJDhWSE5UURE9PSIsImMiOiJhYmMxMjMifQ=="
+            ],
+            "description": "Token from a previous response to retrieve a specific page of drafts."
+          },
+          "max_results": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": 1,
+            "maximum": 500,
+            "minimum": 1,
+            "examples": [
+              10,
+              100,
+              500
+            ],
+            "description": "Maximum number of drafts to return per page."
+          }
+        }
+      }
+    },
+    "inputPreview": "gmail_GMAIL_LIST_DRAFTS {}"
+  },
+  {
+    "id": "apr_3c984a67-8788-40b2-9846-32b573fb0bf7",
+    "ctx": {
+      "venue": "app",
+      "presence": "present",
+      "principal": {
+        "kind": "user",
+        "display": "Maya Alvarez",
+        "subject": "8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01"
+      }
+    },
+    "call": {
+      "id": "call_8567db79-af11-47f9-8f6b-d8ac430d5f20",
+      "args": {},
+      "tool": "gmail_GMAIL_GET_PROFILE"
+    },
+    "createdAt": "2026-07-26T11:59:08.995Z",
+    "descriptor": {
+      "name": "gmail_GMAIL_GET_PROFILE",
+      "risk": "read",
+      "description": "Retrieves key gmail profile information (email address, message/thread totals, history id) for a user.",
+      "inputSchema": {
+        "type": "object",
+        "title": "GetProfileRequest",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "default": "me",
+            "examples": [
+              "user@example.com",
+              "me"
+            ],
+            "description": "The email address of the Gmail user whose profile is to be retrieved, or the special value 'me' to indicate the currently authenticated user."
+          }
+        }
+      }
+    },
+    "inputPreview": "gmail_GMAIL_GET_PROFILE {}"
+  }
+]

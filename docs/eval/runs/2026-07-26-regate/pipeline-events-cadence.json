@@ -1,0 +1,704 @@
+{
+  "I16:A": {
+    "id": "I16",
+    "arm": "A",
+    "log": "cadence-armA-1785061704662.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=29.9s tokens=21989→2303"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I17:A": {
+    "id": "I17",
+    "arm": "A",
+    "log": "cadence-armA-1785061819678.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=41.3s tokens=21982→3325",
+      "[vendo] gen full complete at=71.8s tokens=22168→2395",
+      "[vendo] gen full complete at=102.9s tokens=22224→2507"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I18:A": {
+    "id": "I18",
+    "arm": "A",
+    "log": "cadence-armA-1785062867242.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=41282"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=46.5s tokens=21994→3774",
+      "[vendo] gen repair complete at=86.9s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I19:A": {
+    "id": "I19",
+    "arm": "A",
+    "log": "cadence-armA-1785063045986.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=28105"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=34.8s tokens=21984→2583",
+      "[vendo] gen repair complete at=62.5s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I20:A": {
+    "id": "I20",
+    "arm": "A",
+    "log": "cadence-armA-1785063374674.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=27640"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=35.4s tokens=21985→3041",
+      "[vendo] gen repair complete at=62.5s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I21:A": {
+    "id": "I21",
+    "arm": "A",
+    "log": "cadence-armA-1785063599297.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=55.5s tokens=21982→4114",
+      "[vendo] gen full complete at=98.3s tokens=22136→2629",
+      "[vendo] gen full complete at=136.5s tokens=22200→2910"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": true,
+    "refusalIssues": [
+      "- wire unknown-reference: \"dashboard.data.documentsReceived\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"dashboard.data.documentsTotal\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"dashboard.data.clientsMissingDocs\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"activity.data\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data\" does not name a declared <Query> or state",
+      "- node \"turnaroundinsight-1\" references unknown component \"TurnaroundInsight\"",
+      "- island \"TurnaroundPanel\" computes displayed values from the hand-typed constant 2 — a constant feeding displayed math is invented data (law 1): derive it from a tool result, or render an honest <Disclaimer/> that the rate/value isn't available on this host.",
+      "- wire unknown-reference: \"dashboard.data.documentsOutstanding\" does not name a declared <Query> or state"
+    ]
+  },
+  "I22:A": {
+    "id": "I22",
+    "arm": "A",
+    "log": "cadence-armA-1785064173615.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=16.7s tokens=21981→1075",
+      "[vendo] gen full complete at=28.2s tokens=22036→724"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I23:A": {
+    "id": "I23",
+    "arm": "A",
+    "log": "cadence-armA-1785064419296.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=33269"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=40.5s tokens=21979→3179",
+      "[vendo] gen repair complete at=73.2s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I24:A": {
+    "id": "I24",
+    "arm": "A",
+    "log": "cadence-armA-1785064739001.log",
+    "pipeline": [],
+    "lanes": [],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I25:A": {
+    "id": "I25",
+    "arm": "A",
+    "log": "cadence-armA-1785065172995.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=22820"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=57.3s tokens=21984→4407",
+      "[vendo] gen full complete at=84.4s tokens=22015→1553",
+      "[vendo] gen full complete at=113.4s tokens=22222→2058",
+      "[vendo] gen full complete at=34.1s tokens=21987→1756",
+      "[vendo] gen full complete at=68.6s tokens=22042→1754",
+      "[vendo] gen repair complete at=91.0s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": true,
+    "refusalIssues": [
+      "- wire nested-query: <Query> belongs at App level; the query was still hoisted",
+      "- wire unknown-reference: \"clients.data\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.id\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.businessName\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.contactName\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.progress.received\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.progress.total\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.filingDeadline\" does not name a declared <Query> or state",
+      "- node \"equinoxreminderform-1\" references unknown component \"EquinoxReminderForm\""
+    ]
+  },
+  "I26:A": {
+    "id": "I26",
+    "arm": "A",
+    "log": "cadence-armA-1785066190955.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=35009"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=47.9s tokens=21983→3726",
+      "[vendo] gen repair complete at=82.5s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I27:A": {
+    "id": "I27",
+    "arm": "A",
+    "log": "cadence-armA-1785066488129.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=10.1s tokens=21979→471"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I28:A": {
+    "id": "I28",
+    "arm": "A",
+    "log": "cadence-armA-1785067006382.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=31760"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=37.6s tokens=21985→2757",
+      "[vendo] gen repair complete at=68.6s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I29:A": {
+    "id": "I29",
+    "arm": "A",
+    "log": "cadence-armA-1785067206187.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=34028"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=41.9s tokens=21985→3296",
+      "[vendo] gen repair complete at=75.5s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I30:A": {
+    "id": "I30",
+    "arm": "A",
+    "log": "cadence-armA-1785067526298.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=2 repaired=true ms=24893"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=37.6s tokens=21988→3068",
+      "[vendo] gen repair complete at=62.0s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I16:B": {
+    "id": "I16",
+    "arm": "B",
+    "log": "cadence-armB-1785061615316.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=29581",
+      "[vendo] gen pipeline data-verify applied=false ms=2373"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=41.8s tokens=21989→3238",
+      "[vendo] gen repair complete at=71.0s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I17:B": {
+    "id": "I17",
+    "arm": "B",
+    "log": "cadence-armB-1785061751032.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=20046",
+      "[vendo] gen pipeline data-verify applied=false ms=721"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=33.2s tokens=21982→2312",
+      "[vendo] gen repair complete at=52.6s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I18:B": {
+    "id": "I18",
+    "arm": "B",
+    "log": "cadence-armB-1785062432050.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=false ms=40"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=37.2s tokens=21994→3046",
+      "[vendo] gen repair complete at=37.2s",
+      "[vendo] gen full complete at=68.0s tokens=22053→2314"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": true,
+    "refusalIssues": [
+      "- island \"AnjaliClientView\" must be plain TSX with an `export default` component — no braces, template literals, or fences around the source",
+      "- model generation failed: Cannot connect to API: other side closed",
+      "- App name=\"Anjali Patel — document status & messages\" is 41 characters — name is the app's display title (at most 40 characters); write a short human title, never the request echoed back",
+      "- island \"AnjaliClientView\" renders <CadenceStatusBadge> — <CadenceStatusBadge> renders on the host page and cannot exist inside an island (the name is undefined in the sandbox): use the ambient Kit equivalent (EnumBadge) inside the island, or move it to a tree node.",
+      "- island \"AnjaliClientView\" renders <CadenceDocProgress> — <CadenceDocProgress> renders on the host page and cannot exist inside an island (the name is undefined in the sandbox): use the ambient Kit equivalent (Progress) inside the island, or move it to a tree node.",
+      "- island \"AnjaliClientView\" renders <Skeleton> — <Skeleton> renders on the host page and cannot exist inside an island (the name is undefined in the sandbox): islands render against live tool data — replace it with a brief loading state (e.g. <Text text=\"Loading…\"/> until the data arrives), or move it to a tree node."
+    ]
+  },
+  "I19:B": {
+    "id": "I19",
+    "arm": "B",
+    "log": "cadence-armB-1785062971860.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=23955",
+      "[vendo] gen pipeline data-verify applied=false ms=1346"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=33.0s tokens=21984→2460",
+      "[vendo] gen repair complete at=56.2s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I20:B": {
+    "id": "I20",
+    "arm": "B",
+    "log": "cadence-armB-1785063218736.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=744"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=43.0s tokens=21985→3760",
+      "[vendo] gen full complete at=81.0s tokens=22018→2977"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I21:B": {
+    "id": "I21",
+    "arm": "B",
+    "log": "cadence-armB-1785064036813.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=1363"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=56.5s tokens=21982→4394",
+      "[vendo] gen full complete at=72.1s tokens=22197→895"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I22:B": {
+    "id": "I22",
+    "arm": "B",
+    "log": "cadence-armB-1785064218102.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1009"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=14.1s tokens=21981→736"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I23:B": {
+    "id": "I23",
+    "arm": "B",
+    "log": "cadence-armB-1785064301869.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1548"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=32.6s tokens=21979→2418",
+      "[vendo] gen full complete at=63.9s tokens=22090→2294",
+      "[vendo] gen full complete at=98.7s tokens=22147→2945"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I24:B": {
+    "id": "I24",
+    "arm": "B",
+    "log": "cadence-armB-1785064507779.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=23639",
+      "[vendo] gen pipeline data-verify applied=true ms=1120"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=45.3s tokens=21984→3613",
+      "[vendo] gen full complete at=74.7s tokens=22015→2127",
+      "[vendo] gen repair complete at=97.8s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I25:B": {
+    "id": "I25",
+    "arm": "B",
+    "log": "cadence-armB-1785065712147.log",
+    "pipeline": [
+      "[vendo] gen pipeline repair rounds=1 repaired=true noValidFix=1 ms=2236"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=21.2s tokens=21987→1370",
+      "[vendo] gen full complete at=32.8s tokens=22018→600",
+      "[vendo] gen repair complete at=35.1s"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": true,
+    "refusalIssues": [
+      "- nothing in this request could be built with this host's tools — every part needed data or actions no registered tool provides, so the app would only show \"not available\" notices. Ask for something the host's tools can serve, or register a tool that covers this request."
+    ]
+  },
+  "I26:B": {
+    "id": "I26",
+    "arm": "B",
+    "log": "cadence-armB-1785066289474.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=830"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=45.5s tokens=21983→3757",
+      "[vendo] gen full complete at=92.5s tokens=22109→3668"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I27:B": {
+    "id": "I27",
+    "arm": "B",
+    "log": "cadence-armB-1785066455386.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1078"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=12.9s tokens=21979→584"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I28:B": {
+    "id": "I28",
+    "arm": "B",
+    "log": "cadence-armB-1785066571027.log",
+    "pipeline": [],
+    "lanes": [
+      "[vendo] gen full complete at=30.1s tokens=21985→2110",
+      "[vendo] gen full complete at=67.7s tokens=22038→2737",
+      "[vendo] gen full complete at=90.9s tokens=22059→1574"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": true,
+    "refusalIssues": [
+      "- wire unknown-reference: \"clients.data\" does not name a declared <Query> or state",
+      "- node \"clientmessageisland-1\" references unknown component \"ClientMessageIsland\"",
+      "- node \"antoniochecklist-1\" references unknown component \"AntonioChecklist\"",
+      "- wire unknown-reference: \"clients.data.0.id\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.filingDeadline\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.status\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.contactName\" does not name a declared <Query> or state",
+      "- wire unknown-reference: \"clients.data.0.businessName\" does not name a declared <Query> or state",
+      "- node \"checklistmessagecomposer-1\" references unknown component \"ChecklistMessageComposer\""
+    ]
+  },
+  "I29:B": {
+    "id": "I29",
+    "arm": "B",
+    "log": "cadence-armB-1785067301284.log",
+    "pipeline": [],
+    "lanes": [],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I30:B": {
+    "id": "I30",
+    "arm": "B",
+    "log": "cadence-armB-1785067301284.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=true ms=36790",
+      "[vendo] gen pipeline data-verify applied=false ms=1191",
+      "[vendo] gen pipeline island-repair islands=1 repaired=false ms=34602",
+      "[vendo] gen pipeline data-verify applied=false ms=1906"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=44.0s tokens=21985→2771",
+      "[vendo] gen repair complete at=80.4s",
+      "[vendo] gen full complete at=48.2s tokens=21988→3895",
+      "[vendo] gen repair complete at=82.8s",
+      "[vendo] gen full complete at=113.4s tokens=22065→2429"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I16:C": {
+    "id": "I16",
+    "arm": "C",
+    "log": "cadence-armC-1785061547838.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1451"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=49.2s tokens=23581→4378"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I17:C": {
+    "id": "I17",
+    "arm": "C",
+    "log": "cadence-armC-1785061939458.log",
+    "pipeline": [],
+    "lanes": [],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I18:C": {
+    "id": "I18",
+    "arm": "C",
+    "log": "cadence-armC-1785061939458.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=949"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=42.1s tokens=23574→3506",
+      "[vendo] gen full complete at=32.1s tokens=23586→2531",
+      "[vendo] gen full complete at=53.6s tokens=23646→1561",
+      "[vendo] gen full complete at=79.8s tokens=23669→2067"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": true,
+    "refusalIssues": [
+      "- App name=\"Anjali Patel — document status & messages\" is 41 characters — name is the app's display title (at most 40 characters); write a short human title, never the request echoed back",
+      "- wire unknown-reference: \"host_listClients\" does not name a declared <Query> or state",
+      "- wire nested-query: <Query> belongs at App level; the query was still hoisted",
+      "- query \"docs\" (tool \"host_listClientDocuments\") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools.",
+      "- query \"msgs\" (tool \"host_listClientMessages\") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools."
+    ]
+  },
+  "I19:C": {
+    "id": "I19",
+    "arm": "C",
+    "log": "cadence-armC-1785063124562.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=649"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=35.4s tokens=23576→2833",
+      "[vendo] gen full complete at=75.7s tokens=23610→3236"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I20:C": {
+    "id": "I20",
+    "arm": "C",
+    "log": "cadence-armC-1785063318634.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=817"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=37.3s tokens=23577→3149"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I21:C": {
+    "id": "I21",
+    "arm": "C",
+    "log": "cadence-armC-1785063454597.log",
+    "pipeline": [
+      "[vendo] gen pipeline island-repair islands=1 repaired=false ms=38890",
+      "[vendo] gen pipeline data-verify applied=true ms=1868"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=49.4s tokens=23574→4292",
+      "[vendo] gen repair complete at=88.6s",
+      "[vendo] gen full complete at=125.4s tokens=23651→3028"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I22:C": {
+    "id": "I22",
+    "arm": "C",
+    "log": "cadence-armC-1785064125401.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=1379"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=31.5s tokens=23573→2383"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I23:C": {
+    "id": "I23",
+    "arm": "C",
+    "log": "cadence-armC-1785064247736.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=true ms=1072"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=37.7s tokens=23571→2754"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I24:C": {
+    "id": "I24",
+    "arm": "C",
+    "log": "cadence-armC-1785064623389.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=633"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=52.4s tokens=23576→4195",
+      "[vendo] gen full complete at=99.5s tokens=23760→3815"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I25:C": {
+    "id": "I25",
+    "arm": "C",
+    "log": "cadence-armC-1785066146157.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=2067"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=25.2s tokens=23579→1821"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I26:C": {
+    "id": "I26",
+    "arm": "C",
+    "log": "cadence-armC-1785066400223.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=833"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=36.3s tokens=23575→2938"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I27:C": {
+    "id": "I27",
+    "arm": "C",
+    "log": "cadence-armC-1785066518255.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1908"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=32.2s tokens=23571→2455"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I28:C": {
+    "id": "I28",
+    "arm": "C",
+    "log": "cadence-armC-1785067091441.log",
+    "pipeline": [],
+    "lanes": [],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I29:C": {
+    "id": "I29",
+    "arm": "C",
+    "log": "cadence-armC-1785067091441.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1256",
+      "[vendo] gen pipeline data-verify applied=false ms=1656"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=38.5s tokens=23577→3168",
+      "[vendo] gen full complete at=43.3s tokens=23577→3471"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  },
+  "I30:C": {
+    "id": "I30",
+    "arm": "C",
+    "log": "cadence-armC-1785067603185.log",
+    "pipeline": [
+      "[vendo] gen pipeline data-verify applied=false ms=1442"
+    ],
+    "lanes": [
+      "[vendo] gen full complete at=33.8s tokens=23580→2545",
+      "[vendo] gen full complete at=67.8s tokens=23605→2850"
+    ],
+    "smokeSkips": 0,
+    "buildFailed": false,
+    "refusalIssues": []
+  }
+}

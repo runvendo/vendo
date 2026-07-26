@@ -1,0 +1,30 @@
+=== boot cadence arm C at 2026-07-26T10:32:19.459Z ===
+▲ Next.js 16.2.11
+- Local:         http://localhost:3300
+- Network:       http://10.0.0.188:3300
+✓ Ready in 276ms
+
+=== create I17 arm C start ===
+
+=== create I17 arm C end ===
+
+=== create I18 arm C start ===
+
+=== create I18 arm C end ===
+[vendo] model: explicit ANTHROPIC_API_KEY (anthropic) → claude-sonnet-4-6
+[vendo] gen full complete at=42.1s tokens=23574→3506
+[vendo] model (paint): explicit ANTHROPIC_API_KEY (anthropic) → claude-haiku-4-5
+[vendo] gen pipeline data-verify applied=false ms=949
+[vendo] gen create complete app=app_08869561-e969-4e2c-8fd7-492a3510550d total=44.9s
+[vendo] gen full complete at=32.1s tokens=23586→2531
+[vendo] gen full invalid (1 issue): App name="Anjali Patel
+[vendo] gen full complete at=53.6s tokens=23646→1561
+[vendo] gen full invalid (1 issue): wire unknown-reference: "host_listClients" does not name a declared <Query> or state
+[vendo] gen full complete at=79.8s tokens=23669→2067
+[vendo] gen full invalid (5 issues): wire nested-query: <Query> belongs at App level; the query was still hoisted | wire nested-query: <Query> belongs at App level; the query was still hoisted | wire nested-query: <Query> belongs at App level; the query was still hoisted
+[vendo] app build failed (app_c8c0e1b6-50b1-4f29-bc09-42b268aeac4d): generation failed
+  - App name="Anjali Patel — document status & messages" is 41 characters — name is the app's display title (at most 40 characters); write a short human title, never the request echoed back
+  - wire unknown-reference: "host_listClients" does not name a declared <Query> or state
+  - wire nested-query: <Query> belongs at App level; the query was still hoisted
+  - query "docs" (tool "host_listClientDocuments") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools.
+  - query "msgs" (tool "host_listClientMessages") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools.
