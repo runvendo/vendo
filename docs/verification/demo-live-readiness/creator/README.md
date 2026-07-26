@@ -1,4 +1,21 @@
-# demo-creator live-readiness evidence — linear-issues (criteria 32–37)
+# demo-creator live-readiness evidence (criteria 32–37)
+
+## THE CANONICAL RUN — one clean uninterrupted `demo:pipeline` invocation (criterion 34)
+
+`timings-clean-run.json` + `clean-run/` — prospect https://linear.app, id `linear-tracker`,
+2026-07-27, ONE command, zero interruptions: **36.9 minutes end-to-end wall-clock**
+(14:14:36 → 14:51:31), inside both the 45-minute p50 target and the 2-hour cap.
+One honest row per stage occurrence: create/install/research (15s), plan (33s),
+5 parallel rewrite agents (8.9 min), assembly incl. one repair round (7.4 min),
+judge round 1 FAIL(logo 6) → targeted fix → round 2 PASS (9/7/8/8/8, 8.4 min
+total), beats capture (4.9 min), deploy (38s, first attempt), final gate incl.
+the Railway build wait (6.0 min) — real login through the injected wall,
+3 scenario cards, one live generation to a settled turn, 6/6 PASS
+(`clean-run/GATE.md`, `clean-run/FIDELITY.md`, screenshots). The linear-tracker
+deployment was reaped after the proof (it duplicated the standing linear-issues
+demo); the committed artifacts are its record.
+
+## The standing demo — linear-issues (criteria 32–37 development run)
 
 Live demo: https://demos.vendo.run/linear-issues · demo password `linear-issues-demo` (seeded fallback; `DEMO_PASSWORD` env overrides) · expires 2026-08-16.
 Produced by `demo:pipeline` on 2026-07-26/27 from https://linear.app + two operator screenshots hand-captured from Linear's public site/docs (stand-ins for customer-provided images; provenance in the app's RESEARCH/manifest.json).
@@ -11,7 +28,7 @@ Produced by `demo:pipeline` on 2026-07-26/27 from https://linear.app + two opera
 - `judge-rounds/` — the built-screen captures the judge scored.
 - `timings.json` — the raw per-occurrence stage table (criterion 34's timing table). Read it with the notes below.
 
-## Reading timings.json — the honest numbers
+## Appendix: reading timings.json (the linear-issues development-run table)
 
 This was the tooling's FIRST live run, and the run was interrupted four times by
 tooling defects found and fixed mid-flight (each fix is a lane commit). Every
