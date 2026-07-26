@@ -59,6 +59,85 @@ function visitNodes(ts: typeof TS, root: TS.Node, visit: (node: TS.Node) => void
   ts.forEachChild(root, walkNode);
 }
 
+/** Every name a binding pattern introduces (destructuring included). */
+function bindingNames(ts: typeof TS, name: TS.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  const names: string[] = [];
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) names.push(...bindingNames(ts, element.name));
+  }
+  return names;
+}
+
+/** Whether this SCOPE-CREATING node itself introduces `name`. */
+function scopeDeclares(ts: typeof TS, scope: TS.Node, name: string): boolean {
+  if (ts.isFunctionLike(scope)) {
+    for (const parameter of scope.parameters) {
+      if (ts.isParameter(parameter) && bindingNames(ts, parameter.name).includes(name)) return true;
+    }
+  }
+  const statements = ts.isBlock(scope) || ts.isModuleBlock(scope) ? scope.statements : null;
+  if (statements !== null) {
+    for (const statement of statements) {
+      if (ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) {
+          if (bindingNames(ts, declaration.name).includes(name)) return true;
+        }
+      }
+      if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === name) {
+        return true;
+      }
+    }
+  }
+  if (ts.isCatchClause(scope) && scope.variableDeclaration !== undefined
+    && bindingNames(ts, scope.variableDeclaration.name).includes(name)) return true;
+  if ((ts.isForStatement(scope) || ts.isForOfStatement(scope) || ts.isForInStatement(scope))
+    && scope.initializer !== undefined && ts.isVariableDeclarationList(scope.initializer)) {
+    for (const declaration of scope.initializer.declarations) {
+      if (bindingNames(ts, declaration.name).includes(name)) return true;
+    }
+  }
+  return false;
+}
+
+/** Whether this FILE-scope statement introduces `name` (imports included). */
+function statementDeclares(ts: typeof TS, statement: TS.Statement, name: string): boolean {
+  if (ts.isImportDeclaration(statement)) {
+    const clause = statement.importClause;
+    if (clause?.name?.text === name) return true;
+    const bindings = clause?.namedBindings;
+    if (bindings !== undefined && ts.isNamespaceImport(bindings)) return bindings.name.text === name;
+    if (bindings !== undefined && ts.isNamedImports(bindings)) {
+      return bindings.elements.some((element) => element.name.text === name);
+    }
+    return false;
+  }
+  if (ts.isVariableStatement(statement)) {
+    return statement.declarationList.declarations.some((declaration) => bindingNames(ts, declaration.name).includes(name));
+  }
+  if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === name) return true;
+  return false;
+}
+
+/** Scope-aware, checker-free binding resolution: true when the identifier
+ * USE resolves to the given top-level declaration statement — no scope
+ * between the use and the file scope shadows the name, and the first
+ * file-scope statement declaring it IS `declaration`. A shadowed name fails
+ * to resolve, so font evidence fails CLOSED. */
+function resolvesToDeclaration(ts: typeof TS, use: TS.Identifier, declaration: TS.Statement): boolean {
+  const name = use.text;
+  for (let node: TS.Node | undefined = use.parent; node !== undefined; node = node.parent) {
+    if (ts.isSourceFile(node)) {
+      for (const statement of node.statements) {
+        if (statementDeclares(ts, statement, name)) return statement === declaration;
+      }
+      return false;
+    }
+    if (scopeDeclares(ts, node, name)) return false;
+  }
+  return false;
+}
+
 export interface FontBinding {
   /** CSS custom property the font is exposed as (next/font's `variable`
    *  option, or geist's fixed names); null when only `.className` exists. */
@@ -89,27 +168,37 @@ const GEIST_FONTS = [
   { importName: "GeistMono", specifier: "geist/font/mono", family: "Geist Mono", variable: "--font-geist-mono" },
 ] as const;
 
-/** Named-import locals for `imported` from `specifier` (aliases resolved). */
-function namedImportLocals(parsed: ParsedModule, specifier: string, imported: string): string[] {
+interface NamedImportLocal {
+  local: string;
+  statement: TS.Statement;
+}
+
+/** Named-import locals for `imported` from `specifier` (aliases resolved),
+ *  with their declaring import statement for symbol resolution. */
+function namedImportLocals(parsed: ParsedModule, specifier: string, imported: string): NamedImportLocal[] {
   const { ts, sf } = parsed;
-  const locals: string[] = [];
+  const locals: NamedImportLocal[] = [];
   for (const statement of sf.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     if (statement.moduleSpecifier.text !== specifier) continue;
     const bindings = statement.importClause?.namedBindings;
     if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
     for (const element of bindings.elements) {
-      if ((element.propertyName ?? element.name).text === imported) locals.push(element.name.text);
+      if ((element.propertyName ?? element.name).text === imported) {
+        locals.push({ local: element.name.text, statement });
+      }
     }
   }
   return locals;
 }
 
 /** True when `local.className` / `local.variable` appears inside a JSX
- *  attribute (including spread attributes) of a rendered element — template
- *  literals and cn(...) calls inside the attribute count; a reference parked
- *  in a dead constant does not. */
-function appliedToJsx(parsed: ParsedModule, local: string): boolean {
+ *  attribute (including spread attributes) of a rendered element AND the
+ *  reference resolves (scope-aware) to `declaration` — template literals and
+ *  cn(...) calls inside the attribute count; a reference parked in a dead
+ *  constant, or one whose name is SHADOWED by a nearer declaration, does
+ *  not. */
+function appliedToJsx(parsed: ParsedModule, local: string, declaration: TS.Statement): boolean {
   const { ts, sf } = parsed;
   let applied = false;
   visitNodes(ts, sf, (node) => {
@@ -117,6 +206,7 @@ function appliedToJsx(parsed: ParsedModule, local: string): boolean {
     if (!ts.isPropertyAccessExpression(node)) return;
     if (!ts.isIdentifier(node.expression) || node.expression.text !== local) return;
     if (node.name.text !== "className" && node.name.text !== "variable") return;
+    if (!resolvesToDeclaration(ts, node.expression, declaration)) return;
     for (let ancestor: TS.Node | undefined = node.parent; ancestor !== undefined; ancestor = ancestor.parent) {
       if (ts.isJsxAttribute(ancestor) || ts.isJsxSpreadAttribute(ancestor)) {
         applied = true;
@@ -137,8 +227,8 @@ export function layoutFontBindings(source: string): FontBinding[] {
   const bindings: FontBinding[] = [];
 
   for (const font of GEIST_FONTS) {
-    for (const local of namedImportLocals(parsed, font.specifier, font.importName)) {
-      bindings.push({ variable: font.variable, family: font.family, applied: appliedToJsx(parsed, local) });
+    for (const { local, statement } of namedImportLocals(parsed, font.specifier, font.importName)) {
+      bindings.push({ variable: font.variable, family: font.family, applied: appliedToJsx(parsed, local, statement) });
     }
   }
 
@@ -155,28 +245,37 @@ export function layoutFontBindings(source: string): FontBinding[] {
       const importedLocal = element.name.text;
       let variable: string | null = null;
       let fontLocal: string | null = null;
-      visitNodes(ts, sf, (node) => {
-        if (fontLocal !== null) return;
-        if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name)) return;
-        const init = node.initializer;
-        if (init === undefined || !ts.isCallExpression(init)) return;
-        if (!ts.isIdentifier(init.expression) || init.expression.text !== importedLocal) return;
-        fontLocal = node.name.text;
-        const options = init.arguments[0];
-        if (options !== undefined && ts.isObjectLiteralExpression(options)) {
-          for (const property of options.properties) {
-            if (!ts.isPropertyAssignment(property)) continue;
-            const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : null;
-            if (name === "variable" && ts.isStringLiteralLike(property.initializer)) {
-              variable = property.initializer.text;
+      let fontStatement: TS.Statement | null = null;
+      // The font local is only usable for symbol resolution when declared at
+      // file scope (the universal layout shape); a nested declaration cannot
+      // be resolved and fails closed to the model.
+      for (const declStatement of sf.statements) {
+        if (fontLocal !== null) break;
+        if (!ts.isVariableStatement(declStatement)) continue;
+        for (const node of declStatement.declarationList.declarations) {
+          if (!ts.isIdentifier(node.name)) continue;
+          const init = node.initializer;
+          if (init === undefined || !ts.isCallExpression(init)) continue;
+          if (!ts.isIdentifier(init.expression) || init.expression.text !== importedLocal) continue;
+          fontLocal = node.name.text;
+          fontStatement = declStatement;
+          const options = init.arguments[0];
+          if (options !== undefined && ts.isObjectLiteralExpression(options)) {
+            for (const property of options.properties) {
+              if (!ts.isPropertyAssignment(property)) continue;
+              const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : null;
+              if (name === "variable" && ts.isStringLiteralLike(property.initializer)) {
+                variable = property.initializer.text;
+              }
             }
           }
+          break;
         }
-      });
+      }
       bindings.push({
         variable,
         family,
-        applied: fontLocal !== null && appliedToJsx(parsed, fontLocal),
+        applied: fontLocal !== null && fontStatement !== null && appliedToJsx(parsed, fontLocal, fontStatement),
       });
     }
   }

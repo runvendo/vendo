@@ -351,6 +351,30 @@ describe("runStructuralLayer", () => {
     expect(results["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoRoot");
   });
 
+  it("still fails a local declaration SHADOWING the imported VendoRoot alias (symbol resolution, not names)", async () => {
+    const repoDir = await makeTempRepo();
+    // The import exists and <VendoRoot> wraps {children} — but the tag
+    // resolves to the LOCAL component, not the provider.
+    await writeFile(
+      path.join(repoDir, "app/layout.tsx"),
+      [
+        'import { VendoRoot } from "@vendoai/vendo/react";',
+        "",
+        "export default function RootLayout({ children }: { children: React.ReactNode }) {",
+        "  const VendoRoot = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;",
+        "  return <html><body><VendoRoot>{children}</VendoRoot></body></html>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
+
+    const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
+
+    expect(results["files.expected"]).toMatchObject({ pass: false });
+    expect(results["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoRoot");
+  });
+
   it("still fails a Next layout that never mounts VendoRoot", async () => {
     const repoDir = await makeTempRepo();
     await writeFile(

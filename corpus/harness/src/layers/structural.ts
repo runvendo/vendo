@@ -287,6 +287,92 @@ function hasFunctionalExpressVendoMount(server: string): boolean {
   return false;
 }
 
+/** Every name a binding pattern introduces (destructuring included). */
+function bindingNames(ts: typeof TS, name: TS.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  const names: string[] = [];
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) names.push(...bindingNames(ts, element.name));
+  }
+  return names;
+}
+
+/** Whether this SCOPE-CREATING node itself introduces `name` (parameters,
+ * block-level const/let/var, function/class declarations, catch and for-init
+ * bindings). Import declarations are deliberately NOT counted here — they
+ * only exist at file scope, which resolvesToTopLevel handles separately. */
+function scopeDeclares(ts: typeof TS, scope: TS.Node, name: string): boolean {
+  if (ts.isFunctionLike(scope)) {
+    for (const parameter of scope.parameters) {
+      if (ts.isParameter(parameter) && bindingNames(ts, parameter.name).includes(name)) return true;
+    }
+  }
+  const statements = ts.isBlock(scope) || ts.isModuleBlock(scope) ? scope.statements : null;
+  if (statements !== null) {
+    for (const statement of statements) {
+      if (ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) {
+          if (bindingNames(ts, declaration.name).includes(name)) return true;
+        }
+      }
+      if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === name) {
+        return true;
+      }
+    }
+  }
+  if (ts.isCatchClause(scope) && scope.variableDeclaration !== undefined
+    && bindingNames(ts, scope.variableDeclaration.name).includes(name)) return true;
+  if ((ts.isForStatement(scope) || ts.isForOfStatement(scope) || ts.isForInStatement(scope))
+    && scope.initializer !== undefined && ts.isVariableDeclarationList(scope.initializer)) {
+    for (const declaration of scope.initializer.declarations) {
+      if (bindingNames(ts, declaration.name).includes(name)) return true;
+    }
+  }
+  return false;
+}
+
+/** Whether this FILE-scope statement introduces `name` (imports included). */
+function statementDeclares(ts: typeof TS, statement: TS.Statement, name: string): boolean {
+  if (ts.isImportDeclaration(statement)) {
+    const clause = statement.importClause;
+    if (clause?.name?.text === name) return true;
+    const bindings = clause?.namedBindings;
+    if (bindings !== undefined && ts.isNamespaceImport(bindings)) return bindings.name.text === name;
+    if (bindings !== undefined && ts.isNamedImports(bindings)) {
+      return bindings.elements.some((element) => element.name.text === name);
+    }
+    return false;
+  }
+  if (ts.isVariableStatement(statement)) {
+    return statement.declarationList.declarations.some((declaration) => bindingNames(ts, declaration.name).includes(name));
+  }
+  if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === name) return true;
+  return false;
+}
+
+/** Scope-aware, checker-free binding resolution: true when the identifier
+ * USE resolves to a top-level (SourceFile) declaration satisfying `accept` —
+ * i.e. no scope between the use and the file scope shadows the name, and the
+ * first file-scope statement declaring it passes `accept`. A shadowed name
+ * simply fails to resolve, so callers fail closed. */
+function resolvesToTopLevel(
+  ts: typeof TS,
+  use: TS.Identifier,
+  accept: (statement: TS.Statement) => boolean,
+): boolean {
+  const name = use.text;
+  for (let node: TS.Node | undefined = use.parent; node !== undefined; node = node.parent) {
+    if (ts.isSourceFile(node)) {
+      for (const statement of node.statements) {
+        if (statementDeclares(ts, statement, name)) return accept(statement);
+      }
+      return false;
+    }
+    if (scopeDeclares(ts, node, name)) return false;
+  }
+  return false;
+}
+
 interface VendoRootImport {
   /** The local JSX tag the module binds VendoRoot to (alias or VendoRoot). */
   localTag: string;
@@ -309,9 +395,11 @@ function vendoRootImports(parsed: ParsedModule): VendoRootImport[] {
 }
 
 /** True when a `{children}` JSX expression is a DESCENDANT of a JSX element
- * whose opening tag is `localTag` — real AST containment, so a self-closing
- * `<Tag />` beside `{children}`, or children sitting BETWEEN two sibling
- * `<Tag>` elements, never count as wrapped. */
+ * whose opening tag is `localTag` AND that tag resolves (scope-aware) to the
+ * file-scope IMPORT binding — real AST containment plus symbol resolution,
+ * so a self-closing `<Tag />` beside `{children}`, children sitting BETWEEN
+ * two sibling `<Tag>` elements, or a local declaration SHADOWING the
+ * imported alias never count as wrapped. */
 function childrenInsideTag(parsed: ParsedModule, localTag: string): boolean {
   const { ts, sf } = parsed;
   let found = false;
@@ -321,6 +409,7 @@ function childrenInsideTag(parsed: ParsedModule, localTag: string): boolean {
       ts.isJsxElement(node)
       && ts.isIdentifier(node.openingElement.tagName)
       && node.openingElement.tagName.text === localTag
+      && resolvesToTopLevel(ts, node.openingElement.tagName, (statement) => ts.isImportDeclaration(statement))
     );
     if (
       inside
@@ -345,10 +434,18 @@ function childrenInsideTag(parsed: ParsedModule, localTag: string): boolean {
  * `vendo/vendo-root` module — the layout itself never names the package.
  * "Wraps" means the `{children}` expression is an AST descendant of the
  * VendoRoot element (self-closing siblings and children between two
- * providers fail), and the wrapper's own JSX must nest ITS children inside
- * the package's VendoRoot under the wrapper's alias — so a layout mounting
- * some unrelated local VendoRoot still fails. Fails closed when the
- * TypeScript compiler is unavailable. */
+ * providers fail), the tag resolves scope-aware to the import (a shadowing
+ * local declaration fails), and the wrapper's own JSX must nest ITS children
+ * inside the package's VendoRoot under the wrapper's alias — so a layout
+ * mounting some unrelated local VendoRoot still fails. Fails closed when
+ * the TypeScript compiler is unavailable.
+ *
+ * Precision boundary (conductor ruling 2026-07-26): symbol-correct
+ * scope-aware resolution is the contract's boundary. Shapes beyond it —
+ * eval/require-time indirection, dynamic component maps, runtime
+ * re-assignment — are documented limitations of this check, not detected:
+ * it is a drift detector for honest codebases, not a defense against
+ * adversarial hosts. */
 async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layout: string): Promise<boolean> {
   const parsedLayout = parseModuleSource(layout, app.layoutRel);
   if (parsedLayout === null) return false;

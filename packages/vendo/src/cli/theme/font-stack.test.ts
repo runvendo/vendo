@@ -163,6 +163,37 @@ describe("layoutFontBindings", () => {
       resolveCssVar: noCssVars,
     })).toBeNull();
   });
+
+  it("a SHADOWED font binding is NOT applied — the JSX reference resolves to the local, not the font (checker round 5)", () => {
+    const layout = `
+      import { Inter } from "next/font/google";
+      const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+      export default function Layout({ children }) {
+        const inter = { variable: "brand-x" }; // shadows the font local
+        return <html className={inter.variable}><body>{children}</body></html>;
+      }
+    `;
+    expect(layoutFontBindings(layout)).toEqual([
+      { variable: "--font-inter", family: "Inter", applied: false },
+    ]);
+    expect(deriveBodyFontStack({
+      layout,
+      tailwindConfig: null,
+      cssText: '@import "tailwindcss";',
+      resolveCssVar: noCssVars,
+    })).toBeNull();
+    // Shadowed geist import: same law.
+    const geistLayout = `
+      import { GeistSans } from "geist/font/sans";
+      export default function Layout({ children }) {
+        const GeistSans = { variable: "not-the-font" };
+        return <html className={GeistSans.variable}><body>{children}</body></html>;
+      }
+    `;
+    expect(layoutFontBindings(geistLayout)).toEqual([
+      { variable: "--font-geist-sans", family: "Geist Sans", applied: false },
+    ]);
+  });
 });
 
 describe("deriveBodyFontStack", () => {
