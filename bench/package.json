@@ -15,6 +15,7 @@
     "demo:capture": "node dist/demo-capture/cli.js",
     "demo:create": "node dist/demo-creator/cli.js create",
     "demo:deploy": "node dist/demo-creator/cli.js deploy",
+    "demo:pipeline": "node dist/demo-creator/cli.js pipeline",
     "demo:reap": "node dist/demo-creator/cli.js reap",
     "demo:research": "node dist/demo-creator/cli.js research",
     "test": "vitest run",

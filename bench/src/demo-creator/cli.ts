@@ -2,6 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { displayAppPath, parseDemoCreateArgs, runDemoCreate, type DemoCreateResult } from "./create.js";
 import { parseDemoDeployArgs, runDemoDeploy } from "./deploy.js";
+import { parseDemoPipelineArgs, runDemoPipeline } from "./pipeline.js";
 import { parseDemoReapArgs, runDemoReap } from "./reap.js";
 import { parseDemoResearchArgs, runDemoResearch } from "./research.js";
 
@@ -13,6 +14,7 @@ function usage(): string {
   pnpm --filter @vendoai/bench demo:research -- --app APP_DIR --url https://... [--url https://...]
   pnpm --filter @vendoai/bench demo:deploy -- --app apps/demo-SLUG [--project NAME] [--router-url URL] [--skip-registry] [--dry-run]
   pnpm --filter @vendoai/bench demo:reap -- [--router-url URL] [--project NAME] [--execute]
+  pnpm --filter @vendoai/bench demo:pipeline -- --id SLUG --prospect NAME --url PROSPECT_SITE [--screenshots a.png,b.png] [--cta-url URL] [--target-dir DIR] [--skip-deploy]
 
 demo:create clones apps/demo-template into <target-dir>/demo-<id> (default apps/)
 and writes a TODO-fenced demo.config.json skeleton plus a RESEARCH/ pointer;
@@ -80,6 +82,12 @@ async function main(): Promise<void> {
     if (!result.dryRun && result.registryPayload !== undefined) {
       process.stdout.write(`\nLive at ${args.routerUrl.replace(/\/+$/, "")}/${result.registryPayload.id}\n`);
     }
+    return;
+  }
+  if (command === "pipeline") {
+    const args = parseDemoPipelineArgs(rest);
+    const result = await runDemoPipeline(args, { repoRoot });
+    process.stdout.write(`Pipeline finished for ${result.appPath} — timings in ${result.appPath}/timings.json\n`);
     return;
   }
   if (command === "reap") {

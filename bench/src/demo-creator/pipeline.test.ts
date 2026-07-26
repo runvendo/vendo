@@ -1,0 +1,195 @@
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import {
+  parseDemoPipelineArgs,
+  runDemoPipeline,
+  validateProspectUrl,
+  type PipelineStages,
+} from "./pipeline.js";
+
+describe("parseDemoPipelineArgs", () => {
+  it("parses the full pipeline invocation", () => {
+    expect(parseDemoPipelineArgs([
+      "--id", "linear",
+      "--prospect", "Linear",
+      "--url", "https://linear.app",
+      "--screenshots", "/tmp/a.png,/tmp/b.png",
+      "--skip-deploy",
+    ])).toEqual({
+      id: "linear",
+      prospect: "Linear",
+      url: "https://linear.app",
+      screenshots: ["/tmp/a.png", "/tmp/b.png"],
+      skipDeploy: true,
+      targetDir: "apps",
+    });
+  });
+
+  it("requires --id, --prospect and --url", () => {
+    expect(() => parseDemoPipelineArgs(["--prospect", "Linear", "--url", "https://linear.app"]))
+      .toThrow("--id is required");
+    expect(() => parseDemoPipelineArgs(["--id", "linear", "--url", "https://linear.app"]))
+      .toThrow("--prospect is required");
+    expect(() => parseDemoPipelineArgs(["--id", "linear", "--prospect", "Linear"]))
+      .toThrow("--url is required");
+  });
+});
+
+describe("validateProspectUrl", () => {
+  it("passes when HEAD answers", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    await expect(validateProspectUrl("https://linear.app", { fetchImpl })).resolves.toBeUndefined();
+  });
+
+  it("treats a HEAD 405 as reachable without needing the GET fallback", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(null, { status: 405 }));
+    await expect(validateProspectUrl("https://linear.app", { fetchImpl })).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to GET when HEAD itself errors and passes on a page response", async () => {
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(new TypeError("socket hang up"))
+      .mockResolvedValueOnce(new Response("<html/>", { status: 200 }));
+    await expect(validateProspectUrl("https://linear.app", { fetchImpl })).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats a bot-challenge status as reachable (403 still proves a live site)", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(new Response("denied", { status: 403 }));
+    await expect(validateProspectUrl("https://linear.app", { fetchImpl })).resolves.toBeUndefined();
+  });
+
+  it("fails on network errors, naming the URL", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    await expect(validateProspectUrl("https://unreachable.invalid", { fetchImpl }))
+      .rejects.toThrow(/https:\/\/unreachable\.invalid.*unreachable|unreachable.*https:\/\/unreachable\.invalid/);
+  });
+
+  it("fails on a server that only ever 5xxes, naming the URL", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 503 }));
+    await expect(validateProspectUrl("https://down.example", { fetchImpl }))
+      .rejects.toThrow(/https:\/\/down\.example/);
+  });
+});
+
+/** Stage stubs that actually create the app dir (like runDemoCreate would)
+ * so the abort-cleanup path has something real to remove. */
+function stubStages(repoRoot: string, overrides: Partial<PipelineStages> = {}): PipelineStages {
+  const appDir = path.join(repoRoot, "apps", "demo-linear");
+  return {
+    create: vi.fn(async () => {
+      await mkdir(path.join(appDir, "RESEARCH"), { recursive: true });
+      return {
+        appDir,
+        packageName: "demo-linear",
+        configPath: path.join(appDir, "demo.config.json"),
+        researchReadme: path.join(appDir, "RESEARCH", "README.md"),
+      };
+    }),
+    research: vi.fn(async () => ({
+      researchDir: path.join(appDir, "RESEARCH"),
+      reportPath: path.join(appDir, "RESEARCH", "research.json"),
+      report: {
+        capturedAt: "2026-07-26T00:00:00.000Z",
+        urls: ["https://linear.app"],
+        operatorScreenshots: [],
+        pages: [],
+        palette: { colors: [], fontFamilies: [] },
+        fonts: { families: [], faceSrcs: [], webfontLinks: [] },
+      },
+    })),
+    ...overrides,
+  };
+}
+
+const pipelineArgs = {
+  id: "linear",
+  prospect: "Linear",
+  url: "https://linear.app",
+  targetDir: "apps",
+  skipDeploy: true,
+};
+
+describe("runDemoPipeline", () => {
+  async function makeRepoRoot(): Promise<string> {
+    return await mkdtemp(path.join(tmpdir(), "vendo-demo-pipeline-"));
+  }
+
+  it("fails fast on an unreachable URL: names it, exits before create, leaves nothing", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot);
+    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    await expect(runDemoPipeline(pipelineArgs, {
+      repoRoot,
+      stages,
+      fetchImpl,
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      write: () => {},
+    })).rejects.toThrow(/https:\/\/linear\.app/);
+    expect(stages.create).not.toHaveBeenCalled();
+    expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(false);
+  });
+
+  it("removes the app dir when an early stage aborts after create", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot, {
+      research: vi.fn(async () => { throw new Error("demo:research failed for every URL"); }),
+    });
+    await expect(runDemoPipeline(pipelineArgs, {
+      repoRoot,
+      stages,
+      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      write: () => {},
+    })).rejects.toThrow("demo:research failed");
+    expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(false);
+  });
+
+  it("writes per-stage timings and one-line progress markers", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot);
+    const lines: string[] = [];
+    const result = await runDemoPipeline(pipelineArgs, {
+      repoRoot,
+      stages,
+      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      write: (line) => lines.push(line),
+    });
+    const timings = JSON.parse(await readFile(path.join(result.appDir, "timings.json"), "utf8"));
+    expect(timings.map((row: { stage: string }) => row.stage))
+      .toEqual(["validate", "create", "install", "research"]);
+    for (const row of timings) {
+      expect(row).toMatchObject({
+        stage: expect.any(String),
+        startedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        ms: expect.any(Number),
+      });
+    }
+    for (const stage of ["validate", "create", "install", "research"]) {
+      expect(lines.some((line) => line.includes(stage) && /\bms\b|\dms/.test(line)), `marker for ${stage}`).toBe(true);
+    }
+  });
+
+  it("passes operator screenshots through to create", async () => {
+    const repoRoot = await makeRepoRoot();
+    const stages = stubStages(repoRoot);
+    await runDemoPipeline({ ...pipelineArgs, screenshots: ["/tmp/a.png"] }, {
+      repoRoot,
+      stages,
+      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      write: () => {},
+    });
+    expect(stages.create).toHaveBeenCalledWith(
+      expect.objectContaining({ screenshots: ["/tmp/a.png"] }),
+      expect.anything(),
+    );
+  });
+});
