@@ -1654,6 +1654,37 @@ describe("createMcpDoor connect page", () => {
     expect(await response.text()).not.toContain("<script");
   });
 
+  it("prefers an explicitly configured product name over package.json", async () => {
+    const html = await (await get(makeHarness({ productName: "Maple" }).door)).text();
+    expect(html).toContain("Connect Maple to your AI client");
+    expect(html).not.toContain("@vendoai/mcp");
+  });
+
+  it("puts the configured product name on the server card too, so both surfaces agree", async () => {
+    const harness = makeHarness({ productName: "Maple", mount: "/api/vendo/mcp" });
+    const card = await harness.door.handler(new Request("https://product.example/.well-known/mcp/server-card.json"));
+    expect((await card.json() as { name?: string }).name).toBe("Maple");
+  });
+
+  it("warns once, naming the path it tried, when host identity falls back to the generic name", async () => {
+    const warned: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((line: string) => { warned.push(line); });
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue("/nonexistent-host-root");
+    try {
+      const harness = makeHarness();
+      const html = await (await get(harness.door)).text();
+      // The page is human-visible now, so a silent generic name is a bug.
+      expect(html).toContain("Connect vendo to your AI client");
+      const identityWarnings = warned.filter((line) => line.includes("/nonexistent-host-root/package.json"));
+      expect(identityWarnings).toHaveLength(1);
+      await get(harness.door);
+      expect(warned.filter((line) => line.includes("/nonexistent-host-root/package.json"))).toHaveLength(1);
+    } finally {
+      cwd.mockRestore();
+      spy.mockRestore();
+    }
+  });
+
   it("is GET-only and 404s every other method", async () => {
     const response = await makeHarness().door.handler(new Request(`${BASE}/connect`, { method: "POST" }));
     expect(response.status).toBe(404);
@@ -1698,6 +1729,19 @@ describe("createMcpDoor tool menu, titles, and annotations", () => {
     await connected.client.close();
   });
 
+  it("treats an empty title as no title (generated files can carry one; the wire must not)", async () => {
+    const { connected } = await open({
+      extraDescriptors: [
+        { name: "host_blank", description: "Blank label", inputSchema: { type: "object" }, risk: "read" as const, title: "" },
+      ],
+    });
+    const listed = await connected.client.listTools();
+    const blank = listed.tools.find((tool) => tool.name === "host_blank")!;
+    expect(blank.title).toBeUndefined();
+    expect(blank.annotations).toEqual({ readOnlyHint: true, destructiveHint: false });
+    await connected.client.close();
+  });
+
   it("lists only the configured menu, and a call to an off-menu tool is a plain not-found", async () => {
     const { harness, connected } = await open({
       extraDescriptors: surfaceDescriptors,
@@ -1738,19 +1782,56 @@ describe("createMcpDoor tool menu, titles, and annotations", () => {
     await connected.client.close();
   });
 
-  it("resolves a provider-form menu exactly once, however many times it is consulted", async () => {
-    let resolutions = 0;
+  it("re-resolves the menu per listing, so a lazily expanded tool becomes visible without a restart", async () => {
+    // The registry GROWS mid-session (a lazy connector's expandToolkits), and
+    // the umbrella's menu provider reads the registry. A door that resolved the
+    // menu once would filter the late tool out forever.
+    let expanded = false;
+    const late = { name: "gmail_send", description: "Send mail", inputSchema: { type: "object" }, risk: "write" as const };
+    const current = () => (expanded ? [...surfaceDescriptors, late] : surfaceDescriptors);
+    const { connected } = await open({
+      extraDescriptors: current,
+      menuTools: () => ["host_lookup", ...current().map((tool) => tool.name)],
+    });
+
+    expect((await connected.client.listTools()).tools.map((tool) => tool.name)).not.toContain("gmail_send");
+    expanded = true;
+    expect((await connected.client.listTools()).tools.map((tool) => tool.name)).toContain("gmail_send");
+    await connected.client.close();
+  });
+
+  it("re-resolves the menu per call, so a lazily expanded tool is callable without a restart", async () => {
+    let expanded = false;
+    const late = { name: "gmail_send", description: "Send mail", inputSchema: { type: "object" }, risk: "write" as const };
+    const current = () => (expanded ? [...surfaceDescriptors, late] : surfaceDescriptors);
+    const { harness, connected } = await open({
+      extraDescriptors: current,
+      menuTools: () => ["host_lookup", ...current().map((tool) => tool.name)],
+    });
+
+    await connected.client.listTools();
+    expanded = true;
+    const before = harness.executions.length;
+    const called = await connected.client.callTool({ name: "gmail_send", arguments: {} });
+    expect(called.isError).toBeFalsy();
+    expect(harness.executions.length).toBe(before + 1);
+    await connected.client.close();
+  });
+
+  it("never caches a failed menu resolution", async () => {
+    let attempt = 0;
     const { connected } = await open({
       extraDescriptors: surfaceDescriptors,
       menuTools: () => {
-        resolutions += 1;
+        attempt += 1;
+        if (attempt === 1) return Promise.reject(new Error("overrides.json unreadable this once"));
         return Promise.resolve(["host_pay"]);
       },
     });
+    await expect(connected.client.listTools()).rejects.toThrow();
+    // A transient failure must not freeze the door into a permanently broken
+    // (or permanently unrestricted) menu.
     expect((await connected.client.listTools()).tools.map((tool) => tool.name)).toEqual(["host_pay"]);
-    await connected.client.listTools();
-    await connected.client.callTool({ name: "host_pay", arguments: {} });
-    expect(resolutions).toBe(1);
     await connected.client.close();
   });
 
@@ -1765,11 +1846,14 @@ describe("createMcpDoor tool menu, titles, and annotations", () => {
 interface HarnessOptions {
   store?: MemoryStore;
   menuTools?: string[] | (() => string[] | undefined | Promise<string[] | undefined>);
+  productName?: string;
   state?: McpDoorState;
   getOutcome?: () => ToolOutcome;
   principal?: (subject: string) => Principal | null;
   apps?: AppsPort;
-  extraDescriptors?: Awaited<ReturnType<ToolRegistry["descriptors"]>>;
+  /** A function form lets a test GROW the surface mid-session (lazy connector
+   *  expansion), which is exactly what a memoized door menu would miss. */
+  extraDescriptors?: Awaited<ReturnType<ToolRegistry["descriptors"]>> | (() => Awaited<ReturnType<ToolRegistry["descriptors"]>>);
   check?: Guard["check"];
   mount?: string;
   baseUrl?: string;
@@ -1804,7 +1888,7 @@ function makeHarness(options: HarnessOptions = {}) {
         description: "Look something up",
         inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
         risk: "read",
-      }, ...(options.extraDescriptors ?? [])];
+      }, ...(typeof options.extraDescriptors === "function" ? options.extraDescriptors() : options.extraDescriptors ?? [])];
     },
     async execute(call, ctx) {
       executions.push({ id: call.id, ctx });
@@ -1817,6 +1901,7 @@ function makeHarness(options: HarnessOptions = {}) {
     store,
     apps: options.apps,
     ...(options.menuTools === undefined ? {} : { menuTools: options.menuTools }),
+    ...(options.productName === undefined ? {} : { productName: options.productName }),
     ...(options.mount === undefined ? {} : { mount: options.mount }),
     ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
     ...(options.remoteAs === undefined ? {} : { remoteAs: options.remoteAs }),

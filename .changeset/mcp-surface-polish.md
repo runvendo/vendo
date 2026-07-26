@@ -28,6 +28,16 @@ in both standard MCP places (top-level `title` and `annotations.title`), and
 approval cards prefer it over the prettified tool id, behind an in-code
 `ToolMeta.label`.
 
+**Upgrade note.** Every tool the door lists now carries `annotations`
+unconditionally, including for hosts with no `surfaces` block. That means a
+`read` tool asserts `readOnlyHint: true` to clients, and some MCP clients use
+that hint to skip their own confirmation prompt for read calls. Nothing changes
+server-side: Vendo's guard, policy, approvals, and audit decide exactly what
+they decided before, and annotations are hints the spec says clients may
+ignore. If you have a `read`-labelled tool that is not actually side-effect
+free, correct its `risk` in `.vendo/overrides.json` — that label was already
+driving your policy.
+
 Every tool the door lists now also carries `annotations` derived from its risk
 label (`read` → `readOnlyHint`, `destructive` → `destructiveHint`), and the door
 serves a themed, script-free, unauthenticated connect page at `{mount}/connect`

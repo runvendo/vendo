@@ -73,6 +73,31 @@ describe("computeInitialLoadout (loadout policy)", () => {
     expect(loadout).toEqual(new Set(["vendo_apps_open", "host_b_write"]));
   });
 
+  it("intersects an explicit loadout with the surface menu — a menu binds host config too", () => {
+    const loadout = computeInitialLoadout(
+      surface,
+      { search, loadout: ["host_a_read", "host_c_wipe"] },
+      undefined,
+      ["host_a_read"],
+    );
+    expect(loadout).toEqual(new Set(["vendo_apps_open", "host_a_read"]));
+  });
+
+  it("applies the menu to the seeded loadout", () => {
+    const loadout = computeInitialLoadout(surface, { search }, ["host_a_read", "host_b_write"], ["host_b_write"]);
+    expect(loadout).toEqual(new Set(["vendo_apps_open", "host_b_write"]));
+  });
+
+  it("applies the menu to the uncurated bounded default", () => {
+    const loadout = computeInitialLoadout(surface, { search }, undefined, ["host_c_wipe"]);
+    expect(loadout).toEqual(new Set(["vendo_apps_open", "host_c_wipe"]));
+  });
+
+  it("an empty menu still keeps vendo_* tools active", () => {
+    const loadout = computeInitialLoadout(surface, { search, loadout: ["host_a_read"] }, undefined, []);
+    expect(loadout).toEqual(new Set(["vendo_apps_open"]));
+  });
+
   it("applies a deterministic read-first bounded default when uncurated and large", () => {
     const big = [descriptor("vendo_apps_open", "Open an app")];
     for (let i = 0; i < 10; i += 1) big.push(descriptor(`host_w_${i}`, "w", "destructive"));

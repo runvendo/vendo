@@ -125,6 +125,13 @@ export interface McpDoorConfig {
    * to `undefined` means unrestricted.
    */
   menuTools?: string[] | (() => string[] | undefined | Promise<string[] | undefined>);
+  /**
+   * The product name shown to PEOPLE (the connect page) and advertised on the
+   * server card. Wins over the `package.json` name the door otherwise reads,
+   * which is a package id and is often not what the product is called. Set it
+   * when the two differ.
+   */
+  productName?: string;
 }
 
 export interface McpDoor {
@@ -166,9 +173,6 @@ class Door {
   readonly #publicOrigin: string | undefined;
   #identity: Promise<HostIdentity> | undefined;
   readonly #shimHtml: string;
-  /** The resolved menu as a set, or undefined for an uncurated door. Resolved
-   *  once on first use (see McpDoorConfig.menuTools). */
-  #menuPromise: Promise<Set<string> | undefined> | undefined;
 
   constructor(config: McpDoorConfig, state: McpDoorState) {
     this.#config = config;
@@ -218,7 +222,7 @@ class Door {
       const identity = await this.#hostIdentity();
       // SEP-2127 remains a draft; this deliberately minimal shape tracks it.
       return json({
-        name: identity.name,
+        name: this.#config.productName ?? identity.name,
         version: identity.version,
         description: identity.description,
         protocol_versions: ["2025-11-25"],
@@ -269,7 +273,7 @@ class Door {
       if (req.method !== "GET") return notFound();
       const identity = await this.#hostIdentity();
       return connectPage({
-        productName: identity.name,
+        productName: this.#config.productName ?? identity.name,
         mcpUrl: resourceUri(origin, this.#config.mount ?? mount),
         ...(this.#config.theme === undefined ? {} : { theme: this.#config.theme }),
       });
@@ -418,13 +422,19 @@ class Door {
     }
   }
 
-  #menu(): Promise<Set<string> | undefined> {
-    this.#menuPromise ??= (async () => {
-      const configured = this.#config.menuTools;
-      const names = typeof configured === "function" ? await configured() : configured;
-      return names === undefined ? undefined : new Set(names);
-    })();
-    return this.#menuPromise;
+  /**
+   * Resolve the menu FRESH for every listing and every call. It is deliberately
+   * not memoized: the registry behind the provider grows at runtime (a lazy
+   * connector's `expandToolkits`, an `add()`), and a door that froze its menu at
+   * the first request would leave every late-arriving tool invisible AND
+   * uncallable until the process restarted. The registry memoizes its own load,
+   * so re-asking costs a map lookup. A rejected resolution is likewise never
+   * cached — a transient read failure must not permanently freeze the door.
+   */
+  async #menu(): Promise<Set<string> | undefined> {
+    const configured = this.#config.menuTools;
+    const names = typeof configured === "function" ? await configured() : configured;
+    return names === undefined ? undefined : new Set(names);
   }
 
   async #listedTools(): Promise<Tool[]> {
@@ -441,12 +451,16 @@ class Door {
     // the registry (one guard decision), and #callTool unwraps its OpenSurface
     // output into a shim-renderable payload.
     const tools: Tool[] = descriptors.map(({ name, description, inputSchema, risk, title }) => {
+      // A generated tools.json can carry title: "" (the authored file's schema
+      // forbids it, the machine layer's does not). An empty label is worse than
+      // none — a client would render a blank menu row — so it reads as absent.
+      const label = title === undefined || title.trim() === "" ? undefined : title;
       const tool: Tool = {
         name,
         description,
         inputSchema: inputSchema as Tool["inputSchema"],
-        ...(title === undefined ? {} : { title }),
-        annotations: toolAnnotations(risk, title),
+        ...(label === undefined ? {} : { title: label }),
+        annotations: toolAnnotations(risk, label),
       };
       if (appsConfigured && APP_TOOL_NAMES.has(name)) tool._meta = appUiMeta();
       return tool;
@@ -1041,19 +1055,39 @@ function escapeCssValue(value: string): string {
 
 async function readHostIdentity(): Promise<HostIdentity> {
   const fallback = { name: "vendo", version: "0.0.0", description: "Vendo MCP server" };
+  const path = typeof process === "undefined" ? undefined : `${process.cwd()}/package.json`;
+  // The generic fallback used to be machine-only (a server-card field). The
+  // connect page puts it in front of a person, where "vendo" reads as a bug in
+  // the host's product. Say so once, naming the file that was tried.
+  const warnFallback = (reason: string): HostIdentity => {
+    if (!identityFallbackWarned) {
+      identityFallbackWarned = true;
+      console.warn(
+        `[vendo] mcp door: could not read a product name from ${path ?? "the host package"} (${reason}); `
+        + "the server card and the connect page will say \"vendo\". Pass `mcp: { productName }` "
+        + "or run the door from the host's package root.",
+      );
+    }
+    return fallback;
+  };
   try {
-    if (typeof process === "undefined") return fallback;
+    if (path === undefined) return warnFallback("no filesystem on this runtime");
     const { readFile } = await import("node:fs/promises");
-    const raw = await readFile(`${process.cwd()}/package.json`, "utf8");
+    const raw = await readFile(path, "utf8");
     const pkg = JSON.parse(raw) as Record<string, unknown>;
-    const name = typeof pkg.name === "string" ? pkg.name : fallback.name;
+    if (typeof pkg.name !== "string") return warnFallback("it declares no name");
+    const name = pkg.name;
     const version = typeof pkg.version === "string" ? pkg.version : fallback.version;
     const description = typeof pkg.description === "string" ? pkg.description : `${name} MCP server`;
     return { name, version, description };
-  } catch {
-    return fallback;
+  } catch (error) {
+    return warnFallback(error instanceof Error ? error.message : String(error));
   }
 }
+
+/** Once per process: a missing product name is a deployment fact, not a
+ *  per-request event. */
+let identityFallbackWarned = false;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";

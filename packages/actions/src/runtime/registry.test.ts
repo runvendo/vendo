@@ -1272,25 +1272,43 @@ describe("format v3 host files (cse lane 1)", () => {
       await expect(actions.surfaceMenu("mcp")).resolves.toEqual(["host_getProfile"]);
     });
 
-    it("warns once naming an unknown or disabled menu entry, ignores it, and still applies the menu", async () => {
+    it("keeps an unmatched menu entry in the list and warns once — a menu is a filter, not a reference", async () => {
       const root = await tempVendo(
         { format: VENDO_TOOLS_FORMAT_V3, tools: menuTools() },
         {
           format: VENDO_OVERRIDES_FORMAT_V3,
           tools: {},
-          surfaces: { mcp: { tools: ["host_getProfile", "host_typo", "host_legacy"] } },
+          surfaces: { mcp: { tools: ["host_getProfile", "gmail_send", "host_legacy"] } },
         },
       );
       const warned: string[] = [];
       const spy = vi.spyOn(console, "warn").mockImplementation((line: string) => { warned.push(line); });
       try {
         const actions = createActions({ dir: root });
-        await expect(actions.surfaceMenu("mcp")).resolves.toEqual(["host_getProfile"]);
+        // The whole authored set survives: `gmail_send` may be a lazy connector
+        // tool that has not been expanded yet, and dropping it here would make
+        // it permanently unreachable once it does arrive.
+        await expect(actions.surfaceMenu("mcp")).resolves.toEqual(["host_getProfile", "gmail_send", "host_legacy"]);
         await actions.surfaceMenu("mcp");
         const menuWarnings = warned.filter((line) => line.includes("surfaces.mcp"));
         expect(menuWarnings).toHaveLength(1);
-        expect(menuWarnings[0]).toContain("host_typo");
+        expect(menuWarnings[0]).toContain("gmail_send");
         expect(menuWarnings[0]).toContain("host_legacy");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("warns loudly when an authored menu matches nothing at all", async () => {
+      const root = await tempVendo(
+        { format: VENDO_TOOLS_FORMAT_V3, tools: menuTools() },
+        { format: VENDO_OVERRIDES_FORMAT_V3, tools: {}, surfaces: { mcp: { tools: ["nope_one", "nope_two"] } } },
+      );
+      const warned: string[] = [];
+      const spy = vi.spyOn(console, "warn").mockImplementation((line: string) => { warned.push(line); });
+      try {
+        await expect(createActions({ dir: root }).surfaceMenu("mcp")).resolves.toEqual(["nope_one", "nope_two"]);
+        expect(warned.some((line) => line.includes("surfaces.mcp") && /matches no/i.test(line))).toBe(true);
       } finally {
         spy.mockRestore();
       }

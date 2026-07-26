@@ -170,6 +170,14 @@ so a client can warn a person before a write without re-reading prose:
 
 Annotations are hints for presentation. The guard is what decides.
 
+Annotations ride on every listing, whether or not you curate a menu. One
+consequence worth knowing before you upgrade: a `read` tool now asserts
+`readOnlyHint: true`, and some clients use that to skip their own confirmation
+prompt for read calls. Your server-side perimeter is unchanged. If a
+`read`-labelled tool is not actually side-effect free, fix its `risk` in
+`.vendo/overrides.json`; that label was already driving your policy and
+approvals.
+
 ## Consent page
 
 The door renders the consent page for you when your adapter uses `session`. It

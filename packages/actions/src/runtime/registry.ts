@@ -1063,20 +1063,26 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const [{ dispatch, audience }, host] = await Promise.all([load(), loadHost()]);
       const authored = host.overrides.surfaces?.[surface];
       if (authored !== undefined) {
-        const kept: string[] = [];
-        const ignored: string[] = [];
-        // dispatch holds exactly the enabled, registered names, so one check
-        // covers both failure modes a menu can express (typo, disabled tool).
-        for (const name of authored.tools) (dispatch.has(name) ? kept : ignored).push(name);
-        if (ignored.length > 0 && !surfaceMenuWarned.has(surface)) {
+        // A menu is a FILTER, not a validated reference list. The authored set
+        // is returned whole and matched against the live surface at use time,
+        // because the surface grows: a lazy connector's tools do not exist at
+        // boot, and dropping their names here would make them permanently
+        // unreachable the moment they DO arrive. Unmatched names simply never
+        // match anything, which is what a filter should do.
+        const unmatched = authored.tools.filter((name) => !dispatch.has(name));
+        if (unmatched.length > 0 && !surfaceMenuWarned.has(surface)) {
           surfaceMenuWarned.add(surface);
           console.warn(
-            `[vendo] surfaces.${surface}.tools in .vendo/overrides.json names tools that no enabled source registered: `
-            + `${ignored.join(", ")}. Those entries are ignored — the rest of the menu still applies. Check for a typo, `
-            + "a disabled tool, or re-run `vendo sync`.",
+            unmatched.length === authored.tools.length
+              ? `[vendo] surfaces.${surface}.tools in .vendo/overrides.json matches no registered tool at all `
+                + `(${unmatched.join(", ")}). If these are not lazy connector tools awaiting expansion, this surface `
+                + "will offer nothing — check for typos or re-run `vendo sync`."
+              : `[vendo] surfaces.${surface}.tools in .vendo/overrides.json names tools that are not registered right `
+                + `now: ${unmatched.join(", ")}. They stay on the menu (a lazy connector tool matches once expanded); `
+                + "if that is not what they are, check for a typo, a disabled tool, or re-run `vendo sync`.",
           );
         }
-        return kept;
+        return [...authored.tools];
       }
       if (surface === "agent") return undefined;
       // The default door menu: an MCP client speaks for a person, so offer the

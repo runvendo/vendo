@@ -7,6 +7,7 @@ import {
   type ServerActionHandler,
 } from "@vendoai/actions";
 import { createAgent, VENDO_TOOL_PACK_PREFIX, type VendoAgent } from "@vendoai/agent";
+import { memoizedSurfaceMenu } from "./surface-menu.js";
 import {
   buildEnv,
   createApps,
@@ -1534,6 +1535,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       // this composition; turns only run after createVendo returns, so the
       // closure reference is safe.
       seed: (ctx) => loadoutSeedFor(ctx),
+      // The curated agent menu also binds an explicit `agent.loadout`: host
+      // config chooses WITHIN the menu, it does not escape it.
+      menu: async () => {
+        const menu = await agentMenu();
+        return menu === undefined ? undefined : [...menu];
+      },
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
       ...(config.agent?.loadout === undefined ? {} : { loadout: config.agent.loadout }),
     },
@@ -1546,17 +1553,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // `surfaces.agent` (.vendo/overrides.json): the host's curated agent menu.
   // Enforced HERE, at the composition seam, and not inside the registry —
   // `actions.descriptors()` is also what the MCP door and the host's own code
-  // read, and those surfaces have their own menus. Resolved once per boot
-  // (menus are boot config, like the rest of the authored file); a failure to
-  // resolve degrades to unrestricted rather than silently emptying the agent,
-  // because a malformed overrides.json already fails loudly at descriptors().
-  let agentMenuPromise: Promise<Set<string> | undefined> | undefined;
-  const agentMenu = (): Promise<Set<string> | undefined> => {
-    agentMenuPromise ??= actions.surfaceMenu("agent")
-      .then((names) => (names === undefined ? undefined : new Set(names)))
-      .catch(() => undefined);
-    return agentMenuPromise;
-  };
+  // read, and those surfaces have their own menus. Successes are cached for the
+  // process (a menu is boot config); failures are warned and never cached (see
+  // memoizedSurfaceMenu).
+  const agentMenu = memoizedSurfaceMenu(() => actions.surfaceMenu("agent"));
   /** Keep only entries the agent menu offers. Vendo's OWN `vendo_*` runtime
    *  tools are never curated away: surfaces curate a product's API surface, not
    *  the runtime's plumbing (gating `vendo_apps_*` or `vendo_tools_search` out

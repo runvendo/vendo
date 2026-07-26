@@ -2292,6 +2292,29 @@ describe("surfaces.agent through createVendo", () => {
     expect(recorder.toolNamesPerCall.at(-1)).not.toContain("host_exportLedger");
   });
 
+  it("binds an explicit agent.loadout to the menu — host config chooses within it, never around it", async () => {
+    await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
+    const store = await tempStore("vendo-surfaces-agent-loadout-store-");
+    const recorder = recordingModel(["text"]);
+    const vendo = createVendo({
+      model: await recorder.model() as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      // The host names BOTH tools in its explicit loadout; the menu still wins.
+      agent: { loadout: ["host_listAccounts", "host_exportLedger"] },
+    });
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_surface_loadout",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
+    expect(recorder.toolNamesPerCall[0]).not.toContain("host_exportLedger");
+    expect(recorder.toolNamesPerCall[0]).toContain("vendo_tools_search");
+  });
+
   it("without a surfaces block the agent surface is unchanged", async () => {
     await curatedRoot(undefined);
     const store = await tempStore("vendo-surfaces-agent-none-store-");

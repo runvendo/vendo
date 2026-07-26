@@ -45,6 +45,13 @@ export interface ToolSearchConfig {
    *  toolset is built so freshly expanded tools are included. A failure
    *  degrades to the risk/name fallback, never the turn. */
   seed?: (ctx: RunContext) => Promise<string[] | undefined>;
+  /** The host's curated menu for THIS surface (`surfaces.agent` in
+   *  `.vendo/overrides.json`, resolved by the umbrella). `undefined` means
+   *  unrestricted. It binds every path into the initial loadout — including an
+   *  explicit `loadout`, which is host config but not a licence to offer a tool
+   *  the host curated off this surface. Vendo's own `vendo_*` tools are never
+   *  filtered by it. Resolved per turn, beside `seed`. */
+  menu?: (ctx: RunContext) => Promise<readonly string[] | undefined>;
 }
 
 const SEARCH_INPUT_SCHEMA = {
@@ -79,10 +86,16 @@ export function computeInitialLoadout(
   descriptors: readonly ToolDescriptor[],
   config: ToolSearchConfig,
   seedNames?: readonly string[],
+  /** The resolved surface menu (see ToolSearchConfig.menu). */
+  menuNames?: readonly string[],
 ): Set<string> {
-  const available = new Set(descriptors.map((descriptor) => descriptor.name));
+  // The menu binds EVERY branch below. It is applied here, once, rather than at
+  // each branch, so no future loadout path can quietly escape it.
+  const menu = menuNames === undefined ? undefined : new Set(menuNames);
+  const offered = (name: string): boolean => menu === undefined || isAlwaysActive(name) || menu.has(name);
+  const available = new Set(descriptors.filter((d) => offered(d.name)).map((descriptor) => descriptor.name));
   const alwaysActive = descriptors.filter((descriptor) => isAlwaysActive(descriptor.name)).map((d) => d.name);
-  const hostTools = descriptors.filter((descriptor) => !isAlwaysActive(descriptor.name));
+  const hostTools = descriptors.filter((descriptor) => !isAlwaysActive(descriptor.name) && offered(descriptor.name));
 
   if (config.loadout !== undefined) {
     return new Set([...alwaysActive, ...config.loadout.filter((name) => available.has(name))]);
@@ -121,6 +134,8 @@ export interface ToolSearchSessionOptions {
   loaded: Set<string>;
   /** Per-turn seed for the initial loadout (see ToolSearchConfig.seed). */
   seedNames?: readonly string[];
+  /** Per-turn resolved surface menu (see ToolSearchConfig.menu). */
+  menuNames?: readonly string[];
   /** Full descriptors for names search returned that are NOT yet in the built
    * toolset — they were lazily expanded during the search itself. */
   resolve?: (names: string[]) => Promise<ToolDescriptor[]>;
@@ -131,7 +146,7 @@ export interface ToolSearchSessionOptions {
 
 export function createToolSearchSession(options: ToolSearchSessionOptions): ToolSearchSession {
   const available = new Set(options.descriptors.map((descriptor) => descriptor.name));
-  const initial = computeInitialLoadout(options.descriptors, options.config, options.seedNames);
+  const initial = computeInitialLoadout(options.descriptors, options.config, options.seedNames, options.menuNames);
   // Captured at attach: the full run toolset. Every Vendo-owned `vendo_*` tool
   // in it stays active regardless of loadout — including the OTHER meta-tools
   // (notably `vendo_report_capability_miss`) that are attached after the host
