@@ -175,6 +175,7 @@ function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
     inputSchema: tool.inputSchema,
     risk: tool.risk,
     ...(tool.critical !== undefined ? { critical: tool.critical } : {}),
+    ...(tool.title !== undefined ? { title: tool.title } : {}),
   };
 }
 
@@ -188,6 +189,7 @@ function mergeOverride<T extends ToolDescriptor & Pick<ExtractedToolV3, "audienc
     ...(override.risk !== undefined ? { risk: override.risk } : {}),
     ...(override.critical !== undefined ? { critical: override.critical } : {}),
     ...(override.description !== undefined ? { description: override.description } : {}),
+    ...(override.title !== undefined ? { title: override.title } : {}),
     ...(override.disabled !== undefined ? { disabled: override.disabled } : {}),
     ...(override.audience !== undefined ? { audience: override.audience } : {}),
     // v3: overrides correct semantics field-by-field, never wholesale.

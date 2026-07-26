@@ -1216,6 +1216,26 @@ describe("format v3 host files (cse lane 1)", () => {
     }
   });
 
+  it("carries a human `title` from tools.json onto the merged descriptor", async () => {
+    const root = await tempVendo(
+      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_transfer", { title: "Send money" } as Partial<ExtractedToolV3>)] },
+      { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} },
+    );
+    await expect(createActions({ dir: root }).descriptors()).resolves.toEqual([
+      { name: "host_transfer", description: "host_transfer", inputSchema: { type: "object" }, risk: "read", title: "Send money" },
+    ]);
+  });
+
+  it("lets an overrides.json `title` correct the extracted one", async () => {
+    const root = await tempVendo(
+      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_transfer", { title: "Post transfer" } as Partial<ExtractedToolV3>)] },
+      { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_transfer: { title: "Send money" } } },
+    );
+    await expect(createActions({ dir: root }).descriptors()).resolves.toEqual([
+      { name: "host_transfer", description: "host_transfer", inputSchema: { type: "object" }, risk: "read", title: "Send money" },
+    ]);
+  });
+
   it("a malformed leftover capabilities.json beside a v3 pair fails loud, like every authored file", async () => {
     const root = await tempVendo(
       { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },

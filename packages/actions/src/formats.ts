@@ -271,6 +271,10 @@ export interface ToolOverride {
   critical?: boolean;
   disabled?: boolean;
   description?: string;
+  /** The short human label people see for this tool (MCP client menus,
+   *  approval cards). Presentation, not capability — the authored copy is the
+   *  last word over whatever sync's enrichment proposed. */
+  title?: string;
   /** Who can legitimately call this through the product's own auth. Extraction
    *  records it as provenance for the default exclusion of non-end-user tools
    *  (operator/internal surfaces never reach the embedded agent unreviewed). */
@@ -286,6 +290,7 @@ export const toolOverrideSchema = z.object({
   critical: z.boolean().optional(),
   disabled: z.boolean().optional(),
   description: z.string().optional(),
+  title: z.string().min(1).optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
 }).strict() satisfies z.ZodType<ToolOverride>;
