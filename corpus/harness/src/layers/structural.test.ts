@@ -328,6 +328,29 @@ describe("runStructuralLayer", () => {
     expect(viaWrapper["files.expected"]).toMatchObject({ pass: false });
   });
 
+  it("still fails children sitting BETWEEN two sibling VendoRoot elements (span-match trap)", async () => {
+    const repoDir = await makeTempRepo();
+    // A text span from the first opening tag to the last closing tag contains
+    // {children}; the AST says children are a sibling of both providers.
+    await writeFile(
+      path.join(repoDir, "app/layout.tsx"),
+      [
+        'import { VendoRoot } from "@vendoai/vendo/react";',
+        "",
+        "export default function RootLayout({ children }: { children: React.ReactNode }) {",
+        "  return <html><body><VendoRoot><span /></VendoRoot>{children}<VendoRoot><span /></VendoRoot></body></html>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
+
+    const results = byId(await runStructuralLayer(passingContext(repoDir, runner)));
+
+    expect(results["files.expected"]).toMatchObject({ pass: false });
+    expect(results["files.expected"]?.detail).toContain("does not wrap children with @vendoai/vendo/react VendoRoot");
+  });
+
   it("still fails a Next layout that never mounts VendoRoot", async () => {
     const repoDir = await makeTempRepo();
     await writeFile(

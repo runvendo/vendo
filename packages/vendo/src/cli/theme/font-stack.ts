@@ -1,3 +1,6 @@
+import { createRequire } from "node:module";
+import type TS from "typescript";
+
 /**
  * Deterministic body-font-stack derivation for the conventional setups the
  * exact `--font-sans` CSS read cannot see:
@@ -10,20 +13,60 @@
  * - No Tailwind: a single font applied by next/font on the root layout IS
  *   the body font (next/font semantics), with no declared tail.
  *
- * Everything here reads documented conventions — next/font's "the import's
- * export name is the family" (underscores become spaces) and the geist
- * package's fixed variables — never inference: any entry it cannot resolve
- * aborts the whole derivation (null) and the slot stays with the staged
- * model pass.
+ * All source analysis is TypeScript-AST structure matching (never substring
+ * scans): import provenance is resolved to its module specifier, a spread of
+ * Tailwind's default sans counts only when its binding provably comes from
+ * "tailwindcss/defaultTheme", and a font is "applied" only when its
+ * `.className`/`.variable` reference is attached to a JSX attribute on a
+ * rendered element. Anything unprovable — including an unavailable compiler
+ * — fails CLOSED to the staged model pass.
  */
+
+// The TypeScript compiler, resolved lazily through this package's own
+// dependency graph (same posture as @vendoai/actions' loadCompiler): a Next
+// host always carries typescript; when it genuinely cannot be loaded, every
+// derivation here verifies nothing and the slot stays with the model.
+let compilerModule: typeof TS | null | undefined;
+
+function loadCompiler(): typeof TS | null {
+  if (compilerModule === undefined) {
+    try {
+      compilerModule = createRequire(import.meta.url)("typescript") as typeof TS;
+    } catch {
+      compilerModule = null;
+    }
+  }
+  return compilerModule;
+}
+
+interface ParsedModule {
+  ts: typeof TS;
+  sf: TS.SourceFile;
+}
+
+function parseModuleSource(source: string, fileName: string): ParsedModule | null {
+  const ts = loadCompiler();
+  if (!ts) return null;
+  const kind = /\.[cm]?ts$/u.test(fileName) ? ts.ScriptKind.TS : ts.ScriptKind.TSX;
+  return { ts, sf: ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind) };
+}
+
+function visitNodes(ts: typeof TS, root: TS.Node, visit: (node: TS.Node) => void): void {
+  const walkNode = (node: TS.Node): void => {
+    visit(node);
+    ts.forEachChild(node, walkNode);
+  };
+  ts.forEachChild(root, walkNode);
+}
 
 export interface FontBinding {
   /** CSS custom property the font is exposed as (next/font's `variable`
    *  option, or geist's fixed names); null when only `.className` exists. */
   variable: string | null;
   family: string;
-  /** Referenced in the layout as `.className`/`.variable` — actually applied
-   *  to markup, not merely imported. */
+  /** The local's `.className`/`.variable` is attached to a JSX attribute on
+   *  a rendered element — actually applied to markup, not merely imported,
+   *  configured, or referenced in dead code. */
   applied: boolean;
 }
 
@@ -46,71 +89,213 @@ const GEIST_FONTS = [
   { importName: "GeistMono", specifier: "geist/font/mono", family: "Geist Mono", variable: "--font-geist-mono" },
 ] as const;
 
+/** Named-import locals for `imported` from `specifier` (aliases resolved). */
+function namedImportLocals(parsed: ParsedModule, specifier: string, imported: string): string[] {
+  const { ts, sf } = parsed;
+  const locals: string[] = [];
+  for (const statement of sf.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    if (statement.moduleSpecifier.text !== specifier) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
+    for (const element of bindings.elements) {
+      if ((element.propertyName ?? element.name).text === imported) locals.push(element.name.text);
+    }
+  }
+  return locals;
+}
+
+/** True when `local.className` / `local.variable` appears inside a JSX
+ *  attribute (including spread attributes) of a rendered element — template
+ *  literals and cn(...) calls inside the attribute count; a reference parked
+ *  in a dead constant does not. */
+function appliedToJsx(parsed: ParsedModule, local: string): boolean {
+  const { ts, sf } = parsed;
+  let applied = false;
+  visitNodes(ts, sf, (node) => {
+    if (applied) return;
+    if (!ts.isPropertyAccessExpression(node)) return;
+    if (!ts.isIdentifier(node.expression) || node.expression.text !== local) return;
+    if (node.name.text !== "className" && node.name.text !== "variable") return;
+    for (let ancestor: TS.Node | undefined = node.parent; ancestor !== undefined; ancestor = ancestor.parent) {
+      if (ts.isJsxAttribute(ancestor) || ts.isJsxSpreadAttribute(ancestor)) {
+        applied = true;
+        return;
+      }
+    }
+  });
+  return applied;
+}
+
 /** Font bindings declared IN the given source (conventionally the root
  *  layout — fonts wired through a separate module are invisible here and the
  *  derivation simply doesn't fire, leaving the slot to the model pass). */
 export function layoutFontBindings(source: string): FontBinding[] {
+  const parsed = parseModuleSource(source, "layout.tsx");
+  if (parsed === null) return [];
+  const { ts, sf } = parsed;
   const bindings: FontBinding[] = [];
+
   for (const font of GEIST_FONTS) {
-    const imported = new RegExp(
-      `import\\s*\\{[^}]*\\b${font.importName}\\b[^}]*\\}\\s*from\\s*["']${font.specifier}["']`,
-    ).test(source);
-    if (!imported) continue;
-    const applied = new RegExp(`\\b${font.importName}\\.(?:variable|className)\\b`).test(source);
-    bindings.push({ variable: font.variable, family: font.family, applied });
+    for (const local of namedImportLocals(parsed, font.specifier, font.importName)) {
+      bindings.push({ variable: font.variable, family: font.family, applied: appliedToJsx(parsed, local) });
+    }
   }
-  const googleImport = source.match(/import\s*\{([^}]*)\}\s*from\s*["']next\/font\/google["']/);
-  for (const raw of (googleImport?.[1] ?? "").split(",")) {
-    const importName = raw.trim();
-    if (!/^[A-Z][A-Za-z0-9_]*$/.test(importName)) continue;
-    // const inter = Inter({ subsets: [...], variable: "--font-inter" })
-    const call = source.match(
-      new RegExp(`(?:const|let|var)\\s+([\\w$]+)\\s*=\\s*${importName}\\s*\\(([\\s\\S]*?)\\)`),
-    );
-    const local = call?.[1];
-    const variable = call?.[2]?.match(/variable\s*:\s*["'](--[\w-]+)["']/)?.[1] ?? null;
-    const applied = local !== undefined && new RegExp(`\\b${local}\\.(?:variable|className)\\b`).test(source);
-    bindings.push({ variable, family: importName.replace(/_/g, " "), applied });
+
+  // next/font/google: `import { Some_Font } from "next/font/google"` +
+  // `const someFont = Some_Font({ ..., variable: "--font-x" })` — the export
+  // name is the family (underscores become spaces).
+  for (const statement of sf.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    if (statement.moduleSpecifier.text !== "next/font/google") continue;
+    const named = statement.importClause?.namedBindings;
+    if (named === undefined || !ts.isNamedImports(named)) continue;
+    for (const element of named.elements) {
+      const family = (element.propertyName ?? element.name).text.replace(/_/g, " ");
+      const importedLocal = element.name.text;
+      let variable: string | null = null;
+      let fontLocal: string | null = null;
+      visitNodes(ts, sf, (node) => {
+        if (fontLocal !== null) return;
+        if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name)) return;
+        const init = node.initializer;
+        if (init === undefined || !ts.isCallExpression(init)) return;
+        if (!ts.isIdentifier(init.expression) || init.expression.text !== importedLocal) return;
+        fontLocal = node.name.text;
+        const options = init.arguments[0];
+        if (options !== undefined && ts.isObjectLiteralExpression(options)) {
+          for (const property of options.properties) {
+            if (!ts.isPropertyAssignment(property)) continue;
+            const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : null;
+            if (name === "variable" && ts.isStringLiteralLike(property.initializer)) {
+              variable = property.initializer.text;
+            }
+          }
+        }
+      });
+      bindings.push({
+        variable,
+        family,
+        applied: fontLocal !== null && appliedToJsx(parsed, fontLocal),
+      });
+    }
   }
   return bindings;
 }
-
-/** ONLY the two real-world spellings of spreading Tailwind's own default
- *  sans: `...fontFamily.sans` (destructured from tailwindcss/defaultTheme)
- *  and `...defaultTheme.fontFamily.sans` (default import). Anything else —
- *  `...browserFonts.sans`, `...designSystem.fontFamily.sans` — is a custom
- *  expression whose contents are unknowable here and must fail CLOSED to
- *  the model stage, never map to the default stack. */
-const DEFAULT_SANS_SPREAD = /^\.\.\.\s*(?:defaultTheme\.)?fontFamily\.sans$/;
 
 /** A config's `fontFamily.sans` read has THREE outcomes, and the difference
  *  is load-bearing: `{ declared: false }` (no sans key — other derivation
  *  rules may apply), `{ declared: true, entries }` (parsed), and
  *  `{ declared: true, entries: null }` (a sans key exists but contains
- *  something unreadable, e.g. a custom spread — the config is authoritative
- *  and the derivation must fail CLOSED to the model stage, never fall
- *  through to a guess). */
+ *  something unprovable — the config is authoritative and the derivation
+ *  must fail CLOSED to the model stage, never fall through to a guess). */
 export type TailwindSansRead =
   | { declared: false }
   | { declared: true; entries: string[] | null };
 
-/** Entries of the config's `fontFamily.sans` array (Tailwind v3 shape).
- *  String literals stay verbatim, a spread of Tailwind's default sans
- *  expands to the documented stack, anything else is unreadable. */
-export function tailwindConfigSansStack(config: string): TailwindSansRead {
-  const fontFamily = config.match(/fontFamily\s*:\s*\{([\s\S]*?)\}/);
-  const sans = fontFamily?.[1]?.match(/\bsans\s*:\s*\[([^\]]*)\]/);
-  if (!sans) return { declared: false };
-  const entries: string[] = [];
-  for (const raw of sans[1]!.split(",")) {
-    const entry = raw.trim();
-    if (entry === "") continue;
-    const literal = entry.match(/^(["'])(.*)\1$/);
-    if (literal) {
-      entries.push(literal[2]!);
+/** Locals provably bound to "tailwindcss/defaultTheme": either its
+ *  `fontFamily` member directly (named import / destructured require) or the
+ *  whole module object (default/namespace import, bare require). */
+interface DefaultThemeBinding {
+  local: string;
+  binds: "fontFamily" | "module";
+}
+
+function defaultThemeBindings(parsed: ParsedModule): DefaultThemeBinding[] {
+  const { ts, sf } = parsed;
+  const out: DefaultThemeBinding[] = [];
+  for (const statement of sf.statements) {
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)
+      && statement.moduleSpecifier.text === "tailwindcss/defaultTheme") {
+      const clause = statement.importClause;
+      if (clause?.name !== undefined) out.push({ local: clause.name.text, binds: "module" });
+      const bindings = clause?.namedBindings;
+      if (bindings !== undefined && ts.isNamespaceImport(bindings)) out.push({ local: bindings.name.text, binds: "module" });
+      if (bindings !== undefined && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements) {
+          if ((element.propertyName ?? element.name).text === "fontFamily") {
+            out.push({ local: element.name.text, binds: "fontFamily" });
+          }
+        }
+      }
       continue;
     }
-    if (DEFAULT_SANS_SPREAD.test(entry)) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      const init = declaration.initializer;
+      if (init === undefined || !ts.isCallExpression(init)) continue;
+      if (!ts.isIdentifier(init.expression) || init.expression.text !== "require") continue;
+      const argument = init.arguments[0];
+      if (argument === undefined || !ts.isStringLiteralLike(argument) || argument.text !== "tailwindcss/defaultTheme") continue;
+      if (ts.isIdentifier(declaration.name)) out.push({ local: declaration.name.text, binds: "module" });
+      if (ts.isObjectBindingPattern(declaration.name)) {
+        for (const element of declaration.name.elements) {
+          if (!ts.isBindingElement(element) || !ts.isIdentifier(element.name)) continue;
+          const imported = element.propertyName !== undefined && ts.isIdentifier(element.propertyName)
+            ? element.propertyName.text
+            : element.name.text;
+          if (imported === "fontFamily") out.push({ local: element.name.text, binds: "fontFamily" });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** The spread expression is provably Tailwind's own default sans:
+ *  `<fontFamilyLocal>.sans` or `<moduleLocal>.fontFamily.sans`, where the
+ *  root binding demonstrably comes from "tailwindcss/defaultTheme". A local
+ *  object that merely SPELLS the same path never matches. */
+function isDefaultSansSpread(parsed: ParsedModule, expression: TS.Expression, bindings: DefaultThemeBinding[]): boolean {
+  const { ts } = parsed;
+  if (!ts.isPropertyAccessExpression(expression) || expression.name.text !== "sans") return false;
+  const base = expression.expression;
+  if (ts.isIdentifier(base)) {
+    return bindings.some((binding) => binding.binds === "fontFamily" && binding.local === base.text);
+  }
+  if (ts.isPropertyAccessExpression(base) && base.name.text === "fontFamily" && ts.isIdentifier(base.expression)) {
+    const root = base.expression.text;
+    return bindings.some((binding) => binding.binds === "module" && binding.local === root);
+  }
+  return false;
+}
+
+/** Entries of the config's `fontFamily.sans` array (Tailwind v3 shape),
+ *  located structurally: a `fontFamily` object property anywhere in the
+ *  config (theme or theme.extend) holding a `sans` array. String literals
+ *  stay verbatim; a spread counts as Tailwind's default stack only with
+ *  proven "tailwindcss/defaultTheme" provenance; anything else is
+ *  unreadable. */
+export function tailwindConfigSansStack(config: string): TailwindSansRead {
+  const parsed = parseModuleSource(config, "tailwind.config.ts");
+  if (parsed === null) return { declared: false };
+  const { ts, sf } = parsed;
+  const provenance = defaultThemeBindings(parsed);
+
+  let sansArray: TS.ArrayLiteralExpression | null = null;
+  visitNodes(ts, sf, (node) => {
+    if (sansArray !== null) return;
+    if (!ts.isPropertyAssignment(node)) return;
+    const name = ts.isIdentifier(node.name) || ts.isStringLiteralLike(node.name) ? node.name.text : null;
+    if (name !== "fontFamily" || !ts.isObjectLiteralExpression(node.initializer)) return;
+    for (const property of node.initializer.properties) {
+      if (!ts.isPropertyAssignment(property)) continue;
+      const key = ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name) ? property.name.text : null;
+      if (key === "sans" && ts.isArrayLiteralExpression(property.initializer)) {
+        sansArray = property.initializer;
+        return;
+      }
+    }
+  });
+  if (sansArray === null) return { declared: false };
+
+  const entries: string[] = [];
+  for (const element of (sansArray as TS.ArrayLiteralExpression).elements) {
+    if (parsed.ts.isStringLiteralLike(element)) {
+      entries.push(element.text);
+      continue;
+    }
+    if (parsed.ts.isSpreadElement(element) && isDefaultSansSpread(parsed, element.expression, provenance)) {
       entries.push(...TAILWIND_DEFAULT_SANS);
       continue;
     }
@@ -121,14 +306,15 @@ export function tailwindConfigSansStack(config: string): TailwindSansRead {
 
 export interface DerivedFontStack {
   /** Raw comma-joined stack — callers normalize (extract-theme's
-   *  normalizeFontStack owns quoting/truncation canonicalization). */
+   *  normalizeFontStack owns quoting canonicalization). */
   value: string;
   /** Provenance string for ThemeSummary.matched. */
   provenance: string;
 }
 
 /** Split a font stack on top-level commas — commas inside `var(--x, fb)`
- *  fallbacks stay within their entry. */
+ *  fallbacks stay within their entry. (CSS value text, not JS: this is the
+ *  one place string handling is the correct domain.) */
 function splitStack(value: string): string[] {
   const entries: string[] = [];
   let depth = 0;

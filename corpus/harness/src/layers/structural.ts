@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { access, readdir, readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
+import type TS from "typescript";
 import {
   vendoThemeSchema,
 } from "@vendoai/core";
@@ -92,10 +94,34 @@ const CHECK_ORDER: StructuralCheckId[] = [
 ];
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-// Any named-import statement, capturing the binding list and the module
-// specifier — filtered for VendoRoot (possibly aliased, as in the generated
-// wrapper's `VendoRoot as VendoClientRoot`) by vendoRootImports below.
-const NAMED_IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+
+// The TypeScript compiler, resolved lazily and fail-closed (the same posture
+// as packages/actions/src/sync/common.ts's loadCompiler): when it cannot be
+// loaded, wiring analysis verifies nothing rather than guessing with string
+// scans — the check fails, never passes.
+let compilerModule: typeof TS | null | undefined;
+
+function loadCompiler(): typeof TS | null {
+  if (compilerModule === undefined) {
+    try {
+      compilerModule = createRequire(import.meta.url)("typescript") as typeof TS;
+    } catch {
+      compilerModule = null;
+    }
+  }
+  return compilerModule;
+}
+
+interface ParsedModule {
+  ts: typeof TS;
+  sf: TS.SourceFile;
+}
+
+function parseModuleSource(source: string, fileName: string): ParsedModule | null {
+  const ts = loadCompiler();
+  if (!ts) return null;
+  return { ts, sf: ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX) };
+}
 const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
 
 export function corpusHostCommandEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -267,22 +293,49 @@ interface VendoRootImport {
   specifier: string;
 }
 
-function vendoRootImports(source: string): VendoRootImport[] {
+function vendoRootImports(parsed: ParsedModule): VendoRootImport[] {
+  const { ts, sf } = parsed;
   const imports: VendoRootImport[] = [];
-  for (const match of source.matchAll(NAMED_IMPORT)) {
-    const named = match[1]!.match(/\bVendoRoot\b(?:\s+as\s+([\w$]+))?/);
-    if (named === null) continue;
-    imports.push({ localTag: named[1] ?? "VendoRoot", specifier: match[2]! });
+  for (const statement of sf.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
+    for (const element of bindings.elements) {
+      if ((element.propertyName ?? element.name).text !== "VendoRoot") continue;
+      imports.push({ localTag: element.name.text, specifier: statement.moduleSpecifier.text });
+    }
   }
   return imports;
 }
 
-/** `{children}` sits INSIDE a `<tag …>…</tag>` element — a self-closing
- * `<tag />` rendered beside `{children}` is not a wrap, it leaves children
- * outside the provider. Not a JSX parser; exact enough for the wiring
- * shapes init writes and the harness pastes. */
-function nestsChildrenInside(source: string, tag: string): boolean {
-  return new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?\\{\\s*children\\s*\\}[\\s\\S]*?</${tag}>`).test(source);
+/** True when a `{children}` JSX expression is a DESCENDANT of a JSX element
+ * whose opening tag is `localTag` — real AST containment, so a self-closing
+ * `<Tag />` beside `{children}`, or children sitting BETWEEN two sibling
+ * `<Tag>` elements, never count as wrapped. */
+function childrenInsideTag(parsed: ParsedModule, localTag: string): boolean {
+  const { ts, sf } = parsed;
+  let found = false;
+  const visit = (node: TS.Node, insideTag: boolean): void => {
+    if (found) return;
+    const inside = insideTag || (
+      ts.isJsxElement(node)
+      && ts.isIdentifier(node.openingElement.tagName)
+      && node.openingElement.tagName.text === localTag
+    );
+    if (
+      inside
+      && ts.isJsxExpression(node)
+      && node.expression !== undefined
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === "children"
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, (child) => visit(child, inside));
+  };
+  visit(sf, false);
+  return found;
 }
 
 /** The layout wraps children with the @vendoai/vendo/react provider either
@@ -290,21 +343,27 @@ function nestsChildrenInside(source: string, tag: string): boolean {
  * visible-surface wiring (init-scaffolds.ts's vendoRootWrapperSource), a
  * by-the-book init mounts <VendoRoot> imported from the repo-local
  * `vendo/vendo-root` module — the layout itself never names the package.
- * "Wraps" means `{children}` is NESTED inside the VendoRoot element (a
- * self-closing sibling fails), and the wrapper's own JSX must nest its
- * children inside the package's VendoRoot (aliased or not) — so a layout
- * mounting some unrelated local VendoRoot still fails. */
+ * "Wraps" means the `{children}` expression is an AST descendant of the
+ * VendoRoot element (self-closing siblings and children between two
+ * providers fail), and the wrapper's own JSX must nest ITS children inside
+ * the package's VendoRoot under the wrapper's alias — so a layout mounting
+ * some unrelated local VendoRoot still fails. Fails closed when the
+ * TypeScript compiler is unavailable. */
 async function layoutReachesVendoReact(repoDir: string, app: AppRouterInfo, layout: string): Promise<boolean> {
-  for (const { localTag, specifier } of vendoRootImports(layout)) {
-    if (!nestsChildrenInside(layout, localTag)) continue;
+  const parsedLayout = parseModuleSource(layout, app.layoutRel);
+  if (parsedLayout === null) return false;
+  for (const { localTag, specifier } of vendoRootImports(parsedLayout)) {
+    if (!childrenInsideTag(parsedLayout, localTag)) continue;
     if (specifier === "@vendoai/vendo/react") return true;
     if (!specifier.startsWith(".")) continue;
     const base = path.posix.join(path.posix.dirname(app.layoutRel), specifier);
     for (const candidate of [base, `${base}.tsx`, `${base}.ts`, `${base}.jsx`, `${base}.js`]) {
       const source = await readText(repoDir, candidate);
       if (source === null) continue;
-      const packageImport = vendoRootImports(source).find((entry) => entry.specifier === "@vendoai/vendo/react");
-      if (packageImport !== undefined && nestsChildrenInside(source, packageImport.localTag)) return true;
+      const parsedWrapper = parseModuleSource(source, candidate);
+      if (parsedWrapper === null) continue;
+      const packageImport = vendoRootImports(parsedWrapper).find((entry) => entry.specifier === "@vendoai/vendo/react");
+      if (packageImport !== undefined && childrenInsideTag(parsedWrapper, packageImport.localTag)) return true;
     }
   }
   return false;

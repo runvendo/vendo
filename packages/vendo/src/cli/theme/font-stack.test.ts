@@ -67,23 +67,37 @@ describe("tailwindConfigSansStack", () => {
 
   it("a dotted prefix merely ENDING in fontFamily.sans is NOT the Tailwind default (checker round 2)", () => {
     // designSystem is some custom object — its fontFamily.sans could be
-    // anything; only the recognized tailwindcss/defaultTheme spellings map.
+    // anything; only a binding proven to come from tailwindcss/defaultTheme maps.
     expect(tailwindConfigSansStack(
-      'fontFamily: { sans: ["var(--font-brand)", ...designSystem.fontFamily.sans] }',
+      'import { designSystem } from "./design-system";\nexport default { theme: { fontFamily: { sans: ["var(--font-brand)", ...designSystem.fontFamily.sans] } } }',
     )).toEqual({ declared: true, entries: null });
-    // Both recognized spellings still expand.
-    expect(tailwindConfigSansStack('fontFamily: { sans: [...fontFamily.sans] }'))
-      .toEqual({ declared: true, entries: [...TAILWIND_DEFAULT_SANS] });
-    expect(tailwindConfigSansStack('fontFamily: { sans: [...defaultTheme.fontFamily.sans] }'))
-      .toEqual({ declared: true, entries: [...TAILWIND_DEFAULT_SANS] });
+    // Both recognized spellings still expand — with real provenance.
+    expect(tailwindConfigSansStack(
+      'import { fontFamily } from "tailwindcss/defaultTheme";\nexport default { theme: { fontFamily: { sans: [...fontFamily.sans] } } }',
+    )).toEqual({ declared: true, entries: [...TAILWIND_DEFAULT_SANS] });
+    expect(tailwindConfigSansStack(
+      'import defaultTheme from "tailwindcss/defaultTheme";\nexport default { theme: { fontFamily: { sans: [...defaultTheme.fontFamily.sans] } } }',
+    )).toEqual({ declared: true, entries: [...TAILWIND_DEFAULT_SANS] });
+  });
+
+  it("a LOCAL object with the exact defaultTheme spelling must NOT expand (checker round 4: provenance, not spelling)", () => {
+    expect(tailwindConfigSansStack([
+      'const fontFamily = { sans: ["Comic Sans MS"] };',
+      'module.exports = { theme: { fontFamily: { sans: ["var(--font-brand)", ...fontFamily.sans] } } };',
+    ].join("\n"))).toEqual({ declared: true, entries: null });
+    // Aliased destructured require still counts as provenance.
+    expect(tailwindConfigSansStack([
+      'const { fontFamily: tw } = require("tailwindcss/defaultTheme");',
+      'module.exports = { theme: { fontFamily: { sans: [...tw.sans] } } };',
+    ].join("\n"))).toEqual({ declared: true, entries: [...TAILWIND_DEFAULT_SANS] });
   });
 
   it("keeps literal-only stacks verbatim and reports undeclared when no sans key exists", () => {
-    expect(tailwindConfigSansStack('fontFamily: { sans: ["Inter", "sans-serif"] }')).toEqual({
+    expect(tailwindConfigSansStack('module.exports = { theme: { fontFamily: { sans: ["Inter", "sans-serif"] } } }')).toEqual({
       declared: true,
       entries: ["Inter", "sans-serif"],
     });
-    expect(tailwindConfigSansStack('fontFamily: { mono: ["Menlo", "monospace"] }')).toEqual({ declared: false });
+    expect(tailwindConfigSansStack('module.exports = { theme: { fontFamily: { mono: ["Menlo", "monospace"] } } }')).toEqual({ declared: false });
     expect(tailwindConfigSansStack("module.exports = {}")).toEqual({ declared: false });
   });
 });
@@ -128,13 +142,34 @@ describe("layoutFontBindings", () => {
       { variable: null, family: "Libre Franklin", applied: false },
     ]);
   });
+
+  it("a .variable reference parked in a dead constant is NOT applied (checker round 4: JSX attachment, not substring)", () => {
+    const layout = `
+      import { Inter } from "next/font/google";
+      const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+      const cssVars = inter.variable; // never attached to JSX
+      export default function Layout({ children }) {
+        return <html><body>{children}</body></html>;
+      }
+    `;
+    expect(layoutFontBindings(layout)).toEqual([
+      { variable: "--font-inter", family: "Inter", applied: false },
+    ]);
+    // And therefore nothing derives — the model owns the slot.
+    expect(deriveBodyFontStack({
+      layout,
+      tailwindConfig: null,
+      cssText: '@import "tailwindcss";',
+      resolveCssVar: noCssVars,
+    })).toBeNull();
+  });
 });
 
 describe("deriveBodyFontStack", () => {
   it("skateshop shape: config head resolves through the layout's geist import", () => {
     const derived = deriveBodyFontStack({
       layout: 'import { GeistSans } from "geist/font/sans"\nimport { GeistMono } from "geist/font/mono"\n<body className={cn("min-h-screen bg-background font-sans antialiased", GeistSans.variable, GeistMono.variable)} />',
-      tailwindConfig: 'fontFamily: { sans: ["var(--font-geist-sans)", ...fontFamily.sans] }',
+      tailwindConfig: 'import { fontFamily } from "tailwindcss/defaultTheme";\nexport default { theme: { extend: { fontFamily: { sans: ["var(--font-geist-sans)", ...fontFamily.sans] } } } }',
       cssText: "@tailwind base;",
       resolveCssVar: noCssVars,
     });
@@ -169,7 +204,7 @@ describe("deriveBodyFontStack", () => {
   it("a CSS-declared variable head outranks the font-binding fallback", () => {
     const derived = deriveBodyFontStack({
       layout: null,
-      tailwindConfig: 'fontFamily: { sans: ["var(--brand-font)", "sans-serif"] }',
+      tailwindConfig: 'module.exports = { theme: { fontFamily: { sans: ["var(--brand-font)", "sans-serif"] } } }',
       cssText: "",
       resolveCssVar: (name) => (name === "--brand-font" ? "Custom Grotesk" : null),
     });
@@ -180,7 +215,7 @@ describe("deriveBodyFontStack", () => {
     // Config head var with no CSS declaration and no layout binding.
     expect(deriveBodyFontStack({
       layout: null,
-      tailwindConfig: 'fontFamily: { sans: ["var(--font-sans)", ...fontFamily.sans] }',
+      tailwindConfig: 'import { fontFamily } from "tailwindcss/defaultTheme";\nexport default { theme: { fontFamily: { sans: ["var(--font-sans)", ...fontFamily.sans] } } }',
       cssText: "",
       resolveCssVar: noCssVars,
     })).toBeNull();
@@ -219,7 +254,7 @@ describe("deriveBodyFontStack", () => {
     // the config declares a stack we cannot read, so the model stage owns it.
     expect(deriveBodyFontStack({
       layout: 'import { GeistSans } from "geist/font/sans";\n<html className={GeistSans.variable} />',
-      tailwindConfig: "fontFamily: { sans: ['Inter Variable', ...browserFonts.sans] }",
+      tailwindConfig: "const { browserFonts } = require('../shared/browser-fonts');\nmodule.exports = { fontFamily: { sans: ['Inter Variable', ...browserFonts.sans] } };",
       cssText: '@import "tailwindcss";',
       resolveCssVar: noCssVars,
     })).toBeNull();
@@ -227,7 +262,7 @@ describe("deriveBodyFontStack", () => {
     // in fontFamily.sans (checker round 2): still null, never the default.
     expect(deriveBodyFontStack({
       layout: 'import { GeistSans } from "geist/font/sans";\n<html className={GeistSans.variable} />',
-      tailwindConfig: 'fontFamily: { sans: ["var(--font-geist-sans)", ...designSystem.fontFamily.sans] }',
+      tailwindConfig: 'import { designSystem } from "./ds";\nexport default { theme: { fontFamily: { sans: ["var(--font-geist-sans)", ...designSystem.fontFamily.sans] } } }',
       cssText: '@import "tailwindcss";',
       resolveCssVar: noCssVars,
     })).toBeNull();
