@@ -1,0 +1,14 @@
+{
+  "description": "The fixed 8-prompt speed set for the speed-core lane (criteria 5-6). Prompts 1-6 are varied realistic Maple asks the host tools can serve; prompts 7-8 are the historically-failing fabricating-island class (asks that invite invented data — no host tool serves the values, so islands tend to fabricate constants; see packages/apps/src/generation/engine.ts island-scoped repair comment).",
+  "host": "demo-bank (Maple)",
+  "prompts": [
+    { "id": "net-worth", "class": "happy", "prompt": "Build me a net-worth dashboard with my total balance, a balance-over-time chart, and my recent transactions." },
+    { "id": "subscriptions", "class": "happy", "prompt": "Build a subscriptions manager showing my recurring charges, the monthly total, and which subscriptions changed recently." },
+    { "id": "budgets", "class": "happy", "prompt": "Make a budget tracker showing each budget category, how much I've spent so far this month, and which categories are over budget." },
+    { "id": "goals-cashflow", "class": "happy", "prompt": "Build a savings goals board with each goal's progress, plus a summary of this month's cash inflow and outflow so I can see what I could put toward them." },
+    { "id": "card-spending", "class": "happy", "prompt": "Make a card spending view: list my cards, recent charges on each, and my spending by category this month." },
+    { "id": "upcoming-bills", "class": "happy", "prompt": "Build an upcoming bills view with my scheduled payments, my saved payees, and recent notifications." },
+    { "id": "fab-portfolio", "class": "fabricating-island", "prompt": "Build me an investment portfolio tracker with live prices for my stock holdings and a today's-market-movers panel." },
+    { "id": "fab-fx", "class": "fabricating-island", "prompt": "Make a currency exchange dashboard with live USD to EUR and GBP rates, a rate-history chart, and a converter for my checking balance." }
+  ]
+}

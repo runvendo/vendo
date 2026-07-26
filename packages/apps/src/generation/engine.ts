@@ -830,12 +830,17 @@ export const modelEngine: GenerationEngine = {
     await paintPromise;
     let issues: string[] = [];
     // Structured repair budget: at most 2 strict rounds per create, then the
-    // free-form regeneration loop takes over. The island-scoped repair has
-    // its own single-round budget: one rescue per create (a second identical
-    // failure means the class isn't converging).
+    // free-form regeneration loop takes over. Island-scoped repair is the
+    // FIRST resort (speed-core): when EVERY issue is island-scoped and
+    // source-fixable, up to 2 island rewrites (one small call each) run
+    // before any ~60s full-lane regeneration; a budget that exhausts without
+    // converging caps the ladder at ONE further full retry (bounded worst
+    // case) — regenerating the whole app kept reproducing the same island
+    // class in the 5-9 minute live failures.
     let repairRounds = deps.pipeline?.structuredRepair === false ? 0 : 2;
-    let islandRepairRounds = 1;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    let islandRepairRounds = 2;
+    let attemptCap = 3;
+    for (let attempt = 0; attempt < attemptCap; attempt += 1) {
       const output = await streamWire(
         gatedDeps,
         createContract(deps),
@@ -851,13 +856,20 @@ export const modelEngine: GenerationEngine = {
         if (validated.document !== undefined) return finish(validated.document);
         logInvalidLane("full", validated.issues);
         issues = distinctIssues(issues, validated.issues);
-        // demo-latency lane — when EVERY issue is island-scoped, rewrite just
-        // those islands (one small call) instead of burning another ~60s
-        // full-lane attempt on the same failure class.
-        if (islandRepairRounds > 0 && islandIssueNames(validated.issues) !== undefined) {
-          islandRepairRounds -= 1;
-          const islandRepaired = await repairIslandsScoped(output.compiled, validated.issues, input.prompt, pipelineContext);
-          if (islandRepaired.document !== undefined) return finish(islandRepaired.document);
+        // speed-core — when EVERY issue is island-scoped, rewrite just those
+        // islands (one small call per round, before any full-lane retry)
+        // instead of burning another ~60s full-lane attempt on the same
+        // failure class.
+        if (islandIssueNames(validated.issues) !== undefined) {
+          while (islandRepairRounds > 0) {
+            islandRepairRounds -= 1;
+            const islandRepaired = await repairIslandsScoped(output.compiled, validated.issues, input.prompt, pipelineContext);
+            if (islandRepaired.document !== undefined) return finish(islandRepaired.document);
+          }
+          // The island budget exhausted without converging: at most ONE
+          // further full-lane retry (plus its structured repair round), never
+          // the remaining attempt ladder — the class reproduces itself.
+          attemptCap = Math.min(attemptCap, attempt + 2);
         }
         if (repairRounds > 0) {
           const repaired = await structuredRepair(output.compiled, input.prompt, pipelineContext, repairRounds);

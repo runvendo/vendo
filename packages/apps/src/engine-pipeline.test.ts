@@ -613,6 +613,97 @@ describe("island-scoped repair (demo-latency lane)", () => {
     expect(document.components?.Sparky).not.toContain("0.92");
   });
 
+  // speed-core lane — island repair is the FIRST resort (criteria 1-3): the
+  // ordering, the untouched attempt counter on success, and the bounded worst
+  // case once the island budget exhausts on a non-converging class.
+  it("criterion 1+2: island repair runs BEFORE any full-lane regeneration, and a success leaves the attempt counter at one (event order)", async () => {
+    const sequence: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      if (isIslandRepairCall(call)) return fixedIsland;
+      return fabricating;
+    });
+
+    await modelEngine.create(
+      { prompt: "Build a revenue HQ" },
+      deps(model, {
+        tools,
+        toolShapes: metricShapes,
+        onTiming: (event: { lane: string; phase: string }) => {
+          if (event.phase === "complete") sequence.push(event.lane);
+        },
+        onPipeline: (event: { stage: string }) => sequence.push(event.stage),
+      }),
+    );
+
+    // ONE full attempt, then the island repair — never a second full lane.
+    // (repairIslandsScoped emits its own `repair` timing complete before the
+    // island-repair pipeline event; both trail the single full complete.)
+    expect(sequence.filter((lane) => lane === "full")).toHaveLength(1);
+    expect(sequence).toEqual(["full", "repair", "island-repair"]);
+  });
+
+  it("criterion 1 under regionParallel: a failed parallel path still reaches island repair before a full-lane retry", async () => {
+    // The outline planner fails (no outline → single-stream fallback), the
+    // full lane emits the island-only failure, and island repair must still
+    // run before any second full attempt.
+    const lanes: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      if (isOutlineCall(call)) { lanes.push("outline"); return "not a tool call"; }
+      if (isIslandRepairCall(call)) { lanes.push("island-repair"); return fixedIsland; }
+      lanes.push("full");
+      return fabricating;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue HQ" },
+      deps(model, { tools, toolShapes: metricShapes, pipeline: { regionParallel: true } }),
+    );
+
+    expect(lanes).toEqual(["outline", "full", "island-repair"]);
+    expect(document.components?.Sparky).not.toContain("0.92");
+  });
+
+  it("criterion 3: island repair failing twice on the same class allows exactly ONE full-lane retry, then a structured repair round", async () => {
+    // The retry's output carries a repairable binding error (a different,
+    // closed-space class), so the bounded sequence ends in a structured round.
+    const bindingBroken = '<App name="HQ"><Query id="metric" tool="host_metric"/><MetricCard label="Revenue" value={metric.missing_field}/></App>';
+    const lanes: string[] = [];
+    let fullCalls = 0;
+    const model = scriptedLanguageModel((call) => {
+      if (isIslandRepairCall(call)) { lanes.push("island-repair"); return fabricating; } // still fabricating: round fails
+      if (isRepairCall(call)) { lanes.push("strict-repair"); return { tool: "apply_fixes", input: { fix_0: "/metric/total" } }; }
+      lanes.push("full");
+      fullCalls += 1;
+      return fullCalls === 1 ? fabricating : bindingBroken;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue HQ" },
+      deps(model, { tools, toolShapes: metricShapes }),
+    );
+
+    expect(lanes).toEqual(["full", "island-repair", "island-repair", "full", "strict-repair"]);
+    expect((document.tree as { nodes: Nodes }).nodes.at(-1)?.props?.value).toEqual({ $path: "/metric/total" });
+  });
+
+  it("criterion 3 (bound): a non-converging island class never gets the full 3-attempt ladder — one retry, then the create ends", async () => {
+    const lanes: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      if (isIslandRepairCall(call)) { lanes.push("island-repair"); return fabricating; }
+      lanes.push("full");
+      return fabricating; // every lane keeps producing the same island class
+    });
+
+    await expect(modelEngine.create(
+      { prompt: "Build a revenue HQ" },
+      deps(model, { tools, toolShapes: metricShapes }),
+    )).rejects.toMatchObject({ code: "validation" });
+
+    // 2 island rounds spent on the first failure, ONE full retry, no third
+    // attempt (island issues have no structured fix space, so no strict call).
+    expect(lanes).toEqual(["full", "island-repair", "island-repair", "full"]);
+  });
+
   it("leaves mixed (island + tree) failure sets to the existing repair/retry flow", async () => {
     // A dead submit button (tree issue) beside a broken island: the closed
     // island class does not apply, so the island repair must not fire.

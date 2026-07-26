@@ -29,8 +29,11 @@ export const mapleAuth = authJs({
 export const vendo = createVendo({
   // Model + store slots stay UNSET (demo-refresh Part 2): the env ladder
   // resolves them — locally ANTHROPIC_API_KEY, deployed VENDO_API_KEY — and
-  // the unset store composes the local default. Known deliberate regression
-  // until the model-family lane lands: paint rides the main model.
+  // the unset store composes the local default. With the agent slot on the
+  // ladder, paint invisibility applies (resolveModels): the paint lane
+  // composes the family fast pick — vendo-paint on Cloud, the provider's
+  // fast model on BYO — so the demo runs the fast two-lane path with no
+  // hardcoded model names (speed-core lane; BYO rule).
   auth: mapleAuth,
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.

@@ -226,7 +226,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // #492 — apps whose build turn terminally FAILED: a flagged open poll
     // answers {kind:"failed"} with the reason (the record exists as a failure),
     // so the embed resolves promptly instead of spinning to its deadline.
-    failedApps: new Map<string, { reason: string; retryable?: boolean }>(),
+    failedApps: new Map<string, { reason: string; retryable?: boolean; prompt?: string }>(),
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
@@ -677,7 +677,12 @@ export async function createWireServer(options: WireServerOptions = {}) {
           // record exists), so the embed shows the reason promptly.
           if (action === "open" && method === "GET" && state.failedApps.has(id)) {
             const failure = state.failedApps.get(id)!;
-            return json(response, { kind: "failed", reason: failure.reason, ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }) });
+            return json(response, {
+              kind: "failed",
+              reason: failure.reason,
+              ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
+              ...(failure.prompt === undefined ? {} : { prompt: failure.prompt }),
+            });
           }
           // The real wire's flag-gated build-window answer: a flagged open
           // poll gets a quiet 200 pending envelope instead of the 404.

@@ -4,6 +4,7 @@ import {
   VendoError,
   checkBindingShapes,
   deriveShapeCard,
+  effectiveBuildWatchdogMs,
   safeErrorMessage,
   validateAppDocument,
   type AppDocument,
@@ -292,9 +293,11 @@ export type OpenSurface =
    * The build turn terminally FAILED (model error, quota, timeout): the app
    * will never become servable. Surfaced so the embed resolves promptly with
    * the reason instead of polling to its client deadline — the same prompt
-   * resolution the approval embed gets from denied/expired.
+   * resolution the approval embed gets from denied/expired. `prompt` (when
+   * the record carries it) lets the embed's retry affordance re-issue the
+   * exact create.
    */
-  | { kind: "failed"; reason: string; retryable?: boolean };
+  | { kind: "failed"; reason: string; retryable?: boolean; prompt?: string };
 
 /** The non-empty name a failed build record ships under (open() ignores it —
  *  the embed's title rides the app-ref — but validateAppDocument requires one).
@@ -323,17 +326,13 @@ const BUILD_WATCHDOG_REASON =
   "the build never finished — the server-side build task stalled or died without reporting a "
   + "failure. Retry the request; if this repeats, check the host server log.";
 
-const BUILD_WATCHDOG_MS = 4 * 60_000;
-
 /** Test seam and operator escape hatch, mirroring turn-liveness: the window a
  *  create has to persist SOMETHING (app or failure) before the watchdog writes
- *  the terminal failed record. Guarded access — this module also runs on
- *  edge/Worker targets with no `process` global. */
-const buildWatchdogMs = (): number => {
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
-  const configured = Number(env?.["VENDO_APP_BUILD_WATCHDOG_MS"]);
-  return Number.isFinite(configured) && configured > 0 ? configured : BUILD_WATCHDOG_MS;
-};
+ *  the terminal failed record. Shared with the UI polling cutoff through
+ *  @vendoai/core's build-deadlines module (speed-core lane), so the client
+ *  always outlasts the watchdog and renders its record instead of the generic
+ *  deadline beat. */
+const buildWatchdogMs = effectiveBuildWatchdogMs;
 
 const QUOTA_SIGNAL = /quota|insufficient|payment|billing|\b402\b/i;
 const TIMEOUT_SIGNAL = /time?d?\s*out|timeout|abort/i;
@@ -1776,7 +1775,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             format: "vendo/app@1",
             id: appId,
             name: fallbackAppName(input.prompt),
-            buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString() },
+            buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString(), prompt: input.prompt },
           }, ctx.principal.subject));
           console.error(`[vendo] app build watchdog (${appId}): no app record and no failure landed within ${buildWatchdogMs()}ms — persisted a terminal failed record so the embed resolves instead of polling forever.`);
         })().catch(() => undefined);
@@ -1845,7 +1844,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           format: "vendo/app@1",
           id: appId,
           name: fallbackAppName(input.prompt),
-          buildFailed: { reason, retryable, at: new Date().toISOString() },
+          buildFailed: { reason, retryable, at: new Date().toISOString(), prompt: input.prompt },
         }, ctx.principal.subject)).catch(() => undefined);
         clearTimeout(watchdog);
         // The operator's terminal gets the un-canned detail (the engine folds
