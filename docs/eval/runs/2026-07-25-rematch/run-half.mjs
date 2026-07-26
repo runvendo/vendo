@@ -93,7 +93,7 @@ function runDriver(args) {
   // amounts, quotes, or backticks is passed through verbatim.
   try {
     return execFileSync("node", [DRIVER, ...args], {
-      encoding: "utf8", timeout: 420_000, env: process.env,
+      encoding: "utf8", timeout: 900_000, env: process.env,
     });
   } catch (error) {
     return `DRIVER-ERROR: ${error.stdout ?? ""}\n${error.stderr ?? ""}\n${error.message}`;
