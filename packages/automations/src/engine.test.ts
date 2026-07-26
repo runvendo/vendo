@@ -286,6 +286,103 @@ describe("automations enable and grant capture", () => {
   });
 });
 
+describe("grant sets: one set per enable, dedupe against pending, list projection", () => {
+  let store: StoreAdapter;
+  let guard: GuardDouble;
+
+  // Mirrors the demo weeklySummaryDocument capture surface: two host reads.
+  const insightsTool: ToolDescriptor = {
+    name: "host_getSpendingInsights",
+    description: "See category totals and month-over-month trends.",
+    inputSchema: { type: "object" },
+    risk: "read",
+  };
+  const transactionsTool: ToolDescriptor = {
+    name: "host_listTransactions",
+    description: "Read transaction history across accounts.",
+    inputSchema: { type: "object" },
+    risk: "read",
+  };
+  const weekly = app("app_weekly_set", {
+    on: { kind: "schedule", cron: "0 17 * * 5" },
+    run: { kind: "steps", steps: [
+      { id: "spending", tool: insightsTool.name },
+      { id: "transactions", tool: transactionsTool.name },
+    ] },
+  }, "Weekly spending summary");
+
+  const makeEngine = () => createAutomations({
+    apps: appsDouble(), tools: registry([insightsTool, transactionsTool]), guard, store, now: () => NOW,
+  });
+
+  beforeEach(async () => {
+    store = memoryStoreAdapter();
+    guard = new GuardDouble();
+    await seedApp(store, weekly);
+  });
+
+  it("returns one grantSetId spanning both missing asks and projects pendingGrants via list()", async () => {
+    const engine = makeEngine();
+    const result = await engine.enable(weekly.id, ctx());
+
+    expect(result.enabled).toBe(true);
+    expect(result.missing).toHaveLength(2);
+    expect(result.grantSetId).toEqual(expect.stringMatching(/^gset_/));
+    for (const ask of result.missing) {
+      expect((await store.records("automations:captures").get(ask.id))?.data).toMatchObject({
+        appId: weekly.id,
+        grantSetId: result.grantSetId,
+      });
+    }
+    const listed = await engine.list(ctx());
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({
+      enabled: true,
+      pendingGrants: 2,
+      grantSetId: result.grantSetId,
+    });
+  });
+
+  it("re-running enable() reuses the pending ask — no duplicate ApprovalRequest per (appId, tool)", async () => {
+    const engine = makeEngine();
+    const first = await engine.enable(weekly.id, ctx());
+    guard.decide(first.missing[0]!.id, true);
+    await flush();
+
+    const second = await engine.enable(weekly.id, ctx());
+
+    expect(second.missing.map((ask) => ask.call.tool)).toEqual([transactionsTool.name]);
+    expect(second.missing[0]!.id).toBe(first.missing[1]!.id);
+    expect(second.grantSetId).toBe(first.grantSetId);
+    const approvals = await store.records("vendo_approvals").list();
+    const pendingForPair = approvals.records.filter((record) => {
+      const data = record.data as { status?: string; request?: { call?: { tool?: string } } };
+      return data.status === "pending" && data.request?.call?.tool === transactionsTool.name;
+    });
+    expect(pendingForPair).toHaveLength(1);
+    expect((await engine.list(ctx()))[0]).toMatchObject({
+      pendingGrants: 1,
+      grantSetId: first.grantSetId,
+    });
+  });
+
+  it("clears the projection once every ask in the set is decided and omits grantSetId when nothing is missing", async () => {
+    const engine = makeEngine();
+    const { missing } = await engine.enable(weekly.id, ctx());
+    guard.decide(missing[0]!.id, true);
+    guard.decide(missing[1]!.id, true);
+    await flush();
+
+    const listed = await engine.list(ctx());
+    expect(listed[0]?.pendingGrants).toBeUndefined();
+    expect(listed[0]?.grantSetId).toBeUndefined();
+
+    const again = await engine.enable(weekly.id, ctx());
+    expect(again.missing).toHaveLength(0);
+    expect(again.grantSetId).toBeUndefined();
+  });
+});
+
 describe("steps execution, parking, and resumption", () => {
   it("evaluates JSONata args, if, forEach, and cross-step outputs sequentially", async () => {
     const store = memoryStoreAdapter();

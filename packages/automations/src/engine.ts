@@ -68,6 +68,10 @@ const captureSchema = z.object({
   subject: z.string(),
   tool: z.string(),
   descriptorHash: z.string(),
+  /** The grant SET this pending ask belongs to (07 §3 grant capture; one
+   *  enable() = one set). Optional: rows minted before sets existed have
+   *  none and are adopted into the app's set on the next enable(). */
+  grantSetId: z.string().optional(),
 });
 
 const parkedSchema = z.object({ runId: z.string() });
@@ -1007,6 +1011,20 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   config.guard.onApprovalDecision((approvalId, approved) =>
     handleDecision(approvalId, approved) as unknown as void);
 
+  /** Every still-pending capture for the subject, parsed — the outstanding
+   *  grant sets. Captures are engine-owned and deleted on decision, so
+   *  "capture exists" ≈ "ask is pending"; volume stays tiny (undecided asks
+   *  only), so an unindexed scan is fine on every adapter. */
+  const pendingCaptures = async (subject: string): Promise<Array<{ id: string; data: z.infer<typeof captureSchema> }>> => {
+    const records = await allRecords(config.store.records(CAPTURES));
+    const captures: Array<{ id: string; data: z.infer<typeof captureSchema> }> = [];
+    for (const record of records) {
+      const parsed = captureSchema.safeParse(record.data);
+      if (parsed.success && parsed.data.subject === subject) captures.push({ id: record.id, data: parsed.data });
+    }
+    return captures;
+  };
+
   const enable: AutomationsEngine["enable"] = async (appId, ctx) => {
     const found = await ownedApp(appId, ctx.principal.subject);
     if (found.row.doc.trigger === undefined) throw new VendoError("validation", "app has no trigger");
@@ -1016,11 +1034,39 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       ? [...new Set(trigger.run.steps.map((step) => step.tool).filter((tool) => !tool.startsWith("fn:")))]
       // PR flag: without a model seat, agentic capture conservatively exposes every bound descriptor.
       : [...byName.keys()];
+    // One grant SET per automation: re-enables reuse the app's still-pending
+    // asks (and their set id) instead of minting duplicates for the same
+    // (appId, tool); a fresh set id is minted only when nothing is pending.
+    const pendingForApp = new Map(
+      (await pendingCaptures(found.row.subject))
+        .filter((capture) => capture.data.appId === appId)
+        .map((capture) => [capture.data.tool, capture]),
+    );
+    const grantSetId = [...pendingForApp.values()]
+      .map((capture) => capture.data.grantSetId)
+      .find((value) => value !== undefined) ?? id("gset_");
     const missing: ApprovalRequest[] = [];
     for (const tool of surface) {
       const descriptor = byName.get(tool);
       if (descriptor === undefined) throw new VendoError("validation", `unknown tool in automation: ${tool}`);
       if (await liveGrant(found.row.subject, appId, descriptor)) continue;
+      const pending = pendingForApp.get(tool);
+      if (pending !== undefined) {
+        const approval = await config.store.records(APPROVALS).get(pending.id);
+        const parsed = approval === null ? undefined : approvalRowSchema.safeParse(approval.data);
+        if (parsed?.success === true && parsed.data.status === "pending") {
+          // Adopt pre-set rows (and any stray sibling) into THE app's set so
+          // one decision can settle everything outstanding.
+          if (pending.data.grantSetId !== grantSetId) {
+            await config.store.records(CAPTURES).put({ id: pending.id, data: { ...pending.data, grantSetId } });
+          }
+          missing.push(clone(parsed.data.request));
+          continue;
+        }
+        // A capture whose approval is gone or already decided is stale —
+        // clear it and fall through to a fresh mint.
+        await config.store.records(CAPTURES).delete(pending.id);
+      }
       const request: ApprovalRequest = {
         id: id("apr_"),
         call: { id: id("call_"), tool, args: {} },
@@ -1040,7 +1086,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       });
       await config.store.records(CAPTURES).put({
         id: request.id,
-        data: { appId, subject: found.row.subject, tool, descriptorHash: descriptorHash(descriptor) },
+        data: { appId, subject: found.row.subject, tool, descriptorHash: descriptorHash(descriptor), grantSetId },
       });
       missing.push(request);
     }
@@ -1059,7 +1105,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         await config.store.records(WEBHOOK).put({ id: appId, data: { secret: base64url(bytes) } });
       }
     }
-    return { enabled: true, missing };
+    return { enabled: true, missing, ...(missing.length === 0 ? {} : { grantSetId }) };
   };
 
   const disable: AutomationsEngine["disable"] = async (appId, ctx) => {
@@ -1070,9 +1116,29 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
 
   const list: AutomationsEngine["list"] = async (ctx) => {
     const records = await allRecords(config.store.records(APPS), { refs: { subject: ctx.principal.subject } });
+    // Pending-captures projection: an enabled row with outstanding standing-grant
+    // asks is NOT plain enabled — surfaces render "waiting on N permissions"
+    // from here (reload-safe; never from an enable() result held in memory).
+    const outstanding = new Map<string, { pendingGrants: number; grantSetId?: string }>();
+    for (const capture of await pendingCaptures(ctx.principal.subject)) {
+      const entry = outstanding.get(capture.data.appId) ?? { pendingGrants: 0 };
+      entry.pendingGrants += 1;
+      entry.grantSetId ??= capture.data.grantSetId;
+      outstanding.set(capture.data.appId, entry);
+    }
     return records.map(parseAppRow)
       .filter((row) => row.subject === ctx.principal.subject && row.doc.trigger !== undefined)
-      .map((row) => ({ app: row.doc, enabled: row.enabled }));
+      .map((row) => {
+        const pending = outstanding.get(row.doc.id);
+        return {
+          app: row.doc,
+          enabled: row.enabled,
+          ...(pending === undefined ? {} : {
+            pendingGrants: pending.pendingGrants,
+            ...(pending.grantSetId === undefined ? {} : { grantSetId: pending.grantSetId }),
+          }),
+        };
+      });
   };
 
   const sweepParked = async (): Promise<void> => {

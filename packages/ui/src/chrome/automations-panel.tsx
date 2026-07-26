@@ -1,13 +1,14 @@
-import type { ApprovalRequest, AppId, ApprovalDecision, Trigger } from "@vendoai/core";
-import { useEffect, useRef, useState } from "react";
+import type { ApprovalRequest, AppId, Trigger } from "@vendoai/core";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { APPROVALS_DECIDED_EVENT } from "../client-impl.js";
 import { useVendoTheme } from "../context.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
 import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 import { formatAuditTime } from "./activity-semantics.js";
-import { ApprovalCard } from "./approval-card.js";
 import { automationFlow } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { GrantSetCard } from "./grant-set-card.js";
 
 const ENABLE_CELEBRATION_MS = 3_100;
 const REDUCED_ENABLE_CELEBRATION_MS = 900;
@@ -100,7 +101,6 @@ export function AutomationsPanel() {
   const automations = useAutomations();
   const approvals = useApprovals();
   const theme = useVendoTheme();
-  const [missing, setMissing] = useState<Record<AppId, ApprovalRequest[]>>({});
   const [plans, setPlans] = useState<Record<AppId, RunPlan | undefined>>({});
   const [runs, setRuns] = useState<Record<AppId, RunRecord[] | undefined>>({});
   const [recent, setRecent] = useState<Record<AppId, RunRecord[] | undefined>>({});
@@ -120,6 +120,20 @@ export function AutomationsPanel() {
   useEffect(() => () => {
     for (const timer of enableTimers.current.values()) window.clearTimeout(timer);
     enableTimers.current.clear();
+  }, []);
+
+  // A decision on ANY surface (the in-thread set card decides the same guard
+  // asks) must clear this panel's pending rows too — same announcement the
+  // thread listens to. Refs keep the subscription mount-stable.
+  const refreshRef = useRef<() => void>(() => undefined);
+  refreshRef.current = () => {
+    void approvals.refresh();
+    void automations.refresh();
+  };
+  useEffect(() => {
+    const onDecided = () => refreshRef.current();
+    window.addEventListener(APPROVALS_DECIDED_EVENT, onDecided);
+    return () => window.removeEventListener(APPROVALS_DECIDED_EVENT, onDecided);
   }, []);
 
   // Eager last-N-runs fetch per card (pick B): the strip answers "is this
@@ -189,9 +203,30 @@ export function AutomationsPanel() {
     }
   };
 
-  const decide = async (appId: AppId, approval: ApprovalRequest, decision: ApprovalDecision) => {
-    await approvals.decide(approval.id, decision);
-    setMissing(current => ({ ...current, [appId]: (current[appId] ?? []).filter(item => item.id !== approval.id) }));
+  // Outstanding standing-grant asks per automation, derived from the PERSISTED
+  // pending approvals (grant-set reload survival): the asks a page reload
+  // re-fetches, never an enable() result held in component state.
+  const pendingByApp = useMemo(() => {
+    const byApp = new Map<AppId, ApprovalRequest[]>();
+    for (const ask of approvals.pending) {
+      if (ask.ctx.venue !== "automation" || ask.ctx.appId === undefined) continue;
+      byApp.set(ask.ctx.appId, [...(byApp.get(ask.ctx.appId) ?? []), ask]);
+    }
+    return byApp;
+  }, [approvals.pending]);
+
+  /** Decide the app's WHOLE grant set with one wire call (atomic per
+      criterion: all granted or none). Deny also disarms the automation so the
+      row never sits enabled-but-ungranted; the announcement carries the set
+      id so a thread parked on this set resumes from here. */
+  const decideSet = async (appId: AppId, asks: ApprovalRequest[], grantSetId: string | undefined, approve: boolean) => {
+    await approvals.decide(
+      asks.map(ask => ask.id),
+      { approve },
+      grantSetId === undefined ? undefined : { grantSetId },
+    );
+    if (!approve) await automations.disable(appId);
+    await automations.refresh();
   };
 
   // Evaluated once per render (not once per automation): matchMedia is cheap but
@@ -210,6 +245,10 @@ export function AutomationsPanel() {
           const appId = entry.app.id;
           const appRuns = runs[appId];
           const flow = automationFlow(entry.app.trigger);
+          // The set-card rows come from the persisted pending queue; the count
+          // prefers the engine's own projection (they agree modulo poll skew).
+          const pendingAsks = pendingByApp.get(appId) ?? [];
+          const waitingOn = entry.pendingGrants ?? pendingAsks.length;
           const celebrating = justEnabled[appId] === true;
           // Oldest → newest left-to-right, so the strip reads like a timeline.
           const strip = recent[appId]?.slice().reverse();
@@ -260,14 +299,18 @@ export function AutomationsPanel() {
                       <>
                         {entry.enabled ? (
                           <span
-                            className="fl-auto-live"
+                            className={`fl-auto-live${waitingOn > 0 ? " fl-auto-wait" : ""}`}
                             aria-hidden="true"
                             style={celebrating && !reduced
                               ? { animation: "fl-connect-pop .55s cubic-bezier(.22,1,.36,1) both" }
                               : undefined}
                           />
                         ) : null}
-                        {entry.enabled ? "Enabled" : "Disabled"}
+                        {entry.enabled
+                          ? waitingOn > 0
+                            ? `Enabled · waiting on ${waitingOn} permission${waitingOn === 1 ? "" : "s"}`
+                            : "Enabled"
+                          : "Disabled"}
                         {nextRun ? <span className="fl-auto-nextrun">· {nextRun}</span> : null}
                       </>
                     )}
@@ -292,11 +335,13 @@ export function AutomationsPanel() {
                     if (entry.enabled) {
                       await automations.disable(appId);
                       clearEnableCelebration(appId);
-                      setMissing(current => ({ ...current, [appId]: [] }));
                     } else {
                       const result = await automations.enable(appId);
-                      setMissing(current => ({ ...current, [appId]: result.missing }));
-                      if (result.enabled) celebrateEnable(appId);
+                      // The minted asks land in the persisted pending queue;
+                      // re-fetch it so the grant-set card renders from the
+                      // same source a reload would use.
+                      await approvals.refresh();
+                      if (result.enabled && result.missing.length === 0) celebrateEnable(appId);
                     }
                   })}
                 />
@@ -377,9 +422,22 @@ export function AutomationsPanel() {
                 >Run history</button>
               </div>
 
-              {(missing[appId] ?? []).map(approval => (
-                <ApprovalCard key={approval.id} approval={approval} onDecide={decision => decide(appId, approval, decision)} />
-              ))}
+              {pendingAsks.length > 0 ? (
+                <GrantSetCard
+                  name={entry.app.name}
+                  permissions={pendingAsks.map(ask => ({
+                    approvalId: ask.id,
+                    tool: ask.call.tool,
+                    ...(ask.descriptor.description.length > 0 ? { description: ask.descriptor.description } : {}),
+                    risk: ask.descriptor.risk,
+                  }))}
+                  state="parked"
+                  onDecide={async approve => {
+                    await decideSet(appId, pendingAsks, entry.grantSetId, approve);
+                    if (approve) celebrateEnable(appId);
+                  }}
+                />
+              ) : null}
 
               {plans[appId] ? (
                 <div

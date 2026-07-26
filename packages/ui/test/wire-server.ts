@@ -107,6 +107,38 @@ function approval(): ApprovalRequest {
   };
 }
 
+/** Grant-set fixtures (demo-live-readiness): the two standing asks arming the
+ *  Invoice watcher mints, all under one set id — mirrors the automations
+ *  engine's enable() capture. Idempotent: pending asks are reused (T2 dedupe). */
+const GRANT_SET_ID = "gset_1";
+
+function grantAsk(id: string, tool: string, description: string): ApprovalRequest {
+  return {
+    id,
+    call: { id: `call_${id}`, tool, args: {} },
+    descriptor: { name: tool, description, inputSchema: { type: "object" }, risk: "read" },
+    inputPreview: `Allow "Invoice watcher" to use ${tool} while you're away (standing, this app only)`,
+    ctx: {
+      principal: { kind: "user", subject: "user_1" },
+      venue: "automation",
+      presence: "present",
+      appId: "app_auto",
+    },
+    createdAt: NOW,
+  };
+}
+
+function mintGrantSet(approvals: ApprovalRequest[]): ApprovalRequest[] {
+  const pending = approvals.filter(item => item.ctx.appId === "app_auto");
+  if (pending.length > 0) return pending;
+  const minted = [
+    grantAsk("apr_set_1", "host_email_send", "Send email digests as you."),
+    grantAsk("apr_set_2", "host_invoices_list", "Read invoices across your account."),
+  ];
+  approvals.push(...minted);
+  return minted;
+}
+
 function grant(): PermissionGrant {
   return {
     id: "grt_1",
@@ -329,6 +361,47 @@ export async function createWireServer(options: WireServerOptions = {}) {
           const failingResponse = createUIMessageStreamResponse({ stream: failingChunks });
           failingResponse.headers.set("x-vendo-thread-id", threadId);
           await sendFetchResponse(failingResponse, response);
+          return;
+        }
+        if (sentText.includes("[grant-set]")) {
+          // demo-live-readiness — a turn that parks on a grant SET: the
+          // data-vendo-grant-set part beside the parked native call (the
+          // shape the demo scripted engine streams). The guard asks land in
+          // the pending queue so any surface can decide them.
+          const asks = mintGrantSet(state.approvals);
+          const grantSetChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_grant_set",
+            execute: async ({ writer }) => {
+              writer.write({ type: "tool-input-start", toolCallId: "call_gset", toolName: "host_email_send", dynamic: true });
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_gset",
+                toolName: "host_email_send",
+                input: { permissions: asks.map(ask => ask.inputPreview) },
+                dynamic: true,
+              });
+              writer.write({
+                type: "data-vendo-grant-set",
+                data: {
+                  toolCallId: "call_gset",
+                  grantSetId: GRANT_SET_ID,
+                  appId: "app_auto",
+                  name: "Invoice watcher",
+                  permissions: asks.map(ask => ({
+                    approvalId: ask.id,
+                    tool: ask.call.tool,
+                    description: ask.descriptor.description,
+                    risk: ask.descriptor.risk,
+                  })),
+                },
+              } as UIMessageChunk);
+              writer.write({ type: "tool-approval-request", toolCallId: "call_gset", approvalId: asks[0]!.id });
+            },
+          });
+          const grantSetResponse = createUIMessageStreamResponse({ stream: grantSetChunks });
+          grantSetResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(grantSetResponse, response);
           return;
         }
         if (sentText.includes("[stream-kill]")) {
@@ -721,7 +794,15 @@ export async function createWireServer(options: WireServerOptions = {}) {
         }
       }
 
-      if (method === "GET" && url.pathname === "/automations") return json(response, state.automations);
+      if (method === "GET" && url.pathname === "/automations") {
+        // The engine's pending-captures projection: an entry with undecided
+        // standing asks carries pendingGrants + the set id (reload survival).
+        return json(response, state.automations.map(entry => {
+          const pending = state.approvals.filter(item =>
+            item.ctx.venue === "automation" && item.ctx.appId === entry.app.id).length;
+          return pending === 0 ? entry : { ...entry, pendingGrants: pending, grantSetId: GRANT_SET_ID };
+        }));
+      }
       const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)$/);
       if (method === "POST" && automationMatch) {
         const id = decodeURIComponent(automationMatch[1] ?? "");
@@ -730,7 +811,8 @@ export async function createWireServer(options: WireServerOptions = {}) {
         const action = automationMatch[2];
         if (action === "enable") {
           entry.enabled = true;
-          return json(response, { enabled: true, missing: [approval()] });
+          const missing = mintGrantSet(state.approvals);
+          return json(response, { enabled: true, missing, grantSetId: GRANT_SET_ID });
         }
         if (action === "disable") {
           entry.enabled = false;

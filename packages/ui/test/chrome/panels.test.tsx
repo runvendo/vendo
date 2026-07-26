@@ -42,15 +42,27 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
-  it("toggles, captures missing approvals, previews, expands runs, and stops a running run", async () => {
+  it("toggles, captures the grant SET, previews, expands runs, and stops a running run", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
     const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(toggle);
-    expect(await screen.findByLabelText("Approval for Email send")).toBeTruthy();
+    // ONE set card for both minted asks (criterion 18): every permission
+    // enumerated, exactly one Approve and one Deny.
+    const card = await screen.findByLabelText("Standing access — Invoice watcher");
+    expect(card.textContent).toContain("Invoice watcher needs 2 permissions");
+    expect(card.textContent).toContain("Send email digests as you.");
+    expect(card.textContent).toContain("Read invoices across your account.");
+    expect(card.querySelectorAll("button")).toHaveLength(2);
     await waitFor(() => expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true"));
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    await waitFor(() => expect(screen.queryByLabelText("Approval for Email send")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Allow both & enable" }));
+    await waitFor(() => expect(screen.queryByLabelText("Standing access — Invoice watcher")).toBeNull());
+    // ONE decision decided the WHOLE set (criterion 19 atomicity).
+    expect(wire.requests).toContainEqual(expect.objectContaining({
+      method: "POST",
+      path: "/approvals/decide",
+      body: { ids: ["apr_set_1", "apr_set_2"], decision: { approve: true } },
+    }));
 
     fireEvent.click(screen.getByRole("button", { name: "Dry run" }));
     expect((await screen.findByLabelText("Dry run for Invoice watcher")).textContent).toContain("host_invoices_list — ready");
@@ -64,6 +76,57 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Enable Invoice watcher" }));
     await waitFor(() => expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false"));
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "POST", path: "/automations/app_auto/disable" }));
+  });
+
+  it("renders outstanding grant sets from the store projection after a reload (criterion 21)", async () => {
+    // Simulate the post-reload world: the asks were minted in an EARLIER
+    // session — they exist server-side only; no enable() result in memory.
+    // (No running run: the "running now" line otherwise owns the sub line.)
+    wire.state.runs.length = 0;
+    wire.state.automations[0]!.enabled = true;
+    wire.state.approvals.push(
+      {
+        ...wire.state.approvals[0]!,
+        id: "apr_set_1",
+        call: { id: "call_apr_set_1", tool: "host_email_send", args: {} },
+        descriptor: { name: "host_email_send", description: "Send email digests as you.", inputSchema: { type: "object" }, risk: "read" },
+        ctx: { principal: { kind: "user", subject: "user_1" }, venue: "automation", presence: "present", appId: "app_auto" },
+      },
+      {
+        ...wire.state.approvals[0]!,
+        id: "apr_set_2",
+        call: { id: "call_apr_set_2", tool: "host_invoices_list", args: {} },
+        descriptor: { name: "host_invoices_list", description: "Read invoices across your account.", inputSchema: { type: "object" }, risk: "read" },
+        ctx: { principal: { kind: "user", subject: "user_1" }, venue: "automation", presence: "present", appId: "app_auto" },
+      },
+    );
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+
+    const card = await screen.findByLabelText("Standing access — Invoice watcher");
+    expect(card.textContent).toContain("Invoice watcher needs 2 permissions");
+    expect(screen.getByText("Enabled · waiting on 2 permissions")).toBeTruthy();
+  });
+
+  it("Deny on the set card grants nothing and disarms the automation (criterion 19)", async () => {
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher" }));
+    await screen.findByLabelText("Standing access — Invoice watcher");
+
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Standing access — Invoice watcher")).toBeNull());
+    expect(wire.requests).toContainEqual(expect.objectContaining({
+      method: "POST",
+      path: "/approvals/decide",
+      body: { ids: ["apr_set_1", "apr_set_2"], decision: { approve: false } },
+    }));
+    expect(wire.requests).toContainEqual(expect.objectContaining({
+      method: "POST",
+      path: "/automations/app_auto/disable",
+    }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("false"));
+    // Nothing granted: no grant rows were minted by the deny.
+    expect(wire.state.approvals.filter(item => item.ctx.appId === "app_auto")).toHaveLength(0);
   });
 
   it("renders a scheduler-refused run as failed with its blocked reason in run history (pricing v3 §5)", async () => {
