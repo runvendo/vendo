@@ -1511,6 +1511,7 @@ const citationsThread: Thread = {
                 title: "Refunds & cancellations",
                 source: "docs.acmebilling.com",
                 kind: "docs",
+                visibility: "public",
                 snippet: "If you cancel mid-cycle we do not charge again, and any metered overage "
                   + "already accrued is billed on the final invoice. Seats removed mid-cycle are credited…",
               },
@@ -1519,6 +1520,7 @@ const citationsThread: Thread = {
                 title: "Billing FAQ",
                 source: "docs.acmebilling.com",
                 kind: "docs",
+                visibility: "public",
                 snippet: "Annual plans refund in full within 30 days of purchase; after that, unused "
                   + "months refund pro-rata via support.",
               },

@@ -32,6 +32,7 @@ const CITATIONS = [
     title: "Refunds & cancellations",
     source: "docs/refunds.md",
     kind: "docs",
+    visibility: "public",
     snippet: "If you cancel mid-cycle we do not charge again.",
   },
   {
@@ -39,6 +40,7 @@ const CITATIONS = [
     title: "Billing FAQ",
     source: "docs/faq.md",
     kind: "docs",
+    visibility: "public",
     snippet: "Seats removed mid-cycle are credited to the final invoice.",
   },
 ];
@@ -90,6 +92,8 @@ describe("knowledge citations in the thread (Knowledge K1)", () => {
     expect(pop.querySelector(".fl-cite-psnippet")?.textContent).toContain("If you cancel mid-cycle we do not charge again.");
     expect(pop.querySelector(".fl-cite-porigin")?.textContent).toContain("docs/refunds.md");
     expect(pop.querySelector(".fl-cite-porigin")?.textContent).toContain("Product docs");
+    // The mockup's three-segment origin line: source · kind · visibility.
+    expect(pop.querySelector(".fl-cite-porigin")?.textContent).toContain("public");
     // Click again to collapse.
     fireEvent.click(chip);
     expect(document.querySelector(".fl-cite--open")).toBeNull();

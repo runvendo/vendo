@@ -33,6 +33,9 @@ export interface KnowledgeCitation {
   title?: string;
   source?: string;
   kind: KnowledgeHit["kind"];
+  /** Checker round 1 (pin amended): rides from KnowledgeHit.visibility so
+      the UI's origin line states it instead of guessing. */
+  visibility: KnowledgeHit["visibility"];
   snippet: string;
 }
 
@@ -132,6 +135,7 @@ export function toCitation(hit: KnowledgeHit): KnowledgeCitation {
     ...(hit.ref.title === undefined ? {} : { title: hit.ref.title }),
     ...(hit.ref.source === undefined ? {} : { source: hit.ref.source }),
     kind: hit.kind,
+    visibility: hit.visibility,
     snippet: trimSnippet(hit.snippet),
   };
 }
@@ -177,6 +181,15 @@ export function createKnowledgeTools(
   options: KnowledgeToolsOptions = {},
 ): ToolRegistry {
   const threshold = options.weakScoreThreshold ?? 0;
+
+  // The status()-verified refusal (checker round 1): an empty/weak search
+  // from a SICK engine must not pass as an honest refusal or not-found — the
+  // emptiness is unverifiable. Consulted only on the zero/weak paths (a
+  // strong answer never pays the status call); a throw propagates to the
+  // caller's catch, which maps it to the loud "unavailable".
+  const verifyEmptiness = async (): Promise<void> => {
+    await adapter.status();
+  };
 
   const readMore = async (ref: { docId: string; chunkId?: string }, ctx: RunContext): Promise<ToolOutcome> => {
     if (adapter.posture.fetch !== true || adapter.fetch === undefined) {
@@ -228,7 +241,10 @@ export function createKnowledgeTools(
             { text: input.query, intent: "schema", kinds: ["glossary", "api"] },
             knowledgeCtx,
           );
-          if (result.hits.length === 0) return envelope({ outcome: "not-found" });
+          if (result.hits.length === 0) {
+            await verifyEmptiness();
+            return envelope({ outcome: "not-found" });
+          }
           return envelope({ outcome: "answered", hits: result.hits.slice(0, MAX_HITS).map(toCitation) });
         }
 
@@ -244,6 +260,7 @@ export function createKnowledgeTools(
         }
         // Structured refusal WITH the weak evidence: the model says it does
         // not know; the UI still gets whatever weak hits existed.
+        await verifyEmptiness();
         return envelope({
           outcome: "insufficient-evidence",
           hits: deep.hits.slice(0, MAX_HITS).map(toCitation),

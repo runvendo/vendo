@@ -77,6 +77,7 @@ describe("vendo_knowledge_search execute (walking skeleton)", () => {
       title: "Wire transfer limits",
       source: "docs/transfers.md",
       kind: "docs",
+      visibility: "public",
     });
     expect(typeof output.hits[0]!["snippet"]).toBe("string");
   });
@@ -198,7 +199,7 @@ describe("tool policy: schema lookups (T2)", () => {
     const envelope = await envelopeOf(await search(createKnowledgeTools(adapter), { query: "APY", lookup: true }));
     expect(envelope.outcome).toBe("answered");
     expect(envelope.hits).toHaveLength(1);
-    expect(envelope.hits![0]).toMatchObject({ docId: "glossary-apy", kind: "glossary" });
+    expect(envelope.hits![0]).toMatchObject({ docId: "glossary-apy", kind: "glossary", visibility: "public" });
     expect(adapter.searches).toHaveLength(1);
     expect(adapter.searches[0]!.query.intent).toBe("schema");
     expect(adapter.searches[0]!.query.kinds).toEqual(["glossary", "api"]);
@@ -262,6 +263,63 @@ describe("tool policy: read-more (T2)", () => {
     expect(outcome.status).toBe("error");
     if (outcome.status !== "error") return;
     expect(outcome.error.message).toMatch(/read-more is unavailable/i);
+  });
+});
+
+describe("tool policy: status()-verified refusals (T2, checker round 1)", () => {
+  it("maps a healthy-but-empty search with a THROWING status to unavailable — never a silent refusal", async () => {
+    // The checker's probe: search resolves fine (zero hits) but the engine's
+    // own status check fails. Reporting insufficient-evidence would be the
+    // silent-empty trap — the emptiness is unverifiable, so the outage rule
+    // wins.
+    const base = memoryKnowledgeAdapter({ docs: [] });
+    const sick: KnowledgeAdapter = {
+      ...base,
+      async status() {
+        throw new Error("engine status check failed");
+      },
+    };
+    const envelope = await envelopeOf(await search(createKnowledgeTools(sick), { query: "anything" }));
+    expect(envelope.outcome).toBe("unavailable");
+  });
+
+  it("still refuses honestly when the empty result is status-verified", async () => {
+    // Working status() + empty corpus = a TRUE no-coverage refusal.
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(memoryKnowledgeAdapter({ docs: [] })),
+      { query: "quantum ledgers" },
+    ));
+    expect(envelope.outcome).toBe("insufficient-evidence");
+  });
+
+  it("maps an empty schema lookup with a THROWING status to unavailable, not not-found", async () => {
+    const base = memoryKnowledgeAdapter({ docs });
+    const sick: KnowledgeAdapter = {
+      ...base,
+      async status() {
+        throw new Error("engine status check failed");
+      },
+    };
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(sick),
+      { query: "wire transfers", lookup: true },
+    ));
+    expect(envelope.outcome).toBe("unavailable");
+  });
+
+  it("never consults status() when the evidence is strong", async () => {
+    const base = memoryKnowledgeAdapter({ docs });
+    let statusCalls = 0;
+    const adapter: KnowledgeAdapter = {
+      ...base,
+      async status() {
+        statusCalls += 1;
+        return base.status();
+      },
+    };
+    const envelope = await envelopeOf(await search(createKnowledgeTools(adapter), { query: "wire transfers" }));
+    expect(envelope.outcome).toBe("answered");
+    expect(statusCalls).toBe(0);
   });
 });
 

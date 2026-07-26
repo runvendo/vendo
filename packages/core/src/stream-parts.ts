@@ -9,7 +9,7 @@ import {
   type GrantId,
   type IsoDateTime,
 } from "./ids.js";
-import { knowledgeKindSchema, type KnowledgeKind } from "./knowledge.js";
+import { knowledgeKindSchema, knowledgeVisibilitySchema, type KnowledgeKind, type KnowledgeVisibility } from "./knowledge.js";
 import { riskLabelSchema, type RiskLabel } from "./tools.js";
 import type { ToolCall } from "./tools.js";
 import { uiPayloadSchema, type UIPayload } from "./tree.js";
@@ -203,13 +203,16 @@ export const VENDO_KNOWLEDGE_RESULT_KIND = "vendo/knowledge-result@1" as const;
 
 /** Knowledge K1 — one citation as the UI receives it. `title` is required on
  *  this surface (chips render titles); the bridge falls back to the docId
- *  when an engine's hit carries none. */
+ *  when an engine's hit carries none. `visibility` rides from
+ *  KnowledgeHit.visibility (checker round 1, pin amended by the conductor)
+ *  so the popover origin line can state it instead of guessing. */
 export interface VendoKnowledgeCitation {
   docId: string;
   chunkId?: string;
   title: string;
   source?: string;
   kind: KnowledgeKind;
+  visibility: KnowledgeVisibility;
   snippet: string;
 }
 
@@ -220,6 +223,7 @@ export const vendoKnowledgeCitationSchema = z.object({
   title: z.string().min(1),
   source: z.string().optional(),
   kind: knowledgeKindSchema,
+  visibility: knowledgeVisibilitySchema,
   snippet: z.string(),
 }).passthrough() satisfies z.ZodType<VendoKnowledgeCitation>;
 

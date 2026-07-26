@@ -233,6 +233,7 @@ describe("vendoCitationsPartSchema", () => {
         title: "Wire transfer limits",
         source: "docs/transfers.md",
         kind: "docs",
+        visibility: "public",
         snippet: "Maple caps outbound wire transfers at $25,000 per business day.",
       }],
     };
@@ -254,7 +255,7 @@ describe("vendoCitationsPartSchema", () => {
     }
   });
 
-  it("rejects a not-found outcome, a missing title, and a wrong kind", () => {
+  it("rejects a not-found outcome, a missing title, a wrong kind, and a missing visibility", () => {
     expect(vendoCitationsPartSchema.safeParse({
       type: "data-vendo-citations",
       toolCallId: "call_k1",
@@ -265,13 +266,19 @@ describe("vendoCitationsPartSchema", () => {
       type: "data-vendo-citations",
       toolCallId: "call_k1",
       outcome: "answered",
-      citations: [{ docId: "d1", kind: "docs", snippet: "s" }],
+      citations: [{ docId: "d1", kind: "docs", visibility: "public", snippet: "s" }],
     }).success).toBe(false);
     expect(vendoCitationsPartSchema.safeParse({
       type: "data-vendo-citations",
       toolCallId: "call_k1",
       outcome: "answered",
-      citations: [{ docId: "d1", title: "T", kind: "notes", snippet: "s" }],
+      citations: [{ docId: "d1", title: "T", kind: "notes", visibility: "public", snippet: "s" }],
+    }).success).toBe(false);
+    expect(vendoCitationsPartSchema.safeParse({
+      type: "data-vendo-citations",
+      toolCallId: "call_k1",
+      outcome: "answered",
+      citations: [{ docId: "d1", title: "T", kind: "docs", snippet: "s" }],
     }).success).toBe(false);
   });
 });

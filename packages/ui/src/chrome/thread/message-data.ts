@@ -86,6 +86,7 @@ export function sourcesFor(message: UIMessage): TurnKnowledgeSources {
     for (const citation of data.citations) {
       if (typeof citation?.docId !== "string" || typeof citation.title !== "string") continue;
       if (typeof citation.snippet !== "string" || typeof citation.kind !== "string") continue;
+      if (citation.visibility !== "public" && citation.visibility !== "internal") continue;
       const key = `${citation.docId}::${citation.chunkId ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);

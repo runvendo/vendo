@@ -42,6 +42,8 @@ function CitationChip({ citation }: { citation: VendoKnowledgeCitation }) {
             </>
           ) : null}
           {kindLabel(citation.kind)}
+          <span className="fl-cite-sep" aria-hidden="true">·</span>
+          {citation.visibility}
         </span>
       </span>
     </span>

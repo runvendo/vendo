@@ -64,6 +64,7 @@ describe("agent citations bridge (Knowledge K1)", () => {
       title: "Wire transfer limits",
       source: "docs/transfers.md",
       kind: "docs",
+      visibility: "public",
       snippet: "Maple caps outbound wire transfers at $25,000 per business day. Limits reset at midnight ET.",
     };
     const found = await citationsPartsFor({
@@ -110,13 +111,25 @@ describe("agent citations bridge (Knowledge K1)", () => {
     const found = await citationsPartsFor({
       kind: VENDO_KNOWLEDGE_RESULT_KIND,
       outcome: "answered",
-      hits: [{ docId: "doc-untitled", kind: "docs", snippet: "snippet" }],
+      hits: [{ docId: "doc-untitled", kind: "docs", visibility: "public", snippet: "snippet" }],
     });
     expect(found).toHaveLength(1);
     expect((found[0]!.data.citations as Array<Record<string, unknown>>)[0]).toMatchObject({
       docId: "doc-untitled",
       title: "doc-untitled",
+      visibility: "public",
     });
+  });
+
+  it("writes NO part for a hit missing the pinned visibility field", async () => {
+    // The pin (checker round 1 amendment) requires visibility on every
+    // citation; a malformed envelope must not half-render.
+    const found = await citationsPartsFor({
+      kind: VENDO_KNOWLEDGE_RESULT_KIND,
+      outcome: "answered",
+      hits: [{ docId: "doc-x", title: "X", kind: "docs", snippet: "s" }],
+    });
+    expect(found).toHaveLength(0);
   });
 
   it("writes NO citations part for model-facing-only results", async () => {
