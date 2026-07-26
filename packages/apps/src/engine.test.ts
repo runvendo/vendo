@@ -186,6 +186,9 @@ describe("generation engine through createApps", () => {
 
     expect(prompts[0]).toContain(`CURRENT DATE: ${today}`);
     expect(prompts.at(-1)).toContain(`CURRENT DATE: ${today}`);
+    // Design guidance (2026-07 demo feedback): the EDIT dialect also forbids
+    // emojis in any text an op introduces.
+    expect(prompts.at(-1)).toContain("No emojis, ever");
   });
 
   describe("data-sighted verification pass (pipeline.endPass at the runtime seam)", () => {
@@ -277,6 +280,9 @@ describe("generation engine through createApps", () => {
       expect(prompts[0]).toContain("<building_great_apps>");
       expect(prompts[0]).toContain("<examples>");
       expect(prompts[0]).toContain("Claims tell the truth");
+      // Design guidance (2026-07 demo feedback): generated UI text never
+      // carries emojis.
+      expect(prompts[0]).toContain("No emojis, ever");
       expect(prompts[0]).toContain("a semantically wrong tool is worse than a disclaimer");
       expect(prompts[0]).toContain("rows lacking the named series draws nothing");
       expect(prompts[0]).toContain(`CURRENT DATE: ${new Date().toISOString().slice(0, 10)}`);
