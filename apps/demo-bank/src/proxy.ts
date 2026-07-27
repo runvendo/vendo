@@ -1,6 +1,7 @@
 import { getToken } from "next-auth/jwt";
 import { NextResponse, type NextRequest } from "next/server";
-import { authSecret, isSecureDeployment } from "@/server/users";
+import { mintAutologinSession } from "@/server/autologin";
+import { authSecret, demoAutologin, isSecureDeployment } from "@/server/users";
 
 /**
  * Maple requires a real sign-in (Next 16 proxy, né middleware): pages bounce
@@ -34,6 +35,27 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     secureCookie: isSecureDeployment(),
   });
   if (typeof token?.sub === "string") return NextResponse.next();
+  if (demoAutologin()) {
+    // Zero-friction demo mode: mint the same Auth.js session cookie a
+    // credential login would, inject it into THIS request so the first paint
+    // already renders signed-in (no redirect), and Set-Cookie it for the
+    // requests that follow. /logout still clears the cookie — under this flag
+    // it means "reset my session": the very next request mints a fresh one.
+    const session = await mintAutologinSession();
+    const headers = new Headers(request.headers);
+    const cookie = headers.get("cookie");
+    const pair = `${session.name}=${session.value}`;
+    headers.set("cookie", cookie ? `${cookie}; ${pair}` : pair);
+    const response = NextResponse.next({ request: { headers } });
+    response.cookies.set(session.name, session.value, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      secure: isSecureDeployment(),
+      maxAge: session.maxAgeSeconds,
+    });
+    return response;
+  }
   if (pathname.startsWith("/api/")) {
     return NextResponse.json(
       { error: { message: "Sign in to Maple to use its API", code: "unauthenticated" } },

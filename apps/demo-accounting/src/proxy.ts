@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
-import { resolveCadenceSession } from "@/server/session"
+import { mintAutologinToken } from "@/server/autologin"
+import { resolveCadenceSession, SESSION_COOKIE } from "@/server/session"
+import { demoAutologin, isSecureDeployment } from "@/server/users"
 
 /**
  * Cadence requires a real Supabase sign-in (Next 16 proxy, né middleware):
@@ -27,6 +29,29 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
   const session = await resolveCadenceSession(request)
   if (session) return NextResponse.next()
+  if (demoAutologin()) {
+    // Zero-friction demo mode: locally sign the same HS256 session token a
+    // GoTrue login would issue (no Supabase running), inject it into THIS
+    // request so the first paint already renders signed-in (no redirect), and
+    // Set-Cookie it for the requests that follow. /logout still clears the
+    // cookie — under this flag it means "reset my session": the very next
+    // request mints a fresh one.
+    const minted = await mintAutologinToken()
+    const headers = new Headers(request.headers)
+    const cookie = headers.get("cookie")
+    const pair = `${SESSION_COOKIE}=${minted.token}`
+    headers.set("cookie", cookie ? `${cookie}; ${pair}` : pair)
+    const response = NextResponse.next({ request: { headers } })
+    // Same attributes sessionCookie() (server/session.ts) sets on login.
+    response.cookies.set(SESSION_COOKIE, minted.token, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      secure: isSecureDeployment(),
+      maxAge: minted.maxAgeSeconds,
+    })
+    return response
+  }
   if (pathname.startsWith("/api/")) {
     return NextResponse.json(
       { error: { message: "Sign in to Cadence to use its API", code: "unauthenticated" } },
