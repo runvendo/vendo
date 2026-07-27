@@ -9,6 +9,7 @@ export { composioToolRisk } from "./connectors/composio-risk.js";
 export { normalizeToolName } from "./connectors/names.js";
 export { mcpConnector, type McpAuthContext, type McpHeadersResolver } from "./connectors/mcp.js";
 export { createActions, type ActionsRegistry, type ActionsRunContext, type ServerActionHandler } from "./runtime/registry.js";
+export { createConnectGate, type ConnectGate, type ConnectGateOptions } from "./runtime/connect-gate.js";
 export { type ToolSearchMatch, type ToolSearchOptions } from "./runtime/search.js";
 export { validateCapabilities, type CapabilityIssue, type PrimitiveStepTarget } from "./runtime/compound.js";
 // Build-/dev-time extraction surface moved to `@vendoai/actions/sync` so the

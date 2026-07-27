@@ -183,4 +183,22 @@ describe("cloudTools lazy mode (no apps) — connection-scoped loading", () => {
     expect((await connector.descriptors()).map((d) => d.name)).toEqual(["gmail_GMAIL_SEND_EMAIL"]);
     await expect(connector.expandToolkits!(["slack"])).resolves.toBe(false);
   });
+
+  it("apps scoping also scopes the discovery index (criterion 9: index size == scoped set)", async () => {
+    const stub = consoleStub((url) =>
+      url.includes("/api/v1/connections/catalog")
+        ? {
+            body: { available: [
+              ...CATALOG.available,
+              { toolkit: "notion", connector: "composio", description: "Notion pages" },
+              { toolkit: "jira", connector: "composio", description: "Jira issues" },
+            ] },
+          }
+        : { body: { tools: [GMAIL_TOOL] } });
+    const connector = cloudTools({ apiKey: "vnd_key", baseUrl: "https://cloud.test", apps: ["gmail", "slack"], fetch: stub.fetchImpl });
+
+    const index = await connector.discoveryIndex!();
+    expect(index).toHaveLength(2);
+    expect(index.map((entry) => entry.toolkit).sort()).toEqual(["gmail", "slack"]);
+  });
 });

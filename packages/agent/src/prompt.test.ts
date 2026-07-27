@@ -106,3 +106,23 @@ describe("presentation discipline", () => {
     }
   });
 });
+
+/** Discovery-discipline 2026-07-25 (criterion 12): tool discovery gets a hard
+ * budget so a connector catalog can never become an agent side-quest. Rides
+ * only when tool search is configured — without the meta-tool there is
+ * nothing to budget. */
+describe("discovery budget", () => {
+  it("rides the prompt when tool search is enabled", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, true);
+    expect(prompt).toContain("Discovery budget");
+    expect(prompt).toContain("at most 2");
+    expect(prompt).toMatch(/unconnected/i);
+  });
+
+  it("stays out when tool search is off", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, false);
+    expect(prompt).not.toContain("Discovery budget");
+    const defaulted = await assembleSystemPrompt(testGuard({}, []), ctx());
+    expect(defaulted).not.toContain("Discovery budget");
+  });
+});

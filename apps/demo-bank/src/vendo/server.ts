@@ -80,9 +80,11 @@ export const vendo = createVendo({
   // BYO Composio when Maple brings its own key; otherwise the slot stays
   // UNSET so a VENDO_API_KEY deployment composes the Cloud tools connector
   // (an explicit [] would read as "no connectors, ever" — the seam honors it).
+  // connectorApps scopes THAT auto-composed cloud pair to the same toolkits
+  // the BYO line uses — the demo never advertises the console's full catalog.
   ...(composioApiKey
     ? { connectors: [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "slack"] })] }
-    : {}),
+    : { connectorApps: ["gmail", "slack"] }),
   // Store posture — an explicit demo decision (README "Store posture"). The
   // DEPLOYED demo leaves this slot unset so the VENDO_API_KEY env ladder
   // composes the Cloud HOSTED store: Railway's container filesystem is

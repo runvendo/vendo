@@ -1,5 +1,6 @@
 import {
   createActions,
+  createConnectGate,
   mergedSemanticsAndDomains,
   overridesFileV3Schema,
   type ActionsRegistry,
@@ -278,6 +279,15 @@ export interface CreateVendoConfig {
       the tool does not exist (precedence: selectKnowledge). */
   knowledge?: KnowledgeAdapter;
   connectors?: Connector[];
+  /** Toolkit scoping for the AUTO-COMPOSED Cloud connector (discovery
+      discipline, 2026-07-25 spec): with VENDO_API_KEY and no explicit
+      `connectors`, the composed cloudTools/cloudConnections pair is scoped to
+      exactly these toolkits — the discovery index, the executable tools, and
+      the connect catalog all bound to the set (instead of lazily advertising
+      the console's whole catalog). Ignored when `connectors` or `connections`
+      is passed explicitly — scope those adapters directly (e.g.
+      `composioConnector({ apps })`). */
+  connectorApps?: string[];
   /** 04-actions §3 — an explicit connections adapter; always wins over the
       defaults (precedence: selectConnections). */
   connections?: ConnectionsService;
@@ -389,6 +399,12 @@ export interface CreateVendoConfig {
         the cap is not applied; the rest stay discoverable via
         `vendo_tools_search`. Vendo's own `vendo_*` tools are always active. */
     loadout?: string[];
+    /** Discovery discipline (spec 2026-07-25) — how many lazy connector toolkits ONE
+        `vendo_tools_search` query may expand from the discovery index.
+        Default 3. Lower it to keep a broad intent from fanning out schema
+        loads; 0 disables index-driven expansion entirely (already-loaded
+        tools stay searchable). */
+    maxSearchExpansions?: number;
     /** AGENT-7: agent-loop step cap per turn (default 20). Exhaustion streams a
         renderable `data-vendo-step-limit` part instead of ending silently. */
     maxSteps?: number;
@@ -569,12 +585,16 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
     VENDO_API_KEY default the Cloud tools connector (Composio tools brokered
     through the console; the connections seam below independently resolves to
     the cloud broker for the SAME posture, so connect and use stay paired). */
-function selectConnectors(configured: Connector[] | undefined): Connector[] {
+function selectConnectors(configured: Connector[] | undefined, connectorApps?: string[]): Connector[] {
   if (configured !== undefined) return configured;
   const apiKey = environment("VENDO_API_KEY");
   if (apiKey !== undefined) {
     const baseUrl = environment("VENDO_CLOUD_URL");
-    return [cloudTools({ apiKey, ...(baseUrl === undefined ? {} : { baseUrl }) })];
+    return [cloudTools({
+      apiKey,
+      ...(baseUrl === undefined ? {} : { baseUrl }),
+      ...(connectorApps === undefined ? {} : { apps: connectorApps }),
+    })];
   }
   return [];
 }
@@ -600,14 +620,44 @@ function selectKnowledge(configured: KnowledgeAdapter | undefined): KnowledgeAda
          host left unfilled (VENDO_CLOUD_URL overrides the console base URL);
       4. the unconfigured fallback, which fails closed with setup guidance.
     The adapters themselves never read the environment. */
+/** Wraps a connections adapter so a successful `disconnect` drops the
+    subject's cached connected-toolkit list. Invalidation is a COMPOSITION
+    concern — the cache lives here, not in any adapter — so every posture gets
+    it without an adapter knowing the cache exists. `initiate` needs no hook:
+    a cached MISS already refetches before the gate blocks anything. */
+function withDisconnectInvalidation(
+  service: ConnectionsService,
+  invalidate: (subject: string) => void,
+): ConnectionsService {
+  return {
+    ...service,
+    posture: service.posture,
+    list: (principal) => service.list(principal),
+    initiate: (principal, options) => service.initiate(principal, options),
+    status: (principal, connector, connectionId) => service.status(principal, connector, connectionId),
+    async disconnect(principal, connector, connectionId) {
+      await service.disconnect(principal, connector, connectionId);
+      invalidate(principal.subject);
+    },
+    catalog: () => service.catalog(),
+  };
+}
+
 function selectConnections(
   configured: ConnectionsService | undefined,
   connectors: Connector[],
+  connectorApps?: string[],
 ): ConnectionsService {
   if (configured !== undefined) return configured;
   if (connectors.some(hasConnections)) return byoConnections(connectors);
   const cloud = cloudKeyOptions();
-  return cloud !== undefined ? cloudConnections(cloud) : unconfiguredConnections();
+  if (cloud === undefined) return unconfiguredConnections();
+  // The same host scoping the composed cloudTools carries — the connect
+  // dock's catalog must never advertise a toolkit the agent cannot invoke.
+  return cloudConnections({
+    ...cloud,
+    ...(connectorApps === undefined ? {} : { apps: connectorApps }),
+  });
 }
 
 /* ADAPTER RULE, inference seam: the agent and apps blocks consume one ai-SDK
@@ -1300,7 +1350,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   }
   // Connectors seam (adapter rule): explicit array wins, VENDO_API_KEY
   // defaults the Cloud tools connector for a wholly unset slot.
-  const resolvedConnectors = selectConnectors(config.connectors);
+  const resolvedConnectors = selectConnectors(config.connectors, config.connectorApps);
   // #557 — cloud overrides.json feeds the actions registry's tool ENABLEMENT
   // (disabled/audience), not only app-generation semantics/domains. The registry
   // resolves `config.overrides` ONCE through its memoized `loadHost`, and every
@@ -1430,7 +1480,21 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return probes.execute({ id: "call_vendo_doctor_act_as", tool: doctorActAsTool.name, args: {} }, ctx);
     },
   };
-  const boundTools = guard.bind(actions);
+  // Discovery-discipline 2026-07-25: the connect check wraps OUTSIDE
+  // guard.bind, so a call to an unconnected brokered tool returns the
+  // connect-required flow BEFORE any guard decision — no approval minted on
+  // any door (chat, MCP, automations, compound steps, BYO resume).
+  // `connections` and the toolkit cache are declared below this composition;
+  // execution only happens after createVendo returns, so the closure
+  // references are safe (same pattern as the connections loadout seed).
+  const connectGate = createConnectGate({
+    toolkitOf: (tool) => actions.connectorToolkit(tool),
+    isConnected: (toolkit, ctx) => subjectHasToolkit(toolkit, ctx),
+    // A gated call never reaches guard.bind's audit — the gate reports the
+    // same tool-call event (with connectorAccount enrichment) itself.
+    report: (event) => guard.report(event),
+  });
+  const boundTools = connectGate.bind(guard.bind(actions));
   // 04 §6: compound steps route through the guard binding — grants, approvals,
   // breakers, and audit see every real call; there is no second
   // execution path. createActions reads invokeTool at execution time (same
@@ -1752,8 +1816,16 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       // A curated agent menu has to hold at BOTH doors into the toolset: the
       // per-turn seed below and search, which materializes hits into the live
       // toolset mid-turn. Filtering only the seed would let the model search
-      // its way back to an off-menu tool.
-      search: async (query, options) => onAgentMenu(await actions.search(query, options), (match) => match.name),
+      // its way back to an off-menu tool. The expansion cap (discovery
+      // discipline) rides the same call: it bounds how many lazy toolkits one
+      // query may pull in before the menu filter runs.
+      search: async (query, options) => onAgentMenu(
+        await actions.search(query, {
+          ...options,
+          ...(config.agent?.maxSearchExpansions === undefined ? {} : { maxExpansions: config.agent.maxSearchExpansions }),
+        }),
+        (match) => match.name,
+      ),
       // Connection-scoped loadout seed (spec 2026-07-20): each turn starts
       // with host tools + the principal's connected toolkits — never an
       // alphabetical slice of a lazy catalog. `connections` is declared below
@@ -1769,10 +1841,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       ...(config.agent?.maxInitialTools === undefined ? {} : { maxInitialTools: config.agent.maxInitialTools }),
       ...(config.agent?.loadout === undefined ? {} : { loadout: config.agent.loadout }),
     },
+    // Discovery-discipline: the same connect check the gate-wrapped registry
+    // runs, exposed so needsApproval never mints an approval for a call the
+    // gate will refuse with a connect card.
+    preflight: (call, ctx) => connectGate.check(call, ctx),
   });
   // Per-subject connected-toolkit lookups are cached briefly so a turn never
   // pays a broker round-trip it doesn't need; failures degrade to host tools
   // only (warn, never the turn). Bounded so long-lived deployments don't grow.
+  // Shared by the loadout seed AND the pre-guard connect gate above.
   const CONNECTED_TOOLKITS_TTL_MS = 60_000;
   const connectedToolkitsCache = new Map<string, { at: number; toolkits: string[] }>();
   // `surfaces.agent` (.vendo/overrides.json): the host's curated agent menu.
@@ -1794,29 +1871,54 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       return name.startsWith(VENDO_TOOL_PACK_PREFIX) || menu.has(name);
     });
   }
+  function cacheConnectedToolkits(subject: string, toolkits: string[]): void {
+    if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
+    connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
+  }
+  function cachedConnectedToolkits(subject: string): string[] | undefined {
+    const cached = connectedToolkitsCache.get(subject);
+    return cached !== undefined && Date.now() - cached.at < CONNECTED_TOOLKITS_TTL_MS
+      ? cached.toolkits
+      : undefined;
+  }
+  async function fetchConnectedToolkits(principal: Principal): Promise<string[]> {
+    const accounts = await connections.list(principal);
+    const toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
+    cacheConnectedToolkits(principal.subject, toolkits);
+    return toolkits;
+  }
+  /** The connect gate's lookup. A cached HIT rules the call in without a
+      round-trip; a cached MISS refetches fresh before ruling it out — a user
+      who just finished OAuth must never be blocked by a 60s-old entry.
+      Lookup failure returns undefined: the gate fails OPEN and the
+      broker-side connect-required outcome still catches the call. */
+  async function subjectHasToolkit(toolkit: string, ctx: RunContext): Promise<boolean | undefined> {
+    if (cachedConnectedToolkits(ctx.principal.subject)?.includes(toolkit)) return true;
+    try {
+      return (await fetchConnectedToolkits(ctx.principal)).includes(toolkit);
+    } catch {
+      return undefined;
+    }
+  }
   // Hoisted (function declaration): the apps composition above references it
   // as the AppsConfig.connectedToolkits seam; `connections` is declared below
-  // and only read at request time (same pattern as loadoutSeedFor).
+  // and only read at request time (same pattern as loadoutSeedFor). Built on
+  // the discovery-lane cache primitives: cached hit serves, miss fetches and
+  // caches; lookup failure degrades to "no connected toolkits" this call.
   async function connectedToolkitsFor(ctx: RunContext): Promise<string[]> {
-    const subject = ctx.principal.subject;
-    const cached = connectedToolkitsCache.get(subject);
-    if (cached !== undefined && Date.now() - cached.at < CONNECTED_TOOLKITS_TTL_MS) {
-      return cached.toolkits;
-    }
-    let toolkits: string[];
+    const cached = cachedConnectedToolkits(ctx.principal.subject);
+    if (cached !== undefined) return cached;
     try {
-      const accounts = await connections.list(ctx.principal);
-      toolkits = [...new Set(accounts.filter((account) => account.status === "active").map((account) => account.toolkit))];
+      return await fetchConnectedToolkits(ctx.principal);
     } catch (error) {
       console.warn(
         "[vendo] connected-toolkits lookup failed; treating every toolkit as unconnected:",
         error instanceof Error ? error.message : error,
       );
-      toolkits = [];
+      const toolkits: string[] = [];
+      cacheConnectedToolkits(ctx.principal.subject, toolkits);
+      return toolkits;
     }
-    if (connectedToolkitsCache.size > 1_000) connectedToolkitsCache.clear();
-    connectedToolkitsCache.set(subject, { at: Date.now(), toolkits });
-    return toolkits;
   }
   async function loadoutSeedFor(ctx: RunContext): Promise<string[]> {
     const toolkits = await connectedToolkitsFor(ctx);
@@ -1902,7 +2004,28 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   automationsForArming = automations;
   // 04-actions §3 — per-principal connected accounts, selected by the adapter
   // rule at this composition seam (selectConnections above).
-  const connections = selectConnections(config.connections, resolvedConnectors);
+  //
+  // Disconnect INVALIDATES the subject's connected-toolkit cache. Without
+  // this, the 60s TTL keeps answering "connected" for up to a minute after
+  // the user disconnects, so the connect gate waves the call through, the
+  // guard mints an approval, and the user is asked to approve a call that
+  // cannot run — the exact failure the gate exists to prevent, inverted. The
+  // wrapper sits at the composition seam (never inside an adapter), so it
+  // holds for every posture: BYO brokers and the Cloud adapter alike.
+  //
+  // `selectedConnections` is what the adapter rule chose and is what
+  // `vendo.connections` exposes, UNTOUCHED — an explicitly passed adapter must
+  // stay the very object the host handed in (server.test.ts asserts identity).
+  // Everything the product itself calls (the wire's DELETE route, the loadout
+  // seed, the connect gate) goes through the invalidating wrapper instead.
+  // Out-of-band revocation — a host calling the adapter directly, or a user
+  // revoking in the provider's own dashboard — stays bounded by the 60s TTL,
+  // which no cache can improve on.
+  const selectedConnections = selectConnections(config.connections, resolvedConnectors, config.connectorApps);
+  const connections = withDisconnectInvalidation(
+    selectedConnections,
+    (subject) => connectedToolkitsCache.delete(subject),
+  );
   // 10-mcp §1 — construct the door from the parts already assembled: the SAME
   // guard-bound registry chat/apps/automations use, the guard (its core seam is
   // what the door holds for auth audit), the store (a StoreAdapter for the door's
@@ -2069,7 +2192,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     apps,
     automations,
     actions,
-    connections,
+    // The adapter rule's object, exactly as selected: an explicitly passed
+    // adapter is handed back untouched. The cache-invalidating wrapper is an
+    // internal composition detail (see selectedConnections above).
+    connections: selectedConnections,
     store,
   };
 }
