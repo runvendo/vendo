@@ -8,6 +8,11 @@
  *    (CLI, dev-creds ladder, actions sync, telemetry disk config, store
  *    engines). Bare node builtins stay external — that mirrors Wrangler's
  *    nodejs_compat, the Workers baseline.
+ *  Leg A2 (store split): the @vendoai/store/postgres entry must bundle under
+ *    DEFAULT/node resolution (what OpenNext-style Worker builds and Lambda
+ *    bundlers use — the resolution mode under which a console Worker silently
+ *    crossed Cloudflare's size ceiling carrying PGlite wasm it can't run)
+ *    with neither PGlite nor the store's PGlite engine module in the graph.
  *  Leg B (boot): the fixture worker constructs createVendo at MODULE SCOPE
  *    under real workerd and must serve GET /status 200 — catching
  *    global-scope I/O and timers, unbound fetch, and anything a bundle
@@ -118,6 +123,37 @@ if (serverMeta !== undefined) {
   }
   if (!inputs.some((input) => FORBIDDEN_INPUTS.some(({ fragment }) => input.includes(fragment)))) {
     ok(`no Node-only leg in the worker server graph (${inputs.length} modules checked)`);
+  }
+}
+
+// ---- Leg A2: @vendoai/store/postgres stays PGlite-free under node resolution ----
+const STORE_POSTGRES_ENTRY = join(root, "packages/store/dist/postgres.js");
+if (!existsSync(STORE_POSTGRES_ENTRY)) {
+  fail("packages/store/dist/postgres.js missing — run `pnpm build` first");
+} else {
+  try {
+    const result = await esbuild.build({
+      entryPoints: [STORE_POSTGRES_ENTRY],
+      bundle: true,
+      format: "esm",
+      platform: "node",
+      external: ["pg-native"],
+      metafile: true,
+      write: false,
+      logLevel: "silent",
+    });
+    const inputs = Object.keys(result.metafile.inputs);
+    const leaks = inputs.filter(
+      (input) => input.includes("@electric-sql") || input.includes("pglite") || input.includes("packages/store/dist/db.js"),
+    );
+    if (leaks.length > 0) {
+      fail(`@vendoai/store/postgres reached the PGlite engine under node resolution: ${leaks[0]}\n    containment seam: packages/store src/db-postgres.ts split (engine picker stays in src/db.ts)`);
+    } else {
+      ok(`store postgres entry stays PGlite-free under node resolution (${inputs.length} modules checked)`);
+    }
+  } catch (error) {
+    const messages = (error.errors ?? []).slice(0, 8).map((e) => `\n    ${e.text} (${e.location?.file ?? "?"})`).join("");
+    fail(`store postgres entry does not bundle under node resolution:${messages || `\n    ${error.message}`}`);
   }
 }
 

@@ -1,6 +1,7 @@
 import { VendoError } from "@vendoai/core";
-import type { Db } from "#store/db";
-import { withSchemaLock } from "#store/db";
+// Type-only — erased at compile time, so this module stays engine-free and
+// safe to share between the main entry and @vendoai/store/postgres.
+import type { Db } from "./db-postgres.js";
 
 /** 02-store §4. v3 (block-actions design §C, ENG-263) historically added the
     Vendo-owned org tables (`vendo_orgs` + `vendo_org_members`); those tables
@@ -244,5 +245,5 @@ async function migrate(query: Query): Promise<void> {
 
 /** 02-store §4 */
 export async function ensureSchema(db: Db): Promise<void> {
-  await withSchemaLock(db, migrate);
+  await db.withSchemaLock(migrate);
 }

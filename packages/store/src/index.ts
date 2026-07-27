@@ -1,5 +1,8 @@
-/** @vendoai/store — persistence under everything (docs/contracts/02-store.md). */
-export { createStore, type VendoStore } from "./store.js";
+/** @vendoai/store — persistence under everything (docs/contracts/02-store.md).
+ *  Postgres-only consumers: import from `@vendoai/store/postgres` instead to
+ *  keep the PGlite wasm engine out of the bundle graph. */
+export { createStore } from "./create-store.js";
+export { type VendoStore } from "./store.js";
 // The reserved-collection map (02-store §2): exported so remote StoreAdapters
 // (the umbrella's hostedStore) can mirror this engine's per-collection
 // capability shape — claim on non-routed collections, atomic on generic
