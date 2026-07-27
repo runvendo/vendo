@@ -95,7 +95,7 @@ describe("entailmentVerifier (K14 T2)", () => {
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
-  it("caps a verification at four seconds by default", () => {
-    expect(KNOWLEDGE_VERIFY_TIMEOUT_MS).toBe(4000);
+  it("caps a verification at the measured five seconds by default", () => {
+    expect(KNOWLEDGE_VERIFY_TIMEOUT_MS).toBe(5000);
   });
 });

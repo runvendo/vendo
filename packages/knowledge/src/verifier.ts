@@ -46,11 +46,14 @@ export interface KnowledgeVerifier {
   supported(input: KnowledgeVerifierInput): Promise<boolean | undefined>;
 }
 
-/** The wall the verifier may not cross. Chosen from the measured p95 of the
-    shipped judge-slot model on the calibration corpus (docs/eval/KNOWLEDGE.md
-    §The verifier pass), with headroom: past this the turn is better served by
-    the threshold answer than by a correct verdict nobody waited for. */
-export const KNOWLEDGE_VERIFY_TIMEOUT_MS = 4000;
+/** The wall the verifier may not cross, set from measurement rather than
+    taste: over 183 verifications of the calibration corpus on the shipped
+    judge-slot model (docs/eval/KNOWLEDGE.md §The verifier pass) the median was
+    1.6s, p95 4.0s, and a thin tail ran to 10s. 5s therefore keeps ~97% of
+    verdicts while bounding what the verifier can add to a turn. The tail is
+    not an error — a call that crosses the wall simply yields no verdict and the
+    tool answers the way it would have without a verifier at all. */
+export const KNOWLEDGE_VERIFY_TIMEOUT_MS = 5000;
 
 export interface EntailmentVerifierOptions {
   model: LanguageModel;
