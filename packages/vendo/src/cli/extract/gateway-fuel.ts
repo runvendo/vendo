@@ -29,6 +29,20 @@ import { resolveCloudBaseUrl } from "../cloud/client.js";
 export const INIT_PURPOSE_HEADER_NAME = "x-vendo-purpose";
 export const INIT_PURPOSE_HEADER_VALUE = "init";
 
+/**
+ * The gateway model id every Claude-Code-shaped rung must send when running on
+ * the Vendo Cloud gateway (#617). The gateway serves ONLY its curated vendo-*
+ * family ids and 400s anything else — including the `claude-*` id Claude Code
+ * sends by default. Claude Code passes a custom model id through verbatim once
+ * ANTHROPIC_BASE_URL points at a non-Anthropic endpoint (verified against
+ * claude 2.1.220), so pinning ANTHROPIC_MODEL to the gateway's own extraction
+ * id lands every rung on a valid gateway id — no gateway contract change. This
+ * is the extraction role of the gateway's model family (vendo-extract, see
+ * vendo-web console lib/api/model-aliases.ts VENDO_MODEL_FAMILY); a dev's
+ * explicit VENDO_EXTRACTION_MODEL pin still wins via the harness's --model flag.
+ */
+export const EXTRACTION_MODEL_ID = "vendo-extract";
+
 /** Env vars that Claude Code itself accepts as an own credential besides
  *  ANTHROPIC_API_KEY and a CLI login: a corporate-gateway auth token, a
  *  device-flow OAuth token, or a custom base URL with no token at all
@@ -57,6 +71,9 @@ export interface GatewayFuelOverlay {
   ANTHROPIC_BASE_URL: string;
   ANTHROPIC_AUTH_TOKEN: string;
   ANTHROPIC_CUSTOM_HEADERS: string;
+  /** Pins the model to a gateway-served id — Claude Code's own default is a
+   *  claude-* id the gateway 400s (#617). See EXTRACTION_MODEL_ID. */
+  ANTHROPIC_MODEL: string;
 }
 
 export interface GatewayFuelOptions {
@@ -95,5 +112,6 @@ export function composeGatewayFuel(options: GatewayFuelOptions): GatewayFuelOver
     ANTHROPIC_BASE_URL: baseURL,
     ANTHROPIC_AUTH_TOKEN: key.trim(),
     ANTHROPIC_CUSTOM_HEADERS: `${INIT_PURPOSE_HEADER_NAME}: ${INIT_PURPOSE_HEADER_VALUE}`,
+    ANTHROPIC_MODEL: EXTRACTION_MODEL_ID,
   };
 }
