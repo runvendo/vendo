@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { componentMapError } from "../../component-map.js";
-import { validateTreeV2 } from "../tree-v2.js";
-import { compileWireV2 } from "./compile.js";
+import { validateTree } from "../tree.js";
+import { compileWire } from "./compile.js";
 
 /**
  * D6 valid-while-partial property (v2 spec §2, plan Task 5): for EVERY prefix
  * length of a rich fixture — every character boundary, not samples — the
  * compiler must
- *  - never throw (compileWireV2 catches internally and degrades to a
+ *  - never throw (compileWire catches internally and degrades to a
  *    `compile-failed` issue, so the sweep asserts that issue never appears:
  *    a hidden throw cannot masquerade as success),
- *  - emit a tree that passes validateTreeV2,
+ *  - emit a tree that passes validateTree,
  *  - emit components that pass componentMapError,
  *  - report `complete` false for every proper prefix and true only at full
  *    length (the fixtures end exactly at `</App>` to make that sharp), and
@@ -58,11 +58,11 @@ const sweepPrefixes = (wire: string): void => {
   const problems: string[] = [];
   let previousNodeCount = 0;
   for (let length = 0; length <= wire.length; length += 1) {
-    const result = compileWireV2(wire.slice(0, length));
+    const result = compileWire(wire.slice(0, length));
     if (result.issues.some((entry) => entry.code === "compile-failed")) {
-      problems.push(`len ${length}: compileWireV2 threw internally (compile-failed)`);
+      problems.push(`len ${length}: compileWire threw internally (compile-failed)`);
     }
-    const validation = validateTreeV2(result.tree);
+    const validation = validateTree(result.tree);
     if (!validation.ok) {
       problems.push(`len ${length}: tree invalid — ${validation.error.message}`);
     }
@@ -83,9 +83,9 @@ const sweepPrefixes = (wire: string): void => {
   expect(problems).toEqual([]);
 };
 
-describe("compileWireV2 valid-while-partial property (D6)", () => {
+describe("compileWire valid-while-partial property (D6)", () => {
   it("compiles the full fixture clean (the sweep's endpoint is a real document)", () => {
-    const result = compileWireV2(FIXTURE);
+    const result = compileWire(FIXTURE);
     expect(result.issues).toEqual([]);
     expect(result.complete).toBe(true);
     expect(result.name).toBe("Cash Overview");
@@ -107,7 +107,7 @@ describe("compileWireV2 valid-while-partial property (D6)", () => {
   });
 
   it("keeps the hostile segment inert at full length (no phantom declarations)", () => {
-    const result = compileWireV2(HOSTILE);
+    const result = compileWire(HOSTILE);
     expect(result.complete).toBe(true);
     expect(Object.keys(result.components)).toEqual(["RevenueNote"]);
     expect(result.tree.queries?.map((query) => query.name)).toEqual(["revenue", "payments"]);

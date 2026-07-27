@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validateAppDocument } from "../../app-document.js";
 import { componentMapError } from "../../component-map.js";
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2 } from "../../formats.js";
+import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "../../formats.js";
 import {
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
@@ -9,15 +9,15 @@ import {
   TREE_MAX_QUERIES,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
 } from "../tree-limits.js";
-import { validateTreeV2 } from "../tree-v2.js";
-import { compileWireV2, type WireCompileOptions, type WireCompileResult } from "./compile.js";
+import { validateTree } from "../tree.js";
+import { compileWire, type WireCompileOptions, type WireCompileResult } from "./compile.js";
 
-/** D6 — every compiled tree must pass validateTreeV2, whatever the input
+/** D6 — every compiled tree must pass validateTree, whatever the input
  *  (the §8 caps are enforced at compile, so even over-cap input compiles to
  *  a within-limits valid tree). */
 const compile = (wire: string, options?: WireCompileOptions): WireCompileResult => {
-  const result = compileWireV2(wire, options);
-  const validation = validateTreeV2(result.tree);
+  const result = compileWire(wire, options);
+  const validation = validateTree(result.tree);
   expect(validation).toEqual({ ok: true, tree: result.tree });
   return result;
 };
@@ -27,7 +27,7 @@ const codes = (result: WireCompileResult): string[] =>
 
 /** The degraded output for no-App/hostile input: root Stack, no children. */
 const EMPTY_TREE = {
-  formatVersion: VENDO_TREE_FORMAT_V2,
+  formatVersion: VENDO_TREE_FORMAT,
   root: "root",
   nodes: [{ id: "root", component: "Stack", source: "prewired" }],
 };
@@ -45,11 +45,11 @@ const SPEC_DOC = `
 </App>
 `;
 
-describe("compileWireV2 document shape", () => {
+describe("compileWire document shape", () => {
   it("compiles a nested query-free document to the exact expected tree", () => {
     const result = compile(SPEC_DOC);
     expect(result.tree).toStrictEqual({
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [
         { id: "root", component: "Stack", source: "prewired", children: ["stack-1"] },
@@ -117,7 +117,7 @@ describe("compileWireV2 document shape", () => {
   });
 });
 
-describe("compileWireV2 attributes", () => {
+describe("compileWire attributes", () => {
   it("decodes markup-layer string escapes for quote and backslash only", () => {
     const result = compile('<App><Card title="say \\"hi\\" \\\\ done" path="a\\nb"/></App>');
     expect(result.tree.nodes[1]?.props).toStrictEqual({
@@ -205,7 +205,7 @@ describe("compileWireV2 attributes", () => {
   });
 });
 
-describe("compileWireV2 element recovery", () => {
+describe("compileWire element recovery", () => {
   it("skips unknown lowercase tags including their subtree", () => {
     const result = compile('<App><div class="x"><Card/></div><Badge/></App>');
     expect(result.tree.nodes.map((node) => node.id)).toEqual(["root", "badge-1"]);
@@ -270,7 +270,7 @@ describe("compileWireV2 element recovery", () => {
   });
 });
 
-describe("compileWireV2 document errors", () => {
+describe("compileWire document errors", () => {
   it.each(["", "   \n\t", "hello", "<app></app>", "not markup at all"])(
     "compiles no-App input %j to the empty tree with missing-app",
     (wire) => {
@@ -303,7 +303,7 @@ describe("compileWireV2 document errors", () => {
   });
 });
 
-describe("compileWireV2 partial input (D6)", () => {
+describe("compileWire partial input (D6)", () => {
   it("auto-closes unclosed elements at EOF with eof-unclosed and marks incomplete", () => {
     const result = compile("<App><Stack><Card/>");
     expect(result.tree.nodes).toStrictEqual([
@@ -341,7 +341,7 @@ describe("compileWireV2 partial input (D6)", () => {
   });
 });
 
-describe("compileWireV2 totality", () => {
+describe("compileWire totality", () => {
   it("never throws on hostile input, and the tree stays valid", () => {
     const nasty = [
       "<",
@@ -364,12 +364,12 @@ describe("compileWireV2 totality", () => {
     for (const wire of nasty) {
       let result: WireCompileResult | undefined;
       expect(() => {
-        result = compileWireV2(wire);
+        result = compileWire(wire);
       }).not.toThrow();
       expect(Array.isArray(result?.issues)).toBe(true);
       expect(typeof result?.complete).toBe("boolean");
       expect(result?.components).toStrictEqual({});
-      expect(validateTreeV2(result?.tree)).toEqual({ ok: true, tree: result?.tree });
+      expect(validateTree(result?.tree)).toEqual({ ok: true, tree: result?.tree });
     }
   });
 
@@ -377,15 +377,15 @@ describe("compileWireV2 totality", () => {
     const wire = "<App>" + "<Stack>".repeat(20_000);
     let result: WireCompileResult | undefined;
     expect(() => {
-      result = compileWireV2(wire);
+      result = compileWire(wire);
     }).not.toThrow();
     expect(result?.complete).toBe(false);
     expect(result?.tree.nodes.length).toBe(TREE_MAX_NODES);
-    expect(validateTreeV2(result?.tree)).toEqual({ ok: true, tree: result?.tree });
+    expect(validateTree(result?.tree)).toEqual({ ok: true, tree: result?.tree });
   });
 });
 
-describe("compileWireV2 queries (D3)", () => {
+describe("compileWire queries (D3)", () => {
   it("hoists queries into tree.queries in document order, wherever they appear", () => {
     const result = compile(
       '<App><Query id="a" tool="t.a"/><Card/><Query id="b" tool="t.b"/></App>',
@@ -465,7 +465,7 @@ describe("compileWireV2 queries (D3)", () => {
   });
 });
 
-describe("compileWireV2 forward references", () => {
+describe("compileWire forward references", () => {
   it("resolves a binding to a query declared later in the wire", () => {
     const result = compile('<App><Card rows={payments}/><Query id="payments" tool="p.list"/></App>');
     expect(result.tree.nodes[1]?.props).toStrictEqual({ rows: { $path: "/payments" } });
@@ -521,7 +521,7 @@ describe("compileWireV2 forward references", () => {
   });
 });
 
-describe("compileWireV2 islands (D3)", () => {
+describe("compileWire islands (D3)", () => {
   it("captures raw TSX verbatim: quotes, braces, and < pass through unparsed", () => {
     const source = 'export default function N() { if (1<2) { return "}{ <div/>"; } }';
     const result = compile(`<App><Island name="Note">${source}</Island></App>`);
@@ -574,7 +574,7 @@ describe("compileWireV2 islands (D3)", () => {
   });
 });
 
-describe("compileWireV2 source resolution (D3)", () => {
+describe("compileWire source resolution (D3)", () => {
   it("marks host-catalog names as host", () => {
     const result = compile("<App><RevenuePanel/></App>", { hostComponents: ["RevenuePanel"] });
     expect(result.tree.nodes[1]).toStrictEqual({ id: "revenuepanel-1", component: "RevenuePanel", source: "host" });
@@ -610,7 +610,7 @@ describe("compileWireV2 source resolution (D3)", () => {
   });
 });
 
-describe("compileWireV2 text children (D3)", () => {
+describe("compileWire text children (D3)", () => {
   it("trims the ends but preserves internal whitespace", () => {
     const result = compile("<App><Card>\n  hello   world \n</Card></App>");
     expect(result.tree.nodes[2]?.props).toStrictEqual({ text: "hello   world" });
@@ -645,7 +645,7 @@ describe("compileWireV2 text children (D3)", () => {
   });
 });
 
-describe("compileWireV2 actions (D5)", () => {
+describe("compileWire actions (D5)", () => {
   it("compiles on* string attributes naming a tool to the canonical action prop", () => {
     const result = compile('<App><Button onClick="save"/></App>');
     expect(result.tree.nodes[1]?.props).toStrictEqual({ onClick: { action: "save" } });
@@ -685,7 +685,7 @@ describe("compileWireV2 actions (D5)", () => {
     const result = compile('<App><Card cfg={{ list: [{ deep: { action: "fn:" } }] }}/></App>');
     expect(result.tree.nodes[1]?.props).toBeUndefined();
     expect(codes(result)).toEqual(["invalid-action"]);
-    expect(validateTreeV2(result.tree)).toEqual({ ok: true, tree: result.tree });
+    expect(validateTree(result.tree)).toEqual({ ok: true, tree: result.tree });
   });
 
   it("leaves non-action-shaped attributes alone", () => {
@@ -699,7 +699,7 @@ describe("compileWireV2 actions (D5)", () => {
   });
 });
 
-describe("compileWireV2 behavior pins (review)", () => {
+describe("compileWire behavior pins (review)", () => {
   it("skips a nested <App> with its subtree", () => {
     const result = compile("<App><App><Card/></App><Badge/></App>");
     expect(result.tree.nodes.map((node) => node.id)).toEqual(["root", "badge-1"]);
@@ -741,7 +741,7 @@ describe("compileWireV2 behavior pins (review)", () => {
   });
 });
 
-describe("compileWireV2 full-spec-example gate (spec §2)", () => {
+describe("compileWire full-spec-example gate (spec §2)", () => {
   const specWire = (points: string): string => `
 <App name="Cash Overview">
   <Query id="revenue" tool="metrics.revenue"/>
@@ -759,7 +759,7 @@ describe("compileWireV2 full-spec-example gate (spec §2)", () => {
 
   const expectSpecTree = (result: WireCompileResult): void => {
     expect(result.tree).toStrictEqual({
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [
         { id: "root", component: "Stack", source: "prewired", children: ["stack-1"] },
@@ -825,7 +825,7 @@ describe("compileWireV2 full-spec-example gate (spec §2)", () => {
   });
 });
 
-describe("compileWireV2 §8 limits", () => {
+describe("compileWire §8 limits", () => {
   it("stops creating nodes at TREE_MAX_NODES with a single node-limit issue", () => {
     const wire = "<App>" + "<Card/>".repeat(TREE_MAX_NODES + 100) + "</App>";
     const result = compile(wire);
@@ -934,7 +934,7 @@ describe("compileWireV2 §8 limits", () => {
   });
 });
 
-describe("compileWireV2 dangling-generated reconciliation", () => {
+describe("compileWire dangling-generated reconciliation", () => {
   /** A node pointing at a DROPPED island must not stay source:"generated" —
    *  the document validator requires a components entry for every generated
    *  node, so a dangling one turns a one-island problem into a whole-app
@@ -979,7 +979,7 @@ describe("compileWireV2 dangling-generated reconciliation", () => {
 
   it("clears source on a truncated prefix whose island never arrived, then restores it at full parse", () => {
     const wire = '<App><Note/><Island name="Note">export default function Note() {}</Island></App>';
-    const prefix = compileWireV2(wire.slice(0, wire.indexOf("<Island") + 10), undefined);
+    const prefix = compileWire(wire.slice(0, wire.indexOf("<Island") + 10), undefined);
     expect(prefix.tree.nodes.find(({ id }) => id === "note-1")?.source).toBeUndefined();
     expect(documentValidation(prefix).ok).toBe(true);
     const full = compile(wire);
@@ -991,7 +991,7 @@ describe("compileWireV2 dangling-generated reconciliation", () => {
 /** v2 spec §3 — the compile-time shape check: a binding to fields absent
  *  from the tool's response shape is a compile error routed to per-binding
  *  repair; unknown shapes stay defensive (Json). */
-describe("compileWireV2 shape check (v2 spec §3)", () => {
+describe("compileWire shape check (v2 spec §3)", () => {
   const revenueShape = {
     kind: "object" as const,
     fields: {
@@ -1085,7 +1085,7 @@ describe("compileWireV2 shape check (v2 spec §3)", () => {
   });
 });
 
-describe("compileWireV2 prewired option projection (v2 spec §3)", () => {
+describe("compileWire prewired option projection (v2 spec §3)", () => {
   const accountsShape = {
     kind: "object" as const,
     fields: {
@@ -1196,7 +1196,7 @@ describe("compileWireV2 prewired option projection (v2 spec §3)", () => {
  *  slots (Table cells, Text/Stat/Badge) render raw JSON; the shape check
  *  flags them and routes to template/scalar-field repair, mirroring the
  *  option-item projection check. */
-describe("compileWireV2 display-slot object check (raw-braces class)", () => {
+describe("compileWire display-slot object check (raw-braces class)", () => {
   const deadlinesShape = {
     kind: "object" as const,
     fields: {
@@ -1300,7 +1300,7 @@ describe("compileWireV2 display-slot object check (raw-braces class)", () => {
   });
 });
 
-describe("compileWireV2 shape check pointer misses", () => {
+describe("compileWire shape check pointer misses", () => {
   it("a non-index segment into an array and a pointer past a scalar report shaped messages", () => {
     const shapes: WireCompileOptions = {
       toolShapes: {
@@ -1314,14 +1314,14 @@ describe("compileWireV2 shape check pointer misses", () => {
       },
     };
     const wire = (binding: string): string => `<App><Query id="q" tool="t"/><Card v={${binding}}/></App>`;
-    const nonIndex = compileWireV2(wire("q.rows.month"), shapes);
+    const nonIndex = compileWire(wire("q.rows.month"), shapes);
     expect(nonIndex.bindingErrors[0]?.message).toContain("indexes into an array");
-    const pastScalar = compileWireV2(wire("q.total.deep"), shapes);
+    const pastScalar = compileWire(wire("q.total.deep"), shapes);
     expect(pastScalar.bindingErrors[0]?.message).toContain("goes past");
   });
 });
 
-describe("compileWireV2 comments", () => {
+describe("compileWire comments", () => {
   it("skips HTML comments between elements and inside text", () => {
     const result = compile('<App name="C"><!-- Header --><Text text="hi"/><!-- KPI Row --><Card/></App>');
     expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text", "Card"]);
@@ -1330,13 +1330,13 @@ describe("compileWireV2 comments", () => {
   });
 
   it("treats an unterminated comment as truncation, not content", () => {
-    const result = compileWireV2('<App name="C"><Text text="hi"/><!-- dangling', undefined);
+    const result = compileWire('<App name="C"><Text text="hi"/><!-- dangling', undefined);
     expect(result.tree.nodes.map((node) => node.component)).toEqual(["Stack", "Text"]);
     expect(result.complete).toBe(false);
   });
 });
 
-describe("compileWireV2 comments before declarations", () => {
+describe("compileWire comments before declarations", () => {
   it("still pre-scans queries and islands declared after a comment (Devin, PR #381)", () => {
     const wire = [
       '<App name="C"><!-- data -->',

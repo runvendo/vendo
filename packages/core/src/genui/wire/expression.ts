@@ -1,7 +1,7 @@
 /**
- * Internal: the v2 wire expression grammar — the `attr={...}` sub-language of
+ * Internal: the wire expression grammar — the `attr={...}` sub-language of
  * the vendo-genui/v2 markup (v2 spec §2,
- * docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md). The wire-v2
+ * docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md). The wire
  * markup compiler hands this module the text BETWEEN an attribute's braces;
  * it returns canonical JSON with `$path`/`$state` bindings compiled in. Only
  * the issue contract (`WIRE_ISSUE_CODES`, `WireIssueCode`, `WireIssue`) is
@@ -16,12 +16,12 @@
 import { safeErrorMessage } from "../../errors.js";
 import type { Json } from "../../ids.js";
 import { findInvalidReshapeSteps, type ReshapeStep } from "../../reshape.js";
-import { defineOwn, isPathBinding, isStateBinding, type PathBinding, type StateBinding } from "../tree.js";
+import { defineOwn, isPathBinding, isStateBinding, type PathBinding, type StateBinding } from "../tree-node.js";
 import { isWellFormedUtf16 } from "./state.js";
 
 /**
  * v2 spec §2 — the closed registry of stable issue codes across all six
- * wire-v2 modules. This is the renderer / wave-3-repair contract: a typo'd
+ * wire modules. This is the renderer / wave-3-repair contract: a typo'd
  * code fails compile, and adding a code means adding it here first.
  */
 export const WIRE_ISSUE_CODES = [
@@ -118,7 +118,7 @@ export const WIRE_ISSUE_CODES = [
   /** Issue list capped at WIRE_MAX_ISSUES; always the final entry when present. */
   "issues-truncated",
   // — totality (compile.ts)
-  /** compileWireV2Unsafe threw; degraded to the empty valid tree. Never expected. */
+  /** compileWireUnsafe threw; degraded to the empty valid tree. Never expected. */
   "compile-failed",
 ] as const;
 

@@ -2,12 +2,12 @@ import { z } from "zod";
 import { componentMapError } from "./component-map.js";
 import { safeErrorMessage } from "./errors.js";
 import { FN_REFERENCE_PATTERN, collectActionReferences } from "./fn-references.js";
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2 } from "./formats.js";
+import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "./formats.js";
 import { appIdSchema, isoDateTimeSchema, type AppId, type IsoDateTime } from "./ids.js";
 import { TOOL_NAME_PATTERN } from "./tools.js";
-import { validateTreeV2 } from "./tree-v2.js";
+import { validateTree } from "./genui/tree.js";
 import { triggerSchema, type Trigger } from "./triggers.js";
-import { uiPayloadSchema, type TreeNode, type UIPayload } from "./tree.js";
+import { uiPayloadSchema, type TreeNode, type UIPayload } from "./genui/tree-node.js";
 
 /** 01-core §9 */
 export interface StorageDecl {
@@ -172,7 +172,7 @@ const fail = (code: string, message: string): AppDocumentValidation => ({
   error: { code, message },
 });
 
-/** Shared by the v1 and v2 tree branches: collect every fn: reference a
+/** Shared by the tree validation branches: collect every fn: reference a
  *  validated tree names (query tools + prop actions) for the machine-presence
  *  rule. Grammar and server checks happen at the call sites' shared tail. */
 const collectTreeFnReferences = (
@@ -205,11 +205,11 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
   }
 
   const fnReferences: string[] = [];
-  if (app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
-    // No grafting: v2 trees never carry components (validateTreeV2 rejects a
+  if (app.tree?.formatVersion === VENDO_TREE_FORMAT) {
+    // No grafting: trees never carry components (validateTree rejects a
     // tree-level `components` member itself), so the tree validates AS-IS and
     // the document-level map is validated beside it.
-    const treeResult = validateTreeV2(app.tree);
+    const treeResult = validateTree(app.tree);
     if (!treeResult.ok) {
       return fail("validation", treeResult.error.message);
     }
@@ -218,7 +218,7 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     if (componentError !== null) {
       return fail("validation", componentError);
     }
-    // Generated-presence — the check validateTreeV2 deliberately defers to the
+    // Generated-presence — the check validateTree deliberately defers to the
     // document, which is where the components map lives (mirrors v1's rule).
     for (const node of treeResult.tree.nodes) {
       if (node.source === "generated" && !Object.prototype.hasOwnProperty.call(components, node.component)) {

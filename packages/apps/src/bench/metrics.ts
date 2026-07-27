@@ -1,12 +1,12 @@
 /**
  * W1-bench (docs/verification/w1-bench) — metrics computed from the REAL
- * production compiler (compileWireV2 with the fixture tool shapes). The
+ * production compiler (compileWire with the fixture tool shapes). The
  * reliability signals — compile-error rate, reference/binding errors,
  * declared-but-unused queries, unknown tools/components — are the compiler's
  * own verdicts, not a re-implementation.
  */
 import {
-  compileWireV2,
+  compileWire,
   PREWIRED_COMPONENT_NAMES,
   type Json,
   type ShapeType,
@@ -75,7 +75,7 @@ export const computeWireMetrics = (
   toolShapes: Readonly<Record<string, ShapeType>>,
   opts: { inlineRefs?: boolean } = {},
 ): WireMetrics => {
-  const r = compileWireV2(wire, { toolShapes, hostComponents: [...CATALOG_COMPONENT_NAMES], inlineRefs: opts.inlineRefs });
+  const r = compileWire(wire, { toolShapes, hostComponents: [...CATALOG_COMPONENT_NAMES], inlineRefs: opts.inlineRefs });
   const nodes = r.tree.nodes ?? [];
   const queries = r.tree.queries ?? [];
   const islandNames = new Set(Object.keys(r.components ?? {}));

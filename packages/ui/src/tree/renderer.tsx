@@ -6,14 +6,14 @@ import {
   applyReshape,
   isPathBinding,
   isStateBinding,
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   type Json,
   type PathBinding,
   type ToolOutcome,
   type TreeNode,
   type UIPayload,
 } from "@vendoai/core";
-import { convertV2Payload } from "./renderer-v2.js";
+import { convertPayload } from "./convert-payload.js";
 import {
   useCallback,
   useMemo,
@@ -66,8 +66,8 @@ export function registerTreeRenderer(formatVersion: string, component: PayloadRe
 /**
  * v2 spec §6 — the walk's input: the SHARED render mechanics' tree shape
  * (nodes, path-keyed resolved queries, grafted components, payload extras).
- * The v1 format surface around it is gone; renderer-v2 converts the
- * canonical v2 tree into this shape (named queries → "/" + name pointers).
+ * The v1 format surface around it is gone; convert-payload converts the
+ * canonical tree into this shape (named queries → "/" + name pointers).
  */
 export interface WalkTree {
   root: string;
@@ -89,7 +89,7 @@ const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
 /** The structural render-gate the v1 validator used to provide (per-render
  *  hot path): ids unique and rooted, node shapes sane, generated components
  *  present. Format-tag checks live one layer up (PayloadView dispatch +
- *  validateTreeV2 in renderer-v2). */
+ *  validateTree in convert-payload). */
 const validateWalkTree = (input: WalkTree): WalkValidation => {
   const ids = new Set<string>();
   if (!Array.isArray(input.nodes)) return walkFail("nodes must be an array");
@@ -143,12 +143,12 @@ const validateWalkTree = (input: WalkTree): WalkValidation => {
 };
 
 /** v2 spec §1 — a validated v2 payload converts to the v1 tree shape and
- *  walks the SAME TreeView (renderer-v2.tsx documents the mapping). The
+ *  walks the SAME TreeView (convert-payload.tsx documents the mapping). The
  *  registration lives here, in PayloadView's own module: the package is
  *  `sideEffects: false`, so a registration-only import would be tree-shaken
  *  out of host bundles. */
-function VendoTreeV2Renderer({ payload, ...props }: PayloadRendererProps) {
-  const converted = useMemo(() => convertV2Payload(payload), [payload]);
+function VendoTreeRenderer({ payload, ...props }: PayloadRendererProps) {
+  const converted = useMemo(() => convertPayload(payload), [payload]);
   if (!converted.ok) {
     // A mid-stream partial legitimately passes through shapes the validator
     // has not admitted yet — hold the forming skeleton; the notice is a
@@ -165,7 +165,7 @@ function VendoTreeV2Renderer({ payload, ...props }: PayloadRendererProps) {
   return <TreeView tree={converted.tree} {...props} />;
 }
 
-registerTreeRenderer(VENDO_TREE_FORMAT_V2, VendoTreeV2Renderer);
+registerTreeRenderer(VENDO_TREE_FORMAT, VendoTreeRenderer);
 
 /** 01-core §8 — renderer dispatch is exclusively by the payload tag. */
 export function PayloadView(props: PayloadRendererProps) {

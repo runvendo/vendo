@@ -1,13 +1,13 @@
 /**
  * Internal: shared compiler state for the vendo-genui/v2 wire markup compiler
  * (v2 spec §2, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md;
- * plan decisions D3/D6). Bottom of the wire-v2 module stack: compile →
+ * plan decisions D3/D6). Bottom of the wire module stack: compile →
  * attributes → scan → state; expression.ts also imports the shared UTF-16
  * well-formedness guard from here.
  */
 
-import type { TreeNode } from "../tree.js";
-import type { TreeQueryV2 } from "../tree-v2.js";
+import type { TreeNode } from "../tree-node.js";
+import type { TreeQuery } from "../tree.js";
 import type { WireIssue, WireIssueCode } from "./expression.js";
 
 /** Internal EOF-truncation sentinel — flows up instead of a throw so every
@@ -40,7 +40,7 @@ export interface CompileState {
   /** D3 — the host catalog names (compiler option) for source resolution. */
   readonly hostComponents: ReadonlySet<string>;
   /** D3 — hoisted `<Query>` declarations in document order. */
-  readonly queries: TreeQueryV2[];
+  readonly queries: TreeQuery[];
   /** The hoisted queries' names, kept beside {@link queries} so the
    *  duplicate check stays O(1) per query (a linear scan is quadratic over
    *  large wires). */

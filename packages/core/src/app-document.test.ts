@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   WIRE_ISSUE_CODES,
   appDocumentSchema,
-  compileWireV2,
+  compileWire,
   validateAppDocument,
 } from "./index.js";
 
@@ -14,7 +14,7 @@ const minimal = () => ({
   name: "Support Chat",
   ui: "tree" as const,
   tree: {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+    formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { value: "How can I help?" } }],
   },
@@ -27,7 +27,7 @@ const invoiceChaser = () => ({
   description: "Follows up on overdue invoices every Monday.",
   ui: "tree" as const,
   tree: {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+    formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["summary", "send"] },
@@ -225,13 +225,13 @@ describe("appDocumentSchema and validateAppDocument", () => {
   });
 });
 
-const v2Minimal = () => ({
+const minimalDoc = () => ({
   format: VENDO_APP_FORMAT,
   id: "app_v2",
-  name: "V2 App",
+  name: "Minimal App",
   ui: "tree" as const,
   tree: {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+    formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { text: "How can I help?" } }],
   },
@@ -287,11 +287,11 @@ describe("appDocumentSchema machine field (execution-v2)", () => {
 });
 
 describe("validateAppDocument with vendo-genui/v2 trees", () => {
-  it("accepts a v2 tree whose generated nodes are backed by document-level components", () => {
+  it("accepts a tree whose generated nodes are backed by document-level components", () => {
     const document = {
-      ...v2Minimal(),
+      ...minimalDoc(),
       tree: {
-        formatVersion: VENDO_TREE_FORMAT_V2,
+        formatVersion: VENDO_TREE_FORMAT,
         root: "root",
         nodes: [
           { id: "root", component: "Stack", children: ["gauge"] },
@@ -304,19 +304,19 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
     expect(validateAppDocument(document)).toEqual({ ok: true, app: document });
   });
 
-  it("rejects components smuggled inside a v2 tree with the tree validator's message", () => {
+  it("rejects components smuggled inside a tree with the tree validator's message", () => {
     expectValidationMessage(
-      { ...v2Minimal(), tree: { ...v2Minimal().tree, components: {} } },
-      "v2 trees must not carry components (they live at the app-document level)",
+      { ...minimalDoc(), tree: { ...minimalDoc().tree, components: {} } },
+      "trees must not carry components (they live at the app-document level)",
     );
   });
 
   it("rejects generated nodes with no definition in the document components", () => {
     expectValidationMessage(
       {
-        ...v2Minimal(),
+        ...minimalDoc(),
         tree: {
-          ...v2Minimal().tree,
+          ...minimalDoc().tree,
           nodes: [{ id: "root", component: "Gauge", source: "generated" as const }],
         },
       },
@@ -324,28 +324,28 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
     );
   });
 
-  it("enforces document component limits beside a v2 tree", () => {
-    expectValidation({ ...v2Minimal(), components: { Text: "export default () => null;" } }); // reserved
-    expectValidation({ ...v2Minimal(), components: { "not-pascal": "x" } });
+  it("enforces document component limits beside a tree", () => {
+    expectValidation({ ...minimalDoc(), components: { Text: "export default () => null;" } }); // reserved
+    expectValidation({ ...minimalDoc(), components: { "not-pascal": "x" } });
   });
 
   it("requires a machine (or legacy server) for fn: v2 query tools and prop actions", () => {
     const withQuery = {
-      ...v2Minimal(),
-      tree: { ...v2Minimal().tree, queries: [{ name: "load", tool: "fn:load" }] },
+      ...minimalDoc(),
+      tree: { ...minimalDoc().tree, queries: [{ name: "load", tool: "fn:load" }] },
     };
     expectValidationMessage(withQuery, "fn: references require a machine (or legacy app server)");
     expect(validateAppDocument({ ...withQuery, server: "e2b:snap_ok" }).ok).toBe(true);
-    // execution-v2: the v2 machine satisfies the presence rule the same way.
+    // execution-v2: the machine satisfies the presence rule the same way.
     expect(validateAppDocument({
       ...withQuery,
       machine: { snapshotRef: "e2b:v2:snap_ok", provisionedAt: "2026-07-19T00:00:00.000Z" },
     }).ok).toBe(true);
     expectValidationMessage(
       {
-        ...v2Minimal(),
+        ...minimalDoc(),
         tree: {
-          ...v2Minimal().tree,
+          ...minimalDoc().tree,
           nodes: [{ id: "root", component: "Button", props: { nested: [{ action: "fn:click" }] } }],
         },
       },
@@ -355,10 +355,10 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
 
   it("rejects malformed fn: prop actions in v2 nodes even when a server exists", () => {
     expectValidation({
-      ...v2Minimal(),
+      ...minimalDoc(),
       server: "e2b:snap_ok",
       tree: {
-        ...v2Minimal().tree,
+        ...minimalDoc().tree,
         nodes: [{ id: "root", component: "Button", props: { onClick: { action: "fn:bad name" } } }],
       },
     });
@@ -366,9 +366,9 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
 
   it("rejects malformed fn: v2 query tools even when a server exists", () => {
     expectValidation({
-      ...v2Minimal(),
+      ...minimalDoc(),
       server: "e2b:snap_ok",
-      tree: { ...v2Minimal().tree, queries: [{ name: "load", tool: "fn:bad name" }] },
+      tree: { ...minimalDoc().tree, queries: [{ name: "load", tool: "fn:bad name" }] },
     });
   });
 
@@ -384,7 +384,7 @@ describe("validateAppDocument with vendo-genui/v2 trees", () => {
 
   it("exports the wire compiler and issue registry from the package root", () => {
     expect(WIRE_ISSUE_CODES).toContain("missing-app");
-    const compiled = compileWireV2('<App name="Tiny"><Text>hi</Text></App>');
+    const compiled = compileWire('<App name="Tiny"><Text>hi</Text></App>');
     expect(compiled.complete).toBe(true);
     expect(compiled.issues).toEqual([]);
     expect(compiled.name).toBe("Tiny");

@@ -13,7 +13,7 @@ const respond = (
   body: textEncoder.encode(body),
 });
 
-interface FakeSnapshotV2 {
+interface FakeStatefulSnapshot {
   env: Readonly<Record<string, string>>;
   /** The create-time egress allowlist the snapshot carries (like real refs). */
   allowedDomains?: readonly string[];
@@ -27,7 +27,7 @@ interface FakeSnapshotV2 {
  * reads it back), so lifecycle tests can prove a snapshot/resume cycle
  * preserves what ran inside the box.
  */
-export class FakeMachineV2 implements SandboxMachine {
+export class FakeStatefulMachine implements SandboxMachine {
   stopped = false;
   /** True after the live-machine destroy() (distinct from a snapshot-preserving stop). */
   destroyedSelf = false;
@@ -42,7 +42,7 @@ export class FakeMachineV2 implements SandboxMachine {
     readonly allowedDomains: readonly string[] | undefined,
     readonly template: string | undefined,
     state: ReadonlyMap<string, string>,
-    private readonly saveSnapshot: (machine: FakeMachineV2) => string,
+    private readonly saveSnapshot: (machine: FakeStatefulMachine) => string,
   ) {
     this.env = Object.freeze({ ...env });
     this.state = new Map(state);
@@ -56,8 +56,8 @@ export class FakeMachineV2 implements SandboxMachine {
   }): Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }> {
     // The seam's dead-machine signal (sandbox.ts): provider state gone under a
     // live handle throws VendoError not-found, never an app-level status.
-    if (this.reaped) throw new VendoError("not-found", `fake v2 machine ${this.id} was reaped by the provider`);
-    if (this.stopped) throw new Error(`fake v2 machine ${this.id} is stopped`);
+    if (this.reaped) throw new VendoError("not-found", `fake stateful machine ${this.id} was reaped by the provider`);
+    if (this.stopped) throw new Error(`fake stateful machine ${this.id} is stopped`);
     const key = /^\/state\/([A-Za-z0-9_-]+)$/.exec(req.path)?.[1];
     if (key !== undefined) {
       if (req.method.toUpperCase() === "POST") {
@@ -75,7 +75,7 @@ export class FakeMachineV2 implements SandboxMachine {
 
   async url(port?: number): Promise<string> {
     const target = port ?? Number(this.env.PORT ?? 8080);
-    return `https://${target}-${this.id}.fake-v2.test`;
+    return `https://${target}-${this.id}.fake-stateful.test`;
   }
 
   async snapshot(): Promise<string> {
@@ -98,11 +98,11 @@ export class FakeMachineV2 implements SandboxMachine {
   }
 }
 
-export interface FakeSandboxV2 extends SandboxAdapter {
+export interface FakeStatefulSandbox extends SandboxAdapter {
   /** Every machine this adapter ever booted, in boot order. */
-  readonly machines: FakeMachineV2[];
+  readonly machines: FakeStatefulMachine[];
   /** Live provider-side snapshots (destroy removes its ref from here). */
-  readonly snapshots: Map<string, FakeSnapshotV2>;
+  readonly snapshots: Map<string, FakeStatefulSnapshot>;
   /** Refs passed to destroy, in call order. */
   readonly destroyed: string[];
   creates: number;
@@ -110,14 +110,14 @@ export interface FakeSandboxV2 extends SandboxAdapter {
 }
 
 /** In-process SandboxAdapter with inspectable machines, snapshots, and destroys. */
-export const fakeSandboxV2 = (): FakeSandboxV2 => {
-  const machines: FakeMachineV2[] = [];
-  const snapshots = new Map<string, FakeSnapshotV2>();
+export const fakeStatefulSandbox = (): FakeStatefulSandbox => {
+  const machines: FakeStatefulMachine[] = [];
+  const snapshots = new Map<string, FakeStatefulSnapshot>();
   const destroyed: string[] = [];
   let nextMachine = 1;
   let nextSnapshot = 1;
 
-  const saveSnapshot = (machine: FakeMachineV2): string => {
+  const saveSnapshot = (machine: FakeStatefulMachine): string => {
     const ref = `fake-v2:snap_${nextSnapshot++}`;
     snapshots.set(ref, Object.freeze({
       env: machine.env,
@@ -133,8 +133,8 @@ export const fakeSandboxV2 = (): FakeSandboxV2 => {
     allowedDomains: readonly string[] | undefined,
     template: string | undefined,
     state: ReadonlyMap<string, string>,
-  ): FakeMachineV2 => {
-    const machine = new FakeMachineV2(
+  ): FakeStatefulMachine => {
+    const machine = new FakeStatefulMachine(
       `fake-machine-${nextMachine++}`,
       env,
       allowedDomains === undefined ? undefined : Object.freeze([...allowedDomains]),
@@ -146,7 +146,7 @@ export const fakeSandboxV2 = (): FakeSandboxV2 => {
     return machine;
   };
 
-  const adapter: FakeSandboxV2 = {
+  const adapter: FakeStatefulSandbox = {
     machines,
     snapshots,
     destroyed,
@@ -159,7 +159,7 @@ export const fakeSandboxV2 = (): FakeSandboxV2 => {
     async resume(snapshotRef, policy) {
       adapter.resumes += 1;
       const snapshot = snapshots.get(snapshotRef);
-      if (snapshot === undefined) throw new Error(`unknown fake v2 snapshot: ${snapshotRef}`);
+      if (snapshot === undefined) throw new Error(`unknown fake stateful snapshot: ${snapshotRef}`);
       // Lane E — a passed policy replaces the snapshot-time allowlist (seam rule).
       const allowedDomains = policy === undefined ? snapshot.allowedDomains : policy.allowedDomains;
       return boot({ ...snapshot.env }, allowedDomains, snapshot.template, snapshot.state);

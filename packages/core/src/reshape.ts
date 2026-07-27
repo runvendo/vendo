@@ -1,6 +1,6 @@
 import type { Json } from "./ids.js";
 import { shapeAtPointer, type ShapeType } from "./shape.js";
-import { defineOwn, isPlainObject } from "./tree.js";
+import { defineOwn, isPlainObject } from "./genui/tree-node.js";
 
 /**
  * v2 spec §3 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) —
@@ -11,10 +11,10 @@ import { defineOwn, isPlainObject } from "./tree.js";
  * object→string interpolation for display slots), and aggregates.
  *
  * Three consumers share this module:
- * - `validateTreeV2` gates the canonical form via {@link findInvalidReshape}
+ * - `validateTree` gates the canonical form via {@link findInvalidReshape}
  *   (the vocabulary is enforceable at the format gate, not just at compile);
  * - the wire compiler flows tool shapes through {@link reshapeShape}
- *   (wire-v2/shape-check.ts) to type-check bindings against shape cards;
+ *   (genui/wire/shape-check.ts) to type-check bindings against shape cards;
  * - the renderer evaluates {@link applyReshape} on resolved data — total and
  *   defensive, so a runtime mismatch becomes a contained data-shape notice,
  *   never a broken render.
@@ -159,7 +159,7 @@ export const findInvalidReshapeSteps = (steps: unknown): string | null => {
 
 /**
  * v2 spec §3 — deep-walk a props value for `$reshape` members and validate
- * every chain against the closed vocabulary (the validateTreeV2 gate; same
+ * every chain against the closed vocabulary (the validateTree gate; same
  * walk discipline as fn-references' findInvalidActionReference). Returns the
  * first violation message, or null.
  */

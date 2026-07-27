@@ -99,7 +99,7 @@ export interface AppScheduleStatus {
 export interface ScheduleEngineConfig {
   store: StoreAdapter;
   lifecycle: MachineLifecycle;
-  /** The v2 fn door (fn.ts): POST /fn/<name> with outcome containment. */
+  /** The box fn door (fn.ts): POST /fn/<name> with outcome containment. */
   callFn(app: AppDocument, name: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
   /** Guard audit seam — every fire is reported as the owner's away execution. */
   audit?(event: AuditEvent): Promise<void>;

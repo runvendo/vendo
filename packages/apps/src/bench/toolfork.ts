@@ -6,7 +6,7 @@
  * (constrained component + prop names), and `define_island`. Bindings and
  * actions are structured tool inputs (`bind_data` field paths). The call
  * stream is reconstructed into ordinary wire so it goes through the exact same
- * compileWireV2 + metrics path as the JSX arm.
+ * compileWire + metrics path as the JSX arm.
  */
 import { jsonSchema, tool, type ToolSet } from "ai";
 import { PREWIRED_SCHEMAS } from "../prewired-schema.js";

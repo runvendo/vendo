@@ -5,7 +5,7 @@ import { VendoError, type AppDocument, type SecretsProvider } from "@vendoai/cor
  * when it creates a machine; nothing else composes box env vars. Inside the
  * box is free country — these vars are the whole "in" side of the contract:
  *   - PORT: where the app must listen;
- *   - each GRANTED declared secret, by its own name, real value (the v2 box
+ *   - each GRANTED declared secret, by its own name, real value (the box
  *     does its own allowlisted egress — no handles, no egress proxy);
  *   - VENDO_STORE_URL + VENDO_APP_TOKEN: durable rows over plain HTTP;
  *   - VENDO_HOST_URL + the same token: host tool calls through the guard;

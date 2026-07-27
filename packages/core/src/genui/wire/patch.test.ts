@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { validateTreeV2 } from "../tree-v2.js";
-import { compileWireV2, type WireCompileOptions } from "./compile.js";
-import { compileWirePatchV2, type WirePatchResult } from "./patch.js";
+import { validateTree } from "../tree.js";
+import { compileWire, type WireCompileOptions } from "./compile.js";
+import { compileWirePatch, type WirePatchResult } from "./patch.js";
 
 /** v2 spec §5 — one dialect: edits are `<Edit>` documents of op elements in
  *  the same grammar, applied against compiler-stamped ids, deterministic and
- *  total, re-validated (validateTreeV2 + the wave-3 shape check). */
+ *  total, re-validated (validateTree + the wave-3 shape check). */
 
 const OPTIONS: WireCompileOptions = { hostComponents: ["HostCard"] };
 
@@ -21,11 +21,11 @@ const BASE_WIRE = `<App name="Cash">
   </Stack>
 </App>`;
 
-const base = () => compileWireV2(BASE_WIRE, OPTIONS);
+const base = () => compileWire(BASE_WIRE, OPTIONS);
 
 const patch = (edit: string, baseResult = base(), options = OPTIONS): WirePatchResult => {
-  const result = compileWirePatchV2(edit, baseResult, options);
-  const validation = validateTreeV2(result.tree);
+  const result = compileWirePatch(edit, baseResult, options);
+  const validation = validateTree(result.tree);
   expect(validation.ok).toBe(true);
   return result;
 };
@@ -33,7 +33,7 @@ const patch = (edit: string, baseResult = base(), options = OPTIONS): WirePatchR
 const codes = (result: WirePatchResult): string[] => result.issues.map((issue) => issue.code);
 const node = (result: WirePatchResult, id: string) => result.tree.nodes.find((entry) => entry.id === id);
 
-describe("compileWirePatchV2 Set/Unset", () => {
+describe("compileWirePatch Set/Unset", () => {
   it("Set merges attributes into the target's props (expressions, actions, bindings included)", () => {
     const result = patch(`<Edit>
       <Set id="linechart-1" title="Revenue (12mo)" smooth points={revenue.rows | asPoints(month, revenue)}/>
@@ -65,7 +65,7 @@ describe("compileWirePatchV2 Set/Unset", () => {
   });
 });
 
-describe("compileWirePatchV2 Insert/Remove/Move", () => {
+describe("compileWirePatch Insert/Remove/Move", () => {
   it("Insert compiles a subtree at the index, minting fresh ids past the base ordinals", () => {
     const result = patch(`<Edit>
       <Insert into="grid-1" at={1}><Stat label="Total" value={revenue.rows | sum(revenue)}/></Insert>
@@ -109,7 +109,7 @@ describe("compileWirePatchV2 Insert/Remove/Move", () => {
   });
 });
 
-describe("compileWirePatchV2 queries, islands, name", () => {
+describe("compileWirePatch queries, islands, name", () => {
   it("Query upserts (new appends, same name replaces) and RemoveQuery deletes", () => {
     const result = patch(`<Edit>
       <Query id="payments" tool="payments_list" input={{ limit: 5 }}/>
@@ -198,17 +198,17 @@ describe("compileWirePatchV2 queries, islands, name", () => {
   });
 });
 
-describe("compileWirePatchV2 totality and re-validation", () => {
+describe("compileWirePatch totality and re-validation", () => {
   it("a non-Edit document changes nothing (missing-edit)", () => {
     const before = base();
-    const result = compileWirePatchV2('<App name="nope"/>', before, OPTIONS);
+    const result = compileWirePatch('<App name="nope"/>', before, OPTIONS);
     expect(codes(result)).toEqual(["missing-edit"]);
     expect(result.tree).toStrictEqual(before.tree);
     expect(result.complete).toBe(false);
   });
 
   it("a truncated patch applies the parsed ops and reports incomplete", () => {
-    const result = compileWirePatchV2('<Edit><Set id="pageheader-1" title="New"/><Set id="line', base(), OPTIONS);
+    const result = compileWirePatch('<Edit><Set id="pageheader-1" title="New"/><Set id="line', base(), OPTIONS);
     expect(node(result, "pageheader-1")?.props?.title).toBe("New");
     expect(result.complete).toBe(false);
     expect(codes(result)).toContain("truncated-tag");
@@ -236,9 +236,9 @@ describe("compileWirePatchV2 totality and re-validation", () => {
         },
       },
     };
-    const result = compileWirePatchV2(
+    const result = compileWirePatch(
       '<Edit><Set id="linechart-1" points={revenue.rows | asPoints(period, amount)}/></Edit>',
-      compileWireV2(BASE_WIRE, toolShapes),
+      compileWire(BASE_WIRE, toolShapes),
       toolShapes,
     );
     expect(codes(result)).toEqual(["shape-mismatch"]);
@@ -263,9 +263,9 @@ describe("compileWirePatchV2 totality and re-validation", () => {
         },
       },
     };
-    const result = compileWirePatchV2(
+    const result = compileWirePatch(
       '<Edit><Query id="digest" tool="fn:getDigest"/><Set id="pageheader-1" title={digest.data.summary}/></Edit>',
-      compileWireV2(BASE_WIRE, withFnShape),
+      compileWire(BASE_WIRE, withFnShape),
       withFnShape,
     );
     expect(codes(result)).toEqual(["shape-mismatch"]);
@@ -285,7 +285,7 @@ describe("compileWirePatchV2 totality and re-validation", () => {
   });
 });
 
-describe("compileWirePatchV2 unknown paired ops", () => {
+describe("compileWirePatch unknown paired ops", () => {
   it("skips a paired unknown op's whole subtree exactly once (no cursor drift)", () => {
     const result = patch('<Edit><Teleport id="x"><Card/><Set id="pageheader-1" title="inside"/></Teleport><Set id="pageheader-1" title="after"/></Edit>');
     expect(codes(result)).toEqual(["invalid-patch-op"]);
@@ -294,7 +294,7 @@ describe("compileWirePatchV2 unknown paired ops", () => {
   });
 });
 
-describe("compileWirePatchV2 extension ops", () => {
+describe("compileWirePatch extension ops", () => {
   it("collects declared extension ops (parsed attrs, document order) without issues or application", () => {
     const result = patch(
       '<Edit><ForkPin slot="cards/Revenue" props={{ tone: "bold" }}/><Set id="pageheader-1" title="New"/><SetDescription text="d"/></Edit>',
@@ -324,7 +324,7 @@ describe("compileWirePatchV2 extension ops", () => {
   });
 });
 
-describe("compileWirePatchV2 strict op attributes", () => {
+describe("compileWirePatch strict op attributes", () => {
   it("rejects unknown attributes on structural ops instead of silently misplacing (position alias)", () => {
     const result = patch('<Edit><Insert into="grid-1" position={0}><Card/></Insert></Edit>');
     expect(codes(result)).toEqual(["invalid-patch-op"]);
@@ -348,7 +348,7 @@ describe("compileWirePatchV2 strict op attributes", () => {
   });
 });
 
-describe("compileWirePatchV2 appliedOps", () => {
+describe("compileWirePatch appliedOps", () => {
   it("counts applied ops — a structurally no-op Move still counts; skipped ops do not", () => {
     expect(patch('<Edit><Move id="datatable-1" into="grid-1" at={1}/></Edit>').appliedOps).toBe(1);
     expect(patch('<Edit><Set id="ghost-9" title="x"/></Edit>').appliedOps).toBe(0);
@@ -358,13 +358,13 @@ describe("compileWirePatchV2 appliedOps", () => {
 
 /** Edge/defensive coverage: every skip/degrade path is exercised so the
  *  totality claims stay pinned (CI coverage gate). */
-describe("compileWirePatchV2 edge paths", () => {
+describe("compileWirePatch edge paths", () => {
   it("truncated <Edit tag, lone '<', and truncated ops degrade with issues", () => {
-    expect(codes(compileWirePatchV2("<Edit id=", base(), OPTIONS))).toEqual(["truncated-tag"]);
-    const lone = compileWirePatchV2("<Edit><", base(), OPTIONS);
+    expect(codes(compileWirePatch("<Edit id=", base(), OPTIONS))).toEqual(["truncated-tag"]);
+    const lone = compileWirePatch("<Edit><", base(), OPTIONS);
     expect(codes(lone)).toEqual(["truncated-tag", "eof-unclosed"]);
-    expect(codes(compileWirePatchV2('<Edit><Insert into="grid-1"', base(), OPTIONS))).toEqual(["truncated-tag", "eof-unclosed"]);
-    expect(codes(compileWirePatchV2('<Edit><Set id="pageheader-1"', base(), OPTIONS))).toEqual(["truncated-tag", "eof-unclosed"]);
+    expect(codes(compileWirePatch('<Edit><Insert into="grid-1"', base(), OPTIONS))).toEqual(["truncated-tag", "eof-unclosed"]);
+    expect(codes(compileWirePatch('<Edit><Set id="pageheader-1"', base(), OPTIONS))).toEqual(["truncated-tag", "eof-unclosed"]);
   });
 
   it("bare text, stray closes, paired attribute-only ops, and self-closing Insert are contained", () => {
@@ -391,21 +391,21 @@ describe("compileWirePatchV2 edge paths", () => {
   });
 
   it("re-enforces the §8 query and island caps across base + patch", () => {
-    const manyQueries = compileWireV2(
+    const manyQueries = compileWire(
       `<App>${Array.from({ length: 16 }, (_, i) => `<Query id="q${i}" tool="t"/>`).join("")}<Card/></App>`,
     );
-    const overQuery = compileWirePatchV2('<Edit><Query id="q_extra" tool="t"/></Edit>', manyQueries, {});
+    const overQuery = compileWirePatch('<Edit><Query id="q_extra" tool="t"/></Edit>', manyQueries, {});
     expect(codes(overQuery)).toEqual(["query-limit"]);
     expect(overQuery.tree.queries).toHaveLength(16);
 
-    const manyIslands = compileWireV2(
+    const manyIslands = compileWire(
       `<App>${Array.from({ length: 16 }, (_, i) => `<Island name="Gen${i}">export default () => null;</Island>`).join("")}<Card/></App>`,
     );
-    const overIsland = compileWirePatchV2('<Edit><Island name="GenExtra">export default () => null;</Island></Edit>', manyIslands, {});
+    const overIsland = compileWirePatch('<Edit><Island name="GenExtra">export default () => null;</Island></Edit>', manyIslands, {});
     expect(codes(overIsland)).toEqual(["component-limit"]);
     expect(Object.keys(overIsland.components)).toHaveLength(16);
     // Upsert of an EXISTING island replaces in place (no cap interaction).
-    const upsert = compileWirePatchV2('<Edit><Island name="Gen0">export default () => "v2";</Island></Edit>', manyIslands, {});
+    const upsert = compileWirePatch('<Edit><Island name="Gen0">export default () => "v2";</Island></Edit>', manyIslands, {});
     expect(upsert.issues).toEqual([]);
     expect(upsert.components.Gen0).toContain("v2");
   });
@@ -423,7 +423,7 @@ describe("compileWirePatchV2 edge paths", () => {
       components: {},
       name: "Bad",
     };
-    const result = compileWirePatchV2('<Edit><SetName name="Renamed"/></Edit>', badBase as never, {});
+    const result = compileWirePatch('<Edit><SetName name="Renamed"/></Edit>', badBase as never, {});
     expect(codes(result)).toEqual(["patch-invalid"]);
     expect(result.tree).toBe(badBase.tree);
     expect(result.complete).toBe(false);
@@ -440,7 +440,7 @@ describe("compileWirePatchV2 edge paths", () => {
       },
       components: {},
     };
-    const result = compileWirePatchV2("<Edit/>", hostile as never, {});
+    const result = compileWirePatch("<Edit/>", hostile as never, {});
     expect(codes(result)).toEqual(["compile-failed"]);
     expect(result.appliedOps).toBe(0);
   });

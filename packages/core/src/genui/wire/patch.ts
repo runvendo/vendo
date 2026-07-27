@@ -5,7 +5,7 @@
  * and emits a small `<Edit>` document of op elements in the SAME
  * element/attribute/expression grammar; this module applies it against a
  * base compile result deterministically and re-validates the outcome
- * (validateTreeV2 + the wave-3 shape check). No JSON-ops dialect exists.
+ * (validateTree + the wave-3 shape check). No JSON-ops dialect exists.
  *
  * Total like the create compiler: a bad op records an issue and is SKIPPED
  * whole (never half-applied); a truncated document applies the ops that
@@ -20,15 +20,15 @@
  * component's ordinal past the maximum already present.
  */
 
-import { VENDO_TREE_FORMAT_V2 } from "../../formats.js";
+import { VENDO_TREE_FORMAT } from "../../formats.js";
 // CORE-6: the §8-capped generated-components byte measure is the shared
 // UTF-8 counter (the limits.ts pattern).
 import { utf8ByteLength } from "../../component-map.js";
 import { safeErrorMessage } from "../../errors.js";
 import type { Json } from "../../ids.js";
 import { TREE_MAX_GENERATED_COMPONENTS, TREE_MAX_QUERIES, TREE_MAX_TOTAL_COMPONENT_BYTES } from "../tree-limits.js";
-import { defineOwn, type TreeNode } from "../tree.js";
-import { validateTreeV2, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
+import { defineOwn, type TreeNode } from "../tree-node.js";
+import { validateTree, type TreeQuery, type Tree } from "../tree.js";
 import { parseAttributes } from "./attributes.js";
 import {
   compileIsland,
@@ -97,7 +97,7 @@ interface PatchTree {
   owned: Set<string>;
 }
 
-const buildPatchTree = (tree: TreeV2): PatchTree => {
+const buildPatchTree = (tree: Tree): PatchTree => {
   const byId = new Map(tree.nodes.map((node) => [node.id, node]));
   const parentOf = new Map<string, string>();
   for (const node of tree.nodes) {
@@ -221,7 +221,7 @@ const skipOpContent = (state: CompileState, selfClosing: boolean, op: string): v
   skipElement(state, op);
 };
 
-const compileWirePatchV2Unsafe = (
+const compileWirePatchUnsafe = (
   wire: string,
   base: WirePatchBase,
   options: WirePatchOptions | undefined,
@@ -296,7 +296,7 @@ const compileWirePatchV2Unsafe = (
       const hoistedBefore = state.queries.length;
       compileQuery(state, [{ tag: "Edit", node: { id: "", component: "Edit" } }]);
       if (state.queries.length > hoistedBefore) {
-        removedQueries.delete((state.queries[hoistedBefore] as TreeQueryV2).name);
+        removedQueries.delete((state.queries[hoistedBefore] as TreeQuery).name);
       }
       continue;
     }
@@ -520,7 +520,7 @@ const compileWirePatchV2Unsafe = (
   }
 
   // — assembly: queries (base order + upserts − removals, §8-capped) —
-  const queries: TreeQueryV2[] = [];
+  const queries: TreeQuery[] = [];
   const upserts = new Map(state.queries.map((query) => [query.name, query]));
   for (const query of base.tree.queries ?? []) {
     if (removedQueries.has(query.name)) continue;
@@ -575,8 +575,8 @@ const compileWirePatchV2Unsafe = (
     nodes.push(patch.byId.get(id) as TreeNode);
   }
 
-  const tree: TreeV2 = {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+  const tree: Tree = {
+    formatVersion: VENDO_TREE_FORMAT,
     root: base.tree.root,
     nodes,
   };
@@ -586,7 +586,7 @@ const compileWirePatchV2Unsafe = (
   // v2 spec §5 — re-validate: the applied result must pass the same gates as
   // a create. A failure (impossible from compiler-produced bases) degrades
   // to the untouched base.
-  const validation = validateTreeV2(tree);
+  const validation = validateTree(tree);
   if (!validation.ok) {
     return failResult([
       ...state.issues,
@@ -615,16 +615,16 @@ const compileWirePatchV2Unsafe = (
 /**
  * v2 spec §5 — apply one `<Edit>` wire patch to a base compile result.
  * Deterministic, pure, total: never throws, never mutates the base, and the
- * result always passes validateTreeV2 (a re-validation failure returns the
+ * result always passes validateTree (a re-validation failure returns the
  * base unchanged with a `patch-invalid` issue).
  */
-export function compileWirePatchV2(
+export function compileWirePatch(
   wire: string,
   base: WirePatchBase,
   options?: WirePatchOptions,
 ): WirePatchResult {
   try {
-    return compileWirePatchV2Unsafe(wire, base, options);
+    return compileWirePatchUnsafe(wire, base, options);
   } catch (error) {
     return {
       tree: base.tree,

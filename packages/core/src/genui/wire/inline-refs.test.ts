@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { expandInlineRefs } from "./inline-refs.js";
-import { compileWireV2 } from "./compile.js";
+import { compileWire } from "./compile.js";
 
 describe("expandInlineRefs", () => {
   it("mints one query for two refs sharing tool + args (dedupe)", () => {
@@ -63,8 +63,8 @@ describe("expandInlineRefs", () => {
   it("compiles to the same canonical tree as the explicit <Query> arm", () => {
     const inline = `<App name="Overdue"><Table rows={invoices.list({status:"overdue"}).data} columns={[{key:"client"}]}/></App>`;
     const explicit = `<App name="Overdue"><Query id="invoicesList" tool="invoices.list" input={{status:"overdue"}}/><Table rows={invoicesList.data} columns={[{key:"client"}]}/></App>`;
-    const a = compileWireV2(inline, { inlineRefs: true });
-    const b = compileWireV2(explicit);
+    const a = compileWire(inline, { inlineRefs: true });
+    const b = compileWire(explicit);
     expect(a.complete).toBe(true);
     expect(a.tree.queries).toEqual(b.tree.queries);
     expect(a.tree.nodes).toEqual(b.tree.nodes);

@@ -7,19 +7,19 @@
  * ./validation, and what RUNS AROUND the model in ./stages.
  */
 import {
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   VendoError,
-  compileWirePatchV2,
-  compileWireV2,
+  compileWirePatch,
+  compileWire,
   findDeprecatedReshapeUsage,
-  printWireV2,
+  printWire,
   type AppDocument,
   type DomainManifest,
   type NormalizedCatalog,
   type ShapeType,
   type ToolSemantics,
   type TreeNode,
-  type TreeV2,
+  type Tree,
   type VendoTheme,
   type WireCompileResult,
 } from "@vendoai/core";
@@ -49,11 +49,11 @@ export interface HostToolInfo {
   inputSchema?: Record<string, unknown>;
 }
 
-/** A compiled prefix of the streaming wire: always a validateTreeV2-passing
+/** A compiled prefix of the streaming wire: always a validateTree-passing
  *  tree (valid-while-partial) plus the islands admitted so far. */
 export interface GeneratedPartial {
   name?: string;
-  tree: TreeV2;
+  tree: Tree;
   components?: Record<string, string>;
 }
 
@@ -292,7 +292,7 @@ const streamWire = async (
     if (deps.onPartial === undefined) return;
     if (firstPartialAt === 0) { firstPartialAt = Date.now(); reportTiming("first-partial"); }
     lastFlushAt = Date.now();
-    const compiled = compileWireV2(extractWire(text), wireCompileOptionsFor(deps, hostComponents));
+    const compiled = compileWire(extractWire(text), wireCompileOptionsFor(deps, hostComponents));
     const partial: GeneratedPartial = {
       tree: compiled.tree,
       ...(compiled.name === undefined ? {} : { name: compiled.name }),
@@ -362,7 +362,7 @@ const streamWire = async (
       const usage = await Promise.resolve(result.usage).catch(() => undefined);
       reportTiming("complete", usage === undefined ? undefined : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
     }
-    return { compiled: compileWireV2(extractWire(text), wireCompileOptionsFor(deps, hostComponents)), raw: extractWire(text), issues: [] };
+    return { compiled: compileWire(extractWire(text), wireCompileOptionsFor(deps, hostComponents)), raw: extractWire(text), issues: [] };
   } catch (error) {
     await finishPartials();
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
@@ -502,7 +502,7 @@ export const repairIslandsScoped = async (
     [
       `USER_REQUEST: ${userRequest}`,
       `CURRENT_APP (context only — do NOT re-emit it; everything outside the named islands is already valid):`,
-      printWireV2(base, { includeIds: false }),
+      printWire(base, { includeIds: false }),
       `ISLANDS_TO_FIX: ${names.join(", ")}`,
       `VALIDATION_ISSUES:`,
       ...issues.map((issue) => `- ${issue}`),
@@ -514,7 +514,7 @@ export const repairIslandsScoped = async (
   // fences anyway — the wire compiler extracts islands from either shape.
   const text = output.text.replaceAll(/```[a-z]*\n?/gi, "");
   const fixesWire = text.includes("<App") ? extractWire(text) : `<App name="__island_repair__">${text}</App>`;
-  const fixes = compileWireV2(fixesWire, wireCompileOptionsFor(deps, [...context.hostComponents]));
+  const fixes = compileWire(fixesWire, wireCompileOptionsFor(deps, [...context.hostComponents]));
   const nextComponents: Record<string, string> = { ...compiled.components };
   let replaced = 0;
   for (const name of names) {
@@ -525,8 +525,8 @@ export const repairIslandsScoped = async (
     }
   }
   if (replaced === 0) return finish();
-  const recompiled = compileWireV2(
-    printWireV2({ ...base, components: nextComponents }, { includeIds: false }),
+  const recompiled = compileWire(
+    printWire({ ...base, components: nextComponents }, { includeIds: false }),
     wireCompileOptionsFor(deps, [...context.hostComponents]),
   );
   const validated = await context.validate(recompiled);
@@ -557,7 +557,7 @@ export const applyPinFork = (
   }
   const componentName = pinComponentName(baseline.slot);
   if (app.components?.[componentName] !== undefined) return fail(`generated component "${componentName}" already exists`);
-  const tree = app.tree as unknown as TreeV2;
+  const tree = app.tree as unknown as Tree;
   const parentId = props.into === undefined ? tree.root : props.into;
   if (typeof parentId !== "string") return fail("into must be a string node id when present");
   const parent = tree.nodes.find(({ id }) => id === parentId);
@@ -590,16 +590,16 @@ const editTree = async (
   input: GenerationEditInput,
   deps: GenerationDependencies,
 ): Promise<GenerationEditResult> => {
-  if (input.app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) {
+  if (input.app.tree?.formatVersion !== VENDO_TREE_FORMAT) {
     return { kind: "failure", issues: ["tree edits require a vendo-genui/v2 app"] };
   }
   const hostComponents = deps.catalog.map(({ name }) => name);
   const base = {
-    tree: input.app.tree as unknown as TreeV2,
+    tree: input.app.tree as unknown as Tree,
     components: input.app.components ?? {},
     name: input.app.name,
   };
-  const context = printWireV2(base, { includeIds: true });
+  const context = printWire(base, { includeIds: true });
   let issues = [...(input.repairIssues ?? [])];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const output = await generateWireText(
@@ -609,7 +609,7 @@ const editTree = async (
     );
     issues = distinctIssues(issues, output.issues);
     if (output.text !== undefined) {
-      const patched = compileWirePatchV2(extractEdit(output.text), base, {
+      const patched = compileWirePatch(extractEdit(output.text), base, {
         hostComponents,
         ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
         extensionOps: ["ForkPin", "SetDescription"],
@@ -823,7 +823,7 @@ export const modelEngine: GenerationEngine = {
         },
         ...(gatedPartial === undefined ? {} : {
           emitPartial: (assembledWire: string) => {
-            const compiled = compileWireV2(assembledWire, wireCompileOptionsFor(deps, hostComponents));
+            const compiled = compileWire(assembledWire, wireCompileOptionsFor(deps, hostComponents));
             gatedPartial({
               tree: compiled.tree,
               ...(compiled.name === undefined ? {} : { name: compiled.name }),

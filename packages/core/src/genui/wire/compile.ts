@@ -5,15 +5,15 @@
  * per the v2 spec §2 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md)
  * and plan decisions D3/D5/D6
  * (docs/superpowers/plans/2026-07-18-vendo-v2-wave1-format-compiler-renderer.md).
- * `compileWireV2` and its options/result types are exported from the package
+ * `compileWire` and its options/result types are exported from the package
  * root, as is expression.ts's issue contract (`WIRE_ISSUE_CODES`,
- * `WireIssueCode`, `WireIssue`); everything else in wire-v2 stays internal.
+ * `WireIssueCode`, `WireIssue`); everything else in genui/wire stays internal.
  *
  * The wire is a single `<App ...>...</App>` element whose element children
  * become children of a synthetic `root` Stack node. The compiler is pure,
  * deterministic (identical wire → byte-identical result) and TOTAL: it never
  * throws — malformed input degrades to ordered issues plus a smaller tree
- * that still passes validateTreeV2.
+ * that still passes validateTree.
  *
  * Module stack (one-directional): compile → attributes → scan/limits →
  * state. This file owns element dispatch, the frame stack, the
@@ -22,19 +22,19 @@
  * always stay within the pinned limits.
  *
  * Valid-while-partial (D6) is property-tested in roundtrip.e2e.test.ts:
- * EVERY prefix of a wire compiles to a validateTreeV2-passing tree with
+ * EVERY prefix of a wire compiles to a validateTree-passing tree with
  * monotonically non-decreasing node counts, `complete` true only at a
  * proper full parse.
  */
 
 import { safeErrorMessage } from "../../errors.js";
 import { FN_REFERENCE_PATTERN } from "../../fn-references.js";
-import { VENDO_TREE_FORMAT_V2 } from "../../formats.js";
+import { VENDO_TREE_FORMAT } from "../../formats.js";
 import type { Json } from "../../ids.js";
-import { isPlainObject, type TreeNode } from "../tree.js";
+import { isPlainObject, type TreeNode } from "../tree-node.js";
 import { RESERVED_COMPONENT_NAMES } from "../tree-limits.js";
 import { WIRE_COMPONENT_NAMES } from "../../kit/specs.js";
-import { QUERY_NAME_PATTERN, type TreeQueryV2, type TreeV2 } from "../tree-v2.js";
+import { QUERY_NAME_PATTERN, type TreeQuery, type Tree } from "../tree.js";
 import type { ShapeType } from "../../shape.js";
 import { parseAttributes } from "./attributes.js";
 import type { WireIssue } from "./expression.js";
@@ -65,7 +65,7 @@ export interface WireCompileOptions {
 
 /** v2 spec §2 / plan D6 — the compile result. */
 export interface WireCompileResult {
-  tree: TreeV2;
+  tree: Tree;
   /** Generated-component sources: `<Island name>` → raw TSX (D3). Always
    *  present; empty when no islands were declared. */
   components: Record<string, string>;
@@ -188,7 +188,7 @@ export const compileQuery = (state: CompileState, frames: Frame[]): void => {
     return;
   }
   if (!claimQuerySlot(state)) return; // §8 — over-cap queries are dropped
-  const query: TreeQueryV2 = { name, tool };
+  const query: TreeQuery = { name, tool };
   const input = attrs.props?.input;
   if (input !== undefined) {
     if (isPlainObject(input)) {
@@ -282,7 +282,7 @@ const compileOpenTag = (state: CompileState, frames: Frame[], name: string): voi
     // structure (attribute cursor movement above, close-tag balancing via
     // this frame), but no node is appended and no child id is recorded, so
     // children only ever reference emitted nodes. The placeholder's empty
-    // id would fail validateTreeV2 if it ever leaked into the tree; it also
+    // id would fail validateTree if it ever leaked into the tree; it also
     // cannot be mutated, since once the cap is hit no descendant claims a
     // slot either.
     if (!attrs.selfClosing) frames.push({ tag: name, node: { id: "", component: name } });
@@ -509,8 +509,8 @@ const finishResult = (
       delete node.source;
     }
   }
-  const tree: TreeV2 = {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+  const tree: Tree = {
+    formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: state.nodes,
   };
@@ -536,7 +536,7 @@ const finishResult = (
   return result;
 };
 
-const compileWireV2Unsafe = (rawWire: string, options: WireCompileOptions | undefined): WireCompileResult => {
+const compileWireUnsafe = (rawWire: string, options: WireCompileOptions | undefined): WireCompileResult => {
   const wire = options?.inlineRefs
     ? expandInlineRefs(rawWire, options.inlineTools === undefined ? undefined : { tools: options.inlineTools }).wire
     : rawWire;
@@ -580,15 +580,15 @@ const compileWireV2Unsafe = (rawWire: string, options: WireCompileOptions | unde
  * v2 spec §2 / plan D3/D5/D6 — compile one wire markup document to the
  * canonical v2 tree. Deterministic, pure, and total: never throws on any
  * input — an unexpected failure degrades to the empty valid tree plus a
- * `compile-failed` issue (same discipline as validateTreeV2).
+ * `compile-failed` issue (same discipline as validateTree).
  */
-export function compileWireV2(wire: string, options?: WireCompileOptions): WireCompileResult {
+export function compileWire(wire: string, options?: WireCompileOptions): WireCompileResult {
   try {
-    return compileWireV2Unsafe(wire, options);
+    return compileWireUnsafe(wire, options);
   } catch (error) {
     return {
       tree: {
-        formatVersion: VENDO_TREE_FORMAT_V2,
+        formatVersion: VENDO_TREE_FORMAT,
         root: "root",
         nodes: [{ id: "root", component: "Stack", source: "prewired" }],
       },

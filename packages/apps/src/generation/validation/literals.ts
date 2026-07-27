@@ -13,7 +13,7 @@ import {
   KIT_WIRE_COMPONENT_NAMES,
   type NormalizedCatalog,
   type TreeNode,
-  type TreeV2,
+  type Tree,
 } from "@vendoai/core";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -71,7 +71,7 @@ const isBindingValue = (value: unknown): boolean => isPathBinding(value) || isSt
 
 /** Law 1 — every data-classed prop present on a node must be a `$path` /
  *  `$state` binding. A literal there is hand-typed business data. */
-export const literalDataFaults = (tree: TreeV2, catalog: NormalizedCatalog): LiteralDataFault[] => {
+export const literalDataFaults = (tree: Tree, catalog: NormalizedCatalog): LiteralDataFault[] => {
   const faults: LiteralDataFault[] = [];
   for (const node of tree.nodes) {
     const props = node.props;
@@ -87,6 +87,6 @@ export const literalDataFaults = (tree: TreeV2, catalog: NormalizedCatalog): Lit
 };
 
 /** The repair-facing message for each law-1 fault. */
-export const literalDataIssues = (tree: TreeV2, catalog: NormalizedCatalog): string[] =>
+export const literalDataIssues = (tree: Tree, catalog: NormalizedCatalog): string[] =>
   literalDataFaults(tree, catalog).map((fault) =>
     `node "${fault.nodeId}" prop "${fault.prop}" on <${fault.component}> carries hand-typed LITERAL business data — law 1: every data-classed prop must be a binding to a tool result, e.g. ${fault.prop}={queryName.field.path}. If NO host tool provides this data, render an honest <Disclaimer reason="..."/> instead — never invent figures.`);

@@ -6,7 +6,7 @@
  * structured-repair fix space and the create/edit validation share ONE
  * detector (actionFaults); actionIssues renders the repair-facing messages.
  */
-import type { TreeV2 } from "@vendoai/core";
+import type { Tree } from "@vendoai/core";
 import type { HostToolInfo } from "../engine.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -71,7 +71,7 @@ export interface ActionFault {
 }
 
 export const actionFaults = (
-  tree: TreeV2,
+  tree: Tree,
   tools: readonly HostToolInfo[] | undefined,
 ): ActionFault[] => {
   const byName = new Map((tools ?? []).map((tool) => [tool.name, tool]));
@@ -130,7 +130,7 @@ export const actionFaults = (
 /** The repair-facing message for each action fault. Each routes to repair,
  *  where the model binds the row/form context — or, when the host has no
  *  tool for the ask, replaces the dead button with an honest disclaimer. */
-export const actionIssues = (tree: TreeV2, tools: readonly HostToolInfo[] | undefined): string[] =>
+export const actionIssues = (tree: Tree, tools: readonly HostToolInfo[] | undefined): string[] =>
   actionFaults(tree, tools).map((fault) => {
     if (fault.kind === "dead-submit") {
       return `node "${fault.nodeId}" is a submit affordance ("${fault.label}") with no action — a submit that does nothing is a fake affordance. Wire its action to a host tool that performs it, binding the form/row context into payload; or if NO host tool can perform it, replace it with an honest disclaimer that the action isn't available.`;

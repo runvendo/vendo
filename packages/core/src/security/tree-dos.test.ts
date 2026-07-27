@@ -6,9 +6,9 @@ import {
   TREE_MAX_QUERIES,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   validateAppDocument,
-  validateTreeV2,
+  validateTree,
 } from "../index.js";
 
 // Denial-of-service / resource-exhaustion regression suite for the tree and
@@ -17,13 +17,13 @@ import {
 // making the jail compile an unbounded payload.
 
 const treeWithNodes = (count: number): Record<string, unknown> => ({
-  formatVersion: VENDO_TREE_FORMAT_V2,
+  formatVersion: VENDO_TREE_FORMAT,
   root: "n0",
   nodes: Array.from({ length: count }, (_, index) => ({ id: `n${index}`, component: "Text" })),
 });
 
 const expectProvisionFailure = (input: unknown): void => {
-  const result = validateTreeV2(input);
+  const result = validateTree(input);
   expect(result.ok).toBe(false);
   if (!result.ok) expect(result.error.code).toBe("provision");
 };
@@ -32,7 +32,7 @@ const componentCode = "export default function C(){ return null; }";
 
 describe("validateTree resource caps", () => {
   it("rejects more than TREE_MAX_NODES nodes", () => {
-    expect(validateTreeV2(treeWithNodes(TREE_MAX_NODES)).ok).toBe(true);
+    expect(validateTree(treeWithNodes(TREE_MAX_NODES)).ok).toBe(true);
     expectProvisionFailure(treeWithNodes(TREE_MAX_NODES + 1));
   });
 
@@ -41,7 +41,7 @@ describe("validateTree resource caps", () => {
       ...treeWithNodes(1),
       queries: Array.from({ length: count }, (_, index) => ({ name: `q${index}`, tool: "t" })),
     });
-    expect(validateTreeV2(withQueries(TREE_MAX_QUERIES)).ok).toBe(true);
+    expect(validateTree(withQueries(TREE_MAX_QUERIES)).ok).toBe(true);
     expectProvisionFailure(withQueries(TREE_MAX_QUERIES + 1));
   });
 
@@ -79,7 +79,7 @@ describe("validateTree resource caps", () => {
 
   it("rejects duplicate node ids", () => {
     expectProvisionFailure({
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "dup",
       nodes: [{ id: "dup", component: "Text" }, { id: "dup", component: "Text" }],
     });
@@ -87,7 +87,7 @@ describe("validateTree resource caps", () => {
 
   it("rejects a missing / non-matching root", () => {
     expectProvisionFailure({
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "ghost",
       nodes: [{ id: "real", component: "Text" }],
     });
@@ -102,7 +102,7 @@ describe("validateAppDocument fn:-requires-a-machine", () => {
       name: "Needs a machine",
       ui: "tree" as const,
       tree: {
-        formatVersion: VENDO_TREE_FORMAT_V2,
+        formatVersion: VENDO_TREE_FORMAT,
         root: "root",
         nodes: [{ id: "root", component: "Text" }],
         queries: [{ name: "data", tool: "fn:load_data" }],
@@ -126,8 +126,8 @@ describe("validateTree DoS bound gaps (recorded by-contract)", () => {
     // multi-hundred-KB `data` blob and still PASS. This DoS bound is delegated to
     // an upstream request-body limit (the HTTP layer), not the core validator.
     const bigBlob = "y".repeat(400_000); // ~400 KB, well past any component cap
-    const result = validateTreeV2({
-      formatVersion: VENDO_TREE_FORMAT_V2,
+    const result = validateTree({
+      formatVersion: VENDO_TREE_FORMAT,
       root: "n0",
       nodes: [{ id: "n0", component: "Text", props: { huge: bigBlob } }],
       data: { huge: bigBlob },

@@ -1,9 +1,9 @@
 import {
-  validateTreeV2,
+  validateTree,
   type Json,
   type TreeNode,
-  type TreeQueryV2,
-  type TreeV2,
+  type TreeQuery,
+  type Tree,
 } from "@vendoai/core";
 
 /**
@@ -19,7 +19,7 @@ import {
  *   emits (wire-v2 D5); the v1 walk dispatches `{ $action }`, so conversion
  *   rewrites the key.
  * - component sources ride on the PAYLOAD (app-document level), never the
- *   canonical tree — validateTreeV2 rejects tree-carried `components`, so
+ *   canonical tree — validateTree rejects tree-carried `components`, so
  *   they are lifted off before validation and re-attached for the walk.
  *
  * This module is a PURE converter. The registry registration lives in
@@ -50,7 +50,7 @@ const convertNode = (node: TreeNode): TreeNode => node.props === undefined
   : { ...node, props: convertPropValue(node.props) as Record<string, Json> };
 
 /** v2 query results reside at `"/" + name` — that pointer is the v1 path. */
-const convertQuery = (query: TreeQueryV2): { path: string; tool: string; input?: Record<string, Json> } => ({
+const convertQuery = (query: TreeQuery): { path: string; tool: string; input?: Record<string, Json> } => ({
   path: `/${query.name}`,
   tool: query.tool,
   ...(query.input === undefined ? {} : { input: query.input }),
@@ -58,22 +58,22 @@ const convertQuery = (query: TreeQueryV2): { path: string; tool: string; input?:
 
 import type { WalkTree } from "./renderer.js";
 
-export type ConvertedV2 =
+export type ConvertedPayload =
   | { ok: true; tree: WalkTree }
   | { ok: false; error: { code: "version" | "provision"; message: string } };
 
-export function convertV2Payload(payload: { formatVersion: string }): ConvertedV2 {
+export function convertPayload(payload: { formatVersion: string }): ConvertedPayload {
   // Sources live at the app-document level; the payload may carry them
-  // alongside the tree, but the canonical v2 tree must not (validateTreeV2
+  // alongside the tree, but the canonical v2 tree must not (validateTree
   // rejects it), so they are lifted off before the gate.
   const { components, ...tree } = payload as { components?: unknown };
-  const validation = validateTreeV2(tree);
+  const validation = validateTree(tree);
   if (!validation.ok) return validation;
-  // Payload extras beyond the TreeV2 shape (streaming, furnishings, inClient,
+  // Payload extras beyond the Tree shape (streaming, furnishings, inClient,
   // pinDrift…) survive the spread at runtime; the shared walk reads them off
   // the tree object (v2 spec §6 — the mechanics survive, the v1 format
   // surface around them is gone).
-  const valid: TreeV2 = validation.tree;
+  const valid: Tree = validation.tree;
   return {
     ok: true,
     tree: {

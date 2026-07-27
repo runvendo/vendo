@@ -6,13 +6,13 @@
  * outside the closed space falls back to the free-form regeneration loop.
  */
 import {
-  printWireV2,
+  printWire,
   isPathBinding,
   isStateBinding,
   shapeAtPointer,
   type ShapeType,
   type TreeNode,
-  type TreeV2,
+  type Tree,
   type WireCompileResult,
 } from "@vendoai/core";
 import type {
@@ -154,7 +154,7 @@ const hostPropRequirement = (
 
 /** Candidate payload-context bindings: every bounded path into every KNOWN
  *  query shape in the app (the per-row id, the form field values live here). */
-const contextPaths = (tree: TreeV2, deps: GenerationDependencies): string[] => {
+const contextPaths = (tree: Tree, deps: GenerationDependencies): string[] => {
   const out: string[] = [];
   for (const query of tree.queries ?? []) {
     const shape = deps.toolShapes?.[query.tool];
@@ -418,7 +418,7 @@ const enumerateShapePathsBreadthFirst = (
  *  under a different query) that deliver the same kind the current binding
  *  does. A slot whose only legal target is itself is not a slot. */
 export const deriveRebindSlots = (
-  tree: TreeV2,
+  tree: Tree,
   deps: GenerationDependencies,
   resolvedData: Record<string, unknown>,
 ): RebindSlot[] => {
@@ -621,7 +621,7 @@ export const strictToolCall = async (
 // re-exported here so existing importers keep their path.
 export { DISCLAIMER_TEXT };
 
-const disclaimNode = (tree: TreeV2, nodeId: string): void => {
+const disclaimNode = (tree: Tree, nodeId: string): void => {
   const node = tree.nodes.find((candidate) => candidate.id === nodeId);
   if (node === undefined) return;
   node.component = "Text";
@@ -654,7 +654,7 @@ const hasDeepBinding = (container: Record<string, unknown> | unknown[]): boolean
  *  (headings around the disclaimers) does not rescue it — that is exactly the
  *  shape the cert screenshots show. A tree with NO disclaimers is never
  *  degenerate here, whatever else it lacks. */
-export const isDisclaimerOnlyTree = (tree: TreeV2): boolean => {
+export const isDisclaimerOnlyTree = (tree: Tree): boolean => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const seen = new Set<string>();
   const pending = [tree.root];
@@ -735,7 +735,7 @@ const replaceBindingPath = (
 const bindingReferencesQuery = (value: unknown, queryName: string): boolean =>
   isPathBinding(value) && (value.$path === `/${queryName}` || value.$path.startsWith(`/${queryName}/`));
 
-const pruneUnreachable = (tree: TreeV2): void => {
+const pruneUnreachable = (tree: Tree): void => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const reachable = new Set<string>();
   const pending = [tree.root];
@@ -754,7 +754,7 @@ const spliceFixes = (
   compiled: WireCompileResult,
   fixes: RepairFix[],
   chosen: Record<string, unknown>,
-): { tree: TreeV2; components: Record<string, string>; name?: string } => {
+): { tree: Tree; components: Record<string, string>; name?: string } => {
   const tree = structuredClone(compiled.tree);
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const disclaimedIslands = new Set<string>();
@@ -908,7 +908,7 @@ export const structuredRepair = async (
     const fixes = deriveFixes(current, deps, islandDisclaimNames);
     if (fixes.length === 0) return finish({ rounds: round, issues, noValidFixCount });
     const schema = buildFixSchema(fixes);
-    const wire = printWireV2(
+    const wire = printWire(
       { tree: current.tree, components: current.components, ...(current.name === undefined ? {} : { name: current.name }) },
       { includeIds: true },
     );

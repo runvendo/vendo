@@ -31,20 +31,40 @@ export * from "./store.js";
 export * from "./stream-parts.js";
 export * from "./tool-envelopes.js";
 export * from "./tools.js";
-export * from "./tree.js";
-export * from "./tree-v2.js";
+export * from "./genui/tree-node.js";
+export * from "./genui/tree.js";
 export * from "./triggers.js";
-// wire-v2 — only the compiler entry point, the renderer/repair issue
+// genui/wire — only the compiler entry point, the renderer/repair issue
 // contract, and the per-binding repair shape (v2 spec §3) are public; the
 // sibling modules (expressions, attributes, scan, limits, state) stay
 // internal. The shape checker itself is public for one consumer: the
 // graduation fn-result post-pass (Wave 7 H2), which re-checks an already
 // compiled tree once the fn: shapes are sampled.
-export { compileWireV2, type WireCompileOptions, type WireCompileResult } from "./wire-v2/compile.js";
-export { expandInlineRefs, type InlineRefsResult } from "./wire-v2/inline-refs.js";
-export { WIRE_ISSUE_CODES, type WireIssue, type WireIssueCode } from "./wire-v2/expression.js";
+export { compileWire, type WireCompileOptions, type WireCompileResult } from "./genui/wire/compile.js";
+export { expandInlineRefs, type InlineRefsResult } from "./genui/wire/inline-refs.js";
+export { WIRE_ISSUE_CODES, type WireIssue, type WireIssueCode } from "./genui/wire/expression.js";
 // v2 spec §5 — the one-dialect edit surface: print the app as id-anchored
 // wire (the model's edit context), apply the model's <Edit> patch.
-export { compileWirePatchV2, type PatchExtensionOp, type WirePatchBase, type WirePatchOptions, type WirePatchResult } from "./wire-v2/patch.js";
-export { printWireV2, type WirePrintInput, type WirePrintOptions } from "./wire-v2/print.js";
-export { checkBindingShapes, type BindingShapeError } from "./wire-v2/shape-check.js";
+export { compileWirePatch, type PatchExtensionOp, type WirePatchBase, type WirePatchOptions, type WirePatchResult } from "./genui/wire/patch.js";
+export { printWire, type WirePrintInput, type WirePrintOptions } from "./genui/wire/print.js";
+export { checkBindingShapes, type BindingShapeError } from "./genui/wire/shape-check.js";
+
+// Deprecated aliases from the pre-de-versioning naming (0.4.x). Remove next minor.
+/** @deprecated Use compileWire. */
+export { compileWire as compileWireV2 } from "./genui/wire/compile.js";
+/** @deprecated Use compileWirePatch. */
+export { compileWirePatch as compileWirePatchV2 } from "./genui/wire/patch.js";
+/** @deprecated Use printWire. */
+export { printWire as printWireV2 } from "./genui/wire/print.js";
+/** @deprecated Use validateTree. */
+export { validateTree as validateTreeV2 } from "./genui/tree.js";
+/** @deprecated Use VENDO_TREE_FORMAT. */
+export { VENDO_TREE_FORMAT as VENDO_TREE_FORMAT_V2 } from "./formats.js";
+/** @deprecated Use treeSchema. */
+export { treeSchema as treeV2Schema } from "./genui/tree.js";
+/** @deprecated Use treeQuerySchema. */
+export { treeQuerySchema as treeQueryV2Schema } from "./genui/tree.js";
+/** @deprecated Use Tree. */
+export type { Tree as TreeV2 } from "./genui/tree.js";
+/** @deprecated Use TreeQuery. */
+export type { TreeQuery as TreeQueryV2 } from "./genui/tree.js";

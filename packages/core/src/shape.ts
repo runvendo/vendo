@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { IsoDateTime, Json } from "./ids.js";
-import { defineOwn } from "./tree.js";
+import { defineOwn } from "./genui/tree-node.js";
 
 /**
  * v2 spec §3 (docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md) —
@@ -12,7 +12,7 @@ import { defineOwn } from "./tree.js";
  * Shape cards are derived from recorded samples ({@link deriveShapeCard});
  * the engine hands them to the model as generation context
  * ({@link describeShape}) and to the wire compiler as `toolShapes` for the
- * binding type-check (wire-v2/shape-check.ts).
+ * binding type-check (genui/wire/shape-check.ts).
  */
 export type ShapeType =
   | { kind: "string" | "number" | "boolean" | "null" | "json" }
@@ -125,7 +125,7 @@ function mergeShapes(a: ShapeType, b: ShapeType): ShapeType {
 const ARRAY_INDEX_PATTERN = /^(?:0|[1-9]\d*)$/;
 
 /** One pointer-walk miss, with the field context per-binding repair needs
- *  (wire-v2/shape-check.ts). */
+ *  (genui/wire/shape-check.ts). */
 export interface ShapePointerMiss {
   message: string;
   missing?: string[];

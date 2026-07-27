@@ -8,7 +8,7 @@ import {
   TREE_MAX_COMPONENT_SOURCE_BYTES,
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
-} from "./tree-limits.js";
+} from "./genui/tree-limits.js";
 
 const COMPONENT_NAME_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 

@@ -10,7 +10,7 @@
  * pins the two in step).
  */
 import { z } from "zod";
-import { PREWIRED_COMPONENT_NAMES } from "../tree-limits.js";
+import { PREWIRED_COMPONENT_NAMES } from "../genui/tree-limits.js";
 import { config, copy, data, type KitComponentSpec, type PropClass } from "./schema.js";
 
 // ---- shared zod fragments -------------------------------------------------

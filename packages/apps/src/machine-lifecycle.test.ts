@@ -3,7 +3,7 @@ import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createMachineLifecycle, type LifecycleClock } from "./machine-lifecycle.js";
 import { documentFromRecord } from "./persistence.js";
-import { fakeSandboxV2, memoryStore, seedAppRow } from "./testing/index.js";
+import { fakeStatefulSandbox, memoryStore, seedAppRow } from "./testing/index.js";
 
 const app = (id = "app_machine_test"): AppDocument => ({
   format: VENDO_APP_FORMAT,
@@ -55,7 +55,7 @@ const setup = async (options: {
   allowedDomains?: (doc: AppDocument) => Promise<string[] | undefined> | string[] | undefined;
 } = {}) => {
   const store = memoryStore();
-  const sandbox = fakeSandboxV2();
+  const sandbox = fakeStatefulSandbox();
   const timers = fakeClock();
   const doc = options.doc ?? app();
   await seedAppRow(store, doc, "owner");
@@ -255,7 +255,7 @@ describe("machine lifecycle: provider snapshot hygiene", () => {
 
   it("a provision that loses a cross-process race keeps the winner's ref and releases its own", async () => {
     const store = memoryStore();
-    const sandbox = fakeSandboxV2();
+    const sandbox = fakeStatefulSandbox();
     const timers = fakeClock();
     const doc = app();
     await seedAppRow(store, doc, "owner");
@@ -385,7 +385,7 @@ describe("machine lifecycle: stale-live-ref eviction (Wave 7)", () => {
     const resume = sandbox.resume.bind(sandbox);
     sandbox.resume = async (ref, policy) => {
       const machine = await resume(ref, policy);
-      (machine as InstanceType<typeof import("./testing/fake-sandbox-v2.js").FakeMachineV2>).reap();
+      (machine as InstanceType<typeof import("./testing/fake-sandbox-stateful.js").FakeStatefulMachine>).reap();
       return machine;
     };
 
@@ -441,7 +441,7 @@ describe("machine lifecycle: env-stale wake rebuild (Wave 7)", () => {
 
   it("a failed env rebuild fails the wake CLOSED — no live machine serves stale secrets", async () => {
     const store = memoryStore();
-    const sandbox = fakeSandboxV2();
+    const sandbox = fakeStatefulSandbox();
     const timers = fakeClock();
     const doc = app();
     await seedAppRow(store, doc, "owner");
@@ -480,7 +480,7 @@ describe("machine lifecycle: env-stale wake rebuild (Wave 7)", () => {
 
   it("a WARM wake honors a marker written by another process: the live box is re-policed", async () => {
     const store = memoryStore();
-    const sandbox = fakeSandboxV2();
+    const sandbox = fakeStatefulSandbox();
     const timers = fakeClock();
     const doc = app();
     await seedAppRow(store, doc, "owner");

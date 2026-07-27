@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { VENDO_TREE_FORMAT_V2, type ToolOutcome, type UIPayload } from "@vendoai/core";
+import { VENDO_TREE_FORMAT, type ToolOutcome, type UIPayload } from "@vendoai/core";
 import { TreeView } from "../../src/tree/index.js";
 import type { PinDrift } from "../../src/tree/renderer.js";
 
@@ -27,7 +27,7 @@ const DRIFT: PinDrift = {
 
 function driftedTree(pinDrift?: PinDrift[]): UIPayload {
   const tree: UIPayload & { pinDrift?: PinDrift[] } = {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+    formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [
       { id: "root", component: "Stack", children: ["card"] },

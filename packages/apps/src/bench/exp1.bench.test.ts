@@ -1,7 +1,7 @@
 /**
  * W1-bench Experiment 1 — inline tool refs vs <Query> declarations.
  * A/B over the same dev prompts, same generator model. Compiler is production
- * compileWireV2 (inline arm uses the inlineRefs prototype). Writes raw samples
+ * compileWire (inline arm uses the inlineRefs prototype). Writes raw samples
  * + an arm summary to docs/verification/w1-bench/raw/.
  *
  * Run: (env-loaded) pnpm --filter @vendoai/apps exec vitest run src/bench/exp1.bench.test.ts

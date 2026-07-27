@@ -1,7 +1,7 @@
 /**
  * W1-bench prototype (docs/verification/w1-bench) — inline tool references.
  *
- * Behind `compileWireV2({ inlineRefs: true })`. An inline reference is a tool
+ * Behind `compileWire({ inlineRefs: true })`. An inline reference is a tool
  * call written directly in a prop expression:
  *
  *   rows={invoices.list({status:"overdue"}).data}

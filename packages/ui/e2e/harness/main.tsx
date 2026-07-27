@@ -1,8 +1,8 @@
 import {
-  compileWirePatchV2,
-  compileWireV2,
+  compileWirePatch,
+  compileWire,
   deriveShapeCard,
-  printWireV2,
+  printWire,
   type ApprovalDecision,
   type ApprovalRequest,
   type Json,
@@ -1167,8 +1167,8 @@ function SlotFallbackScenario() {
   );
 }
 
-/** A stored v2 tree rendered beside the freshly compiled wire (v1 is gone;
- *  stored documents are v2-only). */
+/** A stored tree rendered beside the freshly compiled wire (v1 is gone;
+ *  stored documents all carry the current format). */
 const storedTree: UIPayload = {
   formatVersion: "vendo-genui/v2",
   root: "root",
@@ -1188,11 +1188,11 @@ const storedTree: UIPayload = {
  * `$path` bindings, host-brand-wins resolution, a jailed generated island,
  * and a compiler-emitted action dispatching through onAction.
  */
-const V2_WIRE = `<App name="Cash overview">
+const TREE_WIRE = `<App name="Cash overview">
   <Query id="invoice" tool="billing_invoice"/>
   <Query id="customer" tool="crm_customer"/>
   <Stack gap={14}>
-    <Text text="Cash overview (compiled from the v2 JSX wire)" variant="heading"/>
+    <Text text="Cash overview (compiled from the JSX wire)" variant="heading"/>
     <HostCard title={customer.name} total={invoice.total}/>
     <Grid columns={2}>
       <Card title="Why this renders">
@@ -1209,9 +1209,9 @@ export default function RevenueNote() {
   </Island>
 </App>`;
 
-function TreeV2Scenario() {
+function TreeWireScenario() {
   const [action, setAction] = useState<{ nodeId: string; action: string; payload?: Json }>();
-  const compiled = useMemo(() => compileWireV2(V2_WIRE, { hostComponents: ["HostCard"] }), []);
+  const compiled = useMemo(() => compileWire(TREE_WIRE, { hostComponents: ["HostCard"] }), []);
   const payload = useMemo(
     () => ({ ...compiled.tree, components: compiled.components }) as unknown as UIPayload,
     [compiled],
@@ -1224,7 +1224,7 @@ function TreeV2Scenario() {
   return (
     <TreeThemeBoundary>
       <div className="format-drill-grid">
-        <section aria-label="v2 wire surface">
+        <section aria-label="wire surface">
           <h2>vendo-genui/v2 — compiled from the wire</h2>
           <PayloadView
             payload={payload}
@@ -1232,10 +1232,10 @@ function TreeV2Scenario() {
             data={{ invoice: { total: 4200 }, customer: { name: "Ada Lovelace" } }}
             onAction={onAction}
           />
-          <output className="recorder" data-testid="v2-compile-recorder">
+          <output className="recorder" data-testid="wire-compile-recorder">
             {`compile: complete=${compiled.complete} issues=${compiled.issues.length}`}
           </output>
-          <output className="recorder" data-testid="v2-action-recorder">
+          <output className="recorder" data-testid="wire-action-recorder">
             {action ? JSON.stringify(action) : "No action recorded"}
           </output>
         </section>
@@ -1280,7 +1280,7 @@ const SHAPE_WIRE_BROKEN = `<App name="Revenue by month (mis-bound)">
   </Stack>
 </App>`;
 
-function TreeV2ShapeScenario() {
+function TreeWireShapeScenario() {
   const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
   // The shape card comes straight from the scripted sample — the same
   // deriveShapeCard path `vendo sync`/the engine uses on recorded responses.
@@ -1288,8 +1288,8 @@ function TreeV2ShapeScenario() {
     () => ({ metrics_revenue: deriveShapeCard("metrics_revenue", [SHAPE_DATA.revenue]).output }),
     [],
   );
-  const happy = useMemo(() => compileWireV2(SHAPE_WIRE, { toolShapes }), [toolShapes]);
-  const broken = useMemo(() => compileWireV2(SHAPE_WIRE_BROKEN, { toolShapes }), [toolShapes]);
+  const happy = useMemo(() => compileWire(SHAPE_WIRE, { toolShapes }), [toolShapes]);
+  const broken = useMemo(() => compileWire(SHAPE_WIRE_BROKEN, { toolShapes }), [toolShapes]);
   const happyPayload = useMemo(() => happy.tree as unknown as UIPayload, [happy]);
   const brokenPayload = useMemo(() => broken.tree as unknown as UIPayload, [broken]);
   return (
@@ -1337,10 +1337,10 @@ const EDIT_PATCH = `<Edit>
   <SetName name="Cash overview (edited)"/>
 </Edit>`;
 
-function TreeV2EditScenario() {
+function TreeWireEditScenario() {
   const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  const base = useMemo(() => compileWireV2(EDIT_BASE_WIRE), []);
-  const [patched, setPatched] = useState<ReturnType<typeof compileWirePatchV2>>();
+  const base = useMemo(() => compileWire(EDIT_BASE_WIRE), []);
+  const [patched, setPatched] = useState<ReturnType<typeof compileWirePatch>>();
   const shown = patched ?? base;
   const payload = useMemo(
     () => ({ ...shown.tree, components: shown.components }) as unknown as UIPayload,
@@ -1355,7 +1355,7 @@ function TreeV2EditScenario() {
           <button
             type="button"
             data-testid="apply-edit"
-            onClick={() => setPatched(compileWirePatchV2(EDIT_PATCH, base))}
+            onClick={() => setPatched(compileWirePatch(EDIT_PATCH, base))}
           >
             Apply the &lt;Edit&gt; patch
           </button>
@@ -1366,8 +1366,8 @@ function TreeV2EditScenario() {
           </output>
         </section>
         <section aria-label="Model edit context">
-          <h2>The model's edit context (printWireV2, id anchors)</h2>
-          <pre className="recorder" data-testid="edit-context">{printWireV2(base, { includeIds: true })}</pre>
+          <h2>The model's edit context (printWire, id anchors)</h2>
+          <pre className="recorder" data-testid="edit-context">{printWire(base, { includeIds: true })}</pre>
         </section>
       </div>
     </TreeThemeBoundary>
@@ -1853,9 +1853,9 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
-    case "/tree-v2": return { title: "vendo-genui/v2 — wire compile + stored render", content: <TreeV2Scenario /> };
-    case "/tree-v2-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeV2ShapeScenario /> };
-    case "/tree-v2-edit": return { title: "vendo-genui/v2 — one-dialect edit (wave 4)", content: <TreeV2EditScenario /> };
+    case "/tree-wire": return { title: "vendo-genui/v2 — wire compile + stored render", content: <TreeWireScenario /> };
+    case "/tree-wire-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeWireShapeScenario /> };
+    case "/tree-wire-edit": return { title: "vendo-genui/v2 — one-dialect edit (wave 4)", content: <TreeWireEditScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };

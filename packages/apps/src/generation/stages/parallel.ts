@@ -4,7 +4,7 @@
  * Any planning/assembly failure returns fallback info and the engine's
  * single-stream lane takes over — never blocks.
  */
-import { compileWireV2 } from "@vendoai/core";
+import { compileWire } from "@vendoai/core";
 import type { GeneratedAppDocument, PipelineContext } from "../engine.js";
 import { strictToolCall, structuredRepair } from "./repair.js";
 import { wireCompileOptionsFor } from "../wire-options.js";
@@ -187,7 +187,7 @@ export const regionParallelCreate = async (
   // assembly compiles with the exact options the streaming lanes use — the
   // bare options here made every inline-reference app fail region-parallel
   // with "unknown-reference" (live 2026-07-23).
-  const compiled = compileWireV2(assemble(), wireCompileOptionsFor(context.deps, context.hostComponents));
+  const compiled = compileWire(assemble(), wireCompileOptionsFor(context.deps, context.hostComponents));
   const validated = await context.validate(compiled);
   if (validated.document !== undefined) {
     return finish({ document: validated.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
