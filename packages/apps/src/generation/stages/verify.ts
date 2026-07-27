@@ -22,6 +22,7 @@ import {
   rebindChoices,
   strictToolCall,
 } from "./repair.js";
+import { modelCallParams } from "../../model-params.js";
 import { recompile } from "../wire-options.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -152,7 +153,7 @@ export const endPass = async (
       model,
       system: END_PASS_CONTRACT,
       prompt: `USER_ASK: ${userRequest}\nCURRENT_APP (wire markup; id attributes are your anchors):\n${wire}`,
-      temperature: 0,
+      ...modelCallParams(model),
       maxRetries: 0,
     });
     deps.onTiming?.({ lane: "end-pass", phase: "complete", atMs: Date.now() - context.startedAt, thinking: false });
@@ -311,7 +312,7 @@ export const dataSightedVerify = async (
       model,
       system: DATA_VERIFY_CONTRACT,
       prompt: `USER_ASK: ${userRequest}\nCURRENT_APP (wire markup; id attributes are your anchors):\n${wire}\nACTUAL data the queries returned (trimmed sample):\n${dataDigest(resolvedData)}`,
-      temperature: 0,
+      ...modelCallParams(model),
       maxRetries: 0,
     });
     const patched = compileWirePatch(extractEdit(result.text), base, {
