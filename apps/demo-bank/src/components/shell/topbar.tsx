@@ -3,7 +3,7 @@ import { usePathname } from "next/navigation"
 import { Search, Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/toast"
-import { useNotifications } from "@/lib/hooks"
+import { useNotifications, useProfile } from "@/lib/hooks"
 import { titleForPath } from "./nav"
 import { NotificationsMenu } from "./notifications-menu"
 
@@ -11,6 +11,7 @@ export function Topbar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const pathname = usePathname()
   const toast = useToast()
   const { data: notifications } = useNotifications()
+  const { data: profile } = useProfile()
   const hasUnread = !!notifications?.some((n) => !n.read)
 
   const demo = (title: string, description: string) => () => toast({ title, description })
@@ -30,6 +31,14 @@ export function Topbar({ onOpenPalette }: { onOpenPalette: () => void }) {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Auto-minted sessions only (DEMO_AUTOLOGIN) — credential logins never
+            get the flag, so local dev shows no chip. */}
+        {profile?.demoAutologin && (
+          <span className="mr-1 hidden items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-xs text-muted md:flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-pos" aria-hidden />
+            Live demo — signed in as {profile.name.split(" ")[0]}
+          </span>
+        )}
         <Button size="sm" variant="primary" onClick={demo("Demo only", "Sending money is disabled in this demo.")}>
           Send
         </Button>

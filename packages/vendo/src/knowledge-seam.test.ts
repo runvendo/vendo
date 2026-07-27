@@ -5,13 +5,22 @@ import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2, type AppDocument, type Principal } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type CreateVendoConfig, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()!();
+  vi.unstubAllEnvs();
+});
+
+beforeEach(() => {
+  // "No adapter ⇒ no tool" is only true of an UNCONFIGURED host: since #623
+  // the seam also resolves the Cloud engine from VENDO_API_KEY, so a real key
+  // in the ambient env would otherwise decide what this file observes. The
+  // key rung has its own matrix in knowledge-resolution.test.ts.
+  vi.stubEnv("VENDO_API_KEY", "");
 });
 
 async function tempStore(prefix: string): Promise<VendoStore> {

@@ -49,6 +49,11 @@ export interface KnowledgeResultEnvelope {
   /** Read-more only: the fetched document text, hard-trimmed by the caller. */
   text?: string;
   truncated?: boolean;
+  /** `unavailable` only — WHY the engine could not answer, in the model's
+      context so the agent can say what happened instead of shrugging. Carries
+      the failure STATEMENT only; the operator's remediation ("run `vendo
+      login`…") is log-side (see describeEngineFailure). */
+  message?: string;
 }
 
 const descriptor: ToolDescriptor = {
@@ -233,6 +238,32 @@ export function createKnowledgeTools(
   const threshold = options.weakScoreThreshold ?? 0;
   const breaker = new CallRateBreaker(options.maxCallsPerMinute ?? maxCallsPerMinuteFromEnv() ?? MAX_CALLS_PER_MINUTE);
 
+  // An engine failure has two audiences and they need different halves of the
+  // same error (conductor amendment, 2026-07-27).
+  //
+  // The MODEL gets the statement — what failed — because an outcome with no
+  // reason is the silence this whole seam exists to kill: the agent could not
+  // distinguish "your key is rejected" from "the network blipped", and said
+  // neither. The OPERATOR additionally gets the remediation, because they are
+  // the only one who can act on it and nobody debugs a key from a chat
+  // transcript. Adapter cloud errors already write themselves in exactly that
+  // order, statement then remediation after an em dash ("Vendo Cloud rejected
+  // the API key — run `vendo login` or check VENDO_API_KEY"), so the split is
+  // a slice of the existing convention, not a rewrite of the message. An
+  // error with no remediation clause is all statement, which is correct.
+  const warned = new Set<string>();
+  const describeEngineFailure = (error: unknown): string => {
+    const raw = error instanceof Error ? error.message : String(error);
+    const full = error instanceof VendoError ? `${error.code}: ${raw}` : raw;
+    if (!warned.has(full)) {
+      // Deduped by cause: a permanently broken engine costs one log line per
+      // distinct failure, not one per turn.
+      warned.add(full);
+      console.warn(`[vendo] knowledge engine failed — ${VENDO_KNOWLEDGE_SEARCH_TOOL} answers "unavailable" until this is fixed: ${full}`);
+    }
+    return raw.split(" — ")[0]!;
+  };
+
   // The status()-verified refusal (checker round 1): an empty/weak search
   // from a SICK engine must not pass as an honest refusal or not-found — the
   // emptiness is unverifiable. Consulted only on the zero/weak paths (a
@@ -328,10 +359,15 @@ export function createKnowledgeTools(
           outcome: "insufficient-evidence",
           hits: deep.hits.slice(0, MAX_HITS).map(toCitation),
         });
-      } catch {
+      } catch (error) {
         // The loud engine-outage rule: a thrown adapter is NEVER a silent
-        // empty result — the model and the UI both see "unavailable".
-        return envelope({ outcome: "unavailable", hits: [] });
+        // empty result — the UI gets "unavailable", the model gets that plus
+        // the reason, and the operator's log gets the reason plus the fix.
+        return envelope({
+          outcome: "unavailable",
+          hits: [],
+          message: describeEngineFailure(error),
+        });
       }
     },
   };
