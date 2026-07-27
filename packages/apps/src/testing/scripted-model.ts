@@ -4,6 +4,10 @@ export interface ScriptedModelCall {
   prompt: Array<{
     role: string;
     content: string | Array<{ type?: string; text?: string }>;
+    /** Per-message provider hints (e.g. the Anthropic ephemeral cache
+     *  breakpoint the generation prompt sets on its stable prefix). Present in
+     *  the normalized LanguageModelV2 prompt so tests can assert on it. */
+    providerOptions?: Record<string, unknown>;
   }>;
   /** W4 pipeline — the tool definitions the caller passed (strict tool-use
    *  calls), so tests can assert on the generated fix-space schema. */

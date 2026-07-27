@@ -135,10 +135,10 @@ export function errorClass(error: unknown): string {
     same ceremony stays "cloud-init". */
 export type CommandName =
   | "login"
+  | "try"
   | "extract"
   | "theme"
   | "eject"
-  | "playground"
   | "sync"
   | "cloud-init"
   | "mcp"
@@ -174,7 +174,7 @@ export async function withCommandRun(
     command: CommandName;
     telemetry?: TelemetryOptions;
     /** Host project dir for the cloud lane's projectName/repoHost; omitted
-        for commands without a target project (playground, mcp). */
+        for commands without a target project (mcp). */
     root?: string;
   },
   body: (failure: { failedStep?: string }, telemetry: Telemetry) => Promise<number>,

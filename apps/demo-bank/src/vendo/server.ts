@@ -29,8 +29,11 @@ export const mapleAuth = authJs({
 export const vendo = createVendo({
   // Model + store slots stay UNSET (demo-refresh Part 2): the env ladder
   // resolves them — locally ANTHROPIC_API_KEY, deployed VENDO_API_KEY — and
-  // the unset store composes the local default. Known deliberate regression
-  // until the model-family lane lands: paint rides the main model.
+  // the unset store composes the local default. With the agent slot on the
+  // ladder, paint invisibility applies (resolveModels): the paint lane
+  // composes the family fast pick — vendo-paint on Cloud, the provider's
+  // fast model on BYO — so the demo runs the fast two-lane path with no
+  // hardcoded model names (speed-core lane; BYO rule).
   auth: mapleAuth,
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
@@ -56,11 +59,14 @@ export const vendo = createVendo({
     experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
-    // demo-refresh Part 5 — the full v4 generation pipeline.
+    // speed-core ruling (2026-07-26, supersedes demo-refresh Part 5):
+    // regionParallel is OFF for the demos — live evidence
+    // (docs/verification/demo-live-readiness/speed-core/after.md) showed its
+    // serial outline + assembly-invalid fallback made creates SLOWER on this
+    // surface (p50 55s vs 31.4s without it). endPass stays on: the runtime
+    // rides it as the data-sighted verify. structuredRepair and smokeRender
+    // are default-on and island repair is the engine's first resort.
     pipeline: {
-      exemplarContract: true,
-      structuredRepair: true,
-      regionParallel: true,
       endPass: true,
     },
   },

@@ -506,6 +506,32 @@ export default function EmptyGeneratedComponent() {
 }
 `;
 
+// unified-try-surface Defect 2 (form submit dead in the real nested jail):
+// the exact pretraining-habit shape the report found — a RAW <form> (not the
+// Kit's <Form>) whose onSubmit handler is async and takes NO event argument,
+// so it structurally cannot call preventDefault() itself. Only the jail
+// runtime's own document-level capture-phase listener can save this submit
+// from the sandbox's no-allow-forms block.
+const rawFormSource = String.raw`
+import React, { useState } from "react";
+
+export default function RawFormProbe({ onRun }) {
+  const [phase, setPhase] = useState("idle");
+
+  // No event parameter — mirrors the report's exact defect shape.
+  const handleSubmit = async () => {
+    await onRun();
+    setPhase("submitted");
+  };
+
+  return <form onSubmit={handleSubmit} aria-label="Raw form probe">
+    <input type="text" defaultValue="untouched" />
+    <button type="submit">Submit raw form</button>
+    <output id="raw-form-phase">phase: {phase}</output>
+  </form>;
+}
+`;
+
 const furnishedPinSource = String.raw`
 import { FurnishedCardBody } from "./FurnishedCardBody";
 
@@ -536,7 +562,7 @@ const jailTree: UIPayload & { furnishings: Record<string, unknown> } = {
   formatVersion: "vendo-genui/v2",
   root: "root",
   nodes: [
-    { id: "root", component: "Stack", children: ["before", "furnished", "probe", "thrower", "empty", "after"] },
+    { id: "root", component: "Stack", children: ["before", "furnished", "probe", "rawform", "thrower", "empty", "after"] },
     { id: "before", component: "Text", props: { text: "Jail siblings before" } },
     { id: "furnished", component: "FurnishedPin", source: "generated" },
     {
@@ -548,6 +574,14 @@ const jailTree: UIPayload & { furnishings: Record<string, unknown> } = {
         onRun: { $action: "fn:secure-submit", payload: { invoiceId: "inv_42" } },
       },
     },
+    {
+      id: "rawform",
+      component: "RawFormProbe",
+      source: "generated",
+      props: {
+        onRun: { $action: "fn:secure-submit", payload: { invoiceId: "inv_raw" } },
+      },
+    },
     { id: "thrower", component: "ThrowingGeneratedComponent", source: "generated" },
     { id: "empty", component: "EmptyGeneratedComponent", source: "generated" },
     { id: "after", component: "Text", props: { text: "Jail sibling survived" } },
@@ -555,6 +589,7 @@ const jailTree: UIPayload & { furnishings: Record<string, unknown> } = {
   components: {
     FurnishedPin: furnishedPinSource,
     SecurityProbe: securitySource,
+    RawFormProbe: rawFormSource,
     ThrowingGeneratedComponent: throwingSource,
     EmptyGeneratedComponent: emptySource,
   },

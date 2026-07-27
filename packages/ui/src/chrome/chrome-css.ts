@@ -891,6 +891,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 16px; flex: 1; min-height: 0; overflow-y: auto; padding: 30px 30px 10px; text-align: center; }
 .fl-greet { margin: 0; font-family: var(--vendo-heading-font); font-size: calc(var(--vendo-base-size) * 1.533); font-weight: 600; letter-spacing: -.022em; }
+/* The optional capability line under the landing headline (VendoThread's
+   \`intro\` prop) — muted assistant voice, canvas geometry (max 460px). */
+.fl-intro { margin: 0; max-width: 460px; font-size: var(--vendo-text-body); line-height: 1.65;
+  letter-spacing: -.006em; color: var(--vendo-fg-muted); }
 /* Greeting-as-tutorial (ui-usage-dx §6): the one-time first message reads as
    the agent speaking — left-aligned assistant typography with its prompt chips
    beneath — inside the otherwise-centered landing. */

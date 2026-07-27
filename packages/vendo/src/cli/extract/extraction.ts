@@ -300,6 +300,43 @@ const ENGINE_FAMILIES: Record<string, string> = {
   "npx-engine": "npx",
 };
 
+/** One available rung of the engine ladder: the harness itself, the human
+    credential label its availability check reported, and the user-facing
+    `--engine` family that rung speaks for. */
+export interface AvailableEngine {
+  harness: ExtractionHarness;
+  credential: string;
+  family: string;
+}
+
+/** The ordered engine ladder (install-dx: init-selfcontained-engine, Task
+    2/4): Agent SDK -> claude CLI -> codex CLI -> npx-fetched engine. A rung
+    whose availability() is null (binary missing or present-but-
+    unauthenticated) is skipped; ladder order encodes preference (the npx rung
+    is last on purpose: it's the only one with a real first-run cost, an npm
+    fetch, so every rung that can run for free gets first refusal).
+    Availability is checked across the WHOLE ladder (every check is local and
+    cheap) so `--engine` can pin a family and the interactive consent can
+    offer a choice when there is one; the first available rung of a family
+    speaks for that family. Exported so `vendo try`'s background deepening
+    (cli/try/deepen.ts) selects from the SAME ladder. */
+export async function selectExtractionEngines(input: {
+  root: string;
+  env: Record<string, string | undefined>;
+  harnesses?: ExtractionHarness[];
+}): Promise<AvailableEngine[]> {
+  const harnesses = input.harnesses
+    ?? [claudeHarness(), claudeCliHarness(), codexCliHarness(), npxEngineHarness()];
+  const available: AvailableEngine[] = [];
+  for (const harness of harnesses) {
+    const family = ENGINE_FAMILIES[harness.id] ?? harness.id;
+    if (available.some((entry) => entry.family === family)) continue;
+    const credential = await harness.availability({ root: input.root, env: input.env });
+    if (credential !== null) available.push({ harness, credential, family });
+  }
+  return available;
+}
+
 /** init's AI extraction step. Never changes init's exit code. */
 export async function runAiExtraction(
   options: AiExtractionOptions,
@@ -328,24 +365,11 @@ export async function runAiExtraction(
     return { ran: false };
   }
 
-  // Ordered engine ladder (install-dx: init-selfcontained-engine, Task 2/4):
-  // Agent SDK -> claude CLI -> codex CLI -> npx-fetched engine. A rung whose
-  // availability() is null (binary missing or present-but-unauthenticated) is
-  // skipped; ladder order encodes preference (the npx rung is last on purpose:
-  // it's the only one with a real first-run cost, an npm fetch, so every rung
-  // that can run for free gets first refusal). Availability is checked across
-  // the WHOLE ladder (every check is local and cheap) so `--engine` can pin a
-  // family and the interactive consent can offer a choice when there is one;
-  // the first available rung of a family speaks for that family.
-  const harnesses = options.harnesses
-    ?? [claudeHarness(), claudeCliHarness(), codexCliHarness(), npxEngineHarness()];
-  const available: Array<{ harness: ExtractionHarness; credential: string; family: string }> = [];
-  for (const harness of harnesses) {
-    const family = ENGINE_FAMILIES[harness.id] ?? harness.id;
-    if (available.some((entry) => entry.family === family)) continue;
-    const credential = await harness.availability({ root, env });
-    if (credential !== null) available.push({ harness, credential, family });
-  }
+  const available = await selectExtractionEngines({
+    root,
+    env,
+    ...(options.harnesses === undefined ? {} : { harnesses: options.harnesses }),
+  });
   if (available.length === 0) {
     output.log("AI polish: unavailable — needs Claude Code installed (`npm install -g @anthropic-ai/claude-code`) or @anthropic-ai/claude-agent-sdk resolvable, plus a Claude Code login or ANTHROPIC_API_KEY; or the `codex` CLI installed, plus a codex login (`codex login`) or OPENAI_API_KEY; or a VENDO_API_KEY (`vendo login`), which fetches Claude Code on the fly via npx. Extractor defaults stand; re-run `vendo init` once set up.");
     return { ran: false };

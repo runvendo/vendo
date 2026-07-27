@@ -12,6 +12,8 @@ import { ScenarioMount } from "./scenario-mount.js";
 import { scenarios, type PlaygroundScenario } from "./scenarios.js";
 import { ThemeEditor, useGoogleFont } from "./theme-editor.js";
 import { decodeThemeParam, encodeThemeParam } from "./theme-state.js";
+import { mountTryApp } from "./try-app.js";
+import { readTryConfig } from "./try-boot.js";
 
 /* Vendo brand shell (brand kit): Porcelain #FAFAF8, Ink #17171A, Ultramarine
    #4338CA, Onest (its @font-face rides in via the chrome stylesheet). The
@@ -172,8 +174,19 @@ const style = document.createElement("style");
 style.textContent = SHELL_CSS;
 document.head.append(style);
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+const rootElement = document.getElementById("root")!;
+const renderClassic = (): void => {
+  createRoot(rootElement).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+};
+
+// Try mode (`vendo try`, the hosted twin) boots from the injected
+// `window.__VENDO_TRY__` pointer; any page without one — the playground
+// server, `?embed=1` iframes, hash-routed scenarios — is EXACTLY the classic
+// playground. A failed profile load falls back to classic mode too.
+const tryConfig = readTryConfig(window);
+if (tryConfig === null) renderClassic();
+else void mountTryApp(rootElement, tryConfig, renderClassic);

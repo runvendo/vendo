@@ -191,6 +191,85 @@ describe("generation engine through createApps", () => {
     expect(prompts.at(-1)).toContain("No emojis, ever");
   });
 
+  describe("Anthropic prompt-cache breakpoint on the generation prompt", () => {
+    // Back-to-back generations (a user iterating on a design) re-pay full
+    // input price for the identical stable prefix (design rules + component
+    // catalog + field semantics) unless it is marked cacheable. The engine
+    // marks the END of the stable prefix — the system message — with the
+    // ephemeral breakpoint, exactly like the chat agent, so the variable
+    // tail (the user's request / the app being edited) stays OUT of the
+    // cached prefix.
+    const ephemeral = (message: ScriptedModelCall["prompt"][number] | undefined): unknown =>
+      (message?.providerOptions as { anthropic?: { cacheControl?: unknown } } | undefined)?.anthropic?.cacheControl;
+    const systemText = (call: ScriptedModelCall): string => {
+      const system = call.prompt.find((message) => message.role === "system");
+      return typeof system?.content === "string" ? system.content : "";
+    };
+    const userText = (call: ScriptedModelCall): string => call.prompt
+      .filter((message) => message.role === "user")
+      .map((message) => typeof message.content === "string"
+        ? message.content
+        : message.content.map((part) => part.text ?? "").join(""))
+      .join("\n");
+
+    it("marks the create system prefix cacheable, and never the variable user prompt", async () => {
+      const calls: ScriptedModelCall[] = [];
+      const runtime = createApps({
+        store: memoryStore(),
+        guard: guardFixture(),
+        tools,
+        catalog,
+        model: scriptedLanguageModel((call) => { calls.push(call); return validCreate(); }),
+      });
+
+      const app = await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+      // Off-Anthropic no-op: the scripted (non-Anthropic) model ignores the
+      // breakpoint entirely and generation still returns a valid document.
+      expect(app.tree).toBeDefined();
+
+      const call = calls[0];
+      const system = call?.prompt.find((message) => message.role === "system");
+      const user = call?.prompt.find((message) => message.role === "user");
+      // The stable prefix (design rules + catalog + semantics) really lives in
+      // the system message, and it carries the breakpoint.
+      expect(systemText(call!)).toContain("HOST DESIGN RULES");
+      expect(ephemeral(system)).toEqual({ type: "ephemeral" });
+      // The variable tail (the user request) is NOT inside the cached prefix.
+      expect(userText(call!)).toContain("Build a revenue dashboard");
+      expect(ephemeral(user)).toBeUndefined();
+    });
+
+    it("marks the edit system prefix cacheable, and never the variable edit instruction / app document", async () => {
+      const store = memoryStore();
+      await putApp(store, generatedTreeApp());
+      const calls: ScriptedModelCall[] = [];
+      const runtime = createApps({
+        store,
+        guard: guardFixture(),
+        tools,
+        catalog,
+        model: scriptedLanguageModel((call) => {
+          calls.push(call);
+          return '<Edit><SetName name="Renamed"/></Edit>';
+        }),
+      });
+
+      const result = await runtime.edit("app_generated_edit", "rename it to Renamed", ctx);
+      expect(result.failure).toBeUndefined();
+
+      const call = calls[0];
+      const system = call?.prompt.find((message) => message.role === "system");
+      const user = call?.prompt.find((message) => message.role === "user");
+      // The edit contract (stable prefix) carries the breakpoint.
+      expect(systemText(call!)).toContain("EDIT DIALECT");
+      expect(ephemeral(system)).toEqual({ type: "ephemeral" });
+      // The instruction and the app document being edited are the variable
+      // tail — outside the cached prefix.
+      expect(userText(call!)).toContain("rename it to Renamed");
+      expect(ephemeral(user)).toBeUndefined();
+    });
+  });
+
   describe("data-sighted verification pass (pipeline.endPass at the runtime seam)", () => {
     const appWire = '<App name="Client board"><Query id="metric" tool="host_metric"/><Stack><Stat label="Total clients" value={metric.headline}/></Stack></App>';
     const metricTools: ToolRegistry = {

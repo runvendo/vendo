@@ -96,7 +96,7 @@ export const VendoEmbed = ({ surface, poster, alt, height = 480, caption }) => {
               fontSize: "11px", fontWeight: 600,
             }}
           >
-            live embed unavailable — <a href="https://vendo.run/playground" style={{ color: "#fff", textDecoration: "underline" }}>open the playground</a>
+            live embed unavailable — <a href="https://vendo.run/playground" style={{ color: "#fff", textDecoration: "underline" }}>open the try surface</a>
           </div>
         )}
         <div ref={containerRef} style={{ display: live ? "block" : "none", minHeight: `${height}px`, padding: "16px" }} />

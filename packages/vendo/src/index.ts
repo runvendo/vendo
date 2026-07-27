@@ -4,10 +4,16 @@ export type { VendoStore } from "@vendoai/store";
 export type { Thread, ThreadSummary, VendoAgent } from "@vendoai/agent";
 export type {
   ActionsRegistry,
+  // Task 15a — the actions-file shapes a host names when composing the
+  // in-memory `createVendo({ profile })` pieces (SemanticsFile and VendoTheme
+  // already arrive through `export type * from "@vendoai/core"` above).
+  CapabilitiesFile,
+  CatalogFile,
   Connector,
   ConnectorAccount,
   ConnectorConnections,
   ExtractedTool,
+  OverridesFile,
   SyncReport,
 } from "@vendoai/actions";
 export type { ConnectionsService, InitiatedConnection, InitiateOptions } from "./connections.js";
