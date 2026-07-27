@@ -8,19 +8,28 @@
  * Note: Thesys is mid-rebrand to "OpenUI Cloud"; SDK versions are pinned in
  * package.json.
  *
- * LIVE STATUS 2026-07-26: the key authenticates, but the Thesys organisation is
- * billing-suspended — every call returns 429 ERR_BILLING_THRESHOLD_EXCEEDED, so
- * the lane truthfully reports `failed` with that message and the recorded
- * fixture could not be re-recorded from a real response (see its _note). The
- * request path itself is exercised by the fixture test through the real openai
- * client; only C1's response DSL remains unverified against reality.
+ * LIVE STATUS 2026-07-26: verified end to end against the real API — the
+ * runTools loop executes the fixture's tools and the final assistant content
+ * is C1's `<content thesys="true" version="2">` envelope wrapping an
+ * ```openui-lang``` program, which their SDK renders as-is (envelope included).
+ * The recorded fixtures under `__fixtures__/` are that live traffic.
+ *
+ * C1 is model-agnostic: their catalog also carries OpenAI GPT-5/5.2 and Google
+ * Gemini 3. We pin their current best Anthropic model so the comparison holds
+ * the model family roughly constant with the Vendo lane; `THESYS_C1_MODEL`
+ * overrides it for a one-off cross-provider look.
  */
 import OpenAI from "openai";
 import type { RunnableToolFunctionWithoutParse } from "openai/lib/RunnableFunction";
 import type { HostFixture, LaneAdapter, LaneResult } from "../runner/types";
 
 export const C1_BASE_URL = "https://api.thesys.dev/v1/embed";
-export const C1_MODEL = "c1/anthropic/claude-sonnet-4/v-20251230";
+/** Their current best Anthropic model (GET /v1/embed/models, 2026-07-26). */
+export const C1_MODEL = "c1/anthropic/claude-sonnet-4.6/v-20260331";
+
+export function c1Model(): string {
+  return process.env.THESYS_C1_MODEL || C1_MODEL;
+}
 
 interface HostToolLike {
   name: string;
@@ -68,6 +77,7 @@ export function createThesysC1Adapter(deps: ThesysC1Deps = {}): LaneAdapter {
       const apiKey = process.env.THESYS_API_KEY;
       if (!apiKey) return { status: "no-key" };
       const startedAt = Date.now();
+      const model = c1Model();
       try {
         const client = new OpenAI({
           apiKey,
@@ -75,18 +85,20 @@ export function createThesysC1Adapter(deps: ThesysC1Deps = {}): LaneAdapter {
           ...(deps.fetch ? { fetch: deps.fetch } : {}),
         });
         const runner = client.chat.completions.runTools({
-          model: C1_MODEL,
+          model,
           messages: [{ role: "user", content: prompt }],
           tools: toRunnableTools(host),
         });
         // Official examples stream; runTools' runner exposes finalContent() on
         // both the streaming and non-streaming shapes, so this handles either.
+        // The string is C1's full `<content …>` envelope — their C1Component
+        // parses the envelope itself, so it is passed through unmodified.
         const c1Response = (await runner.finalContent()) ?? "";
         return {
           status: "ok",
           startedAt,
           durationMs: Date.now() - startedAt,
-          raw: { model: C1_MODEL, c1Response, messages: runner.messages },
+          raw: { model, c1Response, messages: runner.messages },
         };
       } catch (error) {
         return {

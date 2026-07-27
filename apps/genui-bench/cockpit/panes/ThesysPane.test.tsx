@@ -16,12 +16,14 @@ const fixture = JSON.parse(
 ) as { finalCompletion: { choices: Array<{ message: { content: string } }> } };
 
 
+const MODEL = "c1/anthropic/claude-sonnet-4.6/v-20260331";
+
 const okResult: LaneResult = {
   status: "ok",
   startedAt: 0,
   durationMs: 1200,
   raw: {
-    model: "c1/anthropic/claude-sonnet-4/v-20251230",
+    model: MODEL,
     c1Response: fixture.finalCompletion.choices[0].message.content,
     messages: [],
   },
@@ -30,10 +32,14 @@ const okResult: LaneResult = {
 afterEach(cleanup);
 
 describe("ThesysPane", () => {
-  it("renders the fixture C1 response through their SDK with the asymmetry footnote", () => {
+  it("renders the recorded live C1 response through their SDK with the asymmetry footnote", () => {
     const { container } = render(<ThesysPane lane="thesys-c1" result={okResult} host="maple" runId="run_test" />);
     expect(container.querySelector('[data-pane="thesys-c1"]')).toBeTruthy();
-    expect(screen.getByText(/their renderer\/theme · same prompt \+ tools/)).toBeTruthy();
+    // The footnote names the model that produced the pane (C1 is multi-provider).
+    expect(screen.getByText(new RegExp(`their renderer/theme · same prompt \\+ tools · ${MODEL}`))).toBeTruthy();
+    // Their SDK parsed the `<content … version="2">` envelope and rendered the
+    // openui-lang program: the generated header text is on screen.
+    expect(screen.getByText("Account Balances")).toBeTruthy();
   });
 
   it("renders the no-key state", () => {
