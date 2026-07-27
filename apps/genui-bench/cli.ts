@@ -12,6 +12,15 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { executeRun } from "./runner/run";
+import {
+  EFFORT_LEVELS,
+  PRODUCTION_MODEL,
+  findModel,
+  modelChoices,
+  validateModelChoice,
+  type EffortLevel,
+  type RunModel,
+} from "./runner/models";
 import type { HostFixture, HostName, LaneAdapter, LaneName, RunRequest } from "./runner/types";
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url));
@@ -28,6 +37,9 @@ async function main(): Promise<void> {
       pack: { type: "string" },
       lanes: { type: "string", default: "vendo" },
       "runs-dir": { type: "string" },
+      model: { type: "string" },
+      temperature: { type: "string" },
+      thinking: { type: "string" },
     },
   });
   if (positionals.length > 0 && positionals[0] !== "run") {
@@ -43,6 +55,7 @@ async function main(): Promise<void> {
     if (!LANES.includes(lane)) usage(`unknown lane "${lane}" (${LANES.join("|")})`);
   }
 
+  const model = resolveModel(values.model, values.temperature, values.thinking);
   const prompts = resolvePrompts(values.prompt, values.pack);
   const runsDir = values["runs-dir"] ?? join(APP_DIR, "runs");
 
@@ -56,11 +69,14 @@ async function main(): Promise<void> {
       host,
       lanes,
       ...(values.pack ? { packRef: { pack: values.pack, index } } : {}),
+      ...(model ? { model } : {}),
     };
     const record = await executeRun(request, fixtures, adapters, runsDir);
     console.log(join(runsDir, record.id, "run.json"));
 
-    const entry: Record<string, unknown> = { prompt };
+    // The summary always names the model that actually ran, so an agent
+    // reading the line never has to know what the engine default is.
+    const entry: Record<string, unknown> = { prompt, model: model ?? { id: PRODUCTION_MODEL.id } };
     for (const lane of lanes) {
       const result = record.lanes[lane];
       if (!result) continue;
@@ -81,6 +97,50 @@ async function main(): Promise<void> {
     summary.push(entry);
   }
   console.log(JSON.stringify({ runs: summary }));
+}
+
+/**
+ * `--model <id|label> [--temperature <n>] [--thinking <tokens|low|medium|high>]`.
+ * One `--thinking` flag covers both dialects: the Claude 5 line takes an
+ * effort level, older models take a token budget (see runner/models.ts).
+ * Returns undefined when no model flag was given — an untouched run measures
+ * the engine default.
+ */
+function resolveModel(
+  id: string | undefined,
+  temperature: string | undefined,
+  thinking: string | undefined,
+): RunModel | undefined {
+  if (id === undefined) {
+    if (temperature !== undefined || thinking !== undefined) {
+      usage("--temperature/--thinking need an explicit --model (they are per-model settings)");
+    }
+    return undefined;
+  }
+
+  const spec = findModel(id);
+  if (!spec) usage(`unknown --model "${id}" — valid: ${modelChoices()}`);
+
+  const choice: RunModel = { id: spec.id };
+  if (temperature !== undefined) {
+    const value = Number(temperature);
+    if (Number.isNaN(value)) usage(`--temperature must be a number (got "${temperature}")`);
+    choice.temperature = value;
+  }
+  if (thinking !== undefined) {
+    if (EFFORT_LEVELS.includes(thinking as EffortLevel)) choice.effort = thinking as EffortLevel;
+    else {
+      const budget = Number(thinking);
+      if (!Number.isInteger(budget)) {
+        usage(`--thinking must be a token count or one of ${EFFORT_LEVELS.join("|")} (got "${thinking}")`);
+      }
+      choice.thinkingBudget = budget;
+    }
+  }
+
+  const invalid = validateModelChoice(choice);
+  if (invalid) usage(invalid);
+  return choice;
 }
 
 function resolvePrompts(prompts: string[] | undefined, pack: string | undefined): string[] {
@@ -156,7 +216,10 @@ function loadRootEnv(): void {
 function usage(message: string): never {
   console.error(`genui-bench: ${message}`);
   console.error(
-    'usage: bench run --host <maple|cadence> (--prompt "..." [--prompt "..."] | --pack <name>) [--lanes vendo,thesys-c1,copilotkit,tambo] [--runs-dir <dir>]',
+    'usage: bench run --host <maple|cadence> (--prompt "..." [--prompt "..."] | --pack <name>) [--lanes vendo,thesys-c1,copilotkit,tambo] [--runs-dir <dir>]' +
+      `\n       [--model <id|label>] [--temperature <0-1>] [--thinking <tokens|${EFFORT_LEVELS.join("|")}>]` +
+      `\n       models: ${modelChoices()}` +
+      `\n       (no --model = the engine default, ${PRODUCTION_MODEL.id})`,
   );
   process.exit(1);
 }

@@ -8,7 +8,8 @@
 import { describe, expect, it } from "vitest";
 import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "@vendoai/core";
 import type { GeneratedAppDocument, GenerationDependencies, PipelineEvent } from "@vendoai/apps";
-import { createVendoAdapter } from "./vendo";
+import { createVendoAdapter, transformModelParams, type ModelCallParams } from "./vendo";
+import { MAX_OUTPUT_TOKENS, PRODUCTION_MODEL, findModel, type BenchModel } from "../runner/models";
 import type { HostFixture } from "../runner/types";
 
 const fixture: HostFixture = {
@@ -93,5 +94,84 @@ describe("vendo lane adapter", () => {
     expect(result.error).toContain("model exploded mid-pipeline");
     expect(result.events).toEqual([events[0]]);
     expect(typeof result.durationMs).toBe("number");
+  });
+});
+
+/** RunRequest.model → the adapter. No model calls: `createModel` is the seam
+ *  that captures the id, and the params rewrite is a pure function. */
+describe("vendo lane model controls", () => {
+  const okEngine = { create: async () => generatedDocument };
+
+  function adapterCapturingId(): { seen: string[]; adapter: ReturnType<typeof createVendoAdapter> } {
+    const seen: string[] = [];
+    return {
+      seen,
+      adapter: createVendoAdapter({
+        engine: okEngine,
+        createModel: (id) => {
+          seen.push(id);
+          return fakeModel;
+        },
+      }),
+    };
+  }
+
+  it("no model on the request → the engine's production default, untouched", async () => {
+    const { seen, adapter } = adapterCapturingId();
+    const result = await adapter.generate("hi", fixture);
+    expect(result.status).toBe("ok");
+    expect(seen).toEqual([PRODUCTION_MODEL.id]);
+  });
+
+  it("threads the chosen model id into the provider call", async () => {
+    const { seen, adapter } = adapterCapturingId();
+    const result = await adapter.generate("hi", fixture, { model: { id: "claude-opus-5" } });
+    expect(result.status).toBe("ok");
+    expect(seen).toEqual(["claude-opus-5"]);
+  });
+
+  it("fails the lane (never silently drops) on a setting the model rejects", async () => {
+    const { adapter } = adapterCapturingId();
+    const result = await adapter.generate("hi", fixture, {
+      model: { id: "claude-opus-5", temperature: 0.7 },
+    });
+    if (result.status !== "failed") throw new Error(`expected failed, got ${result.status}`);
+    expect(result.error).toContain("does not accept a temperature");
+  });
+
+  /** What the engine actually sends: temperature hardcoded to 0, nothing else. */
+  const engineParams = (): ModelCallParams => ({ temperature: 0 });
+
+  const opus5 = findModel("claude-opus-5") as BenchModel;
+  const sonnet46 = findModel("claude-sonnet-4-6") as BenchModel;
+
+  it("strips the engine's hardcoded temperature for models that reject it", () => {
+    // The engine sends temperature: 0 at every call site; the Claude 5 line
+    // 400s on any temperature, so leaving it would break every run.
+    const out = transformModelParams(engineParams(), { id: opus5.id }, opus5);
+    expect("temperature" in out).toBe(false);
+    expect(out.maxOutputTokens).toBe(MAX_OUTPUT_TOKENS);
+  });
+
+  it("applies temperature and thinking budget on models that take them", () => {
+    const out = transformModelParams(
+      engineParams(),
+      { id: sonnet46.id, thinkingBudget: 4096 },
+      sonnet46,
+    );
+    expect(out.providerOptions?.anthropic).toEqual({
+      thinking: { type: "enabled", budgetTokens: 4096 },
+    });
+    // Anthropic forbids temperature alongside extended thinking.
+    expect("temperature" in out).toBe(false);
+
+    const warm = transformModelParams(engineParams(), { id: sonnet46.id, temperature: 0.8 }, sonnet46);
+    expect(warm.temperature).toBe(0.8);
+    expect(warm.providerOptions).toBeUndefined();
+  });
+
+  it("maps thinking effort onto the provider's output_config.effort seam", () => {
+    const out = transformModelParams(engineParams(), { id: opus5.id, effort: "high" }, opus5);
+    expect(out.providerOptions?.anthropic).toEqual({ effort: "high" });
   });
 });

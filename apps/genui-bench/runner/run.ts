@@ -7,6 +7,7 @@ import type {
   LaneAdapter,
   LaneName,
   LaneResult,
+  LaneRunOptions,
   RunRecord,
   RunRequest,
 } from "./types";
@@ -39,8 +40,11 @@ export async function executeRun(
   const fixture = fixtures[req.host];
   const byName = new Map(adapters.map((adapter) => [adapter.name, adapter]));
 
+  const laneOptions: LaneRunOptions = req.model ? { model: req.model } : {};
   const settled = await Promise.allSettled(
-    req.lanes.map((lane) => runLane(lane, byName.get(lane), req.prompt, fixture, req.host)),
+    req.lanes.map((lane) =>
+      runLane(lane, byName.get(lane), req.prompt, fixture, req.host, laneOptions),
+    ),
   );
   const lanes: RunRecord["lanes"] = {};
   req.lanes.forEach((lane, index) => {
@@ -72,6 +76,7 @@ async function runLane(
   prompt: string,
   fixture: HostFixture | undefined,
   host: HostName,
+  options: LaneRunOptions,
 ): Promise<LaneResult> {
   const startedAt = Date.now();
   const failed = (error: string): LaneResult => ({
@@ -83,7 +88,7 @@ async function runLane(
   if (!adapter) return failed(`no adapter registered for lane "${lane}"`);
   if (!fixture) return failed(`no host fixture for "${host}"`);
   try {
-    return await adapter.generate(prompt, fixture);
+    return await adapter.generate(prompt, fixture, options);
   } catch (error) {
     // Adapters promise not to throw; catch anyway so one lane can never
     // take down the run.

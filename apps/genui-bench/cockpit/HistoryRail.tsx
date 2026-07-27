@@ -1,5 +1,6 @@
 "use client";
 
+import { describeModel } from "../runner/models";
 import type { LaneResult, RunRecord } from "../runner/types";
 import { formatDuration } from "./lane-meta";
 
@@ -34,9 +35,11 @@ export function HistoryRail({
             {run.pin && <span className="pinbadge">★ {run.pin} </span>}
             {run.request.prompt}
           </div>
+          {/* The model rides the rail, not the pane header: split-compare is
+              now also a model A/B, and both arms are picked from here. */}
           <div className="rmeta">
             {timeOf(run)} · {run.gitSha.slice(0, 7)}
-            {run.gitDirty ? "+" : ""} · {railDuration(run)}
+            {run.gitDirty ? "+" : ""} · {railDuration(run)} · {describeModel(run.request.model)}
           </div>
           <button
             type="button"

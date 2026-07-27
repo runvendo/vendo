@@ -10,6 +10,22 @@
  * The model key comes from the repo-root .env (source-only: values are read
  * into process.env and never printed). The Anthropic provider resolves through
  * @vendoai/apps's own module space — genui-bench declares no model SDK.
+ *
+ * PER-RUN MODEL + SAMPLING (RunRequest.model). Three seams, only one of which
+ * the engine owns:
+ *
+ *   - model id — a real GenerationDependencies seam: `deps.model` is whatever
+ *     LanguageModel instance we hand it, so the id is just the provider call.
+ *   - temperature / thinking — NOT a GenerationDependencies seam. The engine
+ *     hardcodes `temperature: 0` at every call site and never sets
+ *     providerOptions or maxOutputTokens, so per-run sampling rides the AI
+ *     SDK's own model middleware (`wrapLanguageModel` + `transformParams`),
+ *     which rewrites the outgoing provider call for every engine stage.
+ *
+ * The middleware is not a nicety: the Claude 5 line rejects `temperature`
+ * outright (400), so without stripping the engine's hardcoded 0 those models
+ * could not be selected at all. Absent RunRequest.model there is no wrapper —
+ * an untouched run is byte-identical to what ships.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -31,16 +47,27 @@ import {
   type Tree,
   type VendoTheme,
 } from "@vendoai/core";
-import type { HostFixture, LaneAdapter, LaneResult } from "../runner/types";
+import {
+  MAX_OUTPUT_TOKENS,
+  PRODUCTION_MODEL,
+  findModel,
+  validateModelChoice,
+  type BenchModel,
+  type RunModel,
+} from "../runner/models";
+import type { HostFixture, LaneAdapter, LaneResult, LaneRunOptions } from "../runner/types";
 
 export interface VendoAdapterOverrides {
   /** Test seam: a GenerationEngine-shaped fake (default: the real modelEngine). */
   engine?: Pick<GenerationEngine, "create">;
   /** Test seam: an injected model instance (default: Anthropic from root .env). */
   model?: GenerationDependencies["model"];
+  /** Test seam: build a provider model for an id (default: Anthropic from root .env). */
+  createModel?: (id: string) => GenerationDependencies["model"];
 }
 
-const DEFAULT_MODEL_ID = "claude-sonnet-4-6";
+/** Keep in sync with runner/models.ts PRODUCTION_MODEL. */
+const DEFAULT_MODEL_ID = PRODUCTION_MODEL.id;
 
 /** Source-only root .env load (cli.ts pattern, duplicated because cli.ts runs
  *  its main on import): fills unset process.env keys, never prints values. */
@@ -62,23 +89,98 @@ function loadRootEnv(): void {
   }
 }
 
-/** The real model: @ai-sdk/anthropic resolved through @vendoai/apps's module
- *  space (the engine's own provider dep) so this app adds no model SDK. */
-function resolveAnthropicModel(): GenerationDependencies["model"] {
+/** @vendoai/apps's own module space (the engine's provider deps) so this app
+ *  declares no model SDK. import.meta.resolve is absent when tsx runs this
+ *  file as CJS (the CLI path); createRequire is the everywhere-safe way. */
+function requireFromApps(specifier: string): unknown {
+  const appsEntry = createRequire(import.meta.url).resolve("@vendoai/apps");
+  return createRequire(appsEntry)(specifier);
+}
+
+/** The real model: @ai-sdk/anthropic for the given id. */
+function resolveAnthropicModel(id: string): GenerationDependencies["model"] {
   loadRootEnv();
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey === undefined || apiKey === "") {
     throw new Error("ANTHROPIC_API_KEY missing — set it in the repo-root .env");
   }
-  // import.meta.resolve is absent when tsx runs this file as CJS (the CLI
-  // path) — createRequire(import.meta.url).resolve is the everywhere-safe way
-  // to locate @vendoai/apps's entry and require from its module space.
-  const appsEntry = createRequire(import.meta.url).resolve("@vendoai/apps");
-  const requireFromApps = createRequire(appsEntry);
   const { createAnthropic } = requireFromApps("@ai-sdk/anthropic") as {
     createAnthropic: (options: { apiKey: string }) => (id: string) => GenerationDependencies["model"];
   };
-  return createAnthropic({ apiKey })(process.env.GENUI_BENCH_MODEL ?? DEFAULT_MODEL_ID);
+  return createAnthropic({ apiKey })(id);
+}
+
+/** The slice of the AI SDK's provider call options this lane rewrites. */
+export interface ModelCallParams {
+  temperature?: number;
+  maxOutputTokens?: number;
+  providerOptions?: Record<string, Record<string, unknown>>;
+}
+
+/**
+ * Rewrite one outgoing provider call for the run's model choice. Pure, and
+ * exported as the assertion point for lanes/vendo.test.ts.
+ *
+ * `temperature` is deleted rather than left alone when the model rejects it:
+ * the engine hardcodes 0 and the Claude 5 line 400s on any temperature.
+ */
+export function transformModelParams<T extends ModelCallParams>(
+  params: T,
+  choice: RunModel,
+  spec: BenchModel,
+): T {
+  const next: T = { ...params, maxOutputTokens: params.maxOutputTokens ?? MAX_OUTPUT_TOKENS };
+
+  if (!spec.temperature) delete next.temperature;
+  else if (choice.temperature !== undefined) next.temperature = choice.temperature;
+
+  const anthropic: Record<string, unknown> = { ...next.providerOptions?.anthropic };
+  if (choice.thinkingBudget !== undefined) {
+    anthropic.thinking = { type: "enabled", budgetTokens: choice.thinkingBudget };
+    // Anthropic forbids temperature alongside extended thinking.
+    delete next.temperature;
+  }
+  if (choice.effort !== undefined) anthropic.effort = choice.effort;
+  if (Object.keys(anthropic).length > 0) {
+    next.providerOptions = { ...next.providerOptions, anthropic };
+  }
+  return next;
+}
+
+/** Wrap a provider model so every engine stage inherits the run's settings. */
+function withRunSettings(
+  base: GenerationDependencies["model"],
+  choice: RunModel,
+  spec: BenchModel,
+): GenerationDependencies["model"] {
+  const { wrapLanguageModel } = requireFromApps("ai") as {
+    wrapLanguageModel: (options: { model: unknown; middleware: unknown }) => GenerationDependencies["model"];
+  };
+  return wrapLanguageModel({
+    model: base,
+    middleware: {
+      specificationVersion: "v3",
+      transformParams: ({ params }: { params: ModelCallParams }) =>
+        Promise.resolve(transformModelParams(params, choice, spec)),
+    },
+  });
+}
+
+/** The model the engine will run on, honoring the per-run choice. */
+function modelFor(
+  choice: RunModel | undefined,
+  overrides: VendoAdapterOverrides,
+): GenerationDependencies["model"] {
+  const create = overrides.createModel ?? resolveAnthropicModel;
+  if (!choice) {
+    // No per-run choice: exactly what ships (GENUI_BENCH_MODEL stays the
+    // headless override), and no middleware in the path.
+    return overrides.model ?? create(process.env.GENUI_BENCH_MODEL ?? DEFAULT_MODEL_ID);
+  }
+  const invalid = validateModelChoice(choice);
+  if (invalid) throw new Error(invalid);
+  const spec = findModel(choice.id) as BenchModel;
+  return withRunSettings(overrides.model ?? create(spec.id), choice, spec);
 }
 
 /** The canonical printed wire of the final document (the engine exposes no
@@ -98,12 +200,12 @@ function renderWire(document: AppDocument): string | undefined {
 export function createVendoAdapter(overrides: VendoAdapterOverrides = {}): LaneAdapter {
   return {
     name: "vendo",
-    async generate(prompt: string, host: HostFixture): Promise<LaneResult> {
+    async generate(prompt: string, host: HostFixture, options: LaneRunOptions = {}): Promise<LaneResult> {
       const startedAt = Date.now();
       const events: PipelineEvent[] = [];
       try {
         const engine = overrides.engine ?? modelEngine;
-        const model = overrides.model ?? resolveAnthropicModel();
+        const model = modelFor(options.model, overrides);
         const deps: GenerationDependencies = {
           model,
           catalog: host.catalog as NormalizedCatalog,
