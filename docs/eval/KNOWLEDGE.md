@@ -116,7 +116,9 @@ questions** on the Agentset engine: answerable questions span 0.674-0.866,
 unanswerable ones 0.597-0.783, and the best bar (0.7211) still lets 16 of 34
 unanswerable questions through while refusing 7 of 60 answerable ones. K14's
 answer is the *band* — the overlap region, where the score is spent and a
-cheap model reads the passages instead.
+cheap model reads the passages instead. It ships **opt-in**
+(`VENDO_KNOWLEDGE_VERIFY=on`, Cloud engine only): the trade below is worth
+taking, but it changes what live users see, so hosts choose when.
 
 | | shipped bar alone | + verifier in the band |
 |---|---|---|

@@ -652,20 +652,40 @@ const CLOUD_KNOWLEDGE_POLICY = {
   verifyBand: { low: 0.6735, high: 0.7835 },
 } as const;
 
-/** The verifier's off switch and the tool options that carry it.
-    `VENDO_KNOWLEDGE_VERIFY=off` returns the tool to the pure-threshold
-    behavior; anything else leaves the calibrated policy in place. The
-    verifier model is the family's cheap `judge` pick on whatever rung the
-    host's credentials resolve to (bound to `models.judge` like every other
-    judge-slot model), and a rung that resolves to nothing simply yields no
-    verdict — the tool then falls back to the threshold, which is why this can
-    never make knowledge unavailable. */
+/** The verifier is OPT-IN for its first release: `VENDO_KNOWLEDGE_VERIFY=on`
+    turns it on for the Cloud engine, unset leaves every host exactly where it
+    is today. The measured trade is worth taking (false answers 47% → 3%,
+    docs/eval/KNOWLEDGE.md) but it changes what live users see — some questions
+    that got an answer now get a refusal — and it spends a model call on about
+    two thirds of knowledge turns, so hosts choose the day that starts rather
+    than discovering it in a patch release.
+
+    A value that is neither on nor off is a TYPO, and a typo that silently
+    means "off" is how a host thinks it enabled a trust feature it did not.
+    Loud, like every other env knob here (positiveIntegerEnv). */
+function knowledgeVerifyEnabled(): boolean {
+  const raw = environment("VENDO_KNOWLEDGE_VERIFY")?.trim().toLowerCase();
+  if (raw === undefined || raw === "") return false;
+  if (["on", "true", "1"].includes(raw)) return true;
+  if (["off", "false", "0"].includes(raw)) return false;
+  throw new VendoError(
+    "validation",
+    `VENDO_KNOWLEDGE_VERIFY must be on or off, got ${JSON.stringify(raw)}`,
+  );
+}
+
+/** The tool options for the composed engine. The calibrated policy rides the
+    Cloud engine and only when the host asked for it; the verifier model is the
+    family's cheap `judge` pick on whatever rung the host's credentials resolve
+    to (bound to `models.judge` like every other judge-slot model), and a rung
+    that resolves to nothing simply yields no verdict — the tool then falls
+    back to the threshold, which is why this can never make knowledge
+    unavailable. */
 function knowledgeToolOptions(
   hostConfigured: boolean,
   models: ModelsConfig | undefined,
 ): KnowledgeToolsOptions {
-  if (hostConfigured) return {};
-  if (environment("VENDO_KNOWLEDGE_VERIFY")?.toLowerCase() === "off") return {};
+  if (hostConfigured || !knowledgeVerifyEnabled()) return {};
   const model = vendoModel(undefined, { slot: "judge" });
   bindVendoModelSlots(model, models);
   return { ...CLOUD_KNOWLEDGE_POLICY, verifier: entailmentVerifier({ model }) };

@@ -84,8 +84,9 @@ of unanswerable questions still cleared it. No bar fixes that — it is a
 property of embedding similarity, which cannot tell "how to install in a
 framework" from "how to install in **your** framework".
 
-So on the Cloud engine, in the score region where the bar provably cannot
-decide (the *band*, calibrated in
+So on the Cloud engine there is an opt-in switch. Turn it on with
+`VENDO_KNOWLEDGE_VERIFY=on`, and in the score region where the bar provably
+cannot decide (the *band*, calibrated in
 [`docs/eval/knowledge/bands/agentset.json`](eval/knowledge/bands/agentset.json)),
 the tool asks a cheap model one question before answering: can this question
 be answered from the passages the search actually returned? If not, the tool
@@ -99,16 +100,22 @@ turns — a second only when a rejected verdict escalates to a deep retry that
 comes back with different passages — and median 1.6s, p95 3.6s added to those
 turns.
 
-Three properties are worth knowing:
+Four properties are worth knowing:
 
+- **It is off until you turn it on.** This is a live behavior change — some
+  questions that used to get an answer now get a refusal, which is the point —
+  and it spends a model call on about two thirds of knowledge turns, so it
+  ships opt-in rather than arriving in a patch release. `off` and unset are
+  the same thing; anything that is neither `on` nor `off` fails loudly at
+  startup rather than leaving you with a trust feature you think is running.
 - **It only applies to the Cloud engine.** Scores are engine-relative, so a
   number calibrated on one engine means nothing on another. Local lexical, BYO
-  and self-hosted engines are untouched.
+  and self-hosted engines are untouched, switch or no switch.
 - **It can never take knowledge away.** No model credential, a timeout past
   5s, or an unusable response means *no verdict*, and the tool answers exactly
   as it would have without a verifier.
-- **You can turn it off.** `VENDO_KNOWLEDGE_VERIFY=off` returns the tool to
-  pure-threshold behavior, with the 47% false-answer rate that implies.
+- **Turning it back off is one variable.** `VENDO_KNOWLEDGE_VERIFY=off`,
+  with the 47% false-answer rate that implies.
 
 ## Engines
 

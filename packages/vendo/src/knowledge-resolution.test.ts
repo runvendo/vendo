@@ -42,6 +42,9 @@ beforeEach(() => {
   // must never decide what this suite observes.
   vi.stubEnv("VENDO_API_KEY", "");
   vi.stubEnv("VENDO_CLOUD_URL", "");
+  // Same hazard for the K14 opt-in: a developer who switched the verifier on
+  // in their shell must not change what these rows observe.
+  vi.stubEnv("VENDO_KNOWLEDGE_VERIFY", "");
 });
 
 async function tempStore(): Promise<VendoStore> {
@@ -312,12 +315,18 @@ describe("knowledge resolution — misconfiguration is audible", () => {
  * against a live run (docs/eval/knowledge/bands/agentset.json), and the
  * calibration's finding was that no score threshold separates answerable from
  * unanswerable questions. So the Cloud engine — and only the Cloud engine —
- * composes with the band, and inside the band a cheap model decides. Every
- * row below uses an IN-BAND score (0.75), the region where the threshold
- * alone would answer, so the verifier's effect is the only thing observed.
+ * composes with the band, and only when the host opted in, and inside the band
+ * a cheap model decides. Every row below uses an IN-BAND score (0.75), the
+ * region where the threshold alone would answer, so the verifier's effect is
+ * the only thing observed.
  */
 describe("knowledge verification band (K14) — where the score cannot decide", () => {
   const IN_BAND = 0.75;
+
+  /** The first release is opt-in: rows that want the verifier ask for it. */
+  const optIn = (value = "on"): void => {
+    vi.stubEnv("VENDO_KNOWLEDGE_VERIFY", value);
+  };
 
   /** A judge-slot model object answering with a fixed verdict. */
   function verdictModel(supported: boolean): LanguageModel & { calls: number } {
@@ -347,6 +356,7 @@ describe("knowledge verification band (K14) — where the score cannot decide", 
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
+    optIn();
     const judge = verdictModel(false);
     const vendo = await compose({ models: { judge } });
     const result = await search(vendo);
@@ -361,24 +371,43 @@ describe("knowledge verification band (K14) — where the score cannot decide", 
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
+    optIn();
     const vendo = await compose({ models: { judge: verdictModel(true) } });
     expect(outcomeOf(await search(vendo))).toBe("answered");
   });
 
-  it("VENDO_KNOWLEDGE_VERIFY=off returns the tool to the pure-threshold behavior", async () => {
+  it("is OPT-IN: an untouched Cloud host keeps today's pure-threshold behavior", async () => {
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
-    vi.stubEnv("VENDO_KNOWLEDGE_VERIFY", "off");
     const judge = verdictModel(false);
     const vendo = await compose({ models: { judge } });
     expect(outcomeOf(await search(vendo))).toBe("answered");
     expect(judge.calls).toBe(0);
   });
 
+  it("VENDO_KNOWLEDGE_VERIFY=off is the same as unset", async () => {
+    const wire = wireRouter({ score: IN_BAND });
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey();
+    optIn("off");
+    const judge = verdictModel(false);
+    const vendo = await compose({ models: { judge } });
+    expect(outcomeOf(await search(vendo))).toBe("answered");
+    expect(judge.calls).toBe(0);
+  });
+
+  it("a typo in VENDO_KNOWLEDGE_VERIFY fails loudly — never a silently-off trust feature", async () => {
+    withKey();
+    optIn("yes-please");
+    await expect(compose()).rejects.toThrow(/VENDO_KNOWLEDGE_VERIFY must be on or off/);
+  });
+
   it("a host's own engine is never held to another engine's calibration", async () => {
-    // Scores are engine-relative: 0.75 means nothing here, so no band, no
-    // verification, and the host's adapter answers exactly as it does today.
+    // Scores are engine-relative: 0.75 means nothing here, so even with the
+    // verifier switched ON there is no band, no verification, and the host's
+    // adapter answers exactly as it does today.
+    optIn();
     const judge = verdictModel(false);
     const vendo = await compose({
       knowledge: {
@@ -405,6 +434,7 @@ describe("knowledge verification band (K14) — where the score cannot decide", 
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
+    optIn();
     // The Cloud key resolves the judge slot through the console gateway, so
     // strip it from the model ladder's view: no key, no provider module, no
     // verdict. The tool must fall back to the shipped threshold (0.75 clears
