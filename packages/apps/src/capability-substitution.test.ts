@@ -151,7 +151,11 @@ describe("island source — capability substitution", () => {
   // A gate that reads only plain decimals publishes its own bypass: the live
   // defect's `amount: 1` sentinel is `0x1`, `1e0`, `+1` or `(1)` in four other
   // spellings, all of them just as hand-typed.
-  it.each(["1e0", "0x1", "1_00", "+1", "(1)", "0b1", "0o1", ".5", "1.5e2"])(
+  it.each([
+    "1e0", "0x1", "1_00", "+1", "(1)", "0b1", "0o1", ".5", "1.5e2",
+    // Signs and parens peel in any order, with any spacing.
+    "+ 1", "- 1", "-1", "-(1)", "( + 1 )", "+0x1", "- 1_00", "((1))", "- +1",
+  ])(
     "a fabricated amount spelled %s FAILS like a plain decimal",
     (amount) => {
       const source = island(`
@@ -160,11 +164,16 @@ describe("island source — capability substitution", () => {
     },
   );
 
-  it("an arithmetic expression is still a reference, not a literal", () => {
-    const source = island(`
-  const send = (row, count) => tools.host_transferMoney({ amount: (count + 1), recipient_name: row.name });`);
-    expect(islandSubstitutionViolations(source, tools, "let me pay a saved payee")).toHaveLength(0);
-  });
+  // The controls for the peeling loop: anything that is not JUST a number
+  // behind wrappers must stay a reference.
+  it.each(["(count + 1)", "count + 1", "-count", "(count)", "+row.amount", "(a) + (1)"])(
+    "an expression spelled %s is still a reference, not a literal",
+    (amount) => {
+      const source = island(`
+  const send = (row, count, a) => tools.host_transferMoney({ amount: ${amount}, recipient_name: row.name });`);
+      expect(islandSubstitutionViolations(source, tools, "let me pay a saved payee")).toHaveLength(0);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
