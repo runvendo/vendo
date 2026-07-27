@@ -1,8 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { KnowledgeAdapter, Principal, RunContext, ToolOutcome } from "@vendoai/core";
-import { lexicalKnowledge } from "@vendoai/knowledge";
+import type { KnowledgeAdapter, KnowledgeDoc, Principal, RunContext, ToolOutcome } from "@vendoai/core";
+import { httpKnowledge, lexicalKnowledge } from "@vendoai/knowledge";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,10 +16,16 @@ import { createVendo, type CreateVendoConfig, type Vendo } from "./server.js";
  * `vendo_knowledge_search` tool, and no error, while every other Cloud-backed
  * seam resolved from the same key. The seam test that existed asserted only
  * the two combinations that worked, so a unit suite stayed green across a
- * broken product. This file pins every combination instead: which
- * implementation composes, whether the tool appears, and — for the cloud rung
- * — that a real `vendo/knowledge-wire@1` call leaves the process.
+ * broken product.
+ *
+ * This file pins every combination instead. Each engine answers with its own
+ * marker document, so a row does not merely assert "a tool exists" — it names
+ * which implementation actually served the query, and (for the rows where a
+ * key is present but must lose) that the console saw no traffic at all.
  */
+
+const CLOUD_BASE = "https://console.test";
+const BYO_BASE = "https://byo.test/knowledge";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -27,6 +33,7 @@ afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()!();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 beforeEach(() => {
@@ -62,103 +69,213 @@ async function compose(config: Partial<CreateVendoConfig> = {}): Promise<Vendo> 
 const hasKnowledgeTool = async (vendo: Vendo): Promise<boolean> =>
   (await vendo.actions.descriptors()).some((descriptor) => descriptor.name === "vendo_knowledge_search");
 
-const search = (vendo: Vendo, query: string): Promise<ToolOutcome> =>
+const search = (vendo: Vendo, query = "how long do transfers take"): Promise<ToolOutcome> =>
   vendo.actions.execute({ id: "call_knowledge", tool: "vendo_knowledge_search", args: { query } }, ctx);
 
-/** A console mount that speaks the search leg of `vendo/knowledge-wire@1`.
-    Deliberately NOT the knowledge package's fake server: the point is to
-    observe what the composed adapter puts on the wire — URL, bearer, body —
-    from outside the block that builds it. */
-function fakeConsole(options: { bearer?: string } = {}): {
-  fetch: ReturnType<typeof vi.fn>;
-  calls: Array<{ url: string; authorization: string | null }>;
-} {
-  const calls: Array<{ url: string; authorization: string | null }> = [];
-  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = new Request(input, init);
-    // Composition touches other console routes (tool overrides, config); only
-    // the knowledge wire is this fake's business.
-    if (!request.url.includes("/api/v1/knowledge/")) return new Response("not found", { status: 404 });
-    calls.push({ url: request.url, authorization: request.headers.get("authorization") });
-    if (options.bearer !== undefined && request.headers.get("authorization") !== `Bearer ${options.bearer}`) {
-      return Response.json({ error: { code: "unauthorized", message: "Valid API key required." } }, { status: 401 });
-    }
-    return Response.json({
-      hits: [{
-        ref: { docId: "doc-cloud", title: "Wire transfers", source: "docs/transfers.md" },
-        snippet: "Cloud-hosted answer: transfers settle in one business day.",
-        kind: "docs",
-        visibility: "public",
-        score: 0.9,
-      }],
-    });
-  });
-  return { fetch, calls };
+/** The docId the served answer cites — the identity of whichever engine the
+    seam actually chose. */
+function servingEngine(outcome: ToolOutcome): string | undefined {
+  const output = (outcome as { output?: { hits?: Array<{ docId?: string }> } }).output;
+  return output?.hits?.[0]?.docId;
 }
 
-describe("knowledge resolution — the VENDO_API_KEY cloud rung (#623)", () => {
-  it("composes the Cloud engine from the key alone, with no hand-wiring", async () => {
-    const mount = fakeConsole();
-    vi.stubGlobal("fetch", mount.fetch);
-    vi.stubEnv("VENDO_API_KEY", "vnd_key_only");
-    vi.stubEnv("VENDO_CLOUD_URL", "https://console.test");
+const doc = (docId: string): KnowledgeDoc => ({
+  id: docId,
+  kind: "docs",
+  visibility: "public",
+  title: "Wire transfers",
+  text: "# Wire transfers\nTransfers settle in one business day.",
+  source: "docs/transfers.md",
+});
 
-    const vendo = await compose();
+/** An adapter the host passes by hand — the plainest form of "explicit". */
+function probeKnowledge(docId: string): KnowledgeAdapter {
+  return {
+    posture: { fetch: false, write: false, visibility: "public-only" },
+    async search() {
+      return {
+        hits: [{
+          ref: { docId, title: "Wire transfers", source: "docs/transfers.md" },
+          snippet: "Transfers settle in one business day.",
+          kind: "docs",
+          visibility: "public",
+          score: 0.9,
+        }],
+      };
+    },
+    async status() {
+      return { docs: 1, byKind: { docs: 1 } };
+    },
+  };
+}
 
-    expect(await hasKnowledgeTool(vendo)).toBe(true);
-
-    const outcome = await search(vendo, "how long do transfers take");
-    expect(outcome).toMatchObject({
-      status: "ok",
-      output: { outcome: "answered", hits: [{ docId: "doc-cloud" }] },
-    });
-    expect(mount.calls[0]?.url).toBe("https://console.test/api/v1/knowledge/search");
-    expect(mount.calls[0]?.authorization).toBe("Bearer vnd_key_only");
+/** Two `vendo/knowledge-wire@1` mounts behind one `fetch`: the Cloud console
+    and a BYO endpoint, each answering with its own marker doc and counting
+    what it was asked. Everything else 404s, so a composition that reaches for
+    an unexpected engine is visible rather than absorbed. */
+function wireRouter(options: { cloudBearer?: string } = {}): {
+  fetch: typeof fetch;
+  cloud: Array<{ url: string; authorization: string | null }>;
+  byo: Array<{ url: string; authorization: string | null }>;
+} {
+  const cloud: Array<{ url: string; authorization: string | null }> = [];
+  const byo: Array<{ url: string; authorization: string | null }> = [];
+  const answer = (docId: string): Response => Response.json({
+    hits: [{
+      ref: { docId, title: "Wire transfers", source: "docs/transfers.md" },
+      snippet: "Transfers settle in one business day.",
+      kind: "docs",
+      visibility: "public",
+      score: 0.9,
+    }],
   });
 
-  it("says a bad key is a bad key instead of a silent shrug", async () => {
-    const mount = fakeConsole({ bearer: "vnd_the_real_key" });
-    vi.stubGlobal("fetch", mount.fetch);
-    vi.stubEnv("VENDO_API_KEY", "vnd_wrong_key");
-    vi.stubEnv("VENDO_CLOUD_URL", "https://console.test");
-    const warn = vi.spyOn(globalThis.console, "warn").mockImplementation(() => undefined);
+  const handler = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const request = new Request(input, init);
+    const record = { url: request.url, authorization: request.headers.get("authorization") };
+    if (request.url.startsWith(`${CLOUD_BASE}/api/v1/knowledge/`)) {
+      cloud.push(record);
+      if (options.cloudBearer !== undefined && record.authorization !== `Bearer ${options.cloudBearer}`) {
+        return Response.json({ error: { code: "unauthorized", message: "Valid API key required." } }, { status: 401 });
+      }
+      return answer("doc-cloud");
+    }
+    if (request.url.startsWith(BYO_BASE)) {
+      byo.push(record);
+      return answer("doc-byo");
+    }
+    // Composition touches other console routes (tool overrides, config);
+    // none of them are this router's business.
+    return new Response("not found", { status: 404 });
+  };
+  return { fetch: handler as typeof fetch, cloud, byo };
+}
+
+const withKey = (key = "vnd_key"): void => {
+  vi.stubEnv("VENDO_API_KEY", key);
+  vi.stubEnv("VENDO_CLOUD_URL", CLOUD_BASE);
+};
+
+describe("knowledge resolution matrix (ENG-368) — which engine composes, and does the tool appear", () => {
+  it("explicit adapter, no key: the host's adapter serves", async () => {
+    const wire = wireRouter();
+    vi.stubGlobal("fetch", wire.fetch);
+
+    const vendo = await compose({ knowledge: probeKnowledge("doc-explicit") });
+
+    expect(await hasKnowledgeTool(vendo)).toBe(true);
+    expect(servingEngine(await search(vendo))).toBe("doc-explicit");
+  });
+
+  it("explicit adapter WITH a key: the adapter still wins and the console is never called", async () => {
+    const wire = wireRouter();
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey();
+
+    const vendo = await compose({ knowledge: probeKnowledge("doc-explicit") });
+
+    expect(servingEngine(await search(vendo))).toBe("doc-explicit");
+    // The adapter rule's whole point: a key fills seams the host left unset,
+    // it never shadows one the host filled.
+    expect(wire.cloud).toEqual([]);
+  });
+
+  it("BYO wire endpoint WITH a key: the host's own endpoint serves, not Cloud", async () => {
+    const wire = wireRouter();
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey();
+
+    const vendo = await compose({ knowledge: httpKnowledge({ url: BYO_BASE }) });
+
+    expect(servingEngine(await search(vendo))).toBe("doc-byo");
+    expect(wire.byo[0]?.url).toBe(`${BYO_BASE}/search`);
+    expect(wire.cloud).toEqual([]);
+  });
+
+  it("key only: the Cloud engine composes from the key alone, with no hand-wiring", async () => {
+    const wire = wireRouter();
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey("vnd_key_only");
 
     const vendo = await compose();
-    const outcome = await search(vendo, "how long do transfers take");
 
-    // The tool EXISTS (a wrong key is a configured host), the end user hears
-    // the contract's honest "unavailable", and the operator — who is the only
-    // one who can fix a rejected key — gets the cause in the server log.
-    // Setup guidance stays out of the model's context on purpose: it is
-    // operator text and must not reach an end user through the answer.
     expect(await hasKnowledgeTool(vendo)).toBe(true);
-    expect(outcome).toMatchObject({ status: "ok", output: { outcome: "unavailable" } });
-    expect(warn.mock.calls.flat().join(" ")).toMatch(/rejected the API key/);
+    expect(servingEngine(await search(vendo))).toBe("doc-cloud");
+    expect(wire.cloud[0]?.url).toBe(`${CLOUD_BASE}/api/v1/knowledge/search`);
+    expect(wire.cloud[0]?.authorization).toBe("Bearer vnd_key_only");
+  });
+
+  it("zero-config lexicalKnowledge() WITH a key: the local engine serves over the composed store", async () => {
+    const wire = wireRouter();
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey();
+    const store = await tempStore();
+    await store.ensureSchema();
+    await lexicalKnowledge({ store }).upsert!([doc("docs#composed-store.md")]);
+
+    // No store plumbing anywhere in the host's config — exactly what
+    // docs/knowledge.md promises.
+    const vendo = await compose({ store, knowledge: lexicalKnowledge() });
+
+    expect(servingEngine(await search(vendo, "transfers settle business day"))).toBe("docs#composed-store.md");
+    expect(wire.cloud).toEqual([]);
+  });
+
+  it("lexicalKnowledge({ store }): the host's own knowledge database is never re-pointed at the composed one", async () => {
+    const composed = await tempStore();
+    const elsewhere = await tempStore();
+    await composed.ensureSchema();
+    await elsewhere.ensureSchema();
+    await lexicalKnowledge({ store: composed }).upsert!([doc("docs#composed-store.md")]);
+    await lexicalKnowledge({ store: elsewhere }).upsert!([doc("docs#other-database.md")]);
+
+    const vendo = await compose({ store: composed, knowledge: lexicalKnowledge({ store: elsewhere }) });
+
+    expect(servingEngine(await search(vendo, "transfers settle business day"))).toBe("docs#other-database.md");
+  });
+
+  it("nothing configured: no adapter, no tool — the agent never advertises a knowledge base the host lacks", async () => {
+    const vendo = await compose();
+
+    expect(await hasKnowledgeTool(vendo)).toBe(false);
+    expect(await search(vendo)).toMatchObject({ status: "error", error: { code: "not-found" } });
   });
 });
 
-describe("knowledge resolution — the zero-config local rung", () => {
-  it("injects the composed store into a store-less lexicalKnowledge()", async () => {
-    const store = await tempStore();
-    await store.ensureSchema();
+describe("knowledge resolution — misconfiguration is audible", () => {
+  it("a rejected key reaches the operator's log, not just an unavailable answer", async () => {
+    const wire = wireRouter({ cloudBearer: "vnd_the_real_key" });
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey("vnd_wrong_key");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    const vendo = await compose({ store, knowledge: lexicalKnowledge() });
+    const vendo = await compose();
+    const outcome = await search(vendo);
 
+    // The tool EXISTS (a wrong key is a configured host), the end user hears
+    // the contract's honest "unavailable", and the operator — the only one
+    // who can fix a rejected key — gets the cause in the server log. Setup
+    // guidance stays out of the model's context on purpose: it is operator
+    // text and must not reach an end user through the answer.
     expect(await hasKnowledgeTool(vendo)).toBe(true);
-    const seeded = lexicalKnowledge({ store }) as Required<Pick<KnowledgeAdapter, "upsert">> & KnowledgeAdapter;
-    await seeded.upsert([{
-      id: "docs#transfers.md",
-      kind: "docs",
-      visibility: "public",
-      title: "Wire transfers",
-      text: "# Wire transfers\nTransfers settle in one business day.",
-      source: "docs/transfers.md",
-    }]);
+    expect(outcome).toMatchObject({ status: "ok", output: { outcome: "unavailable", hits: [] } });
+    expect(JSON.stringify(outcome)).not.toMatch(/vendo login|VENDO_API_KEY/);
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/rejected the API key/);
+  });
 
-    const outcome = await search(vendo, "transfers settle business day");
-    expect(outcome).toMatchObject({
-      status: "ok",
-      output: { outcome: "answered", hits: [{ docId: "docs#transfers.md" }] },
-    });
+  it("an unreachable console is unavailable-with-a-reason, never an empty corpus", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }));
+    withKey();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const outcome = await search(await compose());
+
+    // "unavailable" and not "insufficient-evidence": an engine that cannot be
+    // reached has not told us the corpus is empty, and the agent must not say
+    // it looked and found nothing.
+    expect(outcome).toMatchObject({ status: "ok", output: { outcome: "unavailable" } });
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/unreachable/);
   });
 });
