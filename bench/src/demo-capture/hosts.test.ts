@@ -52,6 +52,9 @@ describe("configDemoHost", () => {
       packageName: "acme-widgets-demo",
       route: "/vendo",
       threadId: "thr_acme_widgets_demo",
+      // The injected login wall's knobs (env override, seeded fallback).
+      demoPasswordEnv: "DEMO_PASSWORD",
+      demoPasswordFallback: "acme-widgets-demo",
     });
     expect(config.beats.map((beat) => beat.key)).toEqual(["generate-ui", "take-action"]);
   });

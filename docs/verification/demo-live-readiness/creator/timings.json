@@ -1,0 +1,142 @@
+[
+  {
+    "stage": "validate",
+    "startedAt": "2026-07-26T09:18:24.157Z",
+    "ms": 719
+  },
+  {
+    "stage": "create",
+    "startedAt": "2026-07-26T09:18:24.877Z",
+    "ms": 198
+  },
+  {
+    "stage": "install",
+    "startedAt": "2026-07-26T09:18:25.075Z",
+    "ms": 15128
+  },
+  {
+    "stage": "research",
+    "startedAt": "2026-07-26T09:18:40.204Z",
+    "ms": 13118
+  },
+  {
+    "stage": "rewrite:tokens",
+    "startedAt": "2026-07-26T09:18:53.323Z",
+    "ms": 5
+  },
+  {
+    "stage": "rewrite:plan",
+    "startedAt": "2026-07-26T09:18:53.328Z",
+    "ms": 40312
+  },
+  {
+    "stage": "rewrite:agents",
+    "startedAt": "2026-07-26T09:19:33.646Z",
+    "ms": 804765
+  },
+  {
+    "stage": "rewrite:assembly",
+    "startedAt": "2026-07-26T09:32:58.416Z",
+    "ms": 366861
+  },
+  {
+    "stage": "judge:round-1",
+    "startedAt": "2026-07-26T09:39:05.281Z",
+    "ms": 44311
+  },
+  {
+    "stage": "judge:round-1",
+    "startedAt": "2026-07-26T09:41:32.257Z",
+    "ms": 325753
+  },
+  {
+    "stage": "judge:round-1",
+    "startedAt": "2026-07-26T09:48:20.777Z",
+    "ms": 90355
+  },
+  {
+    "stage": "judge:round-1",
+    "startedAt": "2026-07-26T09:53:40.000Z",
+    "ms": 270817
+  },
+  {
+    "stage": "capture",
+    "startedAt": "2026-07-26T09:58:10.824Z",
+    "ms": 106693
+  },
+  {
+    "stage": "capture",
+    "startedAt": "2026-07-26T10:01:28.777Z",
+    "ms": 334673
+  },
+  {
+    "stage": "deploy",
+    "startedAt": "2026-07-26T10:07:03.455Z",
+    "ms": 71975
+  },
+  {
+    "stage": "deploy",
+    "startedAt": "2026-07-26T10:09:26.458Z",
+    "ms": 72633
+  },
+  {
+    "stage": "final-gate",
+    "startedAt": "2026-07-26T10:10:39.147Z",
+    "ms": 9708
+  },
+  {
+    "stage": "final-gate",
+    "startedAt": "2026-07-26T10:15:29.760Z",
+    "ms": 909135
+  },
+  {
+    "stage": "deploy",
+    "startedAt": "2026-07-26T10:37:36.340Z",
+    "ms": 170897
+  },
+  {
+    "stage": "deploy",
+    "startedAt": "2026-07-26T10:41:04.021Z",
+    "ms": 314598
+  },
+  {
+    "stage": "final-gate",
+    "startedAt": "2026-07-26T10:46:18.643Z",
+    "ms": 203989
+  },
+  {
+    "stage": "final-gate",
+    "startedAt": "2026-07-26T10:51:10.491Z",
+    "ms": 16855
+  },
+  {
+    "stage": "final-gate",
+    "startedAt": "2026-07-26T10:53:04.839Z",
+    "ms": 77907
+  },
+  {
+    "stage": "inject-auth",
+    "startedAt": "2026-07-26T19:02:07.041Z",
+    "ms": 16064
+  },
+  {
+    "stage": "deploy#5",
+    "startedAt": "2026-07-26T19:02:23.109Z",
+    "ms": 175501
+  },
+  {
+    "stage": "await-auth-build",
+    "startedAt": "2026-07-26T19:05:18.612Z",
+    "ms": 181869
+  },
+  {
+    "stage": "final-gate#6",
+    "startedAt": "2026-07-26T19:08:20.484Z",
+    "ms": 5203
+  },
+  {
+    "stage": "final-gate#7",
+    "startedAt": "2026-07-26T19:09:33.357Z",
+    "ms": 102613
+  }
+]

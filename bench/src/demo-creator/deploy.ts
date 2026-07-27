@@ -47,7 +47,7 @@ export interface ExecResult {
   stderr: string;
 }
 
-export type ExecFn = (command: string[], options: { cwd: string }) => Promise<ExecResult>;
+export type ExecFn = (command: string[], options: { cwd: string; signal?: AbortSignal }) => Promise<ExecResult>;
 
 export interface DemoDeployResult {
   serviceName: string;
@@ -124,13 +124,25 @@ export function parseDemoDeployArgs(argv: string[]): DemoDeployArgs {
   };
 }
 
+/** Falls back to the version demo-bank's hand-maintained Dockerfile pins. */
+const fallbackPnpmVersion = "11.10.0";
+
+/** The pnpm the Docker build must install: the repo root's `packageManager`
+ * pin. A hardcoded version here silently breaks every deploy when the repo
+ * migrates pnpm (a stale 9.12.0 pin failed the frozen install against the
+ * pnpm-11 lockfile with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH on a live run). */
+export function pnpmVersionFromPackageManager(packageManager: string | undefined): string {
+  const match = /^pnpm@(\d+\.\d+\.\d+)/.exec(packageManager ?? "");
+  return match?.[1] ?? fallbackPnpmVersion;
+}
+
 /** demo-bank's Dockerfile, parametrized: repo-root build context, turbo filter = the app's package name. */
-export function renderDockerfile(options: { packageName: string; appPath: string }): string {
+export function renderDockerfile(options: { packageName: string; appPath: string; pnpmVersion?: string }): string {
   return `# ${GENERATED_FILE_MARKER}
 FROM node:22-bookworm-slim
 
 WORKDIR /app
-RUN npm install --global pnpm@9.12.0
+RUN npm install --global pnpm@${options.pnpmVersion ?? fallbackPnpmVersion}
 
 COPY . .
 RUN pnpm install --frozen-lockfile
@@ -271,7 +283,12 @@ async function loadDemoConfigModule(): Promise<typeof import("demo-template/demo
 }
 
 /** Shared spawn-based exec (argv array, no shell — secrets and ids are never
- * interpolated into a command string). Also used by reap.ts. */
+ * interpolated into a command string). Also used by reap.ts.
+ *
+ * Cancellation: children run in their own process group, and an aborted
+ * `signal` SIGKILLs the whole group — the pipeline's wall-clock cap must
+ * TERMINATE in-flight work (a `railway up` completing after the park would
+ * be a deploy-after-park), not merely stop awaiting it. */
 export const defaultExec: ExecFn = (command, options) =>
   new Promise((resolve, reject) => {
     const [file, ...args] = command;
@@ -279,13 +296,32 @@ export const defaultExec: ExecFn = (command, options) =>
       reject(new Error("empty command"));
       return;
     }
-    const child = spawn(file, args, { cwd: options.cwd, stdio: ["ignore", "pipe", "pipe"] });
+    if (options.signal?.aborted) {
+      reject(options.signal.reason instanceof Error ? options.signal.reason : new Error("exec aborted before start"));
+      return;
+    }
+    const child = spawn(file, args, { cwd: options.cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    const killGroup = (): void => {
+      if (child.exitCode !== null || child.pid === undefined) return;
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+    };
+    options.signal?.addEventListener("abort", killGroup, { once: true });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on("error", (error) => {
+      options.signal?.removeEventListener("abort", killGroup);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      options.signal?.removeEventListener("abort", killGroup);
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
   });
 
 export interface DeployIo {
@@ -329,8 +365,11 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
   // Docker only honors the root .dockerignore — that (committed) file is the
   // real upload/exclusion mechanism.
   const dockerfilePath = path.join(appDir, "Dockerfile");
+  const rootPackageRaw = await readIfExists(path.join(io.repoRoot, "package.json"));
+  const rootPackageJson = rootPackageRaw === undefined ? {} : JSON.parse(rootPackageRaw) as { packageManager?: string };
+  const pnpmVersion = pnpmVersionFromPackageManager(rootPackageJson.packageManager);
   if (shouldWriteGeneratedFile(await readIfExists(dockerfilePath))) {
-    await writeFile(dockerfilePath, renderDockerfile({ packageName, appPath }));
+    await writeFile(dockerfilePath, renderDockerfile({ packageName, appPath, pnpmVersion }));
     write(`Wrote ${appPath}/Dockerfile`);
   } else {
     write(`Keeping hand-edited ${appPath}/Dockerfile (no generated-file marker)`);
