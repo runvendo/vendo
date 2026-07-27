@@ -30,15 +30,18 @@ export const vendo = createVendo({
     ].join("\n"),
   },
   apps: {
-    // demo-refresh Part 5 — the full v4 generation pipeline.
+    // speed-core ruling (2026-07-26, supersedes demo-refresh Part 5): same
+    // amended config as demo-bank — regionParallel OFF (live evidence:
+    // docs/verification/demo-live-readiness/speed-core/after.md), endPass on
+    // (the runtime's data-sighted verify), everything else default.
     pipeline: {
-      exemplarContract: true,
-      structuredRepair: true,
-      regionParallel: true,
       endPass: true,
     },
   },
-  connectors: composioApiKey
-    ? [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "googlecalendar", "slack"] })]
-    : [],
+  // BYO Composio when Cadence brings its own key; otherwise connectorApps
+  // scopes the VENDO_API_KEY-composed Cloud pair to the same toolkits — the
+  // demo gets connectors in cloud posture, never the console's full catalog.
+  ...(composioApiKey
+    ? { connectors: [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "googlecalendar", "slack"] })] }
+    : { connectorApps: ["gmail", "googlecalendar", "slack"] }),
 });

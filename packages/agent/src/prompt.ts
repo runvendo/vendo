@@ -30,6 +30,14 @@ const PRESENTATION_PROMPT = `Presentation
 - Do not narrate surface mechanics ("the chart is loading above", "see the table below").
 - Match the product's voice. No emoji unless the user or the host's directions use them.`;
 
+// Discovery-discipline 2026-07-25 (section id: discovery-budget) — a bounded
+// discovery posture so a large connector catalog can never become a per-turn
+// side-quest of searches, speculative unconnected calls, and approval spam.
+const DISCOVERY_BUDGET_PROMPT = `Discovery budget
+- Use vendo_tools_search at most 2 times per user intent; prefer the host's own tools whenever they can fulfill the ask.
+- Never call a tool for a service you know is unconnected. A connect-required result means stop calling that service: tell the user what it needs and point them to the connect card that appeared.
+- When a needed service is unconnected, say so plainly and surface the connect step — do not try other tools of the same service or hunt for substitutes across the catalog.`;
+
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
   guard: Guard,
@@ -39,12 +47,22 @@ export async function assembleSystemPrompt(
   // with a first-request cloud read so the brief resolves LIVE (a console
   // publish applies to the next turn with no restart). The string form is
   // unchanged.
-  system?: { product?: string | (() => string | undefined); catalog?: string; instructions?: string },
+  // `knowledge` accepts a resolver (knowledge k8): the umbrella locks it to
+  // the boot-time index (status() is async, compose is sync), so per-turn
+  // reads return the SAME bytes — prompt-cache stability is a hard criterion.
+  system?: {
+    product?: string | (() => string | undefined);
+    catalog?: string;
+    knowledge?: string | (() => string | undefined | Promise<string | undefined>);
+    instructions?: string;
+  },
   capabilityMiss = false,
+  toolSearch = false,
 ): Promise<string> {
   const sections = [OPERATING_PROMPT];
   if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT);
   if (capabilityMiss) sections.push(CAPABILITY_MISS_PROMPT);
+  if (toolSearch) sections.push(DISCOVERY_BUDGET_PROMPT);
   const product = (typeof system?.product === "function" ? system.product() : system?.product)?.trim();
   if (product) sections.push(`Product\n${product}`);
 
@@ -59,6 +77,12 @@ export async function assembleSystemPrompt(
   // agent places it, venue-gated.
   const catalog = system?.catalog?.trim();
   if (catalog && TREE_VENUES.has(ctx.venue)) sections.push(catalog);
+
+  // Knowledge k8 (ENG-368): the static index + usage guidance rides only the
+  // venues whose turns go through this assembler with a knowledge-capable
+  // surface (chat + app); automation and MCP rely on the tool descriptor.
+  const knowledge = (await (typeof system?.knowledge === "function" ? system.knowledge() : system?.knowledge))?.trim();
+  if (knowledge && TREE_VENUES.has(ctx.venue)) sections.push(knowledge);
 
   const instructions = system?.instructions?.trim();
   if (instructions) sections.push(instructions);

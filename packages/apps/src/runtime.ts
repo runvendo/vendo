@@ -4,6 +4,7 @@ import {
   VendoError,
   checkBindingShapes,
   deriveShapeCard,
+  effectiveBuildWatchdogMs,
   safeErrorMessage,
   validateAppDocument,
   type AppDocument,
@@ -292,9 +293,11 @@ export type OpenSurface =
    * The build turn terminally FAILED (model error, quota, timeout): the app
    * will never become servable. Surfaced so the embed resolves promptly with
    * the reason instead of polling to its client deadline — the same prompt
-   * resolution the approval embed gets from denied/expired.
+   * resolution the approval embed gets from denied/expired. `prompt` (when
+   * the record carries it) lets the embed's retry affordance re-issue the
+   * exact create.
    */
-  | { kind: "failed"; reason: string; retryable?: boolean };
+  | { kind: "failed"; reason: string; retryable?: boolean; prompt?: string };
 
 /** The non-empty name a failed build record ships under (open() ignores it —
  *  the embed's title rides the app-ref — but validateAppDocument requires one).
@@ -323,17 +326,13 @@ const BUILD_WATCHDOG_REASON =
   "the build never finished — the server-side build task stalled or died without reporting a "
   + "failure. Retry the request; if this repeats, check the host server log.";
 
-const BUILD_WATCHDOG_MS = 4 * 60_000;
-
 /** Test seam and operator escape hatch, mirroring turn-liveness: the window a
  *  create has to persist SOMETHING (app or failure) before the watchdog writes
- *  the terminal failed record. Guarded access — this module also runs on
- *  edge/Worker targets with no `process` global. */
-const buildWatchdogMs = (): number => {
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
-  const configured = Number(env?.["VENDO_APP_BUILD_WATCHDOG_MS"]);
-  return Number.isFinite(configured) && configured > 0 ? configured : BUILD_WATCHDOG_MS;
-};
+ *  the terminal failed record. Shared with the UI polling cutoff through
+ *  @vendoai/core's build-deadlines module (speed-core lane), so the client
+ *  always outlasts the watchdog and renders its record instead of the generic
+ *  deadline beat. */
+const buildWatchdogMs = effectiveBuildWatchdogMs;
 
 const QUOTA_SIGNAL = /quota|insufficient|payment|billing|\b402\b/i;
 const TIMEOUT_SIGNAL = /time?d?\s*out|timeout|abort/i;
@@ -486,6 +485,14 @@ export interface AppsRuntime {
     prompt: string;
     /** Additive per-call stream hook used by the agent bridge. */
     onView?: (part: VendoViewPart) => void;
+    /** Called when the app was generated and STREAMED to the surface but the
+     *  store refused to persist it: the view is on screen, the app is not in
+     *  the user's list and cannot be reopened. The create still resolves with
+     *  the document — losing a working view to a storage fault is the worse
+     *  failure — so this is the only signal that the app is view-only, and
+     *  the agent bridge turns it into an honest sentence instead of an
+     *  apology for something the user can see. */
+    onUnsaved?: (reason: string) => void;
   }, ctx: RunContext): Promise<AppDocument>;
   /** Speed lane — best-effort page-open warm-up of the generation model(s)
    *  (full + paint), so the first create reuses a live connection. Safe to
@@ -1776,7 +1783,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             format: "vendo/app@1",
             id: appId,
             name: fallbackAppName(input.prompt),
-            buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString() },
+            buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString(), prompt: input.prompt },
           }, ctx.principal.subject));
           console.error(`[vendo] app build watchdog (${appId}): no app record and no failure landed within ${buildWatchdogMs()}ms — persisted a terminal failed record so the embed resolves instead of polling forever.`);
         })().catch(() => undefined);
@@ -1845,7 +1852,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           format: "vendo/app@1",
           id: appId,
           name: fallbackAppName(input.prompt),
-          buildFailed: { reason, retryable, at: new Date().toISOString() },
+          buildFailed: { reason, retryable, at: new Date().toISOString(), prompt: input.prompt },
         }, ctx.principal.subject)).catch(() => undefined);
         clearTimeout(watchdog);
         // The operator's terminal gets the un-canned detail (the engine folds
@@ -1911,11 +1918,38 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         queryResolver?.update(finalTree);
         finalTree.data = verifiedData ?? await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
       }
-      await apps.put(appRecordInput(app, ctx.principal.subject));
-      clearTimeout(watchdog);
-      await reportLifecycle("create", app.id, ctx);
+      // The finished view reaches the screen BEFORE anything that can fail.
+      // Live 2026-07-27 (deployed Maple): the emit sat after the persist, so a
+      // store that refused the write froze every card mid-stream — one
+      // half-painted donut, one blank, one empty-state table, none of them
+      // ever resolving — while the engine's own logs read all-green. The
+      // document is generated, validated and data-resolved by this point; a
+      // storage fault is no reason to withhold it.
       if (finalTree !== undefined) emit(finalTree);
-      console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`);
+      let unsavedReason: string | undefined;
+      try {
+        await apps.put(appRecordInput(app, ctx.principal.subject));
+      } catch (error) {
+        // A persist failure degrades the app to view-only — it renders, it
+        // just is not in the user's apps list and cannot be reopened. That is
+        // a far better outcome than discarding a working view, but it is
+        // never silent: the operator gets a classified line (the user path
+        // previously logged NOTHING here, so the outage read as a mystery),
+        // and the caller is told so the agent can say it plainly instead of
+        // apologizing for a view the user can see.
+        unsavedReason = safeErrorMessage(error);
+        console.error(`[vendo] app not saved (${appId}): the view rendered but the store rejected it — ${unsavedReason}`);
+      }
+      clearTimeout(watchdog);
+      if (unsavedReason === undefined) await reportLifecycle("create", app.id, ctx);
+      console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s${unsavedReason === undefined ? "" : " (NOT SAVED)"}`);
+      if (unsavedReason !== undefined) {
+        // Escalation (automations, graduation) all write through the same
+        // store the persist just failed on, and every one of them assumes a
+        // stored app — so an unsaved create ends here, with the view up.
+        input.onUnsaved?.(unsavedReason);
+        return structuredClone(app);
+      }
       // execution-v2 Wave 9 — escalate on create when the prompt needs server
       // capability, walking the ladder: a steps/agentic automation (seconds,
       // no machine) before box graduation. The tree is already on screen; the

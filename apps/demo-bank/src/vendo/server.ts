@@ -29,8 +29,11 @@ export const mapleAuth = authJs({
 export const vendo = createVendo({
   // Model + store slots stay UNSET (demo-refresh Part 2): the env ladder
   // resolves them — locally ANTHROPIC_API_KEY, deployed VENDO_API_KEY — and
-  // the unset store composes the local default. Known deliberate regression
-  // until the model-family lane lands: paint rides the main model.
+  // the unset store composes the local default. With the agent slot on the
+  // ladder, paint invisibility applies (resolveModels): the paint lane
+  // composes the family fast pick — vendo-paint on Cloud, the provider's
+  // fast model on BYO — so the demo runs the fast two-lane path with no
+  // hardcoded model names (speed-core lane; BYO rule).
   auth: mapleAuth,
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
@@ -56,27 +59,34 @@ export const vendo = createVendo({
     experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
-    // demo-refresh Part 5 — the full v4 generation pipeline.
+    // speed-core ruling (2026-07-26, supersedes demo-refresh Part 5):
+    // regionParallel is OFF for the demos — live evidence
+    // (docs/verification/demo-live-readiness/speed-core/after.md) showed its
+    // serial outline + assembly-invalid fallback made creates SLOWER on this
+    // surface (p50 55s vs 31.4s without it). endPass stays on: the runtime
+    // rides it as the data-sighted verify. structuredRepair and smokeRender
+    // are default-on and island repair is the engine's first resort.
     pipeline: {
-      exemplarContract: true,
-      structuredRepair: true,
-      regionParallel: true,
       endPass: true,
     },
   },
-  // Knowledge K1 — the product knowledge base behind `vendo_knowledge_search`
-  // (citation chips + structured refusal in the chat). The in-memory dev
-  // adapter carries Maple's help-center corpus; a real engine slots in here
-  // unchanged (same KnowledgeAdapter seam).
-  knowledge: memoryKnowledgeAdapter({ docs: mapleKnowledgeDocs }),
+  // Knowledge posture — the same shape as the store slot below. With
+  // VENDO_API_KEY set, the slot stays UNSET so the env ladder composes the
+  // Cloud knowledge engine and Maple answers from the corpus connected in the
+  // console; keyless (a laptop, a fork, CI), the in-memory dev adapter carries
+  // Maple's own help-center corpus so citation chips and refusal still demo
+  // with no account. The host never constructs a Cloud client itself.
+  ...(process.env.VENDO_API_KEY ? {} : { knowledge: memoryKnowledgeAdapter({ docs: mapleKnowledgeDocs }) }),
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
   // BYO Composio when Maple brings its own key; otherwise the slot stays
   // UNSET so a VENDO_API_KEY deployment composes the Cloud tools connector
   // (an explicit [] would read as "no connectors, ever" — the seam honors it).
+  // connectorApps scopes THAT auto-composed cloud pair to the same toolkits
+  // the BYO line uses — the demo never advertises the console's full catalog.
   ...(composioApiKey
     ? { connectors: [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "slack"] })] }
-    : {}),
+    : { connectorApps: ["gmail", "slack"] }),
   // Store posture — an explicit demo decision (README "Store posture"). The
   // DEPLOYED demo leaves this slot unset so the VENDO_API_KEY env ladder
   // composes the Cloud HOSTED store: Railway's container filesystem is

@@ -59,6 +59,36 @@ export function approvalByCall(messages: UIMessage[]): Map<string, {
   return approvals;
 }
 
+/** Grant-set membership by tool call — carried in the data-vendo-grant-set
+    part beside the parked native call. The thread uses it to (a) hand the
+    parked call to the set card instead of the plain ApprovalCard, and (b)
+    resume on a decided announcement that matches the SET (by grantSetId or
+    any member approval id), not just the raw native id. */
+export function grantSetByCall(messages: UIMessage[]): Map<string, {
+  grantSetId: string;
+  approvalIds: string[];
+}> {
+  const sets = new Map<string, { grantSetId: string; approvalIds: string[] }>();
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type !== "data-vendo-grant-set") continue;
+      const data = partData(part) as {
+        toolCallId?: unknown;
+        grantSetId?: unknown;
+        permissions?: Array<{ approvalId?: unknown }>;
+      };
+      if (typeof data.toolCallId !== "string" || typeof data.grantSetId !== "string") continue;
+      const approvalIds = Array.isArray(data.permissions)
+        ? data.permissions
+            .map(permission => permission.approvalId)
+            .filter((value): value is string => typeof value === "string")
+        : [];
+      sets.set(data.toolCallId, { grantSetId: data.grantSetId, approvalIds });
+    }
+  }
+  return sets;
+}
+
 /** Knowledge K1 — what a turn's `data-vendo-citations` parts add up to.
     Chips render only ANSWERED citations (a refusal's weak hits stay off the
     chip row — mockup state 2 shows the searched-line alone); the flags carry

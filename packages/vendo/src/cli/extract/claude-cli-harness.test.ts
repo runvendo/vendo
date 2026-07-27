@@ -416,6 +416,10 @@ describe("claudeCliHarness", () => {
       expect(capturedEnv?.ANTHROPIC_BASE_URL).toBe("http://localhost:3001/api/v1");
       expect(capturedEnv?.ANTHROPIC_AUTH_TOKEN).toBe("vnd_x");
       expect(capturedEnv?.ANTHROPIC_CUSTOM_HEADERS).toBe("x-vendo-purpose: init");
+      // The child must send the gateway's own model id — Claude Code's default
+      // is a claude-* id the gateway 400s (#617). No --model flag is passed
+      // (VENDO_EXTRACTION_MODEL is unset), so this env pin is what lands.
+      expect(capturedEnv?.ANTHROPIC_MODEL).toBe("vendo-extract");
     });
   });
 });

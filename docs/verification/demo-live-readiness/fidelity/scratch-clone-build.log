@@ -1,0 +1,29 @@
++ vitest 3.2.7 (4.1.10 is available)
+
+Done in 8.1s using pnpm v11.10.0
+=== BUILD ===
+✓ Compiled successfully in 30.9s
+  Running TypeScript ...
+  Finished TypeScript in 12.8s ...
+  Collecting page data using 10 workers ...
+[vendo] VENDO_BASE_URL is not set in production. Present-mode host tool calls that need to forward the caller's credentials will fail instead of running unauthenticated. Set VENDO_BASE_URL to this deployment's public origin and restart the server.
+  Generating static pages using 10 workers (0/3) ...
+✓ Generating static pages using 10 workers (3/3) in 1234ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/items
+├ ƒ /api/items/[id]/archive
+├ ƒ /api/vendo/[...vendo]
+├ ƒ /demo-status
+├ ƒ /login
+└ ƒ /vendo
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

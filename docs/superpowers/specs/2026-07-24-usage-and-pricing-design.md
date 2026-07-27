@@ -32,12 +32,12 @@ Free $0 / Pro $49/mo / Teams $499/mo / Enterprise custom. The Pro→Teams line i
 | **Sandbox minutes** | 200, hard cap | 2,000 incl., then $0.01/min | 10,000 incl., then $0.01/min | Committed |
 | **Storage — files & app data (GB-mo)** | 1 GB, hard cap | 20 GB incl., then $0.25/GB-mo | 100 GB incl., then $0.25/GB-mo | Committed |
 | **Knowledge base (GB-mo)** | 1 GB, hard cap | 10 GB incl., then $0.60/GB-mo | 50 GB incl., then $0.60/GB-mo | Committed |
-| **Automation runs** | 100/mo, hard cap | 3,000/mo incl., then $3/1k | 30,000/mo incl., then $3/1k | Committed |
+| **Automation runs** | 300/mo, hard cap | 3,000/mo incl., then $3/1k | 30,000/mo incl., then $3/1k | Committed |
 | **Active connections** | 20, hard cap | 150 incl., then ~$0.30/conn-mo | 2,000 incl., then ~$0.30/conn-mo | Committed |
 | **Threads, memory, audit logs** | Free — 7-day retention | Free — 90-day retention | Free — unlimited threads; 1-yr audit retention | Free — custom / compliance-grade retention |
 | **Support** | Community | Email | Priority | Named SE, private channel, SLA |
 
-All allowance and overage numbers are structural placeholders **pending COGS validation against real usage data** before the pricing page ships. The structure (which meters exist, hard-stop vs overage, ratios between tiers) is the locked part.
+All allowance and overage numbers are structural placeholders **pending COGS validation against real usage data** before the pricing page ships. The structure (which meters exist, hard-stop vs overage, ratios between tiers) is the locked part. Free runs raised 100→300 on 2026-07-26 from live evidence: a real evaluation sprint burns ~100/day; 300 holds three sprint days while staying under half of one hourly job.
 
 ## 3. The six meters
 

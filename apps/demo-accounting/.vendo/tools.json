@@ -15,6 +15,17 @@
         "method": "POST",
         "path": "/api/voice"
       },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "clientSecret": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
+      },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
@@ -39,6 +50,85 @@
         "method": "GET",
         "path": "/api/clients/{id}"
       },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Client id, e.g. cl_rivera"
+              },
+              "businessName": {
+                "type": "string"
+              },
+              "entityType": {
+                "type": "string",
+                "enum": [
+                  "s_corp",
+                  "sole_prop",
+                  "partnership",
+                  "c_corp",
+                  "individual"
+                ]
+              },
+              "contactName": {
+                "type": "string"
+              },
+              "contactEmail": {
+                "type": "string"
+              },
+              "assigneeId": {
+                "type": "string"
+              },
+              "assignee": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "initials": {
+                    "type": "string"
+                  }
+                }
+              },
+              "filingDeadline": {
+                "type": "string",
+                "description": "ISO 8601 filing deadline"
+              },
+              "progress": {
+                "type": "object",
+                "description": "Document collection progress, rendered as e.g. '3 of 6 received'",
+                "properties": {
+                  "received": {
+                    "type": "number",
+                    "description": "Documents no longer missing or rejected"
+                  },
+                  "total": {
+                    "type": "number"
+                  }
+                }
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "missing_docs",
+                  "in_review",
+                  "complete"
+                ],
+                "description": "Derived from the client's documents"
+              }
+            }
+          }
+        }
+      },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
@@ -54,6 +144,52 @@
         "operationId": "getDashboard",
         "method": "GET",
         "path": "/api/dashboard"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "clientsMissingDocs": {
+                "type": "number",
+                "description": "Clients with at least one outstanding document"
+              },
+              "documentsOutstanding": {
+                "type": "number",
+                "description": "Documents still missing or rejected across all clients"
+              },
+              "documentsReceived": {
+                "type": "number"
+              },
+              "documentsTotal": {
+                "type": "number"
+              },
+              "clientsTotal": {
+                "type": "number"
+              },
+              "nearestDeadline": {
+                "type": "string",
+                "description": "ISO 8601 date of the soonest client filing deadline; the dashboard counts down to this"
+              },
+              "nearestDeadlineClient": {
+                "type": "object",
+                "description": "The client whose deadline is soonest",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "businessName": {
+                    "type": "string"
+                  },
+                  "filingDeadline": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
       },
       "semantics": {
         "data.nearestDeadline": {
@@ -88,6 +224,42 @@
         "operationId": "listActivity",
         "method": "GET",
         "path": "/api/activity"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "upload_received",
+                    "document_verified",
+                    "document_rejected",
+                    "message_sent",
+                    "deadline_approaching"
+                  ]
+                },
+                "clientId": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string",
+                  "description": "ISO 8601"
+                }
+              }
+            }
+          }
+        }
       },
       "semantics": {
         "data.id": {
@@ -136,6 +308,57 @@
         "method": "GET",
         "path": "/api/clients/{id}/documents"
       },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Document request id, e.g. doc_rivera_w2"
+                },
+                "clientId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "What was requested, e.g. W-2, 1099-NEC, Bank statements (2025)"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "missing",
+                    "received",
+                    "needs_review",
+                    "verified",
+                    "rejected"
+                  ],
+                  "description": "Lifecycle: missing -> received (or needs_review if the upload looks wrong) -> verified; reject returns it to missing with a note"
+                },
+                "note": {
+                  "type": "string",
+                  "description": "Rejection or review note shown until the client re-uploads"
+                },
+                "file": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "uploadedAt": {
+                      "type": "string",
+                      "description": "ISO 8601"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
@@ -159,6 +382,43 @@
         "operationId": "listClientMessages",
         "method": "GET",
         "path": "/api/clients/{id}/messages"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "clientId": {
+                  "type": "string"
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "firm",
+                    "client"
+                  ],
+                  "description": "firm: sent by the firm to the client; client: sent by the client"
+                },
+                "author": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "sentAt": {
+                  "type": "string",
+                  "description": "ISO 8601"
+                }
+              }
+            }
+          }
+        }
       },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
@@ -187,6 +447,88 @@
         "operationId": "listClients",
         "method": "GET",
         "path": "/api/clients"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Client id, e.g. cl_rivera"
+                },
+                "businessName": {
+                  "type": "string"
+                },
+                "entityType": {
+                  "type": "string",
+                  "enum": [
+                    "s_corp",
+                    "sole_prop",
+                    "partnership",
+                    "c_corp",
+                    "individual"
+                  ]
+                },
+                "contactName": {
+                  "type": "string"
+                },
+                "contactEmail": {
+                  "type": "string"
+                },
+                "assigneeId": {
+                  "type": "string"
+                },
+                "assignee": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    },
+                    "initials": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "filingDeadline": {
+                  "type": "string",
+                  "description": "ISO 8601 filing deadline"
+                },
+                "progress": {
+                  "type": "object",
+                  "description": "Document collection progress, rendered as e.g. '3 of 6 received'",
+                  "properties": {
+                    "received": {
+                      "type": "number",
+                      "description": "Documents no longer missing or rejected"
+                    },
+                    "total": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "missing_docs",
+                    "in_review",
+                    "complete"
+                  ],
+                  "description": "Derived from the client's documents"
+                }
+              }
+            }
+          }
+        }
       },
       "semantics": {
         "data.id": {
@@ -237,6 +579,104 @@
         "method": "GET",
         "path": "/api/deadlines"
       },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Client id, e.g. cl_rivera"
+                    },
+                    "businessName": {
+                      "type": "string"
+                    },
+                    "entityType": {
+                      "type": "string",
+                      "enum": [
+                        "s_corp",
+                        "sole_prop",
+                        "partnership",
+                        "c_corp",
+                        "individual"
+                      ]
+                    },
+                    "contactName": {
+                      "type": "string"
+                    },
+                    "contactEmail": {
+                      "type": "string"
+                    },
+                    "assigneeId": {
+                      "type": "string"
+                    },
+                    "assignee": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string"
+                        },
+                        "initials": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "filingDeadline": {
+                      "type": "string",
+                      "description": "ISO 8601 filing deadline"
+                    },
+                    "progress": {
+                      "type": "object",
+                      "description": "Document collection progress, rendered as e.g. '3 of 6 received'",
+                      "properties": {
+                        "received": {
+                          "type": "number",
+                          "description": "Documents no longer missing or rejected"
+                        },
+                        "total": {
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "missing_docs",
+                        "in_review",
+                        "complete"
+                      ],
+                      "description": "Derived from the client's documents"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "missingDocKinds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Kinds of documents still owed, e.g. ['W-2', 'Receipts']; empty when the checklist is complete"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
       "semantics": {
         "data.id": {
           "kind": "id"
@@ -286,6 +726,37 @@
         "method": "GET",
         "path": "/api/demo/chips"
       },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "chips": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "prompt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "prompt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "chips"
+            ]
+          }
+        }
+      },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
@@ -301,6 +772,52 @@
         "operationId": "resetDemo",
         "method": "POST",
         "path": "/api/demo/reset"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "clientsMissingDocs": {
+                "type": "number",
+                "description": "Clients with at least one outstanding document"
+              },
+              "documentsOutstanding": {
+                "type": "number",
+                "description": "Documents still missing or rejected across all clients"
+              },
+              "documentsReceived": {
+                "type": "number"
+              },
+              "documentsTotal": {
+                "type": "number"
+              },
+              "clientsTotal": {
+                "type": "number"
+              },
+              "nearestDeadline": {
+                "type": "string",
+                "description": "ISO 8601 date of the soonest client filing deadline; the dashboard counts down to this"
+              },
+              "nearestDeadlineClient": {
+                "type": "object",
+                "description": "The client whose deadline is soonest",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "businessName": {
+                    "type": "string"
+                  },
+                  "filingDeadline": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
       },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
@@ -342,6 +859,40 @@
         "operationId": "sendClientMessage",
         "method": "POST",
         "path": "/api/clients/{id}/messages"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "clientId": {
+                "type": "string"
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "firm",
+                  "client"
+                ],
+                "description": "firm: sent by the firm to the client; client: sent by the client"
+              },
+              "author": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "sentAt": {
+                "type": "string",
+                "description": "ISO 8601"
+              }
+            }
+          }
+        }
       },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
@@ -398,6 +949,54 @@
         "method": "POST",
         "path": "/api/clients/{id}/documents/{docId}/status"
       },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Document request id, e.g. doc_rivera_w2"
+              },
+              "clientId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "description": "What was requested, e.g. W-2, 1099-NEC, Bank statements (2025)"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "missing",
+                  "received",
+                  "needs_review",
+                  "verified",
+                  "rejected"
+                ],
+                "description": "Lifecycle: missing -> received (or needs_review if the upload looks wrong) -> verified; reject returns it to missing with a note"
+              },
+              "note": {
+                "type": "string",
+                "description": "Rejection or review note shown until the client re-uploads"
+              },
+              "file": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "uploadedAt": {
+                    "type": "string",
+                    "description": "ISO 8601"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     },
     {
@@ -447,6 +1046,88 @@
         "operationId": "simulateClientUpload",
         "method": "POST",
         "path": "/api/demo/simulate/upload"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "document": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Document request id, e.g. doc_rivera_w2"
+                  },
+                  "clientId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "What was requested, e.g. W-2, 1099-NEC, Bank statements (2025)"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "missing",
+                      "received",
+                      "needs_review",
+                      "verified",
+                      "rejected"
+                    ],
+                    "description": "Lifecycle: missing -> received (or needs_review if the upload looks wrong) -> verified; reject returns it to missing with a note"
+                  },
+                  "note": {
+                    "type": "string",
+                    "description": "Rejection or review note shown until the client re-uploads"
+                  },
+                  "file": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "uploadedAt": {
+                        "type": "string",
+                        "description": "ISO 8601"
+                      }
+                    }
+                  }
+                }
+              },
+              "message": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "clientId": {
+                    "type": "string"
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "firm",
+                      "client"
+                    ],
+                    "description": "firm: sent by the firm to the client; client: sent by the client"
+                  },
+                  "author": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "sentAt": {
+                    "type": "string",
+                    "description": "ISO 8601"
+                  }
+                }
+              }
+            }
+          }
+        }
       },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     }

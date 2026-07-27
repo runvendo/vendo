@@ -1,33 +1,16 @@
+/** Engine picker + the PGlite dev-mode default (02-store §4). The pg engine
+ *  and the shared Db/StoreConfig types live in ./db-postgres.ts so the
+ *  `@vendoai/store/postgres` entry never has this module — and with it the
+ *  PGlite wasm — in its bundle graph. */
 import { PGlite } from "@electric-sql/pglite";
-import { Client, Pool } from "pg";
 import fs from "node:fs";
 import { join, resolve } from "node:path";
 
-/** 02-store §1 */
-export interface StoreConfig {
-  url?: string;
-  dataDir?: string;
-  encryption?: { key: string };
-  /** 02-store §4 — dev-mode escape hatch: store secrets unencrypted when no
-      encryption key is configured. Never enable in production; secret writes
-      without a key fail closed there. */
-  allowUnencryptedSecrets?: boolean;
-}
+import { createPostgresDb, type Db, type StoreConfig } from "./db-postgres.js";
 
-/** 02-store §4 */
-export interface Db {
-  kind: "pg" | "pglite";
-  query(text: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
-  close(): Promise<void>;
-  raw(): unknown;
-}
-
-type Driver = Pool | PGlite;
-type Query = Db["query"];
+export type { Db, Query, StoreConfig } from "./db-postgres.js";
 
 const SERVERLESS_ENVS = ["VERCEL", "CF_PAGES", "AWS_LAMBDA_FUNCTION_NAME"] as const;
-const ADVISORY_LOCK_KEY = 7_461_001;
-const pgUrls = new WeakMap<Db, string>();
 
 function preparePgliteDir(dataDir: string): void {
   if (dataDir.startsWith("memory://")) return;
@@ -266,24 +249,19 @@ async function createPgliteHealingStaleLock(dataDir: string): Promise<PGlite> {
   }
 }
 
-/** 02-store §4 */
+/** 02-store §4 — url picks the pg engine; otherwise the PGlite dev default. */
 export function createDb(config: StoreConfig = {}): Db {
-  const kind = config.url ? "pg" : "pglite";
-  const dataDir = config.dataDir ?? ".vendo/data";
-  let driver: Driver | undefined;
-  let opening: Promise<Driver> | undefined;
+  if (config.url) return createPostgresDb(config.url);
+  return createPgliteDb(config.dataDir ?? ".vendo/data");
+}
+
+function createPgliteDb(dataDir: string): Db {
+  let driver: PGlite | undefined;
+  let opening: Promise<PGlite> | undefined;
   let shared: SharedPglite | undefined;
   let closed = false;
 
-  if (config.url) {
-    const pool = new Pool({ connectionString: config.url });
-    pool.on("error", (error) => {
-      console.error("[vendo] postgres pool: idle connection error (recovering)", error);
-    });
-    driver = pool;
-  }
-
-  const open = (): Promise<Driver> => {
+  const open = (): Promise<PGlite> => {
     if (closed) return Promise.reject(new Error("[vendo] store is closed"));
     if (driver) return Promise.resolve(driver);
     if (opening) return opening;
@@ -322,12 +300,10 @@ export function createDb(config: StoreConfig = {}): Db {
   };
 
   const db: Db = {
-    kind,
+    kind: "pglite",
     async query(text, params = []) {
       const active = await open();
-      const result = active instanceof Pool
-        ? await active.query(text, params)
-        : await active.query<Record<string, unknown>>(text, params);
+      const result = await active.query<Record<string, unknown>>(text, params);
       return { rows: result.rows as Record<string, unknown>[] };
     },
     async close() {
@@ -344,9 +320,7 @@ export function createDb(config: StoreConfig = {}): Db {
         await releaseSharedPglite(dataDir, held);
         return;
       }
-      if (!active) return;
-      if (active instanceof Pool) await active.end();
-      else await active.close();
+      await active?.close();
     },
     raw() {
       if (!driver) {
@@ -354,36 +328,11 @@ export function createDb(config: StoreConfig = {}): Db {
       }
       return driver;
     },
+    // PGlite is single-connection single-writer; migration needs no advisory
+    // lock session — the ENG-351 dir lock already serializes processes.
+    withSchemaLock(work) {
+      return work(db.query.bind(db));
+    },
   };
-
-  if (config.url) pgUrls.set(db, config.url);
   return db;
-}
-
-/** 02-store §4 */
-export async function withSchemaLock<T>(db: Db, work: (query: Query) => Promise<T>): Promise<T> {
-  return withAdvisoryLock(db, ADVISORY_LOCK_KEY, work);
-}
-
-async function withAdvisoryLock<T>(db: Db, key: number, work: (query: Query) => Promise<T>): Promise<T> {
-  if (db.kind === "pglite") return work(db.query.bind(db));
-
-  const url = pgUrls.get(db);
-  if (!url) throw new Error("[vendo] missing Postgres connection string");
-  const client = new Client({ connectionString: url });
-  await client.connect();
-  const query: Query = async (text, params = []) => {
-    const result = await client.query(text, params);
-    return { rows: result.rows as Record<string, unknown>[] };
-  };
-  try {
-    await query("SELECT pg_advisory_lock($1)", [key]);
-    try {
-      return await work(query);
-    } finally {
-      await query("SELECT pg_advisory_unlock($1)", [key]);
-    }
-  } finally {
-    await client.end();
-  }
 }

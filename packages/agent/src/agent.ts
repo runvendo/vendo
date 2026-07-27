@@ -11,6 +11,8 @@ import {
   type RunContext,
   type StoreAdapter,
   type ThreadId,
+  type ToolCall,
+  type ToolOutcome,
   type ToolRegistry,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
@@ -99,6 +101,10 @@ interface AgentConfig {
     /** AGENT-1 (03 §3 item 4): catalog + theme summary, assembled by the
      *  umbrella; injected only for venues that render trees. */
     catalog?: string;
+    /** Knowledge k8 (ENG-368): static knowledge index + usage guidance,
+     *  assembled by the umbrella at boot (locked — never per-turn, so the
+     *  prompt stays cache-stable); venue-gated like the catalog. */
+    knowledge?: string | (() => string | undefined | Promise<string | undefined>);
     instructions?: string;
   };
   context?: {
@@ -118,6 +124,11 @@ interface AgentConfig {
    *  rest through search; searched-in tools execute through the same guard-bound
    *  registry as any initially-enabled tool. */
   toolSearch?: ToolSearchConfig;
+  /** Discovery-discipline 2026-07-25: a pre-guard short-circuit. A non-undefined
+   *  outcome (the umbrella wires the connect gate's check) means the call will
+   *  not run — needsApproval must NOT consult the guard (no approval minted);
+   *  execute() returns the outcome from the (gate-wrapped) registry instead. */
+  preflight?: (call: ToolCall, ctx: RunContext) => Promise<ToolOutcome | undefined>;
 }
 
 // Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
@@ -443,6 +454,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
         input.ctx,
         config.system,
         config.capabilityMiss !== undefined,
+        config.toolSearch !== undefined,
       );
 
       const stream = createUIMessageStream<UIMessage>({
@@ -489,6 +501,9 @@ export function createAgent(config: AgentConfig): VendoAgent {
             writer,
             toolOutputCap: config.context?.toolOutputCap,
             ...(missDetector === undefined ? {} : { onCall: missDetector.onCall }),
+            ...(config.preflight === undefined ? {} : { preflight: config.preflight }),
+            // Fresh per turn: one connect card per unconnected service.
+            connectCards: new Set<string>(),
           };
           const tools = await buildAgentTools(bridgeOptions);
           missDetector?.attach(tools);

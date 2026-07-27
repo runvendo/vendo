@@ -96,7 +96,7 @@
         "method": "POST",
         "path": "/api/orders"
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_demo_chips_list",
@@ -175,7 +175,7 @@
         "method": "GET",
         "path": "/api/accounts/{id}"
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_getBudgets",
@@ -204,7 +204,7 @@
           }
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_getCashflowInsights",
@@ -220,7 +220,7 @@
         "method": "GET",
         "path": "/api/insights/cashflow"
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_getProfile",
@@ -236,7 +236,7 @@
         "method": "GET",
         "path": "/api/profile"
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_getRecurringInsights",
@@ -272,7 +272,7 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_getSpendingInsights",
@@ -287,6 +287,47 @@
         "operationId": "getSpendingInsights",
         "method": "GET",
         "path": "/api/insights/spending"
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "The spending slices live under `data` — the array itself is `data`, never the response body.",
+        "properties": {
+          "data": {
+            "type": "array",
+            "description": "One slice per spending category, largest first.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "dining",
+                    "groceries",
+                    "coffee",
+                    "transport",
+                    "subscriptions",
+                    "shopping",
+                    "income",
+                    "transfer",
+                    "housing",
+                    "other"
+                  ]
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Amount spent in integer cents."
+                }
+              },
+              "required": [
+                "category",
+                "amount"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
       },
       "semantics": {
         "data.category": {
@@ -306,7 +347,7 @@
           "unit": "cents"
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_getTransaction",
@@ -329,7 +370,7 @@
         "method": "GET",
         "path": "/api/transactions/{id}"
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_listAccounts",
@@ -363,7 +404,7 @@
           "unit": "cents"
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_listAccountTransactions",
@@ -387,7 +428,7 @@
         "method": "GET",
         "path": "/api/accounts/{id}/transactions"
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_listCards",
@@ -423,7 +464,7 @@
           "unit": "cents"
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_listCardTransactions",
@@ -447,7 +488,7 @@
         "method": "GET",
         "path": "/api/cards/{id}/transactions"
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_listGoals",
@@ -468,7 +509,7 @@
           "kind": "id"
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_listNotifications",
@@ -502,7 +543,7 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_listPayees",
@@ -530,7 +571,7 @@
           }
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_listScheduledPayments",
@@ -563,7 +604,7 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_listTransactions",
@@ -675,7 +716,7 @@
           "entity": "recurring"
         }
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_transferMoney",
@@ -709,7 +750,7 @@
         "method": "POST",
         "path": "/api/transfers"
       },
-      "srcHash": "sha256:e2a71914a1c2e1e2758c843edd62445e8385a93071d0db6fc023f2ee6eff4167"
+      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
     },
     {
       "name": "host_voice_create",

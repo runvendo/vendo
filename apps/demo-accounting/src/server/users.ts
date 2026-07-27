@@ -55,6 +55,15 @@ export function resolveCadenceSubject(subject: string): CadenceDemoUser | null {
   return SEEDED_USERS.find(user => user.subject === subject) ?? null
 }
 
+/** DEMO_AUTOLOGIN=1 — deployed-demo mode: unauthenticated visitors get a
+ * server-minted session for the primary seeded user (see server/autologin.ts)
+ * and the Supabase stack is not needed at all. Absent (any other value),
+ * every existing flow — including the production env assertions below — is
+ * untouched. */
+export function demoAutologin(): boolean {
+  return process.env.DEMO_AUTOLOGIN === "1"
+}
+
 /** The Supabase project URL. Defaults to the `supabase start` local stack. */
 export function supabaseUrl(): string {
   return process.env.SUPABASE_URL ?? "http://127.0.0.1:54321"
@@ -70,6 +79,13 @@ export function supabaseUrl(): string {
 export function supabaseJwtSecret(): string {
   const configured = process.env.SUPABASE_JWT_SECRET
   if (configured) return configured
+  // Required in production even in auto-login mode. This secret is not just
+  // for minting: the session VERIFIER trusts any HS256 token signed with it,
+  // and the development default below is published in this repository — so
+  // falling back to it on a deployment would let anyone forge an
+  // authenticated session for a seeded user, host gate or not. Auto-login
+  // drops the GoTrue dependency (SUPABASE_URL / ANON_KEY), never the signing
+  // key.
   if (production()) throw new Error("SUPABASE_JWT_SECRET is required in production")
   return "super-secret-jwt-token-with-at-least-32-characters-long"
 }
@@ -79,7 +95,11 @@ export function supabaseJwtSecret(): string {
 export function supabaseAnonKey(): string {
   const configured = process.env.SUPABASE_ANON_KEY
   if (configured) return configured
-  if (production()) throw new Error("SUPABASE_ANON_KEY is required in production")
+  // Only the login route presents this key to GoTrue; auto-login mode never
+  // contacts GoTrue, so a missing key must not break those deployments.
+  if (production() && !demoAutologin()) {
+    throw new Error("SUPABASE_ANON_KEY is required in production")
+  }
   return (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
     "eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9." +

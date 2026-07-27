@@ -13,7 +13,7 @@ stream over SSE.
 | `/threads` | POST | `{ threadId?, message }` → AI SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id: <thr_…>` (the effective requested or server-minted id) so hosts can persist the identity of a default thread without a follow-up round trip |
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
 | `/approvals` | GET | pending `ApprovalRequest[]` |
-| `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable) |
+| `/approvals/decide` | POST | `{ ids, decision }` → `{}`. Batch-capable, and a multi-id batch is atomic: every id lands or none does (members already decided the same way are skipped; an opposite prior decision conflicts the whole batch). Denying an automation's standing-grant ask also disarms that automation inside the same decision |
 | `/grants` · `/grants/:id` | GET · DELETE | grants · revoke |
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
 | `/apps/:id` | GET · DELETE | app · delete |
@@ -29,8 +29,8 @@ stream over SSE.
 | `/apps/:id/rebase-pin` | POST | `{ slot }` → `PinRebaseResult`, re-fork from the new baseline and replay recorded intents, all-or-nothing |
 | `/apps/fork-pin` | POST | `{ slot, instruction? }` → `PinForkResult`, the Remix gesture on an empty slot: deterministic engine fork of the captured slot into a freshly minted app (no model call); an optional instruction then rides the ordinary edit path scoped to the fork |
 | `/apps/:id/fork-pin` | POST | `{ slot, instruction? }` → `PinForkResult`, the same gesture fork landing in an existing app |
-| `/automations` | GET | list |
-| `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing }` · `{}` |
+| `/automations` | GET | list; each entry optionally carries `pendingGrants` (count of still-undecided standing-grant asks) and `grantSetId` — projected from the store so a reload still shows "waiting on N permissions" |
+| `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing, grantSetId? }` · `{}`; `grantSetId` names the ONE grant set the `missing` asks belong to (present exactly when `missing` is non-empty) — decide every member in one `POST /approvals/decide { ids }` and the whole set lands all-or-none |
 | `/automations/:id/dry-run` | POST | `RunPlan` |
 | `/runs` · `/runs/:id` | GET | run records |
 | `/runs/:id/stop` | POST | `{}` |

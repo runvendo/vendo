@@ -62,7 +62,7 @@ export const mapleRegistry = {
   },
   MapleSpendingDonut: {
     component: MapleSpendingDonut,
-    description: "The default Maple visualization for spending by category, where money went, or category mix. Use it whenever the request includes one of those intents; slice amounts are integer CENTS (matching the spending-insights tool).",
+    description: "The default Maple visualization for spending by category, where money went, or category mix. Use it whenever the request includes one of those intents. `slices` takes the ARRAY of category rows: bind it to the spending-insights tool's `data` array (host_getSpendingInsights({}).data), never to the response body itself — the body is the { data: [...] } wrapper and binding it renders an empty card. Slice amounts are integer CENTS (matching that tool).",
     props: z.object({
       slices: z.array(z.object({
         category: mapleCategorySchema,

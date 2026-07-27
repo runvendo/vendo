@@ -16,7 +16,10 @@ import { VendoRoot } from "./VendoRoot";
 function CadenceThread(props: VendoThreadProps) {
   const chips = useTryThisChips()
   const suggestions = chips.length === 0 ? cadenceScenarios : [...cadenceScenarios, ...chips]
-  return <VendoThread {...props} suggestions={suggestions} />;
+  // discoverability="quiet" matches Maple: the fire-once greeting-as-tutorial
+  // would otherwise replace the cards+chips on the FIRST-ever visit (and burn
+  // the flag), so the demo's opening beat showed generic chips until a reload.
+  return <VendoThread {...props} suggestions={suggestions} discoverability="quiet" />;
 }
 
 async function resetDemo(): Promise<void> {

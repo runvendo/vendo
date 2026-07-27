@@ -202,13 +202,31 @@ export const createAgentTools = (
       if (call.tool === "vendo_apps_create") {
         const args = input(call.args, ["prompt"]);
         const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
+        let unsaved: string | undefined;
         const app = await runtime.create({
           prompt: args.prompt as string,
+          onUnsaved: (reason) => { unsaved = reason; },
           ...(stream === undefined ? {} : {
             onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
           }),
         }, ctx);
-        return { status: "ok", output: app as unknown as Json };
+        // View-only (the store refused the write): the app IS on the user's
+        // screen, so this is a success with a caveat, not a failure. Reporting
+        // it as an error made the agent apologize for a rendered view and
+        // rebuild it two more times — three cards, one prompt (live
+        // 2026-07-27). The note rides the document so the model can say the
+        // one true thing and stop.
+        return {
+          status: "ok",
+          output: (unsaved === undefined ? app : {
+            ...app,
+            unsaved: {
+              reason: unsaved,
+              savedToAppsList: false,
+              guidance: "The view is already rendered on the user's screen. Say in one short sentence that it could not be saved to their apps, and do NOT call vendo_apps_create again for this request.",
+            },
+          }) as unknown as Json,
+        };
       }
       if (call.tool === "vendo_apps_edit") {
         const args = input(call.args, ["appId", "instruction"]);

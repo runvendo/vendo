@@ -1,7 +1,7 @@
 import { composioToolRisk, normalizeToolName, type Connector, type ConnectorAccountIdentity } from "@vendoai/actions";
 import type { RunContext, ToolCall, ToolDescriptor, ToolOutcome } from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
-import { defaultFetch } from "@vendoai/core";
+import { debugConnectorHttp, defaultFetch } from "@vendoai/core";
 
 /** The Cloud tools adapter — the execution half of the zero-key Composio
  * seam (cloudConnections is the account half). Tools list and execute ride
@@ -47,6 +47,7 @@ export function cloudTools(options: CloudToolsOptions): Connector {
   let normalizedToRaw = new Map<string, { raw: string; toolkit: string }>();
 
   async function cloudFetch(path: string, init?: RequestInit): Promise<{ ok: boolean; status: number; payload: unknown }> {
+    debugConnectorHttp("cloud-tools", init?.method ?? "GET", path);
     const response = await fetchImpl(`${base}${path}`, {
       ...init,
       headers: {
@@ -127,6 +128,10 @@ export function cloudTools(options: CloudToolsOptions): Connector {
     return available
       .filter((entry): entry is { toolkit: string; label?: string; description?: string } =>
         !!entry && typeof entry === "object" && typeof (entry as { toolkit?: unknown }).toolkit === "string")
+      // Host `apps` scoping bounds discovery too: an unscoped index would keep
+      // advertising the console's whole catalog to tool search even when the
+      // executable surface is scoped (discovery-discipline, criterion 9).
+      .filter((entry) => options.apps === undefined || options.apps.includes(entry.toolkit))
       .map((entry) => ({
         toolkit: entry.toolkit,
         ...(typeof entry.label === "string" ? { label: entry.label } : {}),
@@ -136,6 +141,10 @@ export function cloudTools(options: CloudToolsOptions): Connector {
 
   return {
     name: "composio",
+
+    // Feeds the pre-guard connect check: every brokered tool runs on a
+    // per-user connected account (same semantics as BYO composioConnector).
+    toolkitOf: (tool) => normalizedToRaw.get(tool)?.toolkit,
 
     discoveryIndex: () => (indexPromise ??= buildIndex()),
 

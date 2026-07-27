@@ -8,9 +8,10 @@ below — with no brand or product surface baked in.
 Everything visible (pages, components, styling, copy, seed data) is a
 placeholder the creator agent replaces. Vendo is wired minimally:
 
-- `src/vendo/server.ts` — `createVendo` with an anthropic model, local
-  `.vendo/data` store, anonymous per-visitor principals (no login wall), and
-  an empty host-component catalog (a creator seam).
+- `src/vendo/server.ts` — `createVendo` with the metered `vendoModel()`,
+  anonymous per-visitor principals (no login wall), and an empty
+  host-component catalog (a creator seam). See "Cloud posture" below for the
+  store/connections/model slots.
 - `src/vendo/theme.ts` + `.vendo/theme.json` — neutral default theme the
   creator overwrites with the prospect's brand.
 - `src/server/` — ONE worked example of the fake-host-API pattern (a generic
@@ -43,14 +44,42 @@ placeholder the creator agent replaces. Vendo is wired minimally:
   never consumes a turn) so an exhausted cap swaps in the card mid-session
   instead of leaving only the thread's generic error toast.
 - `src/components/suggestion-chips.tsx` — demo.config `beats` as a persistent
-  chip strip (labels from `beats[].chip`). First-turn submission goes through
+  chip strip (labels from `beats[].chip`). The creator's `demo:chips` stage
+  derives those pills from this app's OWN `.vendo/tools.json`, so they name
+  capabilities the demo can really perform; hand-authored beats win. First-turn submission goes through
   `VendoThread`'s official `suggestions` prop (the panel passes the beats'
   prompts, shown on the empty landing; clicking sends one). Mid-thread there
   is no @vendoai/ui seam to prefill/submit the composer from outside, so a
   clicked chip reveals its prompt with a copy button — see the SEAM NOTE in
   the file before "improving" this with DOM hacks.
 
-Set `ANTHROPIC_API_KEY` (and optionally `VENDO_DEMO_MODEL`) to chat.
+## Cloud posture
+
+A deployed demo runs as a Cloud tenant under ONE `VENDO_API_KEY`, pointed at
+the managed "Demos" project. That single variable composes three things at
+once, which is why the slots below are deliberately left UNSET:
+
+- **Store** — unset, so the key composes the Cloud HOSTED store. A demo
+  container's filesystem is ephemeral: a container-local store would silently
+  wipe every demo's state on each redeploy.
+- **Connections / connectors** — unset, so the key composes the Cloud broker
+  (that is what makes "connect your Gmail" work on a live demo). An explicit
+  `connectors: []` would read as "no connectors, ever" — the seam honors it.
+  `connectorApps` scopes the auto-composed pair to `gmail`,
+  `googlecalendar` and `slack`, so the connect dock never advertises the
+  console's whole catalog to a prospect.
+- **Model** — `vendoModel()`, whose credential ladder sends inference to the
+  key's metered gateway. It stays wrapped in the spend middleware: PLUMBING,
+  see below.
+
+Local dev pins the local PGlite store with `DEMO_STORE=local` in `.env.local`,
+so a laptop never shares the deployed demo's tenant (mirroring demo-bank's
+`MAPLE_STORE=local`). An explicitly passed adapter always beats the key
+default, per the adapter rule.
+
+Credentials: `VENDO_API_KEY` for the Cloud posture, or `ANTHROPIC_API_KEY`
+for BYO. `VENDO_DEMO_MODEL` optionally pins a model name, passed through
+verbatim to whichever rung resolved.
 
 ## Setup
 

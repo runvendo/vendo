@@ -70,6 +70,7 @@ export function MessageList({
             onEditLast={onEditLast}
             onRegenerateLast={onRegenerateLast}
             sendMessage={sendMessage}
+            respond={respond}
           />
         ))}
         <ThreadApprovals

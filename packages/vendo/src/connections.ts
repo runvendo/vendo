@@ -1,4 +1,4 @@
-import { defaultFetch, VendoError, type Principal } from "@vendoai/core";
+import { debugConnectorHttp, defaultFetch, VendoError, type Principal } from "@vendoai/core";
 import type { Connector, ConnectorAccount, ConnectorConnections } from "@vendoai/actions";
 import { consoleSender, raiseCloudError } from "./cloud-console.js";
 
@@ -176,6 +176,7 @@ export function cloudConnections(options: CloudConnectionsOptions): ConnectionsS
   });
 
   async function cloudFetch(path: string, init?: RequestInit): Promise<unknown> {
+    debugConnectorHttp("cloud-connections", init?.method ?? "GET", path);
     const response = await send(path, {
       ...init,
       headers: {

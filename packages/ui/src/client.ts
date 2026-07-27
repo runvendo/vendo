@@ -63,8 +63,11 @@ export interface VendoClient {
 
   approvals: {
     pending(): Promise<ApprovalRequest[]>;
-    /** Batch-capable: POST /approvals/decide { ids, decision }. */
-    decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision): Promise<void>;
+    /** Batch-capable: POST /approvals/decide { ids, decision }. `options.grantSetId`
+        (additive) names the grant SET the ids settle so the decided announcement
+        can resume a thread parked on the set from ANY surface — it never rides
+        the wire. */
+    decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision, options?: { grantSetId?: string }): Promise<void>;
     /** Existing-agents — GET /approvals/:id, the per-approval state
         `<VendoApprovalEmbed>` polls (pending/executed/declined/expired). */
     get(id: ApprovalId): Promise<ApprovalResolution>;

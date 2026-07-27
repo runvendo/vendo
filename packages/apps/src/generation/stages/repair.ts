@@ -23,6 +23,7 @@ import type {
 import { actionBindingsInProps, actionFaults, hasPayload } from "../validation/actions.js";
 import { literalDataFaults } from "../validation/literals.js";
 import { DISCLAIMER_TEXT } from "../validation/validate.js";
+import { wrapperArrayRebinds, type WrapperArrayRebind } from "../validation/wrapper-array.js";
 import { recompile } from "../wire-options.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -123,7 +124,18 @@ interface LiteralDataFix {
   options: string[];
 }
 
-type RepairFix = BindingFix | QueryToolFix | ActionDisclaimFix | ActionPayloadFix | ActionToolFix | LiteralDataFix;
+/** speed-core (criterion 3) — the island-disclaim arm: an island whose
+ *  source-scoped repair budget exhausted without converging. Island
+ *  validation issues are invisible to the compile-derived fix space, so the
+ *  engine passes the offending island NAMES in explicitly, and the only
+ *  legal fix is the honest disclaimer (every node rendering the island is
+ *  disclaimed and its source dropped). */
+interface IslandDisclaimFix {
+  kind: "island-disclaim";
+  island: string;
+}
+
+type RepairFix = BindingFix | QueryToolFix | ActionDisclaimFix | ActionPayloadFix | ActionToolFix | LiteralDataFix | IslandDisclaimFix;
 
 const hostPropRequirement = (
   deps: GenerationDependencies,
@@ -162,8 +174,16 @@ const contextPaths = (tree: TreeV2, deps: GenerationDependencies): string[] => {
 const deriveFixes = (
   compiled: WireCompileResult,
   deps: GenerationDependencies,
+  islandDisclaimNames?: readonly string[],
 ): RepairFix[] => {
   const fixes: RepairFix[] = [];
+  // speed-core (criterion 3) — engine-supplied non-converging islands; only
+  // those still present in the compiled output are disclaimable.
+  for (const island of islandDisclaimNames ?? []) {
+    if (typeof compiled.components[island] === "string") {
+      fixes.push({ kind: "island-disclaim", island });
+    }
+  }
   const nodes = new Map(compiled.tree.nodes.map((node) => [node.id, node]));
   const seenBindings = new Set<string>();
   for (const error of compiled.bindingErrors) {
@@ -538,6 +558,12 @@ const buildFixSchema = (fixes: RepairFix[]): Record<string, unknown> => {
         }])),
         description: `Node "${fix.nodeId}" prop "${fix.prop}" invokes mutating tool "${fix.action}" with no payload. Bind the context it acts on: choose a data path for each payload field. Omitting every field replaces the control with an honest disclaimer.`,
       };
+    } else if (fix.kind === "island-disclaim") {
+      properties[fixKey(index)] = {
+        type: "string",
+        enum: [NO_VALID_FIX],
+        description: `Island "${fix.island}" failed validation repeatedly and its source-scoped repair budget is exhausted; confirm ${NO_VALID_FIX} to replace it with an honest disclaimer.`,
+      };
     } else {
       properties[fixKey(index)] = {
         type: "string",
@@ -707,6 +733,28 @@ const replaceBindingPath = (
   }
 };
 
+/** The deterministic wrapper-envelope splice: each listed whole-prop binding
+ *  is repointed one hop into the object's only array field. No model call —
+ *  the target was derived, not chosen (validation/wrapper-array.ts). */
+const spliceWrapperRebinds = (
+  compiled: WireCompileResult,
+  rebinds: readonly WrapperArrayRebind[],
+): { tree: TreeV2; components: Record<string, string>; name?: string } => {
+  const tree = structuredClone(compiled.tree);
+  const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
+  for (const rebind of rebinds) {
+    const value = nodes.get(rebind.nodeId)?.props?.[rebind.prop];
+    if (isPathBinding(value) && value.$path === rebind.from) {
+      (value as { $path: string }).$path = rebind.to;
+    }
+  }
+  return {
+    tree,
+    components: structuredClone(compiled.components),
+    ...(compiled.name === undefined ? {} : { name: compiled.name }),
+  };
+};
+
 const bindingReferencesQuery = (value: unknown, queryName: string): boolean =>
   isPathBinding(value) && (value.$path === `/${queryName}` || value.$path.startsWith(`/${queryName}/`));
 
@@ -732,9 +780,17 @@ const spliceFixes = (
 ): { tree: TreeV2; components: Record<string, string>; name?: string } => {
   const tree = structuredClone(compiled.tree);
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
+  const disclaimedIslands = new Set<string>();
   fixes.forEach((fix, index) => {
     const value = chosen[fixKey(index)];
-    if (fix.kind === "binding") {
+    if (fix.kind === "island-disclaim") {
+      // The only legal value is the disclaimer arm: every node rendering the
+      // island becomes an honest disclaimer and the source is dropped.
+      disclaimedIslands.add(fix.island);
+      for (const node of tree.nodes) {
+        if (node.component === fix.island) disclaimNode(tree, node.id);
+      }
+    } else if (fix.kind === "binding") {
       const node = nodes.get(fix.nodeId);
       if (node?.props === undefined) return;
       const pick = typeof value === "string" && fix.options.includes(value) ? value : NO_VALID_FIX;
@@ -823,7 +879,9 @@ const spliceFixes = (
   pruneUnreachable(tree);
   return {
     tree,
-    components: structuredClone(compiled.components),
+    components: Object.fromEntries(
+      Object.entries(structuredClone(compiled.components)).filter(([name]) => !disclaimedIslands.has(name)),
+    ),
     ...(compiled.name === undefined ? {} : { name: compiled.name }),
   };
 };
@@ -835,6 +893,8 @@ export interface StructuredRepairResult {
   issues: string[];
   /** How many fixes resolved to the no-valid-fix/Disclaimer arm. */
   noValidFixCount: number;
+  /** Wrapper-envelope bindings repointed deterministically (no model call). */
+  wrapperRebinds: number;
 }
 
 /** Structured repair. Compile errors with a closed fix space are fixed by
@@ -848,15 +908,19 @@ export const structuredRepair = async (
   userRequest: string,
   context: PipelineContext,
   maxRounds = 2,
+  /** speed-core (criterion 3) — islands whose scoped-repair budget exhausted
+   *  without converging: adds the island-disclaim arm to the fix space. */
+  islandDisclaimNames?: readonly string[],
 ): Promise<StructuredRepairResult> => {
   const repairStart = Date.now();
   const finish = (result: StructuredRepairResult): StructuredRepairResult => {
-    if (result.rounds > 0) {
+    if (result.rounds > 0 || result.wrapperRebinds > 0) {
       context.deps.onPipeline?.({
         stage: "repair",
         rounds: result.rounds,
         repaired: result.document !== undefined,
         noValidFix: result.noValidFixCount,
+        rebinds: result.wrapperRebinds,
         ms: Date.now() - repairStart,
       });
     }
@@ -866,9 +930,27 @@ export const structuredRepair = async (
   let current = compiled;
   let issues: string[] = [];
   let noValidFixCount = 0;
+  let wrapperRebinds = 0;
   for (let round = 0; round < maxRounds; round += 1) {
-    const fixes = deriveFixes(current, deps);
-    if (fixes.length === 0) return finish({ rounds: round, issues, noValidFixCount });
+    // The wrapper-envelope arm runs FIRST and costs no model round: its target
+    // is derived (the envelope object's only array), not chosen. A doc whose
+    // only fault was the envelope validates here, so the live failure never
+    // reaches a full-lane regeneration.
+    const rebinds = wrapperArrayRebinds(current, deps);
+    if (rebinds.length > 0) {
+      const rebound = recompile(spliceWrapperRebinds(current, rebinds), context);
+      const validated = await context.validate(rebound);
+      wrapperRebinds += rebinds.length;
+      if (validated.document !== undefined) {
+        return finish({ document: validated.document, rounds: round, issues, noValidFixCount, wrapperRebinds });
+      }
+      // Still invalid for OTHER reasons: the repointed tree is strictly the
+      // better starting point for the strict round below.
+      issues = [...new Set([...issues, ...validated.issues])];
+      current = rebound;
+    }
+    const fixes = deriveFixes(current, deps, islandDisclaimNames);
+    if (fixes.length === 0) return finish({ rounds: round, issues, noValidFixCount, wrapperRebinds });
     const schema = buildFixSchema(fixes);
     const wire = printWireV2(
       { tree: current.tree, components: current.components, ...(current.name === undefined ? {} : { name: current.name }) },
@@ -883,10 +965,10 @@ export const structuredRepair = async (
       `USER_REQUEST: ${userRequest}\nCURRENT_APP (wire markup; id attributes locate the failing nodes):\n${wire}`,
     );
     deps.onTiming?.({ lane: "repair", phase: "complete", atMs: Date.now() - context.startedAt, thinking: false });
-    if (chosen === undefined) return finish({ rounds: round + 1, issues, noValidFixCount });
+    if (chosen === undefined) return finish({ rounds: round + 1, issues, noValidFixCount, wrapperRebinds });
     fixes.forEach((fix, index) => {
       const value = chosen[fixKey(index)];
-      if (fix.kind === "action-disclaim") { noValidFixCount += 1; return; }
+      if (fix.kind === "action-disclaim" || fix.kind === "island-disclaim") { noValidFixCount += 1; return; }
       if (fix.kind === "action-payload") {
         const picks = isRecord(value) ? value : {};
         if (!fix.fields.some((field) => typeof picks[field] === "string" && fix.options.includes(picks[field] as string))) noValidFixCount += 1;
@@ -897,10 +979,10 @@ export const structuredRepair = async (
     const recompiled = recompile(spliceFixes(current, fixes, chosen), context);
     const validated = await context.validate(recompiled);
     if (validated.document !== undefined) {
-      return finish({ document: validated.document, rounds: round + 1, issues, noValidFixCount });
+      return finish({ document: validated.document, rounds: round + 1, issues, noValidFixCount, wrapperRebinds });
     }
     issues = [...new Set([...issues, ...validated.issues])];
     current = recompiled;
   }
-  return finish({ rounds: maxRounds, issues, noValidFixCount });
+  return finish({ rounds: maxRounds, issues, noValidFixCount, wrapperRebinds });
 };

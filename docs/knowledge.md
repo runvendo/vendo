@@ -9,7 +9,7 @@ the same contract:
 | Engine | What it is | Posture |
 | --- | --- | --- |
 | `lexicalKnowledge()` | Free tier: keyword retrieval in your own store — works offline, zero keys | full (`fetch`, `write`, `visibility: "enforced"`) |
-| `cloudKnowledge({ apiKey })` | Vendo Cloud's managed engine over `vendo/knowledge-wire@1` | full |
+| `cloudKnowledge({ apiKey })` | Vendo Cloud's managed engine over `vendo/knowledge-wire@1` — composed for you from `VENDO_API_KEY` | full |
 | `httpKnowledge({ url })` | BYO: any endpoint you run, in any language, speaking the same wire | declared — partial implementations are first-class |
 
 ## Quickstart: config → sync → agent answers
@@ -53,6 +53,28 @@ The agent side needs no wiring beyond the knowledge slot on `createVendo`:
 the agent's `vendo_knowledge_search` tool retrieves snippets, fetches
 read-more context, and cites documents or refuses when evidence is weak.
 
+## Which engine you get
+
+Which engine backs the tool is the standard adapter decision, made once in
+`createVendo`:
+
+1. An explicit `knowledge: <adapter>` always wins — including the keyless BYO
+   engines (`lexicalKnowledge()`, `httpKnowledge({ url })`). A Cloud
+   subscriber therefore keeps its own engine by construction: a key never
+   shadows a slot you filled.
+2. `VENDO_API_KEY` fills the slot with the Vendo Cloud engine (`cloudKnowledge`
+   against the console mount; `VENDO_CLOUD_URL` overrides the base URL). No
+   other wiring — a key is the whole setup.
+3. Nothing set: no adapter, and `vendo_knowledge_search` does not exist. The
+   agent never advertises a knowledge base you don't have.
+
+Rung 3 is the only quiet outcome. A key that is wrong, or a console that is
+down, is not: like every Vendo Cloud seam, key problems surface on the first
+real call rather than at a validate endpoint — the tool answers `unavailable`
+(the agent says it cannot check the docs; it never reports an empty corpus as
+"nothing found"), and the server log carries the actual cause, once per
+distinct failure.
+
 ## Engines
 
 **Local lexical** — honest keyword grade: deterministic term-frequency
@@ -65,10 +87,12 @@ term/title lookup over glossary/api entries. Pass
 database.
 
 **Cloud** — `cloudKnowledge({ apiKey })` speaks `vendo/knowledge-wire@1`
-against the console mount. Tenancy never crosses the wire: your corpus is the
-key's org, resolved server-side. Managed acquisition (crawl a docs URL,
-Notion/Drive) is connected in the console — `vendo knowledge add notion`
-prints the deep link.
+against the console mount. You rarely construct it: `VENDO_API_KEY` composes
+it for you (see [Which engine you get](#which-engine-you-get)); pass it
+explicitly only to point one composition at a different key or console.
+Tenancy never crosses the wire: your corpus is the key's org, resolved
+server-side. Managed acquisition (crawl a docs URL, Notion/Drive) is connected
+in the console — `vendo knowledge add notion` prints the deep link.
 
 **BYO HTTP** — see [BYO knowledge wire](knowledge-wire-byo.md). Search-only
 endpoints are legal: declare the posture and the rest of the contract adapts

@@ -1,0 +1,8 @@
+Keeping hand-edited apps/demo-bank/Dockerfile (no generated-file marker)
+Dry run — plan for apps/demo-bank (service demo-maple, project vendo-demos):
+  railway link --project vendo-demos
+  railway add --service demo-maple --json   # tolerated if the service already exists
+  railway domain --service demo-maple --json
+  railway variables --set VENDO_API_KEY=<redacted> --set NODE_ENV=production --set RAILWAY_DOCKERFILE_PATH=apps/demo-bank/Dockerfile --set VENDO_BASE_URL=<from railway domain> --service demo-maple --skip-deploys
+  railway up --service demo-maple --detach
+  (registry registration skipped: --skip-registry)

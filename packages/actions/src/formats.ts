@@ -234,12 +234,25 @@ export type ExtractedTool = ToolDescriptor & {
   /** Fail-closed extraction (04 §1): a route the scanner can't classify is emitted disabled, never silently auto-allowed. */
   disabled?: boolean;
   note?: string;
+  /** The host's DECLARED response body, when its source says so (an OpenAPI
+   *  2xx `application/json` schema today). Extraction never invents one.
+   *
+   *  RECORDED ONLY — nothing consumes it yet. Generation's `toolShapes` still
+   *  come exclusively from runtime sampling (apps runtime, generationToolContext),
+   *  which is ground truth and covers every no-input read tool. The gap this
+   *  field is here to close is the tools sampling can NEVER reach — ones that
+   *  require input, mutate, or sit behind a policy gate — but feeding declared
+   *  schemas into generation changes the prompt for every OpenAPI host at once
+   *  and wants its own corpus evidence, so it is deliberately a separate
+   *  change. Until then this is committed contract data, not a live input. */
+  outputSchema?: JsonSchema;
 };
 
 export const extractedToolSchema = toolDescriptorSchema.extend({
   binding: extractedBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
+  outputSchema: jsonSchemaSchema.optional(),
 }).superRefine((tool, context) => {
   if ((tool.binding as { kind?: string }).kind === "compound") {
     context.addIssue({
@@ -398,6 +411,7 @@ export const extractedToolV3Schema = toolDescriptorSchema.extend({
   binding: extractedBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
+  outputSchema: jsonSchemaSchema.optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
   srcHash: z.string().min(1).optional(),

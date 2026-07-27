@@ -1,4 +1,4 @@
-import type { ApprovalRequest, Json, RiskLabel, UIPayload, VendoAutomationPart, VendoBuildFailedPart, VendoViewPart } from "@vendoai/core";
+import type { ApprovalRequest, Json, RiskLabel, UIPayload, VendoAutomationPart, VendoBuildFailedPart, VendoGrantSetPart, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState } from "react";
 import { useVendoContext } from "../../context.js";
@@ -10,6 +10,7 @@ import { ApprovalSheet } from "../approval-sheet.js";
 import { AutomationCard } from "../automation-card.js";
 import { BuildBeat, toolPresentation } from "../build-beat.js";
 import { ConnectCard } from "../connect-card.js";
+import { GrantSetCard, type GrantSetPermission } from "../grant-set-card.js";
 import { toolkitDisplayName, toolTitle } from "../humanize.js";
 import { Markdown } from "../markdown.js";
 import type { MorphToastProps } from "../morph-toast.js";
@@ -58,7 +59,7 @@ function UserText({ text: rawText, restored }: { text: string; restored?: boolea
 /** One stream part in a turn: text (user verbatim / assistant markdown with the
     ENG-217 caret choreography), assistant files, tool build beats, and the
     jailed generated-view app card (06-apps §§8–9). */
-export function ThreadPart({ part, partKey, role, restored, count = 1, risks, connectLive = false, sendMessage }: {
+export function ThreadPart({ part, partKey, role, restored, count = 1, risks, connectLive = false, sendMessage, siblingParts, respond }: {
   part: UIMessage["parts"][number];
   partKey: string;
   role: UIMessage["role"];
@@ -71,6 +72,12 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
   connectLive?: boolean;
   /** The thread's send, for the post-connect continuation. */
   sendMessage?: (message: { text: string }) => unknown;
+  /** The enclosing message's parts — the grant-set card reads its parked
+      native call's state from the sibling tool part (same toolCallId). */
+  siblingParts?: UIMessage["parts"];
+  /** The thread's native approval response — the grant-set card resumes the
+      parked turn with it after deciding the guard set over the wire. */
+  respond?: (response: { id: string; approved: boolean }) => void;
 }) {
   if (part.type === "text") {
     if (role === "user") return <UserText text={part.text} restored={restored} />;
@@ -150,6 +157,27 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
       </div>
     );
   }
+  if (part.type === "data-vendo-grant-set") {
+    // demo-live-readiness 2026-07 — the grant-SET consent card renders at its
+    // transcript position (like ConnectCard): actionable while its native
+    // call is parked, then the settled record ("Enabled · N permissions
+    // granted" / denied) — reload-safe, since the state derives from the
+    // persisted sibling tool part, never component state.
+    const data = partData(part) as Partial<VendoGrantSetPart>;
+    if (typeof data.toolCallId !== "string" || typeof data.grantSetId !== "string"
+      || typeof data.name !== "string"
+      || !Array.isArray(data.permissions) || data.permissions.length === 0) return null;
+    return (
+      <GrantSetConsent
+        toolCallId={data.toolCallId}
+        grantSetId={data.grantSetId}
+        name={data.name}
+        permissions={data.permissions as GrantSetPermission[]}
+        siblingParts={siblingParts ?? []}
+        respond={respond}
+      />
+    );
+  }
   if (part.type === "data-vendo-automation") {
     // 2026-07 demo feedback — a turn that creates/arms an automation renders
     // it AS an automation: the same card vocabulary as the workspace panel
@@ -162,6 +190,7 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
         enabled={data.enabled === true}
         {...(data.trigger === undefined ? {} : { trigger: data.trigger })}
         {...(typeof data.description === "string" ? { description: data.description } : {})}
+        {...(typeof data.pendingGrants === "number" ? { pendingGrants: data.pendingGrants } : {})}
       />
     );
   }
@@ -187,6 +216,52 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
     return <ThreadAppCard key={`${partKey}-${data.appId}`} appId={data.appId} payload={payload} restored={restored} />;
   }
   return null;
+}
+
+/** The grant-set card's wire half: derives parked/approved/denied from the
+    sibling tool part carrying the SAME toolCallId, and on a decision settles
+    the WHOLE set atomically — one approvals.decide over every member id
+    (announced with the grantSetId so sibling surfaces resume too), then the
+    native approval response that resumes this thread's parked turn. */
+function GrantSetConsent({ toolCallId, grantSetId, name, permissions, siblingParts, respond }: {
+  toolCallId: string;
+  grantSetId: string;
+  name: string;
+  permissions: GrantSetPermission[];
+  siblingParts: UIMessage["parts"];
+  respond?: ((response: { id: string; approved: boolean }) => void) | undefined;
+}) {
+  const { client } = useVendoContext();
+  const sibling = siblingParts.filter(isToolUIPart).find(candidate => candidate.toolCallId === toolCallId);
+  const approvedFlag = (sibling as { approval?: { approved?: boolean } } | undefined)?.approval?.approved;
+  const state = sibling === undefined || sibling.state === "approval-requested" ? "parked" as const
+    : sibling.state === "output-available" ? "approved" as const
+    : sibling.state === "output-denied" ? "denied" as const
+    // approval-responded (decision sent, resume in flight) and output-error
+    // settle by the recorded decision direction.
+    : approvedFlag === true ? "approved" as const
+    : "denied" as const;
+  const nativeApprovalId = sibling?.state === "approval-requested" ? sibling.approval.id : undefined;
+  return (
+    <GrantSetCard
+      name={name}
+      permissions={permissions}
+      state={state}
+      {...(state !== "parked" ? {} : {
+        onDecide: async (approve: boolean) => {
+          // One wire decision settles every ask in the set (criterion 19's
+          // atomicity); the announcement carries the set id for any parked
+          // sibling surface. The native response resumes THIS thread.
+          await client.approvals.decide(
+            permissions.map(permission => permission.approvalId),
+            { approve },
+            { grantSetId },
+          );
+          if (nativeApprovalId !== undefined) respond?.({ id: nativeApprovalId, approved: approve });
+        },
+      })}
+    />
+  );
 }
 
 /** Compact-preview geometry (2026-07 demo feedback): inside an overlay
