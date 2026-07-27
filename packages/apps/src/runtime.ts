@@ -485,6 +485,14 @@ export interface AppsRuntime {
     prompt: string;
     /** Additive per-call stream hook used by the agent bridge. */
     onView?: (part: VendoViewPart) => void;
+    /** Called when the app was generated and STREAMED to the surface but the
+     *  store refused to persist it: the view is on screen, the app is not in
+     *  the user's list and cannot be reopened. The create still resolves with
+     *  the document — losing a working view to a storage fault is the worse
+     *  failure — so this is the only signal that the app is view-only, and
+     *  the agent bridge turns it into an honest sentence instead of an
+     *  apology for something the user can see. */
+    onUnsaved?: (reason: string) => void;
   }, ctx: RunContext): Promise<AppDocument>;
   /** Speed lane — best-effort page-open warm-up of the generation model(s)
    *  (full + paint), so the first create reuses a live connection. Safe to
@@ -1910,11 +1918,38 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         queryResolver?.update(finalTree);
         finalTree.data = verifiedData ?? await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
       }
-      await apps.put(appRecordInput(app, ctx.principal.subject));
-      clearTimeout(watchdog);
-      await reportLifecycle("create", app.id, ctx);
+      // The finished view reaches the screen BEFORE anything that can fail.
+      // Live 2026-07-27 (deployed Maple): the emit sat after the persist, so a
+      // store that refused the write froze every card mid-stream — one
+      // half-painted donut, one blank, one empty-state table, none of them
+      // ever resolving — while the engine's own logs read all-green. The
+      // document is generated, validated and data-resolved by this point; a
+      // storage fault is no reason to withhold it.
       if (finalTree !== undefined) emit(finalTree);
-      console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s`);
+      let unsavedReason: string | undefined;
+      try {
+        await apps.put(appRecordInput(app, ctx.principal.subject));
+      } catch (error) {
+        // A persist failure degrades the app to view-only — it renders, it
+        // just is not in the user's apps list and cannot be reopened. That is
+        // a far better outcome than discarding a working view, but it is
+        // never silent: the operator gets a classified line (the user path
+        // previously logged NOTHING here, so the outage read as a mystery),
+        // and the caller is told so the agent can say it plainly instead of
+        // apologizing for a view the user can see.
+        unsavedReason = safeErrorMessage(error);
+        console.error(`[vendo] app not saved (${appId}): the view rendered but the store rejected it — ${unsavedReason}`);
+      }
+      clearTimeout(watchdog);
+      if (unsavedReason === undefined) await reportLifecycle("create", app.id, ctx);
+      console.info(`[vendo] gen create complete app=${appId} total=${((Date.now() - createStartedAt) / 1000).toFixed(1)}s${unsavedReason === undefined ? "" : " (NOT SAVED)"}`);
+      if (unsavedReason !== undefined) {
+        // Escalation (automations, graduation) all write through the same
+        // store the persist just failed on, and every one of them assumes a
+        // stored app — so an unsaved create ends here, with the view up.
+        input.onUnsaved?.(unsavedReason);
+        return structuredClone(app);
+      }
       // execution-v2 Wave 9 — escalate on create when the prompt needs server
       // capability, walking the ladder: a steps/agentic automation (seconds,
       // no machine) before box graduation. The tree is already on screen; the
