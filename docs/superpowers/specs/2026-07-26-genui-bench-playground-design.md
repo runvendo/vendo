@@ -57,7 +57,9 @@ Load-bearing decisions:
   run is always visible.
 - **Prompt row:** free-text prompt; Packs dropdown (smoke ~3 / standard
   ~10 / stress ~8; current prompt can be saved into a pack); per-run lane
-  toggle chips; Run.
+  toggle chips; Run. Packs are committed files under
+  `apps/genui-bench/packs/` (versioned, shared with agents) — unlike
+  `runs/`, which stays gitignored.
 - **History rail:** runs newest-first (prompt, time, SHA, duration);
   pinned runs surfaced with ★; click = load run read-only; ⌥-click =
   split-compare vs current.
