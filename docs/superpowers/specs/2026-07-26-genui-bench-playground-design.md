@@ -43,6 +43,9 @@ Load-bearing decisions:
 3. **Host contexts are fixtures, not live servers**: the existing bench
    `demo-bank-surface.ts` pattern (real tool catalog, real theme, canned
    tool data), extended with a Cadence surface. Deterministic-ish, fast.
+   Fixture tools are EXECUTABLE, not just cataloged — the rendered app's
+   queries and actions run against them at view time, so the Vendo pane
+   exercises the full generate → render → interact → tool-call loop.
 4. **Competitor SDKs quarantined** in this app's package.json only.
    Dependency-guard and published packages never see them.
 5. **RunRecord is the atom.** History, pinning, split-compare, and agent
@@ -63,10 +66,16 @@ Load-bearing decisions:
 - **History rail:** runs newest-first (prompt, time, SHA, duration);
   pinned runs surfaced with ★; click = load run read-only; ⌥-click =
   split-compare vs current.
-- **Four panes:** Vendo renders live via the real `@vendoai/ui` renderer;
-  competitor panes render with their own SDKs/themes (honest, not
-  re-skinned). Pane header: status dot, wall-clock, repair count. Pane
-  footnote states the lane's asymmetry (see Lanes).
+- **Four panes:** the Vendo pane is the REAL RUNTIME, fully interactive
+  (Yousef addition 2026-07-26): the generated app runs — its tool calls
+  execute against the fixture host's tool implementations (canned data)
+  through the real ToolRegistry/guard path, actions fire, `$state` and
+  islands work, and you click around the app exactly as an end user
+  would. Rendering uses the exact production Kit components and
+  `@vendoai/ui` renderer — no approximations. Competitor panes render
+  with their own SDKs/themes (honest, not re-skinned). Pane header:
+  status dot, wall-clock, repair count. Pane footnote states the lane's
+  asymmetry (see Lanes).
 - **Internals drawer:** Vendo `PipelineEvent` timeline humanized
   (outline → stream → compile → guardrail verdicts → repair rounds →
   smoke render → done + cost); tabs for raw wire text, final AppDocument
