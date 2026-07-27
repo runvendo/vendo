@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createApps } from "./index.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
-  fakeSandboxV2,
+  fakeStatefulSandbox,
   guardFixture,
   memoryStore,
   seedAppRow,
@@ -82,7 +82,7 @@ describe("the box door scrubs responses (integration)", () => {
       catalog: [],
       secrets,
       experimentalMachines: true,
-      machine: { sandbox: fakeSandboxV2(), buildEnv: () => ({ PORT: "8080" }) },
+      machine: { sandbox: fakeStatefulSandbox(), buildEnv: () => ({ PORT: "8080" }) },
     });
     await runtime.machine.provision(doc.id, ada);
     return { runtime, doc };
@@ -90,7 +90,7 @@ describe("the box door scrubs responses (integration)", () => {
 
   it("an fn response echoing a secret value comes back redacted", async () => {
     const { runtime, doc } = await setup();
-    // The fake v2 box stores what it is told and echoes it back — the exact
+    // The stateful fake box stores what it is told and echoes it back — the exact
     // leak shape: a box putting its own env into a response.
     await runtime.box.request(doc.id, {
       method: "POST",
@@ -165,7 +165,7 @@ describe("issue #566 — injected secret values redact without a refetch", () =>
       catalog: [],
       secrets: secretsProvider,
       experimentalMachines: true,
-      machine: { sandbox: fakeSandboxV2(), buildEnv: injectingEnv(inject) },
+      machine: { sandbox: fakeStatefulSandbox(), buildEnv: injectingEnv(inject) },
     });
 
   const seed = async (store: ReturnType<typeof memoryStore>, id: string) => {

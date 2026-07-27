@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
-import { validateTreeV2, type Json, type ToolOutcome, type TreeV2 } from "@vendoai/core";
+import { validateTree, type Json, type ToolOutcome, type Tree } from "@vendoai/core";
 import { TreeView, type WalkTree } from "@vendoai/ui/tree";
 import { measure, summarize } from "../stats.js";
 import { syntheticTree, TREE_SIZES } from "../trees.js";
@@ -10,7 +10,7 @@ const noAction = async (): Promise<ToolOutcome> => ({ status: "ok", output: null
 
 /** The walk input the v2 renderer produces: named queries become "/" + name
  *  pointers (pre-converted here so the render-only case times the walk). */
-const toWalkTree = (tree: TreeV2): WalkTree => ({
+const toWalkTree = (tree: Tree): WalkTree => ({
   root: tree.root,
   nodes: tree.nodes,
   ...(tree.data === undefined ? {} : { data: tree.data }),
@@ -61,8 +61,8 @@ export const treeRenderSuite: Suite = {
         warmup: big ? 3 : 10,
         iterations: big ? 30 : 100,
         fn: () => {
-          const result = validateTreeV2(tree);
-          if (!result.ok) throw new Error(`validateTreeV2 failed at ${size}`);
+          const result = validateTree(tree);
+          if (!result.ok) throw new Error(`validateTree failed at ${size}`);
           renderTree(toWalkTree(result.tree));
         },
       });

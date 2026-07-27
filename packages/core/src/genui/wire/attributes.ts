@@ -10,7 +10,7 @@
 import { FN_REFERENCE_PATTERN, findInvalidActionReference } from "../../fn-references.js";
 import type { Json } from "../../ids.js";
 import { TOOL_NAME_PATTERN } from "../../tools.js";
-import { defineOwn } from "../tree.js";
+import { defineOwn } from "../tree-node.js";
 import { parseExpression } from "./expression.js";
 import { NAME_START, readName, skipBraceBlock, skipQuotedRun, skipWhitespace } from "./scan.js";
 import {
@@ -96,7 +96,7 @@ const parseExpressionAttribute = (state: CompileState): Json | Dropped | Failed 
  *  reference; it compiles to the v1 canonical action prop shape. Anything
  *  else is dropped. Expression-form `on*` attributes never come through
  *  here — a hand-written `{ action: ... }` object passes through as-is
- *  (validateTreeV2's props walk checks fn: grammar anywhere). */
+ *  (validateTree's props walk checks fn: grammar anywhere). */
 const compileActionValue = (state: CompileState, name: string, value: string): Json | Dropped => {
   if (TOOL_NAME_PATTERN.test(value) || FN_REFERENCE_PATTERN.test(value)) {
     return { action: value };
@@ -164,7 +164,7 @@ export const parseAttributes = (state: CompileState, element: AttributeElement):
         const parsed = parseExpressionAttribute(state);
         if (parsed === FAILED) return FAILED;
         value = parsed;
-        // D6 always-validates: validateTreeV2 walks node props for the fn:
+        // D6 always-validates: validateTree walks node props for the fn:
         // action grammar (same walk, ../fn-references.js), so an expression
         // value smuggling { action: "fn:9bad" } anywhere would un-validate
         // the tree. Drop the attribute here instead — only component props

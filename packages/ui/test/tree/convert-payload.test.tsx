@@ -3,11 +3,11 @@ import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
-  compileWireV2,
-  VENDO_TREE_FORMAT_V2,
+  compileWire,
+  VENDO_TREE_FORMAT,
   type Json,
   type ToolOutcome,
-  type TreeV2,
+  type Tree,
   type UIPayload,
 } from "@vendoai/core";
 import { PayloadView, TreeView } from "../../src/tree/index.js";
@@ -19,12 +19,12 @@ afterEach(() => {
 
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
-function treeV2(
-  nodes: TreeV2["nodes"],
-  extras: Partial<Omit<TreeV2, "formatVersion" | "nodes">> & { components?: Record<string, string> } = {},
+function treePayload(
+  nodes: Tree["nodes"],
+  extras: Partial<Omit<Tree, "formatVersion" | "nodes">> & { components?: Record<string, string> } = {},
 ): UIPayload {
   return {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+    formatVersion: VENDO_TREE_FORMAT,
     root: extras.root ?? nodes[0]?.id ?? "root",
     nodes,
     ...extras,
@@ -32,10 +32,10 @@ function treeV2(
 }
 
 describe("vendo-genui/v2 renderer registration", () => {
-  it("dispatches a v2 payload by tag instead of the unsupported-format notice", () => {
+  it("dispatches a tree payload by its format tag instead of the unsupported-format notice", () => {
     render(
       <PayloadView
-        payload={treeV2([
+        payload={treePayload([
           { id: "root", component: "Stack", children: ["text-1"] },
           { id: "text-1", component: "Text", props: { text: "v2 says hello" } },
         ])}
@@ -51,7 +51,7 @@ describe("vendo-genui/v2 renderer registration", () => {
   it("renders the prewired primitives from a v2 tree", () => {
     render(
       <PayloadView
-        payload={treeV2([
+        payload={treePayload([
           { id: "root", component: "Stack", children: ["heading", "row", "grid", "surface", "divider"] },
           { id: "heading", component: "Text", props: { text: "v2 heading", variant: "heading" } },
           { id: "row", component: "Row" },
@@ -73,7 +73,7 @@ describe("vendo-genui/v2 renderer registration", () => {
   it("contains an invalid v2 payload with the validation notice instead of throwing", () => {
     render(
       <PayloadView
-        payload={treeV2([{ id: "root", component: "Stack" }], { root: "not-a-node" })}
+        payload={treePayload([{ id: "root", component: "Stack" }], { root: "not-a-node" })}
         components={{}}
         onAction={ok}
       />,
@@ -94,7 +94,7 @@ describe("vendo-genui/v2 bindings and data residency", () => {
 
     render(
       <PayloadView
-        payload={treeV2(
+        payload={treePayload(
           [{
             id: "revenuelabel-1",
             component: "RevenueLabel",
@@ -121,7 +121,7 @@ describe("vendo-genui/v2 bindings and data residency", () => {
     const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
     render(
       <PayloadView
-        payload={treeV2(
+        payload={treePayload(
           [
             { id: "root", component: "Row", children: ["editor-1", "stateprobe-1"] },
             { id: "editor-1", component: "Editor", source: "generated" },
@@ -148,7 +148,7 @@ describe("vendo-genui/v2 bindings and data residency", () => {
 describe("vendo-genui/v2 actions", () => {
   it("dispatches compiler-emitted {action} props through onAction with the minted node id", async () => {
     const wire = '<App name="Actions"><ActionRow label="Run" onRun="fn:submit_report"/></App>';
-    const compiled = compileWireV2(wire, { hostComponents: ["ActionRow"] });
+    const compiled = compileWire(wire, { hostComponents: ["ActionRow"] });
     expect(compiled.complete).toBe(true);
     expect(compiled.issues).toEqual([]);
 
@@ -178,7 +178,7 @@ describe("vendo-genui/v2 component source resolution", () => {
     const Card: ComponentType<{ title?: string }> = ({ title }) => <article>Host card: {title}</article>;
     render(
       <PayloadView
-        payload={treeV2([
+        payload={treePayload([
           { id: "card-1", component: "Card", source: "host", props: { title: "brand wins" } },
         ])}
         components={{ Card }}
@@ -194,7 +194,7 @@ describe("vendo-genui/v2 component source resolution", () => {
     const Card: ComponentType<{ title?: string }> = ({ title }) => <article>Host card: {title}</article>;
     render(
       <PayloadView
-        payload={treeV2([
+        payload={treePayload([
           { id: "card-1", component: "Card", props: { title: "primitive wins" } },
         ])}
         components={{ Card }}
@@ -209,7 +209,7 @@ describe("vendo-genui/v2 component source resolution", () => {
   it("mounts a generated island in the jail with its payload-carried source", () => {
     render(
       <PayloadView
-        payload={treeV2(
+        payload={treePayload(
           [{ id: "revenuenote-1", component: "RevenueNote", source: "generated" }],
           { components: { RevenueNote: "export default function RevenueNote() { return <p>note</p> }" } },
         )}
@@ -254,7 +254,7 @@ describe("v2 reshape bindings at render", () => {
   it("applies a $reshape chain on resolution (count over rows renders 2)", () => {
     render(
       <PayloadView
-        payload={treeV2([
+        payload={treePayload([
           { id: "root", component: "Stack", children: ["text-1"] },
           {
             id: "text-1",
@@ -273,7 +273,7 @@ describe("v2 reshape bindings at render", () => {
   it("renders the contained data-shape notice on a runtime mismatch instead of a broken component", () => {
     render(
       <PayloadView
-        payload={treeV2([
+        payload={treePayload([
           { id: "root", component: "Stack", children: ["text-1"] },
           {
             id: "text-1",
@@ -298,7 +298,7 @@ describe("v2 reshape bindings at render", () => {
   it("a mis-bound container's notice replaces the component only, never its valid children", () => {
     render(
       <PayloadView
-        payload={treeV2([
+        payload={treePayload([
           { id: "root", component: "Stack", children: ["card-1"] },
           {
             id: "card-1",
@@ -319,7 +319,7 @@ describe("v2 reshape bindings at render", () => {
   it("absent data is loading, not a mismatch: no notice, component renders empty", () => {
     render(
       <PayloadView
-        payload={treeV2([
+        payload={treePayload([
           { id: "root", component: "Stack", children: ["text-1", "text-2"] },
           {
             id: "text-1",
@@ -343,7 +343,7 @@ describe("streaming error recovery", () => {
       <output>{(series as number[]).slice(0, 2).join(",")}</output>
     );
     const payload = (data?: Record<string, Json>): UIPayload => ({
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [
         { id: "root", component: "Stack", children: ["sparkline-1"] },

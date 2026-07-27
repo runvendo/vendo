@@ -1,6 +1,6 @@
 import {
   validateTree,
-  validateTreeV2,
+  validateTree,
   type AppDocument,
   type NormalizedCatalog,
   type RunContext,
@@ -535,7 +535,7 @@ describe("generation engine through createApps", () => {
         if (typeof message.content === "string") return message.content;
         return message.content.map((part) => part.text ?? "").join("");
       }).join("\n");
-      // v2 JSX wire (format-gen-v2): arbitrary props on a schema-less host
+      // JSX wire (format-gen-v2): arbitrary props on a schema-less host
       // entry must pass the permissive validator.
       return '<App name="Plain app"><PlainCard goes={42}/></App>';
     });
@@ -639,7 +639,7 @@ describe("generation engine through createApps", () => {
       `<Edit><Island name="${componentName}">${source.replace("$1.2M", "$1.4M")}</Island></Edit>`,
       // Props-only edit to the pinned node: no source change, no base change —
       // the SUBTREE comparison alone must mark the slot touched (Devin, PR #375:
-      // the v1-gated pinnedSubtree made this dead for v2 apps).
+      // the v1-gated pinnedSubtree made this dead for current apps).
       `<Edit><Set id="${pinComponentName(slot).toLowerCase()}-1" tone="bold"/></Edit>`,
       '<Edit><SetName name="Maple overview"/></Edit>',
     );
@@ -1230,11 +1230,11 @@ describe("instructionRequiresServedApp (Wave 4 layer 3)", () => {
   });
 });
 
-describe("v2 wire create", () => {
+describe("wire create", () => {
   const wireCreate = (name = "Revenue dashboard") =>
     `<App name="${name}"><MetricCard label="Revenue" value="$42k"/></App>`;
 
-  it("creates a validated v2 document from the wire dialect", async () => {
+  it("creates a validated document from the wire dialect", async () => {
     const store = memoryStore();
     const runtime = createApps({
       store,
@@ -1257,7 +1257,7 @@ describe("v2 wire create", () => {
         { id: "metriccard-1", component: "MetricCard", source: "host", props: { label: "Revenue", value: "$42k" } },
       ],
     });
-    expect(validateTreeV2(app.tree).ok).toBe(true);
+    expect(validateTree(app.tree).ok).toBe(true);
   });
 
   it("sends the wire dialect with the catalog and no v1 JSON contract", async () => {
@@ -1418,7 +1418,7 @@ describe("v2 wire create", () => {
     });
   });
 
-  it("streams valid-while-partial v2 payloads and finishes with resolved query data", async () => {
+  it("streams valid-while-partial payloads and finishes with resolved query data", async () => {
     const streamed = [
       '<App name="Streaming dashboard"><Query id="metric" tool="host_metric"/>',
       '<Stack gap={8}><Text text="Revenue"/>',

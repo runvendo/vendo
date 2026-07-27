@@ -12,7 +12,7 @@ import {
 import { knowledgeKindSchema, knowledgeVisibilitySchema, type KnowledgeKind, type KnowledgeVisibility } from "./knowledge.js";
 import { riskLabelSchema, type RiskLabel } from "./tools.js";
 import type { ToolCall } from "./tools.js";
-import { uiPayloadSchema, type UIPayload } from "./tree.js";
+import { uiPayloadSchema, type UIPayload } from "./genui/tree-node.js";
 import { triggerSchema, type Trigger } from "./triggers.js";
 
 /** 01-core §16 */

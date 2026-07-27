@@ -80,7 +80,7 @@ export interface MachineLifecycleConfig {
  * Execution-v2 machine lifecycle: provision on graduation, wake on demand,
  * sleep on idle, destroy with the app. Wake single-flight and the idle timer
  * are in-process state — multi-instance hosts can wake one app twice (known
- * v2 limit; last sleep's CAS wins).
+ * limit; last sleep's CAS wins).
  */
 export interface MachineLifecycle {
   available(): boolean;

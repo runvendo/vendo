@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { compileWireV2, type WireCompileOptions } from "./compile.js";
-import { printWireV2 } from "./print.js";
+import { compileWire, type WireCompileOptions } from "./compile.js";
+import { printWire } from "./print.js";
 
 /** v2 spec §5 — the printer is the model's edit context: a compile result
  *  prints back to wire markup, and the round trip is exact for anything the
@@ -25,10 +25,10 @@ const SPEC_WIRE = `<App name="Cash Overview">
 </App>`;
 
 const roundTrip = (wire: string): void => {
-  const first = compileWireV2(wire, OPTIONS);
+  const first = compileWire(wire, OPTIONS);
   expect(first.issues).toEqual([]);
-  const printed = printWireV2(first, { includeIds: false });
-  const second = compileWireV2(printed, OPTIONS);
+  const printed = printWire(first, { includeIds: false });
+  const second = compileWire(printed, OPTIONS);
   expect(second.issues).toEqual([]);
   expect(second.tree).toStrictEqual(first.tree);
   expect(second.components).toStrictEqual(first.components);
@@ -36,7 +36,7 @@ const roundTrip = (wire: string): void => {
   expect(second.complete).toBe(true);
 };
 
-describe("printWireV2 round trip", () => {
+describe("printWire round trip", () => {
   it("round-trips the full spec-shaped wire byte-identically (tree, components, name)", () => {
     roundTrip(SPEC_WIRE);
   });
@@ -54,63 +54,63 @@ describe("printWireV2 round trip", () => {
   });
 
   it("is deterministic: print(compile(print(x))) === print(compile(x))", () => {
-    const first = printWireV2(compileWireV2(SPEC_WIRE, OPTIONS), { includeIds: false });
-    const second = printWireV2(compileWireV2(first, OPTIONS), { includeIds: false });
+    const first = printWire(compileWire(SPEC_WIRE, OPTIONS), { includeIds: false });
+    const second = printWire(compileWire(first, OPTIONS), { includeIds: false });
     expect(second).toBe(first);
   });
 });
 
-describe("printWireV2 id anchors", () => {
+describe("printWire id anchors", () => {
   it("includeIds stamps every element with its compiler-minted id", () => {
-    const result = compileWireV2(SPEC_WIRE, OPTIONS);
-    const printed = printWireV2(result, { includeIds: true });
+    const result = compileWire(SPEC_WIRE, OPTIONS);
+    const printed = printWire(result, { includeIds: true });
     expect(printed).toContain('<LineChart id="linechart-1"');
     expect(printed).toContain('<Stack id="stack-1"');
     // The annotated form is model CONTEXT: recompiling it yields the same
     // tree; the ids surface only as the create compiler's wire-id-ignored.
-    const recompiled = compileWireV2(printed, OPTIONS);
+    const recompiled = compileWire(printed, OPTIONS);
     expect(recompiled.tree).toStrictEqual(result.tree);
     expect(new Set(recompiled.issues.map((issue) => issue.code))).toEqual(new Set(["wire-id-ignored"]));
   });
 });
 
-describe("printWireV2 forms", () => {
+describe("printWire forms", () => {
   it("prints actions back in string form and true as a bare attribute", () => {
-    const result = compileWireV2('<App><Button dense onClick="fn:send_reminder"/></App>');
-    const printed = printWireV2(result, { includeIds: false });
+    const result = compileWire('<App><Button dense onClick="fn:send_reminder"/></App>');
+    const printed = printWire(result, { includeIds: false });
     expect(printed).toContain('onClick="fn:send_reminder"');
     expect(printed).toContain("<Button dense ");
   });
 
   it("prints unsafe text (angle brackets) as an explicit Text element", () => {
-    const result = compileWireV2("<App><Card/></App>");
+    const result = compileWire("<App><Card/></App>");
     const tree = structuredClone(result.tree);
     tree.nodes.push({ id: "text-1", component: "Text", source: "prewired", props: { text: "a < b" } });
     (tree.nodes[0] as { children?: string[] }).children = ["card-1", "text-1"];
-    const printed = printWireV2({ ...result, tree }, { includeIds: false });
+    const printed = printWire({ ...result, tree }, { includeIds: false });
     expect(printed).toContain('<Text text="a < b"/>');
-    const recompiled = compileWireV2(printed);
+    const recompiled = compileWire(printed);
     expect(recompiled.tree).toStrictEqual(tree);
   });
 
   it("prints a binding it cannot express as a reference via the object fallback", () => {
-    const base = compileWireV2('<App><Query id="q" tool="t"/><Card v={q.rows}/></App>');
+    const base = compileWire('<App><Query id="q" tool="t"/><Card v={q.rows}/></App>');
     const tree = structuredClone(base.tree);
     const card = tree.nodes.find((node) => node.id === "card-1");
     (card as { props?: Record<string, unknown> }).props = { v: { $path: "/undeclared/field" } };
-    const printed = printWireV2({ ...base, tree }, { includeIds: false });
+    const printed = printWire({ ...base, tree }, { includeIds: false });
     expect(printed).toContain('"$path"');
-    const recompiled = compileWireV2(printed);
+    const recompiled = compileWire(printed);
     expect(recompiled.tree).toStrictEqual(tree);
   });
 });
 
-describe("printWireV2 totality fallbacks", () => {
+describe("printWire totality fallbacks", () => {
   it("prints non-Json prop values as null instead of throwing", () => {
-    const base = compileWireV2("<App><Card/></App>");
+    const base = compileWire("<App><Card/></App>");
     const tree = structuredClone(base.tree);
     (tree.nodes[1] as { props?: Record<string, unknown> }).props = { broken: undefined };
-    const printed = printWireV2({ ...base, tree: tree as typeof base.tree }, { includeIds: false });
+    const printed = printWire({ ...base, tree: tree as typeof base.tree }, { includeIds: false });
     expect(printed).toContain("broken={null}");
   });
 });

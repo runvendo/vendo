@@ -27,7 +27,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { buildEnv, createAppTokens, type SandboxAdapter, type SandboxMachine } from "@vendoai/apps";
-import { descriptorHash, VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2, type AppDocument, type PermissionGrant } from "@vendoai/core";
+import { descriptorHash, VENDO_APP_FORMAT, VENDO_TREE_FORMAT, type AppDocument, type PermissionGrant } from "@vendoai/core";
 import {
   ADA,
   BOB,
@@ -53,7 +53,7 @@ const seedDoc: AppDocument = {
   name: "Machine skin journey",
   ui: "tree",
   tree: {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+    formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { text: "invoice chaser" } }],
   },

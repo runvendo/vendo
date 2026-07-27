@@ -15,7 +15,7 @@ Three engine-internal stages behind the GenerationEngine seam
    assembly, whole-app validation; outline/coupling/assembly failures fall
    back to the single stream.
 3. **End pass** (flag `pipeline.endPass`) — one no-think read-through emitting
-   0–2 polish ops via `compileWirePatchV2`; invalid patches drop silently.
+   0–2 polish ops via `compileWirePatch`; invalid patches drop silently.
 
 ## How to reproduce
 

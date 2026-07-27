@@ -7,7 +7,7 @@ import {
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_BYTES,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
-} from "./tree-limits.js";
+} from "./genui/tree-limits.js";
 
 /** Internal generated-component map rules (01-core §8/§9). componentMapError is
  * not on the package root; it is the shared validator behind the tree + app

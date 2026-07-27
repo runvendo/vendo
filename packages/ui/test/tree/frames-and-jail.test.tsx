@@ -2,7 +2,7 @@
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { VENDO_TREE_FORMAT_V2, type ToolOutcome } from "@vendoai/core";
+import { VENDO_TREE_FORMAT, type ToolOutcome } from "@vendoai/core";
 import { AppFrame, PinMount, TreeView } from "../../src/tree/index.js";
 
 afterEach(() => {
@@ -116,7 +116,7 @@ describe("AppFrame", () => {
         surface={{
           kind: "tree",
           payload: {
-            formatVersion: VENDO_TREE_FORMAT_V2,
+            formatVersion: VENDO_TREE_FORMAT,
             root: "root",
             nodes: [{ id: "root", component: "Text", props: { text: "Instant app" } }],
           },
@@ -153,7 +153,7 @@ describe("PinMount", () => {
 describe("generated component jail structure", () => {
   it("relays captured modules, styles, and sample props as data without putting CSS in the outer frame", () => {
     const generatedTree = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{ id: "root", component: "Furnished", source: "generated" }],
       components: {
@@ -193,7 +193,7 @@ describe("generated component jail structure", () => {
     // (initialRange) must keep the captured sample seed for the rest
     // (valueCents/series) — a wholesale replace crashed the captured component.
     const generatedTree = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{ id: "root", component: "Furnished", source: "generated", props: { initialRange: "1Y" } }],
       components: {
@@ -228,7 +228,7 @@ describe("generated component jail structure", () => {
       "export default function Unsafe() { return <p>inside only</p> }",
     ].join("\n");
     const generatedTree: UIPayload = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{ id: "root", component: "Unsafe", source: "generated" }],
       components: { Unsafe: source },
@@ -249,7 +249,7 @@ describe("generated component jail structure", () => {
 
   it("recovers from a reported error when generated source changes", async () => {
     const broken: UIPayload = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{ id: "root", component: "Editable", source: "generated" }],
       components: { Editable: "export default function Editable() { throw new Error('broken') }" },
@@ -274,7 +274,7 @@ describe("generated component jail structure", () => {
 
   it("applies reported content height for both growth and shrinkage", () => {
     const generatedTree: UIPayload = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{ id: "root", component: "Resizable", source: "generated" }],
       components: { Resizable: "export default function Resizable() { return <p>content</p> }" },
@@ -308,7 +308,7 @@ describe("generated component jail structure", () => {
     // Mid-stream that crash is a transient, not a verdict — the loud note is
     // for final payloads only.
     const streamingTree = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{ id: "root", component: "Partial", source: "generated" }],
       components: { Partial: "export default function Partial() { return <MapleSpendingDonut /> }" },
@@ -330,7 +330,7 @@ describe("generated component jail structure", () => {
 
   it("contains a generated component that renders no content", async () => {
     const generatedTree: UIPayload = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{ id: "root", component: "Empty", source: "generated" }],
       components: { Empty: "export default function Empty() { return null; }" },

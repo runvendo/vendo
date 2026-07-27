@@ -2,30 +2,30 @@ import { describe, expect, it } from "vitest";
 import {
   TREE_MAX_NODES,
   TREE_MAX_QUERIES,
-  VENDO_TREE_FORMAT_V2,
-  validateTreeV2,
-  type TreeV2,
+  VENDO_TREE_FORMAT,
+  validateTree,
+  type Tree,
 } from "../index.js";
 
 const minimal = (): Record<string, unknown> => ({
-  formatVersion: VENDO_TREE_FORMAT_V2,
+  formatVersion: VENDO_TREE_FORMAT,
   root: "n1",
   nodes: [{ id: "n1", component: "Text" }],
 });
 
 const expectProvision = (input: unknown): void => {
-  const result = validateTreeV2(input);
+  const result = validateTree(input);
   expect(result.ok).toBe(false);
   if (!result.ok) expect(result.error.code).toBe("provision");
 };
 
-describe("validateTreeV2 compatibility", () => {
-  it("accepts a valid minimal v2 tree and narrows the result", () => {
-    const result = validateTreeV2(minimal());
+describe("validateTree compatibility", () => {
+  it("accepts a valid minimal tree and narrows the result", () => {
+    const result = validateTree(minimal());
     expect(result.ok).toBe(true);
     if (result.ok) {
-      const tree: TreeV2 = result.tree;
-      expect(tree.formatVersion).toBe(VENDO_TREE_FORMAT_V2);
+      const tree: Tree = result.tree;
+      expect(tree.formatVersion).toBe(VENDO_TREE_FORMAT);
       expect(tree.root).toBe("n1");
     }
   });
@@ -40,7 +40,7 @@ describe("validateTreeV2 compatibility", () => {
       { ...minimal(), formatVersion: "vendo-genui/v3" },
       { root: "n1", nodes: [{ id: "n1", component: "Text" }] },
     ]) {
-      const result = validateTreeV2(input);
+      const result = validateTree(input);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.code).toBe("version");
     }
@@ -74,8 +74,8 @@ describe("validateTreeV2 compatibility", () => {
 
   it("rejects non-object data and accepts absent or plain-object data", () => {
     for (const data of ["oops", 42, []]) expectProvision({ ...minimal(), data });
-    expect(validateTreeV2(minimal()).ok).toBe(true);
-    expect(validateTreeV2({ ...minimal(), data: { title: "Hi" } }).ok).toBe(true);
+    expect(validateTree(minimal()).ok).toBe(true);
+    expect(validateTree({ ...minimal(), data: { title: "Hi" } }).ok).toBe(true);
   });
 
   it("rejects duplicate ids but allows dangling child ids", () => {
@@ -83,7 +83,7 @@ describe("validateTreeV2 compatibility", () => {
       ...minimal(),
       nodes: [{ id: "n1", component: "Text" }, { id: "n1", component: "Text" }],
     });
-    expect(validateTreeV2({
+    expect(validateTree({
       ...minimal(),
       nodes: [{ id: "n1", component: "Stack", children: ["not-yet-streamed"] }],
     }).ok).toBe(true);
@@ -91,7 +91,7 @@ describe("validateTreeV2 compatibility", () => {
 
   it("accepts and rejects the node-count boundary", () => {
     const atCap = Array.from({ length: TREE_MAX_NODES }, (_, index) => ({ id: `n${index}`, component: "Text" }));
-    expect(validateTreeV2({ ...minimal(), root: "n0", nodes: atCap }).ok).toBe(true);
+    expect(validateTree({ ...minimal(), root: "n0", nodes: atCap }).ok).toBe(true);
     expectProvision({
       ...minimal(),
       root: "n0",
@@ -100,7 +100,7 @@ describe("validateTreeV2 compatibility", () => {
   });
 });
 
-describe("validateTreeV2 components rejection", () => {
+describe("validateTree components rejection", () => {
   it("rejects any tree-level components member — components live on the app document", () => {
     expectProvision({ ...minimal(), components: {} });
     expectProvision({
@@ -111,21 +111,21 @@ describe("validateTreeV2 components rejection", () => {
 
   it("tolerates unknown top-level keys other than components", () => {
     // The rejection is components-specific: any other stray key passes through.
-    expect(validateTreeV2({ ...minimal(), extra: 1 }).ok).toBe(true);
+    expect(validateTree({ ...minimal(), extra: 1 }).ok).toBe(true);
   });
 
   it("accepts a generated-source node without a document-level component", () => {
     // The presence rule is the app-document layer's to enforce, not the tree's.
-    expect(validateTreeV2({
+    expect(validateTree({
       ...minimal(),
       nodes: [{ id: "n1", component: "Gauge", source: "generated" }],
     }).ok).toBe(true);
   });
 });
 
-describe("validateTreeV2 queries", () => {
+describe("validateTree queries", () => {
   it("accepts ordinary and fn: query tools addressed by name", () => {
-    expect(validateTreeV2({
+    expect(validateTree({
       ...minimal(),
       data: { revenue: [] },
       queries: [
@@ -172,12 +172,12 @@ describe("validateTreeV2 queries", () => {
 
   it("accepts and rejects the query-count boundary", () => {
     const atCap = Array.from({ length: TREE_MAX_QUERIES }, (_, index) => ({ name: `q${index}`, tool: "t" }));
-    expect(validateTreeV2({ ...minimal(), queries: atCap }).ok).toBe(true);
+    expect(validateTree({ ...minimal(), queries: atCap }).ok).toBe(true);
     expectProvision({ ...minimal(), queries: [...atCap, { name: `q${TREE_MAX_QUERIES}`, tool: "t" }] });
   });
 });
 
-describe("validateTreeV2 action references", () => {
+describe("validateTree action references", () => {
   it("rejects grammar-violating fn: actions anywhere in props", () => {
     expectProvision({
       ...minimal(),
@@ -194,7 +194,7 @@ describe("validateTreeV2 action references", () => {
   });
 
   it("accepts well-formed fn: actions and non-fn actions", () => {
-    expect(validateTreeV2({
+    expect(validateTree({
       ...minimal(),
       nodes: [{
         id: "n1",
@@ -207,14 +207,14 @@ describe("validateTreeV2 action references", () => {
 
 /** v2 spec §3 — the bounded reshape vocabulary is enforced at the format
  *  gate: unknown ops or malformed chains fail provision. */
-describe("validateTreeV2 reshape gate", () => {
+describe("validateTree reshape gate", () => {
   const withProps = (props: Record<string, unknown>): Record<string, unknown> => ({
     ...minimal(),
     nodes: [{ id: "n1", component: "LineChart", props }],
   });
 
   it("accepts a binding with a valid $reshape chain", () => {
-    expect(validateTreeV2(withProps({
+    expect(validateTree(withProps({
       points: { $path: "/revenue/rows", $reshape: [{ op: "asPoints", args: ["month", "revenue"] }] },
     })).ok).toBe(true);
   });
@@ -232,7 +232,7 @@ describe("validateTreeV2 reshape gate", () => {
   });
 });
 
-describe("validateTreeV2 hostile inputs", () => {
+describe("validateTree hostile inputs", () => {
   it("never throws on inputs with throwing getters", () => {
     const hostile = Object.defineProperty({}, "formatVersion", {
       enumerable: true,
@@ -244,7 +244,7 @@ describe("validateTreeV2 hostile inputs", () => {
         });
       },
     });
-    const result = validateTreeV2(hostile);
+    const result = validateTree(hostile);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("provision");
   });

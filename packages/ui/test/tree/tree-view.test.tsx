@@ -2,7 +2,7 @@
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { VENDO_TREE_FORMAT_V2, type Json, type ToolOutcome } from "@vendoai/core";
+import { VENDO_TREE_FORMAT, type Json, type ToolOutcome } from "@vendoai/core";
 import { PayloadView, TreeView, registerTreeRenderer, type WalkTree } from "../../src/tree/index.js";
 
 afterEach(() => {
@@ -13,7 +13,7 @@ afterEach(() => {
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
 function tree(nodes: WalkTree["nodes"], root = nodes[0]?.id ?? "root", components?: Record<string, string>): WalkTree {
-  return { formatVersion: VENDO_TREE_FORMAT_V2, root, nodes, components };
+  return { formatVersion: VENDO_TREE_FORMAT, root, nodes, components };
 }
 
 describe("TreeView public surface", () => {
@@ -194,13 +194,13 @@ describe("TreeView public surface", () => {
     expect(screen.queryByRole("note", { name: /data shape/i })).toBeNull();
   });
 
-  it("skeletons an invalid STREAMING v2 payload instead of the invalid-tree notice", () => {
+  it("skeletons an invalid STREAMING payload instead of the invalid-tree notice", () => {
     const payload = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [
         { id: "root", component: "Stack" },
-        { id: "root", component: "Stack" }, // duplicate id → validateTreeV2 fails
+        { id: "root", component: "Stack" }, // duplicate id → validateTree fails
       ],
       streaming: true,
     } as unknown as Parameters<typeof PayloadView>[0]["payload"];
@@ -239,7 +239,7 @@ describe("TreeView public surface", () => {
 
   it("contains core validation failures before rendering", () => {
     const invalid = {
-      formatVersion: VENDO_TREE_FORMAT_V2,
+      formatVersion: VENDO_TREE_FORMAT,
       root: "root",
       nodes: [{ id: "root", component: "Stack" }],
       components: { Stack: "export default function Stack() { return null }" },

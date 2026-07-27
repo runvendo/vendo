@@ -1,7 +1,7 @@
 import {
-  compileWireV2,
-  printWireV2,
-  type TreeV2,
+  compileWire,
+  printWire,
+  type Tree,
   type WireCompileResult,
 } from "@vendoai/core";
 import type { GenerationDependencies, PipelineContext } from "./engine.js";
@@ -16,7 +16,7 @@ import type { GenerationDependencies, PipelineContext } from "./engine.js";
 export const wireCompileOptionsFor = (
   deps: GenerationDependencies,
   hostComponents: readonly string[],
-): Parameters<typeof compileWireV2>[1] => ({
+): Parameters<typeof compileWire>[1] => ({
   hostComponents: [...hostComponents],
   inlineRefs: true,
   ...(deps.tools === undefined ? {} : { inlineTools: deps.tools.map(({ name }) => name) }),
@@ -28,10 +28,10 @@ export const wireCompileOptionsFor = (
  *  a stage) so verify and repair can both use it without importing each
  *  other — the verify→repair→verify cycle is a TDZ crash under bundlers. */
 export const recompile = (
-  base: { tree: TreeV2; components: Record<string, string>; name?: string },
+  base: { tree: Tree; components: Record<string, string>; name?: string },
   context: PipelineContext,
-): WireCompileResult => compileWireV2(
-  printWireV2(base, { includeIds: false }),
+): WireCompileResult => compileWire(
+  printWire(base, { includeIds: false }),
   // The production compile options (inline tool refs included) — a patched
   // tree must recompile in the exact dialect the streaming lanes used.
   wireCompileOptionsFor(context.deps, context.hostComponents),

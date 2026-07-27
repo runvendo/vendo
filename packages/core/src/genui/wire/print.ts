@@ -4,10 +4,10 @@
  * docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md). A compile (or
  * patch) result prints back to the JSX-wire markup; with `includeIds` each
  * element is stamped with its compiler-minted id so the model can anchor a
- * patch. Only `printWireV2` is public (root export).
+ * patch. Only `printWire` is public (root export).
  *
  * The round-trip law (pinned in print.test.ts): for any COMPILER-PRODUCED
- * result, `compileWireV2(printWireV2(result))` reproduces tree, components,
+ * result, `compileWire(printWire(result))` reproduces tree, components,
  * and name byte-identically with zero issues. Hand-built trees still print
  * totally, via conservative fallbacks (explicit `<Text>` elements for unsafe
  * text, quoted `"$path"` object literals for bindings that cannot be
@@ -17,8 +17,8 @@
 import { TOOL_NAME_PATTERN } from "../../tools.js";
 import { findInvalidReshapeSteps, type ReshapeStep } from "../../reshape.js";
 import { FN_REFERENCE_PATTERN } from "../../fn-references.js";
-import { isPathBinding, isPlainObject, isStateBinding, type TreeNode } from "../tree.js";
-import type { TreeQueryV2 } from "../tree-v2.js";
+import { isPathBinding, isPlainObject, isStateBinding, type TreeNode } from "../tree-node.js";
+import type { TreeQuery } from "../tree.js";
 import type { WireCompileResult } from "./compile.js";
 
 /** v2 spec §5 — printer options. `includeIds` stamps node ids (the model's
@@ -160,7 +160,7 @@ const printNode = (state: PrintState, nodeId: string, depth: number): void => {
   state.lines.push(`${indent}</${node.component}>`);
 };
 
-const printQuery = (query: TreeQueryV2, queryNames: ReadonlySet<string>): string => {
+const printQuery = (query: TreeQuery, queryNames: ReadonlySet<string>): string => {
   const attrs = [`id="${escapeString(query.name)}"`, `tool="${escapeString(query.tool)}"`];
   if (query.input !== undefined) attrs.push(`input={${printExpression(query.input, queryNames)}}`);
   return `  <Query ${attrs.join(" ")}/>`;
@@ -171,7 +171,7 @@ const printQuery = (query: TreeQueryV2, queryNames: ReadonlySet<string>): string
  * deterministic, total. Document order matches the spec example (queries →
  * body → islands), which also keeps re-minted ids identical on recompile.
  */
-export function printWireV2(input: WirePrintInput, options: WirePrintOptions): string {
+export function printWire(input: WirePrintInput, options: WirePrintOptions): string {
   const { tree, components } = input;
   const queryNames = new Set((tree.queries ?? []).map((query) => query.name));
   const state: PrintState = {

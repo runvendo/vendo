@@ -10,7 +10,7 @@ import { requestAppWithBootRetry, type BootRetryOptions } from "./box-agent.js";
 import type { SandboxMachine } from "./sandbox.js";
 
 /**
- * execution-v2 Wave 2 Lane D — fn: resolution over the box door. A v2 tree
+ * execution-v2 Wave 2 Lane D — fn: resolution over the box door. A tree
  * whose query or action names `fn:<name>` resolves here: wake the app's
  * machine (Lane B's lifecycle) and POST the skin-contract `/fn/<name>` route
  * (Lane C's proxy speaks the same door from the wire). The host ToolRegistry
@@ -43,7 +43,7 @@ export interface FnCaller {
   /** Execute one box function as a tool outcome (see containment rule above). */
   callFn(app: AppDocument, name: string, args: Json, ctx: RunContext): Promise<ToolOutcome>;
   /**
-   * Decorate an AppCaller so fn: refs on a machine-bearing app ride the v2
+   * Decorate an AppCaller so fn: refs on a machine-bearing app ride the
    * box door; every other ref (host tools, fn: on an app that never
    * graduated) keeps the inner caller's behavior.
    */

@@ -8,7 +8,7 @@ Lane W1 of the Vendo v3 build. Authority: `docs/superpowers/specs/2026-07-19-ven
 - **Prompts:** ~18 lane-authored dev prompts (+3 negatives for Exp3). These are NOT the frozen 30-prompt held-out corpus — that set is never touched here.
 - **Generator model:** `claude-sonnet-4-6` (the production full-lane model — the model downstream decisions apply to). A/B arms always share it.
 - **Judge model:** `claude-opus-4-8` (independent, stronger — avoids self-preference bias). Blind to arm.
-- **Compiler:** every metric is computed from the REAL production compiler `compileWireV2` with the fixture tool shapes — compile-ok, binding-shape errors, unknown tools/components, declared-but-unused are the compiler's own verdicts, not a re-implementation.
+- **Compiler:** every metric is computed from the REAL production compiler `compileWire` with the fixture tool shapes — compile-ok, binding-shape errors, unknown tools/components, declared-but-unused are the compiler's own verdicts, not a re-implementation.
 - **Significance:** small n (18–21/arm). "outside noise" = |mean-quality difference| > 2× combined standard error (~95%). A null result is reported honestly as a null.
 - **Reproduce:** raw per-sample JSON in `raw/exp{1,2,3}.json`. Re-run with `ANTHROPIC_API_KEY` set: `pnpm --filter @vendoai/apps exec vitest run src/bench/exp{N}.bench.test.ts`.
 
@@ -18,7 +18,7 @@ Metric glossary: **compile-ok** = complete parse, no hard-structural issue, non-
 
 ## Experiment 1 — inline tool refs vs `<Query>` declarations — **ADOPT (inline)**
 
-Arm A emits `<Query>` declarations + plain bindings (today's dialect). Arm B writes inline references (`rows={invoices.list({status:"overdue"}).data}`); the `inlineRefs` compiler prototype (`packages/core/src/wire-v2/inline-refs.ts`, behind `compileWireV2({inlineRefs:true})`) mints the query and dedupes by tool+args. Unit tests prove the two arms compile to a byte-identical canonical tree.
+Arm A emits `<Query>` declarations + plain bindings (today's dialect). Arm B writes inline references (`rows={invoices.list({status:"overdue"}).data}`); the `inlineRefs` compiler prototype (`packages/core/src/genui/wire/inline-refs.ts`, behind `compileWire({inlineRefs:true})`) mints the query and dedupes by tool+args. Unit tests prove the two arms compile to a byte-identical canonical tree.
 
 | arm | n | compile-ok | ref-error-free | mean ref-err | mean binding-err | declared-unused | format-miss | fabrication | answers-ask | mean quality (sd) | p50 out-tok | p50 latency |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|

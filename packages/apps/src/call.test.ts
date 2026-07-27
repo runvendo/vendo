@@ -66,7 +66,7 @@ describe("app calls through createApps", () => {
   });
 
   it("settles an fn: ref on a machine-less app as a contained outcome, never a throw", async () => {
-    // fn: refs on a MACHINE-BEARING app ride the v2 box door (fn.ts suites);
+    // fn: refs on a MACHINE-BEARING app ride the box door (fn.ts suites);
     // this pins the base caller's fallthrough for an app that never graduated.
     const { store, runtime } = setup();
     await seedAppRow(store, app("app_fn"), "user_ada");

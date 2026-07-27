@@ -47,7 +47,7 @@ The vocabulary is closed, pure, and non-Turing (`RESHAPE_OPS`, chains capped at
 | `sum(f)` `avg(f)` `min(f)` `max(f)` `count()` | aggregates over rows |
 
 Pipes compile to a canonical `$reshape` array on the `$path`/`$state` binding.
-`validateTreeV2` rejects unknown ops and malformed chains, so the vocabulary is
+`validateTree` rejects unknown ops and malformed chains, so the vocabulary is
 enforced at the format gate. `applyReshape` evaluates chains at render time and
 never throws.
 
@@ -56,9 +56,9 @@ never throws.
 Pass shape cards to the compiler and mis-bindings become compile errors:
 
 ```ts
-import { compileWireV2 } from "@vendoai/core";
+import { compileWire } from "@vendoai/core";
 
-const result = compileWireV2(wire, { toolShapes: { metrics_revenue: card.output } });
+const result = compileWire(wire, { toolShapes: { metrics_revenue: card.output } });
 result.bindingErrors;
 // [{ nodeId: "linechart-1", prop: "points", query: "revenue",
 //    tool: "metrics_revenue", path: "/revenue/rows",
@@ -91,15 +91,15 @@ markup with id anchors and emits a single `<Edit>` patch; there is no JSON ops
 dialect.
 
 ```ts
-import { printWireV2, compileWirePatchV2 } from "@vendoai/core";
+import { printWire, compileWirePatch } from "@vendoai/core";
 
-const context = printWireV2(compiled, { includeIds: true });
+const context = printWire(compiled, { includeIds: true });
 // <App name="Cash overview">
 //   <Stack id="stack-1" gap={14}>
 //     <Stat id="stat-1" label="Revenue" value="$42k"/>
 //     ...
 
-const patched = compileWirePatchV2(`<Edit>
+const patched = compileWirePatch(`<Edit>
   <Set id="stat-1" label="Revenue (Q1)" value="$61k"/>
   <Insert into="grid-1" at={1}><Stat label="Overdue" value="3"/></Insert>
   <Remove id="button-1"/>
@@ -110,7 +110,7 @@ Ops: `Set`, `Unset`, `Insert`, `Remove`, `Move`, `Query`/`RemoveQuery`,
 `Island`/`RemoveIsland`, `SetName`. The apply is deterministic and total: a
 bad op is skipped whole with an issue, untouched nodes keep object identity
 (hot-swap keys off stable ids), inserted nodes mint fresh ids past the
-existing ordinals, and the result re-validates through `validateTreeV2` plus
+existing ordinals, and the result re-validates through `validateTree` plus
 the shape check above, so a bad edit is as unshippable as a bad create.
 Callers may declare `extensionOps` (the engine's `ForkPin`/`SetDescription`)
 that parse in the same grammar and come back in `result.extensionOps` for

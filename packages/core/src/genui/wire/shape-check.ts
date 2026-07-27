@@ -16,8 +16,8 @@
 
 import { reshapeShape, type ReshapeStep } from "../../reshape.js";
 import { walkShapePointer, type ShapePointerMiss, type ShapeType } from "../../shape.js";
-import { isPathBinding, isPlainObject, type TreeNode } from "../tree.js";
-import type { TreeQueryV2 } from "../tree-v2.js";
+import { isPathBinding, isPlainObject, type TreeNode } from "../tree-node.js";
+import type { TreeQuery } from "../tree.js";
 import type { WireIssue } from "./expression.js";
 import { mergeIssues, type CompileState } from "./state.js";
 
@@ -291,7 +291,7 @@ const collectFromValue = (
 };
 
 /** Mirrors binding shape errors into the issue stream (capped like every
- *  issue; no index — post-pass, not a cursor). Shared by compileWireV2's
+ *  issue; no index — post-pass, not a cursor). Shared by compileWire's
  *  finishResult and the patch compiler, keeping the message format
  *  byte-identical. */
 export const mirrorBindingIssues = (state: CompileState, bindingErrors: readonly BindingShapeError[]): void => {
@@ -308,7 +308,7 @@ export const mirrorBindingIssues = (state: CompileState, bindingErrors: readonly
  */
 export const checkBindingShapes = (
   nodes: readonly TreeNode[],
-  queries: readonly TreeQueryV2[],
+  queries: readonly TreeQuery[],
   toolShapes: Readonly<Record<string, ShapeType>>,
 ): BindingShapeError[] => {
   const queryTools = new Map(queries.map((query) => [query.name, query.tool]));

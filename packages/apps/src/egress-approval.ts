@@ -66,7 +66,7 @@ export const unapprovedEgress = (app: AppDocument): string[] => {
  *    declaration or approval. The host assembles them from the same URLs it
  *    injects as VENDO_STORE_URL / VENDO_HOST_URL / VENDO_INFERENCE_URL.
  *
- * An app that declares nothing gets the implicit skin domains only: v2
+ * An app that declares nothing gets the implicit skin domains only:
  * machine egress is deny-by-default at the network layer (the SSRF and
  * exfil answer, including for the BYO-model-key case).
  */

@@ -5,7 +5,7 @@ import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import {
   descriptorHash,
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   type AppDocument,
   type KnowledgeAdapter,
   type KnowledgeContext,
@@ -177,7 +177,7 @@ describe("visibility governance — venue leakage matrix (k8 T5)", () => {
       name: "Escalation helper",
       ui: "tree",
       tree: {
-        formatVersion: VENDO_TREE_FORMAT_V2,
+        formatVersion: VENDO_TREE_FORMAT,
         root: "root",
         nodes: [{ id: "root", component: "Text", props: { text: { $path: "/kb/hits/0/snippet" } } }],
         queries: [{ name: "kb", tool: "vendo_knowledge_search", input: { query: "escalation" } }],

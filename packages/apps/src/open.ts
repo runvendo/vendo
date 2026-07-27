@@ -1,13 +1,13 @@
 import {
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   VendoError,
   safeErrorMessage,
-  validateTreeV2,
+  validateTree,
   type AppDocument,
   type Json,
   type RunContext,
-  type TreeQueryV2,
-  type TreeV2,
+  type TreeQuery,
+  type Tree,
   type UIPayload,
 } from "@vendoai/core";
 import type { AppCaller } from "./call.js";
@@ -84,18 +84,18 @@ const setQueryData = (data: Record<string, Json>, pointer: string, value: Json):
 };
 
 /** A v2 query's result lives at `"/" + name` by definition (v2 spec §2). */
-const queryPointer = (query: TreeQueryV2): string => `/${query.name}`;
+const queryPointer = (query: TreeQuery): string => `/${query.name}`;
 
 interface QueryState {
   key: string;
-  query: TreeQueryV2;
+  query: TreeQuery;
   settled: boolean;
   result?: Awaited<ReturnType<AppCaller["callQuery"]>>;
   error?: unknown;
 }
 
 export interface ProgressiveQueryResolver {
-  update(tree: TreeV2): void;
+  update(tree: Tree): void;
   complete(): Promise<Record<string, Json>>;
 }
 
@@ -150,7 +150,7 @@ export const createProgressiveQueryResolver = (
     if (notify) onData?.(structuredClone(data));
   };
 
-  const start = (query: TreeQueryV2, index: number): void => {
+  const start = (query: TreeQuery, index: number): void => {
     const key = JSON.stringify(query);
     const state: QueryState = { key, query: structuredClone(query), settled: false };
     states[index] = state;
@@ -208,7 +208,7 @@ export const stripServerAuthoritativeFields = <T extends object>(payload: T): T 
 /** 06-apps §8 — jail furnishing for forked pins rides inside the tagged tree
  *  payload (UIPayload is forward-compatible). */
 const attachPinFurnishings = (
-  tree: TreeV2,
+  tree: Tree,
   app: AppDocument,
   pinBaselines: readonly PinBaseline[],
 ): void => {
@@ -223,7 +223,7 @@ const attachPinFurnishings = (
     }]];
   }));
   if (Object.keys(furnishings).length > 0) {
-    (tree as TreeV2 & { furnishings: typeof furnishings }).furnishings = furnishings;
+    (tree as Tree & { furnishings: typeof furnishings }).furnishings = furnishings;
   }
 };
 
@@ -303,18 +303,18 @@ export const createAppOpener = (
   }
   // v2 spec §§1–2 — the canonical vendo-genui/v2 tree: validate, resolve
   // queries (results at "/" + name), and serve with document components at
-  // payload level (the v2 renderer lifts them into the shared walk).
-  if (app.tree.formatVersion === VENDO_TREE_FORMAT_V2) {
-    const validation = validateTreeV2(app.tree);
+  // payload level (the renderer lifts them into the shared walk).
+  if (app.tree.formatVersion === VENDO_TREE_FORMAT) {
+    const validation = validateTree(app.tree);
     if (!validation.ok) throw new VendoError("validation", validation.error.message);
     const tree = stripServerAuthoritativeFields(structuredClone(validation.tree));
     const inClient = await inClientVenue?.(app);
     if (inClient !== undefined) {
-      (tree as TreeV2 & { inClient: InClientVenueState }).inClient = inClient;
+      (tree as Tree & { inClient: InClientVenueState }).inClient = inClient;
     }
     const pinDrift = detectPinDrift(app, pinBaselines);
     if (pinDrift.length > 0) {
-      (tree as TreeV2 & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
+      (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
     }
     attachPinFurnishings(tree, app, pinBaselines);
     const queries = createProgressiveQueryResolver(caller, app, ctx);

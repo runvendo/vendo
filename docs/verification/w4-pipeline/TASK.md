@@ -31,7 +31,7 @@ fallback rate → commit numbers.
 
 ## 3 — End pass
 After assembly: one no-think read-through call (app JSX + the ask) emitting 0-2 patches
-in the EXISTING edit-patch dialect (compileWirePatchV2) — each compile-validated, polish
+in the EXISTING edit-patch dialect (compileWirePatch) — each compile-validated, polish
 only (dedupe titles/stats, retitle, drop redundancy); invalid patches dropped silently;
 skippable flag; +~1s budget. TDD with scripted fixtures.
 

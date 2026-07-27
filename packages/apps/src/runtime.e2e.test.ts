@@ -18,7 +18,7 @@ import {
  * through the public createApps surface. Real neighbors are the in-repo core
  * seam implementations; persisted side effects are asserted through the store
  * seam (vendo_apps rows). The v1 state-singleton and tool-proxy e2e coverage
- * died with the run-token proxy; the v2 equivalents are the wire /box rows and
+ * died with the run-token proxy; the current equivalents are the wire /box rows and
  * tools callback suites.
  */
 

@@ -1,6 +1,6 @@
 import {
   VENDO_APP_BUILD_FAILED_PREFIX,
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   VendoError,
   checkBindingShapes,
   deriveShapeCard,
@@ -25,7 +25,7 @@ import {
   type ToolDescriptor,
   type ToolOutcome,
   type ToolSemantics,
-  type TreeV2,
+  type Tree,
   type ToolRegistry,
   type Trigger,
   type UIPayload,
@@ -103,7 +103,7 @@ export interface AppsConfig {
   guard: Guard;
   tools: ToolRegistry;
   /**
-   * execution-v2 — machine lifecycle seams. `sandbox` is the v2 adapter
+   * execution-v2 — machine lifecycle seams. `sandbox` is the sandbox adapter
    * (Lane A's shrunk seam); `buildEnv` is Lane C's env assembly, injected so
    * the lanes do not collide. No adapter → layer-2 lifecycle operations fail
    * with the existing sandbox-unavailable VendoError; layer-1 apps are
@@ -655,7 +655,7 @@ const rungFor = (
   app: AppDocument,
   declared?: VersionEntry["rung"],
 ): VersionEntry["rung"] => {
-  // execution-v2 Wave 4 — a machine-served surface is layer 3 (the v2 ladder);
+  // execution-v2 Wave 4 — a machine-served surface is layer 3 (the layer ladder);
   // rung 4 remains only for the retired v1 `server`-backed http shape.
   if (app.ui === "http") return app.machine !== undefined ? 3 : 4;
   // execution-v2 — a machine (Wave 1 Lane B) is layer 2, exactly like the
@@ -716,21 +716,21 @@ const generationDependencies = (
 };
 
 /** v2 spec §1 — assemble the emitted payload: the tree plus document islands
- *  at payload level (the v2 renderer lifts them into the shared walk). */
+ *  at payload level (the renderer lifts them into the shared walk). */
 const assembleTree = (source: {
-  tree: UIPayload | TreeV2;
+  tree: UIPayload | Tree;
   components?: Record<string, string>;
   /** W4b — the stamped per-island tool manifests ride beside the sources. */
   componentTools?: Record<string, string[]>;
-}): TreeV2 => ({
+}): Tree => ({
   ...structuredClone(source.tree),
   ...(source.components === undefined ? {} : { components: structuredClone(source.components) }),
   ...(source.componentTools === undefined ? {} : { componentTools: structuredClone(source.componentTools) }),
-} as TreeV2);
+} as Tree);
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
-  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return [];
-  const tree = app.tree as unknown as TreeV2;
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT) return [];
+  const tree = app.tree as unknown as Tree;
   const included = new Set(tree.nodes.filter((node) => node.component === componentName).map((node) => node.id));
   const pending = [...included];
   while (pending.length > 0) {
@@ -797,7 +797,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     );
   };
 
-  // execution-v2 — the v2 machine lifecycle (provision/wake/sleep/destroy);
+  // execution-v2 — the machine lifecycle (provision/wake/sleep/destroy);
   // the v1 MachineSessions cache is deleted.
   const {
     implicitDomains,
@@ -1418,7 +1418,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   /**
    * Graduation 1→2 (invisible, additive): provision a machine if the app has
    * none, delegate the server work to the in-box agent, then land the tree's
-   * fn: bindings through the NORMAL v2 tree-edit dialect. The tree keeps
+   * fn: bindings through the NORMAL tree-edit dialect. The tree keeps
    * working throughout; the user never picks a tier. A graduating edit whose
    * server declares unapproved egress SURFACES the parked approval (the code is
    * written and snapshotted; the fn does real egress only once approved).
@@ -1561,7 +1561,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // (fn.ts unwraps the {result} envelope), so it does nothing a rendered
       // board would not do itself; a failed sample leaves that fn's shape
       // unknown — defensive, like an unsampled host tool.
-      const tree = candidate.tree as unknown as TreeV2 | undefined;
+      const tree = candidate.tree as unknown as Tree | undefined;
       const queries = tree?.queries ?? [];
       // Sampling adds no new authority and (at most) one extra invocation:
       // a query-bound fn fires WITHOUT user action the moment the graduated
@@ -1664,7 +1664,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // lands and the miss is reported for a retry edit.
     let bound = automated;
     const issues: string[] = [];
-    if (plan.resultsCollection !== undefined && automated.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+    if (plan.resultsCollection !== undefined && automated.tree?.formatVersion === VENDO_TREE_FORMAT) {
       const rebindInstruction = `The app now has a ${mode} automation${plan.name === undefined ? "" : ` ("${plan.name}")`} that runs while the user is away and writes its latest displayable result into the app data collection "${plan.resultsCollection}" (record id "latest"). Rewire the tree to show those results:
 - Add (or repoint) a query over the results rows: <Query id="results" tool="vendo_apps_data_list" input={{appId:"${previous.id}", collection:"${plan.resultsCollection}"}}/> — the input is LITERAL JSON exactly as written. The tool's result shape is {records: [{id, data: <what the automation stored>}]}, so bind node props against /results/records/... paths (e.g. {results.records.0.data.summary}).
 - Keep the layout; change only what is needed to surface the automation's results (add a small section if none fits).
@@ -1789,7 +1789,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         })().catch(() => undefined);
       }, buildWatchdogMs());
       (watchdog as { unref?: () => void }).unref?.();
-      const emit = (payload: TreeV2): void => {
+      const emit = (payload: Tree): void => {
         // 06-apps §§8–9 — the venue verdict and drift report are
         // server-authoritative and a model-written tree must never smuggle
         // either into the live stream: a freshly generated app has no approval
@@ -1801,7 +1801,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           payload: payload as unknown as UIPayload,
         });
       };
-      let latestTree: TreeV2 | undefined;
+      let latestTree: Tree | undefined;
       const queryApp: AppDocument = {
         format: "vendo/app@1",
         id: appId,
@@ -1812,7 +1812,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         ? undefined
         : createProgressiveQueryResolver(caller, queryApp, ctx, (data) => {
           if (latestTree === undefined) return;
-          emit({ ...structuredClone(latestTree), data, streaming: true } as TreeV2);
+          emit({ ...structuredClone(latestTree), data, streaming: true } as Tree);
         });
       // v4 data-verify — the runtime owns the endPass flag now: queries
       // resolve HERE, so the verification runs data-sighted at this seam and
@@ -1826,7 +1826,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // v2 spec §1 — the payload carries islands at payload level (the
         // renderer lifts them); a mid-stream payload is marked streaming.
         latestTree = assembleTree(partial);
-        emit({ ...structuredClone(latestTree), streaming: true } as TreeV2);
+        emit({ ...structuredClone(latestTree), streaming: true } as Tree);
         queryResolver?.update(latestTree);
       });
       let generated: Awaited<ReturnType<GenerationEngine["create"]>>;
@@ -1837,7 +1837,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // available": no failure record, no log line, and a host chat that
         // reads as a build that never finished. Fail it LOUDLY through the
         // same terminal path as a thrown build turn.
-        if (generated.tree?.formatVersion === VENDO_TREE_FORMAT_V2 && isDisclaimerOnlyTree(generated.tree as unknown as TreeV2)) {
+        if (generated.tree?.formatVersion === VENDO_TREE_FORMAT && isDisclaimerOnlyTree(generated.tree as unknown as Tree)) {
           throw new VendoError("validation", HOST_CAPABILITY_MISS_REASON);
         }
       } catch (error) {
@@ -1896,7 +1896,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // touching queries — so the final view reuses it. Best-effort: any
       // failure ships the unverified app.
       let verifiedData: Record<string, Json> | undefined;
-      if (verifyEnabled && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+      if (verifyEnabled && app.tree?.formatVersion === VENDO_TREE_FORMAT) {
         try {
           const verifyResolver = createProgressiveQueryResolver(caller, app, ctx);
           verifyResolver.update(assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools }));
@@ -1911,8 +1911,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           console.warn(`[vendo] data-sighted verify skipped for ${appId} (the unverified app ships): ${safeErrorMessage(error)}`);
         }
       }
-      let finalTree: TreeV2 | undefined;
-      if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT_V2) {
+      let finalTree: Tree | undefined;
+      if (input.onView !== undefined && app.tree?.formatVersion === VENDO_TREE_FORMAT) {
         finalTree = assembleTree({ tree: app.tree, components: app.components, componentTools: app.componentTools });
         latestTree = structuredClone(finalTree);
         queryResolver?.update(finalTree);
@@ -1966,7 +1966,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // resolver failure, emit nothing rather than a data-less tree that
       // would blank the screen.
       const emitEscalated = async (escalated: AppDocument): Promise<void> => {
-        if (input.onView === undefined || escalated.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return;
+        if (input.onView === undefined || escalated.tree?.formatVersion !== VENDO_TREE_FORMAT) return;
         try {
           const tree = assembleTree({ tree: escalated.tree, components: escalated.components, componentTools: escalated.componentTools });
           stripServerAuthoritativeFields(tree);
@@ -2186,7 +2186,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     async call(appId, ref, args, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
       // A host-tool ref goes straight to the guard-bound registry; an fn: ref
-      // settles as a contained not-implemented outcome until the v2 in-runtime
+      // settles as a contained not-implemented outcome until the in-runtime
       // fn path lands (see call.ts).
       return caller.call(app, ref, args, ctx);
     },
@@ -2283,7 +2283,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         let previous: AppDocument;
         if (input.appId !== undefined) {
           previous = await requireOwned(input.appId, ctx.principal.subject);
-          if (previous.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) {
+          if (previous.tree?.formatVersion !== VENDO_TREE_FORMAT) {
             throw new VendoError("conflict", "a pin fork requires a vendo-genui/v2 tree app");
           }
         } else {
@@ -2296,7 +2296,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             name: `${baseline.slot} remix`,
             ui: "tree",
             tree: {
-              formatVersion: VENDO_TREE_FORMAT_V2,
+              formatVersion: VENDO_TREE_FORMAT,
               root: "root",
               nodes: [{ id: "root", component: "Stack", source: "prewired" }],
             },

@@ -1,6 +1,6 @@
 import {
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   type AppDocument,
   type Json,
   type RunContext,
@@ -12,7 +12,7 @@ import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 import { basicLanguageModel, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
 
 /**
- * execution-v2 Lane D gate (fake adapter): a v2 tree whose query names
+ * execution-v2 Lane D gate (fake adapter): a tree whose query names
  * `fn:<name>` binds its data through the box door at open(); an fn: action
  * round-trips on call() and a re-open re-binds the changed data; a failed fn
  * is a contained outcome, never a thrown white box.
@@ -82,7 +82,7 @@ const fnTreeApp = (id: string): AppDocument => ({
   ui: "tree",
   machine: { snapshotRef: "fake:fn-runtime", provisionedAt: "2026-07-19T00:00:00.000Z" },
   tree: {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+    formatVersion: VENDO_TREE_FORMAT,
     root: "n1",
     nodes: [
       {

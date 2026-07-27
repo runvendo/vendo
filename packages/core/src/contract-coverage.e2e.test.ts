@@ -46,9 +46,9 @@ import {
   auditEventSchema,
   uiPayloadSchema,
   treeNodeSchema,
-  treeQueryV2Schema,
-  treeV2Schema,
-  validateTreeV2,
+  treeQuerySchema,
+  treeSchema,
+  validateTree,
   storageDeclSchema,
   pinSchema,
   appDocumentSchema,
@@ -318,40 +318,40 @@ describe("§8 — UIPayload is the format-tag dispatch surface; unknown tags are
     expect(uiPayloadSchema.safeParse({ formatVersion: 1 }).success).toBe(false); // non-string tag
   });
 
-  it("an unknown tag passes UIPayload but validateTreeV2 rejects it as a 'version' error (containment is the renderer's job)", () => {
+  it("an unknown tag passes UIPayload but validateTree rejects it as a 'version' error (containment is the renderer's job)", () => {
     const unknown = { formatVersion: "vendo-canvas/v2", root: "r", nodes: [] };
     expect(uiPayloadSchema.safeParse(unknown).success).toBe(true);
-    const result = validateTreeV2(unknown);
+    const result = validateTree(unknown);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("version");
   });
 });
 
 describe("§8 — tree/node/query schemas parse the structural shape", () => {
-  it("treeV2Schema accepts a minimal v2 tree and rejects a foreign formatVersion", () => {
-    expect(treeV2Schema.safeParse({
+  it("treeSchema accepts a minimal v2 tree and rejects a foreign formatVersion", () => {
+    expect(treeSchema.safeParse({
       formatVersion: "vendo-genui/v2", root: "a", nodes: [{ id: "a", component: "Text" }],
     }).success).toBe(true);
-    expect(treeV2Schema.safeParse({
+    expect(treeSchema.safeParse({
       formatVersion: "vendo-canvas/v2", root: "a", nodes: [],
     }).success).toBe(false);
   });
 
-  it("treeNode and treeQueryV2 enforce their required fields", () => {
+  it("treeNode and treeQuery enforce their required fields", () => {
     expect(treeNodeSchema.safeParse({ id: "a", component: "Text", source: "generated" }).success).toBe(true);
     expect(treeNodeSchema.safeParse({ id: "a", component: "Text", source: "wired" }).success).toBe(false);
-    expect(treeQueryV2Schema.safeParse({ name: "x", tool: "host_x", input: { limit: 5 } }).success).toBe(true);
-    expect(treeQueryV2Schema.safeParse({ name: "x" }).success).toBe(false);
+    expect(treeQuerySchema.safeParse({ name: "x", tool: "host_x", input: { limit: 5 } }).success).toBe(true);
+    expect(treeQuerySchema.safeParse({ name: "x" }).success).toBe(false);
   });
 });
 
-describe("§8 — validateTreeV2 validates fn: GRAMMAR only; machine-presence is an app-document rule", () => {
-  // The tree shape carries no server/machine field, so validateTreeV2 structurally
+describe("§8 — validateTree validates fn: GRAMMAR only; machine-presence is an app-document rule", () => {
+  // The tree shape carries no server/machine field, so validateTree structurally
   // cannot enforce "trees without a machine must not contain fn: references." It
   // validates fn: grammar; validateAppDocument (which knows `server`) enforces the
   // machine-presence rule. See ESCALATION in the lane report.
   it("accepts a well-formed fn: reference with no server in sight", () => {
-    expect(validateTreeV2({
+    expect(validateTree({
       formatVersion: "vendo-genui/v2", root: "r",
       nodes: [{ id: "r", component: "Text" }],
       queries: [{ name: "refresh", tool: "fn:refresh" }],
@@ -360,7 +360,7 @@ describe("§8 — validateTreeV2 validates fn: GRAMMAR only; machine-presence is
 
   it("rejects fn: references that violate the /^fn:[A-Za-z_][A-Za-z0-9_-]*$/ grammar", () => {
     for (const tool of ["fn:", "fn:9lead", "fn:has space", "fn:slash/x"]) {
-      const result = validateTreeV2({
+      const result = validateTree({
         formatVersion: "vendo-genui/v2", root: "r",
         nodes: [{ id: "r", component: "Text" }],
         queries: [{ name: "q", tool }],
@@ -375,14 +375,14 @@ describe("§8 — validateTreeV2 validates fn: GRAMMAR only; machine-presence is
       formatVersion: "vendo-genui/v2", root: "r",
       nodes: [{ id: "r", component: "Text", props: { rows: [{ action, label: "Go" }] } }],
     });
-    expect(validateTreeV2(treeWithAction("fn:refresh")).ok).toBe(true);
+    expect(validateTree(treeWithAction("fn:refresh")).ok).toBe(true);
     for (const action of ["fn:", "fn:9lead", "fn:has space", "fn:slash/x"]) {
-      const result = validateTreeV2(treeWithAction(action));
+      const result = validateTree(treeWithAction(action));
       expect(result.ok, action).toBe(false);
       if (!result.ok) expect(result.error.code).toBe("provision");
     }
     // Non-fn action names are the host's tool namespace — not this grammar's job.
-    expect(validateTreeV2(treeWithAction("host_refresh")).ok).toBe(true);
+    expect(validateTree(treeWithAction("host_refresh")).ok).toBe(true);
   });
 
   it("validateAppDocument is where a machine-less fn: reference becomes an error", () => {
@@ -533,7 +533,7 @@ describe("public export surface — every contracted camelCaseName schema is pre
       "toolDescriptorSchema", "toolCallSchema", "toolOutcomeSchema",
       "grantScopeSchema", "grantDurationSchema", "permissionGrantSchema", "approvalRequestSchema",
       "approvalDecisionSchema", "guardDecisionSchema", "auditEventSchema", "uiPayloadSchema",
-      "treeV2Schema", "treeNodeSchema", "treeQueryV2Schema", "appDocumentSchema", "storageDeclSchema",
+      "treeSchema", "treeNodeSchema", "treeQuerySchema", "appDocumentSchema", "storageDeclSchema",
       "pinSchema", "triggerSourceSchema", "runModelSchema", "stepSchema", "triggerSchema",
       "vendoRecordSchema", "recordQuerySchema", "authMaterialSchema", "agentRunReportSchema",
       "vendoThemeSchema", "vendoViewPartSchema", "vendoApprovalPartSchema", "vendoCitationsPartSchema", "vendoErrorCodeSchema",

@@ -2,7 +2,7 @@
  * Internal: §8 cap enforcement for the vendo-genui/v2 wire markup compiler
  * (v2 spec §2, docs/superpowers/specs/2026-07-18-vendo-v2-format-spec.md;
  * plan Task 5). Accumulation STOPS at each cap so the emitted tree and
- * component map always stay within the pinned limits (validateTreeV2 and
+ * component map always stay within the pinned limits (validateTree and
  * componentMapError both pass on every compile result, whatever the input).
  *
  * Sits beside scan.ts in the module stack (compile → attributes → scan/limits

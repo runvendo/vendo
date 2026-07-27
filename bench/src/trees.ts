@@ -1,4 +1,4 @@
-import type { Json, TreeNode, TreeQueryV2, TreeV2 } from "@vendoai/core";
+import type { Json, TreeNode, TreeQuery, Tree } from "@vendoai/core";
 
 /**
  * Build a synthetic vendo-genui/v2 tree of exactly `nodeCount` nodes with
@@ -6,7 +6,7 @@ import type { Json, TreeNode, TreeQueryV2, TreeV2 } from "@vendoai/core";
  * cap). Prewired primitives only, so it validates and server-renders without
  * the jail. Never exceeds `nodeCount` (5000 is the contract maximum).
  */
-export function syntheticTree(nodeCount: number): TreeV2 {
+export function syntheticTree(nodeCount: number): Tree {
   const nodes: TreeNode[] = [];
   const rootChildren: string[] = [];
   nodes.push({ id: "root", component: "Stack", source: "prewired", children: rootChildren });
@@ -65,7 +65,7 @@ export function syntheticTree(nodeCount: number): TreeV2 {
 
   data.count = rows.length;
 
-  const queries: TreeQueryV2[] = [];
+  const queries: TreeQuery[] = [];
   for (let i = 0; i < Math.min(16, section); i += 1) {
     queries.push({ name: `rows_${i}`, tool: "host_items_list", input: { section: i } });
   }

@@ -1,5 +1,5 @@
 import type { LanguageModel } from "ai";
-import type { RunContext, ToolRegistry, TreeV2 } from "@vendoai/core";
+import type { RunContext, ToolRegistry, Tree } from "@vendoai/core";
 import { VendoError } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { buildFailureReason, createApps } from "./index.js";
@@ -244,13 +244,13 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
 });
 
 describe("isDisclaimerOnlyTree", () => {
-  const tree = (nodes: TreeV2["nodes"]): TreeV2 => ({
+  const tree = (nodes: Tree["nodes"]): Tree => ({
     formatVersion: "vendo-genui/v2",
     root: "root",
     nodes: [{ id: "root", component: "Stack", source: "prewired", children: nodes.map((node) => node.id) }, ...nodes],
-  } as TreeV2);
-  const disclaimer = (id: string): TreeV2["nodes"][number] =>
-    ({ id, component: "Text", source: "prewired", props: { text: DISCLAIMER_TEXT } }) as TreeV2["nodes"][number];
+  } as Tree);
+  const disclaimer = (id: string): Tree["nodes"][number] =>
+    ({ id, component: "Text", source: "prewired", props: { text: DISCLAIMER_TEXT } }) as Tree["nodes"][number];
 
   it("flags the pure disclaimer tree (the cert's persisted shape)", () => {
     expect(isDisclaimerOnlyTree(tree([disclaimer("text-1")]))).toBe(true);
@@ -258,7 +258,7 @@ describe("isDisclaimerOnlyTree", () => {
 
   it("static copy around the disclaimers does not rescue it (the cloud-rung cert shape: heading + disclaimer)", () => {
     expect(isDisclaimerOnlyTree(tree([
-      { id: "heading-1", component: "Text", source: "prewired", props: { text: "Dashboard", variant: "heading" } } as TreeV2["nodes"][number],
+      { id: "heading-1", component: "Text", source: "prewired", props: { text: "Dashboard", variant: "heading" } } as Tree["nodes"][number],
       disclaimer("text-1"),
     ]))).toBe(true);
   });
@@ -270,43 +270,43 @@ describe("isDisclaimerOnlyTree", () => {
         component: "Text",
         source: "prewired",
         props: { text: `Overview\n    ${DISCLAIMER_TEXT}` },
-      } as TreeV2["nodes"][number],
+      } as Tree["nodes"][number],
     ]))).toBe(true);
   });
 
   it("a data binding beside a disclaimer is real content — not degenerate", () => {
     expect(isDisclaimerOnlyTree(tree([
       disclaimer("text-1"),
-      { id: "stat-1", component: "Stat", source: "prewired", props: { label: "Total", value: { $path: "/totals/sum" } } } as TreeV2["nodes"][number],
+      { id: "stat-1", component: "Stat", source: "prewired", props: { label: "Total", value: { $path: "/totals/sum" } } } as Tree["nodes"][number],
     ]))).toBe(false);
   });
 
   it("an action binding beside a disclaimer is real content — not degenerate", () => {
     expect(isDisclaimerOnlyTree(tree([
       disclaimer("text-1"),
-      { id: "button-1", component: "Button", source: "prewired", props: { label: "Refresh", onClick: { action: "host_refresh" } } } as TreeV2["nodes"][number],
+      { id: "button-1", component: "Button", source: "prewired", props: { label: "Refresh", onClick: { action: "host_refresh" } } } as Tree["nodes"][number],
     ]))).toBe(false);
   });
 
   it("a generated island or host component beside a disclaimer is real content — not degenerate", () => {
     expect(isDisclaimerOnlyTree(tree([
       disclaimer("text-1"),
-      { id: "appshell-1", component: "AppShell", source: "generated" } as TreeV2["nodes"][number],
+      { id: "appshell-1", component: "AppShell", source: "generated" } as Tree["nodes"][number],
     ]))).toBe(false);
     expect(isDisclaimerOnlyTree(tree([
       disclaimer("text-1"),
-      { id: "chart-1", component: "RevenueChart", source: "host" } as TreeV2["nodes"][number],
+      { id: "chart-1", component: "RevenueChart", source: "host" } as Tree["nodes"][number],
     ]))).toBe(false);
   });
 
   it("a tree with no disclaimers is never degenerate, whatever else it lacks", () => {
     expect(isDisclaimerOnlyTree(tree([
-      { id: "text-1", component: "Text", source: "prewired", props: { text: "hello" } } as TreeV2["nodes"][number],
+      { id: "text-1", component: "Text", source: "prewired", props: { text: "hello" } } as Tree["nodes"][number],
     ]))).toBe(false);
   });
 
   it("ignores unreachable disclaimer nodes (pruned subtrees)", () => {
-    const detached: TreeV2 = {
+    const detached: Tree = {
       formatVersion: "vendo-genui/v2",
       root: "root",
       nodes: [
@@ -314,7 +314,7 @@ describe("isDisclaimerOnlyTree", () => {
         { id: "text-1", component: "Text", source: "prewired", props: { text: "hello" } },
         { id: "orphan-1", component: "Text", source: "prewired", props: { text: DISCLAIMER_TEXT } },
       ],
-    } as TreeV2;
+    } as Tree;
     expect(isDisclaimerOnlyTree(detached)).toBe(false);
   });
 });

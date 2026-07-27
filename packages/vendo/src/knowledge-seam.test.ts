@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT_V2, type AppDocument, type Principal } from "@vendoai/core";
+import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT, type AppDocument, type Principal } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -221,7 +221,7 @@ describe("venue-app reachability (k8 T1)", () => {
       name: "Transfer limits helper",
       ui: "tree",
       tree: {
-        formatVersion: VENDO_TREE_FORMAT_V2,
+        formatVersion: VENDO_TREE_FORMAT,
         root: "root",
         nodes: [{ id: "root", component: "Text", props: { text: { $path: "/kb/hits/0/snippet" } } }],
         queries: [{ name: "kb", tool: "vendo_knowledge_search", input: { query: "wire transfer limits" } }],

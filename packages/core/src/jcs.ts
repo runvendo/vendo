@@ -7,7 +7,7 @@ const unsupported = (message: string): never => {
 /** ES2024 String.prototype.isWellFormed — guaranteed at runtime by the
  *  package's engines floor (node >= 20) but absent from this tsconfig's
  *  ES2022 lib, hence the local cast. The one lone-surrogate detector in the
- *  package: canonicalJson rejects ill-formed strings below, and the wire-v2
+ *  package: canonicalJson rejects ill-formed strings below, and the wire
  *  compiler (state.ts) keeps them out of props/islands so this never throws
  *  downstream. */
 export const isWellFormedUtf16 = (text: string): boolean =>

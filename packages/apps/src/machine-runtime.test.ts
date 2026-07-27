@@ -4,11 +4,11 @@ import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { createApps } from "./index.js";
 import {
-  fakeSandboxV2,
+  fakeStatefulSandbox,
   guardFixture,
   memoryStore,
   seedAppRow,
-  type FakeSandboxV2,
+  type FakeStatefulSandbox,
 } from "./testing/index.js";
 
 const decoder = new TextDecoder();
@@ -42,7 +42,7 @@ const setup = async (options: {
 } = {}) => {
   const store = memoryStore();
   const guard = guardFixture();
-  const sandbox: FakeSandboxV2 = fakeSandboxV2();
+  const sandbox: FakeStatefulSandbox = fakeStatefulSandbox();
   const doc = options.doc ?? app();
   await seedAppRow(store, doc, "user_ada");
   const runtime = createApps({

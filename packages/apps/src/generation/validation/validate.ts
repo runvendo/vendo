@@ -8,18 +8,18 @@ import {
   KIT_WIRE_COMPONENT_NAMES,
   WIRE_COMPONENT_NAMES,
   VENDO_APP_FORMAT,
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   kitSpec,
   shapeAtPointer,
   isPathBinding,
   isStateBinding,
   validateAppDocument,
-  validateTreeV2,
+  validateTree,
   type AppDocument,
   type NormalizedCatalog,
   type ShapeType,
   type TreeNode,
-  type TreeV2,
+  type Tree,
   type WireCompileResult,
 } from "@vendoai/core";
 import { prewiredPropNames } from "../../prewired-schema.js";
@@ -127,7 +127,7 @@ const hostReshapeIssues = (compiled: WireCompileResult, deps: GenerationDependen
  *  resolves bindings inside it, so a dependent call
  *  (`accountId: accounts.data.0.id`) reaches the tool as an unresolved
  *  binding object and the app ships broken. Reject at compile → repair. */
-const queryInputIssues = (tree: TreeV2): string[] => {
+const queryInputIssues = (tree: Tree): string[] => {
   const issues: string[] = [];
   const findBinding = (value: unknown): boolean => {
     if (isPathBinding(value) || isStateBinding(value)) return true;
@@ -288,7 +288,7 @@ const prewiredPropsIssues = (node: TreeNode): string[] => {
 };
 
 const catalogIssues = async (
-  tree: TreeV2,
+  tree: Tree,
   components: Record<string, string> | undefined,
   catalog: NormalizedCatalog,
 ): Promise<string[]> => {
@@ -361,7 +361,7 @@ const SHELL_TEXT_VARIANTS: ReadonlySet<string> = new Set(["heading", "caption", 
 
 /** A Text node whose static string is real body copy (default/body variant,
  *  non-empty text). Bound values are handled by the binding check instead. */
-const isBodyCopyText = (node: TreeV2["nodes"][number]): boolean => {
+const isBodyCopyText = (node: Tree["nodes"][number]): boolean => {
   if (node.component !== "Text") return false;
   const variant = node.props?.["variant"];
   if (typeof variant === "string" && SHELL_TEXT_VARIANTS.has(variant)) return false;
@@ -377,7 +377,7 @@ const hasRuntimeBinding = (value: unknown): boolean => {
   return false;
 };
 
-const emptyDocumentIssues = (tree: TreeV2): string[] => {
+const emptyDocumentIssues = (tree: Tree): string[] => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
   const visited = new Set<string>();
@@ -402,7 +402,7 @@ const emptyDocumentIssues = (tree: TreeV2): string[] => {
   ];
 };
 
-const rootedRenderIssues = (tree: TreeV2): string[] => {
+const rootedRenderIssues = (tree: Tree): string[] => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
   const visited = new Set<string>();
@@ -525,10 +525,10 @@ export const validateEditedApp = async (
 ): Promise<string[]> => {
   const validation = validateAppDocument(app);
   if (!validation.ok) return [validation.error.message];
-  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT_V2) return ["tree edit produced an unsupported format"];
-  const treeValidation = validateTreeV2(app.tree);
+  if (app.tree?.formatVersion !== VENDO_TREE_FORMAT) return ["tree edit produced an unsupported format"];
+  const treeValidation = validateTree(app.tree);
   if (!treeValidation.ok) return [treeValidation.error.message];
-  const sourceTreeValidation = validateTreeV2(source.tree);
+  const sourceTreeValidation = validateTree(source.tree);
   const sourceRenderIssues = sourceTreeValidation.ok
     ? new Set(rootedRenderIssues(sourceTreeValidation.tree))
     : new Set<string>();

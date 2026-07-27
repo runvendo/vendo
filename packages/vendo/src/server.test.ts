@@ -5,7 +5,7 @@ import { capturedPinBaselineSchema } from "@vendoai/actions";
 import {
   VENDO_APP_FORMAT,
   VENDO_POLICY_FORMAT,
-  VENDO_TREE_FORMAT_V2,
+  VENDO_TREE_FORMAT,
   VendoError,
   type AppDocument,
   type ComponentCatalog,
@@ -65,7 +65,7 @@ const app = (id = "app_wire"): AppDocument => ({
   name: "Wire app",
   ui: "tree",
   tree: {
-    formatVersion: VENDO_TREE_FORMAT_V2,
+    formatVersion: VENDO_TREE_FORMAT,
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { text: "ok" } }],
   },
@@ -1757,7 +1757,7 @@ describe("XCUT-3 — umbrella runtime store surface", () => {
 });
 
 describe("app design rules (spec 2026-07-20)", () => {
-  /** Minimal V2-shape scripted model (mirrors @vendoai/apps' internal test
+  /** Minimal scripted model (mirrors @vendoai/apps' internal test
    *  helper, which is not exported): captures every prompt as flat text and
    *  answers with fixed wire markup so runtime.create completes. */
   const appGenModel = (prompts: string[]): LanguageModel => ({
@@ -2688,9 +2688,9 @@ describe("09 §2 apps composition", () => {
     }));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
-    // v2 JSX wire: `value={metrics.value}` compiles to the runtime binding
+    // JSX wire: `value={metrics.value}` compiles to the runtime binding
     // { $path: "/metrics/value" } (a ghost binding renders as absent data —
-    // wire-v2/compile.ts); the bad case is a plain string attribute.
+    // genui/wire/compile.ts); the bad case is a plain string attribute.
     // The query names a REAL registry tool: query tools are now validated
     // against the live descriptor list at create (verify-v2 fixes).
     const bound = '<App name="Disk binding app"><Query id="metrics" tool="vendo_apps_data_list"/><DiskMetric value={metrics.value}/></App>';

@@ -263,7 +263,7 @@ describe("reshapeShape (compile-time flow)", () => {
   });
 });
 
-describe("findInvalidReshape (the validateTreeV2 gate)", () => {
+describe("findInvalidReshape (the validateTree gate)", () => {
   it("accepts valid steps anywhere in a props record, and props without reshape", () => {
     expect(findInvalidReshape({
       points: { $path: "/revenue/rows", $reshape: [{ op: "asPoints", args: ["month", "revenue"] }] },

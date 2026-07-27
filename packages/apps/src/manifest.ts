@@ -2,7 +2,7 @@ import { VendoError } from "@vendoai/core";
 import { z } from "zod";
 
 /** execution-v2 spec ("The skin of the box") — `vendo.json`, the manifest an
- * app ships at its box root. v2 carries exactly two declarations and nothing
+ * app ships at its box root. The manifest carries exactly two declarations and nothing
  * else (YAGNI): `schedules` ("at this cron, POST /fn/<name>"), read by the
  * scheduler broker (Wave 2 Lane D), and `egress`, the outbound-domain
  * allowlist the sandbox network layer enforces (Wave 2 Lane E). Declarative

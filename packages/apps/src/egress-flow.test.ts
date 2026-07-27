@@ -3,7 +3,7 @@ import { VENDO_APP_FORMAT } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "./index.js";
 import {
-  fakeSandboxV2,
+  fakeStatefulSandbox,
   guardFixture,
   memoryStore,
   seedAppRow,
@@ -42,7 +42,7 @@ const setup = async (options: {
 } = {}) => {
   const store = memoryStore();
   const guard = options.guard ?? guardFixture();
-  const sandbox = fakeSandboxV2();
+  const sandbox = fakeStatefulSandbox();
   const doc = options.doc ?? app();
   await seedAppRow(store, doc, "user_ada");
   const runtime = createApps({

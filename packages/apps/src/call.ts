@@ -95,7 +95,7 @@ export const amountUnitIssue = (
 };
 
 // execution-v2 — the v1 MachineSessions fn: path is deleted. fn: refs on a
-// machine-bearing app resolve over the v2 box door (fn.ts decorates this
+// machine-bearing app resolve over the box door (fn.ts decorates this
 // caller in createApps); what remains HERE is the fallthrough for an app with
 // no machine, which settles as a CONTAINED error outcome — a stale binding
 // must not take down open() or an automation run.
