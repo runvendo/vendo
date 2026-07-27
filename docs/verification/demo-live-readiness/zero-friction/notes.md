@@ -68,6 +68,37 @@ mint; missing Host ⇒ no mint; no `VENDO_BASE_URL` (even loopback) ⇒ no
 mint; demo origin ⇒ mint; `DEMOS.VENDO.RUN`, `demos.vendo.run:443`,
 `Demos.Vendo.Run:443` ⇒ mint, `demos.vendo.run:8443` ⇒ no mint.
 
+### X-Forwarded-Host agreement, and the accepted residual
+
+Host is the source of truth (it is what the edge routed on). When
+`X-Forwarded-Host` IS present — Railway's edge always sets it — it must
+AGREE with Host after the same normalization, and both must equal the
+configured origin. XFH is never a source of truth; the agreement check can
+only make the gate stricter. A duplicate Host smuggled past an upstream hop
+fails it, because the value the edge recorded and the value we see diverge.
+
+Every ambiguity the runtime lets us observe is refused: more than one Host
+(or XFH) entry, or a comma-joined value, and the gate does not guess which
+one routed — it refuses.
+
+**Known residual, accepted (measured, not assumed).** Over a real HTTP
+connection Node's parser keeps the FIRST Host field and discards the rest;
+it does not comma-join them. So on a request sent straight to the origin
+with two Host fields and no XFH, the app sees only the first value and
+decides on that — it mints if that value is the configured origin. The live
+matrix records this row honestly as MINTED rather than hiding it.
+
+Why that is acceptable here: the dangerous version of this is an upstream
+hop routing on a *different* Host value than the one Node hands us, and
+that is exactly what the XFH agreement check catches — the matrix shows the
+same duplicate refused as soon as the edge's X-Forwarded-Host names the
+smuggled host, and Railway's edge always sets XFH. What remains is a pure
+parser differential in a hop upstream of the app that also forwards no XFH;
+it is not observable from inside the app, since we cannot see a header the
+runtime already dropped. Blast radius is a demo session on a demo host, and
+this gate is defense in depth — not the security boundary of any customer
+deployment.
+
 Unit tests also cover every URL-smuggling form (`@`, `/`, `#`, `?`,
 embedded whitespace, brackets, double colon, empty label) as explicit
 no-mint cases. Leading/trailing whitespace cannot reach the gate — the

@@ -183,6 +183,55 @@ describe("proxy auto-login behavior", () => {
     }
   })
 
+  it("rejects an ambiguous Host: duplicate fields the runtime collapses into one value", async () => {
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    vi.stubEnv("VENDO_BASE_URL", "https://demos.vendo.run")
+    // Two Host fields: undici joins them, and the joined value is exactly
+    // what a smuggled duplicate looks like. Never guess which one routed.
+    const duplicate = new NextRequest("https://demos.vendo.run/accounts", {
+      headers: new Headers([
+        ["host", "demos.vendo.run"],
+        ["host", "victim.example"],
+      ]),
+    })
+    expect(duplicate.headers.get("host")).toContain(",") // the collapse we must catch
+    const response = await proxy(duplicate)
+    expect(response.headers.get("set-cookie")).toBeNull()
+  })
+
+  it("requires X-Forwarded-Host to agree with Host when the edge sets it", async () => {
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    vi.stubEnv("VENDO_BASE_URL", "https://demos.vendo.run")
+
+    // Agreement (what Railway's edge actually sends) ⇒ mints.
+    const agreeing = await proxy(
+      new NextRequest("https://demos.vendo.run/accounts", {
+        headers: { host: "demos.vendo.run", "x-forwarded-host": "DEMOS.VENDO.RUN:443" },
+      }),
+    )
+    expect(agreeing.headers.get("set-cookie")).toContain("__Secure-authjs.session-token=")
+
+    // Disagreement ⇒ no mint, even though Host alone is the demo origin.
+    const disagreeing = await proxy(
+      new NextRequest("https://demos.vendo.run/accounts", {
+        headers: { host: "demos.vendo.run", "x-forwarded-host": "victim.example" },
+      }),
+    )
+    expect(disagreeing.headers.get("set-cookie")).toBeNull()
+
+    // Ambiguous XFH ⇒ no mint.
+    const ambiguous = await proxy(
+      new NextRequest("https://demos.vendo.run/accounts", {
+        headers: new Headers([
+          ["host", "demos.vendo.run"],
+          ["x-forwarded-host", "demos.vendo.run"],
+          ["x-forwarded-host", "victim.example"],
+        ]),
+      }),
+    )
+    expect(ambiguous.headers.get("set-cookie")).toBeNull()
+  })
+
   it("host comparison is normalized: case-insensitive hostname and default-port equivalence", async () => {
     vi.stubEnv("DEMO_AUTOLOGIN", "1")
     vi.stubEnv("VENDO_BASE_URL", "https://demos.vendo.run")

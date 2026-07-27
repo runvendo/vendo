@@ -44,23 +44,40 @@ function normalizeHost(rawHost: string, protocol: string): string | null {
   return hostname.toLowerCase()
 }
 
-/** The one host an auto-login deployment may serve: the operator-set public
- * origin (VENDO_BASE_URL — the same origin the cookie policy already
- * trusts). FAIL CLOSED: no configured origin, no valid bare authority, no
- * loopback exception — local runs must set VENDO_BASE_URL explicitly. Both
- * sides are normalized the SAME strict way. */
-function isDemoHost(rawHost: string): boolean {
+/** The one authority an auto-login deployment may serve, normalized: the
+ * operator-set public origin (VENDO_BASE_URL — the same origin the cookie
+ * policy already trusts). FAIL CLOSED: no configured origin, no loopback
+ * exception — local runs must set VENDO_BASE_URL explicitly. */
+function configuredDemoOrigin(): { host: string; protocol: string } | null {
   const base = process.env.VENDO_BASE_URL
-  if (!base || !rawHost) return false
+  if (!base) return null
   let configured: URL
   try {
     configured = new URL(base)
   } catch {
-    return false
+    return null
   }
-  const expected = normalizeHost(configured.host, configured.protocol)
-  const actual = normalizeHost(rawHost, configured.protocol)
-  return expected !== null && actual !== null && expected === actual
+  const host = normalizeHost(configured.host, configured.protocol)
+  return host === null ? null : { host, protocol: configured.protocol }
+}
+
+/**
+ * The single authority a header carries.
+ *   undefined = header absent
+ *   null      = AMBIGUOUS, never guess: the runtime surfaced more than one
+ *               value (repeated fields, or duplicates joined with ", ").
+ *               A smuggled second Host is exactly this shape.
+ */
+function soleHeaderAuthority(request: Request, name: string): string | null | undefined {
+  const values: string[] = []
+  for (const [key, value] of request.headers) {
+    if (key.toLowerCase() === name) values.push(value)
+  }
+  if (values.length === 0) return undefined
+  if (values.length > 1) return null
+  // NOT trimmed: whitespace must fail the authority check, not be sanitized.
+  const only = values[0]!
+  return only.includes(",") ? null : only
 }
 
 /**
@@ -68,22 +85,48 @@ function isDemoHost(rawHost: string): boolean {
  * enough — that would make a leaked/copied `DEMO_AUTOLOGIN=1` an auth bypass
  * on any reachable deployment. It must ALSO arrive for the configured demo
  * origin (this module only ships in the demo host app; there is no non-demo
- * build of Cadence). The decision reads the Host header ONLY — Railway
- * passes the real public host in Host, while X-Forwarded-Host is
- * attacker-settable and request.url is derived — and a missing Host never
- * mints. A mismatch logs loudly once and the request falls through to the
- * normal unauthenticated flow.
+ * build of Cadence).
+ *
+ * Host is the source of truth — it is what the edge routed on, whereas
+ * X-Forwarded-Host is caller-settable. When XFH IS present (Railway's edge
+ * always sets it) it must AGREE with Host after the same normalization, and
+ * both must equal the configured origin. That agreement is defense in depth
+ * only: it can make the gate stricter, never looser, and a duplicate Host
+ * smuggled past an upstream hop fails it because the value the edge saw and
+ * the value we see no longer match.
+ *
+ * KNOWN RESIDUAL (accepted, measured — see the lane's host-binding-probe.txt):
+ * over a real connection Node keeps the FIRST Host field and DISCARDS the
+ * rest, so a duplicate is invisible here and we decide on the value we were
+ * given. The dangerous version — an upstream hop routing on a different value
+ * — is what the XFH agreement above catches. What remains is a parser
+ * differential in a hop that also forwards no XFH; unobservable from inside
+ * the app. Blast radius is a demo session on a demo host; this gate is
+ * defense in depth, not the security boundary of any customer deployment.
+ *
+ * A refusal logs loudly once and the request falls through to the normal
+ * unauthenticated flow.
  */
 export function demoAutologinActive(request: Request): boolean {
   if (!demoAutologin()) return false
-  // NOT trimmed: whitespace must fail the authority check, not be sanitized.
-  const host = request.headers.get("host") ?? ""
-  if (isDemoHost(host)) return true
+  const expected = configuredDemoOrigin()
+  const host = soleHeaderAuthority(request, "host")
+  const forwarded = soleHeaderAuthority(request, "x-forwarded-host")
+  const actual = expected && typeof host === "string" ? normalizeHost(host, expected.protocol) : null
+  const agrees =
+    forwarded === undefined ||
+    (typeof forwarded === "string" &&
+      expected !== null &&
+      normalizeHost(forwarded, expected.protocol) === actual)
+  if (expected !== null && actual !== null && actual === expected.host && agrees) return true
   if (!warnedHostMismatch) {
     warnedHostMismatch = true
     console.error(
-      `[cadence] DEMO_AUTOLOGIN=1 but request Host "${host}" is not the configured demo origin ` +
-        `(${process.env.VENDO_BASE_URL ?? "VENDO_BASE_URL unset — autologin disabled"}) — refusing to auto-mint sessions.`,
+      `[cadence] DEMO_AUTOLOGIN=1 but the request does not match the configured demo origin ` +
+        `(${process.env.VENDO_BASE_URL ?? "VENDO_BASE_URL unset — autologin disabled"}): ` +
+        `Host=${host === null ? "<ambiguous>" : JSON.stringify(host ?? null)}, ` +
+        `X-Forwarded-Host=${forwarded === null ? "<ambiguous>" : JSON.stringify(forwarded ?? null)} ` +
+        `— refusing to auto-mint sessions.`,
     )
   }
   return false
