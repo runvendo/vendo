@@ -26,6 +26,7 @@ interface LiveRecord {
   outcome: string;
   unverified: boolean;
   latencyMs: number;
+  searches: Array<{ intent: string; hits: Array<{ docId: string; score?: number }> }>;
   verifications: Array<{ verdict: "supported" | "unsupported" | "none"; latencyMs: number }>;
   falseAnswer: boolean;
   falseRefusal: boolean;
@@ -64,6 +65,7 @@ const artifact = JSON.parse(readFileSync(ARTIFACT, "utf8")) as {
   passes: number;
   perPass: LivePass[];
   records: LiveRecord[];
+  gating?: string;
   fidelity: { sweep: { deleted: boolean; listedStillContainsIt: boolean } };
   smokeRun?: unknown;
 };
