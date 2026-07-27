@@ -13,12 +13,12 @@ const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 function usage(): string {
   return `Usage:
-  pnpm --filter @vendoai/bench demo:create -- --id SLUG --prospect NAME [--cta-url URL] [--target-dir DIR] [--url PROSPECT_SITE] [--screenshots a.png,b.png]
+  pnpm --filter @vendoai/bench demo:create -- --id SLUG --prospect NAME [--cta-url URL] [--target-dir DIR] [--url PROSPECT_SITE] [--screenshots a.png,b.png] [--notes notes.md]
   pnpm --filter @vendoai/bench demo:research -- --app APP_DIR --url https://... [--url https://...]
   pnpm --filter @vendoai/bench demo:chips -- --app APP_DIR [--prospect NAME]
   pnpm --filter @vendoai/bench demo:deploy -- --app apps/demo-SLUG [--project NAME] [--router-url URL] [--skip-registry] [--dry-run]
   pnpm --filter @vendoai/bench demo:reap -- [--router-url URL] [--project NAME] [--execute]
-  pnpm --filter @vendoai/bench demo:pipeline -- --id SLUG --prospect NAME --url PROSPECT_SITE [--screenshots a.png,b.png] [--cta-url URL] [--target-dir DIR] [--port N] [--skip-capture] [--skip-deploy]
+  pnpm --filter @vendoai/bench demo:pipeline -- --id SLUG --prospect NAME --url PROSPECT_SITE [--screenshots a.png,b.png] [--notes notes.md] [--cta-url URL] [--target-dir DIR] [--port N] [--skip-capture] [--skip-deploy]
 
 demo:create clones apps/demo-template into <target-dir>/demo-<id> and writes a
 TODO-fenced demo.config.json skeleton plus a RESEARCH/ pointer. The default
@@ -29,6 +29,11 @@ its vendor/ dir. --target-dir apps keeps it in the workspace for local poking
 (gitignored).
 --screenshots copies operator-provided product screenshots into RESEARCH/ as
 top-priority brand evidence (indexed with provenance in RESEARCH/manifest.json).
+--notes copies a markdown file of operator instructions into
+RESEARCH/OPERATOR-NOTES.md; the rewrite inlines it into the brand brief and
+every agent prompt as AUTHORITATIVE — the way to pin a fact the operator has
+already established (the persona the product's own screens show, the currency,
+a page title) against the rewrite's invent-everything default.
 demo:research captures each prospect URL's brand evidence (screenshots, title,
 theme-color, favicon, computed-style palette) into <APP_DIR>/RESEARCH/.
 demo:chips rewrites the demo's example pills from its OWN extracted tool surface

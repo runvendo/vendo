@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { operatorNotesName } from "./create.js";
 import type { ExecFn } from "./deploy.js";
 import { defaultExec } from "./deploy.js";
 import type { ResearchReport } from "./research.js";
@@ -185,12 +186,14 @@ export interface BrandBriefOptions {
   /** App-relative path the logo was copied to (e.g. "public/brand/logo.svg"), if found. */
   logoPath?: string;
   report: ResearchReport;
+  /** Contents of RESEARCH/OPERATOR-NOTES.md (`demo:create --notes`), if any. */
+  operatorNotes?: string;
 }
 
 /** RESEARCH/BRAND.md — the one evidence brief every rewrite agent reads
  * first. Deterministic render of the deterministic transform's output. */
 export function renderBrandBrief(options: BrandBriefOptions): string {
-  const { prospect, url, derived, logoPath, report } = options;
+  const { prospect, url, derived, logoPath, report, operatorNotes } = options;
   const operatorLines = report.operatorScreenshots.length === 0
     ? "- none provided"
     : report.operatorScreenshots.map((shot) => `- RESEARCH/${shot.file} (operator-provided — LOOK at this first; it usually shows the real logged-in product UI)`).join("\n");
@@ -203,6 +206,17 @@ export function renderBrandBrief(options: BrandBriefOptions): string {
 
 Prospect site: ${url}
 Generated mechanically from RESEARCH/research.json — exact sampled values, never eyeballed.
+${operatorNotes === undefined ? "" : `
+## OPERATOR NOTES — AUTHORITATIVE, they win every conflict
+
+The operator has already studied this prospect. Everything below is
+established fact about the product, not a suggestion: follow it literally,
+and where it contradicts a general rule below (including "invent all data"),
+the operator's note WINS. Anything the notes do not cover still follows the
+normal rules.
+
+${operatorNotes.trim()}
+`}
 
 ## Applied theme tokens (.vendo/theme.json — ALREADY WRITTEN, do not edit it)
 
@@ -358,14 +372,19 @@ export function assertDisjointOwnership(jobs: readonly AgentJob[]): void {
   }
 }
 
-const sharedRules = (prospect: string): string => `THE BAR: EXACT brand mimicry of ${prospect} — a person who uses their product should recognize this as theirs at a glance. Generic-ish output fails the visual judge and wastes a fix round.
+const sharedRules = (prospect: string, operatorNotes?: string): string => `THE BAR: EXACT brand mimicry of ${prospect} — a person who uses their product should recognize this as theirs at a glance. Generic-ish output fails the visual judge and wastes a fix round.
+${operatorNotes === undefined ? "" : `
+OPERATOR NOTES — AUTHORITATIVE. The operator has already studied this product; these are established facts, and where one contradicts any rule below (including "ALL seed data is INVENTED") the operator's note WINS. Implement them literally.
 
+${operatorNotes.trim()}
+`}
 Non-negotiable rules:
 - Read RESEARCH/BRAND.md and RESEARCH/PLAN.json FIRST, then LOOK at the evidence images they list (operator screenshots outrank everything).
-- ALL seed data is INVENTED. No real people, names, emails, or records from any source material. Evidence informs STYLE, never DATA. No Foo/Bar/Lorem/Alpha/Bravo placeholders.
+- ALL seed data is INVENTED${operatorNotes === undefined ? "" : ", EXCEPT anything the operator notes above pin down"}. No real people, names, emails, or records from any source material. Evidence informs STYLE, never DATA. No Foo/Bar/Lorem/Alpha/Bravo placeholders.
 - NEVER touch these fenced files (guard plumbing, hash-verified after you run): ${fencedFiles.join(", ")}. Do not edit .vendo/theme.json either — it is already written with exact sampled values.
 - ONLY create or edit files inside YOUR file list below. Other agents own the rest and run concurrently.
-- Use Tailwind classes + the CSS custom properties the template exposes; the theme tokens carry the brand.`;
+- Use Tailwind classes + the CSS custom properties the template exposes; the theme tokens carry the brand.
+- Host API routes answer through ok() in the fenced src/server/http.ts, which wraps EVERY body as { data: ... }. A screen that does \`const rows = await res.json()\` and treats it as an array renders permanently empty — unwrap \`.data\`. (This shipped once: a Reports screen that looked perfect and listed nothing.)`;
 
 export interface AgentJobsOptions {
   prospect: string;
@@ -374,14 +393,16 @@ export interface AgentJobsOptions {
   model: string;
   /** Model for the fidelity-critical shell/home agent. */
   shellModel: string;
+  /** Operator instructions (RESEARCH/OPERATOR-NOTES.md), inlined into every job. */
+  operatorNotes?: string;
 }
 
 /** Compiles the plan into the parallel fan-out: domain, shell+home,
  * one agent per extra screen, beats. Static split, disjoint by construction
  * — asserted anyway. */
 export function buildAgentJobs(options: AgentJobsOptions): AgentJob[] {
-  const { prospect, plan, model, shellModel } = options;
-  const rules = sharedRules(prospect);
+  const { prospect, plan, model, shellModel, operatorNotes } = options;
+  const rules = sharedRules(prospect, operatorNotes);
   const planJson = JSON.stringify(plan, null, 2);
   const [home, ...extraScreens] = plan.screens;
 
@@ -401,7 +422,7 @@ ${planJson}
 
 YOUR TASK — replace the template's "items" worked example with the ${plan.entity.name} entity:
 - src/server/types.ts: the ${plan.entity.name} type with the plan's fields.
-- src/server/seed.ts: deterministic seed via the existing mulberry32 prng (KEEP src/server/prng.ts as-is). 10-20 invented, domain-plausible records — right magnitudes, coherent dates (created < updated, nothing after today), realistic status spread, and include the plan's sampleRecordNames verbatim so the beats can name them.
+- src/server/seed.ts: deterministic seed via the existing mulberry32 prng (KEEP src/server/prng.ts as-is). 10-20 invented, domain-plausible records — right magnitudes, coherent dates (created < updated, nothing after today), realistic status spread, and include the plan's sampleRecordNames verbatim so the beats can name them. Those sample records must seed in a state "${plan.entity.action}" can STILL ACT ON (not already archived/closed/voided/paid) — the take-action beat names one, and an already-actioned record makes the agent correctly decline, so no consent card appears and the beat dies. Pin their state explicitly rather than leaving it to the prng.
 - src/server/store.ts: keep the in-memory store pattern, typed to the new entity.
 - src/server/${plan.entity.stem}.ts: list + the one mutation "${plan.entity.action}" (replace src/server/items.ts — delete its content by rewriting it to re-export from the new module, or empty it to a comment; you own it).
 - src/server/__tests__/: update the seed/entity tests to the new domain (same coverage shape as the template's).
@@ -453,7 +474,7 @@ YOUR FILE LIST (writable): src/app/${screen.slug}/**, src/components/${screen.sl
     })),
     {
       name: "beats",
-      ownedRoots: ["demo.config.json"],
+      ownedRoots: ["demo.config.json", ".vendo/policy.json"],
       maxBudgetUsd: 2,
       timeoutMs: 8 * 60 * 1000,
       model,
@@ -473,17 +494,27 @@ YOUR TASK — demo.config.json ONLY (keep it parsing against the template schema
 - Chips are short labels in ${prospect}'s vocabulary; prompts are the full sentences.
 - caps stay set (20 turns / $5 unless the plan argues otherwise). Set expiresAt to a real UTC instant ~21 days out (not the 2099 placeholder).
 
-YOUR FILE LIST (writable): demo.config.json.`,
+ALSO .vendo/policy.json — keep its "rules" EXACTLY as they are and only APPEND to "directions". Directions are host steering the live agent reads on every turn, and they are the only thing that makes a GENERATED view speak ${prospect}'s language. Add one line for each fact that would otherwise render wrong:
+- currency, when it is not US dollars — Money defaults to USD, so a rupee/euro/yen product needs 'every Money value must pass currency="XXX"', plus whether amounts are stored in minor units;
+- the product's own vocabulary, so generated headings match the screens.
+Take these from RESEARCH/BRAND.md (its OPERATOR NOTES section first). Add nothing you cannot point at in the evidence.
+
+YOUR FILE LIST (writable): demo.config.json, .vendo/policy.json.`,
     },
   ];
   assertDisjointOwnership(jobs);
   return jobs;
 }
 
-export function buildPlanPrompt(options: { prospect: string; url: string }): string {
+export function buildPlanPrompt(options: { prospect: string; url: string; operatorNotes?: string }): string {
   return `You are the PLAN agent for a ${options.prospect} demo (prospect site ${options.url}) built from the Vendo demo-template.
 
 Read RESEARCH/BRAND.md, RESEARCH/research.json and LOOK at every evidence image (operator screenshots first — they usually show the real logged-in product). Then decide the rebuild plan.
+${options.operatorNotes === undefined ? "" : `
+OPERATOR NOTES — AUTHORITATIVE. Already-established facts about this product; the plan must match them (nav labels, screens, vocabulary) rather than re-derive them:
+
+${options.operatorNotes.trim()}
+`}
 
 Output ONLY a JSON object (no prose, no markdown fence) with exactly this shape:
 {
@@ -682,6 +713,10 @@ export async function runRewrite(args: RewriteArgs, io: RewriteIo): Promise<Rewr
   // the quality backstop by design. Override for special runs.
   const shellModel = env.VENDO_DEMO_SHELL_MODEL ?? "sonnet";
   const researchDir = path.join(io.appDir, "RESEARCH");
+  // Written by demo:create --notes; absent on runs without operator notes.
+  const notesPath = path.join(researchDir, operatorNotesName);
+  const operatorNotes = existsSync(notesPath) ? await readFile(notesPath, "utf8") : undefined;
+  if (operatorNotes !== undefined) write(`[rewrite] operator notes: ${operatorNotes.split("\n").length} lines, authoritative over the invent-everything default`);
 
   // (a) Deterministic brand tokens.
   const report = await runStage("rewrite:tokens", async () => {
@@ -699,7 +734,14 @@ export async function runRewrite(args: RewriteArgs, io: RewriteIo): Promise<Rewr
     }
     await writeFile(
       path.join(researchDir, "BRAND.md"),
-      renderBrandBrief({ prospect: args.prospect, url: args.url, derived, report: parsed, ...(logoPath === undefined ? {} : { logoPath }) }),
+      renderBrandBrief({
+        prospect: args.prospect,
+        url: args.url,
+        derived,
+        report: parsed,
+        ...(logoPath === undefined ? {} : { logoPath }),
+        ...(operatorNotes === undefined ? {} : { operatorNotes }),
+      }),
     );
     write(`[rewrite] theme tokens written (${derived.notes.length} notes), logo ${logoPath ?? "NOT FOUND — flagged in BRAND.md"}`);
     return parsed;
@@ -709,7 +751,13 @@ export async function runRewrite(args: RewriteArgs, io: RewriteIo): Promise<Rewr
   // (b) Plan, then the parallel fan-out.
   const plan = await runStage("rewrite:plan", async () => {
     const result = await runAgent(
-      { name: "plan", prompt: buildPlanPrompt({ prospect: args.prospect, url: args.url }), maxBudgetUsd: 3, timeoutMs: 8 * 60 * 1000, model },
+      {
+        name: "plan",
+        prompt: buildPlanPrompt({ prospect: args.prospect, url: args.url, ...(operatorNotes === undefined ? {} : { operatorNotes }) }),
+        maxBudgetUsd: 3,
+        timeoutMs: 8 * 60 * 1000,
+        model,
+      },
       { cwd: io.appDir, env, readOnly: true, ...(io.signal === undefined ? {} : { signal: io.signal }) },
     );
     if (result.code !== 0) throw new Error(`Plan agent failed (exit ${result.code}${result.timedOut ? ", timed out" : ""}):\n${result.output.slice(0, 1000)}`);
@@ -723,7 +771,13 @@ export async function runRewrite(args: RewriteArgs, io: RewriteIo): Promise<Rewr
   const agents: AgentRunResult[] = [plan.planResult];
 
   await runStage("rewrite:agents", async () => {
-    const jobs = buildAgentJobs({ prospect: args.prospect, plan: plan.plan, model, shellModel });
+    const jobs = buildAgentJobs({
+      prospect: args.prospect,
+      plan: plan.plan,
+      model,
+      shellModel,
+      ...(operatorNotes === undefined ? {} : { operatorNotes }),
+    });
     write(`[rewrite] fan-out: ${jobs.map((job) => job.name).join(", ")} (parallel)`);
     const results = await Promise.all(jobs.map((job) => runAgent(job, { cwd: io.appDir, env, ...(io.signal === undefined ? {} : { signal: io.signal }) })));
     agents.push(...results);
@@ -762,7 +816,7 @@ export async function runRewrite(args: RewriteArgs, io: RewriteIo): Promise<Rewr
         name: `repair-${rounds}`,
         prompt: `You are the REPAIR agent for a ${args.prospect} demo built from the Vendo demo-template by several parallel agents. The build failed; fix it with the SMALLEST change that keeps the intent.
 
-${sharedRules(args.prospect)}
+${sharedRules(args.prospect, operatorNotes)}
 
 YOUR FILE LIST (writable): everything in this app EXCEPT the fenced files above and .vendo/theme.json.
 

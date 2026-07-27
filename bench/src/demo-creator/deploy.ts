@@ -266,12 +266,8 @@ export function buildDeployPlan(options: {
   dockerfilePath: string;
   /** Inference credentials to set on the service — at least one, both redacted. */
   modelKeys: { VENDO_API_KEY?: string; ANTHROPIC_API_KEY?: string };
-  /** Upload context for `railway up`. Omitted for an in-repo app (the linked
-   * repo root is already the context); the absolute clone dir for a
-   * standalone one, whose monorepo is not part of the deploy at all. */
-  uploadPath?: string;
 }): DeployPlan {
-  const { serviceName, project, dockerfilePath, modelKeys, uploadPath } = options;
+  const { serviceName, project, dockerfilePath, modelKeys } = options;
   const secretPrefixes = ["ANTHROPIC_API_KEY=", "VENDO_API_KEY="];
   const asDisplay = (command: string[]): string =>
     command
@@ -305,10 +301,20 @@ export function buildDeployPlan(options: {
         "--set", "NODE_ENV=production",
         "--set", `RAILWAY_DOCKERFILE_PATH=${dockerfilePath}`,
         "--set", `VENDO_BASE_URL=${publicBaseUrl}`,
+        // Zero-friction by default: a prospect demo we send out must open
+        // straight into the product. The injected middleware only honors this
+        // for requests that arrive on VENDO_BASE_URL's own authority (set on
+        // the line above), so the flag alone is never an auth bypass.
+        "--set", "DEMO_AUTOLOGIN=1",
         "--service", serviceName,
         "--skip-deploys",
       ]),
-      step(["railway", "up", ...(uploadPath === undefined ? [] : [uploadPath]), "--service", serviceName, "--detach"]),
+      // No positional path: `railway up` uploads its WORKING DIRECTORY, and
+      // the caller runs every step from the right one (repo root in-repo, the
+      // clone itself standalone). Naming an absolute directory outside the cwd
+      // instead fails with a bare "prefix not found" — the CLI computes the
+      // upload prefix relative to where it runs.
+      step(["railway", "up", "--service", serviceName, "--detach"]),
     ],
   };
 }
@@ -446,8 +452,12 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
     modelKeys: args.dryRun && Object.keys(modelKeys).length === 0
       ? { VENDO_API_KEY: "<from env at deploy time>" }
       : modelKeys,
-    ...(standalone ? { uploadPath: appDir } : {}),
   });
+
+  // Where the railway CLI runs — and therefore what `railway up` uploads and
+  // which directory `railway link` binds to the project. A standalone clone is
+  // its own deploy context; an in-repo app ships the monorepo from its root.
+  const railwayCwd = standalone ? appDir : io.repoRoot;
 
   if (args.dryRun) {
     write(`Dry run — plan for ${appPath} (service ${serviceName}, project ${args.project}):`);
@@ -482,7 +492,7 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
 
   const runStep = async (step: DeployStep): Promise<ExecResult | undefined> => {
     write(`$ ${step.display}`);
-    const result = await exec(step.command, { cwd: io.repoRoot });
+    const result = await exec(step.command, { cwd: railwayCwd });
     if (result.code !== 0) {
       if (step.allowFailure === true) {
         write(`  (non-fatal, continuing) ${scrub(firstLine(result.stderr) ?? firstLine(result.stdout) ?? `exit ${result.code}`)}`);

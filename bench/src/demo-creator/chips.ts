@@ -179,6 +179,7 @@ Write ${targetDerivedChips} example prompts a ${options.prospect} user would pla
 - Vary them: at least one that renders a view over data, and at least one that takes an action.
 - "chip" is a short label (2-5 words, sentence case). "prompt" is the full sentence typed into the composer.
 - "key" is a lowercase-hyphenated slug, unique.
+- NEVER name a specific record id, invoice number, customer or ticket in the prompt. You cannot see the demo's seeded data, so an invented id ("Void invoice INV-1042") sends the agent looking for a record that does not exist and the pill dead-ends in front of the prospect. Phrase actions over a described record instead ("the oldest unpaid invoice", "the largest open dispute").
 - "tools" lists the tool names from the surface above that the prompt needs, copied EXACTLY. At least one. Do not guess a name.
 - Two automatic checks discard a pill, so write to pass them: the cited names must exist in the surface above, AND the visible chip+prompt must share at least one real word with the cited capability's name or description. Say "invoices" for a tool about invoices — a pill whose wording has nothing in common with what it cites is thrown away.
 

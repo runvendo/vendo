@@ -232,6 +232,23 @@ describe("runDemoCreate", () => {
     });
   });
 
+  it("copies the operator's notes into RESEARCH/OPERATOR-NOTES.md verbatim", async () => {
+    const repoRoot = await writeRepoFixture();
+    const notes = path.join(repoRoot, "notes.md");
+    await writeFile(notes, "# Notes\n\nThe signed-in user is Robin Vale, Billing Admin.\n");
+    const { appDir } = await runDemoCreate({ ...args, notes }, { repoRoot });
+    expect(await readFile(path.join(appDir, "RESEARCH", "OPERATOR-NOTES.md"), "utf8"))
+      .toBe("# Notes\n\nThe signed-in user is Robin Vale, Billing Admin.\n");
+  });
+
+  it("fails on a missing notes file, naming the path, before touching disk", async () => {
+    const repoRoot = await writeRepoFixture();
+    const missing = path.join(repoRoot, "nope.md");
+    await expect(runDemoCreate({ ...args, notes: missing }, { repoRoot }))
+      .rejects.toThrow(`--notes file not found: ${missing}`);
+    expect(existsSync(path.join(repoRoot, "apps", "demo-acme-widgets"))).toBe(false);
+  });
+
   it("fails on a missing screenshot, naming the path, before touching disk", async () => {
     const repoRoot = await writeRepoFixture();
     const missing = path.join(repoRoot, "shots", "nope.png");
@@ -391,5 +408,7 @@ describe("runDemoCreate", () => {
     expect(dockerignore).toContain("node_modules");
     // The vendored tarballs are the build's input — they MUST reach the image.
     expect(dockerignore).not.toContain("vendor");
+    // .dockerignore bounds the IMAGE; .railwayignore bounds the UPLOAD.
+    expect(await readFile(path.join(result.appDir, ".railwayignore"), "utf8")).toContain("RESEARCH");
   }, 60_000); // real `pnpm pack` subprocess
 });

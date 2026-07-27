@@ -147,6 +147,25 @@ describe("renderBrandBrief", () => {
     expect(brief.indexOf("operator-1-board.png")).toBeLessThan(brief.indexOf("page-1-full.png"));
     expect(brief).toContain("public/brand/logo-1-header.svg");
   });
+
+  it("carries the operator's notes as authoritative, ahead of the general rules", () => {
+    const report = reportFixture({});
+    const brief = renderBrandBrief({
+      prospect: "Linear",
+      url: "https://linear.app",
+      derived: deriveThemeTokens(report, baseTheme),
+      report,
+      operatorNotes: "The signed-in user is Robin Vale, Billing Admin.",
+    });
+    expect(brief).toContain("The signed-in user is Robin Vale, Billing Admin.");
+    expect(brief).toMatch(/OPERATOR NOTES[^\n]*AUTHORITATIVE/);
+  });
+
+  it("says nothing about operator notes when there are none", () => {
+    const report = reportFixture({});
+    const brief = renderBrandBrief({ prospect: "Linear", url: "https://linear.app", derived: deriveThemeTokens(report, baseTheme), report });
+    expect(brief).not.toContain("OPERATOR NOTES");
+  });
 });
 
 const validPlan: RewritePlan = {
@@ -186,13 +205,40 @@ describe("buildAgentJobs", () => {
     expect(jobs.map((job) => job.name)).toEqual(["domain", "shell-home", "screen-backlog", "beats"]);
     expect(() => assertDisjointOwnership(jobs)).not.toThrow();
     const beats = jobs.find((job) => job.name === "beats");
-    expect(beats?.ownedRoots).toEqual(["demo.config.json"]);
+    expect(beats?.ownedRoots).toEqual(["demo.config.json", ".vendo/policy.json"]);
     expect(beats?.prompt).toContain("Fix onboarding drop-off");
     const shell = jobs.find((job) => job.name === "shell-home");
     expect(shell?.model).toBe("opus");
     expect(shell?.prompt).toContain("STRUCTURAL 1:1");
     for (const job of jobs) {
       expect(job.prompt).toContain("NEVER touch these fenced files");
+    }
+  });
+
+  /** The wrong-persona regression: agents saw the real signed-in user in an
+   * operator screenshot and dutifully replaced it with an invented one,
+   * because "ALL seed data is INVENTED" was the only rule in the prompt.
+   * Operator notes have to reach EVERY agent and outrank that rule, or a fact
+   * the operator pinned gets invented away. */
+  it("puts the operator's notes in every agent prompt, outranking the invent-everything rule", () => {
+    const jobs = buildAgentJobs({
+      prospect: "Linear",
+      plan: validPlan,
+      model: "sonnet",
+      shellModel: "opus",
+      operatorNotes: "The signed-in user is Robin Vale, Billing Admin.",
+    });
+    for (const job of jobs) {
+      expect(job.prompt).toContain("The signed-in user is Robin Vale, Billing Admin.");
+      expect(job.prompt).toContain("OPERATOR NOTES — AUTHORITATIVE");
+      expect(job.prompt).toContain("EXCEPT anything the operator notes above pin down");
+    }
+  });
+
+  it("carries no authoritative-notes block when there are no operator notes", () => {
+    for (const job of buildAgentJobs({ prospect: "Linear", plan: validPlan, model: "sonnet", shellModel: "opus" })) {
+      expect(job.prompt).not.toContain("OPERATOR NOTES — AUTHORITATIVE");
+      expect(job.prompt).not.toContain("EXCEPT anything the operator notes above pin down");
     }
   });
 

@@ -10,6 +10,7 @@ import {
   pinWorkspaceDependencies,
   renderCloneDockerignore,
   renderClonePnpmWorkspace,
+  renderCloneRailwayignore,
   vendorWorkspacePackages,
 } from "./scratch.js";
 
@@ -46,6 +47,12 @@ export interface DemoCreateArgs {
    * top-priority brand evidence (they often show logged-in screens a crawler
    * can't reach). */
   screenshots?: string[];
+  /** Markdown file of operator instructions, copied into RESEARCH/ and inlined
+   * into the brand brief + every agent prompt as AUTHORITATIVE. This is the
+   * only way a fact the operator already established (a persona the product's
+   * own screens show, a currency, a page title) survives the rewrite's
+   * invent-everything default. */
+  notes?: string;
 }
 
 export interface DemoCreateResult {
@@ -77,7 +84,7 @@ export const cloneExclusions = [
 
 const defaultCtaUrl = "https://cal.com/yousefhelal";
 
-const valueOptions = new Set(["--id", "--prospect", "--cta-url", "--target-dir", "--url", "--screenshots"]);
+const valueOptions = new Set(["--id", "--prospect", "--cta-url", "--target-dir", "--url", "--screenshots", "--notes"]);
 
 /**
  * Fail-fast reachability probe (criterion 33) — runs at `demo:create` when a
@@ -143,6 +150,7 @@ export function parseDemoCreateArgs(argv: string[]): DemoCreateArgs {
     screenshots = rawScreenshots.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
     if (screenshots.length === 0) throw new Error("--screenshots needs at least one image path (comma-separated)");
   }
+  const notes = options.get("--notes");
   return {
     id,
     prospect,
@@ -150,6 +158,7 @@ export function parseDemoCreateArgs(argv: string[]): DemoCreateArgs {
     targetDir: options.get("--target-dir") ?? defaultDemoScratchDir(),
     ...(url === undefined ? {} : { url: requireHttpUrl("--url", url) }),
     ...(screenshots === undefined ? {} : { screenshots }),
+    ...(notes === undefined ? {} : { notes }),
   };
 }
 
@@ -192,6 +201,9 @@ export interface OperatorScreenshot {
 
 export const operatorManifestName = "manifest.json";
 
+/** RESEARCH-relative name of the operator's instruction file (--notes). */
+export const operatorNotesName = "OPERATOR-NOTES.md";
+
 function researchStub(appPath: string, prospectUrl: string | undefined, screenshots: readonly OperatorScreenshot[]): string {
   const operatorSection = screenshots.length === 0 ? "" : `
 Operator-provided screenshots (TOP-PRIORITY brand evidence — often logged-in
@@ -224,6 +236,9 @@ export async function runDemoCreate(args: DemoCreateArgs, options: { repoRoot: s
   // offline-capable (the CLI-compat pin).
   for (const screenshot of args.screenshots ?? []) {
     if (!existsSync(screenshot)) throw new Error(`--screenshots file not found: ${screenshot}`);
+  }
+  if (args.notes !== undefined && !existsSync(args.notes)) {
+    throw new Error(`--notes file not found: ${args.notes}`);
   }
   if (args.url !== undefined) {
     await validateProspectUrl(args.url, options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl });
@@ -296,6 +311,7 @@ export async function runDemoCreate(args: DemoCreateArgs, options: { repoRoot: s
         renderClonePnpmWorkspace(await readFile(path.join(options.repoRoot, "pnpm-workspace.yaml"), "utf8"), vendorSpecs),
       );
       await writeFile(path.join(appDir, ".dockerignore"), renderCloneDockerignore());
+      await writeFile(path.join(appDir, ".railwayignore"), renderCloneRailwayignore());
     } else {
       await writeFile(packagePath, `${JSON.stringify(identified, null, 2)}\n`);
     }
@@ -317,6 +333,9 @@ export async function runDemoCreate(args: DemoCreateArgs, options: { repoRoot: s
       const file = `operator-${index + 1}-${path.basename(source)}`;
       await cp(source, path.join(researchDir, file));
       operatorScreenshots.push({ file, provenance: "operator-provided", source });
+    }
+    if (args.notes !== undefined) {
+      await cp(args.notes, path.join(researchDir, operatorNotesName));
     }
     if (operatorScreenshots.length > 0) {
       await writeFile(
