@@ -3,10 +3,15 @@
  *
  * Prereqs (prod builds, run from repo root; ANTHROPIC_API_KEY set like the
  * deployed demos so boot-time chip pre-generation fills the tap-to-attach
- * cache — the Supabase env stays ABSENT, which is the contract's point):
- *   apps/demo-bank:      DEMO_AUTOLOGIN=1 AUTH_SECRET=<any> pnpm start -p 4300
+ * cache — the Supabase env stays ABSENT, which is the contract's point).
+ * VENDO_BASE_URL is REQUIRED: the autologin gate is host-bound and fails
+ * closed without a configured demo origin (no loopback exception), so local
+ * runs must set it to the exact origin the browser will use:
+ *   apps/demo-bank:      DEMO_AUTOLOGIN=1 VENDO_BASE_URL=http://127.0.0.1:4300 \
+ *     AUTH_SECRET=<any> pnpm start -p 4300
  *   apps/demo-accounting: env -u SUPABASE_URL -u SUPABASE_ANON_KEY \
- *     -u SUPABASE_JWT_SECRET DEMO_AUTOLOGIN=1 pnpm start -p 4301
+ *     -u SUPABASE_JWT_SECRET DEMO_AUTOLOGIN=1 \
+ *     VENDO_BASE_URL=http://127.0.0.1:4301 pnpm start -p 4301
  *
  * Run: npx tsx docs/verification/demo-live-readiness/zero-friction/proof.ts
  *
@@ -52,7 +57,9 @@ const HOSTS: HostSpec[] = [
     key: "maple",
     origin: "http://127.0.0.1:4300",
     chipText: "Live demo — signed in as Yousef",
-    scriptedCard: "Where did my money go?",
+    // The scenario card's description — unique to the card, unlike its
+    // title, which the pre-generated chips also echo.
+    scriptedCard: "A live breakdown of this month's spending",
     launcherLabel: "Ask Maple",
     reset: async (page) => {
       page.once("dialog", (dialog) => void dialog.accept())
@@ -121,7 +128,10 @@ async function prove(spec: HostSpec): Promise<void> {
 
   // 3. One scripted scenario card attaches (canned turn — no model, no keys).
   await page.getByRole("button", { name: spec.launcherLabel }).first().click()
-  await page.getByText(spec.scriptedCard).first().click()
+  const card = page.getByText(spec.scriptedCard).first()
+  await card.waitFor({ state: "visible", timeout: 30_000 })
+  await page.waitForTimeout(1_500) // let the landing's entrance animation settle
+  await card.click()
   // The canned turn streams and attaches the view card (its pin affordance
   // is the attached-card signal).
   await page.getByText("Pin to dashboard").first().waitFor({ state: "visible", timeout: 60_000 })

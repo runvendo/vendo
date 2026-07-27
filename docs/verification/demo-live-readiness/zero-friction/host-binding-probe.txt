@@ -1,0 +1,17 @@
+Live host-binding probes — Maple prod build, DEMO_AUTOLOGIN=1,
+VENDO_BASE_URL=http://127.0.0.1:4300 (2026-07-26).
+
+1) TRUE demo Host  =>  mints
+HTTP/1.1 200 OK
+set-cookie: authjs.session-token=eyJhbGciOiJkaXIiLCJlbmMiO
+
+2) Foreign Host + X-Forwarded-Host spoofing the demo origin  =>  NO mint
+HTTP/1.1 307 Temporary Redirect
+location: /login?returnTo=%2Faccounts
+
+3) Non-default port on the right hostname  =>  NO mint
+HTTP/1.1 307 Temporary Redirect
+location: /login?returnTo=%2Faccounts
+
+Server-side warning logged for the refusals:
+[maple] DEMO_AUTOLOGIN=1 but request Host "victim.example" is not the configured demo origin (http://127.0.0.1:4300) — refusing to auto-mint sessions.

@@ -17,20 +17,22 @@ const SESSION_TTL_SECONDS = 3600
 
 let warnedHostMismatch = false
 
-/** The hosts an auto-login deployment may serve: the operator-set public
+/** The one host an auto-login deployment may serve: the operator-set public
  * origin (VENDO_BASE_URL — the same origin the cookie policy already
- * trusts), or loopback when it is unset (local dev, local prod proofs). */
-function isDemoHost(host: string): boolean {
+ * trusts). FAIL CLOSED: no configured origin, no blank host, no loopback
+ * exception — local runs must set VENDO_BASE_URL explicitly. Comparison is
+ * by parsed URL host (case-insensitive hostname, default ports collapsed:
+ * DEMOS.VENDO.RUN:443 over https == demos.vendo.run), never raw strings. */
+function isDemoHost(rawHost: string): boolean {
   const base = process.env.VENDO_BASE_URL
-  if (base) {
-    try {
-      return new URL(base).host === host
-    } catch {
-      return false
-    }
+  if (!base || !rawHost) return false
+  try {
+    const origin = new URL(base)
+    const request = new URL(`${origin.protocol}//${rawHost}`)
+    return request.host === origin.host
+  } catch {
+    return false
   }
-  const hostname = host.replace(/:\d+$/, "").replace(/^\[|\]$/gu, "")
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
 }
 
 /**
@@ -38,21 +40,21 @@ function isDemoHost(host: string): boolean {
  * enough — that would make a leaked/copied `DEMO_AUTOLOGIN=1` an auth bypass
  * on any reachable deployment. It must ALSO arrive for the configured demo
  * origin (this module only ships in the demo host app; there is no non-demo
- * build of Cadence). A mismatch logs loudly once and the request falls
- * through to the normal unauthenticated flow.
+ * build of Cadence). The decision reads the Host header ONLY — Railway
+ * passes the real public host in Host, while X-Forwarded-Host is
+ * attacker-settable and request.url is derived — and a missing Host never
+ * mints. A mismatch logs loudly once and the request falls through to the
+ * normal unauthenticated flow.
  */
 export function demoAutologinActive(request: Request): boolean {
   if (!demoAutologin()) return false
-  const forwarded = request.headers.get("x-forwarded-host")
-  const host = (forwarded ?? request.headers.get("host") ?? new URL(request.url).host)
-    .split(",")[0]!
-    .trim()
+  const host = request.headers.get("host")?.trim() ?? ""
   if (isDemoHost(host)) return true
   if (!warnedHostMismatch) {
     warnedHostMismatch = true
     console.error(
-      `[cadence] DEMO_AUTOLOGIN=1 but request host "${host}" is not the configured demo origin ` +
-        `(${process.env.VENDO_BASE_URL ?? "no VENDO_BASE_URL; loopback only"}) — refusing to auto-mint sessions.`,
+      `[cadence] DEMO_AUTOLOGIN=1 but request Host "${host}" is not the configured demo origin ` +
+        `(${process.env.VENDO_BASE_URL ?? "VENDO_BASE_URL unset — autologin disabled"}) — refusing to auto-mint sessions.`,
     )
   }
   return false

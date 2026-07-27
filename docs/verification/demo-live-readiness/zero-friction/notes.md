@@ -3,10 +3,16 @@
 Produced 2026-07-26 by `proof.ts` (see its header for how to reproduce)
 against local **prod builds** (`pnpm build` + `next start`):
 
-- Maple on :4300 — `DEMO_AUTOLOGIN=1 AUTH_SECRET=<local> MAPLE_DEMO_PASSWORD=<local>`
-- Cadence on :4301 — `DEMO_AUTOLOGIN=1` with **zero SUPABASE_\* env**
-  (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_JWT_SECRET all unset;
-  boot succeeded, sessions minted and verified locally — contract Z3)
+- Maple on :4300 — `DEMO_AUTOLOGIN=1 VENDO_BASE_URL=http://127.0.0.1:4300
+  AUTH_SECRET=<local> MAPLE_DEMO_PASSWORD=<local>`
+- Cadence on :4301 — `DEMO_AUTOLOGIN=1 VENDO_BASE_URL=http://127.0.0.1:4301`
+  with **zero SUPABASE_\* env** (SUPABASE_URL / SUPABASE_ANON_KEY /
+  SUPABASE_JWT_SECRET all unset; boot succeeded, sessions minted and
+  verified locally — contract Z3)
+- `VENDO_BASE_URL` is REQUIRED, not incidental: the autologin gate is
+  host-bound and **fails closed** without a configured demo origin (no
+  loopback exception), so every run — local or deployed — must name the
+  exact origin it serves.
 - Both with `ANTHROPIC_API_KEY` (deployed parity) so boot-time chip
   pre-generation fills the tap-to-attach cache. The auto-login path itself
   is key-independent (verified earlier keyless: signed-in landing + chip +
@@ -41,11 +47,23 @@ against local **prod builds** (`pnpm build` + `next start`):
   login there requires a running GoTrue.
 - `recordings/<host>-cold-profile.webm` — full cold-profile session video.
 
-Host binding (V1) is unit-tested per host (foreign Host ⇒ no mint; the
-configured VENDO_BASE_URL origin ⇒ mint) and was probed live:
-`curl -H "Host: victim.example"` against the flag-enabled server got the
-normal redirect-to-login with no Set-Cookie, and the server logged the
-loud one-time mismatch warning.
+## Host binding (the security gate)
+
+The autologin decision reads the **Host header only** — Railway passes the
+real public host there, while `X-Forwarded-Host` is attacker-settable and
+`request.url` is derived — and compares it to `VENDO_BASE_URL` as a parsed
+URL host (case-insensitive, default ports collapsed). Missing/blank Host,
+or no configured origin, never mints.
+
+Unit-tested per host: foreign Host + `X-Forwarded-Host: <demo origin>` ⇒ no
+mint; missing Host ⇒ no mint; no `VENDO_BASE_URL` (even loopback) ⇒ no
+mint; demo origin ⇒ mint; `DEMOS.VENDO.RUN`, `demos.vendo.run:443`,
+`Demos.Vendo.Run:443` ⇒ mint, `demos.vendo.run:8443` ⇒ no mint.
+
+Probed live against the running demo servers (output in the run log): the
+spoofed request (`Host: victim.example` + `X-Forwarded-Host: 127.0.0.1:4300`)
+got the normal redirect-to-login with no Set-Cookie and the server logged
+the loud one-time mismatch warning; the true demo Host minted.
 
 ## Known pre-existing (out of scope)
 

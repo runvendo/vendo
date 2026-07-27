@@ -12,8 +12,15 @@ const MAYA = cadenceDemoUsers()[0]!
 
 function requestFor(path: string, cookie?: string): NextRequest {
   return new NextRequest(`http://localhost:3100${path}`, {
-    headers: cookie ? { cookie } : {},
+    headers: { host: "localhost:3100", ...(cookie ? { cookie } : {}) },
   })
+}
+
+/** The autologin gate fails closed without a configured origin, so every
+ * minting scenario stubs the demo origin explicitly (like local runs must). */
+function stubDemoDeployment(): void {
+  vi.stubEnv("DEMO_AUTOLOGIN", "1")
+  vi.stubEnv("VENDO_BASE_URL", "http://localhost:3100")
 }
 
 describe("auto-login token minting", () => {
@@ -72,7 +79,7 @@ describe("production env assertions stay hard without the flag", () => {
 
 describe("proxy auto-login behavior", () => {
   it("with DEMO_AUTOLOGIN=1 an unauthenticated page request is signed in before first paint", async () => {
-    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    stubDemoDeployment()
     const response = await proxy(requestFor("/clients"))
     // Not a redirect: the request itself proceeds, carrying the minted cookie.
     expect(response.status).toBe(200)
@@ -91,7 +98,7 @@ describe("proxy auto-login behavior", () => {
   })
 
   it("the real /logout continuation lands signed-in: /login redirects into the product with a fresh session", async () => {
-    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    stubDemoDeployment()
     // /logout clears the cookie and 303s to /login — with the flag that
     // continuation must never show a login form.
     const response = await proxy(requestFor("/login"))
@@ -101,7 +108,7 @@ describe("proxy auto-login behavior", () => {
   })
 
   it("/login honors a same-origin returnTo and collapses foreign ones", async () => {
-    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    stubDemoDeployment()
     const same = await proxy(requestFor("/login?returnTo=%2Fclients%3Fq%3Dblue"))
     expect(new URL(same.headers.get("location")!).pathname).toBe("/clients")
     const foreign = await proxy(requestFor(`/login?returnTo=${encodeURIComponent("https://evil.example/phish")}`))
@@ -115,13 +122,33 @@ describe("proxy auto-login behavior", () => {
     expect(response.headers.get("set-cookie")).toBeNull()
   })
 
-  it("host binding: the flag alone never mints for a foreign host", async () => {
+  it("host binding: a foreign Host never mints, even with X-Forwarded-Host spoofing the demo origin", async () => {
     vi.stubEnv("DEMO_AUTOLOGIN", "1")
-    const foreign = new NextRequest("http://localhost:3100/clients", {
-      headers: { host: "books.victim.example" },
+    vi.stubEnv("VENDO_BASE_URL", "https://demos.vendo.run")
+    const spoofed = new NextRequest("https://demos.vendo.run/clients", {
+      headers: { host: "books.victim.example", "x-forwarded-host": "demos.vendo.run" },
     })
-    const response = await proxy(foreign)
+    const response = await proxy(spoofed)
     // Normal unauthenticated flow: bounce to /login, nothing minted.
+    expect(response.status).toBe(307)
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/login")
+    expect(response.headers.get("set-cookie")).toBeNull()
+  })
+
+  it("host binding: a missing Host header never mints", async () => {
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    vi.stubEnv("VENDO_BASE_URL", "https://demos.vendo.run")
+    const hostless = new NextRequest("https://demos.vendo.run/clients")
+    const response = await proxy(hostless)
+    expect(response.headers.get("set-cookie")).toBeNull()
+  })
+
+  it("fails closed: no VENDO_BASE_URL means no minting, not even for loopback", async () => {
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    const loopback = new NextRequest("http://127.0.0.1:3100/clients", {
+      headers: { host: "127.0.0.1:3100" },
+    })
+    const response = await proxy(loopback)
     expect(response.status).toBe(307)
     expect(new URL(response.headers.get("location")!).pathname).toBe("/login")
     expect(response.headers.get("set-cookie")).toBeNull()
@@ -136,13 +163,22 @@ describe("proxy auto-login behavior", () => {
     const response = await proxy(demo)
     expect(response.status).toBe(200)
     expect(response.headers.get("set-cookie")).toContain(`${SESSION_COOKIE}=`)
+  })
 
-    // ...and a loopback request against that same deployment does NOT mint.
-    const loopback = new NextRequest("http://127.0.0.1:3100/clients", {
-      headers: { host: "127.0.0.1:3100" },
-    })
-    const local = await proxy(loopback)
-    expect(local.headers.get("set-cookie")).toBeNull()
+  it("host comparison is normalized: case-insensitive hostname and default-port equivalence", async () => {
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    vi.stubEnv("VENDO_BASE_URL", "https://demos.vendo.run")
+    for (const host of ["DEMOS.VENDO.RUN", "demos.vendo.run:443", "Demos.Vendo.Run:443"]) {
+      const response = await proxy(
+        new NextRequest("https://demos.vendo.run/clients", { headers: { host } }),
+      )
+      expect(response.headers.get("set-cookie"), `Host: ${host}`).toContain(`${SESSION_COOKIE}=`)
+    }
+    // A NON-default port is a different host.
+    const wrongPort = await proxy(
+      new NextRequest("https://demos.vendo.run/clients", { headers: { host: "demos.vendo.run:8443" } }),
+    )
+    expect(wrongPort.headers.get("set-cookie")).toBeNull()
   })
 
   it("without the flag, unauthenticated behavior is unchanged: pages bounce to /login, APIs 401", async () => {
@@ -156,7 +192,7 @@ describe("proxy auto-login behavior", () => {
   })
 
   it("never mints over an existing valid session", async () => {
-    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    stubDemoDeployment()
     const daniel = cadenceDemoUsers()[1]!
     const now = Math.floor(Date.now() / 1000)
     const login = await new SignJWT({ email: daniel.email, role: "authenticated" })
