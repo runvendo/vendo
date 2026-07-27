@@ -17,8 +17,7 @@
 import type { VendoTheme } from "@vendoai/core";
 import { defaultVendoTheme, type ToolMetaMap } from "@vendoai/ui";
 import { VendoOverlay } from "@vendoai/ui/chrome";
-import { StrictMode, useEffect, useMemo, useSyncExternalStore } from "react";
-import { createRoot } from "react-dom/client";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { TryProfile } from "../../try/profile.js";
 import { ScenarioMount } from "./scenario-mount.js";
 import { scenarios, type PlaygroundScenario } from "./scenarios.js";
@@ -27,7 +26,6 @@ import { decodeThemeParam } from "./theme-state.js";
 import {
   brandTitle,
   capabilityLine,
-  createTryBoot,
   depthLabel,
   liveToolMeta,
   pickStageArchetype,
@@ -36,7 +34,6 @@ import {
   stageNavLabels,
   usecaseChips,
   type TryBoot,
-  type TryBootConfig,
   type TrySurfaceMode,
 } from "./try-boot.js";
 import { TryPanelProvider, TryPanelThread } from "./try-panel.js";
@@ -58,6 +55,9 @@ function profileTheme(profile: TryProfile | null): VendoTheme {
  *  so it hides while open (aria-expanded is the chrome's own open state) and
  *  returns on close — focus restoration already skips non-visible targets. */
 const TRY_SHELL_CSS = `
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; }
 .fl-chips[data-vendo-try-chips] { display: none; }
 .fl-landing .fl-chips[data-vendo-try-chips] { display: flex; }
 .fl-launcher[aria-expanded="true"] { display: none; }
@@ -90,7 +90,7 @@ function TrySurface({ mode, apiBase, theme, tools }: {
   return <ScenarioMount scenario={stageScenario} theme={theme} />;
 }
 
-function TryApp({ boot }: { boot: TryBoot }) {
+export function TryApp({ boot }: { boot: TryBoot }) {
   const state = useSyncExternalStore(boot.subscribe, () => boot.state);
   const theme = profileTheme(state.profile);
   useGoogleFont(theme.typography.fontFamily);
@@ -170,33 +170,5 @@ function TryApp({ boot }: { boot: TryBoot }) {
         <TrySurface key={mode} mode={mode} apiBase={boot.config.apiBase} theme={theme} tools={tools} />
       </TryPanelProvider>
     </div>
-  );
-}
-
-/**
- * Boot try mode: block the FIRST render only on the initial profile load (the
- * server answers from disk — this is never an AI wait); a hard load failure
- * hands the page back to classic playground mode via `renderClassic`.
- */
-export async function mountTryApp(
-  rootElement: HTMLElement,
-  config: TryBootConfig,
-  renderClassic: () => void,
-): Promise<void> {
-  const boot = createTryBoot({
-    config,
-    fetchImpl: (url) => fetch(url),
-    eventSourceFactory: (url) => new EventSource(url),
-  });
-  const { ok } = await boot.load();
-  if (!ok) {
-    boot.close();
-    renderClassic();
-    return;
-  }
-  createRoot(rootElement).render(
-    <StrictMode>
-      <TryApp boot={boot} />
-    </StrictMode>,
   );
 }

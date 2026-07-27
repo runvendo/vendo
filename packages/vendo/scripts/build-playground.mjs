@@ -8,6 +8,12 @@ import { build } from "vite";
 // self-contained IIFE and ship it as a generated source string, so the CLI
 // serves it with zero runtime asset plumbing. The embed entry (docs inline
 // mounting, window.VendoDocsEmbed) builds the same way into its own string.
+//
+// Both entries are thin browser bootstraps over the SAME surface module the
+// package exports as `@vendoai/vendo/try-surface` (src/cli/playground/app/
+// surface.tsx): main.tsx calls `mount(#root)`, embed-entry wires
+// mountScenario/mountLauncher onto window. One source, two venues (the CLI here
+// and vendo-web's Next route) — no hand-copied blob.
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const BUNDLES = [

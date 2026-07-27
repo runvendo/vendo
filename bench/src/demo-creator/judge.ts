@@ -7,6 +7,7 @@ import type { ExecFn } from "./deploy.js";
 import { defaultExec } from "./deploy.js";
 import type { ResearchReport } from "./research.js";
 import { defaultRunAgent, fencedFiles, type RewritePlan, type RunAgentFn } from "./rewrite.js";
+import { appBuildCommand } from "./scratch.js";
 
 /**
  * The visual judge loop — the stage that keeps `demo:pipeline` from silently
@@ -260,7 +261,7 @@ Judge's justification: ${options.score.justification}
 
 Read RESEARCH/BRAND.md and LOOK at the evidence images it lists (operator screenshots first), then at RESEARCH/judge/ for the built-screen captures the judge saw. Likely files: ${targets[options.dimension]}.
 
-Rules: NEVER touch the fenced files (${fencedFiles.join(", ")}). All data stays invented. Do not "fix" other dimensions — one dimension, minimal diff.`;
+Rules: NEVER touch the fenced files (${fencedFiles.join(", ")}). All data stays invented EXCEPT whatever BRAND.md's OPERATOR NOTES section pins down — those are authoritative and must survive your fix untouched. Do not "fix" other dimensions — one dimension, minimal diff.`;
 }
 
 export interface JudgeRound {
@@ -424,7 +425,11 @@ No dimension was scored; provide the missing evidence (operator screenshots via 
         costUsd += fix.costUsd ?? 0;
         if (fix.code !== 0) throw new Error(`Fix agent for ${dimension} failed (exit ${fix.code}):\n${fix.output.slice(0, 1000)}`);
       }
-      const build = await exec(["pnpm", "exec", "turbo", "run", "build", `--filter=${args.packageName}`], { cwd: io.repoRoot });
+      // Same build seam the rewrite's repair loop uses: a standalone clone is
+      // NOT a workspace member, so a monorepo turbo filter finds no package and
+      // fails the round on a demo that built fine.
+      const buildStep = appBuildCommand({ repoRoot: io.repoRoot, appDir: io.appDir, packageName: args.packageName });
+      const build = await exec(buildStep.command, { cwd: buildStep.cwd });
       if (build.code !== 0) {
         throw new Error(`Build broken after fidelity fixes:\n${(build.stderr || build.stdout).slice(-3000)}`);
       }

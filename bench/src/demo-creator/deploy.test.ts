@@ -203,7 +203,7 @@ describe("buildDeployPlan", () => {
     expect(domain?.command).toEqual(["railway", "domain", "--service", "demo-linear", "--json"]);
   });
 
-  it("finalizes with variables (including VENDO_BASE_URL from the domain) then up", () => {
+  it("finalizes with variables (VENDO_BASE_URL from the domain, plus the host-bound autologin flag) then up", () => {
     expect(finalizeSteps.map((step) => step.command.slice(0, 2).join(" "))).toEqual([
       "railway variables",
       "railway up",
@@ -215,6 +215,9 @@ describe("buildDeployPlan", () => {
       "--set", "NODE_ENV=production",
       "--set", "RAILWAY_DOCKERFILE_PATH=apps/demo-linear/Dockerfile",
       "--set", "VENDO_BASE_URL=https://demo-linear-production.up.railway.app",
+      // A sent-to-a-prospect demo opens straight into the product; the
+      // middleware only honors this on VENDO_BASE_URL's own authority.
+      "--set", "DEMO_AUTOLOGIN=1",
       "--service", "demo-linear",
       "--skip-deploys",
     ]);
@@ -246,20 +249,20 @@ describe("buildDeployPlan", () => {
   });
 
   // A scratch clone deploys ITSELF: the app dir is the upload context, so the
-  // Dockerfile path is context-relative and `up` names the directory.
-  it("uploads the app dir for a standalone clone", () => {
+  // Dockerfile path is context-relative. `up` never names a directory — it
+  // uploads its cwd, and the caller runs it inside the clone. Passing an
+  // absolute path outside the cwd instead fails with "prefix not found"
+  // (live: the first standalone deploy died exactly there).
+  it("never passes an upload path to `railway up`", () => {
     const standalonePlan = buildDeployPlan({
       serviceName: "demo-linear",
       project: "vendo-demos",
       dockerfilePath: "Dockerfile",
       modelKeys: { VENDO_API_KEY: "vk-SECRET" },
-      uploadPath: "/tmp/vendo-demos/demo-linear",
     });
     const [variables, up] = standalonePlan.finalize("https://demo-linear-production.up.railway.app");
     expect(variables?.command).toContain("RAILWAY_DOCKERFILE_PATH=Dockerfile");
-    expect(up?.command).toEqual([
-      "railway", "up", "/tmp/vendo-demos/demo-linear", "--service", "demo-linear", "--detach",
-    ]);
+    expect(up?.command).toEqual(["railway", "up", "--service", "demo-linear", "--detach"]);
   });
 
   it("tolerates ONLY `railway add` failing (when the service already exists)", () => {
@@ -352,8 +355,35 @@ describe("runDemoDeploy (dry run against a fixture app)", () => {
     expect(dockerfile).toContain("RUN pnpm build");
     expect(dockerfile).not.toContain("WORKDIR /app/");
     const output = lines.join("\n");
-    expect(output).toContain(`railway up ${appDir} --service demo-linear --detach`);
+    expect(output).toContain("railway up --service demo-linear --detach");
     expect(output).toContain("RAILWAY_DOCKERFILE_PATH=Dockerfile");
+  });
+
+  it("runs the railway CLI INSIDE a standalone clone, so `up` uploads the clone", async () => {
+    const { repoRoot } = await writeFixture();
+    const scratchDir = await mkdtemp(path.join(tmpdir(), "vendo-demo-scratch-"));
+    const appDir = path.join(scratchDir, "demo-linear");
+    await mkdir(appDir, { recursive: true });
+    await writeFile(path.join(appDir, "package.json"), `${JSON.stringify({ name: "demo-linear", private: true }, null, 2)}\n`);
+    await writeFile(path.join(appDir, "demo.config.json"), `${JSON.stringify(demoConfig, null, 2)}\n`);
+    const exec = vi.fn().mockImplementation(async (command: string[]) => ({
+      code: 0,
+      stdout: command[1] === "domain" ? '{"domain":"demo-linear-production.up.railway.app"}' : "",
+      stderr: "",
+    }));
+    await runDemoDeploy(
+      { ...args, app: appDir, dryRun: false },
+      {
+        repoRoot,
+        exec,
+        fetchImpl: vi.fn().mockResolvedValue(new Response("{}", { status: 200 })) as unknown as typeof fetch,
+        env: { ANTHROPIC_API_KEY: "sk-ant-SECRET", ROUTER_ADMIN_TOKEN: "token" },
+        write: () => {},
+      },
+    );
+    for (const [command, options] of exec.mock.calls as [string[], { cwd: string }][]) {
+      expect(options.cwd, `${command.join(" ")} ran outside the clone`).toBe(appDir);
+    }
   });
 
   it("refuses to run live with no inference key at all", async () => {
@@ -403,7 +433,7 @@ describe("runDemoDeploy (dry run against a fixture app)", () => {
         "railway link --project vendo-demos",
         "railway add --service demo-linear --json",
         "railway domain --service demo-linear --json",
-        "railway variables --set ANTHROPIC_API_KEY=sk-ant-SECRET --set NODE_ENV=production --set RAILWAY_DOCKERFILE_PATH=apps/demo-linear/Dockerfile --set VENDO_BASE_URL=https://demo-linear-production.up.railway.app --service demo-linear --skip-deploys",
+        "railway variables --set ANTHROPIC_API_KEY=sk-ant-SECRET --set NODE_ENV=production --set RAILWAY_DOCKERFILE_PATH=apps/demo-linear/Dockerfile --set VENDO_BASE_URL=https://demo-linear-production.up.railway.app --set DEMO_AUTOLOGIN=1 --service demo-linear --skip-deploys",
         "railway up --service demo-linear --detach",
       ]);
       // No second `railway domain` call: the early result is reused for both

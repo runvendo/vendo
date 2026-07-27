@@ -34,6 +34,8 @@ export interface DemoPipelineArgs {
   ctaUrl?: string;
   targetDir: string;
   screenshots?: string[];
+  /** Markdown file of authoritative operator instructions (see create.ts). */
+  notes?: string;
   /** Stop after the local stages (no Railway, no registry row). */
   skipDeploy: boolean;
   /** Skip the local demo-beats GIF capture (fast iteration runs only). */
@@ -42,7 +44,7 @@ export interface DemoPipelineArgs {
   port: number;
 }
 
-const valueOptions = new Set(["--id", "--prospect", "--url", "--cta-url", "--target-dir", "--screenshots", "--port"]);
+const valueOptions = new Set(["--id", "--prospect", "--url", "--cta-url", "--target-dir", "--screenshots", "--port", "--notes"]);
 const flagOptions = new Set(["--skip-deploy", "--skip-capture"]);
 
 export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
@@ -89,6 +91,7 @@ export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
     port,
     ...(ctaUrl === undefined ? {} : { ctaUrl }),
     ...(screenshots === undefined ? {} : { screenshots }),
+    ...(options.get("--notes") === undefined ? {} : { notes: options.get("--notes") as string }),
   };
 }
 
@@ -260,6 +263,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       targetDir: args.targetDir,
       url: args.url,
       ...(args.screenshots === undefined ? {} : { screenshots: args.screenshots }),
+      ...(args.notes === undefined ? {} : { notes: args.notes }),
     }, { repoRoot: io.repoRoot, signal: capSignal, ...(io.fetchImpl === undefined ? {} : { fetchImpl: io.fetchImpl }) }));
     appDir = created.appDir;
 

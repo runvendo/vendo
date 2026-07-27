@@ -47,6 +47,10 @@
       "types": "./dist/try.d.ts",
       "default": "./dist/try.js"
     },
+    "./try-surface": {
+      "types": "./dist/try-surface.d.ts",
+      "default": "./dist/try-surface.js"
+    },
     "./react": {
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"

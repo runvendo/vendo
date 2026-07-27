@@ -11,6 +11,7 @@ import {
   isStandaloneApp,
   pinWorkspaceDependencies,
   renderCloneDockerignore,
+  renderCloneRailwayignore,
   renderClonePnpmWorkspace,
   tarballFileName,
   vendorWorkspacePackages,
@@ -218,6 +219,17 @@ describe("renderCloneDockerignore", () => {
     }
     // The .vendo contract files (theme/tools/policy/catalog) MUST ship.
     expect(rendered).not.toMatch(/^\.vendo$/m);
+  });
+});
+
+describe("renderCloneRailwayignore", () => {
+  it("keeps the same weight out of the `railway up` upload as out of the image", () => {
+    const rendered = renderCloneRailwayignore();
+    for (const excluded of ["node_modules", ".env*", ".vendo/data", "RESEARCH"]) {
+      expect(rendered).toContain(excluded);
+    }
+    // The vendored tarballs ARE the build's input — uploading them is the point.
+    expect(rendered).not.toContain("vendor");
   });
 });
 
