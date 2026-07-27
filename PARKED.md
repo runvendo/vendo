@@ -120,3 +120,118 @@ evidence. Stays a documented limitation, recorded in
 corpus/expectations/invoify/notes.md so the nightly reader stops
 counting it as a surprise. The expected value was NOT edited — #f1f5f9
 is the source-true rendered background.
+
+---
+
+# PARKED — video-system harness (lane: factory/video-harness)
+
+## Round 2 (2026-07-26): P1 is RESOLVED, not parked
+
+The round-1 park of the real overlay panel was rejected by the checker as
+disguised weakening, and the checker was right. The real `VendoOverlay` panel,
+its real header controls, the real `MessageList` transcript and the real
+`.fl-barpin` "Pin to dashboard" control are all now mounted and on camera. See
+`docs/verification/video-harness/README.md` §"The panel is real" for the
+mechanism and the measured proof. P2 (Cadence's Next-coupled components) stands
+below, unchanged and still the contract's own authorised branch — but the
+settings surface it covers has been rebuilt from the host's real markup.
+
+## Q1 — the orb whip now lands on nothing real. A design call for Yousef.
+
+**Not a blocker.** The criterion ("zero hand-drawn agent-surface JSX") is met and
+the pinned motion is untouched. This is a film-grammar question the code cannot
+answer, recorded because the checker's instruction was that the header question
+goes to Yousef rather than back into film grammar.
+
+**The situation.** `OrbWhip.tsx` is CANON: the agent orb, having absorbed the
+corpus, whips across frame and shrinks to a 6px violet dot at `DOT` — the
+top-left of the chat panel — then hard-cuts at `DOT_HANDOFF`, where the
+prototype's drawn "Assistant" header row took over with its violet status dot.
+
+That header row was an invention. Evidence that the product has no counterpart:
+
+    grep -o "\.fl-[a-z-]*\(dot\|blob\|avatar\)[a-z-]*" \
+      packages/ui/src/chrome/chrome-css.ts | sort -u
+
+Output — the only agent marks in the product are the launcher orb and the app
+card's own dot; there is no panel-header dot and no panel title row at all:
+
+    .fl-appcard-dot
+    .fl-approvals-dot
+    .fl-approvals-dot--on
+    .fl-approvals-dots
+    .fl-auto-runs-dot
+    .fl-connect-done-dot
+    .fl-glass-dot
+    .fl-launcher-blob
+    .fl-voice-blob
+    .fl-voice-dots
+
+`VendoOverlay`'s panel children, in source order, are: an `fl-sr-only` "Vendo"
+label, the expand button, the new-conversation button, the close button, then
+`.fl-split`. Its header IS that control cluster.
+
+**What ships (the reversible default).** The invented row is deleted rather than
+replaced, and the whip is left byte-identical: the orb condenses onto the real
+panel's own top-left corner while the panel springs up beneath it, then hands
+off. It reads as the orb becoming the panel. Frame 84 of the render
+(`docs/verification/video-harness`) shows the landing.
+
+**The three options, for whoever decides:**
+1. Ship as-is — the orb dissolves into the panel's corner.
+2. Land the whip on the product's REAL agent orb (`launcher={{label: null}}`
+   renders `.fl-launcher-blob`, the blob-only orb) film-placed at `DOT`. Real
+   pixels, but placed somewhere the product never puts it, and it is ~44px where
+   the whip ends at 6px.
+3. Give `VendoOverlay` a real title row in `packages/ui` — a product change, out
+   of this lane's scope, and the only option that makes the shot true by
+   construction.
+
+Rejected outright: drawing a dot again.
+
+## P2 — Cadence's own components are Next.js-coupled and cannot mount in Remotion
+
+Contract task 3 says to import real `apps/demo-accounting` components "if
+importable into the studio without hacks; else compose from packages/ui
+primitives + the Cadence design tokens". This records which branch each
+component landed on and why. Command:
+
+    grep -rn "from \"next/" apps/demo-accounting/src/components/
+
+Output:
+
+    clients/client-table.tsx:4:   import Link from "next/link"
+    clients/client-table.tsx:5:   import { useRouter, useSearchParams } from "next/navigation"
+    clients/client-detail.tsx:3:  import Link from "next/link"
+    shell/topbar.tsx:4:           import { useRouter } from "next/navigation"
+    shell/sidebar.tsx:3:          import Link from "next/link"
+    shell/sidebar.tsx:4:          import { usePathname } from "next/navigation"
+    shell/app-shell.tsx:1:        import { headers } from "next/headers"
+    vendo/VendoLayer.tsx:4:       import { usePathname, useRouter } from "next/navigation";
+    dashboard/deadline-list.tsx:3:import Link from "next/link"
+
+`app-shell.tsx` is additionally an async server component. Mounting these
+would mean aliasing `next/link`, `next/navigation` and `next/headers` to
+studio stubs — the "hacks" branch the contract rules out. A second blocker
+is styling: Cadence is Tailwind v4 CSS-first with **no config file**
+(`apps/demo-accounting/postcss.config.mjs` is the whole build), so every
+one of these components is a bag of utility classes that resolve only
+through Cadence's own PostCSS pipeline, which Remotion does not run. A
+third: `stat-row`, `deadline-list`, `activity-feed`, `client-panel` are all
+`useSWR` + relative `fetch`, so in the studio they would render their
+skeletons forever — and the contract forbids network calls in compositions.
+
+**Default taken (the contract's own "else" branch):**
+- `MissingDocsHero` IS imported for real — it is pure React with inline
+  styles and zero imports, so it mounts unchanged. See the import at
+  `tools/video-studio/src/scenes/SceneProofC.tsx`.
+- The rest of the console is composed from
+  `tools/video-studio/src/cadence/tokens.ts`, which quotes Cadence's own
+  `src/app/globals.css` `@theme` blocks and `.vendo/theme.json` verbatim —
+  real tokens, not eyeballed values — plus the host's real nav labels, firm
+  name, season and seeded client/activity copy.
+
+Note the asymmetry with A2 deliberately: A2's "zero imitations" law is
+scoped to the *agent surface* (task 2), where the contract demands real
+components unconditionally and where they are used. Task 3 explicitly
+authorises token-composition for host chrome.
