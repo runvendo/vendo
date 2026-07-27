@@ -68,4 +68,7 @@ export interface SpendingSlice { category: Category; amount: number }
 export interface CashflowPoint { label: string; in: number; out: number }
 export interface Profile {
   name: string; email: string; netWorth: number; accountCount: number; avatarInitials: string
+  /** Present (true) only when the session was auto-minted (DEMO_AUTOLOGIN) —
+   * gates the "Live demo" chip; absent for credential logins. */
+  demoAutologin?: boolean
 }

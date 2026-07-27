@@ -1,4 +1,5 @@
 import { getProfile } from "@/server/accounts"
+import { isAutologinSession } from "@/server/autologin"
 import { ok } from "@/server/http"
 import { resolveMapleSession } from "@/vendo/auth"
 
@@ -9,5 +10,12 @@ export async function GET(req: Request) {
   // Auth.js session — the chrome shows who is actually signed in.
   const user = await resolveMapleSession(req)
   const profile = getProfile()
-  return ok(user ? { ...profile, name: user.display, email: user.email } : profile)
+  // Undefined for credential logins (and dropped from the JSON): only an
+  // auto-minted session (DEMO_AUTOLOGIN) shows the "Live demo" chip.
+  const demoAutologin = (await isAutologinSession(req)) || undefined
+  return ok(
+    user
+      ? { ...profile, name: user.display, email: user.email, demoAutologin }
+      : { ...profile, demoAutologin },
+  )
 }

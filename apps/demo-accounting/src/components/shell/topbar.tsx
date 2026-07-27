@@ -7,6 +7,9 @@ import { Bell, Search } from "lucide-react"
 export interface TopbarUser {
   display: string
   avatarUrl?: string
+  /** True only for auto-minted sessions (DEMO_AUTOLOGIN) — shows the
+   * "Live demo" chip; credential logins never set it. */
+  autologin?: boolean
 }
 
 function initials(display: string): string {
@@ -65,6 +68,12 @@ export function Topbar({ user }: { user?: TopbarUser }) {
         </kbd>
       </form>
       <div className="ml-auto flex items-center gap-3">
+        {user?.autologin && (
+          <span className="border-line text-ink-soft flex items-center gap-1.5 rounded-full border bg-surface px-2.5 py-1 text-xs">
+            <span className="bg-status-verified h-1.5 w-1.5 rounded-full" aria-hidden />
+            Live demo — signed in as {display.split(" ")[0]}
+          </span>
+        )}
         <span className="text-[13px] font-medium text-ink-soft">Hartwell &amp; Associates</span>
         <span className="h-4 w-px bg-line-strong" aria-hidden />
         <button

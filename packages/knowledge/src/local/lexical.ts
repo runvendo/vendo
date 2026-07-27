@@ -113,7 +113,7 @@ export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): Knowle
     return hits.slice(0, limit);
   }
 
-  return {
+  const adapter: KnowledgeAdapter = {
     posture: { fetch: true, write: true, visibility: "enforced" },
 
     async search(query, ctx) {
@@ -225,4 +225,23 @@ export function lexicalKnowledge(options: { store?: StoreAdapter } = {}): Knowle
       return { docs, byKind };
     },
   };
+
+  if (options.store === undefined) storeless.add(adapter);
+  return adapter;
+}
+
+/** Engines built with no store of their own — the zero-config
+    `lexicalKnowledge()` form. A WeakSet rather than a marker property so what
+    the host holds stays exactly a `KnowledgeAdapter`. */
+const storeless = new WeakSet<KnowledgeAdapter>();
+
+/** The composition seam's half of zero-config local knowledge (server.ts
+    `selectKnowledge`): hand a store-less `lexicalKnowledge()` the store
+    createVendo composed. Everything else — an engine the host gave its own
+    store, a cloud/BYO/custom adapter — passes through untouched, so this can
+    sit unconditionally on the explicit-adapter rung. Hosts never call it;
+    it is how `knowledge: lexicalKnowledge()` gets the store the docs promise
+    without any host plumbing. */
+export function bindKnowledgeStore(adapter: KnowledgeAdapter, store: StoreAdapter): KnowledgeAdapter {
+  return storeless.has(adapter) ? lexicalKnowledge({ store }) : adapter;
 }
