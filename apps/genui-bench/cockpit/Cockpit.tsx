@@ -37,8 +37,9 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
   }, []);
 
   useEffect(() => {
-    void refreshRuns();
-    const timer = setInterval(() => void refreshRuns(), POLL_MS);
+    const poll = () => void refreshRuns();
+    poll(); // first tick immediately, then on the interval
+    const timer = setInterval(poll, POLL_MS);
     return () => clearInterval(timer);
   }, [refreshRuns]);
 

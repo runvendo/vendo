@@ -70,7 +70,11 @@ function resolveAnthropicModel(): GenerationDependencies["model"] {
   if (apiKey === undefined || apiKey === "") {
     throw new Error("ANTHROPIC_API_KEY missing — set it in the repo-root .env");
   }
-  const requireFromApps = createRequire(import.meta.resolve("@vendoai/apps"));
+  // import.meta.resolve is absent when tsx runs this file as CJS (the CLI
+  // path) — createRequire(import.meta.url).resolve is the everywhere-safe way
+  // to locate @vendoai/apps's entry and require from its module space.
+  const appsEntry = createRequire(import.meta.url).resolve("@vendoai/apps");
+  const requireFromApps = createRequire(appsEntry);
   const { createAnthropic } = requireFromApps("@ai-sdk/anthropic") as {
     createAnthropic: (options: { apiKey: string }) => (id: string) => GenerationDependencies["model"];
   };

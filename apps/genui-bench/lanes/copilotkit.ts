@@ -21,7 +21,10 @@ import {
 } from "../cockpit/panes/harness-components";
 import type { HostFixture, LaneAdapter, LaneResult } from "../runner/types";
 
-export const COPILOTKIT_MODEL = "anthropic/claude-sonnet-4.5";
+// Anthropic model ids are dash-separated ("claude-sonnet-4-6", not "4.5");
+// the runtime strips the provider prefix and passes the rest to the API.
+// Same GENUI_BENCH_MODEL override the Vendo lane honors, for parity.
+export const COPILOTKIT_MODEL = `anthropic/${process.env.GENUI_BENCH_MODEL ?? "claude-sonnet-4-6"}`;
 export const COPILOTKIT_BASE_PATH = "/api/copilotkit";
 export const COPILOTKIT_AGENT_ID = "default";
 const MAX_ROUNDS = 4;
@@ -71,6 +74,46 @@ export interface CopilotKitRaw {
   intents: Array<{ name: HarnessComponentName; props: Record<string, unknown> }>;
   /** Full ordered AG-UI event stream (all rounds), for the internals drawer. */
   events: unknown[];
+}
+
+/** CopilotKit's zod converter (convertJsonSchemaToZodSchema) only handles
+ *  scalar `type` strings — a union like `type: ["string","number"]` crashes
+ *  the whole run. Narrow unions to their first non-null member (noted in the
+ *  description) so the runtime accepts every harness/host schema. */
+function sanitizeSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(sanitizeSchema);
+  if (typeof schema !== "object" || schema === null) return schema;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
+    if (key === "type" && Array.isArray(value)) {
+      const kept = value.find((t) => t !== "null") ?? value[0];
+      out.type = kept;
+      const dropped = value.filter((t) => t !== kept);
+      if (dropped.length > 0) {
+        const note = `accepts ${value.join(" or ")}; send as ${String(kept)}`;
+        out.description = typeof out.description === "string" ? `${out.description} (${note})` : note;
+      }
+      continue;
+    }
+    out[key] = sanitizeSchema(value);
+  }
+  return out;
+}
+
+/** The runtime's SSE handler writes encoder STRINGS into its stream; Node's
+ *  undici rejects that inside Response.text() ("Received non-Uint8Array
+ *  chunk"), so read the body reader directly, accepting either chunk kind. */
+async function readBodyText(response: Response): Promise<string> {
+  if (!response.body) return "";
+  const reader = (response.body as ReadableStream<Uint8Array | string>).getReader();
+  const decoder = new TextDecoder();
+  let out = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out += typeof value === "string" ? value : decoder.decode(value, { stream: true });
+  }
+  return out + decoder.decode();
 }
 
 function parseSse(body: string): AgUiEvent[] {
@@ -153,12 +196,12 @@ export function createCopilotKitAdapter(deps: CopilotKitDeps = {}): LaneAdapter 
           ...buildHarnessCatalog(host).map((c) => ({
             name: c.name,
             description: c.description,
-            parameters: c.propsSchema,
+            parameters: sanitizeSchema(c.propsSchema),
           })),
           ...hostTools.map((t) => ({
             name: t.name,
             description: t.description,
-            parameters: t.inputSchema ?? { type: "object", properties: {} },
+            parameters: sanitizeSchema(t.inputSchema ?? { type: "object", properties: {} }),
           })),
         ];
 
@@ -188,10 +231,11 @@ export function createCopilotKitAdapter(deps: CopilotKitDeps = {}): LaneAdapter 
               },
             ),
           );
+          const body = await readBodyText(response);
           if (!response.ok) {
-            throw new Error(`copilotkit runtime ${response.status}: ${(await response.text()).slice(0, 300)}`);
+            throw new Error(`copilotkit runtime ${response.status}: ${body.slice(0, 300)}`);
           }
-          const events = parseSse(await response.text());
+          const events = parseSse(body);
           allEvents.push(...events);
           const { text: roundText, calls, error } = digestRound(events);
           if (error) throw new Error(error);
