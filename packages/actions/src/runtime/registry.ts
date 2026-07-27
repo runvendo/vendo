@@ -79,6 +79,11 @@ export interface ActionsRegistry extends ToolRegistry {
    * of the menu still applies (a bad label must never take a host down).
    */
   surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined>;
+  /** The brokered-connector toolkit a loaded tool belongs to (undefined for
+   * host tools, compounds, and connectors without per-user connections) —
+   * the lookup behind the pre-guard connect check (discovery discipline,
+   * spec 2026-07-25). */
+  connectorToolkit(tool: string): Promise<{ connector: string; toolkit: string } | undefined>;
 }
 
 /** CORE-2 (wave 5): `grant` and `mcpConsent` are first-class optional fields
@@ -176,6 +181,10 @@ interface LoadedRegistry {
    *  descriptor surface deliberately drops, kept here because the door's
    *  default menu is defined in terms of it. Absent name = ungraded. */
   audience: Map<string, ExtractedToolV3["audience"]>;
+  /** Every name any source claimed — including disabled/quarantined entries
+   * that never reach dispatch. Incremental expansion checks it so a
+   * mid-run toolkit append can never shadow a reserved name. */
+  reserved: Set<string>;
 }
 
 const STRIPPED_HEADERS = new Set([
@@ -893,17 +902,37 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     return hostPromise.then(warnZeroLiveTools);
   }
 
+  /** Memoized per source. A REJECTION is never memoized: a transient schema
+   * fetch failure (broker blip, DNS) would otherwise pin the rejected promise
+   * for the process lifetime, so discovery could never recover without a
+   * restart. Evicting on rejection makes the next read retry. */
   function cachedDescriptors(source: Connector | ToolRegistry): Promise<ToolDescriptor[]> {
     let promise = descriptorPromises.get(source);
     if (!promise) {
       promise = source.descriptors();
       descriptorPromises.set(source, promise);
+      promise.catch(() => {
+        if (descriptorPromises.get(source) === promise) descriptorPromises.delete(source);
+      });
     }
     return promise;
   }
 
   function load(): Promise<LoadedRegistry> {
-    loadedPromise ??= (async () => {
+    if (loadedPromise === undefined) {
+      const building = buildRegistry();
+      loadedPromise = building;
+      // Same rule as cachedDescriptors: a failed build must not be the answer
+      // forever — drop it so the next read rebuilds.
+      building.catch(() => {
+        if (loadedPromise === building) loadedPromise = undefined;
+      });
+    }
+    return loadedPromise;
+  }
+
+  function buildRegistry(): Promise<LoadedRegistry> {
+    return (async () => {
       const host = await loadHost();
       const connectorLists = await Promise.all(connectors.map((connector) => cachedDescriptors(connector)));
       const registryLists = await Promise.all(added.map((registry) => cachedDescriptors(registry)));
@@ -1014,39 +1043,135 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // Runtime dispatch keeps only enabled entries once all collision checks ran.
       const dispatch = new Map<string, Dispatch>();
       for (const [name, entry] of reserved) if (entry) dispatch.set(name, entry);
-      return { descriptors, dispatch, audience };
+      return { descriptors, dispatch, audience, reserved: new Set(reserved.keys()) };
     })();
-    return loadedPromise;
   }
 
-  /** Search may expand at most this many toolkits per query — bounds fan-out
-   * when a broad intent matches many index blurbs. */
+  /** Discovery discipline (spec 2026-07-25): merge ONLY the newly expanded connectors'
+   * tools into an already-loaded registry — same override + disabled
+   * semantics as buildRegistry, without redoing the host/compound merge. A
+   * name that is already reserved is kept as-is (previously expanded tools
+   * re-listed by the connector) rather than thrown as a boot-style conflict:
+   * expansion runs on live traffic, and a collision here would poison the
+   * load memo for the rest of the process. */
+  async function appendExpanded(
+    current: Promise<LoadedRegistry>,
+    changed: Connector[],
+  ): Promise<LoadedRegistry> {
+    const [loaded, host] = await Promise.all([current, loadHost()]);
+    const descriptors = [...loaded.descriptors];
+    const dispatch = new Map(loaded.dispatch);
+    const reserved = new Set(loaded.reserved);
+    // Audience is carried forward the same way buildRegistry records it, so a
+    // mid-run expanded tool grades identically for the door's default menu.
+    const audience = new Map(loaded.audience);
+    for (const connector of changed) {
+      const list = await cachedDescriptors(connector);
+      for (let index = 0; index < list.length; index += 1) {
+        const rawDescriptor = parseToolDescriptor(list[index]!, `connector ${connector.name}[${index}]`);
+        if (reserved.has(rawDescriptor.name)) continue;
+        const merged = mergeOverride(rawDescriptor, host.overrides.tools[rawDescriptor.name]);
+        const { disabled: _disabled, audience: _audience, semantics: _semantics, ...descriptor } = merged;
+        reserved.add(descriptor.name);
+        if (merged.audience !== undefined) audience.set(descriptor.name, merged.audience);
+        if (merged.disabled === true) continue;
+        descriptors.push(descriptor);
+        dispatch.set(descriptor.name, { kind: "connector", descriptor, connector });
+      }
+    }
+    return { descriptors, dispatch, audience, reserved };
+  }
+
+  /** Default cap on toolkits one search may expand — bounds fan-out when a
+   * broad intent matches many index blurbs. Hosts tune it per query via
+   * ToolSearchOptions.maxExpansions. */
   const MAX_SEARCH_EXPANSIONS = 3;
   let indexPromise: Promise<Array<{ toolkit: string; label?: string; description?: string }>> | undefined;
+  /** Discovery discipline (spec 2026-07-25): identical queries answer from a process-lifetime memo — repeat
+   * discovery costs zero index reads, zero expansions, zero schema fetches.
+   * add() invalidates it (the searchable surface changed). */
+  const searchMemo = new Map<string, Promise<ToolSearchMatch[]>>();
 
   function discoveryEntries() {
-    indexPromise ??= (async () => {
-      const lists = await Promise.all(connectors.map((connector) => connector.discoveryIndex?.() ?? Promise.resolve([])));
-      return lists.flat();
-    })();
+    if (indexPromise === undefined) {
+      const building = (async () => {
+        const lists = await Promise.all(connectors.map((connector) => connector.discoveryIndex?.() ?? Promise.resolve([])));
+        return lists.flat();
+      })();
+      indexPromise = building;
+      // A rejected index is not the answer forever (see cachedDescriptors).
+      building.catch(() => {
+        if (indexPromise === building) indexPromise = undefined;
+      });
+    }
     return indexPromise;
   }
 
   /** Expand named toolkits on every lazy connector; on any growth, bust that
-   * connector's descriptor memo and the load memo (the same invalidation
-   * add() performs) so the next read sees the new tools. */
+   * connector's descriptor memo and APPEND the new tools to an already-loaded
+   * registry — never a full load-memo bust, so the host/compound merge
+   * and every other source's schemas stay done. A failed append degrades to
+   * the full rebuild rather than a poisoned load memo. */
   async function expand(toolkits: string[]): Promise<boolean> {
     if (toolkits.length === 0) return false;
-    let changed = false;
+    const changed: Connector[] = [];
     for (const connector of connectors) {
       if (connector.expandToolkits === undefined) continue;
       if (await connector.expandToolkits(toolkits)) {
         descriptorPromises.delete(connector);
-        changed = true;
+        changed.push(connector);
       }
     }
-    if (changed) loadedPromise = undefined;
-    return changed;
+    if (changed.length === 0) return false;
+    const current = loadedPromise;
+    if (current !== undefined) {
+      loadedPromise = appendExpanded(current, changed).catch(() => buildRegistry());
+    }
+    return true;
+  }
+
+  async function runSearch(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
+    // Rank the discovery index FIRST (toolkit-level pseudo-descriptors for
+    // lazily-loaded connectors) and expand the top matches, so an unloaded
+    // toolkit's tools are findable by intent ("send email" → gmail).
+    const index = await discoveryEntries();
+    const maxExpansions = Math.max(Math.trunc(options?.maxExpansions ?? MAX_SEARCH_EXPANSIONS), 0);
+    const expandedNames = new Set<string>();
+    if (index.length > 0 && maxExpansions > 0) {
+      // Whole-word overlap scoring: the tool scorer's substring matching
+      // lets stopwords ("an" ⊂ "channels") expand unrelated toolkits, so the
+      // index ranks on exact word tokens only, ignoring 1–2 char tokens.
+      const queryTokens = tokenize(query).filter((token) => token.length >= 3);
+      const scored = index
+        .map((entry) => {
+          const words = new Set(tokenize(`${entry.label ?? ""} ${entry.description ?? ""}`));
+          let score = 0;
+          for (const token of queryTokens) {
+            if (token === entry.toolkit.toLowerCase()) score += 8;
+            else if (words.has(token)) score += 2;
+          }
+          return { toolkit: entry.toolkit, score };
+        })
+        .filter((hit) => hit.score > 0)
+        .sort((a, b) => (b.score - a.score) || (a.toolkit < b.toolkit ? -1 : 1))
+        .slice(0, maxExpansions);
+      await expand(scored.map((hit) => hit.toolkit));
+      for (const hit of scored) expandedNames.add(hit.toolkit);
+    }
+    // load().descriptors is the post-override, enabled-only surface — disabled
+    // tools never reach it, so they can never be returned as loadable.
+    const matches = searchToolDescriptors((await load()).descriptors, query, options);
+    if (expandedNames.size === 0) return matches;
+    return matches.map((match) => {
+      const toolkit = [...expandedNames].find((name) => match.name.startsWith(`${name}_`));
+      // A plain fact, not an invitation (discovery-discipline criterion 12):
+      // the old suffix told the model calling unconnected tools was the way
+      // to prompt a connect, which turned catalogs into call sprees.
+      return toolkit === undefined ? match : {
+        ...match,
+        description: `${match.description} (part of the ${toolkit} toolkit — requires a connected ${toolkit} account)`,
+      };
+    });
   }
 
   const compoundExecutor = createCompoundExecutor({
@@ -1061,6 +1186,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     add(tools: ToolRegistry): void {
       added.push(tools);
       loadedPromise = undefined;
+      searchMemo.clear();
     },
 
     async descriptors(): Promise<ToolDescriptor[]> {
@@ -1073,6 +1199,13 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
 
     async expandToolkits(toolkits: string[]): Promise<void> {
       await expand(toolkits);
+    },
+
+    async connectorToolkit(tool: string): Promise<{ connector: string; toolkit: string } | undefined> {
+      const entry = (await load()).dispatch.get(tool);
+      if (!entry || entry.kind !== "connector") return undefined;
+      const toolkit = entry.connector.toolkitOf?.(tool);
+      return toolkit === undefined ? undefined : { connector: entry.connector.name, toolkit };
     },
 
     async loadoutSeed(connectedToolkits: string[]): Promise<string[]> {
@@ -1128,43 +1261,19 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     },
 
     async search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {
-      // Rank the discovery index FIRST (toolkit-level pseudo-descriptors for
-      // lazily-loaded connectors) and expand the top matches, so an unloaded
-      // toolkit's tools are findable by intent ("send email" → gmail).
-      const index = await discoveryEntries();
-      const expandedNames = new Set<string>();
-      if (index.length > 0) {
-        // Whole-word overlap scoring: the tool scorer's substring matching
-        // lets stopwords ("an" ⊂ "channels") expand unrelated toolkits, so the
-        // index ranks on exact word tokens only, ignoring 1–2 char tokens.
-        const queryTokens = tokenize(query).filter((token) => token.length >= 3);
-        const scored = index
-          .map((entry) => {
-            const words = new Set(tokenize(`${entry.label ?? ""} ${entry.description ?? ""}`));
-            let score = 0;
-            for (const token of queryTokens) {
-              if (token === entry.toolkit.toLowerCase()) score += 8;
-              else if (words.has(token)) score += 2;
-            }
-            return { toolkit: entry.toolkit, score };
-          })
-          .filter((hit) => hit.score > 0)
-          .sort((a, b) => (b.score - a.score) || (a.toolkit < b.toolkit ? -1 : 1))
-          .slice(0, MAX_SEARCH_EXPANSIONS);
-        await expand(scored.map((hit) => hit.toolkit));
-        for (const hit of scored) expandedNames.add(hit.toolkit);
-      }
-      // load().descriptors is the post-override, enabled-only surface — disabled
-      // tools never reach it, so they can never be returned as loadable.
-      const matches = searchToolDescriptors((await load()).descriptors, query, options);
-      if (expandedNames.size === 0) return matches;
-      return matches.map((match) => {
-        const toolkit = [...expandedNames].find((name) => match.name.startsWith(`${name}_`));
-        return toolkit === undefined ? match : {
-          ...match,
-          description: `${match.description} (part of the ${toolkit} toolkit — if the user hasn't connected ${toolkit}, calling this will prompt them to connect)`,
-        };
-      });
+      const memoKey = [
+        query.trim().toLowerCase().replace(/\s+/g, " "),
+        options?.limit ?? "",
+        options?.maxExpansions ?? "",
+      ].join("\u0000");
+      const memoized = searchMemo.get(memoKey);
+      if (memoized !== undefined) return memoized;
+      if (searchMemo.size > 500) searchMemo.clear();
+      const promise = runSearch(query, options);
+      searchMemo.set(memoKey, promise);
+      // A failed search must not pin its failure for the process lifetime.
+      promise.catch(() => searchMemo.delete(memoKey));
+      return promise;
     },
 
     async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
