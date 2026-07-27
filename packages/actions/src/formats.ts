@@ -235,10 +235,16 @@ export type ExtractedTool = ToolDescriptor & {
   disabled?: boolean;
   note?: string;
   /** The host's DECLARED response body, when its source says so (an OpenAPI
-   *  2xx `application/json` schema today). Extraction never invents one —
-   *  absent means the contract is silent and the shape is learned by sampling
-   *  at runtime. Recorded so the envelope a host returns (`{ data: [...] }`)
-   *  is part of the committed contract rather than a guess. */
+   *  2xx `application/json` schema today). Extraction never invents one.
+   *
+   *  RECORDED ONLY — nothing consumes it yet. Generation's `toolShapes` still
+   *  come exclusively from runtime sampling (apps runtime, generationToolContext),
+   *  which is ground truth and covers every no-input read tool. The gap this
+   *  field is here to close is the tools sampling can NEVER reach — ones that
+   *  require input, mutate, or sit behind a policy gate — but feeding declared
+   *  schemas into generation changes the prompt for every OpenAPI host at once
+   *  and wants its own corpus evidence, so it is deliberately a separate
+   *  change. Until then this is committed contract data, not a live input. */
   outputSchema?: JsonSchema;
 };
 
