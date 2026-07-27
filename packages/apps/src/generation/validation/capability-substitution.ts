@@ -276,6 +276,37 @@ const keyValueSplit = (code: string, start: number, end: number): number => {
   return -1;
 };
 
+/** Strip balanced wrapping parens: `(1)` is the same hand-typed operand as `1`. */
+const unwrapParens = (text: string): string => {
+  let inner = text;
+  while (inner.startsWith("(") && inner.endsWith(")")) {
+    const stripped = inner.slice(1, -1);
+    let depth = 0;
+    for (const char of stripped) {
+      if (char === "(") depth += 1;
+      else if (char === ")") depth -= 1;
+      if (depth < 0) return inner;
+    }
+    if (depth !== 0) return inner;
+    inner = stripped.trim();
+  }
+  return inner;
+};
+
+// Every JS spelling of a hand-typed number, not just plain decimals: a sign,
+// hex/octal/binary, exponents, numeric separators. `0x1` is `1` wearing a hat,
+// and a gate that reads only `1` is a gate with a published bypass. Loose by
+// design — the Number() round-trip below rejects whatever this lets through.
+const NUMERIC_LITERAL =
+  /^[+-]?(?:0[xX][\da-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|\d[\d_]*(?:\.[\d_]*)?(?:[eE][+-]?\d+)?|\.\d[\d_]*(?:[eE][+-]?\d+)?)$/;
+
+const numericLiteral = (blanked: string): { text: string; value: number } | undefined => {
+  const inner = unwrapParens(blanked);
+  if (!NUMERIC_LITERAL.test(inner)) return undefined;
+  const value = Number(inner.replace(/_/g, ""));
+  return Number.isFinite(value) ? { text: inner, value } : undefined;
+};
+
 /**
  * Classify one island-source value span. `code` is {@link blankNonCode}'s
  * offset-preserving view, where a string literal keeps its delimiters and
@@ -298,7 +329,8 @@ const sourceArgValue = (source: string, code: string, start: number, end: number
       entries: objectMembers(source, code, from, to - 1),
     };
   }
-  if (/^-?\d+(?:\.\d+)?$/.test(blanked)) return { kind: "literal", text: blanked, value: Number(blanked) };
+  const numeric = numericLiteral(blanked);
+  if (numeric !== undefined) return { kind: "literal", ...numeric };
   // A lone string/static-template literal: delimiters with only blanked text
   // between them. Concatenation or interpolation leaves code behind and falls
   // through to `other`.
