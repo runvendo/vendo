@@ -4,12 +4,19 @@ import type {
   KnowledgeAdapter,
   KnowledgeContext,
   KnowledgeDoc,
+  KnowledgeHit,
   KnowledgeQuery,
   RunContext,
   ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { createKnowledgeTools, VENDO_KNOWLEDGE_SEARCH_TOOL, type KnowledgeResultEnvelope } from "./index.js";
+import {
+  createKnowledgeTools,
+  VENDO_KNOWLEDGE_SEARCH_TOOL,
+  type KnowledgeResultEnvelope,
+  type KnowledgeVerifier,
+  type KnowledgeVerifierInput,
+} from "./index.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "u1" },
@@ -431,5 +438,165 @@ describe("rate breaker (ENG-370)", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+/** An engine whose every hit carries `score`, so band placement is exact. The
+    same hit set comes back at every intent unless `deepScore` differs — the
+    shape of a reranking engine (the cloud calibration measured chat and deep
+    as the same score space). */
+function scoredAdapter(score: number, deepScore = score): KnowledgeAdapter & { statusCalls: number } {
+  let statusCalls = 0;
+  const hit = (value: number): KnowledgeHit => ({
+    ref: { docId: "doc-transfers", chunkId: "c1", title: "Wire transfer limits" },
+    snippet: "Maple caps outbound wire transfers at $25,000 per business day.",
+    kind: "docs",
+    visibility: "public",
+    score: value,
+  });
+  const adapter = {
+    posture: { fetch: false, write: false },
+    async search(query: KnowledgeQuery) {
+      return { hits: [hit(query.intent === "deep" ? deepScore : score)] };
+    },
+    async status() {
+      statusCalls += 1;
+      return { ok: true } as Awaited<ReturnType<KnowledgeAdapter["status"]>>;
+    },
+  } as KnowledgeAdapter & { statusCalls: number };
+  Object.defineProperty(adapter, "statusCalls", { get: () => statusCalls });
+  return adapter;
+}
+
+/** A verifier that always answers `verdict`, counting its calls. */
+function stubVerifier(verdict: boolean | undefined): KnowledgeVerifier & { calls: KnowledgeVerifierInput[] } {
+  const calls: KnowledgeVerifierInput[] = [];
+  return {
+    calls,
+    async supported(input) {
+      calls.push(input);
+      return verdict;
+    },
+  };
+}
+
+// The committed cloud calibration (docs/eval/knowledge/bands/agentset.json).
+const BAND = { low: 0.6735, high: 0.7835 };
+const BAR = 0.7211;
+
+describe("tool policy: the verification band (K14 T3)", () => {
+  it("answers above the band without spending a verification", async () => {
+    const verifier = stubVerifier(false);
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.84), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(verifier.calls).toHaveLength(0);
+  });
+
+  it("refuses below the band without spending a verification", async () => {
+    const verifier = stubVerifier(true);
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.61), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("insufficient-evidence");
+    expect(verifier.calls).toHaveLength(0);
+  });
+
+  it("inside the band, an unsupported verdict becomes the EXISTING insufficient-evidence outcome", async () => {
+    const verifier = stubVerifier(false);
+    const adapter = scoredAdapter(0.75);
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(adapter, { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      { query: "how do I mount vendo in vue" },
+    ));
+    // The score clears the shipped bar, so today this question is ANSWERED.
+    expect(envelope.outcome).toBe("insufficient-evidence");
+    expect(envelope.hits).toHaveLength(1);
+    expect(verifier.calls[0]).toMatchObject({ question: "how do I mount vendo in vue" });
+    expect(verifier.calls[0]!.passages[0]).toMatchObject({ docId: "doc-transfers", title: "Wire transfer limits" });
+  });
+
+  it("inside the band, a supported verdict answers a score the shipped bar would have refused", async () => {
+    const verifier = stubVerifier(true);
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.69), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(verifier.calls).toHaveLength(1);
+  });
+
+  it("verifies at most once per turn when the deep retry returns the same passages", async () => {
+    const verifier = stubVerifier(false);
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("insufficient-evidence");
+    expect(verifier.calls).toHaveLength(1);
+  });
+
+  it("skips the status() emptiness check when the VERIFIER produced the refusal", async () => {
+    const adapter = scoredAdapter(0.75);
+    await search(
+      createKnowledgeTools(adapter, { weakScoreThreshold: BAR, verifyBand: BAND, verifier: stubVerifier(false) }),
+      { query: "wire transfers" },
+    );
+    expect(adapter.statusCalls).toBe(0);
+  });
+
+  it("fails OPEN to the shipped threshold when the verifier gives no verdict", async () => {
+    // No verdict on a score ABOVE the bar → today's answer.
+    const above = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifyBand: BAND, verifier: stubVerifier(undefined) }),
+      { query: "wire transfers" },
+    ));
+    expect(above.outcome).toBe("answered");
+    // No verdict on a score BELOW the bar → today's refusal.
+    const below = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.69), { weakScoreThreshold: BAR, verifyBand: BAND, verifier: stubVerifier(undefined) }),
+      { query: "wire transfers" },
+    ));
+    expect(below.outcome).toBe("insufficient-evidence");
+  });
+
+  it("changes nothing without a verifier: the band alone is inert", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifyBand: BAND }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+  });
+
+  it("changes nothing without a band: a verifier alone is never consulted", async () => {
+    const verifier = stubVerifier(false);
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifier }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(verifier.calls).toHaveLength(0);
+  });
+
+  it("never consults the verifier on an engine that emits no scores", async () => {
+    const verifier = stubVerifier(false);
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(memoryKnowledgeAdapter({ docs }), { verifyBand: BAND, verifier }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(verifier.calls).toHaveLength(0);
+  });
+
+  it("never consults the verifier on a schema lookup — a different score space", async () => {
+    const verifier = stubVerifier(false);
+    await search(
+      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      { query: "APY", lookup: true },
+    );
+    expect(verifier.calls).toHaveLength(0);
   });
 });

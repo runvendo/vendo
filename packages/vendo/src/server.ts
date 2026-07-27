@@ -53,7 +53,13 @@ import {
   type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type PolicyFile, type VendoGuard } from "@vendoai/guard";
-import { bindKnowledgeStore, cloudKnowledge, createKnowledgeTools } from "@vendoai/knowledge";
+import {
+  bindKnowledgeStore,
+  cloudKnowledge,
+  createKnowledgeTools,
+  entailmentVerifier,
+  type KnowledgeToolsOptions,
+} from "@vendoai/knowledge";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
@@ -100,7 +106,7 @@ import {
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromFile, runtimeCatalogFromJson } from "./catalog.js";
 import { knowledgeIndexResolver } from "./knowledge-prompt.js";
-import { bindVendoModelSlots } from "#dev-creds/model";
+import { bindVendoModelSlots, vendoModel } from "#dev-creds/model";
 // Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
 // entry: the lazily-resolving env ladder createVendo composes when the host
 // passes none, exported for host code too (judge wiring, host features). No
@@ -627,6 +633,42 @@ function selectKnowledge(
   const cloud = cloudKeyOptions();
   if (cloud === undefined) return undefined;
   return cloudKnowledge(cloud);
+}
+
+/** K14 — the CLOUD engine's calibrated refusal policy, measured against the
+    live engine over the eval corpus and committed at
+    `docs/eval/knowledge/bands/agentset.json`. Scores are engine-relative, so
+    these numbers belong to this engine and travel with it: the bar is the
+    error-minimising threshold, the band is the region where that bar provably
+    cannot decide (16 of 34 unanswerable questions cleared it, 7 of 60
+    answerable ones fell below it, and no other bar does better). Inside the
+    band the verifier reads the passages instead of the score.
+
+    Deliberately NOT applied to any other engine: a number from one engine's
+    score space says nothing about another's, and a self-hosted or BYO engine
+    that has not been calibrated keeps today's behavior. */
+const CLOUD_KNOWLEDGE_POLICY = {
+  weakScoreThreshold: 0.7211,
+  verifyBand: { low: 0.6735, high: 0.7835 },
+} as const;
+
+/** The verifier's off switch and the tool options that carry it.
+    `VENDO_KNOWLEDGE_VERIFY=off` returns the tool to the pure-threshold
+    behavior; anything else leaves the calibrated policy in place. The
+    verifier model is the family's cheap `judge` pick on whatever rung the
+    host's credentials resolve to (bound to `models.judge` like every other
+    judge-slot model), and a rung that resolves to nothing simply yields no
+    verdict — the tool then falls back to the threshold, which is why this can
+    never make knowledge unavailable. */
+function knowledgeToolOptions(
+  hostConfigured: boolean,
+  models: ModelsConfig | undefined,
+): KnowledgeToolsOptions {
+  if (hostConfigured) return {};
+  if (environment("VENDO_KNOWLEDGE_VERIFY")?.toLowerCase() === "off") return {};
+  const model = vendoModel(undefined, { slot: "judge" });
+  bindVendoModelSlots(model, models);
+  return { ...CLOUD_KNOWLEDGE_POLICY, verifier: entailmentVerifier({ model }) };
 }
 
 /** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
@@ -1759,7 +1801,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // Knowledge K1 — the tool exists exactly when an adapter is configured;
   // no adapter, no `vendo_knowledge_search` in any descriptor surface.
   const knowledge = selectKnowledge(config.knowledge, store);
-  if (knowledge !== undefined) actions.add(createKnowledgeTools(knowledge));
+  // K14 — the calibrated band + verifier ride exactly the engine they were
+  // calibrated against (the Cloud default); a host-passed adapter keeps the
+  // uncalibrated defaults it has today.
+  if (knowledge !== undefined) {
+    actions.add(createKnowledgeTools(knowledge, knowledgeToolOptions(config.knowledge !== undefined, config.models)));
+  }
   // Knowledge k8 (ENG-368) — the prompt index rides exactly when the tool
   // composes. Byte-stable at a fixed sync state, refreshed when the sync
   // manifest changes (never rebuilt per-turn); knowledge.json is an

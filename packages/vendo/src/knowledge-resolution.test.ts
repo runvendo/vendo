@@ -5,6 +5,7 @@ import type { KnowledgeAdapter, KnowledgeDoc, Principal, RunContext, ToolOutcome
 import { httpKnowledge, lexicalKnowledge } from "@vendoai/knowledge";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type CreateVendoConfig, type Vendo } from "./server.js";
 
@@ -117,7 +118,7 @@ function probeKnowledge(docId: string): KnowledgeAdapter {
     and a BYO endpoint, each answering with its own marker doc and counting
     what it was asked. Everything else 404s, so a composition that reaches for
     an unexpected engine is visible rather than absorbed. */
-function wireRouter(options: { cloudBearer?: string } = {}): {
+function wireRouter(options: { cloudBearer?: string; score?: number } = {}): {
   fetch: typeof fetch;
   cloud: Array<{ url: string; authorization: string | null }>;
   byo: Array<{ url: string; authorization: string | null }>;
@@ -130,7 +131,9 @@ function wireRouter(options: { cloudBearer?: string } = {}): {
       snippet: "Transfers settle in one business day.",
       kind: "docs",
       visibility: "public",
-      score: 0.9,
+      // 0.9 sits above the Cloud engine's verification band, so a row that
+      // does not care about K14 never pays a verification.
+      score: options.score ?? 0.9,
     }],
   });
 
@@ -299,5 +302,122 @@ describe("knowledge resolution — misconfiguration is audible", () => {
       output: { outcome: "unavailable", message: expect.stringMatching(/unreachable/) },
     });
     expect(warn.mock.calls.flat().join(" ")).toMatch(/unreachable/);
+  });
+});
+
+/**
+ * K14 — the verification band at the composition seam.
+ *
+ * The Cloud engine is the one engine whose refusal behavior was calibrated
+ * against a live run (docs/eval/knowledge/bands/agentset.json), and the
+ * calibration's finding was that no score threshold separates answerable from
+ * unanswerable questions. So the Cloud engine — and only the Cloud engine —
+ * composes with the band, and inside the band a cheap model decides. Every
+ * row below uses an IN-BAND score (0.75), the region where the threshold
+ * alone would answer, so the verifier's effect is the only thing observed.
+ */
+describe("knowledge verification band (K14) — where the score cannot decide", () => {
+  const IN_BAND = 0.75;
+
+  /** A judge-slot model object answering with a fixed verdict. */
+  function verdictModel(supported: boolean): LanguageModel & { calls: number } {
+    let calls = 0;
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => {
+        calls += 1;
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ supported, rationale: "test" }) }],
+          finishReason: { unified: "stop" as const, raw: undefined },
+          usage: {
+            inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 0, text: 0, reasoning: 0 },
+          },
+          warnings: [],
+        };
+      },
+    }) as LanguageModel & { calls: number };
+    Object.defineProperty(model, "calls", { get: () => calls });
+    return model;
+  }
+
+  const outcomeOf = (result: ToolOutcome): string | undefined =>
+    (result as { output?: { outcome?: string } }).output?.outcome;
+
+  it("cloud engine, in-band score, verifier says unsupported: the existing insufficient-evidence outcome", async () => {
+    const wire = wireRouter({ score: IN_BAND });
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey();
+    const judge = verdictModel(false);
+    const vendo = await compose({ models: { judge } });
+    const result = await search(vendo);
+    expect(outcomeOf(result)).toBe("insufficient-evidence");
+    expect(judge.calls).toBeGreaterThan(0);
+    // The refusal is the SHIPPED one: still the knowledge envelope, still
+    // carrying the weak evidence for the UI. No new outcome, no new surface.
+    expect(servingEngine(result)).toBe("doc-cloud");
+  });
+
+  it("cloud engine, in-band score, verifier says supported: answered", async () => {
+    const wire = wireRouter({ score: IN_BAND });
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey();
+    const vendo = await compose({ models: { judge: verdictModel(true) } });
+    expect(outcomeOf(await search(vendo))).toBe("answered");
+  });
+
+  it("VENDO_KNOWLEDGE_VERIFY=off returns the tool to the pure-threshold behavior", async () => {
+    const wire = wireRouter({ score: IN_BAND });
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey();
+    vi.stubEnv("VENDO_KNOWLEDGE_VERIFY", "off");
+    const judge = verdictModel(false);
+    const vendo = await compose({ models: { judge } });
+    expect(outcomeOf(await search(vendo))).toBe("answered");
+    expect(judge.calls).toBe(0);
+  });
+
+  it("a host's own engine is never held to another engine's calibration", async () => {
+    // Scores are engine-relative: 0.75 means nothing here, so no band, no
+    // verification, and the host's adapter answers exactly as it does today.
+    const judge = verdictModel(false);
+    const vendo = await compose({
+      knowledge: {
+        ...probeKnowledge("doc-host"),
+        async search() {
+          return {
+            hits: [{
+              ref: { docId: "doc-host", title: "Wire transfers", source: "docs/transfers.md" },
+              snippet: "Transfers settle in one business day.",
+              kind: "docs" as const,
+              visibility: "public" as const,
+              score: IN_BAND,
+            }],
+          };
+        },
+      },
+      models: { judge },
+    });
+    expect(outcomeOf(await search(vendo))).toBe("answered");
+    expect(judge.calls).toBe(0);
+  });
+
+  it("no model credential at all: knowledge still answers — the verifier is an enhancement, never a dependency", async () => {
+    const wire = wireRouter({ score: IN_BAND });
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey();
+    // The Cloud key resolves the judge slot through the console gateway, so
+    // strip it from the model ladder's view: no key, no provider module, no
+    // verdict. The tool must fall back to the shipped threshold (0.75 clears
+    // 0.7211) rather than refuse or fail.
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const vendo = await compose({ models: { judge: { doGenerate: undefined } as unknown as LanguageModel } });
+      expect(outcomeOf(await search(vendo))).toBe("answered");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
