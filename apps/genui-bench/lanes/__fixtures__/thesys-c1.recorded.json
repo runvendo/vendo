@@ -1,0 +1,47 @@
+{
+  "_note": "HAND-AUTHORED FROM DOCS, not a live recording: OpenAI Chat Completions response shapes per docs.thesys.dev examples (July 2026). CI never calls the live API. Re-record these payloads from a real THESYS_API_KEY run and replace this file.",
+  "toolCallCompletion": {
+    "id": "chatcmpl-thesys-fixture-1",
+    "object": "chat.completion",
+    "created": 1753500000,
+    "model": "c1/anthropic/claude-sonnet-4/v-20251230",
+    "choices": [
+      {
+        "index": 0,
+        "finish_reason": "tool_calls",
+        "message": {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_fixture_1",
+              "type": "function",
+              "function": {
+                "name": "host_listAccounts",
+                "arguments": "{}"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "usage": { "prompt_tokens": 420, "completion_tokens": 24, "total_tokens": 444 }
+  },
+  "finalCompletion": {
+    "id": "chatcmpl-thesys-fixture-2",
+    "object": "chat.completion",
+    "created": 1753500004,
+    "model": "c1/anthropic/claude-sonnet-4/v-20251230",
+    "choices": [
+      {
+        "index": 0,
+        "finish_reason": "stop",
+        "message": {
+          "role": "assistant",
+          "content": "<content>{\"component\":{\"component\":\"Card\",\"id\":\"acct-overview\",\"props\":{\"children\":[{\"component\":\"CardHeader\",\"id\":\"hdr\",\"props\":{\"title\":\"Your accounts\",\"subtitle\":\"Balances at a glance\"}},{\"component\":\"Table\",\"id\":\"tbl\",\"props\":{\"columns\":[{\"id\":\"name\",\"header\":\"Account\"},{\"id\":\"balance\",\"header\":\"Balance\"}],\"rows\":[{\"name\":\"Everyday Checking\",\"balance\":\"$4,280.12\"},{\"name\":\"High-Yield Savings\",\"balance\":\"$12,904.55\"}]}}]}}}</content>"
+        }
+      }
+    ],
+    "usage": { "prompt_tokens": 512, "completion_tokens": 188, "total_tokens": 700 }
+  }
+}

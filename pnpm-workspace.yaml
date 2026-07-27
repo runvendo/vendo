@@ -23,6 +23,9 @@ packages:
 # tree — all allowed, preserving pnpm 9 behavior. workerd is miniflare's
 # runtime for the portability gate (scripts/portability-gate.mjs).
 allowBuilds:
+  # Scarf is install telemetry riding in via @copilotkit/runtime (genui-bench
+  # only); its postinstall phones home, so it stays denied.
+  '@scarf/scarf': false
   cbor-extract: true
   esbuild: true
   protobufjs: true
