@@ -42,10 +42,13 @@ describe("vendo CLI commands", () => {
     log.mockRestore();
   });
 
-  it("vendo refine is no longer a command: standard unknown-command error", async () => {
+  it("vendo refine is no longer a command: retirement notice pointing at sync + try", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await main(["refine"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("Unknown command: refine");
+    const output = error.mock.calls.flat().join("\n");
+    expect(output).toContain("vendo refine was retired");
+    expect(output).toContain("vendo sync");
+    expect(output).toContain("vendo try");
     error.mockRestore();
   });
 

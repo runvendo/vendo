@@ -38,7 +38,13 @@ interface CaptureOptions {
    *  local capture only; the module itself never reads the environment for
    *  the key or the console base URL. */
   cloud?: { apiKey: string; baseUrl?: string };
-  surface: Promise<CapabilitySurfaceSnapshot>;
+  /** #557 — a LAZY, memoized factory rather than an eager promise: resolving the
+   *  surface calls the actions registry's `descriptors()` → `loadHost`, which now
+   *  awaits the cloud overrides fetch. Deferring it keeps that fetch out of
+   *  Workers global scope (the composition seam memoizes the factory so
+   *  descriptors runs at most once). Awaited only when a miss is actually
+   *  uploaded. */
+  surface: () => Promise<CapabilitySurfaceSnapshot>;
   append?: AppendMiss;
   fetchImpl?: typeof fetch;
   batchSize?: number;
@@ -117,7 +123,7 @@ function validUploadResponse(value: unknown): boolean {
 
 function createMissUploader(options: {
   cloud: { apiKey: string; baseUrl?: string };
-  surface: Promise<CapabilitySurfaceSnapshot>;
+  surface: () => Promise<CapabilitySurfaceSnapshot>;
   fetchImpl?: typeof fetch;
   batchSize: number;
   queueLimit: number;
@@ -135,7 +141,7 @@ function createMissUploader(options: {
       const timeout = setTimeout(() => controller.abort(), options.requestTimeoutMs);
       unrefTimer(timeout);
       try {
-        const surface = await options.surface;
+        const surface = await options.surface();
         const response = await cloudKeyFetch<{ accepted: number; duplicates: number }>("/api/v1/misses", {
           apiKey: options.cloud.apiKey,
           // The seam already resolved VENDO_CLOUD_URL into baseUrl; an empty

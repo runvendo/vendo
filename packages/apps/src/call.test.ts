@@ -97,3 +97,114 @@ describe("app calls through createApps", () => {
     ).rejects.toMatchObject({ code: "not-found" });
   });
 });
+
+// Re-gate 2026-07-26 I5-C (evidence PR #588): an island form fired
+// host_transferMoney {amount: 25} — $0.25 — for a typed $25; the earlier
+// H4-B fired 941220 for $2,850. The tool sketches say amounts are dollars or
+// cents per host semantics, and the island seam had no unit check. The
+// deterministic half lives here: a CENTS-classified input field (name ends
+// in "cents", or the input schema's own description says cents/minor units)
+// can never legally take a fractional number — that is a dollar amount, and
+// it is rejected with a teaching error BEFORE the guard parks an approval
+// the user could mistakenly approve.
+describe("island/action amount unit guard", () => {
+  const transferTools: ToolRegistry = {
+    async descriptors() {
+      return [
+        {
+          name: "host_transferMoney",
+          description: "Send money. IRREVERSIBLY MOVES MONEY.",
+          risk: "destructive" as const,
+          inputSchema: {
+            type: "object",
+            required: ["amount", "recipient_name"],
+            properties: {
+              amount: { type: "integer", minimum: 1, description: "Amount to send in cents (positive whole number), e.g. 50000 = $500.00" },
+              recipient_name: { type: "string" },
+            },
+          },
+        },
+        {
+          name: "host_payDollars",
+          description: "Pay a bill.",
+          risk: "write" as const,
+          inputSchema: {
+            type: "object",
+            properties: { amount: { type: "number", description: "Amount in dollars, e.g. 25.50" } },
+          },
+        },
+        {
+          name: "host_setBudget",
+          description: "Set a budget threshold.",
+          risk: "write" as const,
+          inputSchema: {
+            type: "object",
+            properties: { amountCents: { type: "number" } },
+          },
+        },
+        {
+          name: "host_listRates",
+          description: "List exchange rates.",
+          risk: "read" as const,
+          inputSchema: { type: "object", properties: { rate: { type: "number", description: "rate in cents" } } },
+        },
+      ];
+    },
+    async execute(call) {
+      return { status: "ok", output: { ran: call.tool } };
+    },
+  };
+
+  it("rejects a fractional value into a cents-described field with a teaching error", async () => {
+    const { store, runtime } = setup(transferTools);
+    await seedAppRow(store, app("app_units"), "user_ada");
+
+    const outcome = await runtime.call(
+      "app_units",
+      "host_transferMoney",
+      { amount: 28.5, recipient_name: "Mom" },
+      context("user_ada"),
+    );
+
+    expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") throw new Error("unreachable");
+    expect(outcome.error.code).toBe("validation");
+    expect(outcome.error.message).toContain("integer cents");
+    expect(outcome.error.message).toContain("amount");
+  });
+
+  it("rejects a fractional value into a *Cents-named field", async () => {
+    const { store, runtime } = setup(transferTools);
+    await seedAppRow(store, app("app_units2"), "user_ada");
+
+    const outcome = await runtime.call("app_units2", "host_setBudget", { amountCents: 99.99 }, context("user_ada"));
+
+    expect(outcome).toMatchObject({ status: "error", error: { code: "validation" } });
+  });
+
+  it("passes integer cents through untouched (the guard/approval pipe still gates)", async () => {
+    const { store, runtime } = setup(transferTools);
+    await seedAppRow(store, app("app_units3"), "user_ada");
+
+    const outcome = await runtime.call(
+      "app_units3",
+      "host_transferMoney",
+      { amount: 2500, recipient_name: "Mom" },
+      context("user_ada"),
+    );
+
+    expect(outcome).toEqual({ status: "ok", output: { ran: "host_transferMoney" } });
+  });
+
+  it("leaves dollars-described fields and read tools alone", async () => {
+    const { store, runtime } = setup(transferTools);
+    await seedAppRow(store, app("app_units4"), "user_ada");
+
+    await expect(
+      runtime.call("app_units4", "host_payDollars", { amount: 25.5 }, context("user_ada")),
+    ).resolves.toEqual({ status: "ok", output: { ran: "host_payDollars" } });
+    await expect(
+      runtime.call("app_units4", "host_listRates", { rate: 0.25 }, context("user_ada")),
+    ).resolves.toEqual({ status: "ok", output: { ran: "host_listRates" } });
+  });
+});

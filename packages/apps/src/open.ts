@@ -246,6 +246,9 @@ export const createAppOpener = (
       kind: "failed",
       reason: app.buildFailed.reason,
       ...(app.buildFailed.retryable === undefined ? {} : { retryable: app.buildFailed.retryable }),
+      // The failed prompt rides along so the embed's retry affordance can
+      // re-issue the EXACT create (speed-core lane, criterion 8).
+      ...(app.buildFailed.prompt === undefined ? {} : { prompt: app.buildFailed.prompt }),
     };
   }
   if (app.ui === "http") {

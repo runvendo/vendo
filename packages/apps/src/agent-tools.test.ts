@@ -26,7 +26,7 @@ const hostTools: ToolRegistry = {
   async execute() { return { status: "error", error: { code: "not-found", message: "missing" } }; },
 };
 
-const generated = '<App name="Tool-built dashboard"><Text text="Ready"/></App>';
+const generated = '<App name="Tool-built dashboard"><Text text="Ready"/><Disclaimer reason="Fixture app."/></App>';
 
 describe("apps agent tools", () => {
   it("exposes exactly provider-safe draft-2020-12 descriptors with closed object inputs", async () => {

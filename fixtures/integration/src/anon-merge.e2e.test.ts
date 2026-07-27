@@ -24,7 +24,7 @@ import {
   type Stack,
 } from "./harness.js";
 
-const CREATE_DIALECT = `<App name="Anon Merge App"><Text text="Hello anon"/></App>`;
+const CREATE_DIALECT = `<App name="Anon Merge App"><Text text="Hello anon"/><Disclaimer reason="Fixture app."/></App>`;
 
 let stack: Stack;
 afterEach(async () => {

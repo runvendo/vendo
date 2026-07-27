@@ -60,7 +60,7 @@ describe("capability-miss local sink", () => {
     const capture = createCapabilityMissCapture({
       env: {},
       telemetryConfig: { anonymousId: "host_sink_failure", optedOut: false },
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append: async () => { throw new Error("disk full"); },
     });
 
@@ -82,7 +82,7 @@ describe("capability-miss Cloud upload", () => {
     const capture = createCapabilityMissCapture({
       env: {},
       telemetryHome: home,
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append: async () => {},
     });
 
@@ -94,7 +94,7 @@ describe("capability-miss Cloud upload", () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const noKey = createCapabilityMissCapture({
       env: {},
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append,
       fetchImpl,
       telemetryConfig: { anonymousId: "host_no_key", optedOut: false },
@@ -112,7 +112,7 @@ describe("capability-miss Cloud upload", () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const envKeyed = createCapabilityMissCapture({
       env: { VENDO_API_KEY: "vnd_env_only" },
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append,
       fetchImpl,
       telemetryConfig: { anonymousId: "host_env_key", optedOut: false },
@@ -134,7 +134,7 @@ describe("capability-miss Cloud upload", () => {
     const capture = createCapabilityMissCapture({
       env: { VENDO_CLOUD_URL: "https://sneaky.env.test" },
       cloud: { apiKey: "vnd_test" },
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append: async () => {},
       fetchImpl,
       telemetryConfig: { anonymousId: "host_env_url", optedOut: false },
@@ -154,7 +154,7 @@ describe("capability-miss Cloud upload", () => {
     const optedOut = createCapabilityMissCapture({
       env: { NODE_ENV: "development" },
       cloud: { apiKey: "vnd_test" },
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append,
       fetchImpl,
       telemetryConfig: { anonymousId: "host_opted_out", optedOut: true },
@@ -177,7 +177,7 @@ describe("capability-miss Cloud upload", () => {
     const capture = createCapabilityMissCapture({
       env: { ...optOut },
       cloud: { apiKey: "vnd_test" },
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append,
       fetchImpl,
       telemetryConfig: { anonymousId: "host_env_opt_out", optedOut: false },
@@ -198,7 +198,7 @@ describe("capability-miss Cloud upload", () => {
       env: { NODE_ENV: "production" },
       cloud: { apiKey: "vnd_test" },
       telemetryConfig: { anonymousId: "host_production", optedOut: false },
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append,
       fetchImpl,
     });
@@ -219,7 +219,7 @@ describe("capability-miss Cloud upload", () => {
     const capture = createCapabilityMissCapture({
       env: { NODE_ENV: "development" },
       cloud: { apiKey: "vnd_test_key", baseUrl: "https://cloud.example.test/" },
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append: async () => {},
       fetchImpl,
       telemetryConfig: { anonymousId: "host_batch", optedOut: false },
@@ -252,7 +252,7 @@ describe("capability-miss Cloud upload", () => {
     const capture = createCapabilityMissCapture({
       env: { NODE_ENV: "development" },
       cloud: { apiKey: "vnd_test_key" },
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append,
       fetchImpl,
       telemetryConfig: { anonymousId: "host_retry", optedOut: false },
@@ -276,7 +276,7 @@ describe("capability-miss Cloud upload", () => {
       env: { NODE_ENV: "test" },
       cloud: { apiKey: "vnd_test_key" },
       telemetryConfig: { anonymousId: "host_timeout", optedOut: false },
-      surface: Promise.resolve(surface),
+      surface: () => Promise.resolve(surface),
       append,
       fetchImpl,
       requestTimeoutMs: 1,

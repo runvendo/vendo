@@ -25,14 +25,29 @@ const MIN_REDACTABLE_LENGTH = 4;
  * names, granted or not (defense in depth: an ungranted value should never
  * appear anywhere, so scrub it too if it somehow does). A failing provider
  * never breaks the response path.
+ *
+ * issue #566 — `injected` carries the values already resolved when they were
+ * injected into THIS box (the machine lifecycle's per-box cache). A value that
+ * was successfully injected is ALWAYS redactable: it comes straight from the
+ * cache, never a refetch that could fail. Only names NOT already injected fall
+ * back to a live (best-effort) provider read. The cache is scoped to a single
+ * box; the caller passes only that box's map, so it can never carry a value
+ * across apps/principals.
  */
 export const collectSecretValues = async (
   names: readonly string[] | undefined,
   secrets: SecretsProvider | undefined,
+  injected?: ReadonlyMap<string, string>,
 ): Promise<Map<string, string>> => {
   const values = new Map<string, string>();
-  if (secrets === undefined) return values;
   for (const name of new Set(names ?? [])) {
+    const cached = injected?.get(name);
+    if (cached !== undefined) {
+      // Already in the box — redact it without a refetch that could fail.
+      if (cached.length >= MIN_REDACTABLE_LENGTH) values.set(name, cached);
+      continue;
+    }
+    if (secrets === undefined) continue;
     try {
       const value = await secrets.get(name);
       if (typeof value === "string" && value.length >= MIN_REDACTABLE_LENGTH) {

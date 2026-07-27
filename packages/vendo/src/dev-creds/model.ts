@@ -203,9 +203,33 @@ async function dynamicImport(url: string): Promise<Record<string, unknown>> {
   }
 }
 
-async function importHostModule(root: string, specifier: string): Promise<Record<string, unknown>> {
+/** Host-root resolution first, vendo's own copy as the provider fallback.
+ *
+ *  Precedence: the HOST's install always wins when present — their version,
+ *  their module instance, so the `ai` SDK never sees two copies of one
+ *  provider in a repo that has it (the dual-package hazard). Only when the
+ *  host root resolves nothing do we resolve from vendo's own module context
+ *  (createRequire off import.meta.url): @ai-sdk/anthropic ships as a real
+ *  dependency of @vendoai/vendo, so an ANTHROPIC_API_KEY — or VENDO_API_KEY
+ *  via the Anthropic-compatible Cloud gateway — lights up live chat under
+ *  `npx vendo try` with nothing installed in the repo. Scoped to @ai-sdk/*
+ *  provider modules; arbitrary specifiers keep strict host-root resolution.
+ *  (Exported for the resolution tests; the injectable seam is `importModule`.) */
+export async function importHostModule(root: string, specifier: string): Promise<Record<string, unknown>> {
   const require = createRequire(join(root, "package.json"));
-  return await dynamicImport(pathToFileURL(require.resolve(specifier)).href);
+  try {
+    return await dynamicImport(pathToFileURL(require.resolve(specifier)).href);
+  } catch (hostError) {
+    if (!specifier.startsWith("@ai-sdk/")) throw hostError;
+    try {
+      const self = createRequire(import.meta.url);
+      return await dynamicImport(pathToFileURL(self.resolve(specifier)).href);
+    } catch {
+      // The host's failure is the honest one to surface — "not installed in
+      // this app" plus the install command, same as before the fallback.
+      throw hostError;
+    }
+  }
 }
 
 export class DevModelController {

@@ -1,14 +1,15 @@
-import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { PLAYGROUND_BUNDLE_SOURCE } from "./playground/bundle.gen.js";
 import { EMBED_BUNDLE_SOURCE } from "./playground/embed-bundle.gen.js";
-import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 /**
- * `vendo playground` — a local page rendering every shipped Vendo surface
- * against scripted (director-mode) data: no model key, no database, no host
- * app. install-dx design §8; the page itself ships in ./playground/.
+ * The scripted-surface server + shared browser-open helper. The `vendo
+ * playground` command was retired (`vendo try` absorbed it — cli/try.ts
+ * serves the same bundle), but the machinery stays: startPlaygroundServer
+ * serves the ./playground/ bundles for the docs-media capture script
+ * (packages/ui/scripts/capture-docs-media.mjs imports it from dist), and
+ * /embed.js (window.VendoDocsEmbed) is what self-hosted docs/pages mount.
  */
 
 export interface PlaygroundServer {
@@ -92,19 +93,6 @@ export async function startPlaygroundServer(options: { port?: number }): Promise
   };
 }
 
-export interface PlaygroundOptions {
-  port?: number;
-  /** When false (`--no-open`), print the URL without launching the browser. */
-  open?: boolean;
-  output?: Output;
-  /** Test seams. */
-  openBrowser?: (url: string) => void;
-  /** When false, return right after startup instead of blocking until Ctrl+C. */
-  wait?: boolean;
-  /** Injectable telemetry deps (matches init/doctor). */
-  telemetry?: TelemetryOptions;
-}
-
 /** Windows' `start` is a cmd built-in, not an executable — execFile can only
  *  reach it through `cmd /c start "" <url>` (the empty string is the window
  *  title, so a URL is never mistaken for one). */
@@ -112,49 +100,4 @@ export function browserOpenCommand(platform: NodeJS.Platform, url: string): { co
   if (platform === "darwin") return { command: "open", args: [url] };
   if (platform === "win32") return { command: "cmd", args: ["/c", "start", "", url] };
   return { command: "xdg-open", args: [url] };
-}
-
-function defaultOpenBrowser(url: string): void {
-  const { command, args } = browserOpenCommand(process.platform, url);
-  execFile(command, args, () => undefined);
-}
-
-export async function runPlayground(options: PlaygroundOptions = {}): Promise<number> {
-  const output = options.output ?? consoleOutput;
-  return withCommandRun(
-    {
-      command: "playground",
-      ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
-    },
-    (failure) => playground(options, output, failure),
-  );
-}
-
-async function playground(
-  options: PlaygroundOptions,
-  output: Output,
-  failure: { failedStep?: string },
-): Promise<number> {
-  let server: PlaygroundServer;
-  try {
-    server = await startPlaygroundServer({ port: options.port });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "unknown error";
-    failure.failedStep = "listen";
-    output.error(`vendo playground: could not listen on port ${options.port ?? 0} (${detail}) — pass a different --port`);
-    return 1;
-  }
-
-  output.log(`Vendo playground running at ${server.url}`);
-  output.log("Every surface, scripted data, no model key. Press Ctrl+C to stop.");
-  if (options.open !== false) (options.openBrowser ?? defaultOpenBrowser)(server.url);
-
-  if (options.wait === false) {
-    await server.close();
-    return 0;
-  }
-
-  await new Promise<void>((resolve) => process.once("SIGINT", resolve));
-  await server.close();
-  return 0;
 }

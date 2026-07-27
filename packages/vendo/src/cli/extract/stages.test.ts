@@ -363,6 +363,55 @@ describe("runStagedExtraction", () => {
     expect(await readArtifact(root, "theme")).toMatchObject({ stage: "theme", error: "model unreachable" });
   });
 
+  it("artifactRoot splits the writes from the explored root; the harness still explores root", async () => {
+    const root = await fixture();
+    const artifactRoot = await fixture();
+    const lifecycle: string[] = [];
+    const { harness, runs } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") return { tools: [] };
+      return { brief: "b" };
+    });
+    await runStagedExtraction({
+      root,
+      artifactRoot,
+      env: {},
+      harness,
+      tools: TOOLS,
+      appName: "maple",
+      onStage: (stage, status) => lifecycle.push(`${stage} ${status}`),
+    });
+
+    // Every write landed under artifactRoot; the explored root got NOTHING.
+    expect(await readdir(join(root, ".vendo"))).toEqual([]);
+    expect(await readdir(join(artifactRoot, ".vendo", "data", "extract"))).toContain("survey.json");
+    // Every harness run still explores root, never the artifact root.
+    expect(runs.length).toBeGreaterThan(0);
+    expect(runs.every((run) => run.input.root === root)).toBe(true);
+    // The onStage seam narrates each stage's lifecycle in order.
+    expect(lifecycle).toEqual([
+      "survey started", "survey done",
+      "drafts started", "drafts done",
+      "cross-check started", "cross-check done",
+      "brief started", "brief done",
+    ]);
+  });
+
+  it("the failed-brief fallback reads the artifactRoot's brief, not the explored root's", async () => {
+    const root = await fixture("the HOST repo's brief — must never be read");
+    const artifactRoot = await fixture("the profile's current brief");
+    const { harness } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") return { tools: [] };
+      return new Error("timed out");
+    });
+    const result = await runStagedExtraction({ root, artifactRoot, env: {}, harness, tools: TOOLS, appName: "maple" });
+    expect(result.briefFromStage).toBe(false);
+    expect(result.draft.brief).toBe("the profile's current brief");
+  });
+
   it("clears artifacts from a previous run before starting", async () => {
     const root = await fixture();
     await mkdir(join(root, ".vendo", "data", "extract"), { recursive: true });

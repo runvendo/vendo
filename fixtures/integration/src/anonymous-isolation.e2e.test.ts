@@ -29,7 +29,7 @@ import {
   type Stack,
 } from "./harness.js";
 
-const CREATE_DIALECT = `<App name="Anon's Greeting"><Text text="Hello anon"/></App>`;
+const CREATE_DIALECT = `<App name="Anon's Greeting"><Text text="Hello anon"/><Disclaimer reason="Fixture app."/></App>`;
 
 /** A single browser-like anonymous client: no x-vendo-test-user, its own cookie
  * jar. Tracks the anon session id (subject = `anonymous_<id>`) and whether the

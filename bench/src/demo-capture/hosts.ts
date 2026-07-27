@@ -49,6 +49,8 @@ export const demoHosts: Record<ConcreteDemoHost, DemoHostDefinition> = {
     route: "/assistant",
     threadId: "thr_cadence_demo",
     demoPasswordEnv: "CADENCE_DEMO_PASSWORD",
+    // Must match the canon: cadenceDemoPassword() in
+    // apps/demo-accounting/src/server/users.ts.
     demoPasswordFallback: "cadence-demo",
   },
 };

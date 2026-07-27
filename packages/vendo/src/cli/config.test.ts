@@ -80,14 +80,14 @@ describe("vendo config status", () => {
     }
   });
 
-  it("prints the overrides enablement caveat (#557)", async () => {
+  it("prints the overrides enablement note (#557 landed)", async () => {
     const dir = await tempProject();
     const fetcher: CloudFetcher = vi.fn(async () => ({ version: null, config: null }));
     const cap = capture();
     await runConfig(["status"], { targetDir: dir, fetcher, output: cap.output, env: KEY });
     const joined = cap.lines.join("\n");
-    expect(joined).toContain("#557");
     expect(joined.toLowerCase()).toContain("enablement");
+    expect(joined).toContain("boot-once");
   });
 
   it("still reports file ownership when there is no key (cloud column unknown)", async () => {
@@ -192,23 +192,23 @@ describe("vendo config push", () => {
     expect(await readFile(join(dir, ".vendo", "policy.json"), "utf8")).toBe("{}");
   });
 
-  it("prints the enablement caveat when pushing overrides, but not for other surfaces (#557)", async () => {
+  it("prints the enablement note when pushing overrides, but not for other surfaces (#557 landed)", async () => {
     const fetcher: CloudFetcher = vi.fn(async (path, options) =>
       (options?.method ?? "GET") === "GET" ? { draft: {} } : { draft: (options!.body as { draft: unknown }).draft });
-    // overrides.json → caveat present
+    // overrides.json → note present
     const over = capture();
     await runConfig(["push", "overrides.json", "--yes"], {
       targetDir: await tempProject({ "overrides.json": "{}" }),
       fetcher, output: over.output, env: KEY,
     });
-    expect(over.lines.join("\n")).toContain("#557");
-    // design-rules.md → no caveat
+    expect(over.lines.join("\n")).toContain("boot-once");
+    // design-rules.md → no note
     const rules = capture();
     await runConfig(["push", "design-rules.md", "--yes"], {
       targetDir: await tempProject({ "design-rules.md": "# rules" }),
       fetcher, output: rules.output, env: KEY,
     });
-    expect(rules.lines.join("\n")).not.toContain("#557");
+    expect(rules.lines.join("\n")).not.toContain("boot-once");
   });
 
   it("errors on an unknown surface", async () => {

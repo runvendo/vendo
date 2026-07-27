@@ -22,17 +22,17 @@ keys always beat implicit ones.
 <Steps>
   <Step title="Env key">
     Reads the first of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
-    `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` or the shell. The matching
-    `@ai-sdk/*@^3` provider must be installed in your app. This rung runs the
-    full native tool loop and works in production.
+    `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` or the shell. An
+    `ANTHROPIC_API_KEY` works alone — Vendo ships `@ai-sdk/anthropic`, and
+    your app's own install wins when present; a non-Anthropic key needs its
+    matching `@ai-sdk/*@^3` provider installed in your app. This rung runs
+    the full native tool loop and works in production.
   </Step>
   <Step title="Vendo Cloud key">
     `VENDO_API_KEY` delegates to the Vendo Cloud model gateway (Anthropic
-    Messages wire, served through the stock `@ai-sdk/anthropic` provider).
-    Because the gateway rides that provider locally, `ai@^6` and
-    `@ai-sdk/anthropic@^3` must be installed in your app even when the Cloud
-    key is your only credential — without them this rung fails the same way
-    a missing provider key does. On this rung the default model is `vendo`
+    Messages wire, served through the stock `@ai-sdk/anthropic` provider,
+    which Vendo ships — the key alone suffices, and your app's own install
+    wins when present). On this rung the default model is `vendo`
     (the console maps it to a concrete model server-side); pin a different
     id with `VENDO_MODEL`. No key on hand? `npx vendo login` mints a free
     metered dev key.
@@ -68,8 +68,9 @@ import { createVendo } from "@vendoai/vendo/server";
 import { vendoModel } from "@vendoai/vendo/server";
 
 // Omit `model` to keep the dev-mode ladder, or set it to pin a provider.
-// In production, set ANTHROPIC_API_KEY (or OPENAI_API_KEY, or
-// GOOGLE_GENERATIVE_AI_API_KEY) and install the matching @ai-sdk/* provider.
+// In production, set ANTHROPIC_API_KEY (works alone — Vendo ships
+// @ai-sdk/anthropic), or OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY
+// with the matching @ai-sdk/* provider installed.
 const vendo = createVendo({ model: vendoModel(), catalog: registry });
 ```
 

@@ -43,6 +43,10 @@
       "types": "./dist/cli/extract/index.d.ts",
       "default": "./dist/cli/extract/index.js"
     },
+    "./try": {
+      "types": "./dist/try.d.ts",
+      "default": "./dist/try.js"
+    },
     "./react": {
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"
@@ -94,12 +98,14 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
     "@vendoai/actions": "workspace:*",
     "@vendoai/agent": "workspace:*",
     "@vendoai/apps": "workspace:*",
     "@vendoai/automations": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
+    "@vendoai/knowledge": "workspace:*",
     "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",
     "@vendoai/telemetry": "workspace:*",
@@ -115,7 +121,8 @@
     "ai": ">=6.0.0 <7",
     "jose": ">=5.0.0",
     "react": "^18.0.0 || ^19.0.0",
-    "react-dom": "^18.0.0 || ^19.0.0"
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "zod": ">=3.25.0 <5"
   },
   "peerDependenciesMeta": {
     "@auth/core": {
@@ -132,7 +139,6 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "3.0.12",
     "@auth/core": "^0.34.3",
     "@clerk/backend": "^3.11.7",
     "@mastra/core": "1.51.0",

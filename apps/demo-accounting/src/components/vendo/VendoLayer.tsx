@@ -6,12 +6,20 @@ import { useVendoOverlay } from "@vendoai/ui";
 import { VendoOverlay, VendoPalette, VendoThread, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
 import { CadenceMark } from "@/components/brand";
 import { cadenceScenarios } from "@/vendo/scenarios";
+import { useTryThisChips } from "./use-try-this-chips";
 import { VendoRoot } from "./VendoRoot";
 
-/** The overlay's thread with the Cadence scenario cards on the empty landing.
+/** The overlay's thread with the Cadence scenario cards on the empty landing,
+ *  plus the pre-generated "try this" pill chips one tier below (demo-hygiene;
+ *  absent while the chip cache is empty).
  *  Module-scope so the component identity is stable across VendoLayer renders. */
 function CadenceThread(props: VendoThreadProps) {
-  return <VendoThread {...props} suggestions={cadenceScenarios} />;
+  const chips = useTryThisChips()
+  const suggestions = chips.length === 0 ? cadenceScenarios : [...cadenceScenarios, ...chips]
+  // discoverability="quiet" matches Maple: the fire-once greeting-as-tutorial
+  // would otherwise replace the cards+chips on the FIRST-ever visit (and burn
+  // the flag), so the demo's opening beat showed generic chips until a reload.
+  return <VendoThread {...props} suggestions={suggestions} discoverability="quiet" />;
 }
 
 async function resetDemo(): Promise<void> {

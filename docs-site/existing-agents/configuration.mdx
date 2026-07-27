@@ -44,7 +44,8 @@ explicit provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   model can be noticeably slower than the Cloud aliases.
 - To force builds through the Vendo Cloud gateway, set
   `VENDO_DEV_CREDENTIAL=vendo-cloud`. The gateway rides the stock
-  `@ai-sdk/anthropic` provider, so that package must be installed.
+  `@ai-sdk/anthropic` provider, which Vendo ships (your app's own install
+  wins when present).
 - No `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
   straight into `.env.local`.
 - If your loop's model has no key on this machine, either set one or point

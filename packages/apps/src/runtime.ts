@@ -4,6 +4,7 @@ import {
   VendoError,
   checkBindingShapes,
   deriveShapeCard,
+  effectiveBuildWatchdogMs,
   safeErrorMessage,
   validateAppDocument,
   type AppDocument,
@@ -198,6 +199,17 @@ export interface AppsConfig {
   /** W3 — the host's domain manifest (has / has-NOT), generation fact.
    *  Provider form resolved per generation (see catalog note). */
   domains?: DomainManifest | (() => DomainManifest | undefined);
+  /** Re-gate 2026-07-26 finding 2 — the caller's CONNECTED toolkits, resolved
+   *  per create/edit. The create-time shape sampler probes every no-arg read
+   *  tool once; a connector tool (descriptor.toolkit set, 01-core §4) whose
+   *  toolkit is not in this set is never probed — on the gate hosts, ~159
+   *  unconnected Slack/Gmail probes piled up at the approval gate and the
+   *  burst tripped the call-rate breaker under real creates. The umbrella
+   *  backs this with the connections seam (connections.list, active accounts).
+   *  Unset or failing = treat every toolkit as unconnected: connector probes
+   *  skip, host tools are unaffected, and the tools stay LISTED for
+   *  generation (execution still answers `connect-required` on its own). */
+  connectedToolkits?: (ctx: RunContext) => Promise<string[]>;
 }
 
 /** 06-apps §1 */
@@ -281,9 +293,11 @@ export type OpenSurface =
    * The build turn terminally FAILED (model error, quota, timeout): the app
    * will never become servable. Surfaced so the embed resolves promptly with
    * the reason instead of polling to its client deadline — the same prompt
-   * resolution the approval embed gets from denied/expired.
+   * resolution the approval embed gets from denied/expired. `prompt` (when
+   * the record carries it) lets the embed's retry affordance re-issue the
+   * exact create.
    */
-  | { kind: "failed"; reason: string; retryable?: boolean };
+  | { kind: "failed"; reason: string; retryable?: boolean; prompt?: string };
 
 /** The non-empty name a failed build record ships under (open() ignores it —
  *  the embed's title rides the app-ref — but validateAppDocument requires one).
@@ -312,17 +326,13 @@ const BUILD_WATCHDOG_REASON =
   "the build never finished — the server-side build task stalled or died without reporting a "
   + "failure. Retry the request; if this repeats, check the host server log.";
 
-const BUILD_WATCHDOG_MS = 4 * 60_000;
-
 /** Test seam and operator escape hatch, mirroring turn-liveness: the window a
  *  create has to persist SOMETHING (app or failure) before the watchdog writes
- *  the terminal failed record. Guarded access — this module also runs on
- *  edge/Worker targets with no `process` global. */
-const buildWatchdogMs = (): number => {
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
-  const configured = Number(env?.["VENDO_APP_BUILD_WATCHDOG_MS"]);
-  return Number.isFinite(configured) && configured > 0 ? configured : BUILD_WATCHDOG_MS;
-};
+ *  the terminal failed record. Shared with the UI polling cutoff through
+ *  @vendoai/core's build-deadlines module (speed-core lane), so the client
+ *  always outlasts the watchdog and renders its record instead of the generic
+ *  deadline beat. */
+const buildWatchdogMs = effectiveBuildWatchdogMs;
 
 const QUOTA_SIGNAL = /quota|insufficient|payment|billing|\b402\b/i;
 const TIMEOUT_SIGNAL = /time?d?\s*out|timeout|abort/i;
@@ -1205,6 +1215,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   // tool's shape unknown (defensive `json` per the spec).
   const sampledShapes = new Map<string, ShapeType>();
   const settledSamples = new Set<string>();
+  // connect-required settles PER SUBJECT and PER TTL (review 2026-07-26): a
+  // shape is host-level, but a missing account connection is one principal's
+  // state — settling it globally would stop ever sampling the tool for a
+  // DIFFERENT subject whose account is fine, and settling it forever would
+  // never recover the shape after the SAME subject reconnects mid-boot (the
+  // broker lists the toolkit as active both before and after, so the
+  // connected set cannot signal the repair). Within the TTL the dead probe
+  // stays quiet; after it, one probe per tool retries. Bounded like the
+  // umbrella's toolkit cache.
+  const CONNECT_SETTLE_TTL_MS = 10 * 60_000;
+  const connectRequiredSettled = new Map<string, number>();
+  const connectSettleKey = (subject: string, tool: string): string => `${subject} ${tool}`;
+  const connectSettled = (subject: string, tool: string): boolean => {
+    const at = connectRequiredSettled.get(connectSettleKey(subject, tool));
+    return at !== undefined && Date.now() - at < CONNECT_SETTLE_TTL_MS;
+  };
   const requiresInput = (descriptor: ToolDescriptor): boolean => {
     const required = (descriptor.inputSchema as { required?: unknown }).required;
     return Array.isArray(required) && required.length > 0;
@@ -1213,9 +1239,25 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ctx: RunContext,
   ): Promise<Pick<GenerationDependencies, "tools" | "toolShapes">> => {
     const descriptors = await config.tools.descriptors().catch(() => []);
-    await Promise.all(descriptors
-      .filter((descriptor) =>
-        descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name))
+    const candidates = descriptors.filter((descriptor) =>
+      descriptor.risk === "read" && !requiresInput(descriptor) && !settledSamples.has(descriptor.name)
+      && !connectSettled(ctx.principal.subject, descriptor.name));
+    // Re-gate 2026-07-26 finding 2: a connector tool (descriptor.toolkit,
+    // 01-core §4) is probed ONLY when its toolkit is connected for this
+    // caller — an unconnected toolkit's probe can never yield a shape (the
+    // account is missing), and on the gate hosts the ~50-tool probe burst
+    // per create parked at the approval gate and tripped the call-rate
+    // breaker under the create's own host reads. The connected set is
+    // resolved lazily (only when a connector candidate exists) and degrades
+    // to empty on failure or when the seam is not composed: probes skip,
+    // the tools stay listed below.
+    const connectorCandidates = candidates.filter((descriptor) => typeof descriptor.toolkit === "string");
+    let connected: ReadonlySet<string> = new Set();
+    if (connectorCandidates.length > 0 && config.connectedToolkits !== undefined) {
+      connected = new Set(await config.connectedToolkits(ctx).catch(() => []));
+    }
+    await Promise.all(candidates
+      .filter((descriptor) => typeof descriptor.toolkit !== "string" || connected.has(descriptor.toolkit))
       .map(async (descriptor) => {
         try {
           const outcome = await config.tools.execute(
@@ -1229,6 +1271,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             // The policy gates this read: never re-ask on later creates (one
             // parked approval per boot at most), and leave the shape unknown.
             settledSamples.add(descriptor.name);
+          } else if (outcome.status === "connect-required") {
+            // The broker listed the toolkit as connected but the provider has
+            // no account (expired/foreign): settle for THIS subject only (and
+            // only for the TTL), so the dead probe stays quiet on their next
+            // creates while a different, properly connected subject still gets
+            // sampled and a mid-boot reconnect recovers after the TTL.
+            if (connectRequiredSettled.size > 10_000) connectRequiredSettled.clear();
+            connectRequiredSettled.set(connectSettleKey(ctx.principal.subject, descriptor.name), Date.now());
           }
           // Transient errors (e.g. an unauthenticated caller) retry on the
           // next create with that caller's own authority.
@@ -1725,7 +1775,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             format: "vendo/app@1",
             id: appId,
             name: fallbackAppName(input.prompt),
-            buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString() },
+            buildFailed: { reason: BUILD_WATCHDOG_REASON, retryable: true, at: new Date().toISOString(), prompt: input.prompt },
           }, ctx.principal.subject));
           console.error(`[vendo] app build watchdog (${appId}): no app record and no failure landed within ${buildWatchdogMs()}ms — persisted a terminal failed record so the embed resolves instead of polling forever.`);
         })().catch(() => undefined);
@@ -1794,7 +1844,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           format: "vendo/app@1",
           id: appId,
           name: fallbackAppName(input.prompt),
-          buildFailed: { reason, retryable, at: new Date().toISOString() },
+          buildFailed: { reason, retryable, at: new Date().toISOString(), prompt: input.prompt },
         }, ctx.principal.subject)).catch(() => undefined);
         clearTimeout(watchdog);
         // The operator's terminal gets the un-canned detail (the engine folds
@@ -2554,8 +2604,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         // Lane E redaction guard — a box may echo its own env (fn responses
         // are host-side artifacts that reach clients and logs): scrub every
         // known secret value out of the response, and out of any error
-        // message crossing this seam.
-        const secretValues = await collectSecretValues(app.secrets, config.secrets);
+        // message crossing this seam. issue #566 — prefer the values already
+        // injected into THIS box (the lifecycle's per-box cache) so a value
+        // that entered the box is always redactable without a refetch that
+        // could fail; only names NOT injected fall back to a best-effort read.
+        const secretValues = await collectSecretValues(
+          app.secrets,
+          config.secrets,
+          lifecycle.injectedSecretValues(appId),
+        );
         try {
           const answer = await machine.request(request);
           if (secretValues.size === 0) return answer;
@@ -2583,9 +2640,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async redact(appId, value) {
         const record = await apps.get(appId);
         if (record === null) return value;
+        // issue #566 — same per-box cache preference as box.request: an
+        // injected value redacts without a refetch that could fail.
         const secretValues = await collectSecretValues(
           documentFromRecord(record).secrets,
           config.secrets,
+          lifecycle.injectedSecretValues(appId),
         );
         return redactSecretJson(value, secretValues);
       },

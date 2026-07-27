@@ -93,6 +93,25 @@ describe("Form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSubmit).toHaveBeenCalled();
   });
+
+  // genqa defect 2: a generated island's onSubmit is often a hydrated
+  // `$action` binding (packages/agent/src/tools.ts's runtime hydrate()) —
+  // a zero-arg callback that can never call preventDefault itself. Form must
+  // own preventDefault unconditionally, or the native submission still fires
+  // and the jail's sandbox (deliberately no allow-forms) blocks it with a
+  // console error instead of the action ever appearing to resolve.
+  it("prevents the native submission even when the caller's onSubmit never calls preventDefault", () => {
+    const onSubmit = vi.fn();
+    render(
+      <Form onSubmit={onSubmit} submitLabel="Save">
+        <Input label="Name" />
+      </Form>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSubmit).toHaveBeenCalledOnce();
+    const event = onSubmit.mock.calls[0]![0] as { defaultPrevented: boolean };
+    expect(event.defaultPrevented).toBe(true);
+  });
 });
 
 describe("Disclaimer (first-class)", () => {

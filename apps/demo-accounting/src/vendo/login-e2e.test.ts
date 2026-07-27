@@ -13,8 +13,16 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { SESSION_COOKIE } from "../server/session"
-import { cadenceDemoEmail, cadenceDemoPassword, cadenceDemoUsers, supabaseUrl } from "../server/users"
+import {
+  cadenceDemoEmail,
+  cadenceDemoPassword,
+  cadenceDemoUsers,
+  supabaseAnonKey,
+  supabaseJwtSecret,
+  supabaseUrl,
+} from "../server/users"
 import { appFetch, bootCadence, BOOT_MS, type CadenceApp } from "./e2e-harness"
+import { e2eSupabaseGuard } from "./e2e-localness"
 
 async function gotrueUp(): Promise<boolean> {
   try {
@@ -27,7 +35,11 @@ async function gotrueUp(): Promise<boolean> {
   }
 }
 
-const supabaseRunning = await gotrueUp()
+// Localness guard (criterion 30): never probe — let alone exercise — an
+// ambient non-loopback stack without the explicit live opt-in.
+const guard = e2eSupabaseGuard(supabaseUrl(), process.env.CADENCE_E2E_SUPABASE)
+if (!guard.run) console.warn(guard.reason)
+const supabaseRunning = guard.run && (await gotrueUp())
 
 let app: CadenceApp | undefined
 
@@ -70,7 +82,14 @@ function sessionCookieFrom(response: Response): string {
 
 beforeAll(async () => {
   if (!supabaseRunning) return
-  app = await bootCadence(".next/login-e2e")
+  // Pin the child app to exactly the Supabase config THIS suite resolved and
+  // guard-vetted, so the booted server can never drift onto ambient config
+  // the guard did not see.
+  app = await bootCadence(".next/login-e2e", {
+    SUPABASE_URL: supabaseUrl(),
+    SUPABASE_JWT_SECRET: supabaseJwtSecret(),
+    SUPABASE_ANON_KEY: supabaseAnonKey(),
+  })
 }, BOOT_MS)
 
 afterAll(async () => {

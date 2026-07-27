@@ -7,6 +7,11 @@ packages:
   - "apps/*"
   - "bench"
   - "spikes/*"
+  # tools/ is NOT globbed: tools/demo-router is deliberately standalone (its own
+  # zero-dependency deploy). The video harness is listed explicitly instead — it
+  # renders the real @vendoai/* components, so it must resolve them through the
+  # workspace rather than a published range.
+  - "tools/video-studio"
   # install-dx-creds is evidence-only and needs zod ^4 (Claude Agent SDK peer);
   # keeping it in the workspace flips zod peer resolution to 4.x for every
   # ai-SDK consumer (packages/agent, packages/ui, fixtures, ...). It installs

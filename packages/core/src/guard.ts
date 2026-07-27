@@ -42,4 +42,14 @@ export interface Guard {
    *  idempotent, never minting a grant — so the pending queue tracks the
    *  thread instead of accreting forever. Callers feature-detect. */
   abandonApprovals?(ids: ApprovalId[], ctx: RunContext): Promise<void>;
+  /** genqa defect 1 (double-count) — a preview of `check()`'s verdict for a
+   *  caller that is about to make (or ask the AI SDK to make) the REAL,
+   *  dispatching call itself moments later for the SAME logical call: a
+   *  "run" verdict here never spends the write-budget/call-rate breakers,
+   *  because the follow-up call does. An "ask"/"block" verdict parks/audits
+   *  exactly as `check()` does — for those outcomes this IS the only
+   *  evaluation that ever runs (the agent bridge's `needsApproval` hook is
+   *  the one caller today; packages/agent tools.ts). Callers feature-detect;
+   *  a guard that omits it is used exactly as `check()` always was. */
+  previewCheck?(call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext): Promise<GuardDecision>;
 }

@@ -27,7 +27,7 @@ interface AppDoc {
   tree: { nodes: TreeNode[] };
 }
 
-const CREATE_DIALECT = '<App name="Greeting"><Text text="Hello"/></App>';
+const CREATE_DIALECT = '<App name="Greeting"><Text text="Hello"/><Disclaimer reason="Fixture app."/></App>';
 
 // EDIT dialect: patch the greeting text. The instruction avoids the
 // engine's server-keyword heuristic so it routes to the tree (not code) dialect.

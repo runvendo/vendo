@@ -1,0 +1,318 @@
+# RUN SUMMARY — video-system harness (`factory/video-harness`)
+
+> This is the lane's run summary, verbatim and committed. `progress.md` is
+> gitignored at the repo root, so the summary lives here where a PR reviewer
+> actually sees it. Round 2: the five confirmed checker findings are fixed.
+
+**Impact.** Vendo has a permanent video harness in-repo, and the film it renders
+is the product — not a drawing of it. `tools/video-studio/` renders the
+14-second "State of the art knowledge in one click" film at 1080p30 in which
+the panel is the product's own `VendoOverlay`, the transcript is the product's
+own `MessageList`, the keep affordance is the product's own "Pin to dashboard"
+control, and the host settings page is Cadence's own markup at Cadence's own
+type sizes. Future episodes are a config file, not a rebuild: episode two was
+written from the README and rendered at 480p without touching a template file.
+
+## See it work
+
+```bash
+pnpm install
+pnpm --filter video-studio render     # → tools/video-studio/out/one-click-knowledge.mp4
+pnpm --filter video-studio preview    # Remotion Studio, to scrub
+open docs/verification/video-harness/README.md
+```
+
+Verified output: `1920x1080`, `30/1` fps, 420 frames, **14.058667 s**.
+
+## Per-task status
+
+| Task | Status | Proof |
+|---|---|---|
+| T1 Walking skeleton | **done** | The prototype lives in `tools/video-studio/`, a private pnpm workspace package. Render: 14.06 s / 1920x1080 / 30 fps. |
+| T2 Real components — agent surfaces | **done** | The real `VendoOverlay` panel + header controls, the real `MessageList` transcript, real `ThreadMessage`/`TurnCitations`/`ThreadAppCard`/`PayloadView`, and the real `.fl-barpin` pin control. The studio authors **zero** product class names. |
+| T3 Real components — host dashboard | **done** | Cadence's real `MissingDocsHero` imported; the settings page and console chrome replicated markup-for-markup from `apps/demo-accounting` with tokens quoted from `globals.css` (traceability table below). |
+| T4 Episode template | **done** | `src/template/` + `src/episodes/<name>.tsx`; proven by `smoke-three-scene` rendering at **854x480** with no template edit. |
+| T5 Evidence + PR | **done** | This folder: 9 frames, the smoke MP4 + its source, the probe record, and the provenance tables below. PR #610. |
+
+## Contract criteria
+
+1. **Clean checkout → `pnpm install && pnpm --filter video-studio render` gives a 14 s ±0.5 s 1920x1080@30 MP4 whose 3.0 s / 6.5 s frames are real `@vendoai/*` components.** PASS — `ffprobe`: `width=1920 height=1080 r_frame_rate=30/1 nb_frames=420 duration=14.058667`. A `prerender` hook builds `@vendoai/ui`'s gitignored jail runtime so a clean checkout needs nothing extra.
+2. **`pnpm build && pnpm test && pnpm typecheck && pnpm lint` all green.** PASS — run twice; `video-studio:test` and `video-studio:typecheck` cache-miss and execute fresh.
+3. **A new episode renders without touching template files.** PASS — `smoke-three-scene`, 155 frames at **854x480**.
+
+## Round-2 findings, and what changed
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | Smoke render must honour 480p; 864x486 was a reinterpretation | The episode now **declares** `width: 854, height: 480` and renders with no `--scale`. `ffprobe` on the committed `smoke-three-scene.mp4`: `width=854 height=480 nb_frames=155`. The template gained `stageFit` — an episode may declare any resolution and the 1920x1080 stage is fitted into it, so the resolution is reproducible from `pnpm render` alone. |
+| 2 | Mount the REAL `VendoOverlay` shell + header; P1 rejected | Done — see "The panel is real" below. The hand-drawn `PanelHeader`, the hand-drawn `.fl-thread`/`.fl-msglist` containers and the hand-drawn `Keep` button are all deleted. |
+| 3 | `SceneClick` must be Cadence-real | Rebuilt from `apps/demo-accounting/src/app/settings/page.tsx` — its `Row` markup, its 13px/12px typography, its real `h-5 w-9` ink/line `Toggle`. The invented violet 64px row is gone. The same page, pulled back, now also replaces the eruption scene's invented corner card, so the two scenes are continuous. |
+| 4 | No network in compositions | `@remotion/google-fonts` removed from `package.json` and the lockfile. Onest is bundled in `tools/video-studio/public/fonts/` and declared with `@font-face` over `staticFile()`. |
+| 5 | RUN SUMMARY must be PR-visible | This file, plus `git add -f progress.md`. |
+
+---
+
+## The panel is real (finding 2)
+
+`tools/video-studio/src/template/OverlayPanel.tsx` mounts the product's own
+overlay:
+
+```tsx
+<VendoOverlay open launcher="none" thread={ThreadSlot} />
+```
+
+- **The panel, its border, radius, glass, shadow and header controls** (new
+  conversation / expand workspace / close) are `VendoOverlay`'s own. Nothing is
+  drawn by the film.
+- **The conversation body** arrives through the overlay's own documented
+  injection point — the `thread` prop, described in `vendo-overlay.tsx` as "the
+  one sanctioned component-injection point (the eject seam) … The overlay stays
+  the positioning shell". The built-in `VendoThread` drives itself off the live
+  transport, which the film deliberately has no wire for.
+- **The transcript** is the product's `MessageList` ("the transcript pane …
+  pure presentation over the thread-level state"), handed the props a settled
+  turn carries. The studio no longer authors `.fl-thread` or `.fl-msglist`.
+- **The keep affordance** is the product's own: `VendoStage` passes `onPin` to
+  `VendoProvider`, which is the host seam `ThreadAppCard` requires before it
+  renders `.fl-barpin` "Pin to dashboard" on the card bar. That is the button
+  the cursor clicks at 7.6 s.
+
+What the film supplies, and only this:
+
+1. **Geometry.** The panel is `position: fixed` and portals to `document.body`;
+   Remotion's viewport IS the 1920x1080 frame, so fixed coordinates ARE film
+   coordinates. A scoped rule (`panelGeometryCss`, re-emitted every frame from
+   the frame number) states the pinned `CARD` rect the transitions were authored
+   against, and rides the film's `panelRise` spring. The product's own shadow
+   values are kept, and only ride the film's deepen-while-moving rule.
+2. **Stillness.** One documented blanket rule (`STILL_CSS`) switches off every
+   wall-clock CSS animation and transition inside the chrome's theme
+   boundaries — the `.5s fl-overlay-stretch` panel open, the `.fl-msglist-wrap`
+   fade, the app card's looping build sweep, the expand button's suggest pulse.
+   Remotion steps frames rather than letting time pass, so wall-clock motion is
+   exactly what makes a render non-reproducible.
+3. **Layering.** The panel carries the product's `z-index: 2147483001` (it has
+   to beat any host page). The film draws over it, so `FILM_Z` in `theme.ts`
+   offsets the cursor, the widget flight, the orb whip and the detonation above
+   that number, in the prototype's original relative order. `Episode.tsx` emits
+   **no** transform on non-shake frames, because any transform would make the
+   film a stacking context and trap those layers under the panel.
+
+### Two consequences worth naming
+
+- **The product's panel has no title row.** Its header is the control cluster
+  (new / expand / close). The prototype drew an "Assistant" row with a violet
+  status dot; that was an invention and is deleted, not replaced. The orb whip's
+  frames and coordinates are untouched — it now condenses onto the real panel's
+  own top-left corner as the panel springs up beneath it. Whether the film wants
+  a *real* landing target there is a design question for Yousef, recorded in
+  `PARKED.md`; it is not resolvable by drawing one.
+- **In the overlay, the product renders an in-thread view as a compact
+  preview**, capped at `PREVIEW_MAX_HEIGHT = 300` with a fade and its own
+  Expand pill (`parts.tsx`: `compact = split !== null`). So the real
+  `.fl-appcard` is 760x342, not the prototype's invented 508, and `WIDGET.h` in
+  `chatShared.ts` was corrected to the measured value so the flight overlay
+  lifts the card from where it actually is. The Expand pill is left on camera:
+  it is a real affordance, and hiding real product controls would point back
+  toward the fake.
+
+### Waypoints are measured, not eyeballed
+
+The cursor's contact points were read off the live DOM with
+`getBoundingClientRect()` during a real render and divided back through the
+scene camera:
+
+```
+frame 137 (chat-local 62)  .fl-cite-btn  x=393.0  y=323.4 w=149.3 h=28.2  → film (488, 346)            = CHIP
+frame 229 (chat-local 154) .fl-barpin    x=1070.9 y=351.2 w=130.2 h=21.5  → film (1131, 366)           = PIN
+frame 229                  .fl-appcard   x=435.7  y=340.9 w=779.8 h=350.9 → film (449, 346, 760, 342)  = WIDGET
+frame 4                    [role=switch] x=1523.9 y=490.9 w=72.2  h=40.1  → film (1560, 511.5)         = TOGGLE
+```
+
+The switch measurement also confirms the Cadence toggle renders at exactly
+`w-9 h-5` = 36x20 CSS px.
+
+---
+
+## Artefacts
+
+| File | What it proves |
+|---|---|
+| `one-click-knowledge.mp4.path.txt` | Where the episode renders to, and its probe record. |
+| `frames/t*.png` | The eight contract frames at 0.3 / 0.9 / 1.5 / 3.0 / 6.5 / 8.4 / 11.0 / 13.5 s, plus the 4.5 s Sources frame. |
+| `smoke-three-scene.mp4` | Episode two, from the same template, at 854x480. |
+| `smoke-three-scene.tsx` | Its whole source — what "adding an episode" costs. |
+
+### Reproducing
+
+```bash
+pnpm install
+pnpm --filter video-studio render          # → tools/video-studio/out/one-click-knowledge.mp4
+ffprobe -v error -select_streams v:0 \
+  -show_entries stream=width,height,r_frame_rate,nb_frames \
+  -show_entries format=duration -of default=nw=1 \
+  tools/video-studio/out/one-click-knowledge.mp4
+for t in 0.3 0.9 1.5 3.0 6.5 8.4 11.0 13.5; do
+  ffmpeg -y -i tools/video-studio/out/one-click-knowledge.mp4 \
+    -ss "$t" -frames:v 1 "frames/t${t}s.png"
+done
+```
+
+---
+
+## Frame-by-frame
+
+| t | Beat | What is on screen |
+|---|---|---|
+| 0.3 s | Cold open + detonation | **Cadence, real.** Its settings page — real `PageHeader`, real `Card`/`CardHeader`, real `Row`s at 13px/12px, the real firm name, the real Notifications card below the fold — with the three-layer violet detonation and the white shockwave ring mid-expansion. |
+| 0.9 s | Detonation hold | Full violet flood, white vendo mark spring-snapped to screen centre. |
+| 1.5 s | Eruption | The corpus storm — 34 file chips arcing into the agent orb, kinetic type "State-of-the-art" punching in, and the same Cadence page pulled back into the corner with the Knowledge toggle now **ink-on**. |
+| 3.0 s | Chat, proof A opening | **Real components.** The real `VendoOverlay` panel with its real header controls, and the real user turn mid-type inside the real `MessageList`. Branded cursor with motion trail on top. |
+| 4.5 s | Grounded answer | The real markdown answer, the real `Sources` row with two real `CitationChip`s from a real `data-vendo-citations` part, and the real `Copy` turn action. |
+| 6.5 s | Chat, proof B building | **Real components.** The real in-thread app card (`.fl-appcard-bar` reading "Building your view…") with the real Kit `Stat`s already streamed in. |
+| 8.4 s | Shared-element travel | The real app card in flight over the Cadence dashboard, mid-transition between the chat and its dashboard slot. |
+| 11.0 s | Claim | "State-of-the-art knowledge base." |
+| 13.5 s | End card | vendo wordmark. |
+
+---
+
+## Provenance
+
+### Agent surfaces — every import (`grep -rn` over `tools/video-studio/src`)
+
+```
+template/OverlayPanel.tsx:2  import {VendoOverlay} from '../../../../packages/ui/src/chrome/vendo-overlay';
+template/VendoStage.tsx:2    import type {VendoClient} from '../../../../packages/ui/src/client';
+template/VendoStage.tsx:3    import {VendoProvider} from '../../../../packages/ui/src/context';
+template/VendoStage.tsx:7    } from '../../../../packages/ui/src/chrome/chrome-root';
+scenes/agent-surface.tsx:4   import {MessageList} from '../../../../packages/ui/src/chrome/thread/message-list';
+scenes/agent-surface.tsx:5   import {ThreadMessage} from '../../../../packages/ui/src/chrome/thread/message';
+scenes/SceneProofC.tsx:8     import {MissingDocsHero} from '../../../../apps/demo-accounting/src/components/dashboard/missing-docs-hero';
+```
+
+`VendoOverlay` supplies the panel, the header controls and the split shell.
+`MessageList` supplies the transcript pane and fans out to `ThreadMessage` →
+`ThreadPart` → {`Markdown`, `TurnCitations`, `ThreadAppCard` → `PayloadView` →
+Kit `Stat`/`LineChart`/`Badge`}.
+
+The stronger check is the negative one: **the studio authors no product class
+name at all.** Every `.fl-*` class on camera is emitted inside `packages/ui`.
+
+```bash
+grep -rn 'className="fl-' tools/video-studio/src   # → no matches
+```
+
+The only classes the studio writes are its own film-grammar hook (`vs-proof-a`,
+the wrapper the answer's spring entrance is scoped to) and the Cadence class
+strings carried for traceability, below.
+
+No composition can reach the network: `VendoStage` passes a `VendoClient` whose
+every method throws (`video-studio renders offline: refusing client.<x>.<y>()`),
+and `ChromeRoot` is mounted with `automaticPolicyNotice={false}` so the status
+probe never runs.
+
+### Host chrome — Cadence, line by line
+
+`tools/video-studio/src/cadence/settings.tsx` replicates
+`apps/demo-accounting/src/app/settings/page.tsx`. Each element carries the
+host's real class string in `className` and the resolved token value inline,
+because Cadence is Tailwind v4 CSS-first with **no config file**
+(`postcss.config.mjs` is the whole build), so its utilities only resolve through
+its own PostCSS pipeline, which Remotion does not run. The contract's task 3
+authorises exactly this branch for host chrome.
+
+| Studio element | Cadence source | Real class / token |
+|---|---|---|
+| `PageHeader` | `ui/page-header.tsx` | `flex items-end justify-between gap-4`; `text-[22px] font-semibold tracking-tight`; `mt-1 text-[13.5px] text-ink-soft` |
+| `Card` | `ui/card.tsx` | `rounded-xl border border-line bg-card shadow-card` |
+| `CardHeader` | `ui/card.tsx` | `flex items-center justify-between px-5 pt-4 pb-3`; `text-[13px] font-semibold tracking-tight` |
+| `Row` | `settings/page.tsx:12` | `flex items-center justify-between gap-8 px-5 py-3.5`; label `text-[13px] font-medium`; hint `mt-0.5 text-[12px] text-ink-faint` |
+| `RowList` | `settings/page.tsx:78` | `divide-y divide-line/60 border-t border-line/70` |
+| `CadenceToggle` | `settings/page.tsx:45` | `inline-flex h-5 w-9 items-center rounded-full px-0.5`; `bg-ink` on / `bg-line-strong` off; knob `h-4 w-4 rounded-full bg-white shadow-card` |
+| mark chip | `ui/badge.tsx` neutral | `border border-line bg-surface` |
+| Notifications card | `settings/page.tsx:92-107` | Its three rows, copy verbatim |
+
+Colours come from `src/cadence/tokens.ts`, which quotes the `@theme` blocks of
+`apps/demo-accounting/src/app/globals.css` (`--color-ink: #111111`,
+`--color-line: #ecebe8`, `--color-line-strong: #dfddd8`,
+`--color-ink-faint: #908c85`, `--shadow-card`) verbatim.
+
+Two deliberate departures from the host, both because the film shows this switch
+being **used** rather than shown as read-only: the toggle animates (a Remotion
+spring at the click frame), and the host's `opacity-70` disabled dimming is
+dropped. The host's own `Toggle` is static and disabled because firm settings
+are owner-managed.
+
+**Known limitation (pre-existing, not a round-2 finding):** Cadence loads Inter
+through `next/font`. The studio has no Next runtime and does not bundle Inter,
+so `CAD_FONT` falls through to the system sans stack. Metrics and layout are the
+host's; the typeface is not.
+
+---
+
+## Offline (finding 4)
+
+Onest — the same pinned v9 variable subsets the product itself ships — is
+bundled as files. They were decoded straight out of
+`packages/ui/src/chrome/onest-font.gen.ts`, which inlines those exact bytes as
+data URIs, so no download was needed to create them and none is needed to render
+with them.
+
+```
+tools/video-studio/public/fonts/onest-latin.woff2       32256 bytes, signature "wOF2"
+tools/video-studio/public/fonts/onest-latin-ext.woff2   15940 bytes, signature "wOF2"
+```
+
+`src/template/onest.ts` declares them with `@font-face` over `staticFile()` and
+holds the render with `delayRender` until `document.fonts` reports the weights
+ready, so frame one is never captured mid-load.
+
+Proof there is no font CDN left in the compositions:
+
+```bash
+$ grep -rn "google-fonts" tools/video-studio/package.json pnpm-lock.yaml
+# → no matches
+
+$ pnpm --filter video-studio exec remotion bundle --out-dir=/tmp/vs-bundle
+$ grep -rlE "fonts\.gstatic\.com|fonts\.googleapis\.com" /tmp/vs-bundle
+# → 0 matches: no font-CDN reference in the bundle
+
+$ find /tmp/vs-bundle -name "*.woff2"
+/tmp/vs-bundle/public/fonts/onest-latin.woff2
+/tmp/vs-bundle/public/fonts/onest-latin-ext.woff2
+```
+
+---
+
+## Template proof (episode two)
+
+`smoke-three-scene.tsx` is a three-scene episode with a different blank
+("automations"), different copy, a different corpus and a different overlay set.
+It was written from `tools/video-studio/README.md` and rendered without editing
+a single file under `src/template/`.
+
+```bash
+pnpm --filter video-studio exec remotion render SmokeThreeScene \
+  out/smoke-three-scene.mp4
+```
+
+Result: **854x480**, 155 frames — the episode's own declared resolution, no
+`--scale` flag. `ffprobe` on the committed MP4:
+
+```
+width=854
+height=480
+nb_frames=155
+```
+
+Per the contract the smoke episode is kept as evidence rather than shipped, so
+it is registered on the branch in one commit and unregistered in the next; those
+two commits are the audit trail that adding an episode touches `src/episodes/`
+only. To re-run it: copy `smoke-three-scene.tsx` back into
+`tools/video-studio/src/episodes/`, add `smokeThreeScene` to the `episodes`
+array, and run the command above.
+
+Note for future episodes: a downscaled composition scales the 1920x1080 stage,
+but the real overlay panel portals to `document.body` and is positioned in
+viewport pixels, so it does not scale with it. Chat-bearing episodes should
+render at 1920x1080. The smoke episode is deliberately three non-chat scenes.

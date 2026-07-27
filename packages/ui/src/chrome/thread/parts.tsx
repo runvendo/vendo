@@ -165,6 +165,13 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
       />
     );
   }
+  if (part.type === "data-vendo-citations") {
+    // Knowledge K1 — rendered at TURN level (message.tsx → TurnCitations),
+    // under the answer text the citations ground, matching the signed
+    // mockups; at this part's transcript position the answer hasn't
+    // streamed yet, so rendering here would put sources above the text.
+    return null;
+  }
   if (part.type === "data-vendo-view") {
     const data = partData(part) as Partial<VendoViewPart>;
     if (typeof data.appId !== "string" || !data.payload) return null;

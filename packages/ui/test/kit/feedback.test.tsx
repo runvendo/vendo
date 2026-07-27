@@ -29,6 +29,30 @@ describe("Callout", () => {
     expect(el.getAttribute("data-tone")).toBe("warning");
     expect(screen.getByText("Three invoices are overdue.")).toBeTruthy();
   });
+
+  // Re-gate 2026-07-26: generated code passes tone="accent" (the tone the
+  // sibling Badge/EnumBadge/Stat vocabularies teach) — it crashed the
+  // destructure and sank four otherwise-honest arm-C rows into error boxes.
+  it('renders tone="accent" as a first-class tone, never a crash', () => {
+    render(<Callout tone="accent" title="Note">Highlighted information.</Callout>);
+    const el = screen.getByRole("status");
+    expect(el.getAttribute("data-tone")).toBe("accent");
+    expect(screen.getByText("Highlighted information.")).toBeTruthy();
+  });
+
+  it("renders any unknown tone safely with the info fallback", () => {
+    render(<Callout tone={"garbage" as never} title="Odd">Still visible.</Callout>);
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(screen.getByText("Still visible.")).toBeTruthy();
+  });
+
+  it("does not pick up Object.prototype members for tones like 'constructor' (review)", () => {
+    render(<Callout tone={"constructor" as never} title="Proto">Prototype-safe.</Callout>);
+    const el = screen.getByRole("status");
+    expect(screen.getByText("Prototype-safe.")).toBeTruthy();
+    // The info fallback's accent color applied — not an undefined style.
+    expect((el as HTMLElement).style.borderLeft).not.toContain("undefined");
+  });
 });
 
 describe("Accordion (self-managing)", () => {

@@ -38,6 +38,79 @@ mount.id = "vendo-jail-root";
 mount.style.display = "flow-root";
 document.body.appendChild(mount);
 
+// Implicit-submission interception (unified-try-surface Defect 2, 2026-07-26):
+// the jail sandbox carries no `allow-forms` — no <form> submission may ever
+// navigate or POST out of this frame, by design (JailedComponent's iframe
+// sandbox is exactly "allow-scripts").
+//
+// The FIRST fix here was a capture-phase `submit` listener calling
+// preventDefault() — browser-verified DEAD: for an implicit submission
+// (clicking a submit button, or pressing Enter in a form field) inside a
+// sandboxed, non-allow-forms frame, Chromium logs "Blocked form
+// submission..." and aborts WITHOUT ever dispatching a cancelable `submit`
+// DOM event — so no `submit` listener (this module's, React's synthetic
+// onSubmit, or the Kit Form's own wrapper) ever runs at all. The only
+// interceptable moment is the act that WOULD trigger the implicit
+// submission — the click or keypress — one step upstream of `submit` itself.
+//
+// Fix: capture-phase `click` and `keydown` listeners find the (submit
+// button | Enter-in-field) trigger, preventDefault() on THAT event (stopping
+// the browser from ever reaching its own blocked-submission path), then
+// re-dispatch a plain, untrusted `submit` Event at the form. An untrusted
+// event constructed and dispatched by script carries no browser-native
+// default action of its own (only a REAL, trusted implicit-submission
+// attempt does), so it reaches every ordinary `submit` listener — Kit's own
+// preventDefault wrapper, a raw island's onSubmit, and any future one —
+// exactly as if the browser's own submission had fired, with zero risk of
+// the sandboxed block re-triggering. The synthetic dispatch is deferred to a
+// microtask so it lands after the triggering event finishes its own capture/
+// target/bubble dispatch, matching the browser's native default-action
+// timing (the default action runs only once the event is fully done).
+const submitTarget = (element: Element): (HTMLButtonElement | HTMLInputElement) | null => {
+  const submitter = element.closest('button, input[type="submit"], input[type="image"]');
+  if (submitter === null) return null;
+  if (submitter instanceof HTMLButtonElement) return submitter.type === "submit" ? submitter : null;
+  if (submitter instanceof HTMLInputElement) {
+    return submitter.type === "submit" || submitter.type === "image" ? submitter : null;
+  }
+  return null;
+};
+
+const fireUntrustedSubmit = (form: HTMLFormElement): void => {
+  queueMicrotask(() => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+};
+
+document.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) return;
+  const submitter = submitTarget(event.target);
+  if (submitter === null || submitter.disabled || submitter.form === null) return;
+  event.preventDefault();
+  fireUntrustedSubmit(submitter.form);
+}, { capture: true });
+
+// The Enter-in-a-field implicit submission (the other native trigger the
+// spec defines) needs the identical treatment — it bypasses `click`
+// entirely, so it hits the SAME blocked-before-any-event Chromium path.
+const IMPLICIT_SUBMIT_INPUT_TYPES = new Set([
+  "text", "search", "url", "tel", "email", "password", "number",
+  "date", "month", "week", "time", "datetime-local",
+]);
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
+  if (!IMPLICIT_SUBMIT_INPUT_TYPES.has(event.target.type) || event.target.form === null) return;
+  event.preventDefault();
+  fireUntrustedSubmit(event.target.form);
+}, { capture: true });
+
+// Defense in depth, kept from the original fix: any OTHER path that still
+// manages to dispatch a real, cancelable `submit` event (a form's own
+// `requestSubmit()` call, a future browser/engine that behaves closer to
+// spec than Chromium's implicit-submission shortcut above) is covered too —
+// preventDefault() here only suppresses the sandboxed native action; it does
+// not stop propagation, so React's synthetic onSubmit (and the Kit Form's
+// own handler) still run normally.
+document.addEventListener("submit", (event) => event.preventDefault(), { capture: true });
+
 let root: Root | undefined;
 let loadedKey: string | undefined;
 let loadedComponent: React.ComponentType<Record<string, unknown>> | undefined;

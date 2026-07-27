@@ -33,6 +33,9 @@ import type { EnrichmentDiff } from "./diff.js";
 export const enrichmentToolProposalSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1).max(500).optional(),
+  /** Presentation only (see ToolDescriptor.title) — bounded short so a model
+   *  cannot smuggle a paragraph into a menu label. */
+  title: z.string().min(1).max(60).optional(),
   risk: z.enum(["read", "write", "destructive"]).optional(),
   critical: z.boolean().optional(),
   disabled: z.boolean().optional(),
@@ -153,6 +156,7 @@ export type EnrichmentRunResult =
 function proposalFields(proposal: EnrichmentToolProposal): EnrichmentFields {
   return {
     ...(proposal.description === undefined ? {} : { description: proposal.description }),
+    ...(proposal.title === undefined ? {} : { title: proposal.title }),
     ...(proposal.risk === undefined ? {} : { risk: proposal.risk }),
     ...(proposal.critical === undefined ? {} : { critical: proposal.critical }),
     ...(proposal.disabled === undefined ? {} : { disabled: proposal.disabled }),

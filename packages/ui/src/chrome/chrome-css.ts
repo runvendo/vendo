@@ -645,6 +645,13 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-btn-primary { background: var(--vendo-accent); color: var(--vendo-accent-fg); border-color: transparent;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 22%, transparent), inset 0 1px 0 rgba(255,255,255,.16); }
 .fl-btn-primary:hover { opacity: .92; background: var(--vendo-accent); border-color: transparent; }
+.fl-btn-quiet { border-color: transparent; background: transparent; box-shadow: none;
+  color: var(--vendo-fg-muted); padding: 8px 10px; }
+.fl-btn-quiet:hover { background: var(--vendo-accent-soft); border-color: transparent; color: var(--vendo-fg); }
+/* Inline button spinner (Reconnect) — tinted for a filled primary button. */
+.fl-btn-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid color-mix(in srgb, var(--vendo-accent-fg) 35%, transparent);
+  border-top-color: var(--vendo-accent-fg); animation: fl-spin .7s linear infinite; }
 .fl-approval--ceremony { border-color: var(--vendo-warn-border); background: var(--vendo-warn-bg); }
 .fl-approval--ceremony .fl-approval-ic { color: var(--vendo-warn); background: color-mix(in srgb, var(--vendo-warn) 16%, transparent); }
 .fl-approval--ceremony .fl-approval-eyebrow { color: var(--vendo-warn); }
@@ -884,6 +891,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 16px; flex: 1; min-height: 0; overflow-y: auto; padding: 30px 30px 10px; text-align: center; }
 .fl-greet { margin: 0; font-family: var(--vendo-heading-font); font-size: calc(var(--vendo-base-size) * 1.533); font-weight: 600; letter-spacing: -.022em; }
+/* The optional capability line under the landing headline (VendoThread's
+   \`intro\` prop) — muted assistant voice, canvas geometry (max 460px). */
+.fl-intro { margin: 0; max-width: 460px; font-size: var(--vendo-text-body); line-height: 1.65;
+  letter-spacing: -.006em; color: var(--vendo-fg-muted); }
 /* Greeting-as-tutorial (ui-usage-dx §6): the one-time first message reads as
    the agent speaking — left-aligned assistant typography with its prompt chips
    beneath — inside the otherwise-centered landing. */
@@ -892,6 +903,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-greeting-intro { margin: 0; line-height: 1.65; font-size: var(--vendo-text-body); letter-spacing: -.006em; }
 .fl-greeting .fl-chips { justify-content: flex-start; }
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+/* Mixed suggestions (cards + chips): the chips are the second tier, under an
+   "Or try this" micro-label (demo-live-readiness mockup §1). */
+.fl-try-row { margin-top: 16px; }
+.fl-try-row .fl-chips { justify-content: flex-start; }
+.fl-try-label { display: block; margin-bottom: 9px; font-size: 11px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--vendo-fg-muted); }
 .fl-chip { border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
   -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
   border-radius: 999px; padding: 8px 14px; font-size: 12.5px; color: var(--vendo-fg); cursor: pointer;
@@ -1783,6 +1800,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-acct-chip--warn { color: var(--vendo-warn-text); background: color-mix(in srgb, var(--vendo-warn-tint) 14%, transparent); }
 .fl-acct-chip--danger { color: var(--vendo-danger); background: color-mix(in srgb, var(--vendo-danger) 11%, transparent); }
 .fl-acct-chip--off { color: var(--vendo-fg-muted); background: color-mix(in srgb, var(--vendo-fg) 7%, transparent); }
+.fl-acct-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.fl-acct-actions .fl-btn { display: inline-flex; align-items: center; gap: 6px; }
 .fl-acct-confirm { overflow: hidden; max-height: 0; transition: max-height .3s var(--vendo-motion-easing); }
 .fl-acct-confirm--open { max-height: 150px; }
 .fl-acct-confirm-inner { border-top: 1px solid var(--vendo-warn-border); background: var(--vendo-warn-bg);
@@ -2186,5 +2205,49 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   .fl-overlay-scrim, .fl-toasts-card, .fl-voice-drawer,
   .fl-approvals-slide, .fl-auto-runs-dot, .fl-acct-severed { animation: none; opacity: 1; }
 }
+
+/* Knowledge K1 — the turn's knowledge trust surface (signed mockups,
+   Surface 2): the labelled SOURCES chip row with the snippet popover, the
+   muted searched-line refusal, and the amber knowledge-unavailable flag.
+   Mockup --v-* values map to brand tokens only (theme.ts rule). */
+.fl-cites { margin-top: 10px; }
+.fl-cites-label { font-size: 10.5px; font-weight: 600; color: var(--vendo-fg-muted);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.fl-cites-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.fl-cite { position: relative; display: inline-flex; }
+.fl-cite-btn { display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--vendo-border); background: var(--vendo-surface);
+  border-radius: var(--vendo-radius-sm); padding: 4.5px 10px; font-family: inherit;
+  font-size: 12px; font-weight: 500; color: var(--vendo-fg); cursor: pointer;
+  transition: border-color .12s ease, background .12s ease; }
+.fl-cite-btn svg { flex: none; color: var(--vendo-fg-muted); }
+.fl-cite-btn:hover, .fl-cite--open .fl-cite-btn { border-color: var(--vendo-border-strong); }
+/* The snippet popover: click-toggled everywhere, hover-revealed on pointer
+   devices (the mockup's chip:hover behavior). */
+.fl-cite-pop { position: absolute; left: 0; top: calc(100% + 8px); width: 292px; z-index: 5;
+  background: var(--vendo-surface); border: 1px solid var(--vendo-border); border-radius: 10px;
+  box-shadow: var(--vendo-shadow); padding: 12px 14px; text-align: left; cursor: default;
+  display: none; }
+.fl-cite--open .fl-cite-pop { display: block; }
+@media (hover: hover) { .fl-cite:hover .fl-cite-pop { display: block; } }
+.fl-cite-ptitle { font-size: 12.5px; font-weight: 600; color: var(--vendo-fg);
+  display: flex; align-items: center; gap: 6px; }
+.fl-cite-ptitle svg { color: var(--vendo-fg-muted); }
+.fl-cite-psnippet { display: block; font-size: 12px; color: var(--vendo-fg-muted); line-height: 1.6;
+  margin: 7px 0 9px; border-left: 2px solid var(--vendo-border); padding-left: 9px; }
+.fl-cite-porigin { font-size: 11px; color: var(--vendo-fg-muted);
+  display: flex; align-items: center; gap: 5px; }
+.fl-cite-sep { color: var(--vendo-border-strong); }
+.fl-know-searched { display: flex; align-items: center; gap: 7px; margin-top: 10px;
+  font-size: 11.5px; color: var(--vendo-fg-muted); }
+.fl-know-searched svg { flex: none; }
+.fl-know-unavail { display: flex; align-items: flex-start; gap: 9px; margin-top: 10px;
+  background: var(--vendo-warn-bg); border: 1px solid var(--vendo-warn-border);
+  border-radius: 10px; padding: 9px 12px; font-size: 12px; line-height: 1.55;
+  /* --vendo-warn, not the mockup's --vendo-warn-text tone: at 12px on the
+     warn wash the lighter tone measures 4.38:1 — under the 4.5:1 AA floor
+     (axe). The darker warn token keeps the amber register and passes. */
+  color: var(--vendo-warn); }
+.fl-know-unavail svg { flex: none; margin-top: 2px; }
 
 `;

@@ -66,6 +66,18 @@ describe("clampEnrichment (restrictive-only, the hard rule)", () => {
     expect(fields).toEqual({ audience: "end-user" });
     expect(clamped).toEqual([]);
   });
+
+  it("accepts a title freely — presentation is never a loosening", () => {
+    const { fields, clamped } = clampEnrichment(baseline({ title: "List invoices" }), { title: "Show my invoices" });
+    expect(fields).toEqual({ title: "Show my invoices" });
+    expect(clamped).toEqual([]);
+  });
+
+  it("drops an unchanged title silently like any other no-op", () => {
+    const { fields, clamped } = clampEnrichment(baseline({ title: "List invoices" }), { title: "List invoices" });
+    expect(fields).toEqual({});
+    expect(clamped).toEqual([]);
+  });
 });
 
 describe("applyEnrichmentFields", () => {
@@ -123,6 +135,11 @@ describe("carryEnrichment (structural syncs must not lose the AI layer)", () => 
     expect(carried.disabled).toBe(true);
     expect(carried.description).toBe("AI.");
     expect(carried.enriched).toBe(true);
+  });
+
+  it("carries a previously written title over a fresh baseline that has none", () => {
+    const previous = applyEnrichmentFields(baseline(), { title: "List invoices" });
+    expect(carryEnrichment(baseline(), previous).title).toBe("List invoices");
   });
 
   it("keeps a previous AI disable even when the fresh scan would enable", () => {

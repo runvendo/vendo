@@ -1,7 +1,7 @@
 ---
-title: "CLI reference: vendo init, login, doctor, sync, eject, extract, playground, mcp, cloud"
+title: "CLI reference: vendo init, login, doctor, sync, eject, extract, try, mcp, cloud"
 sidebarTitle: "CLI"
-description: "Reference for the vendo bin commands: init, login for a Vendo Cloud key, doctor for wiring checks, sync for build-time extraction, eject, extract, playground, mcp, and cloud."
+description: "Reference for the vendo bin commands: init, login for a Vendo Cloud key, doctor for wiring checks, sync for build-time extraction, eject, extract, try for a zero-commit live demo, mcp, and cloud."
 ---
 
 The umbrella owns the `vendo` bin. It has nine commands.
@@ -320,16 +320,56 @@ Options:
 - `--apply <draft.json>`: required. The draft file the agent produced.
 - `--force`: regenerate Vendo-owned files.
 
-## `vendo playground`
+## `vendo try`
 
-Serves every Vendo surface and state (streaming, approvals, slots, the
-workspace page) against scripted data in the browser; no model key, no
-wiring. Runs from anywhere; it does not read the target app.
+Serves a live local demo of your product's agent before you install anything.
+Run it from your app's repo: a deterministic read-only pass extracts your
+tools and brand theme (host-authored `.vendo/` files such as `theme.json`,
+`brief.md`, and `design-rules.md` are carried over and win), the demo opens
+in the browser in seconds, and the AI pass then deepens the profile in the
+background through the same engine ladder `vendo init` uses: product brief,
+risk polish, use-case chips, and synthetic fixtures, streamed into the
+surface as each stage lands. The first paint never waits on AI.
+
+Zero commitment, guaranteed: nothing is written to your repo, no key is
+required, and Ctrl+C leaves no trace. Every artifact lands in a temp profile
+that is swept on exit.
+
+Chat is live when a model credential resolves at startup: a provider env key
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`) or
+`VENDO_API_KEY` through the Vendo Cloud model gateway, the same
+[dev-mode credential ladder](/connect/dev-mode) the runtime uses. An
+Anthropic or Vendo Cloud key works alone (Vendo ships `@ai-sdk/anthropic`);
+a non-Anthropic key needs its matching `@ai-sdk/*` provider installed in
+your app. With a
+model resolved, the surface also takes corrections in conversation: refine
+proposals arrive as reviewable diffs and apply to the temp profile only,
+never to your repo. With zero keys, or outside a repo, everything still
+serves against scripted data.
 
 Options:
 
 - `--port <port>`: listen on a fixed port (default: any free port).
 - `--no-open`: print the URL without opening the browser.
+- `--engine <claude|codex|npx>`: pin the deepening engine family instead of
+  first-available. An unavailable pin skips deepening with one loud line; it
+  never falls back to a different provider.
+- `--no-ai`: skip background deepening entirely; the demo stays on the
+  deterministic profile.
+
+Liked it? `npx vendo init` installs the agent for keeps. See
+[Try Vendo](/try) for the full walkthrough, including the hosted domain-paste
+venue at [vendo.run/playground](https://vendo.run/playground).
+
+`vendo playground` is retired: `vendo try` absorbed its job (the scripted
+surfaces still serve when try runs keyless or outside a repo). Running the
+old command prints an error pointing at `vendo try`.
+
+`vendo refine` is retired too: `vendo sync`'s enrichment pass owns AI
+curation of `.vendo/` (compounds and briefs live in `.vendo/overrides.json`
+now), and the try surface's refine panel carries the conversational
+correction loop. Running the old command prints an error pointing at
+`vendo sync`.
 
 ## `vendo mcp`
 

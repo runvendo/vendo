@@ -61,6 +61,42 @@ describe("lane pick 4B — landing starter cards", () => {
     const chip = await screen.findByRole("button", { name: "Chase overdue invoices" });
     expect(chip.className).toContain("fl-chip");
     expect(document.querySelector(".fl-card")).toBeNull();
+    // Chips-only arrays keep the unlabelled row — the micro-label belongs to
+    // the mixed (cards + chips) tiering alone.
+    expect(document.querySelector(".fl-try-label")).toBeNull();
+  });
+
+  // demo-hygiene criterion 24: mixed suggestions tier the string chips under
+  // an "Or try this" micro-label below the cards; N strings ⇒ N chips, no
+  // strings ⇒ no chip row at all.
+  it("mixed suggestions render N chips under the 'Or try this' micro-label", async () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoThread
+          discoverability="quiet"
+          suggestions={[
+            { title: "Build a view", prompt: "Build me a renewals view" },
+            "Build me a subscriptions tracker",
+            "Where did my dining budget go?",
+          ]}
+        />
+      </VendoProvider>,
+    );
+    await screen.findByRole("button", { name: /Build a view/ });
+    const chips = screen.getAllByRole("button", { name: /./ }).filter(b => b.className.includes("fl-chip"));
+    expect(chips).toHaveLength(2);
+    expect(document.querySelector(".fl-try-label")?.textContent).toBe("Or try this");
+  });
+
+  it("cards without strings render no chip row and no micro-label", async () => {
+    render(
+      <VendoProvider client={client}>
+        <VendoThread discoverability="quiet" suggestions={[{ title: "Build a view", prompt: "p" }]} />
+      </VendoProvider>,
+    );
+    await screen.findByRole("button", { name: /Build a view/ });
+    expect(document.querySelector(".fl-chips")).toBeNull();
+    expect(document.querySelector(".fl-try-label")).toBeNull();
   });
 });
 

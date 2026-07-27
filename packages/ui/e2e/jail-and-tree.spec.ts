@@ -38,6 +38,31 @@ test("generated components stay in the opaque-origin CSP jail and actions cross 
   expect(pageErrors, "jail failures must be reported in-surface, not as uncaught page errors").toEqual([]);
 });
 
+test("unified-try-surface Defect 2 — a raw <form> in the double-nested jail is intercepted, not blocked by the sandbox", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", message => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+
+  await openScenario(page, "tree-jail");
+  const jail = jailFrame(page, "RawFormProbe");
+  await expect(jail.getByRole("button", { name: "Submit raw form" })).toBeVisible();
+
+  await jail.getByRole("button", { name: "Submit raw form" }).click();
+
+  // The handler ran (async, no event arg — it cannot preventDefault() itself)
+  // AND the native submission never reached the sandbox's blocked-navigation path.
+  await expect(jail.locator("#raw-form-phase")).toHaveText("phase: submitted");
+  await expect(page.getByTestId("action-recorder")).toHaveText(JSON.stringify({
+    nodeId: "rawform",
+    action: "fn:secure-submit",
+    payload: { invoiceId: "inv_raw" },
+  }));
+
+  const sandboxErrors = consoleErrors.filter(text => text.toLowerCase().includes("allow-forms"));
+  expect(sandboxErrors, "the sandboxed-forms console error must never fire — the submit is intercepted before the browser's default action").toEqual([]);
+});
+
 test("a pin fork renders with captured sub-components, root CSS, and sample props", async ({ page }) => {
   await openScenario(page, "tree-jail");
   const jail = jailFrame(page, "FurnishedPin");

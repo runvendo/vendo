@@ -48,7 +48,7 @@ import {
 } from "./harness.js";
 import { connectWithSdk, descriptorShape, textOf } from "./mcp-support.js";
 
-const CREATE_DIALECT = `<App name="MCP ride-along app"><Text text="Hello over MCP"/></App>`;
+const CREATE_DIALECT = `<App name="MCP ride-along app"><Text text="Hello over MCP"/><Disclaimer reason="Fixture app."/></App>`;
 
 let stack: Stack;
 afterEach(async () => {
