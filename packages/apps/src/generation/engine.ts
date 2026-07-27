@@ -106,9 +106,17 @@ export interface PipelineConfig {
 /** Opt-in per-stage diagnostics: rounds, no-valid-fix take-rate,
  *  region-parallel fallback reasons, end-pass adoption, wall-clock per stage.
  *  Powers live measurement and production observability. */
+/**
+ * The validation issues still outstanding when a stage ends without a valid
+ * document. Present ONLY on the failing outcome of the stages that hold a real
+ * issue list; the same strings the engine logs and the final VendoError
+ * carries. Without this a failed create reads as "model could not produce a
+ * valid app" everywhere the console is not attached (bench subprocess, hosted
+ * runs) — the reason is exactly the signal format/guardrail work needs.
+ */
 export type PipelineEvent =
-  | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; ms: number }
-  | { stage: "region-parallel"; fallback?: "no-outline" | "sections-failed" | "assembly-invalid"; sectionsPlanned?: number; sectionsLanded?: number; ms: number }
+  | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; ms: number; issues?: readonly string[] }
+  | { stage: "region-parallel"; fallback?: "no-outline" | "sections-failed" | "assembly-invalid"; sectionsPlanned?: number; sectionsLanded?: number; ms: number; issues?: readonly string[] }
   | { stage: "end-pass"; applied: boolean; ms: number }
   // data-verify: `relabels` counts ALL surviving copy-pass ops (Set/Unset/
   // Remove/SetName — the ≤4-op budget), `rebinds` the strict-enum binding
@@ -117,11 +125,11 @@ export type PipelineEvent =
   // demo-latency lane — island-scoped repair: when EVERY validation issue is
   // island-scoped, only the offending island sources are rewritten (one small
   // model call) instead of regenerating the whole app (a full-lane attempt).
-  | { stage: "island-repair"; islands: number; repaired: boolean; ms: number }
+  | { stage: "island-repair"; islands: number; repaired: boolean; ms: number; issues?: readonly string[] }
   // speed-core (criterion 1) — one event per FULL-lane attempt in the create
   // loop, so the full→island-repair ordering is provable from the pipeline
   // event stream alone. Additive; existing stages never renamed.
-  | { stage: "full"; attempt: number; valid: boolean; ms: number };
+  | { stage: "full"; attempt: number; valid: boolean; ms: number; issues?: readonly string[] };
 
 export interface GenerationDependencies {
   model: LanguageModel;
@@ -488,8 +496,18 @@ export const repairIslandsScoped = async (
   if (!names.every((name) => typeof compiled.components[name] === "string")) return {};
   const { deps } = context;
   const repairStart = Date.now();
+  // Issues still outstanding if this stage fails: the incoming ones until the
+  // rewritten islands are revalidated (a stage that fixed nothing leaves the
+  // originals standing), the residual ones after.
+  let pending: readonly string[] = issues;
   const finish = (document?: GeneratedAppDocument): { document?: GeneratedAppDocument } => {
-    deps.onPipeline?.({ stage: "island-repair", islands: names.length, repaired: document !== undefined, ms: Date.now() - repairStart });
+    deps.onPipeline?.({
+      stage: "island-repair",
+      islands: names.length,
+      repaired: document !== undefined,
+      ms: Date.now() - repairStart,
+      ...(document !== undefined || pending.length === 0 ? {} : { issues: [...pending] }),
+    });
     return document === undefined ? {} : { document };
   };
   const base = {
@@ -531,6 +549,7 @@ export const repairIslandsScoped = async (
     wireCompileOptionsFor(deps, [...context.hostComponents]),
   );
   const validated = await context.validate(recompiled);
+  pending = validated.issues;
   return finish(validated.document);
 };
 
@@ -855,8 +874,14 @@ export const modelEngine: GenerationEngine = {
     let attemptCap = 3;
     for (let attempt = 0; attempt < attemptCap; attempt += 1) {
       const attemptStart = Date.now();
-      const emitFull = (valid: boolean): void => {
-        deps.onPipeline?.({ stage: "full", attempt, valid, ms: Date.now() - attemptStart });
+      const emitFull = (valid: boolean, attemptIssues: readonly string[] = []): void => {
+        deps.onPipeline?.({
+          stage: "full",
+          attempt,
+          valid,
+          ms: Date.now() - attemptStart,
+          ...(valid || attemptIssues.length === 0 ? {} : { issues: [...attemptIssues] }),
+        });
       };
       const output = await streamWire(
         gatedDeps,
@@ -870,7 +895,7 @@ export const modelEngine: GenerationEngine = {
       issues = distinctIssues(issues, output.issues);
       if (output.compiled !== undefined) {
         const validated = await validateCompiledCreate(output.compiled, deps, input.prompt);
-        emitFull(validated.document !== undefined);
+        emitFull(validated.document !== undefined, validated.issues);
         if (validated.document !== undefined) return finish(validated.document);
         logInvalidLane("full", validated.issues);
         issues = distinctIssues(issues, validated.issues);
@@ -907,7 +932,8 @@ export const modelEngine: GenerationEngine = {
           issues = distinctIssues(issues, repaired.issues);
         }
       } else {
-        emitFull(false);
+        // No compiled document at all: the stream/compile issues ARE the reason.
+        emitFull(false, output.issues);
       }
     }
     // Never a white box: a failed full lane falls back to the resident
