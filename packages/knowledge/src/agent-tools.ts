@@ -10,6 +10,9 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 
+import { inVerifyBand, type KnowledgeVerifyBand } from "./band.js";
+import type { KnowledgeVerifier } from "./verifier.js";
+
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
 /** Knowledge K1 pin — `vendo_`-prefixed so the loadout policy keeps it always
@@ -90,6 +93,13 @@ export interface KnowledgeToolsOptions {
       tool answers a loud "rate-limited" error. Explicit option wins over the
       VENDO_KNOWLEDGE_MAX_CALLS_PER_MINUTE env knob; default 60. */
   maxCallsPerMinute?: number;
+  /** K14 — the score interval where `weakScoreThreshold` provably cannot
+      decide (band.ts, per-engine like the bars). Inside it the verifier
+      adjudicates; outside it nothing changes. No band, no verification. */
+  verifyBand?: KnowledgeVerifyBand;
+  /** K14 — the adjudicator for band scores. No verifier, no verification:
+      the band alone changes nothing. */
+  verifier?: KnowledgeVerifier;
 }
 
 /** ENG-370 default; the env knob is the operator escape hatch. */
@@ -217,6 +227,25 @@ function isWeak(hits: KnowledgeHit[], threshold: number): boolean {
   return hits.every((hit) => typeof hit.score === "number" && hit.score < threshold);
 }
 
+/** The statistic the band is calibrated on: the best score a search came back
+    with (the calibration's "top hit score"). Taken as the MAX rather than the
+    first hit — adapters order by their own relevance, which is not always the
+    raw score. Undefined when nothing scored: an engine that emits no scores
+    can have no band decision, exactly as it has no threshold decision. */
+function topScore(hits: KnowledgeHit[]): number | undefined {
+  let top: number | undefined;
+  for (const hit of hits) {
+    if (typeof hit.score === "number" && (top === undefined || hit.score > top)) top = hit.score;
+  }
+  return top;
+}
+
+/** Identity of a hit set, so a deep retry that returned the same passages as
+    the chat search reuses its verdict instead of paying a second model call
+    to re-read the same text. */
+const hitSetKey = (hits: KnowledgeHit[]): string =>
+  hits.map((hit) => `${hit.ref.docId} ${hit.ref.chunkId ?? ""}`).join("");
+
 const envelope = (
   fields: Omit<KnowledgeResultEnvelope, "kind">,
 ): ToolOutcome => ({
@@ -237,6 +266,11 @@ export function createKnowledgeTools(
 ): ToolRegistry {
   const threshold = options.weakScoreThreshold ?? 0;
   const breaker = new CallRateBreaker(options.maxCallsPerMinute ?? maxCallsPerMinuteFromEnv() ?? MAX_CALLS_PER_MINUTE);
+  // K14 — the verifier composes only as a PAIR: a calibrated band saying where
+  // the score is useless, and something to ask instead. Either alone leaves
+  // the shipped path untouched.
+  const band = options.verifier === undefined ? undefined : options.verifyBand;
+  const verifier = options.verifier;
 
   // An engine failure has two audiences and they need different halves of the
   // same error (conductor amendment, 2026-07-27).
@@ -271,6 +305,37 @@ export function createKnowledgeTools(
   // caller's catch, which maps it to the loud "unavailable".
   const verifyEmptiness = async (): Promise<void> => {
     await adapter.status();
+  };
+
+  // K14 — the band decision for one search.
+  //
+  // Returns `true` (the passages support an answer), `false` (they do not), or
+  // `undefined` meaning THE BAND DID NOT DECIDE — no band configured, no
+  // scores to place, a score outside the band, or a verifier that gave no
+  // verdict. Undefined is the fail-open path in every one of those cases: the
+  // caller keeps the shipped threshold decision, so a broken or slow verifier
+  // costs latency at worst, never an answer the host would otherwise have got.
+  const adjudicate = async (
+    question: string,
+    hits: KnowledgeHit[],
+    memo: { key?: string; verdict?: boolean },
+  ): Promise<boolean | undefined> => {
+    if (band === undefined || verifier === undefined || hits.length === 0) return undefined;
+    const top = topScore(hits);
+    if (top === undefined || !inVerifyBand(top, band)) return undefined;
+    const key = hitSetKey(hits);
+    if (memo.key === key) return memo.verdict;
+    const verdict = await verifier.supported({
+      question,
+      passages: hits.slice(0, MAX_HITS).map((hit) => ({
+        docId: hit.ref.docId,
+        ...(hit.ref.title === undefined ? {} : { title: hit.ref.title }),
+        snippet: hit.snippet,
+      })),
+    });
+    memo.key = key;
+    memo.verdict = verdict;
+    return verdict;
   };
 
   const readMore = async (ref: { docId: string; chunkId?: string }, ctx: RunContext): Promise<ToolOutcome> => {
@@ -342,19 +407,30 @@ export function createKnowledgeTools(
           return envelope({ outcome: "answered", hits: result.hits.slice(0, MAX_HITS).map(toCitation) });
         }
 
+        // K14 — one memo per turn, so the deep retry does not pay a second
+        // verification for the same passages (engines whose deep mode only
+        // reranks return the same set).
+        const memo: { key?: string; verdict?: boolean } = {};
+
         const chat = await adapter.search({ text: input.query, intent: "chat" }, knowledgeCtx);
-        if (!isWeak(chat.hits, threshold)) {
+        const chatVerdict = await adjudicate(input.query, chat.hits, memo);
+        if (chatVerdict === true || (chatVerdict === undefined && !isWeak(chat.hits, threshold))) {
           return envelope({ outcome: "answered", hits: chat.hits.slice(0, MAX_HITS).map(toCitation) });
         }
-        // Weak chat evidence → exactly one deep retry (engines without a deep
-        // mode treat it as chat, so the retry is at worst a repeat).
+        // Weak chat evidence — or in-band evidence the verifier rejected —
+        // → exactly one deep retry (engines without a deep mode treat it as
+        // chat, so the retry is at worst a repeat).
         const deep = await adapter.search({ text: input.query, intent: "deep" }, knowledgeCtx);
-        if (!isWeak(deep.hits, threshold)) {
+        const deepVerdict = await adjudicate(input.query, deep.hits, memo);
+        if (deepVerdict === true || (deepVerdict === undefined && !isWeak(deep.hits, threshold))) {
           return envelope({ outcome: "answered", hits: deep.hits.slice(0, MAX_HITS).map(toCitation) });
         }
         // Structured refusal WITH the weak evidence: the model says it does
-        // not know; the UI still gets whatever weak hits existed.
-        await verifyEmptiness();
+        // not know; the UI still gets whatever weak hits existed. The
+        // status() check is the emptiness verification — skipped when the
+        // VERIFIER produced the refusal, because an engine that just returned
+        // scored passages has already proven it is alive.
+        if (deepVerdict !== false) await verifyEmptiness();
         return envelope({
           outcome: "insufficient-evidence",
           hits: deep.hits.slice(0, MAX_HITS).map(toCitation),

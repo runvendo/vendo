@@ -75,6 +75,48 @@ real call rather than at a validate endpoint — the tool answers `unavailable`
 "nothing found"), and the server log carries the actual cause, once per
 distinct failure.
 
+## The verifier pass (Cloud engine)
+
+Retrieval scores are a weak signal for "do I actually know this?". Measured
+against our own docs, the Cloud engine scores questions it *can* answer and
+questions it *cannot* in the same range: at the best possible score bar, 47%
+of unanswerable questions still cleared it. No bar fixes that — it is a
+property of embedding similarity, which cannot tell "how to install in a
+framework" from "how to install in **your** framework".
+
+So on the Cloud engine there is an opt-in switch. Turn it on with
+`VENDO_KNOWLEDGE_VERIFY=on`, and in the score region where the bar provably
+cannot decide (the *band*, calibrated in
+[`docs/eval/knowledge/bands/agentset.json`](eval/knowledge/bands/agentset.json)),
+the tool asks a cheap model one question before answering: can this question
+be answered from the passages the search actually returned? If not, the tool
+returns its ordinary `insufficient-evidence` outcome and the agent says it
+does not know. Nothing else changes — same tool, same outcomes, same UI.
+
+What it costs and what it buys, measured on the 94-question calibration corpus
+([the full table](eval/KNOWLEDGE.md#the-verifier-pass-k14)): false answers
+47% → 3%, false refusals 12% → 7-8%, one extra model call on 65% of knowledge
+turns — a second only when a rejected verdict escalates to a deep retry that
+comes back with different passages — and median 1.6s, p95 3.6s added to those
+turns.
+
+Four properties are worth knowing:
+
+- **It is off until you turn it on.** This is a live behavior change — some
+  questions that used to get an answer now get a refusal, which is the point —
+  and it spends a model call on about two thirds of knowledge turns, so it
+  ships opt-in rather than arriving in a patch release. `off` and unset are
+  the same thing; anything that is neither `on` nor `off` fails loudly at
+  startup rather than leaving you with a trust feature you think is running.
+- **It only applies to the Cloud engine.** Scores are engine-relative, so a
+  number calibrated on one engine means nothing on another. Local lexical, BYO
+  and self-hosted engines are untouched, switch or no switch.
+- **It can never take knowledge away.** No model credential, a timeout past
+  5s, or an unusable response means *no verdict*, and the tool answers exactly
+  as it would have without a verifier.
+- **Turning it back off is one variable.** `VENDO_KNOWLEDGE_VERIFY=off`,
+  with the 47% false-answer rate that implies.
+
 ## Engines
 
 **Local lexical** — honest keyword grade: deterministic term-frequency
