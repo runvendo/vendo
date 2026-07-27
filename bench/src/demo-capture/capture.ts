@@ -407,6 +407,7 @@ export async function runConfigCapture(args: ConfigCaptureArgs): Promise<ConfigC
       host,
       port: args.port,
       repoRoot,
+      appDir,
       logFile: path.join(hostDir, "server.log"),
       timeoutMs: args.timeoutMs,
     })

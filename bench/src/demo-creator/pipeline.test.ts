@@ -11,6 +11,7 @@ import {
   validateProspectUrl,
   type PipelineStages,
 } from "./pipeline.js";
+import { defaultDemoScratchDir } from "./scratch.js";
 
 describe("parseDemoPipelineArgs", () => {
   it("parses the full pipeline invocation", () => {
@@ -27,7 +28,7 @@ describe("parseDemoPipelineArgs", () => {
       screenshots: ["/tmp/a.png", "/tmp/b.png"],
       skipDeploy: true,
       skipCapture: false,
-      targetDir: "apps",
+      targetDir: defaultDemoScratchDir(),
       port: 3150,
     });
   });
@@ -99,6 +100,7 @@ function stubStages(repoRoot: string, overrides: Partial<PipelineStages> = {}): 
         packageName: "demo-linear",
         configPath: path.join(appDir, "demo.config.json"),
         researchReadme: path.join(appDir, "RESEARCH", "README.md"),
+        standalone: false,
       };
     }),
     research: vi.fn(async () => ({
@@ -113,6 +115,7 @@ function stubStages(repoRoot: string, overrides: Partial<PipelineStages> = {}): 
         fonts: { families: [], faceSrcs: [], webfontLinks: [] },
       },
     })),
+    chips: vi.fn(async () => ({ chips: [], beats: [], derived: 2, kept: 3 })),
     judge: vi.fn(async () => ({
       rounds: [],
       parked: false,
@@ -263,7 +266,7 @@ describe("runDemoPipeline", () => {
     expect(exec.mock.calls.some((call) => (call[0] as string[]).includes("demo:capture"))).toBe(true);
     const timings = JSON.parse(await readFile(path.join(result.appDir, "timings.json"), "utf8"));
     expect(timings.map((row: { stage: string }) => row.stage))
-      .toEqual(["validate", "create", "install", "research", "rewrite:agents", "capture", "deploy", "final-gate"]);
+      .toEqual(["validate", "create", "install", "research", "rewrite:agents", "chips", "capture", "deploy", "final-gate"]);
   });
 
   it("skips deploy and gate under --skip-deploy", async () => {
@@ -356,7 +359,7 @@ describe("runDemoPipeline", () => {
     });
     const timings = JSON.parse(await readFile(path.join(result.appDir, "timings.json"), "utf8"));
     expect(timings.map((row: { stage: string }) => row.stage))
-      .toEqual(["validate", "create", "install", "research", "rewrite:agents"]);
+      .toEqual(["validate", "create", "install", "research", "rewrite:agents", "chips"]);
     for (const row of timings) {
       expect(row).toMatchObject({
         stage: expect.any(String),

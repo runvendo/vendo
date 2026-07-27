@@ -1,0 +1,8 @@
+Wrote /var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T/vendo-demos/demo-fidelity-proof-d/Dockerfile
+Dry run — plan for /var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T/vendo-demos/demo-fidelity-proof-d (service demo-fidelity-proof-d, project vendo-demos):
+  railway link --project vendo-demos
+  railway add --service demo-fidelity-proof-d --json   # tolerated if the service already exists
+  railway domain --service demo-fidelity-proof-d --json
+  railway variables --set VENDO_API_KEY=<redacted> --set NODE_ENV=production --set RAILWAY_DOCKERFILE_PATH=Dockerfile --set VENDO_BASE_URL=<from railway domain> --service demo-fidelity-proof-d --skip-deploys
+  railway up /var/folders/mb/8gs457ws78dcdwmtbryr76qr0000gn/T/vendo-demos/demo-fidelity-proof-d --service demo-fidelity-proof-d --detach
+  (registry registration skipped: --skip-registry)

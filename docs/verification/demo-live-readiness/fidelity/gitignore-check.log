@@ -1,0 +1,4 @@
+.gitignore:33:apps/demo-*	apps/demo-acme-widgets/src/app/page.tsx
+tracked(ok): apps/demo-bank/package.json
+tracked(ok): apps/demo-accounting/package.json
+tracked(ok): apps/demo-template/package.json

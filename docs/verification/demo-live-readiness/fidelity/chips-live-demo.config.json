@@ -1,0 +1,37 @@
+{
+  "id": "fidelity-proof-g",
+  "prospect": "Maple",
+  "ctaUrl": "https://cal.com/yousefhelal",
+  "beats": [
+    {
+      "key": "spending-by-category",
+      "prompt": "Show me my spending by category for this period.",
+      "chip": "Show spending by category"
+    },
+    {
+      "key": "budget-progress",
+      "prompt": "Show my budgets and how much I've spent so far in each category.",
+      "chip": "Show budget progress"
+    },
+    {
+      "key": "transfer-to-friend",
+      "prompt": "Transfer $50 from checking to Alex.",
+      "chip": "Send money to a friend"
+    },
+    {
+      "key": "order-dinner",
+      "prompt": "Place a delivery order for dinner tonight.",
+      "chip": "Order dinner delivery"
+    },
+    {
+      "key": "recurring-subscriptions",
+      "prompt": "List all my recurring charges and subscriptions.",
+      "chip": "List recurring subscriptions"
+    }
+  ],
+  "caps": {
+    "maxTurns": 20,
+    "maxSpendUsd": 5
+  },
+  "expiresAt": "2099-01-01T00:00:00Z"
+}

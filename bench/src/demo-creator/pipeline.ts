@@ -2,13 +2,15 @@ import { rm } from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { runDemoCreate, validateProspectUrl, type DemoCreateArgs, type DemoCreateResult } from "./create.js";
+import { runDeriveChips, type DeriveChipsIo, type DeriveChipsResult } from "./chips.js";
+import { displayAppPath, runDemoCreate, validateProspectUrl, type DemoCreateArgs, type DemoCreateResult } from "./create.js";
 import { defaultExec, runDemoDeploy, type DemoDeployArgs, type DemoDeployResult, type DeployIo, type ExecFn } from "./deploy.js";
 import { runFinalGate, type FinalGateArgs, type FinalGateIo, type FinalGateResult } from "./gate.js";
 import { demoPassword } from "./inject-auth.js";
 import { runJudgeLoop, type JudgeLoopArgs, type JudgeLoopIo, type JudgeLoopResult } from "./judge.js";
 import { runDemoResearch, type DemoResearchArgs, type DemoResearchResult } from "./research.js";
 import { runRewrite, type RewriteArgs, type RewriteIo, type RewriteResult } from "./rewrite.js";
+import { appInstallCommand, defaultDemoScratchDir } from "./scratch.js";
 
 /**
  * `demo:pipeline` — the one-command drive of the whole demo-creator flow:
@@ -81,7 +83,7 @@ export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
     id,
     prospect,
     url,
-    targetDir: options.get("--target-dir") ?? "apps",
+    targetDir: options.get("--target-dir") ?? defaultDemoScratchDir(),
     skipDeploy: flags.has("--skip-deploy"),
     skipCapture: flags.has("--skip-capture"),
     port,
@@ -122,6 +124,7 @@ export interface PipelineStages {
   create: (args: DemoCreateArgs, options: { repoRoot: string; fetchImpl?: typeof fetch; signal?: AbortSignal }) => Promise<DemoCreateResult>;
   research: (args: DemoResearchArgs, options: { repoRoot: string; signal?: AbortSignal }) => Promise<DemoResearchResult>;
   rewrite: (args: RewriteArgs, io: RewriteIo) => Promise<RewriteResult>;
+  chips: (args: { appDir: string; prospect?: string }, io: DeriveChipsIo) => Promise<DeriveChipsResult>;
   judge: (args: JudgeLoopArgs, io: JudgeLoopIo) => Promise<JudgeLoopResult>;
   deploy: (args: DemoDeployArgs, io: DeployIo) => Promise<DemoDeployResult>;
   gate: (args: FinalGateArgs, io: FinalGateIo) => Promise<FinalGateResult>;
@@ -131,6 +134,7 @@ const defaultStages: PipelineStages = {
   create: runDemoCreate,
   research: runDemoResearch,
   rewrite: runRewrite,
+  chips: runDeriveChips,
   judge: runJudgeLoop,
   deploy: runDemoDeploy,
   gate: runFinalGate,
@@ -194,7 +198,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
   const capMinutes = Math.round((io.capMs ?? defaultCapMs) / 60000);
   const capTimer = setTimeout(() => capController.abort(new Error(`the ${capMinutes}-minute wall-clock cap fired`)), Math.max(0, deadline - Date.now()));
   capTimer.unref?.();
-  const plannedStages = ["validate", "create", "install", "research", "rewrite", "judge", "capture", "deploy", "final-gate"];
+  const plannedStages = ["validate", "create", "install", "research", "rewrite", "chips", "judge", "capture", "deploy", "final-gate"];
   const stageCounts = new Map<string, number>();
 
   const parkAtCap = (context: string): DemoParkedError => {
@@ -259,10 +263,13 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
     }, { repoRoot: io.repoRoot, signal: capSignal, ...(io.fetchImpl === undefined ? {} : { fetchImpl: io.fetchImpl }) }));
     appDir = created.appDir;
 
+    // A scratch clone installs its own deps (registry + its vendored
+    // @vendoai tarballs); an in-repo one relinks the workspace.
     await stage("install", async () => {
-      const result = await exec(["pnpm", "install"], { cwd: io.repoRoot });
+      const install = appInstallCommand({ repoRoot: io.repoRoot, appDir: appDir as string });
+      const result = await exec(install.command, { cwd: install.cwd });
       if (result.code !== 0) {
-        throw new Error(`"pnpm install" (workspace link) failed (exit ${result.code}):\n${result.stderr || result.stdout}`);
+        throw new Error(`"pnpm install" in "${install.cwd}" failed (exit ${result.code}):\n${result.stderr || result.stdout}`);
       }
     });
 
@@ -284,6 +291,19 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       },
     );
 
+    // Pills, derived from the demo's OWN tool surface. Runs AFTER the rewrite
+    // because .vendo/tools.json is only the prospect's surface once the
+    // rewrite's build has re-synced it from the rewritten openapi.json. A
+    // failed derivation must not sink a good demo: the beats the rewrite
+    // already wrote stay, and the run continues.
+    await stage("chips", () => stages.chips(
+      { appDir: appDir as string, prospect: args.prospect },
+      { write },
+    ).catch((error) => {
+      write(`[chips] derivation failed, keeping the rewrite's beats (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`);
+      return undefined;
+    }));
+
     // The judge loop parks rather than throwing: a parked run is a verdict
     // with evidence, not a crash — but it must never reach deploy.
     const judge = await stages.judge(
@@ -304,7 +324,9 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       );
     }
 
-    const appPath = path.relative(io.repoRoot, appDir);
+    // Repo-relative for an in-repo app, absolute for a scratch clone — the
+    // shape every downstream `--app`/`--host-config` consumer accepts.
+    const appPath = displayAppPath(io.repoRoot, appDir);
 
     // Behavior verification + the GIF deliverable: the demo-beats capture
     // (playbook §2.8) boots the app locally, runs every beat in one recording,

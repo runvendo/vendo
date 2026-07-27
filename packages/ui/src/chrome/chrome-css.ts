@@ -1746,7 +1746,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-btn-ceremony:hover, .fl-btn-critical:hover { opacity: .92; background: var(--vendo-warn); }
 
 /* ==================== ui-lane-panels lane block ====================
-   Converged picks (see LANE-REPORT.md in the lane worktree):
+   Converged picks (the lane report they came from was worktree scratch, never
+   part of the repo — the picks themselves are recorded here):
    activity B (icon ledger) · vendo-activities B (approval queue pager) ·
    automations B (run-dot strip) · connected-accounts A+D+F (identity rows,
    two-step disconnect + undo, connect-ahead empty state).

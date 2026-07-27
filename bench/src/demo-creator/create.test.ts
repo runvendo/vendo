@@ -1,10 +1,13 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseDemoConfig } from "demo-template/demo-config";
 import { describe, expect, it, vi } from "vitest";
 import { cloneExclusions, displayAppPath, parseDemoCreateArgs, runDemoCreate, validateProspectUrl } from "./create.js";
+import { defaultDemoScratchDir } from "./scratch.js";
+
+const repoRoot = path.resolve(import.meta.dirname, "../../..");
 
 describe("displayAppPath", () => {
   it("prefers the repo-root-relative shape and falls back to absolute outside the repo", () => {
@@ -30,13 +33,15 @@ describe("parseDemoCreateArgs", () => {
     });
   });
 
-  it("defaults the CTA and target directory", () => {
-    expect(parseDemoCreateArgs(["--id", "acme", "--prospect", "Acme"])).toEqual({
-      id: "acme",
-      prospect: "Acme",
-      ctaUrl: "https://cal.com/yousefhelal",
-      targetDir: "apps",
-    });
+  // THE leak fix: a generated demo is a prospect's brand, so the default
+  // target must resolve outside this checkout — inside it, one `git add -A`
+  // publishes the prospect in the OSS repo.
+  it("defaults the CTA and targets a scratch dir OUTSIDE the repo", () => {
+    const args = parseDemoCreateArgs(["--id", "acme", "--prospect", "Acme"]);
+    expect(args).toMatchObject({ id: "acme", prospect: "Acme", ctaUrl: "https://cal.com/yousefhelal" });
+    expect(args.targetDir).toBe(defaultDemoScratchDir());
+    expect(path.isAbsolute(args.targetDir)).toBe(true);
+    expect(path.relative(repoRoot, path.resolve(repoRoot, args.targetDir)).startsWith("..")).toBe(true);
   });
 
   it("accepts the literal separator forwarded by pnpm scripts", () => {
@@ -110,7 +115,24 @@ describe("runDemoCreate", () => {
       version: "0.1.0",
       private: true,
       scripts: { dev: "next dev" },
+      dependencies: { "@vendoai/core": "workspace:*", next: "16.2.9" },
     }, null, 2)}\n`);
+    // The monorepo bits a standalone clone has to be weaned off: the package
+    // it vendors, the toolchain pin, and the root's security floors.
+    await mkdir(path.join(repoRoot, "packages", "core"), { recursive: true });
+    await writeFile(
+      path.join(repoRoot, "packages", "core", "package.json"),
+      `${JSON.stringify({ name: "@vendoai/core", version: "9.9.9", main: "index.js" }, null, 2)}\n`,
+    );
+    await writeFile(path.join(repoRoot, "packages", "core", "index.js"), "module.exports = {}\n");
+    await writeFile(
+      path.join(repoRoot, "package.json"),
+      `${JSON.stringify({ name: "root", packageManager: "pnpm@11.10.0" }, null, 2)}\n`,
+    );
+    await writeFile(
+      path.join(repoRoot, "pnpm-workspace.yaml"),
+      ['packages:', '  - "apps/*"', "", "overrides:", '  "next": ">=16.2.11"', "", "allowBuilds:", "  esbuild: true", ""].join("\n"),
+    );
     await writeFile(path.join(templateDir, "demo.config.json"), `${JSON.stringify(templateConfig, null, 2)}\n`);
     await writeFile(path.join(templateDir, ".vendo", "theme.json"), "{}\n");
     await writeFile(path.join(templateDir, ".vendo", "data", "base", "junk.db"), "junk\n");
@@ -266,4 +288,108 @@ describe("runDemoCreate", () => {
     await expect(runDemoCreate(args, { repoRoot }))
       .rejects.toThrow(/apps\/demo-template/);
   });
+
+  // --- the leak fix -------------------------------------------------------
+
+  it("leaves an in-repo clone as a plain workspace member (workspace:* intact)", async () => {
+    const repoRoot = await writeRepoFixture();
+    const result = await runDemoCreate(args, { repoRoot });
+    expect(result.standalone).toBe(false);
+    const packageJson = JSON.parse(await readFile(path.join(result.appDir, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(packageJson.dependencies["@vendoai/core"]).toBe("workspace:*");
+    expect(existsSync(path.join(result.appDir, "pnpm-workspace.yaml"))).toBe(false);
+  });
+
+  /**
+   * A failed standalone create used to leave a prospect-branded directory and
+   * a half-filled vendor/ behind, and the existence guard then refused the
+   * retry — a failure that poisoned its own recovery. Two defences: the
+   * freshness gate runs BEFORE anything is copied, and any later failure takes
+   * the clone with it.
+   */
+  describe("a failed standalone create is retryable", () => {
+    /** Makes packages/core look built-but-stale: dist older than src. */
+    async function staleTheWorkspace(repoRoot: string): Promise<void> {
+      const packageDir = path.join(repoRoot, "packages", "core");
+      await writeFile(path.join(packageDir, "package.json"), `${JSON.stringify({
+        name: "@vendoai/core", version: "9.9.9", main: "dist/index.js", scripts: { build: "tsc" },
+      }, null, 2)}\n`);
+      await mkdir(path.join(packageDir, "dist"), { recursive: true });
+      await writeFile(path.join(packageDir, "dist", "index.js"), "module.exports = {}\n");
+      await utimes(path.join(packageDir, "dist", "index.js"), new Date(1_000_000), new Date(1_000_000));
+      await mkdir(path.join(packageDir, "src"), { recursive: true });
+      await writeFile(path.join(packageDir, "src", "index.ts"), "export {}\n");
+    }
+
+    it("leaves NO directory behind when the workspace is stale, so the retry is clean", async () => {
+      const repoRoot = await writeRepoFixture();
+      await staleTheWorkspace(repoRoot);
+      const scratch = await mkdtemp(path.join(tmpdir(), "vendo-demo-scratch-"));
+      const appDir = path.join(scratch, "demo-acme-widgets");
+
+      await expect(runDemoCreate({ ...args, targetDir: scratch }, { repoRoot })).rejects.toThrow(/stale/);
+
+      // No branded config, no partial vendor/, nothing for the guard to trip on.
+      expect(existsSync(appDir)).toBe(false);
+    }, 30_000);
+
+    it("the retry succeeds once the workspace is rebuilt — no manual cleanup", async () => {
+      const repoRoot = await writeRepoFixture();
+      await staleTheWorkspace(repoRoot);
+      const scratch = await mkdtemp(path.join(tmpdir(), "vendo-demo-scratch-"));
+
+      await expect(runDemoCreate({ ...args, targetDir: scratch }, { repoRoot })).rejects.toThrow();
+      // "Rebuild": make dist newer than src again.
+      await writeFile(path.join(repoRoot, "packages", "core", "dist", "index.js"), "module.exports = {}\n");
+
+      const result = await runDemoCreate({ ...args, targetDir: scratch }, { repoRoot });
+      expect(result.standalone).toBe(true);
+      expect(existsSync(path.join(result.appDir, "vendor", "vendoai-core-9.9.9.tgz"))).toBe(true);
+    }, 60_000);
+
+    it("removes the partial clone when a step AFTER the copy fails", async () => {
+      const repoRoot = await writeRepoFixture();
+      const scratch = await mkdtemp(path.join(tmpdir(), "vendo-demo-scratch-"));
+      const appDir = path.join(scratch, "demo-acme-widgets");
+      // The clone copies fine, then vendoring dies: the root pnpm-workspace.yaml
+      // the clone's own settings are derived from is gone.
+      await rm(path.join(repoRoot, "pnpm-workspace.yaml"));
+
+      await expect(runDemoCreate({ ...args, targetDir: scratch }, { repoRoot })).rejects.toThrow();
+
+      expect(existsSync(appDir)).toBe(false);
+    }, 30_000);
+  });
+
+  it("makes an out-of-repo clone self-contained: vendored Vendo, its own pnpm settings and .dockerignore", async () => {
+    const repoRoot = await writeRepoFixture();
+    const scratch = await mkdtemp(path.join(tmpdir(), "vendo-demo-scratch-"));
+    const result = await runDemoCreate({ ...args, targetDir: scratch }, { repoRoot });
+
+    expect(result.standalone).toBe(true);
+    expect(result.appDir).toBe(path.join(scratch, "demo-acme-widgets"));
+    const packageJson = JSON.parse(await readFile(path.join(result.appDir, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+      packageManager?: string;
+    };
+    // No workspace protocol survives — outside the monorepo it resolves to
+    // nothing — and no registry range either: the demo runs THIS tree's Vendo.
+    expect(JSON.stringify(packageJson)).not.toContain("workspace:");
+    expect(packageJson.dependencies["@vendoai/core"]).toBe("file:./vendor/vendoai-core-9.9.9.tgz");
+    expect(existsSync(path.join(result.appDir, "vendor", "vendoai-core-9.9.9.tgz"))).toBe(true);
+    expect(packageJson.packageManager).toBe("pnpm@11.10.0");
+    // Security floors + build allowlist come along; membership does not. The
+    // vendored override is what stops the published copy sneaking back in
+    // through some other package's dependency graph.
+    const workspaceYaml = await readFile(path.join(result.appDir, "pnpm-workspace.yaml"), "utf8");
+    expect(workspaceYaml).toContain('"next": ">=16.2.11"');
+    expect(workspaceYaml).toContain('"@vendoai/core": "file:./vendor/vendoai-core-9.9.9.tgz"');
+    expect(workspaceYaml).not.toContain("packages:");
+    const dockerignore = await readFile(path.join(result.appDir, ".dockerignore"), "utf8");
+    expect(dockerignore).toContain("node_modules");
+    // The vendored tarballs are the build's input — they MUST reach the image.
+    expect(dockerignore).not.toContain("vendor");
+  }, 60_000); // real `pnpm pack` subprocess
 });

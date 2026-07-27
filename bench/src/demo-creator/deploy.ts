@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DemoConfig } from "demo-template/demo-config";
 import { displayAppPath } from "./create.js";
+import { isStandaloneApp } from "./scratch.js";
 
 /**
  * `demo:deploy` — ship one generated demo app to Railway and register it with
@@ -158,6 +159,33 @@ CMD ["pnpm", "start"]
 `;
 }
 
+/**
+ * The same image for a scratch clone, whose build context is the app dir
+ * itself: no monorepo to install, no turbo filter, no nested WORKDIR. The
+ * clone's `@vendoai/*` deps are tarballs vendored into it (see ./scratch.ts)
+ * and travel in the build context like any other file, so this is an ordinary
+ * Next.js Dockerfile — which is the point of building outside the repo at all.
+ */
+export function renderStandaloneDockerfile(options: { pnpmVersion?: string }): string {
+  return `# ${GENERATED_FILE_MARKER}
+FROM node:22-bookworm-slim
+
+WORKDIR /app
+RUN npm install --global pnpm@${options.pnpmVersion ?? fallbackPnpmVersion}
+
+COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm build
+
+ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+
+EXPOSE 3000
+CMD ["pnpm", "start"]
+`;
+}
+
 /** Write only files that are absent or that we generated (marker present) — never clobber hand edits. */
 export function shouldWriteGeneratedFile(existing: string | undefined): boolean {
   return existing === undefined || existing.includes(GENERATED_FILE_MARKER);
@@ -236,16 +264,33 @@ export function buildDeployPlan(options: {
   serviceName: string;
   project: string;
   dockerfilePath: string;
-  anthropicApiKey: string;
+  /** Inference credentials to set on the service — at least one, both redacted. */
+  modelKeys: { VENDO_API_KEY?: string; ANTHROPIC_API_KEY?: string };
+  /** Upload context for `railway up`. Omitted for an in-repo app (the linked
+   * repo root is already the context); the absolute clone dir for a
+   * standalone one, whose monorepo is not part of the deploy at all. */
+  uploadPath?: string;
 }): DeployPlan {
-  const { serviceName, project, dockerfilePath, anthropicApiKey } = options;
+  const { serviceName, project, dockerfilePath, modelKeys, uploadPath } = options;
+  const secretPrefixes = ["ANTHROPIC_API_KEY=", "VENDO_API_KEY="];
   const asDisplay = (command: string[]): string =>
-    command.map((part) => (part.startsWith("ANTHROPIC_API_KEY=") ? "ANTHROPIC_API_KEY=<redacted>" : part)).join(" ");
+    command
+      .map((part) => {
+        const prefix = secretPrefixes.find((candidate) => part.startsWith(candidate));
+        return prefix === undefined ? part : `${prefix}<redacted>`;
+      })
+      .join(" ");
   const step = (command: string[], allowFailure?: boolean): DeployStep => ({
     command,
     display: asDisplay(command),
     ...(allowFailure === undefined ? {} : { allowFailure }),
   });
+  // VENDO_API_KEY first: it is the whole Cloud posture (hosted store,
+  // connections broker, metered model gateway) in one variable. An
+  // ANTHROPIC_API_KEY-only service is the BYO posture and still works.
+  const keySets = (Object.entries(modelKeys) as [string, string | undefined][])
+    .filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== "")
+    .flatMap(([name, value]) => ["--set", `${name}=${value}`]);
   return {
     prepare: [
       step(["railway", "link", "--project", project]),
@@ -256,14 +301,14 @@ export function buildDeployPlan(options: {
     finalize: (publicBaseUrl) => [
       step([
         "railway", "variables",
-        "--set", `ANTHROPIC_API_KEY=${anthropicApiKey}`,
+        ...keySets,
         "--set", "NODE_ENV=production",
         "--set", `RAILWAY_DOCKERFILE_PATH=${dockerfilePath}`,
         "--set", `VENDO_BASE_URL=${publicBaseUrl}`,
         "--service", serviceName,
         "--skip-deploys",
       ]),
-      step(["railway", "up", "--service", serviceName, "--detach"]),
+      step(["railway", "up", ...(uploadPath === undefined ? [] : [uploadPath]), "--service", serviceName, "--detach"]),
     ],
   };
 }
@@ -342,13 +387,14 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
   const env = io.env ?? process.env;
   const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
 
-  // (1) Locate + validate the app. `railway up` uploads the repo root, so the
-  // app must live inside it for the Dockerfile to see it.
+  // (1) Locate the app and pick the deploy shape. An in-repo app deploys the
+  // monorepo (repo-root build context, turbo filter); a scratch clone deploys
+  // ITSELF — it is a self-contained project (published `@vendoai/*` pins),
+  // and uploading a prospect's demo alongside the whole OSS tree was never
+  // the point.
   const appDir = path.resolve(io.repoRoot, args.app);
   const appPath = displayAppPath(io.repoRoot, appDir);
-  if (path.isAbsolute(appPath)) {
-    throw new Error(`--app must point inside the repo root (the railway build context); "${args.app}" resolves outside it`);
-  }
+  const standalone = isStandaloneApp(io.repoRoot, appDir);
   const configPath = path.join(appDir, "demo.config.json");
   if (!existsSync(configPath)) {
     throw new Error(`No demo.config.json in "${appDir}" — is ${args.app} a generated demo app?`);
@@ -357,34 +403,50 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
   const config = parseDemoConfig(JSON.parse(await readFile(configPath, "utf8")), `demo config at "${configPath}"`);
   const packageJson = JSON.parse(await readFile(path.join(appDir, "package.json"), "utf8")) as { name?: string };
   const packageName = packageJson.name;
-  if (packageName === undefined) throw new Error(`"${appPath}/package.json" has no name — turbo needs it as the build filter`);
+  if (packageName === undefined) throw new Error(`"${appPath}/package.json" has no name — the build needs it (turbo filter / service identity)`);
   const serviceName = `demo-${config.id}`;
 
   // (2) Render the Dockerfile (only when absent or previously generated by
-  // us). No per-app .dockerignore: the build context is the REPO ROOT, so
-  // Docker only honors the root .dockerignore — that (committed) file is the
-  // real upload/exclusion mechanism.
+  // us). Exclusions follow the build context: in-repo uploads the REPO ROOT,
+  // so only the committed root .dockerignore is honored; a standalone clone
+  // uploads itself and carries its own (written at `demo:create`).
   const dockerfilePath = path.join(appDir, "Dockerfile");
   const rootPackageRaw = await readIfExists(path.join(io.repoRoot, "package.json"));
   const rootPackageJson = rootPackageRaw === undefined ? {} : JSON.parse(rootPackageRaw) as { packageManager?: string };
   const pnpmVersion = pnpmVersionFromPackageManager(rootPackageJson.packageManager);
   if (shouldWriteGeneratedFile(await readIfExists(dockerfilePath))) {
-    await writeFile(dockerfilePath, renderDockerfile({ packageName, appPath, pnpmVersion }));
+    await writeFile(
+      dockerfilePath,
+      standalone ? renderStandaloneDockerfile({ pnpmVersion }) : renderDockerfile({ packageName, appPath, pnpmVersion }),
+    );
     write(`Wrote ${appPath}/Dockerfile`);
   } else {
     write(`Keeping hand-edited ${appPath}/Dockerfile (no generated-file marker)`);
   }
 
-  // (3) Drive the railway CLI.
-  const anthropicApiKey = env.ANTHROPIC_API_KEY;
-  if (!args.dryRun && (anthropicApiKey === undefined || anthropicApiKey === "")) {
-    throw new Error("ANTHROPIC_API_KEY must be set in the environment — the demo service needs it (it is never logged)");
+  // (3) Drive the railway CLI. Either key is a working posture — VENDO_API_KEY
+  // is Cloud (hosted store + connections broker + metered gateway),
+  // ANTHROPIC_API_KEY alone is BYO — but a service with neither cannot answer
+  // a single turn, so refuse rather than deploy a dead demo.
+  const modelKeys = {
+    ...(env.VENDO_API_KEY === undefined || env.VENDO_API_KEY === "" ? {} : { VENDO_API_KEY: env.VENDO_API_KEY }),
+    ...(env.ANTHROPIC_API_KEY === undefined || env.ANTHROPIC_API_KEY === "" ? {} : { ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY }),
+  };
+  if (!args.dryRun && Object.keys(modelKeys).length === 0) {
+    throw new Error(
+      "Set VENDO_API_KEY (the Cloud posture: hosted store, connections, metered inference) or ANTHROPIC_API_KEY (BYO) "
+      + "in the environment — the demo service needs one to run (neither is ever logged)",
+    );
   }
   const plan = buildDeployPlan({
     serviceName,
     project: args.project,
-    dockerfilePath: `${appPath}/Dockerfile`,
-    anthropicApiKey: anthropicApiKey ?? "<from env at deploy time>",
+    // Relative to the upload context, which differs between the two shapes.
+    dockerfilePath: standalone ? "Dockerfile" : `${appPath}/Dockerfile`,
+    modelKeys: args.dryRun && Object.keys(modelKeys).length === 0
+      ? { VENDO_API_KEY: "<from env at deploy time>" }
+      : modelKeys,
+    ...(standalone ? { uploadPath: appDir } : {}),
   });
 
   if (args.dryRun) {
@@ -401,19 +463,21 @@ export async function runDemoDeploy(args: DemoDeployArgs, io: DeployIo): Promise
   }
 
   // Child output can echo the environment (railway prints variables on some
-  // errors) — scrub the key out of ANYTHING we relay from a child process.
+  // errors) — scrub every key out of ANYTHING we relay from a child process.
+  const secrets = Object.values(modelKeys).filter((value) => value !== "");
   const scrub = (text: string): string =>
-    anthropicApiKey === undefined || anthropicApiKey === "" ? text : text.replaceAll(anthropicApiKey, "<redacted>");
+    secrets.reduce((scrubbed, secret) => scrubbed.replaceAll(secret, "<redacted>"), text);
 
-  // (2.5) `railway up` archives the whole working tree, including untracked
-  // scratch demo apps, so the uploaded pnpm-lock.yaml must cover every
-  // workspace app or the Dockerfile's `pnpm install --frozen-lockfile` fails
-  // on an unrelated demo. --lockfile-only syncs the lockfile without touching
-  // node_modules.
-  write("$ pnpm install --lockfile-only   # sync lockfile with the upload's workspace");
-  const lockSync = await exec(["pnpm", "install", "--lockfile-only"], { cwd: io.repoRoot });
+  // (2.5) The Dockerfile installs `--frozen-lockfile`, so the lockfile inside
+  // the upload must match its package.json. In-repo that means the ROOT
+  // lockfile (railway up archives the whole working tree, untracked scratch
+  // apps included); standalone it means the clone's own. --lockfile-only
+  // syncs without touching node_modules.
+  const lockCwd = standalone ? appDir : io.repoRoot;
+  write(`$ pnpm install --lockfile-only   # sync ${standalone ? "the clone's" : "the workspace"} lockfile with the upload`);
+  const lockSync = await exec(["pnpm", "install", "--lockfile-only"], { cwd: lockCwd });
   if (lockSync.code !== 0) {
-    throw new Error(`"pnpm install --lockfile-only" failed (exit ${lockSync.code}):\n${scrub(lockSync.stderr || lockSync.stdout)}`);
+    throw new Error(`"pnpm install --lockfile-only" in "${lockCwd}" failed (exit ${lockSync.code}):\n${scrub(lockSync.stderr || lockSync.stdout)}`);
   }
 
   const runStep = async (step: DeployStep): Promise<ExecResult | undefined> => {

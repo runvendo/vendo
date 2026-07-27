@@ -1,6 +1,7 @@
 import {
   VENDO_TREE_FORMAT_V2,
   VendoError,
+  safeErrorMessage,
   validateTreeV2,
   type AppDocument,
   type Json,
@@ -114,11 +115,35 @@ export const createProgressiveQueryResolver = (
   let baseData: Record<string, Json> = {};
   let resolvedData: Record<string, Json> = {};
 
+  // A query that does not settle "ok" contributes NO data, so the app renders
+  // its empty state ("No spending data") with the tree, the document and the
+  // logs all looking perfectly healthy. That silence cost a live triage
+  // (2026-07-27): the empty card had to be told apart from a frozen one by
+  // reading DOM attributes. Report each distinct non-ok query once — the
+  // render behavior is unchanged, it just stops being invisible.
+  const reported = new Set<string>();
+  const reportUnresolved = (state: QueryState): void => {
+    if (state.result?.status === "ok" || reported.has(state.key)) return;
+    reported.add(state.key);
+    const why = state.error !== undefined
+      ? safeErrorMessage(state.error)
+      : state.result === undefined
+        ? "the call did not settle"
+        : `the call answered "${state.result.status}"`;
+    console.warn(`[vendo] query "${state.query.name}" (tool "${state.query.tool}") resolved no data for app ${app.id} — ${why}; anything bound to it renders empty`);
+  };
+
   const recompute = (notify = true): void => {
     const data = structuredClone(baseData);
     for (const state of states) {
-      if (!state.settled || state.result === undefined) continue;
-      if (state.result.status !== "ok") continue;
+      if (!state.settled || state.result === undefined) {
+        if (state.settled) reportUnresolved(state);
+        continue;
+      }
+      if (state.result.status !== "ok") {
+        reportUnresolved(state);
+        continue;
+      }
       setQueryData(data, queryPointer(state.query), state.result.output);
     }
     resolvedData = data;

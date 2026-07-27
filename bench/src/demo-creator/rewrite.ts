@@ -5,6 +5,7 @@ import path from "node:path";
 import type { ExecFn } from "./deploy.js";
 import { defaultExec } from "./deploy.js";
 import type { ResearchReport } from "./research.js";
+import { appBuildCommand } from "./scratch.js";
 
 /**
  * The creative-rewrite stage of `demo:pipeline` — replaces the old single
@@ -745,11 +746,12 @@ export async function runRewrite(args: RewriteArgs, io: RewriteIo): Promise<Rewr
     const { parseDemoConfig } = await import("demo-template/demo-config");
     parseDemoConfig(JSON.parse(configRaw), `rewritten demo config at "${path.join(io.appDir, "demo.config.json")}"`);
 
+    const buildStep = appBuildCommand({ repoRoot: io.repoRoot, appDir: io.appDir, packageName: args.packageName });
     let rounds = 0;
     for (;;) {
       rounds += 1;
-      write(`[rewrite] build check (round ${rounds}): pnpm exec turbo run build --filter=${args.packageName}`);
-      const build = await exec(["pnpm", "exec", "turbo", "run", "build", `--filter=${args.packageName}`], { cwd: io.repoRoot });
+      write(`[rewrite] build check (round ${rounds}): ${buildStep.command.join(" ")}`);
+      const build = await exec(buildStep.command, { cwd: buildStep.cwd });
       if (build.code === 0) break;
       if (rounds > maxRepairRounds) {
         throw new Error(`Demo build still failing after ${maxRepairRounds} repair round(s):\n${(build.stderr || build.stdout).slice(-3000)}`);
