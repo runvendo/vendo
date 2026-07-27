@@ -69,6 +69,25 @@ function inputSchema(document: JsonObject, rawPathItem: JsonObject, rawOperation
   };
 }
 
+/**
+ * The operation's declared JSON response body, from the first 2xx response
+ * that carries an `application/json` schema. Recorded as the tool's
+ * `outputSchema` so the host's own contract — envelope included — is machine
+ * readable instead of guessed (live 2026-07-27: a `{ data: [...] }` envelope
+ * with no recorded output schema had the model binding an array prop to the
+ * wrapper object). Undefined when the spec declares no response schema:
+ * extraction never invents one.
+ */
+function outputSchema(document: JsonObject, operation: JsonObject): JsonObject | undefined {
+  const responses = jsonObject(operation.responses);
+  for (const status of Object.keys(responses).filter((code) => /^2\d\d$/.test(code)).sort()) {
+    const response = jsonObject(resolveRefs(document, responses[status]));
+    const schema = jsonObject(jsonObject(response.content)["application/json"]).schema;
+    if (schema !== undefined) return resolveRefs(document, schema) as JsonObject;
+  }
+  return undefined;
+}
+
 function sanitizedOperationName(operationId: string): string {
   return `host_${operationId.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/_+/g, "_")}`;
 }
@@ -112,10 +131,12 @@ export async function extractOpenApi(specPath: string): Promise<ExtractedTool[]>
         : null;
       const name = rawOperationId ? sanitizedOperationName(rawOperationId) : routeToolFullName(method, route);
       const operationId = rawOperationId ?? name;
+      const output = outputSchema(document, operation);
       tools.push({
         name,
         description: descriptionFor(operation, method, route),
         inputSchema: inputSchema(document, pathItem, operation),
+        ...(output === undefined ? {} : { outputSchema: output }),
         risk: extractedRisk(method, name, "openapi"),
         binding: {
           kind: "openapi",

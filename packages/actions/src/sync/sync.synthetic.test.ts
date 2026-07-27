@@ -389,3 +389,44 @@ describe("breaking change diff", () => {
     expect((await toolsAt(host.out)).map((tool) => tool.name)).not.toContain("host_listItems");
   });
 });
+
+describe("declared response bodies", () => {
+  const envelope = {
+    type: "object",
+    properties: { data: { type: "array", items: { type: "object", properties: { id: { type: "string" } } } } },
+    required: ["data"],
+  };
+
+  it("records a 2xx application/json schema as the tool's outputSchema", async () => {
+    const host = await temporaryHost();
+    // The whole document (not writeSpec): the schema rides a components $ref,
+    // so the extractor's ref resolution is under test too.
+    await writeFile(host.root, "openapi.json", JSON.stringify({
+      openapi: "3.1.0",
+      info: { title: "test", version: "1" },
+      paths: {
+        "/api/items": {
+          get: {
+            operationId: "listItems",
+            summary: "List items",
+            responses: { "200": { description: "Items", content: { "application/json": { schema: { $ref: "#/components/schemas/Items" } } } } },
+          },
+        },
+      },
+      components: { schemas: { Items: envelope } },
+    }));
+    await vendoSync(host);
+
+    const tool = (await toolsAt(host.out)).find((entry) => entry.name === "host_listItems");
+    // Refs resolve: the recorded schema is the real envelope, not a pointer.
+    expect(tool?.outputSchema).toEqual(envelope);
+  });
+
+  it("records nothing when the spec declares no response schema", async () => {
+    const host = await temporaryHost();
+    await writeSpec(host.root, { "/api/items": { get: operation("listItems") } });
+    await vendoSync(host);
+
+    expect((await toolsAt(host.out)).find((entry) => entry.name === "host_listItems")).not.toHaveProperty("outputSchema");
+  });
+});

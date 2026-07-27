@@ -234,12 +234,19 @@ export type ExtractedTool = ToolDescriptor & {
   /** Fail-closed extraction (04 §1): a route the scanner can't classify is emitted disabled, never silently auto-allowed. */
   disabled?: boolean;
   note?: string;
+  /** The host's DECLARED response body, when its source says so (an OpenAPI
+   *  2xx `application/json` schema today). Extraction never invents one —
+   *  absent means the contract is silent and the shape is learned by sampling
+   *  at runtime. Recorded so the envelope a host returns (`{ data: [...] }`)
+   *  is part of the committed contract rather than a guess. */
+  outputSchema?: JsonSchema;
 };
 
 export const extractedToolSchema = toolDescriptorSchema.extend({
   binding: extractedBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
+  outputSchema: jsonSchemaSchema.optional(),
 }).superRefine((tool, context) => {
   if ((tool.binding as { kind?: string }).kind === "compound") {
     context.addIssue({
@@ -398,6 +405,7 @@ export const extractedToolV3Schema = toolDescriptorSchema.extend({
   binding: extractedBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
+  outputSchema: jsonSchemaSchema.optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
   srcHash: z.string().min(1).optional(),
