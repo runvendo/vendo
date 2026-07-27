@@ -8,7 +8,7 @@ import type {
   RunContext,
   ToolRegistry,
 } from "@vendoai/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createKnowledgeTools, VENDO_KNOWLEDGE_SEARCH_TOOL, type KnowledgeResultEnvelope } from "./index.js";
 
 const ctx: RunContext = {
@@ -350,5 +350,86 @@ describe("tool policy: engine outage (T2)", () => {
       { query: "anything", readMore: { docId: "doc-transfers" } },
     ));
     expect(envelope.outcome).toBe("unavailable");
+  });
+});
+
+/** ENG-370 — the 60/min per-principal rate breaker at the registry layer.
+ * Over-limit is a LOUD "rate-limited" error outcome, never a silent empty
+ * result; the rolling window forgets calls older than a minute. */
+describe("rate breaker (ENG-370)", () => {
+  const at = (subject: string): RunContext => ({ ...ctx, principal: { kind: "user", subject } });
+
+  async function exhaust(registry: ToolRegistry, runCtx: RunContext, calls: number): Promise<void> {
+    for (let index = 0; index < calls; index += 1) {
+      const outcome = await registry.execute(
+        { id: `call_rate_${index}`, tool: VENDO_KNOWLEDGE_SEARCH_TOOL, args: { query: "wire transfers" } },
+        runCtx,
+      );
+      expect(outcome.status).toBe("ok");
+    }
+  }
+
+  it("answers the 61st call in a minute with a loud rate-limited error", async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = createKnowledgeTools(memoryKnowledgeAdapter({ docs }));
+      await exhaust(registry, ctx, 60);
+      const tripped = await search(registry, { query: "wire transfers" });
+      expect(tripped.status).toBe("error");
+      if (tripped.status !== "error") throw new Error("expected error outcome");
+      expect(tripped.error.code).toBe("rate-limited");
+      expect(tripped.error.message).toContain("rate-limited");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resets: after the window rolls past, the same principal searches again", async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = createKnowledgeTools(memoryKnowledgeAdapter({ docs }));
+      await exhaust(registry, ctx, 60);
+      expect((await search(registry, { query: "wire transfers" })).status).toBe("error");
+      vi.advanceTimersByTime(61_000);
+      expect((await search(registry, { query: "wire transfers" })).status).toBe("ok");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("isolates principals — one user's burst never throttles another", async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = createKnowledgeTools(memoryKnowledgeAdapter({ docs }));
+      await exhaust(registry, at("u_burst"), 60);
+      expect((await registry.execute(
+        { id: "call_rate_other", tool: VENDO_KNOWLEDGE_SEARCH_TOOL, args: { query: "wire transfers" } },
+        at("u_burst"),
+      )).status).toBe("error");
+      expect((await registry.execute(
+        { id: "call_rate_calm", tool: VENDO_KNOWLEDGE_SEARCH_TOOL, args: { query: "wire transfers" } },
+        at("u_calm"),
+      )).status).toBe("ok");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is env-tunable via VENDO_KNOWLEDGE_MAX_CALLS_PER_MINUTE, with an explicit option winning", async () => {
+    vi.stubEnv("VENDO_KNOWLEDGE_MAX_CALLS_PER_MINUTE", "2");
+    try {
+      const fromEnv = createKnowledgeTools(memoryKnowledgeAdapter({ docs }));
+      await exhaust(fromEnv, ctx, 2);
+      expect((await search(fromEnv, { query: "wire transfers" })).status).toBe("error");
+
+      const explicit = createKnowledgeTools(memoryKnowledgeAdapter({ docs }), { maxCallsPerMinute: 4 });
+      await exhaust(explicit, at("u_option"), 2);
+      expect((await explicit.execute(
+        { id: "call_rate_option", tool: VENDO_KNOWLEDGE_SEARCH_TOOL, args: { query: "wire transfers" } },
+        at("u_option"),
+      )).status).toBe("ok");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
