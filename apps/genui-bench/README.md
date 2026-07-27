@@ -79,12 +79,24 @@ lane `{"status":"no-key"}` and the run proceeds):
 | ---------- | ------------------- | ------------------------------------------------------------ |
 | vendo      | `ANTHROPIC_API_KEY` | production engine + PipelineEvent tap                        |
 | copilotkit | `ANTHROPIC_API_KEY` | self-hosted runtime (keyless — no CopilotKit account needed) |
-| thesys-c1  | `THESYS_API_KEY`    | their API + their React renderer                             |
+| thesys-c1  | `THESYS_API_KEY`    | their API + their React renderer (model below)               |
 | tambo      | `TAMBO_API_KEY`     | their orchestration + harness component registry             |
 
 `GENUI_BENCH_MODEL` overrides the Vendo/CopilotKit default model id (a per-run
 `--model` wins over it — see Model controls).
 `GENUI_BENCH_FAKE_LANES=1` swaps every lane for a stub (tests, no keys).
+
+**Thesys C1 is model-agnostic.** Their catalog (`GET /v1/embed/models`, 34
+entries on 2026-07-26) carries OpenAI GPT-5/5.2 and Google Gemini 3 next to
+Anthropic. The lane pins **`c1/anthropic/claude-sonnet-4.6/v-20260331`** —
+their current best Anthropic model — so the comparison holds the model family
+roughly constant with the Vendo lane; `THESYS_C1_MODEL` swaps it for a one-off
+cross-provider look. The Thesys pane footnote always names the model that
+produced what you are looking at. Their API returns the generated UI as the
+final assistant content string wrapped in a `<content thesys="true"
+version="2">` envelope around an ```openui-lang``` program; the lane passes
+that string through untouched because `C1Component` parses the envelope
+itself.
 
 Working in a git worktree (or keeping keys outside the repo)? There is no
 `.env` at the worktree root, so source your key file into the shell first —
