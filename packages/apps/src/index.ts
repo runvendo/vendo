@@ -80,3 +80,14 @@ export {
 // GenerationDependencies.onPipeline — exported as a type so onPipeline
 // consumers (apps/genui-bench runner tap) can name what they accumulate.
 export type { PipelineEvent } from "./pipeline.js";
+// The bench host surface (apps/genui-bench): the demo-bank catalog/tool/shape
+// loaders the live harnesses already share, exported because the exports map
+// closes deep imports. Data-only helpers — no engine behavior rides on them.
+// HostToolInfo is the tool slice those loaders (and GenerationDependencies)
+// speak.
+export type { HostToolInfo } from "./generation/engine.js";
+export {
+  demoBankToolShapes,
+  loadDemoBankCatalog,
+  loadDemoBankTools,
+} from "./bench/demo-bank-surface.js";
