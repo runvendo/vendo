@@ -1,0 +1,61 @@
+{
+  "_note": "HAND-AUTHORED FROM DOCS, not a live recording: TamboThread shape per @tambo-ai/client 1.2.0 type declarations (Anthropic-style content blocks; 'component' blocks carry {name, props}). CI never calls live APIs. Re-record from a real TAMBO_API_KEY run and replace this file.",
+  "thread": {
+    "id": "thread_fixture_1",
+    "name": "Account balances",
+    "status": "idle",
+    "createdAt": "2026-07-26T12:00:00.000Z",
+    "updatedAt": "2026-07-26T12:00:06.000Z",
+    "lastRunCancelled": false,
+    "messages": [
+      {
+        "id": "msg_user_1",
+        "role": "user",
+        "content": [{ "type": "text", "text": "show my account balances at a glance" }]
+      },
+      {
+        "id": "msg_assistant_1",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu_fixture_1",
+            "name": "host_listAccounts",
+            "input": {}
+          }
+        ]
+      },
+      {
+        "id": "msg_user_2",
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_fixture_1",
+            "content": "[{\"id\":\"a1\",\"name\":\"Everyday Checking\",\"balance\":4280.12},{\"id\":\"a2\",\"name\":\"High-Yield Savings\",\"balance\":12904.55}]"
+          }
+        ]
+      },
+      {
+        "id": "msg_assistant_2",
+        "role": "assistant",
+        "content": [
+          { "type": "text", "text": "Here are your account balances at a glance." },
+          {
+            "type": "component",
+            "id": "comp_fixture_1",
+            "name": "chart",
+            "props": {
+              "title": "Account balances",
+              "data": [
+                { "label": "Everyday Checking", "value": 4280.12 },
+                { "label": "High-Yield Savings", "value": 12904.55 }
+              ]
+            },
+            "streamingState": "done"
+          }
+        ]
+      }
+    ]
+  }
+}
