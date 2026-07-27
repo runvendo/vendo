@@ -1,8 +1,7 @@
 /**
- * Contract test for the Tambo adapter against the recorded fixture
- * (hand-authored from the client's type declarations — see the fixture's
- * _note). The fixture thread plays back through the real extraction path via
- * the run seam; no live API calls, ever.
+ * Contract test for the Tambo adapter against the fixture recorded from a real
+ * 2026-07-26 run (see the fixture's _note). The recorded thread plays back
+ * through the real extraction path via the run seam; no live API calls, ever.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -46,12 +45,21 @@ describe("tambo adapter", () => {
     if (result.status !== "ok") return;
     expect(run).toHaveBeenCalledWith("show my account balances at a glance", host, "test-key");
     const raw = result.raw as TamboRaw;
-    expect(raw.components).toHaveLength(1);
-    expect(raw.components[0].name).toBe("chart");
+    // Live shape: one component block per assistant message, chart then table.
+    expect(raw.components.map((pick) => pick.name)).toEqual(["chart", "table"]);
     expect(raw.components[0].props).toMatchObject({ title: "Account balances" });
     expect(raw.text).toContain("balances at a glance");
     // Full thread preserved for the internals drawer.
-    expect(raw.thread.messages).toHaveLength(4);
+    expect(raw.thread.messages).toHaveLength(5);
+  });
+
+  it("strips Tambo's own display metadata out of the component props", async () => {
+    const adapter = createTamboAdapter({ run: async () => fixture.thread });
+    const result = await adapter.generate("show my account balances at a glance", host);
+    if (result.status !== "ok") throw new Error("expected ok");
+    for (const pick of (result.raw as TamboRaw).components) {
+      expect(Object.keys(pick.props).filter((key) => key.startsWith("_tambo_"))).toEqual([]);
+    }
   });
 
   it("never throws: client errors become status failed", async () => {

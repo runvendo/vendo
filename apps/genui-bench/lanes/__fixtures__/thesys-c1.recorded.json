@@ -1,5 +1,5 @@
 {
-  "_note": "HAND-AUTHORED FROM DOCS, not a live recording: OpenAI Chat Completions response shapes per docs.thesys.dev examples (July 2026). CI never calls the live API. Re-record these payloads from a real THESYS_API_KEY run and replace this file.",
+  "_note": "STILL HAND-AUTHORED FROM DOCS — a 2026-07-26 live re-record attempt was BLOCKED, not skipped. The real THESYS_API_KEY authenticates fine but every call to https://api.thesys.dev/v1/embed/chat/completions answers HTTP 429 {\"type\":\"ERR_BILLING_THRESHOLD_EXCEEDED\",\"message\":\"Organization billing suspended due to threshold limit. Please reach out to support to continue usage.\"} — an account/billing block, not a code problem. Payload shapes below are OpenAI Chat Completions per docs.thesys.dev examples (July 2026) and remain UNVERIFIED against a real C1 response, in particular the <content>-wrapped DSL string. Re-record the moment the Thesys org is un-suspended. CI never calls the live API.",
   "toolCallCompletion": {
     "id": "chatcmpl-thesys-fixture-1",
     "object": "chat.completion",

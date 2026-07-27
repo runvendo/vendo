@@ -19,10 +19,20 @@ export interface HarnessChartProps {
   data: Array<{ label: string; value: number }>;
 }
 
+export type HarnessTableCell = string | number;
+/** A competitor's orchestration may hand back an array-of-arrays as an
+ *  index-keyed object ({"0": "Checking", "1": 12846.5}) — Tambo's hosted
+ *  service did exactly that on the 2026-07-26 live run. Accept both. */
+export type HarnessTableRow = HarnessTableCell[] | Record<string, HarnessTableCell>;
+
 export interface HarnessTableProps {
   title?: string;
   columns: string[];
-  rows: Array<Array<string | number>>;
+  rows: HarnessTableRow[];
+}
+
+function rowCells(row: HarnessTableRow): HarnessTableCell[] {
+  return Array.isArray(row) ? row : Object.values(row ?? {});
 }
 
 export interface HarnessFormProps {
@@ -89,7 +99,7 @@ export function HarnessTable({ title, columns, rows }: HarnessTableProps) {
         <tbody>
           {(rows ?? []).map((row, i) => (
             <tr key={i}>
-              {row.map((cell, j) => (
+              {rowCells(row).map((cell, j) => (
                 <td key={j} style={{ padding: "4px 8px", borderBottom: "1px solid #222229" }}>
                   {String(cell)}
                 </td>

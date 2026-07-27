@@ -3,9 +3,10 @@
  * the harness components (chart/table/form) and the host's tools (executors
  * backed by the fixture) with Tambo's headless client; their hosted
  * orchestration picks a component + props, returned as "component" content
- * blocks on the thread's assistant messages. TamboPane renders those picks
- * through OUR harness registry. Each run creates a thread on their hosted
- * service (expected).
+ * blocks on the thread's assistant messages — one block per message, arriving
+ * after the assistant text, as the 2026-07-26 live run showed. TamboPane
+ * renders those picks through OUR harness registry. Each run creates a thread
+ * on their hosted service (expected).
  */
 import {
   buildHarnessCatalog,
@@ -16,6 +17,18 @@ import {
 import type { HostFixture, LaneAdapter, LaneResult } from "../runner/types";
 
 const MAX_STEPS = 6;
+
+/** Tambo's V1 API rejects a run without a context identifier ("provide either
+ *  userKey or an OAuth bearer token"); the bench is one synthetic user. */
+const USER_KEY = "genui-bench";
+
+/** Tambo injects its own display metadata into the props/inputs the model
+ *  produces (`_tambo_statusMessage`, `_tambo_completionStatusMessage`); those
+ *  are theirs, not our components'. Live run 2026-07-26 carried them on every
+ *  component pick. */
+function stripTamboInternals(props: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(props).filter(([key]) => !key.startsWith("_tambo_")));
+}
 
 /** The minimal thread surface the adapter reads (TamboThread-compatible). */
 export interface TamboThreadLike {
@@ -40,6 +53,7 @@ const runWithTamboClient: TamboRunner = async (prompt, host, apiKey) => {
   type TamboTool = import("@tambo-ai/client").TamboTool;
   const client = new TamboClient({
     apiKey,
+    userKey: USER_KEY,
     tools: (host.tools as HostToolLike[]).map(
       (tool): TamboTool => ({
         name: tool.name,
@@ -103,7 +117,7 @@ export function createTamboAdapter(deps: TamboDeps = {}): LaneAdapter {
             if (block.type === "component" && isHarnessComponentName(String(block.name))) {
               components.push({
                 name: String(block.name) as HarnessComponentName,
-                props: (block.props ?? {}) as Record<string, unknown>,
+                props: stripTamboInternals((block.props ?? {}) as Record<string, unknown>),
               });
             }
           }

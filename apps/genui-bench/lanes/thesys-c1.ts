@@ -7,6 +7,13 @@
  *
  * Note: Thesys is mid-rebrand to "OpenUI Cloud"; SDK versions are pinned in
  * package.json.
+ *
+ * LIVE STATUS 2026-07-26: the key authenticates, but the Thesys organisation is
+ * billing-suspended — every call returns 429 ERR_BILLING_THRESHOLD_EXCEEDED, so
+ * the lane truthfully reports `failed` with that message and the recorded
+ * fixture could not be re-recorded from a real response (see its _note). The
+ * request path itself is exercised by the fixture test through the real openai
+ * client; only C1's response DSL remains unverified against reality.
  */
 import OpenAI from "openai";
 import type { RunnableToolFunctionWithoutParse } from "openai/lib/RunnableFunction";
