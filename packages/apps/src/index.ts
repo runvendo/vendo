@@ -91,3 +91,13 @@ export {
   loadDemoBankCatalog,
   loadDemoBankTools,
 } from "./bench/demo-bank-surface.js";
+// The generation seam for the genui-bench vendo lane: the SAME modelEngine
+// createApps() rides, driven directly with production PipelineConfig defaults
+// (no forked engine config). Additive export — engine behavior is unchanged.
+export {
+  modelEngine,
+  type GeneratedAppDocument,
+  type GenerationCreateInput,
+  type GenerationDependencies,
+  type GenerationEngine,
+} from "./generation/engine.js";
