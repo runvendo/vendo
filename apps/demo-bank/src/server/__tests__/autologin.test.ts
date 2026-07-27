@@ -79,12 +79,60 @@ describe("proxy auto-login behavior", () => {
     expect(token).toMatchObject({ sub: "vendo-demo", demoAutologin: true })
   })
 
-  it("with the flag, a signed-out visitor (post-/logout) is signed in again on the next request", async () => {
+  it("the real /logout continuation lands signed-in: /login redirects into the product with a fresh session", async () => {
     vi.stubEnv("DEMO_AUTOLOGIN", "1")
-    // /logout cleared the cookie; the next request carries none and re-mints.
-    const response = await proxy(requestFor("/"))
-    expect(response.status).toBe(200)
+    // /logout clears the cookie and 303s to /login — with the flag that
+    // continuation must never show a login form.
+    const response = await proxy(requestFor("/login"))
+    expect(response.status).toBe(307)
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/")
     expect(response.headers.get("set-cookie")).toContain("authjs.session-token=")
+  })
+
+  it("/login honors a same-origin returnTo and collapses foreign ones", async () => {
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    const same = await proxy(requestFor("/login?returnTo=%2Faccounts%3Ftab%3Dsavings"))
+    expect(new URL(same.headers.get("location")!).pathname).toBe("/accounts")
+    const foreign = await proxy(requestFor(`/login?returnTo=${encodeURIComponent("https://evil.example/phish")}`))
+    expect(new URL(foreign.headers.get("location")!).pathname).toBe("/")
+  })
+
+  it("without the flag, /login still renders the form (passes through untouched)", async () => {
+    const response = await proxy(requestFor("/login"))
+    expect(response.status).toBe(200)
+    expect(response.headers.get("location")).toBeNull()
+    expect(response.headers.get("set-cookie")).toBeNull()
+  })
+
+  it("host binding: the flag alone never mints for a foreign host", async () => {
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    const foreign = new NextRequest("http://localhost:3000/accounts", {
+      headers: { host: "bank.victim.example" },
+    })
+    const response = await proxy(foreign)
+    // Normal unauthenticated flow: bounce to /login, nothing minted.
+    expect(response.status).toBe(307)
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/login")
+    expect(response.headers.get("set-cookie")).toBeNull()
+  })
+
+  it("host binding: the configured demo origin (VENDO_BASE_URL) does mint", async () => {
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    vi.stubEnv("VENDO_BASE_URL", "https://demos.vendo.run")
+    const demo = new NextRequest("https://demos.vendo.run/accounts", {
+      headers: { host: "demos.vendo.run" },
+    })
+    const response = await proxy(demo)
+    expect(response.status).toBe(200)
+    // Secure deployment ⇒ the __Secure- cookie name.
+    expect(response.headers.get("set-cookie")).toContain("__Secure-authjs.session-token=")
+
+    // ...and a loopback request against that same deployment does NOT mint.
+    const loopback = new NextRequest("http://127.0.0.1:3000/accounts", {
+      headers: { host: "127.0.0.1:3000" },
+    })
+    const local = await proxy(loopback)
+    expect(local.headers.get("set-cookie")).toBeNull()
   })
 
   it("without the flag, unauthenticated behavior is unchanged: pages bounce to /login, APIs 401", async () => {

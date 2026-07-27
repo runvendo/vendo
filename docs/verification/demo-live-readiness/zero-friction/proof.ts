@@ -16,7 +16,9 @@
  *   2. the "Live demo — signed in as <first name>" chip is visible;
  *   3. Reset works (Maple: sidebar button; Cadence: ⌘⇧. hotkey) and the
  *      visitor is STILL signed in afterwards;
- *   4. one scripted scenario card attaches (canned turn, no model).
+ *   4. one scripted scenario card attaches (canned turn, no model);
+ *   5. the REAL /logout continuation (which targets /login) lands back in
+ *      the signed-in product — no login form ever renders.
  */
 import { createRequire } from "node:module"
 import { mkdirSync, renameSync } from "node:fs"
@@ -40,6 +42,9 @@ interface HostSpec {
   scriptedCard: string
   launcherLabel: string
   reset: (page: import("playwright").Page) => Promise<void>
+  /** Drive the host's REAL sign-out (it targets /login) — the continuation
+   * must land signed-in without a login form. */
+  logout: (page: import("playwright").Page, origin: string) => Promise<void>
 }
 
 const HOSTS: HostSpec[] = [
@@ -54,6 +59,14 @@ const HOSTS: HostSpec[] = [
       await page.getByRole("button", { name: "Reset demo" }).click()
       await page.waitForURL("**/")
     },
+    logout: async (page, origin) => {
+      // The account switcher's real sign-out: POST /logout, then the client
+      // navigates to /login — which the flag-aware proxy turns into the
+      // signed-in product.
+      await page.getByRole("button", { name: /Yousef Helal/ }).click()
+      await page.getByText("Sign out").click()
+      await page.waitForURL(`${origin}/`, { timeout: 30_000 })
+    },
   },
   {
     key: "cadence",
@@ -65,6 +78,12 @@ const HOSTS: HostSpec[] = [
       // Cadence's demo chrome reset is the ⌘⇧. hotkey (VendoLayer).
       await page.keyboard.press("Meta+Shift+Period")
       await page.waitForURL("**/")
+    },
+    logout: async (page, origin) => {
+      // GET /logout clears the cookie and 303s to /login — which the
+      // flag-aware proxy turns into the signed-in product.
+      await page.goto(`${origin}/logout`)
+      await page.waitForURL(`${origin}/`, { timeout: 30_000 })
     },
   },
 ]
@@ -109,6 +128,23 @@ async function prove(spec: HostSpec): Promise<void> {
   await page.waitForTimeout(6_000) // let the scripted stream finish for the recording
   await page.screenshot({ path: path.join(OUT, `${spec.key}-04-scripted-card-attached.png`) })
 
+  // 4. The REAL /logout continuation: sign-out targets /login, and with the
+  //    flag active that continuation lands back in the signed-in product —
+  //    no login form ever renders.
+  const scrim = page.locator(".fl-overlay-scrim")
+  await page.keyboard.press("Escape") // close the overlay (scrim stays mounted, goes hidden)
+  await scrim.waitFor({ state: "hidden", timeout: 3_000 }).catch(async () => {
+    // Escape landed in the composer — the scrim itself dismisses on click.
+    await scrim.click({ position: { x: 8, y: 8 } })
+    await scrim.waitFor({ state: "hidden", timeout: 5_000 })
+  })
+  await spec.logout(page, spec.origin)
+  await page.getByText(spec.chipText).first().waitFor({ state: "visible", timeout: 30_000 })
+  if ((await page.locator('input[type="password"]').count()) !== 0) {
+    throw new Error(`${spec.key}: the /logout continuation rendered a login form`)
+  }
+  await page.screenshot({ path: path.join(OUT, `${spec.key}-05-logout-continuation-signed-in.png`) })
+
   const video = page.video()
   await context.close()
   if (video) {
@@ -119,22 +155,36 @@ async function prove(spec: HostSpec): Promise<void> {
   console.log(`${spec.key}: PROVEN (${navigations.length} navigation(s): ${navigations.join(" → ")})`)
 }
 
-/** Z4 negative: a CREDENTIAL login on the same flag-enabled Maple server
- * shows no chip — the claim rides only proxy-minted tokens. */
+/** Z4 negative: a CREDENTIAL session on the same flag-enabled Maple server
+ * shows no chip — the claim rides only proxy-minted tokens. The login form
+ * is (by design) unreachable under the flag, so the credential session is
+ * installed directly: the exact claim-less Auth.js JWE the credentials
+ * provider mints, signed with the server's own AUTH_SECRET. If the proxy
+ * did NOT accept it, it would auto-mint and the chip WOULD render — chip
+ * absence therefore proves the credential session was honored. */
 async function proveCredentialNoChip(): Promise<void> {
+  const requireBank = createRequire(path.join(repoRoot, "apps/demo-bank/package.json"))
+  const { encode } = requireBank("next-auth/jwt") as typeof import("next-auth/jwt")
+  const credential = await encode({
+    token: { sub: "vendo-demo", name: "Yousef Helal", email: "yousef@maple.com" },
+    // Must match the AUTH_SECRET the Maple server was started with.
+    secret: process.env.AUTH_SECRET ?? "zero-friction-proof-secret",
+    salt: "authjs.session-token",
+  })
   const browser = await chromium.launch()
-  const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
-  await page.goto("http://127.0.0.1:4300/login", { waitUntil: "load" })
-  await page.locator('input[type="email"]').fill("yousef@maple.com")
-  await page.locator('input[type="password"]').fill(process.env.MAPLE_DEMO_PASSWORD ?? "maple-harvest-0427")
-  await page.getByRole("button", { name: /sign in/i }).click()
-  await page.waitForURL("http://127.0.0.1:4300/", { timeout: 30_000 })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  await context.addCookies([
+    { name: "authjs.session-token", value: credential, url: "http://127.0.0.1:4300/" },
+  ])
+  const page = await context.newPage()
+  await page.goto("http://127.0.0.1:4300/", { waitUntil: "load" })
+  await page.getByText("Yousef Helal").first().waitFor({ state: "visible", timeout: 30_000 })
   await page.waitForTimeout(2_000)
   const chips = await page.getByText("Live demo — signed in as").count()
-  if (chips !== 0) throw new Error(`credential login rendered ${chips} chip(s); expected none`)
-  await page.screenshot({ path: path.join(OUT, "maple-05-credential-login-no-chip.png") })
+  if (chips !== 0) throw new Error(`credential session rendered ${chips} chip(s); expected none`)
+  await page.screenshot({ path: path.join(OUT, "maple-06-credential-session-no-chip.png") })
   await browser.close()
-  console.log("maple credential login: NO chip (as required)")
+  console.log("maple credential session: NO chip (as required)")
 }
 
 async function main(): Promise<void> {

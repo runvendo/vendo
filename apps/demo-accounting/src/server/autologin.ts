@@ -10,10 +10,68 @@
  * Edge-safe (jose + env only): the Next proxy imports this module.
  */
 import { decodeJwt, SignJWT } from "jose"
-import { cadenceDemoUsers, supabaseJwtSecret, supabaseUrl } from "./users"
+import { cadenceDemoUsers, demoAutologin, supabaseJwtSecret, supabaseUrl } from "./users"
 
 /** GoTrue's default access-token expiry — what a real login's token gets. */
 const SESSION_TTL_SECONDS = 3600
+
+let warnedHostMismatch = false
+
+/** The hosts an auto-login deployment may serve: the operator-set public
+ * origin (VENDO_BASE_URL — the same origin the cookie policy already
+ * trusts), or loopback when it is unset (local dev, local prod proofs). */
+function isDemoHost(host: string): boolean {
+  const base = process.env.VENDO_BASE_URL
+  if (base) {
+    try {
+      return new URL(base).host === host
+    } catch {
+      return false
+    }
+  }
+  const hostname = host.replace(/:\d+$/, "").replace(/^\[|\]$/gu, "")
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+}
+
+/**
+ * Whether this request may be auto-signed-in. The env flag alone is not
+ * enough — that would make a leaked/copied `DEMO_AUTOLOGIN=1` an auth bypass
+ * on any reachable deployment. It must ALSO arrive for the configured demo
+ * origin (this module only ships in the demo host app; there is no non-demo
+ * build of Cadence). A mismatch logs loudly once and the request falls
+ * through to the normal unauthenticated flow.
+ */
+export function demoAutologinActive(request: Request): boolean {
+  if (!demoAutologin()) return false
+  const forwarded = request.headers.get("x-forwarded-host")
+  const host = (forwarded ?? request.headers.get("host") ?? new URL(request.url).host)
+    .split(",")[0]!
+    .trim()
+  if (isDemoHost(host)) return true
+  if (!warnedHostMismatch) {
+    warnedHostMismatch = true
+    console.error(
+      `[cadence] DEMO_AUTOLOGIN=1 but request host "${host}" is not the configured demo origin ` +
+        `(${process.env.VENDO_BASE_URL ?? "no VENDO_BASE_URL; loopback only"}) — refusing to auto-mint sessions.`,
+    )
+  }
+  return false
+}
+
+/** Same-origin-only returnTo → path; anything foreign collapses to "/".
+ * Local copy of vendo/auth.ts's safeReturnTo — that module pulls the full
+ * supabase preset, too heavy for the edge proxy. */
+export function autologinReturnTo(request: Request): string {
+  const url = new URL(request.url)
+  const candidate = url.searchParams.get("returnTo")
+  if (!candidate) return "/"
+  try {
+    const target = new URL(candidate, url)
+    return target.origin === url.origin ? `${target.pathname}${target.search}${target.hash}` : "/"
+  } catch {
+    return "/"
+  }
+}
 
 const AUTOLOGIN_CLAIM = "demo_autologin"
 

@@ -25,12 +25,27 @@ against local **prod builds** (`pnpm build` + `next start`):
   Maple = "Where did my money go?" scenario (canned scripted engine),
   Cadence = "What filing deadlines hit next week?" pre-generated chip
   (instant-attach cache).
-- `maple-05-credential-login-no-chip.png` — Z4 negative: a real credential
-  login on the same flag-enabled server renders NO chip (chip count
-  asserted 0). Cadence's negative is covered by unit test
+- `<host>-05-logout-continuation-signed-in.png` — the REAL sign-out flow
+  (Maple: account-switcher "Sign out"; Cadence: GET /logout), whose
+  continuation targets /login: with the flag active the proxy turns that
+  into the signed-in product — no login form ever renders (password-field
+  count asserted 0).
+- `maple-06-credential-session-no-chip.png` — Z4 negative: a credential
+  session on the same flag-enabled server renders NO chip. The login form
+  is unreachable under the flag (by design), so the exact claim-less
+  Auth.js JWE the credentials provider mints (signed with the server's
+  AUTH_SECRET) is installed as the cookie; had the proxy not honored it,
+  auto-mint would have put the chip up — chip absence proves the
+  credential session was used. Cadence's negative is covered by unit test
   (`isAutologinToken` false for GoTrue-shaped tokens) since a credential
   login there requires a running GoTrue.
 - `recordings/<host>-cold-profile.webm` — full cold-profile session video.
+
+Host binding (V1) is unit-tested per host (foreign Host ⇒ no mint; the
+configured VENDO_BASE_URL origin ⇒ mint) and was probed live:
+`curl -H "Host: victim.example"` against the flag-enabled server got the
+normal redirect-to-login with no Set-Cookie, and the server logged the
+loud one-time mismatch warning.
 
 ## Known pre-existing (out of scope)
 

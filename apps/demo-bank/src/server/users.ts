@@ -60,16 +60,12 @@ export function primaryMapleUser(): MapleDemoUser {
   return { ...seededIdentities()[0]! };
 }
 
-/** The primary demo user's email — login prefill and scripted flows. */
+/** The primary demo user's email — login prefill and scripted flows.
+ * Deliberately NOT primaryMapleUser().email: when password login is
+ * unconfigured this has always returned the raw env value, and flag-absent
+ * behavior stays byte-identical. */
 export function mapleDemoEmail(): string {
-  return primaryMapleUser().email;
-}
-
-/** DEMO_AUTOLOGIN=1 — deployed-demo mode: unauthenticated visitors get a
- * server-minted session for the primary seeded user (see server/autologin.ts).
- * Absent (any other value), every existing flow is untouched. */
-export function demoAutologin(): boolean {
-  return process.env.DEMO_AUTOLOGIN === "1";
+  return seededUsers()[0]?.email ?? (process.env.MAPLE_DEMO_EMAIL ?? "yousef@maple.com");
 }
 
 /** Auth.js subject → seeded user, or null for anything Maple never issued. */
