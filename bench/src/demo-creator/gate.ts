@@ -153,29 +153,42 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
     await record("open", landedUrl.startsWith("http"), `landed on ${landedUrl}`, productShot);
     const demoOrigin = new URL(landedUrl).origin;
 
-    // (3) Login — REAL and REQUIRED (criterion 37: "login works"). Every
-    // clone ships the injected wall; a deployed demo without one fails the
-    // gate, and so does a login that doesn't land past /login.
+    // (3) Authenticated and inside the product — REQUIRED (criterion 37). Two
+    // legitimate ways to get there, and the gate proves whichever the demo
+    // ships:
+    //   - auto-login (DEMO_AUTOLOGIN=1 on the demo origin): the visitor is
+    //     already signed in, and NO sign-in page appears at all. This is the
+    //     default for demos we send prospects — a password wall in front of a
+    //     sales demo is friction we deliberately removed;
+    //   - the injected password wall: fill it and land past /login.
+    // What is never acceptable is ending up stuck on /login.
     const loginForm = page.locator('form[action="/login"]');
-    if (await loginForm.count() === 0) {
-      await record("login", false, "the deployed demo has NO login wall — the injected demo login is missing");
+    const hasWall = await loginForm.count() > 0;
+    if (hasWall) {
+      await loginForm.locator('input[name="password"]').fill(args.demoPassword);
+      await loginForm.locator('button[type="submit"]').click();
+      await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 60_000, waitUntil: "commit" })
+        .catch(async () => {
+          await record("login", false, "the demo password was rejected (still on /login after submit)");
+        });
     }
-    await loginForm.locator('input[name="password"]').fill(args.demoPassword);
-    await loginForm.locator('button[type="submit"]').click();
-    await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 60_000, waitUntil: "commit" })
-      .catch(async () => {
-        await record("login", false, "the demo password was rejected (still on /login after submit)");
-      });
     // Land on the product page explicitly (the 303-follow can abort on a cold
     // route); reaching "/" without bouncing back to /login proves the cookie.
     await page.goto(new URL("/", demoOrigin).toString(), { waitUntil: "domcontentloaded", timeout: 60_000 });
     if (new URL(page.url()).pathname.startsWith("/login")) {
-      await record("login", false, "the auth cookie did not stick — / bounced back to /login");
+      await record("login", false, hasWall
+        ? "the auth cookie did not stick — / bounced back to /login"
+        : "no login wall AND no auto-login — / bounced to /login with no way in");
     }
     await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
     const loginShot = path.join(args.outDir, "gate-2-logged-in.png");
     await page.screenshot({ path: loginShot });
-    await record("login", true, `logged in with the demo password; authenticated on ${new URL(page.url()).pathname}`, loginShot);
+    await record(
+      "login",
+      true,
+      `${hasWall ? "logged in with the demo password" : "auto-login (no sign-in page shown)"}; authenticated on ${new URL(page.url()).pathname}`,
+      loginShot,
+    );
 
     // (4) The /vendo panel: badge chrome + every beat's suggestion card.
     const panelUrl = new URL("/vendo", demoOrigin).toString();

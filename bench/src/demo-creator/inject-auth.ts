@@ -25,6 +25,111 @@ export function demoPassword(id: string, env: NodeJS.ProcessEnv = {}): string {
 
 export const DEMO_AUTH_COOKIE = "vendo_demo_auth";
 
+/**
+ * The host-bound auto-login gate, ported from the proven
+ * `apps/demo-bank/src/server/autologin.ts`. Semantics are copied, not
+ * loosened — Maple mints an Auth.js JWE where a clone only needs its cookie,
+ * but the DECISION of whether to mint is identical:
+ *
+ *  - the Host header is validated as a BARE AUTHORITY by regex BEFORE any
+ *    parsing, because `new URL("http://" + host)` silently accepts
+ *    `victim.example@demo.host`, `demo.host#victim`, `demo.host/victim` and
+ *    `demo.host?victim`, reinterpreting or discarding everything outside the
+ *    authority — a foreign host would smuggle the demo host past the compare;
+ *  - X-Forwarded-Host must AGREE with Host when present (Railway's edge always
+ *    sets it) — defense in depth that can only make the gate stricter;
+ *  - observable ambiguity (repeated header fields, or duplicates the runtime
+ *    joined with ", ") is REFUSED, never guessed;
+ *  - it FAILS CLOSED with no configured origin — no loopback exception.
+ *
+ * Kept as source text (not an import) so the generated middleware stays a
+ * single self-contained edge module; the bench test evaluates THIS string, so
+ * what is tested is exactly what ships.
+ *
+ * `process.env.X` is referenced statically so the edge runtime resolves it;
+ * `envOverride` exists for the test.
+ */
+export const AUTOLOGIN_GATE_SOURCE = `/** A bare authority: hostname labels plus an optional port, nothing else. */
+const HOST_AUTHORITY = /^[A-Za-z0-9.-]+(:[0-9]{1,5})?$/;
+
+const DEFAULT_PORTS: Record<string, string> = { "http:": "80", "https:": "443" };
+
+/** Strictly validate + normalize an authority for comparison: lowercase
+ * hostname, default port for the scheme dropped. Null = reject. */
+function normalizeHost(rawHost: string, protocol: string): string | null {
+  if (!HOST_AUTHORITY.test(rawHost)) return null;
+  const [hostname, port] = rawHost.split(":");
+  if (!hostname || hostname.split(".").some((label) => label.length === 0)) return null;
+  if (port !== undefined) {
+    const numeric = Number(port);
+    if (!Number.isInteger(numeric) || numeric < 1 || numeric > 65535) return null;
+    if (String(numeric) !== DEFAULT_PORTS[protocol]) return hostname.toLowerCase() + ":" + numeric;
+  }
+  return hostname.toLowerCase();
+}
+
+/** The one authority an auto-login deployment may serve. FAIL CLOSED: no
+ * configured origin, no loopback exception. */
+function configuredDemoOrigin(baseUrl: string | undefined): { host: string; protocol: string } | null {
+  if (!baseUrl) return null;
+  let configured: URL;
+  try {
+    configured = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+  const host = normalizeHost(configured.host, configured.protocol);
+  return host === null ? null : { host, protocol: configured.protocol };
+}
+
+/** The single authority a header carries.
+ *   undefined = absent · null = AMBIGUOUS (repeated fields, or joined with ", ") */
+function soleHeaderAuthority(request: { headers: Headers }, name: string): string | null | undefined {
+  const values: string[] = [];
+  for (const [key, value] of request.headers) {
+    if (key.toLowerCase() === name) values.push(value);
+  }
+  if (values.length === 0) return undefined;
+  if (values.length > 1) return null;
+  // NOT trimmed: whitespace must fail the authority check, not be sanitized.
+  const only = values[0] as string;
+  return only.includes(",") ? null : only;
+}
+
+let warnedHostMismatch = false;
+
+/** Whether this request may be auto-signed-in. The env flag alone is not
+ * enough — that would make a leaked DEMO_AUTOLOGIN=1 an auth bypass on any
+ * reachable deployment. It must ALSO arrive for the configured demo origin. */
+function demoAutologinActive(request: { headers: Headers }, envOverride?: Record<string, string | undefined>): boolean {
+  const env = envOverride ?? {
+    DEMO_AUTOLOGIN: process.env.DEMO_AUTOLOGIN,
+    VENDO_BASE_URL: process.env.VENDO_BASE_URL,
+  };
+  if (env.DEMO_AUTOLOGIN !== "1") return false;
+  const expected = configuredDemoOrigin(env.VENDO_BASE_URL);
+  const host = soleHeaderAuthority(request, "host");
+  const forwarded = soleHeaderAuthority(request, "x-forwarded-host");
+  const actual = expected && typeof host === "string" ? normalizeHost(host, expected.protocol) : null;
+  const agrees =
+    forwarded === undefined ||
+    (typeof forwarded === "string" &&
+      expected !== null &&
+      normalizeHost(forwarded, expected.protocol) === actual);
+  if (expected !== null && actual !== null && actual === expected.host && agrees) return true;
+  if (!warnedHostMismatch) {
+    warnedHostMismatch = true;
+    console.error(
+      "[demo] DEMO_AUTOLOGIN=1 but the request does not match the configured demo origin (" +
+        (env.VENDO_BASE_URL ?? "VENDO_BASE_URL unset — autologin disabled") +
+        "): Host=" + (host === null ? "<ambiguous>" : JSON.stringify(host ?? null)) +
+        ", X-Forwarded-Host=" + (forwarded === null ? "<ambiguous>" : JSON.stringify(forwarded ?? null)) +
+        " — refusing to auto-sign-in.",
+    );
+  }
+  return false;
+}`;
+
 const banner = `// ============================================================================
 // PLUMBING — demo login wall, written by demo:create (bench/src/demo-creator/
 // inject-auth.ts). DO NOT REWRITE PER PROSPECT: the form contract (action=
@@ -38,6 +143,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const OPEN_PREFIXES = ["/api/", "/demo-status", "/login", "/_next/", "/brand/", "/favicon"];
 
+${AUTOLOGIN_GATE_SOURCE}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (OPEN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix))) {
@@ -45,6 +152,14 @@ export function middleware(request: NextRequest) {
   }
   if (request.cookies.get("${DEMO_AUTH_COOKIE}")?.value === "ok") {
     return NextResponse.next();
+  }
+  // Zero-friction demos: on the configured demo origin the visitor is signed
+  // in before first paint — no password wall. /login stays reachable for
+  // anyone who wants it, and every other origin still bounces there.
+  if (demoAutologinActive(request)) {
+    const response = NextResponse.next();
+    response.cookies.set("${DEMO_AUTH_COOKIE}", "ok", { httpOnly: true, sameSite: "lax", path: "/" });
+    return response;
   }
   const login = request.nextUrl.clone();
   login.pathname = "/login";
