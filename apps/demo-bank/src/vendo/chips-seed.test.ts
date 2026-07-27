@@ -81,6 +81,46 @@ describe("chip pre-generation", () => {
     expect(entries).toHaveLength(2);
   });
 
+  it("an edited prompt regenerates: idempotency keys on the prompt, not the chip key", async () => {
+    const apps = fakeApps();
+    const manifests = memoryRecords();
+    const first = await pregenerate(apps, manifests, "vendo-demo", CHIPS);
+    apps.create.mockClear();
+
+    const edited = [{ key: "subs", prompt: "Track my paid subscriptions" }, CHIPS[1]!];
+    const entries = await pregenerate(apps, manifests, "vendo-demo", edited);
+
+    expect(apps.create).toHaveBeenCalledTimes(1);
+    expect(apps.create).toHaveBeenCalledWith({ prompt: "Track my paid subscriptions" }, expect.anything());
+    const subs = entries.find((entry) => entry.key === "subs")!;
+    expect(subs.prompt).toBe("Track my paid subscriptions");
+    expect(subs.appId).not.toBe(first.find((entry) => entry.key === "subs")!.appId);
+    // The untouched chip keeps its cached app.
+    expect(entries.find((entry) => entry.key === "dining")!.appId)
+      .toBe(first.find((entry) => entry.key === "dining")!.appId);
+  });
+
+  it("concurrent runs single-flight: boot + reset overlap never double-generates", async () => {
+    const apps = fakeApps();
+    // Make create slow enough that the second call arrives mid-run.
+    const inner = apps.create.getMockImplementation()!;
+    apps.create.mockImplementation(async (input) => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return inner(input);
+    });
+    const manifests = memoryRecords();
+
+    const [a, b] = await Promise.all([
+      pregenerate(apps, manifests, "vendo-demo", CHIPS),
+      pregenerate(apps, manifests, "vendo-demo", CHIPS),
+    ]);
+
+    expect(apps.create).toHaveBeenCalledTimes(CHIPS.length);
+    expect(a).toEqual(b);
+    const row = await manifests.get(chipManifestRowId("vendo-demo"));
+    expect((row?.data as { entries: unknown[] }).entries).toHaveLength(CHIPS.length);
+  });
+
   it("tolerates a failed generation: logs, skips the chip, keeps the rest", async () => {
     const apps = fakeApps();
     apps.create.mockRejectedValueOnce(new Error("model 529"));

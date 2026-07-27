@@ -28,9 +28,29 @@ interface ChipAppsRuntime {
   get(appId: string, ctx: RunContext): Promise<AppDocument | null>;
 }
 
+/** Single-flight guard: boot seeding and a demo reset can overlap, and two
+ *  concurrent runs would double-generate (double model spend) and clobber
+ *  each other's manifest write. The second caller joins the first run. */
+const inFlight = new Map<string, Promise<ChipManifestEntry[]>>();
+
 /** DI core — exercised directly by tests; pregenerateChips binds the live
  *  vendo runtime and store below. */
-export async function pregenerate(
+export function pregenerate(
+  apps: ChipAppsRuntime,
+  manifests: RecordStore,
+  subject: string,
+  chips: TryThisChip[],
+  requestHeaders?: Record<string, string>,
+): Promise<ChipManifestEntry[]> {
+  const running = inFlight.get(subject);
+  if (running !== undefined) return running;
+  const run = pregenerateNow(apps, manifests, subject, chips, requestHeaders)
+    .finally(() => inFlight.delete(subject));
+  inFlight.set(subject, run);
+  return run;
+}
+
+async function pregenerateNow(
   apps: ChipAppsRuntime,
   manifests: RecordStore,
   subject: string,
@@ -53,8 +73,14 @@ export async function pregenerate(
 
   const entries: ChipManifestEntry[] = [];
   for (const chip of chips) {
+    // Idempotency keys on the PROMPT: an edited prompt must regenerate — a
+    // key-only match would keep serving the app built for the old wording.
     const cached = existing.get(chip.key);
-    if (cached !== undefined && (await apps.get(cached.appId, ctx)) !== null) {
+    if (
+      cached !== undefined
+      && cached.prompt === chip.prompt
+      && (await apps.get(cached.appId, ctx)) !== null
+    ) {
       entries.push({ ...chip, appId: cached.appId });
       continue;
     }
