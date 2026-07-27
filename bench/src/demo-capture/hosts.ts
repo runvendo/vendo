@@ -125,12 +125,19 @@ export interface RunningDemoHost {
   stop(): Promise<void>;
 }
 
-export function demoHostCommandArgs(packageName: CaptureHostDefinition["packageName"], port: number): string[] {
+/** `standalone` = the app is a scratch demo clone outside this checkout, so
+ * there is no workspace to filter — it is booted from its own directory. */
+export function demoHostCommandArgs(
+  packageName: CaptureHostDefinition["packageName"],
+  port: number,
+  options: { standalone?: boolean } = {},
+): string[] {
   // pnpm's filtered script invocation already treats everything after `dev`
   // as script arguments. Supplying another `--` reaches `next dev` literally
   // and Next mistakes the following flag for a project directory.
   return [
-    "--filter", packageName, "dev",
+    ...(options.standalone === true ? [] : ["--filter", packageName]),
+    "dev",
     "--hostname", "127.0.0.1",
     "--port", String(port),
   ];
@@ -225,18 +232,26 @@ export async function bootDemoHost(options: {
   repoRoot: string;
   logFile: string;
   timeoutMs: number;
+  /** The app's own directory. Pass it for config-driven hosts: a scratch demo
+   * clone lives outside the repo and boots from there instead of by workspace
+   * filter. Omit for the first-party hosts, which are always members. */
+  appDir?: string;
 }): Promise<RunningDemoHost> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is missing; source the Flowlet .env before running a live demo capture");
+  // Either key is a working inference posture (BYO provider / Cloud gateway);
+  // with neither, the boot succeeds and every beat fails on the first turn.
+  if (!process.env.ANTHROPIC_API_KEY && !process.env.VENDO_API_KEY) {
+    throw new Error("ANTHROPIC_API_KEY or VENDO_API_KEY is missing; source the Flowlet .env before running a live demo capture");
   }
+  const standalone = options.appDir !== undefined
+    && path.relative(options.repoRoot, options.appDir).startsWith("..");
   const releaseLock = await acquirePortLock(options.port, Math.max(options.timeoutMs, 600_000));
   await mkdir(path.dirname(options.logFile), { recursive: true });
   const log = createWriteStream(options.logFile, { flags: "a" });
   const child = spawn(
     "pnpm",
-    demoHostCommandArgs(options.host.packageName, options.port),
+    demoHostCommandArgs(options.host.packageName, options.port, { standalone }),
     {
-      cwd: options.repoRoot,
+      cwd: standalone ? (options.appDir as string) : options.repoRoot,
       env: process.env,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],

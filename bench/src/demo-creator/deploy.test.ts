@@ -187,7 +187,7 @@ describe("buildDeployPlan", () => {
     serviceName: "demo-linear",
     project: "vendo-demos",
     dockerfilePath: "apps/demo-linear/Dockerfile",
-    anthropicApiKey: "sk-ant-SECRET",
+    modelKeys: { ANTHROPIC_API_KEY: "sk-ant-SECRET" },
   });
   const finalizeSteps = plan.finalize("https://demo-linear-production.up.railway.app");
 
@@ -226,6 +226,40 @@ describe("buildDeployPlan", () => {
       expect(step.display).not.toContain("sk-ant-SECRET");
     }
     expect(finalizeSteps[0]?.display).toContain("ANTHROPIC_API_KEY=<redacted>");
+  });
+
+  // The Cloud posture: one VENDO_API_KEY buys the hosted store, the
+  // connections broker and the metered model gateway (apps/demo-template's
+  // server.ts leaves those slots unset on purpose).
+  it("sets VENDO_API_KEY when present, and redacts it too", () => {
+    const cloudPlan = buildDeployPlan({
+      serviceName: "demo-linear",
+      project: "vendo-demos",
+      dockerfilePath: "Dockerfile",
+      modelKeys: { VENDO_API_KEY: "vk-SECRET" },
+    });
+    const [variables] = cloudPlan.finalize("https://demo-linear-production.up.railway.app");
+    expect(variables?.command).toContain("VENDO_API_KEY=vk-SECRET");
+    expect(variables?.command).not.toContain("ANTHROPIC_API_KEY=");
+    expect(variables?.display).toContain("VENDO_API_KEY=<redacted>");
+    expect(variables?.display).not.toContain("vk-SECRET");
+  });
+
+  // A scratch clone deploys ITSELF: the app dir is the upload context, so the
+  // Dockerfile path is context-relative and `up` names the directory.
+  it("uploads the app dir for a standalone clone", () => {
+    const standalonePlan = buildDeployPlan({
+      serviceName: "demo-linear",
+      project: "vendo-demos",
+      dockerfilePath: "Dockerfile",
+      modelKeys: { VENDO_API_KEY: "vk-SECRET" },
+      uploadPath: "/tmp/vendo-demos/demo-linear",
+    });
+    const [variables, up] = standalonePlan.finalize("https://demo-linear-production.up.railway.app");
+    expect(variables?.command).toContain("RAILWAY_DOCKERFILE_PATH=Dockerfile");
+    expect(up?.command).toEqual([
+      "railway", "up", "/tmp/vendo-demos/demo-linear", "--service", "demo-linear", "--detach",
+    ]);
   });
 
   it("tolerates ONLY `railway add` failing (when the service already exists)", () => {
@@ -298,16 +332,34 @@ describe("runDemoDeploy (dry run against a fixture app)", () => {
     expect(await readFile(path.join(appDir, "Dockerfile"), "utf8")).toBe("FROM scratch\n# hand-tuned\n");
   });
 
-  it("refuses an app directory outside the repo root (the build context)", async () => {
+  // The leak fix's other half: a scratch clone lives outside the repo, so it
+  // deploys ITSELF (self-contained, published @vendoai/* pins) instead of
+  // dragging the whole OSS tree into a prospect's image.
+  it("deploys an app outside the repo root as a standalone upload", async () => {
     const { repoRoot } = await writeFixture();
-    await expect(runDemoDeploy({ ...args, app: "../elsewhere" }, { repoRoot, env: {}, write: () => {} }))
-      .rejects.toThrow(/inside the repo/);
+    const scratchDir = await mkdtemp(path.join(tmpdir(), "vendo-demo-scratch-"));
+    const appDir = path.join(scratchDir, "demo-linear");
+    await mkdir(appDir, { recursive: true });
+    await writeFile(path.join(appDir, "package.json"), `${JSON.stringify({ name: "demo-linear", private: true }, null, 2)}\n`);
+    await writeFile(path.join(appDir, "demo.config.json"), `${JSON.stringify(demoConfig, null, 2)}\n`);
+    const lines: string[] = [];
+    const result = await runDemoDeploy({ ...args, app: appDir }, { repoRoot, env: {}, write: (line) => lines.push(line) });
+
+    expect(result.appPath).toBe(appDir);
+    const dockerfile = await readFile(path.join(appDir, "Dockerfile"), "utf8");
+    // Standalone: no monorepo install, no turbo filter, no nested WORKDIR.
+    expect(dockerfile).not.toContain("turbo");
+    expect(dockerfile).toContain("RUN pnpm build");
+    expect(dockerfile).not.toContain("WORKDIR /app/");
+    const output = lines.join("\n");
+    expect(output).toContain(`railway up ${appDir} --service demo-linear --detach`);
+    expect(output).toContain("RAILWAY_DOCKERFILE_PATH=Dockerfile");
   });
 
-  it("refuses to run live without ANTHROPIC_API_KEY", async () => {
+  it("refuses to run live with no inference key at all", async () => {
     const { repoRoot } = await writeFixture();
     await expect(runDemoDeploy({ ...args, dryRun: false }, { repoRoot, env: {}, write: () => {} }))
-      .rejects.toThrow(/ANTHROPIC_API_KEY/);
+      .rejects.toThrow(/VENDO_API_KEY .* or ANTHROPIC_API_KEY/);
   });
 
   it("surfaces a broken demo.config.json loudly", async () => {

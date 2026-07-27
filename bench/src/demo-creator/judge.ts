@@ -166,6 +166,7 @@ export async function captureBuiltScreens(options: CaptureScreensOptions): Promi
     host,
     port: options.port,
     repoRoot: options.repoRoot,
+    appDir: options.appDir,
     logFile: options.logFile,
     timeoutMs: 180_000,
   });

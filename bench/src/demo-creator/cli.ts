@@ -1,10 +1,13 @@
 #!/usr/bin/env node
+import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseDemoChipsArgs, runDeriveChips } from "./chips.js";
 import { displayAppPath, parseDemoCreateArgs, runDemoCreate, type DemoCreateResult } from "./create.js";
 import { parseDemoDeployArgs, runDemoDeploy } from "./deploy.js";
 import { parseDemoPipelineArgs, runDemoPipeline } from "./pipeline.js";
 import { parseDemoReapArgs, runDemoReap } from "./reap.js";
 import { parseDemoResearchArgs, runDemoResearch } from "./research.js";
+import { defaultDemoScratchDir } from "./scratch.js";
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -12,19 +15,31 @@ function usage(): string {
   return `Usage:
   pnpm --filter @vendoai/bench demo:create -- --id SLUG --prospect NAME [--cta-url URL] [--target-dir DIR] [--url PROSPECT_SITE] [--screenshots a.png,b.png]
   pnpm --filter @vendoai/bench demo:research -- --app APP_DIR --url https://... [--url https://...]
+  pnpm --filter @vendoai/bench demo:chips -- --app APP_DIR [--prospect NAME]
   pnpm --filter @vendoai/bench demo:deploy -- --app apps/demo-SLUG [--project NAME] [--router-url URL] [--skip-registry] [--dry-run]
   pnpm --filter @vendoai/bench demo:reap -- [--router-url URL] [--project NAME] [--execute]
   pnpm --filter @vendoai/bench demo:pipeline -- --id SLUG --prospect NAME --url PROSPECT_SITE [--screenshots a.png,b.png] [--cta-url URL] [--target-dir DIR] [--port N] [--skip-capture] [--skip-deploy]
 
-demo:create clones apps/demo-template into <target-dir>/demo-<id> (default apps/)
-and writes a TODO-fenced demo.config.json skeleton plus a RESEARCH/ pointer;
+demo:create clones apps/demo-template into <target-dir>/demo-<id> and writes a
+TODO-fenced demo.config.json skeleton plus a RESEARCH/ pointer. The default
+target is a scratch dir OUTSIDE this repo (${defaultDemoScratchDir()}) — a
+generated demo is a prospect's brand and must never be committable here; such a
+clone is made self-contained by vendoring this tree's @vendoai/* packages into
+its vendor/ dir. --target-dir apps keeps it in the workspace for local poking
+(gitignored).
 --screenshots copies operator-provided product screenshots into RESEARCH/ as
 top-priority brand evidence (indexed with provenance in RESEARCH/manifest.json).
 demo:research captures each prospect URL's brand evidence (screenshots, title,
 theme-color, favicon, computed-style palette) into <APP_DIR>/RESEARCH/.
+demo:chips rewrites the demo's example pills from its OWN extracted tool surface
+(<APP_DIR>/.vendo/tools.json) so they name the prospect's real capabilities;
+hand-authored beats are kept verbatim and derived ones fill the rest. Runs
+inside demo:pipeline after the rewrite; standalone for re-deriving.
 demo:deploy ships one demo app to Railway (project vendo-demos by default) and
-registers it with the demos.vendo.run router; needs ANTHROPIC_API_KEY and
-ROUTER_ADMIN_TOKEN in the environment (neither is ever logged).
+registers it with the demos.vendo.run router. An in-repo app deploys the
+monorepo; a scratch clone deploys itself. Needs ROUTER_ADMIN_TOKEN plus an
+inference key — VENDO_API_KEY for the Cloud posture (hosted store, connections
+broker, metered gateway) or ANTHROPIC_API_KEY for BYO. None is ever logged.
 demo:reap lists registry rows past expiry or killed and (with --execute) removes
 their Railway deployments + registry rows; dry-run by default.`;
 }
@@ -32,9 +47,12 @@ their Railway deployments + registry rows; dry-run by default.`;
 function createEpilogue(result: DemoCreateResult, prospectUrl: string | undefined): string {
   const appPath = displayAppPath(repoRoot, result.appDir);
   return `Created ${appPath} (package ${result.packageName}) from apps/demo-template.
+${result.standalone
+    ? "Standalone clone: outside the repo, with this tree's @vendoai/* vendored into vendor/."
+    : "In-repo clone: a workspace member (gitignored — never commit it)."}
 
 Next steps:
-  1. pnpm install    # link the new workspace app
+  1. ${result.standalone ? `cd ${appPath} && pnpm install    # install the clone's own deps` : "pnpm install    # link the new workspace app"}
   2. Research the prospect's brand:
        pnpm --filter @vendoai/bench demo:research -- --app ${appPath} --url ${prospectUrl ?? "<prospect site>"}
   3. Follow ~/.claude/skills/demo-creator/PLAYBOOK.md with ${appPath}/VERIFY.md — replace every "TODO(creator): " placeholder.
@@ -74,6 +92,14 @@ async function main(): Promise<void> {
       palette: result.report.palette,
       fonts: result.report.fonts,
     }, null, 2)}\n`);
+    return;
+  }
+  if (command === "chips") {
+    const args = parseDemoChipsArgs(rest);
+    const result = await runDeriveChips(
+      { appDir: path.resolve(repoRoot, args.app), ...(args.prospect === undefined ? {} : { prospect: args.prospect }) },
+    );
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
   if (command === "deploy") {

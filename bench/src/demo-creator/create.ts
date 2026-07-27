@@ -3,6 +3,14 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DemoConfig } from "demo-template/demo-config";
 import { injectDemoAuth } from "./inject-auth.js";
+import {
+  defaultDemoScratchDir,
+  isStandaloneApp,
+  pinWorkspaceDependencies,
+  renderCloneDockerignore,
+  renderClonePnpmWorkspace,
+  vendorWorkspacePackages,
+} from "./scratch.js";
 
 /**
  * `demo:create` — the mechanical first stage of the demo-creator pipeline:
@@ -13,6 +21,12 @@ import { injectDemoAuth } from "./inject-auth.js";
  * the template's sample beats are kept but fenced with a `TODO(creator): `
  * prefix — a lazy creator cannot ship them unnoticed, yet the skeleton still
  * parses against the template's own schema.
+ *
+ * Clones land OUTSIDE this checkout by default (`<os-tmp>/vendo-demos/`): a
+ * generated demo is a prospect's brand, and while they lived in `apps/` one
+ * `git add -A` published it in the OSS repo. `--target-dir apps` still works
+ * for local poking (and is gitignored as a second line of defence); see
+ * ./scratch.ts for what makes an out-of-repo clone self-contained.
  */
 
 export interface DemoCreateArgs {
@@ -22,7 +36,8 @@ export interface DemoCreateArgs {
   prospect: string;
   /** Booking link shown in demo chrome. */
   ctaUrl: string;
-  /** Directory that receives `demo-<id>/`; relative paths anchor at the repo root. */
+  /** Directory that receives `demo-<id>/`; relative paths anchor at the repo
+   * root, and the default is an absolute scratch dir outside it. */
   targetDir: string;
   /** The prospect's site, recorded in the RESEARCH stub for `demo:research`. */
   url?: string;
@@ -37,6 +52,9 @@ export interface DemoCreateResult {
   packageName: string;
   configPath: string;
   researchReadme: string;
+  /** The clone lives outside the repo, so it was made self-contained (this
+   * tree's `@vendoai/*` vendored, plus its own pnpm-workspace/.dockerignore). */
+  standalone: boolean;
 }
 
 /** Never carried into a clone: per-run state, installs, build output, and the
@@ -128,7 +146,7 @@ export function parseDemoCreateArgs(argv: string[]): DemoCreateArgs {
     id,
     prospect,
     ctaUrl: options.get("--cta-url") ?? defaultCtaUrl,
-    targetDir: options.get("--target-dir") ?? "apps",
+    targetDir: options.get("--target-dir") ?? defaultDemoScratchDir(),
     ...(url === undefined ? {} : { url: requireHttpUrl("--url", url) }),
     ...(screenshots === undefined ? {} : { screenshots }),
   };
@@ -239,6 +257,7 @@ export async function runDemoCreate(args: DemoCreateArgs, options: { repoRoot: s
     throw new Error(`Refusing to overwrite existing "${appDir}" — delete it first or pick another --id`);
   }
 
+  await mkdir(path.dirname(appDir), { recursive: true });
   await cp(templateDir, appDir, {
     recursive: true,
     filter: (source) => !excludedFromClone(templateDir, source),
@@ -246,7 +265,29 @@ export async function runDemoCreate(args: DemoCreateArgs, options: { repoRoot: s
 
   const packagePath = path.join(appDir, "package.json");
   const packageJson = JSON.parse(await readFile(packagePath, "utf8")) as Record<string, unknown>;
-  await writeFile(packagePath, `${JSON.stringify({ ...packageJson, name: packageName }, null, 2)}\n`);
+  const identified = { ...packageJson, name: packageName };
+
+  // An out-of-repo clone is nobody's workspace member: its `workspace:*` deps
+  // resolve to nothing, it inherits none of the root's pnpm settings, and its
+  // deploy uploads itself rather than the monorepo. Make it self-contained.
+  const standalone = isStandaloneApp(options.repoRoot, appDir);
+  if (standalone) {
+    const rootPackageJson = JSON.parse(
+      await readFile(path.join(options.repoRoot, "package.json"), "utf8"),
+    ) as { packageManager?: string };
+    const vendorSpecs = await vendorWorkspacePackages({ repoRoot: options.repoRoot, appDir });
+    const pinned = pinWorkspaceDependencies(identified, vendorSpecs, {
+      ...(rootPackageJson.packageManager === undefined ? {} : { packageManager: rootPackageJson.packageManager }),
+    });
+    await writeFile(packagePath, `${JSON.stringify(pinned, null, 2)}\n`);
+    await writeFile(
+      path.join(appDir, "pnpm-workspace.yaml"),
+      renderClonePnpmWorkspace(await readFile(path.join(options.repoRoot, "pnpm-workspace.yaml"), "utf8"), vendorSpecs),
+    );
+    await writeFile(path.join(appDir, ".dockerignore"), renderCloneDockerignore());
+  } else {
+    await writeFile(packagePath, `${JSON.stringify(identified, null, 2)}\n`);
+  }
 
   const configPath = path.join(appDir, "demo.config.json");
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
@@ -275,5 +316,5 @@ export async function runDemoCreate(args: DemoCreateArgs, options: { repoRoot: s
 
   await writeFile(researchReadme, researchStub(appPath, args.url, operatorScreenshots));
 
-  return { appDir, packageName, configPath, researchReadme };
+  return { appDir, packageName, configPath, researchReadme, standalone };
 }

@@ -1,0 +1,37 @@
+{
+  "id": "fidelity-proof-d",
+  "prospect": "Maple",
+  "ctaUrl": "https://cal.com/yousefhelal",
+  "beats": [
+    {
+      "key": "spending-by-category",
+      "prompt": "Show me my spending by category for this month.",
+      "chip": "Spending by category"
+    },
+    {
+      "key": "recurring-subscriptions",
+      "prompt": "Show me all the recurring charges and subscriptions on my account.",
+      "chip": "Recurring subscriptions"
+    },
+    {
+      "key": "transfer-rent",
+      "prompt": "Transfer $1,200 to my landlord from checking.",
+      "chip": "Send rent payment"
+    },
+    {
+      "key": "savings-goals-progress",
+      "prompt": "Show me the progress on all my savings goals.",
+      "chip": "Savings goals progress"
+    },
+    {
+      "key": "order-dinner-delivery",
+      "prompt": "Order dinner delivery from my usual spot for tonight.",
+      "chip": "Order dinner delivery"
+    }
+  ],
+  "caps": {
+    "maxTurns": 20,
+    "maxSpendUsd": 5
+  },
+  "expiresAt": "2099-01-01T00:00:00Z"
+}

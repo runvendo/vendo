@@ -26,6 +26,15 @@ bench/demo-capture/output/
 !docs/verification/**/*.png
 !docs/verification/**/*.log
 
+# Generated prospect demos — NEVER committed. `demo:create` clones outside the
+# repo by default, but an explicit `--target-dir apps` run must not be one
+# `git add -A` away from publishing a prospect's brand in the OSS repo. Only
+# the three real apps are tracked.
+apps/demo-*
+!apps/demo-bank/
+!apps/demo-accounting/
+!apps/demo-template/
+
 # Vendo demo runtime state (PGlite) — never committed.
 apps/*/.vendo/data/
 apps/*/.vendo/data-*/
