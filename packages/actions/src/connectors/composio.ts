@@ -1,4 +1,4 @@
-import { VendoError, type RunContext, type ToolCall, type ToolDescriptor, type ToolOutcome } from "@vendoai/core";
+import { debugConnectorHttp, VendoError, type RunContext, type ToolCall, type ToolDescriptor, type ToolOutcome } from "@vendoai/core";
 import type { Connector, ConnectorAccount, ConnectorAccountIdentity, ConnectorCatalogEntry, ToolkitIndexEntry } from "./connector.js";
 import { composioToolRisk } from "./composio-risk.js";
 import { normalizeToolName } from "./names.js";
@@ -107,6 +107,7 @@ export function composioConnector(config: {
   ): Promise<{ ok: boolean; status: number; payload: unknown }> {
     const url = new URL(`${baseUrl}${path}`);
     for (const [key, value] of Object.entries(options.query ?? {})) url.searchParams.set(key, value);
+    debugConnectorHttp("composio", options.method ?? "GET", path);
     const response = await fetch(url, {
       method: options.method ?? "GET",
       headers: {
@@ -291,6 +292,10 @@ export function composioConnector(config: {
 
   return {
     name: "composio",
+
+    // Feeds the pre-guard connect check: every Composio tool runs on a
+    // per-user connected account.
+    toolkitOf: (tool) => normalizedToRaw.get(tool)?.toolkit,
 
     discoveryIndex: () => (indexPromise ??= buildIndex()),
 

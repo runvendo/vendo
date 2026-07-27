@@ -30,6 +30,34 @@ describe("deterministic breakers (05 §2)", () => {
     ).resolves.toMatchObject({ action: "ask", decidedBy: "breaker" });
   });
 
+  it("criterion 15 (discovery-discipline): a tripped write breaker never flips READS to ask", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({
+      store,
+      breakers: { maxWritesPerRun: 20, maxCallsPerMinute: 100 },
+      policy: { rules: [{ match: {}, action: "run" }] },
+    });
+    const write = descriptor("write");
+    const read = descriptor("read");
+    const run = context({ trigger: { runId: "run_budget", kind: "schedule" } });
+
+    // 25 write calls in one run: the first 20 spend the budget, 21-25 park.
+    for (let index = 0; index < 25; index += 1) {
+      const decision = await guard.check(call(write.name, {}, `w${index}`), write, run);
+      expect(decision.action).toBe(index < 20 ? "run" : "ask");
+    }
+    // The breaker is tripped for writes…
+    await expect(guard.check(call(write.name, {}, "w_tripped"), write, run)).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "breaker",
+    });
+    // …but read-classified tools keep auto-running: the write budget bounds
+    // side effects, not observation.
+    await expect(guard.check(call(read.name, {}, "r_after"), read, run)).resolves.toMatchObject({
+      action: "run",
+    });
+  });
+
   it("parks the call that exceeds maxCallsPerMinute for one subject", async () => {
     const store = createMemoryStore();
     const guard = createGuard({ store, breakers: { maxCallsPerMinute: 2 } });

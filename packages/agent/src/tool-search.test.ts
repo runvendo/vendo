@@ -354,6 +354,25 @@ describe("seeded loadout (connection-scoped, spec 2026-07-20)", () => {
   });
 });
 
+describe("discovery discipline (criterion 12) — the meta-tool no longer invites unconnected calls", () => {
+  it("the description budgets search and never calls unconnected tools 'safe and correct'", async () => {
+    const { createToolSearchSession } = await import("./tool-search.js");
+    const session = createToolSearchSession({
+      config: { search: async () => [] },
+      descriptors: [],
+      loaded: new Set<string>(),
+    });
+    const tools: Record<string, unknown> = {};
+    session.attach(tools as never);
+    const description = (tools[VENDO_TOOLS_SEARCH_TOOL_NAME] as { description: string }).description;
+    expect(description).not.toContain("safe and correct");
+    // The new posture: search is a last resort, and unconnected services get a
+    // connect card — the agent is never told to go call their tools.
+    expect(description).toMatch(/only when no/i);
+    expect(description).toMatch(/connect card/i);
+  });
+});
+
 describe("mid-turn materialization (lazily expanded search hits)", () => {
   it("search results NOT in the built toolset resolve + materialize + load", async () => {
     const { createToolSearchSession } = await import("./tool-search.js");
