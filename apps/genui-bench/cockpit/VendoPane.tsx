@@ -75,7 +75,10 @@ function VendoDocument({
   }, [queries, host.name]);
 
   useEffect(() => {
-    void resolveQueries();
+    // Mount-time (and document-change) query resolution: the fetches settle
+    // asynchronously, so no render cascades out of this effect.
+    const resolve = () => void resolveQueries();
+    resolve();
   }, [resolveQueries]);
 
   const onAction = useCallback(
@@ -117,6 +120,14 @@ function PaneNote({ children }: { children: React.ReactNode }) {
   );
 }
 
+const COMPARE_GRID: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+  gap: 12,
+  minWidth: 0,
+};
+const COMPARE_HALF: React.CSSProperties = { minWidth: 0, overflow: "auto" };
+
 function resultDocument(result: LaneResult): AppDocument | undefined {
   return result.status === "ok" ? result.document : undefined;
 }
@@ -136,11 +147,18 @@ export function VendoPane({ result, host, compareWith }: PaneProps) {
   if (compareWith !== undefined) {
     const compareDocument = resultDocument(compareWith);
     return (
-      <div data-vendo-pane-compare="" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <VendoDocument document={document} host={host} readOnly />
-        {compareDocument === undefined
-          ? <PaneNote>The compared run carries no document.</PaneNote>
-          : <VendoDocument document={compareDocument} host={host} readOnly />}
+      <div data-vendo-pane-compare="" style={COMPARE_GRID}>
+        {/* minWidth:0 is what keeps a wide generated app inside its half —
+            grid tracks default to min-content and would otherwise spill the
+            compared document across the neighbouring panes. */}
+        <div style={COMPARE_HALF}>
+          <VendoDocument document={document} host={host} readOnly />
+        </div>
+        <div style={COMPARE_HALF}>
+          {compareDocument === undefined
+            ? <PaneNote>The compared run carries no document.</PaneNote>
+            : <VendoDocument document={compareDocument} host={host} readOnly />}
+        </div>
       </div>
     );
   }

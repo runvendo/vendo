@@ -36,8 +36,8 @@ export function TopBar({
   }, []);
 
   useEffect(() => {
-    void refresh();
     const onFocus = () => void refresh();
+    onFocus();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [refresh]);

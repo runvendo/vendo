@@ -3,16 +3,19 @@
 import type { LaneName } from "../runner/types";
 import type { PaneComponent } from "../cockpit/pane-props";
 import { Cockpit } from "../cockpit/Cockpit";
-import { GenericPane } from "../cockpit/GenericPane";
+import { VendoPane } from "../cockpit/VendoPane";
+import ThesysPane from "../cockpit/panes/ThesysPane";
+import CopilotKitPane from "../cockpit/panes/CopilotKitPane";
+import TamboPane from "../cockpit/panes/TamboPane";
 
-/** The page-level lane → pane mapping (the grid stays generic). Real panes
- *  (VendoPane on the production renderer, competitor SDK panes) replace
- *  GenericPane here as their lanes land. */
+/** The page-level lane → pane mapping (the grid stays generic): the Vendo
+ *  pane is the real production runtime, competitor panes render with their
+ *  own SDKs. Tests inject their own pane maps, so this stays page-only. */
 const PANES: Record<LaneName, PaneComponent> = {
-  vendo: GenericPane,
-  "thesys-c1": GenericPane,
-  copilotkit: GenericPane,
-  tambo: GenericPane,
+  vendo: VendoPane,
+  "thesys-c1": ThesysPane,
+  copilotkit: CopilotKitPane,
+  tambo: TamboPane,
 };
 
 export default function Page() {

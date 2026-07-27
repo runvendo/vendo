@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { PipelineEvent } from "@vendoai/apps";
 import type { LaneName, LaneResult, RunRecord } from "../runner/types";
 import { formatDuration } from "./lane-meta";
@@ -33,12 +33,10 @@ export function InternalsDrawer({
       })
     : [];
 
-  // A run without a given competitor lane would strand its raw tab.
-  useEffect(() => {
-    if (tab.startsWith("raw:") && !rawTabs.includes(tab.slice(4) as LaneName)) {
-      setTab("internals");
-    }
-  }, [tab, rawTabs]);
+  // A run without a given competitor lane would strand its raw tab — derive
+  // the shown tab instead of resetting state after the fact.
+  const active: TabKey =
+    tab.startsWith("raw:") && !rawTabs.includes(tab.slice(4) as LaneName) ? "internals" : tab;
 
   const tabs: Array<[TabKey, string]> = [
     ["internals", "Vendo internals"],
@@ -54,7 +52,7 @@ export function InternalsDrawer({
           <button
             key={key}
             type="button"
-            className={`dtab${tab === key ? " on" : ""}`}
+            className={`dtab${active === key ? " on" : ""}`}
             onClick={() => setTab(key)}
           >
             {label}
@@ -67,12 +65,12 @@ export function InternalsDrawer({
         ) : compare ? (
           <>
             <div className="timeline-h">current · {record.id}</div>
-            <TabContent record={record} tab={tab} />
+            <TabContent record={record} tab={active} />
             <div className="timeline-h cmp">compare · {compare.id}</div>
-            <TabContent record={compare} tab={tab} />
+            <TabContent record={compare} tab={active} />
           </>
         ) : (
-          <TabContent record={record} tab={tab} />
+          <TabContent record={record} tab={active} />
         )}
       </div>
     </div>
