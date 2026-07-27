@@ -6,7 +6,7 @@ import { PGlite } from "@electric-sql/pglite";
 import fs from "node:fs";
 import { join, resolve } from "node:path";
 
-import { createPostgresDb, type Db, type StoreConfig } from "./db-postgres.js";
+import { createPostgresDb, type Db, type Query, type StoreConfig } from "./db-postgres.js";
 
 export type { Db, Query, StoreConfig } from "./db-postgres.js";
 
@@ -332,6 +332,22 @@ function createPgliteDb(dataDir: string): Db {
     // lock session — the ENG-351 dir lock already serializes processes.
     withSchemaLock(work) {
       return work(db.query.bind(db));
+    },
+    // PGlite's own transaction() serializes concurrent queries, so a foreign
+    // statement can never join (or be rolled back with) this transaction on
+    // the shared single connection.
+    async withTransaction<T>(work: (query: Query) => Promise<T>): Promise<T> {
+      const active = await open();
+      const result = await active.transaction(async (tx) => {
+        const query: Query = async (text, params = []) => {
+          const queried = await tx.query<Record<string, unknown>>(text, params);
+          return { rows: queried.rows as Record<string, unknown>[] };
+        };
+        return work(query);
+      });
+      // transaction() types as T | undefined for callbacks that call
+      // tx.rollback(); this one never does — a throw is the only exit.
+      return result as T;
     },
   };
   return db;

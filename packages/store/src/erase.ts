@@ -1,3 +1,4 @@
+import type { Query } from "./db-postgres.js";
 import { escapeLike } from "./helpers/utils.js";
 import { dbFor, type VendoStore } from "./store.js";
 import { invalid } from "./validate.js";
@@ -60,85 +61,96 @@ export function eraseStore(store: VendoStore): {
   const db = dbFor(store);
 
   const del = async (
+    query: Query,
     report: EraseReport,
     table: EraseTable,
     where: string,
     params: unknown[],
   ): Promise<void> => {
-    const result = await db.query(`DELETE FROM ${table} WHERE ${where} RETURNING 1`, params);
+    const result = await query(`DELETE FROM ${table} WHERE ${where} RETURNING 1`, params);
     report[table] += result.rows.length;
   };
 
   /** App-scoped data shared by the subject and app cascades: the app's record
       collections and blob namespaces (`app:<appId>:...` — §3's naming
       convention), its per-user state, and its run records. */
-  const eraseAppData = async (report: EraseReport, appId: string): Promise<void> => {
+  const eraseAppData = async (query: Query, report: EraseReport, appId: string): Promise<void> => {
     const prefix = `app:${escapeLike(appId)}:%`;
-    await del(report, "vendo_records", "collection LIKE $1 ESCAPE '\\'", [prefix]);
-    await del(report, "vendo_blobs", "namespace LIKE $1 ESCAPE '\\'", [prefix]);
-    await del(report, "vendo_state", "app_id = $1", [appId]);
-    await del(report, "vendo_runs", "app_id = $1", [appId]);
+    await del(query, report, "vendo_records", "collection LIKE $1 ESCAPE '\\'", [prefix]);
+    await del(query, report, "vendo_blobs", "namespace LIKE $1 ESCAPE '\\'", [prefix]);
+    await del(query, report, "vendo_state", "app_id = $1", [appId]);
+    await del(query, report, "vendo_runs", "app_id = $1", [appId]);
   };
 
+  // Each cascade is ONE transaction: erase either completes across every
+  // table or leaves nothing changed. Before this, a mid-cascade failure
+  // (the 2026-07-27 incident: a missing knowledge table on stale-schema
+  // tenants) left the subject HALF-erased — apps, records, blobs and audit
+  // rows already gone, the caller holding an error and no report of what
+  // was destroyed. Rollback makes a failed erase a clean retry instead.
   return {
     async bySubject(subject) {
       if (typeof subject !== "string" || subject === "") {
         invalid("erase subject must be a non-empty string");
       }
-      const report = emptyReport();
-      const subjectRef = JSON.stringify({ subject });
+      return db.withTransaction(async (query) => {
+        const report = emptyReport();
+        const subjectRef = JSON.stringify({ subject });
 
-      // The subject's apps drive the app-scoped cascade (records/blobs/state/runs
-      // carry the app id, not the subject). The app ROWS are deleted FIRST:
-      // once they are gone, no new gated write (records/blobs WHERE EXISTS)
-      // can land, so the data deletes below collect any stragglers — the
-      // remaining race residue is a write statement already in flight.
-      const owned = (await db.query("SELECT id FROM vendo_apps WHERE subject = $1", [subject])).rows
-        .map((row) => String(row["id"]));
-      await del(report, "vendo_apps", "subject = $1", [subject]);
-      for (const appId of owned) await eraseAppData(report, appId);
+        // The subject's apps drive the app-scoped cascade (records/blobs/state/runs
+        // carry the app id, not the subject). The app ROWS are deleted FIRST:
+        // once they are gone, no new gated write (records/blobs WHERE EXISTS)
+        // can land, so the data deletes below collect any stragglers — the
+        // remaining race residue is a write statement already in flight.
+        const owned = (await query("SELECT id FROM vendo_apps WHERE subject = $1", [subject])).rows
+          .map((row) => String(row["id"]));
+        await del(query, report, "vendo_apps", "subject = $1", [subject]);
+        for (const appId of owned) await eraseAppData(query, report, appId);
 
-      // Ordering matters for accurate counts: the app cascade above already
-      // removed the subject's own state/run rows, so the subject-level deletes
-      // below only count rows the cascade did not reach (e.g. this subject's
-      // state under ANOTHER owner's app).
-      await del(report, "vendo_state", "subject = $1", [subject]);
-      await del(report, "vendo_threads", "subject = $1", [subject]);
-      await del(report, "vendo_grants", "subject = $1", [subject]);
-      await del(report, "vendo_approvals", "subject = $1", [subject]);
-      await del(report, "vendo_audit", "subject = $1", [subject]);
-      // Generic and door-owned rows carry the subject only as a ref (§2/§3).
-      await del(report, "vendo_records", "refs @> $1::jsonb", [subjectRef]);
-      await del(report, "vendo_mcp_clients", "refs @> $1::jsonb", [subjectRef]);
-      await del(report, "vendo_mcp_grants", "refs @> $1::jsonb", [subjectRef]);
-      // Knowledge corpus rows the subject axis reaches carry the subject only as
-      // a ref, same as the door tables (the knowledge engine owns what it refs).
-      await del(report, "vendo_knowledge_docs", "refs @> $1::jsonb", [subjectRef]);
-      await del(report, "vendo_knowledge_chunks", "refs @> $1::jsonb", [subjectRef]);
-      // The session registration (if any) is retired with the data (§4).
-      await del(report, "vendo_sessions", "subject = $1", [subject]);
-      return report;
+        // Ordering matters for accurate counts: the app cascade above already
+        // removed the subject's own state/run rows, so the subject-level deletes
+        // below only count rows the cascade did not reach (e.g. this subject's
+        // state under ANOTHER owner's app).
+        await del(query, report, "vendo_state", "subject = $1", [subject]);
+        await del(query, report, "vendo_threads", "subject = $1", [subject]);
+        await del(query, report, "vendo_grants", "subject = $1", [subject]);
+        await del(query, report, "vendo_approvals", "subject = $1", [subject]);
+        await del(query, report, "vendo_audit", "subject = $1", [subject]);
+        // Generic and door-owned rows carry the subject only as a ref (§2/§3).
+        await del(query, report, "vendo_records", "refs @> $1::jsonb", [subjectRef]);
+        await del(query, report, "vendo_mcp_clients", "refs @> $1::jsonb", [subjectRef]);
+        await del(query, report, "vendo_mcp_grants", "refs @> $1::jsonb", [subjectRef]);
+        // Knowledge corpus rows the subject axis reaches carry the subject only as
+        // a ref, same as the door tables (the knowledge engine owns what it refs).
+        await del(query, report, "vendo_knowledge_docs", "refs @> $1::jsonb", [subjectRef]);
+        await del(query, report, "vendo_knowledge_chunks", "refs @> $1::jsonb", [subjectRef]);
+        // The session registration (if any) is retired with the data (§4).
+        await del(query, report, "vendo_sessions", "subject = $1", [subject]);
+        return report;
+      });
     },
 
     async byApp(appId) {
       if (typeof appId !== "string" || appId === "") {
         invalid("erase appId must be a non-empty string");
       }
-      const report = emptyReport();
-      const appRef = JSON.stringify({ app_id: appId });
+      return db.withTransaction(async (query) => {
+        const report = emptyReport();
+        const appRef = JSON.stringify({ app_id: appId });
 
-      // App row first (same gate-closing order as bySubject), then its data.
-      await del(report, "vendo_apps", "id = $1", [appId]);
-      await eraseAppData(report, appId);
-      await del(report, "vendo_grants", "app_id = $1", [appId]);
-      await del(report, "vendo_audit", "app_id = $1", [appId]);
-      await del(report, "vendo_records", "refs @> $1::jsonb", [appRef]);
-      await del(report, "vendo_mcp_clients", "refs @> $1::jsonb", [appRef]);
-      await del(report, "vendo_mcp_grants", "refs @> $1::jsonb", [appRef]);
-      // An app's knowledge corpus (docs + their chunks) goes with the app.
-      await del(report, "vendo_knowledge_docs", "refs @> $1::jsonb", [appRef]);
-      await del(report, "vendo_knowledge_chunks", "refs @> $1::jsonb", [appRef]);
-      return report;
+        // App row first (same gate-closing order as bySubject), then its data.
+        await del(query, report, "vendo_apps", "id = $1", [appId]);
+        await eraseAppData(query, report, appId);
+        await del(query, report, "vendo_grants", "app_id = $1", [appId]);
+        await del(query, report, "vendo_audit", "app_id = $1", [appId]);
+        await del(query, report, "vendo_records", "refs @> $1::jsonb", [appRef]);
+        await del(query, report, "vendo_mcp_clients", "refs @> $1::jsonb", [appRef]);
+        await del(query, report, "vendo_mcp_grants", "refs @> $1::jsonb", [appRef]);
+        // An app's knowledge corpus (docs + their chunks) goes with the app.
+        await del(query, report, "vendo_knowledge_docs", "refs @> $1::jsonb", [appRef]);
+        await del(query, report, "vendo_knowledge_chunks", "refs @> $1::jsonb", [appRef]);
+        return report;
+      });
     },
   };
 }
