@@ -258,6 +258,35 @@ describe("proxy auto-login behavior", () => {
     expect(api.status).toBe(401)
   })
 
+  it("replaces a stale session cookie so the FIRST render is signed in", async () => {
+    stubDemoDeployment()
+    // A returning visitor whose cookie expired or was corrupted. The minted
+    // cookie must REPLACE it in the forwarded request: cookie parsers take
+    // the first match, so merely appending would leave the stale value
+    // winning and the first render unauthenticated.
+    const response = await proxy(requestFor("/accounts", "authjs.session-token=STALE-GARBAGE"))
+    expect(response.status).toBe(200)
+    const injected = response.headers.get("x-middleware-request-cookie") ?? ""
+    expect(injected).not.toContain("STALE-GARBAGE")
+    const token = await getToken({
+      req: requestFor("/", injected),
+      secret: "maple-local-development-auth-secret",
+      secureCookie: false,
+    })
+    expect(token).toMatchObject({ sub: "vendo-demo", demoAutologin: true })
+  })
+
+  it("keeps unrelated cookies when replacing the session cookie", async () => {
+    stubDemoDeployment()
+    const response = await proxy(
+      requestFor("/accounts", "theme=dark; authjs.session-token=STALE; locale=en"),
+    )
+    const injected = response.headers.get("x-middleware-request-cookie") ?? ""
+    expect(injected).toContain("theme=dark")
+    expect(injected).toContain("locale=en")
+    expect(injected).not.toContain("STALE")
+  })
+
   it("never mints over an existing valid session", async () => {
     stubDemoDeployment()
     const credential = await encode({

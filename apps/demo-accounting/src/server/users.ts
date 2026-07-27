@@ -79,12 +79,14 @@ export function supabaseUrl(): string {
 export function supabaseJwtSecret(): string {
   const configured = process.env.SUPABASE_JWT_SECRET
   if (configured) return configured
-  // Auto-login deployments run with no Supabase stack: the secret only signs
-  // and verifies the demo's own self-issued session tokens (every visitor is
-  // auto-signed-in anyway), so the development default is acceptable there.
-  if (production() && !demoAutologin()) {
-    throw new Error("SUPABASE_JWT_SECRET is required in production")
-  }
+  // Required in production even in auto-login mode. This secret is not just
+  // for minting: the session VERIFIER trusts any HS256 token signed with it,
+  // and the development default below is published in this repository — so
+  // falling back to it on a deployment would let anyone forge an
+  // authenticated session for a seeded user, host gate or not. Auto-login
+  // drops the GoTrue dependency (SUPABASE_URL / ANON_KEY), never the signing
+  // key.
+  if (production()) throw new Error("SUPABASE_JWT_SECRET is required in production")
   return "super-secret-jwt-token-with-at-least-32-characters-long"
 }
 

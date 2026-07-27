@@ -9,6 +9,20 @@ against local **prod builds** (`pnpm build` + `next start`):
   with **zero SUPABASE_\* env** (SUPABASE_URL / SUPABASE_ANON_KEY /
   SUPABASE_JWT_SECRET all unset; boot succeeded, sessions minted and
   verified locally — contract Z3)
+### Deploy configuration this lane requires
+
+- `DEMO_AUTOLOGIN=1` on both demo deployments.
+- `VENDO_BASE_URL` set to the exact public origin each one serves.
+- **Cadence still needs `SUPABASE_JWT_SECRET`** (any strong random value).
+  Auto-login drops the GoTrue dependency — `SUPABASE_URL` and
+  `SUPABASE_ANON_KEY` are no longer required — but NOT the signing key: the
+  session verifier trusts any HS256 token signed with it, and the
+  development default is published in this repository, so falling back to it
+  on a deployment would let anyone forge an authenticated seeded-user
+  session regardless of the host gate. Caught by Greptile on PR #627 (P1)
+  after I had over-loosened the assertion past what the contract asked for;
+  the contract only ever said URL and ANON_KEY.
+
 - `VENDO_BASE_URL` is REQUIRED, not incidental: the autologin gate is
   host-bound and **fails closed** without a configured demo origin (no
   loopback exception), so every run — local or deployed — must name the
@@ -110,6 +124,15 @@ builds: the exact configured authority is the only value that mints;
 X-Forwarded-Host spoofing, all three URL-smuggling strings, brackets,
 double colon, empty label and a wrong port all refuse, with the loud
 server-side warning logged per host.
+
+## Returning visitors with a stale cookie
+
+The minted cookie REPLACES any existing session cookie in the forwarded
+request rather than being appended after it. Both hosts' cookie readers take
+the FIRST match, so appending would leave an expired or corrupted value
+winning and the first render signed out — exactly the promise Z1 makes.
+Unrelated cookies are preserved. Caught by Greptile on PR #627 (P1);
+regression tests per host cover both the replacement and the preservation.
 
 ## Known pre-existing (out of scope)
 

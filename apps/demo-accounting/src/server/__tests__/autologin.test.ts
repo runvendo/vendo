@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { proxy } from "../../proxy"
 import { isAutologinToken, mintAutologinToken } from "../autologin"
 import { resolveCadenceSession, SESSION_COOKIE } from "../session"
-import { cadenceDemoUsers, supabaseAnonKey, supabaseJwtSecret } from "../users"
+import { cadenceDemoUsers, supabaseAnonKey, supabaseJwtSecret, supabaseUrl } from "../users"
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -62,11 +62,23 @@ describe("production env assertions stay hard without the flag", () => {
     expect(() => supabaseAnonKey()).toThrow("SUPABASE_ANON_KEY is required in production")
   })
 
-  it("with DEMO_AUTOLOGIN=1 the Supabase env is not required (no GoTrue dependency)", () => {
+  it("with DEMO_AUTOLOGIN=1 the GoTrue env is not required (no Supabase dependency)", () => {
     vi.stubEnv("NODE_ENV", "production")
     vi.stubEnv("DEMO_AUTOLOGIN", "1")
-    expect(supabaseJwtSecret()).toBe("super-secret-jwt-token-with-at-least-32-characters-long")
+    vi.stubEnv("SUPABASE_JWT_SECRET", "operator-secret-with-at-least-32-characters!")
+    // What auto-login drops: the GoTrue endpoint and its anon key.
     expect(supabaseAnonKey().split(".")).toHaveLength(3)
+    expect(supabaseUrl()).toBe("http://127.0.0.1:54321")
+  })
+
+  it("NEVER falls back to the published development signing secret in production, flag or not", () => {
+    // The verifier trusts any HS256 token signed with this secret, and the
+    // development default is public in this repo — falling back to it on a
+    // deployment would let anyone forge an authenticated seeded-user session,
+    // host gate or not. Auto-login drops GoTrue, never the signing key.
+    vi.stubEnv("NODE_ENV", "production")
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    expect(() => supabaseJwtSecret()).toThrow("SUPABASE_JWT_SECRET is required in production")
   })
 
   it("an explicitly configured secret still wins under the flag", () => {
@@ -266,6 +278,33 @@ describe("proxy auto-login behavior", () => {
 
     const api = await proxy(requestFor("/api/clients"))
     expect(api.status).toBe(401)
+  })
+
+  it("replaces a stale session cookie so the FIRST render is signed in", async () => {
+    stubDemoDeployment()
+    // A returning visitor whose token expired or was corrupted. cookieToken()
+    // returns the FIRST match, so the minted cookie must REPLACE the stale
+    // one in the forwarded request, not sit behind it.
+    const response = await proxy(requestFor("/clients", `${SESSION_COOKIE}=STALE-GARBAGE`))
+    expect(response.status).toBe(200)
+    const injected = response.headers.get("x-middleware-request-cookie") ?? ""
+    expect(injected).not.toContain("STALE-GARBAGE")
+    await expect(
+      resolveCadenceSession(
+        new Request("http://cadence.internal/", { headers: { cookie: injected } }),
+      ),
+    ).resolves.toMatchObject({ subject: MAYA.subject })
+  })
+
+  it("keeps unrelated cookies when replacing the session cookie", async () => {
+    stubDemoDeployment()
+    const response = await proxy(
+      requestFor("/clients", `theme=dark; ${SESSION_COOKIE}=STALE; locale=en`),
+    )
+    const injected = response.headers.get("x-middleware-request-cookie") ?? ""
+    expect(injected).toContain("theme=dark")
+    expect(injected).toContain("locale=en")
+    expect(injected).not.toContain("STALE")
   })
 
   it("never mints over an existing valid session", async () => {

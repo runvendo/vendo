@@ -23,6 +23,23 @@ const PUBLIC_PREFIXES = [
   "/api/demo",
 ]
 
+/** Swap the session cookie in a forwarded Cookie header: drop any existing
+ * pair with that name, then append the fresh one. Appending alone is not
+ * enough — cookieToken() (server/session.ts) takes the FIRST match, so a
+ * stale value would keep winning and the first render would be signed out. */
+function replaceCookie(header: string | null, name: string, value: string): string {
+  const kept = (header ?? "")
+    .split(";")
+    .map(pair => pair.trim())
+    .filter(pair => {
+      if (!pair) return false
+      const separator = pair.indexOf("=")
+      return (separator === -1 ? pair : pair.slice(0, separator)).trim() !== name
+    })
+  kept.push(`${name}=${value}`)
+  return kept.join("; ")
+}
+
 async function setMintedCookie(response: NextResponse): Promise<void> {
   const minted = await mintAutologinToken()
   // Same attributes sessionCookie() (server/session.ts) sets on login.
@@ -62,9 +79,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     // re-mints immediately.
     const minted = await mintAutologinToken()
     const headers = new Headers(request.headers)
-    const cookie = headers.get("cookie")
-    const pair = `${SESSION_COOKIE}=${minted.token}`
-    headers.set("cookie", cookie ? `${cookie}; ${pair}` : pair)
+    headers.set("cookie", replaceCookie(headers.get("cookie"), SESSION_COOKIE, minted.token))
     const response = NextResponse.next({ request: { headers } })
     // Same attributes sessionCookie() (server/session.ts) sets on login.
     response.cookies.set(SESSION_COOKIE, minted.token, {

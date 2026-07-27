@@ -26,6 +26,23 @@ const PUBLIC_PREFIXES = [
   "/api/demo/reset",
 ];
 
+/** Swap the session cookie in a forwarded Cookie header: drop any existing
+ * pair with that name, then append the fresh one. Appending alone is not
+ * enough — cookie parsers take the FIRST match, so a stale value would keep
+ * winning and the first render would be signed out. */
+function replaceCookie(header: string | null, name: string, value: string): string {
+  const kept = (header ?? "")
+    .split(";")
+    .map((pair) => pair.trim())
+    .filter((pair) => {
+      if (!pair) return false;
+      const separator = pair.indexOf("=");
+      return (separator === -1 ? pair : pair.slice(0, separator)).trim() !== name;
+    });
+  kept.push(`${name}=${value}`);
+  return kept.join("; ");
+}
+
 async function setMintedCookie(response: NextResponse): Promise<void> {
   const session = await mintAutologinSession();
   response.cookies.set(session.name, session.value, {
@@ -73,9 +90,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     // it means "reset my session": the continuation re-mints immediately.
     const session = await mintAutologinSession();
     const headers = new Headers(request.headers);
-    const cookie = headers.get("cookie");
-    const pair = `${session.name}=${session.value}`;
-    headers.set("cookie", cookie ? `${cookie}; ${pair}` : pair);
+    headers.set("cookie", replaceCookie(headers.get("cookie"), session.name, session.value));
     const response = NextResponse.next({ request: { headers } });
     response.cookies.set(session.name, session.value, {
       httpOnly: true,
