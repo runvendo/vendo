@@ -98,44 +98,92 @@ describe("buildChipsPrompt", () => {
 });
 
 describe("parseChipsReply", () => {
+  const surface = [
+    { name: "host_listInvoices", description: "List invoices" },
+    { name: "host_sendReminder", description: "Email a reminder" },
+    { name: "host_agingReport", description: "Aging by customer" },
+    { name: "host_listCustomers", description: "List customers" },
+    { name: "host_writeOff", description: "Write off an invoice" },
+    { name: "host_exportCsv", description: "Export to CSV" },
+  ];
   const reply = (chips: unknown) => JSON.stringify({ chips });
+  /** A well-formed, GROUNDED chip — the shape the model is asked for. */
+  const grounded = (n: number, tools: string[] = ["host_listInvoices"]) =>
+    ({ key: `k${n}`, chip: `c${n}`, prompt: `p${n}`, tools });
 
-  it("accepts a clean reply and normalizes keys to slugs", () => {
+  it("accepts a grounded reply and normalizes keys to slugs", () => {
     const beats = parseChipsReply(reply([
-      { key: "Overdue Invoices", chip: "Overdue invoices", prompt: "Show me every overdue invoice" },
-      { key: "send-reminder", chip: "Send a reminder", prompt: "Send a reminder for invoice INV-204" },
-      { key: "aging", chip: "Aging report", prompt: "Build an aging report by customer" },
-      { key: "top-customers", chip: "Top customers", prompt: "Show me my top customers this quarter" },
-    ]));
+      { key: "Overdue Invoices", chip: "Overdue invoices", prompt: "Show me every overdue invoice", tools: ["host_listInvoices"] },
+      { key: "send-reminder", chip: "Send a reminder", prompt: "Send a reminder for invoice INV-204", tools: ["host_sendReminder"] },
+      { key: "aging", chip: "Aging report", prompt: "Build an aging report by customer", tools: ["host_agingReport"] },
+      { key: "top-customers", chip: "Top customers", prompt: "Show me my top customers this quarter", tools: ["host_listCustomers", "host_listInvoices"] },
+    ]), surface);
     expect(beats.map((entry) => entry.key)).toEqual(["overdue-invoices", "send-reminder", "aging", "top-customers"]);
     // Derived pills carry no expectation — they are pills, not a verification contract.
+    // The tool citations are validation input and never reach demo.config.
     for (const entry of beats) {
       expect(entry).not.toHaveProperty("expectsView");
       expect(entry).not.toHaveProperty("expectsApproval");
+      expect(entry).not.toHaveProperty("tools");
+      expect(Object.keys(entry).sort()).toEqual(["chip", "key", "prompt"]);
     }
   });
 
   it("digs the object out of fenced or chatty replies", () => {
-    const chips = Array.from({ length: 4 }, (_, index) => ({ key: `k${index}`, chip: `c${index}`, prompt: `p${index}` }));
-    const beats = parseChipsReply("Sure! Here you go:\n```json\n" + reply(chips) + "\n```\n");
+    const chips = Array.from({ length: 4 }, (_, index) => grounded(index));
+    const beats = parseChipsReply("Sure! Here you go:\n```json\n" + reply(chips) + "\n```\n", surface);
     expect(beats).toHaveLength(4);
   });
 
   it("caps at five and drops duplicate or malformed entries", () => {
     const chips = [
-      ...Array.from({ length: 6 }, (_, index) => ({ key: `k${index}`, chip: `c${index}`, prompt: `p${index}` })),
-      { key: "k0", chip: "dup", prompt: "dup" },
-      { key: "bad", chip: "" },
+      ...Array.from({ length: 6 }, (_, index) => grounded(index)),
+      { key: "k0", chip: "dup", prompt: "dup", tools: ["host_listInvoices"] },
+      { key: "bad", chip: "", tools: ["host_listInvoices"] },
     ];
-    const beats = parseChipsReply(reply(chips));
+    const beats = parseChipsReply(reply(chips), surface);
     expect(beats).toHaveLength(5);
     expect(new Set(beats.map((entry) => entry.key)).size).toBe(5);
   });
 
+  // THE grounding contract. Shape and count prove nothing: a model can return
+  // five perfectly-formed pills for capabilities the demo does not have, and a
+  // prospect clicking one gets a refusal.
+  it("drops a pill citing a tool the surface does not have", () => {
+    const chips = [
+      ...Array.from({ length: 4 }, (_, index) => grounded(index)),
+      { key: "invented", chip: "Reconcile bank feed", prompt: "Reconcile my bank feed", tools: ["host_reconcileBankFeed"] },
+    ];
+    const beats = parseChipsReply(reply(chips), surface);
+    expect(beats.map((entry) => entry.key)).not.toContain("invented");
+    expect(beats).toHaveLength(4);
+  });
+
+  it("drops a pill that cites no tool at all — an ungrounded pill is invented by definition", () => {
+    const chips = [
+      ...Array.from({ length: 4 }, (_, index) => grounded(index)),
+      { key: "vague", chip: "Do something", prompt: "Do something useful", tools: [] },
+      { key: "missing", chip: "Do something else", prompt: "Do something else useful" },
+    ];
+    const beats = parseChipsReply(reply(chips), surface);
+    expect(beats.map((entry) => entry.key)).toEqual(["k0", "k1", "k2", "k3"]);
+  });
+
+  it("fails, naming what it dropped, when grounding leaves too few pills", () => {
+    const chips = [
+      grounded(0),
+      { key: "a", chip: "A", prompt: "A", tools: ["host_nope"] },
+      { key: "b", chip: "B", prompt: "B", tools: ["host_alsoNope"] },
+      { key: "c", chip: "C", prompt: "C", tools: [] },
+    ];
+    expect(() => parseChipsReply(reply(chips), surface))
+      .toThrow(/only 1 usable[\s\S]*Dropped as ungrounded[\s\S]*host_nope/);
+  });
+
   it("refuses a reply too thin to fill the strip, rather than shipping two pills", () => {
-    expect(() => parseChipsReply(reply([{ key: "a", chip: "a", prompt: "a" }]))).toThrow(/only 1 usable/);
-    expect(() => parseChipsReply("no json here")).toThrow(/no JSON object/);
-    expect(() => parseChipsReply('{"nope":1}')).toThrow(/no "chips" array/);
+    expect(() => parseChipsReply(reply([grounded(0)]), surface)).toThrow(/only 1 usable/);
+    expect(() => parseChipsReply("no json here", surface)).toThrow(/no JSON object/);
+    expect(() => parseChipsReply('{"nope":1}', surface)).toThrow(/no "chips" array/);
   });
 });
 
@@ -202,6 +250,7 @@ describe("runDeriveChips", () => {
       key: `pill-${index}`,
       chip: `Pill ${index}`,
       prompt: `Do thing ${index} with invoices`,
+      tools: ["host_listInvoices"],
     })),
   });
 
@@ -236,17 +285,52 @@ describe("runDeriveChips", () => {
     expect(result.kept).toBe(0);
     expect(result.derived).toBe(5);
     expect(result.beats.every((entry) => entry.key.startsWith("pill-"))).toBe(true);
+    expect(result.chips).toHaveLength(5);
   });
 
-  it("is a no-op with no tool surface: no chips, no crash, no model call", async () => {
+  // The criterion: empty/missing tools.json => NO chips, no crash. With no
+  // surface there is nothing to ground a pill in, so the stage must derive
+  // ZERO — not quietly pass the existing beats off as its output.
+  it("derives NO chips with no tool surface, and does not crash or call the model", async () => {
     const appDir = await writeApp();
     const model = vi.fn();
 
     const result = await runDeriveChips({ appDir }, { model, write: () => {} });
 
+    expect(result.chips).toEqual([]);
+    expect(result.derived).toBe(0);
     expect(result.skipped).toBe("no-tools");
     expect(model).not.toHaveBeenCalled();
-    expect(result.beats).toEqual(config.beats);
+    // The config is left exactly as found — the template's strict schema
+    // requires at least one beat, and destroying a demo's authored arc because
+    // its routes are not synced yet would be a far worse failure.
+    const written = JSON.parse(await readFile(path.join(appDir, "demo.config.json"), "utf8")) as typeof config;
+    expect(written.beats).toEqual(config.beats);
+  });
+
+  it("derives NO chips when the surface holds only auth plumbing", async () => {
+    const appDir = await writeApp({ tools: [{ name: "host_auth_create" }, { name: "host_auth_get" }] });
+    const model = vi.fn();
+
+    const result = await runDeriveChips({ appDir }, { model, write: () => {} });
+
+    expect(result.chips).toEqual([]);
+    expect(result.skipped).toBe("no-tools");
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  // Grounding survives the whole stage, not just the parser.
+  it("fails the stage when the model invents capabilities the surface lacks", async () => {
+    const appDir = await writeApp({ tools: [{ name: "host_listInvoices", description: "List invoices" }] });
+    const model = async () => JSON.stringify({
+      chips: Array.from({ length: 5 }, (_, index) => ({
+        key: `pill-${index}`, chip: `c${index}`, prompt: `p${index}`, tools: ["host_reconcileBankFeed"],
+      })),
+    });
+
+    await expect(runDeriveChips({ appDir }, { model, write: () => {} }))
+      .rejects.toThrow(/host_reconcileBankFeed/);
+    // Nothing written: a rejected derivation leaves the demo as it was.
     const written = JSON.parse(await readFile(path.join(appDir, "demo.config.json"), "utf8")) as typeof config;
     expect(written.beats).toEqual(config.beats);
   });
@@ -254,7 +338,9 @@ describe("runDeriveChips", () => {
   it("refuses to write a config the template's strict schema would reject", async () => {
     const appDir = await writeApp({ tools: [{ name: "host_listInvoices" }] });
     const model = async () => JSON.stringify({
-      chips: Array.from({ length: 4 }, (_, index) => ({ key: `pill-${index}`, chip: `c${index}`, prompt: `p${index}` })),
+      chips: Array.from({ length: 4 }, (_, index) => ({
+        key: `pill-${index}`, chip: `c${index}`, prompt: `p${index}`, tools: ["host_listInvoices"],
+      })),
     });
     // A valid derivation writes; the guard is that we re-parse before writing,
     // so a schema break surfaces here instead of at the app's next boot.

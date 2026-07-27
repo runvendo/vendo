@@ -95,7 +95,7 @@ async function newestMtimeMs(dir: string): Promise<number | undefined> {
  * avoid. Compare newest-source against newest-output and refuse rather than
  * vendor something stale.
  */
-async function assertFreshBuild(name: string, packageDir: string): Promise<void> {
+export async function assertFreshBuild(name: string, packageDir: string): Promise<void> {
   const distMtime = await newestMtimeMs(path.join(packageDir, "dist"));
   if (distMtime === undefined) {
     throw new Error(
@@ -121,14 +121,17 @@ async function assertFreshBuild(name: string, packageDir: string): Promise<void>
  * tarballs missing their entry points, and a stale one would produce tarballs
  * that quietly disagree with the checkout.
  */
-export async function vendorWorkspacePackages(options: {
-  repoRoot: string;
-  appDir: string;
-}): Promise<CloneSpecs> {
-  const packagesDir = path.join(options.repoRoot, "packages");
-  const vendorDir = path.join(options.appDir, vendorDirName);
-  await mkdir(vendorDir, { recursive: true });
-  const specs: CloneSpecs = {};
+/** One publishable workspace package, as vendoring sees it. */
+interface VendorablePackage {
+  name: string;
+  version: string;
+  packageDir: string;
+  buildable: boolean;
+}
+
+async function publishableWorkspacePackages(repoRoot: string): Promise<VendorablePackage[]> {
+  const packagesDir = path.join(repoRoot, "packages");
+  const found: VendorablePackage[] = [];
   for (const entry of await readdir(packagesDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const packageDir = path.join(packagesDir, entry.name);
@@ -140,7 +143,38 @@ export async function vendorWorkspacePackages(options: {
     }
     const { name, version } = parsed;
     if (typeof name !== "string" || typeof version !== "string" || parsed.private === true) continue;
-    if (parsed.scripts?.["build"] !== undefined) await assertFreshBuild(name, packageDir);
+    found.push({ name, version, packageDir, buildable: parsed.scripts?.["build"] !== undefined });
+  }
+  return found;
+}
+
+/**
+ * Every freshness check, run as ONE up-front gate.
+ *
+ * Separated from the packing so `demo:create` can call it BEFORE it copies the
+ * template: a stale package must fail while nothing exists on disk yet. Run
+ * mid-clone instead, it aborts having already written a prospect-branded
+ * config and some tarballs, and the next attempt hits "refusing to overwrite" —
+ * a failure that poisons its own retry.
+ */
+export async function assertWorkspacePacksFresh(repoRoot: string): Promise<void> {
+  for (const entry of await publishableWorkspacePackages(repoRoot)) {
+    if (entry.buildable) await assertFreshBuild(entry.name, entry.packageDir);
+  }
+}
+
+export async function vendorWorkspacePackages(options: {
+  repoRoot: string;
+  appDir: string;
+}): Promise<CloneSpecs> {
+  const vendorDir = path.join(options.appDir, vendorDirName);
+  await mkdir(vendorDir, { recursive: true });
+  const specs: CloneSpecs = {};
+  for (const { name, version, packageDir, buildable } of await publishableWorkspacePackages(options.repoRoot)) {
+    // Re-checked here as well as in the up-front gate: this function is
+    // exported and callable on its own, and it must never vendor stale output
+    // just because someone skipped the gate.
+    if (buildable) await assertFreshBuild(name, packageDir);
     await execFileAsync("pnpm", ["pack", "--pack-destination", vendorDir], { cwd: packageDir });
     const tarball = tarballFileName(name, version);
     if (!existsSync(path.join(vendorDir, tarball))) {

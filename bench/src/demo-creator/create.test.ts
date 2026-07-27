@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseDemoConfig } from "demo-template/demo-config";
@@ -300,6 +300,67 @@ describe("runDemoCreate", () => {
     };
     expect(packageJson.dependencies["@vendoai/core"]).toBe("workspace:*");
     expect(existsSync(path.join(result.appDir, "pnpm-workspace.yaml"))).toBe(false);
+  });
+
+  /**
+   * A failed standalone create used to leave a prospect-branded directory and
+   * a half-filled vendor/ behind, and the existence guard then refused the
+   * retry — a failure that poisoned its own recovery. Two defences: the
+   * freshness gate runs BEFORE anything is copied, and any later failure takes
+   * the clone with it.
+   */
+  describe("a failed standalone create is retryable", () => {
+    /** Makes packages/core look built-but-stale: dist older than src. */
+    async function staleTheWorkspace(repoRoot: string): Promise<void> {
+      const packageDir = path.join(repoRoot, "packages", "core");
+      await writeFile(path.join(packageDir, "package.json"), `${JSON.stringify({
+        name: "@vendoai/core", version: "9.9.9", main: "dist/index.js", scripts: { build: "tsc" },
+      }, null, 2)}\n`);
+      await mkdir(path.join(packageDir, "dist"), { recursive: true });
+      await writeFile(path.join(packageDir, "dist", "index.js"), "module.exports = {}\n");
+      await utimes(path.join(packageDir, "dist", "index.js"), new Date(1_000_000), new Date(1_000_000));
+      await mkdir(path.join(packageDir, "src"), { recursive: true });
+      await writeFile(path.join(packageDir, "src", "index.ts"), "export {}\n");
+    }
+
+    it("leaves NO directory behind when the workspace is stale, so the retry is clean", async () => {
+      const repoRoot = await writeRepoFixture();
+      await staleTheWorkspace(repoRoot);
+      const scratch = await mkdtemp(path.join(tmpdir(), "vendo-demo-scratch-"));
+      const appDir = path.join(scratch, "demo-acme-widgets");
+
+      await expect(runDemoCreate({ ...args, targetDir: scratch }, { repoRoot })).rejects.toThrow(/stale/);
+
+      // No branded config, no partial vendor/, nothing for the guard to trip on.
+      expect(existsSync(appDir)).toBe(false);
+    }, 30_000);
+
+    it("the retry succeeds once the workspace is rebuilt — no manual cleanup", async () => {
+      const repoRoot = await writeRepoFixture();
+      await staleTheWorkspace(repoRoot);
+      const scratch = await mkdtemp(path.join(tmpdir(), "vendo-demo-scratch-"));
+
+      await expect(runDemoCreate({ ...args, targetDir: scratch }, { repoRoot })).rejects.toThrow();
+      // "Rebuild": make dist newer than src again.
+      await writeFile(path.join(repoRoot, "packages", "core", "dist", "index.js"), "module.exports = {}\n");
+
+      const result = await runDemoCreate({ ...args, targetDir: scratch }, { repoRoot });
+      expect(result.standalone).toBe(true);
+      expect(existsSync(path.join(result.appDir, "vendor", "vendoai-core-9.9.9.tgz"))).toBe(true);
+    }, 60_000);
+
+    it("removes the partial clone when a step AFTER the copy fails", async () => {
+      const repoRoot = await writeRepoFixture();
+      const scratch = await mkdtemp(path.join(tmpdir(), "vendo-demo-scratch-"));
+      const appDir = path.join(scratch, "demo-acme-widgets");
+      // The clone copies fine, then vendoring dies: the root pnpm-workspace.yaml
+      // the clone's own settings are derived from is gone.
+      await rm(path.join(repoRoot, "pnpm-workspace.yaml"));
+
+      await expect(runDemoCreate({ ...args, targetDir: scratch }, { repoRoot })).rejects.toThrow();
+
+      expect(existsSync(appDir)).toBe(false);
+    }, 30_000);
   });
 
   it("makes an out-of-repo clone self-contained: vendored Vendo, its own pnpm settings and .dockerignore", async () => {

@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DemoConfig } from "demo-template/demo-config";
 import { injectDemoAuth } from "./inject-auth.js";
 import {
+  assertWorkspacePacksFresh,
   defaultDemoScratchDir,
   isStandaloneApp,
   pinWorkspaceDependencies,
@@ -257,64 +258,78 @@ export async function runDemoCreate(args: DemoCreateArgs, options: { repoRoot: s
     throw new Error(`Refusing to overwrite existing "${appDir}" — delete it first or pick another --id`);
   }
 
+  // An out-of-repo clone is nobody's workspace member: its `workspace:*` deps
+  // resolve to nothing, it inherits none of the root's pnpm settings, and its
+  // deploy uploads itself rather than the monorepo. Make it self-contained.
+  const standalone = isStandaloneApp(options.repoRoot, appDir);
+
+  // Vendoring's precondition is checked with the other input validation, while
+  // nothing exists on disk — a stale package must not abort a half-written
+  // clone, because "refusing to overwrite" would then block the retry.
+  if (standalone) await assertWorkspacePacksFresh(options.repoRoot);
+
   await mkdir(path.dirname(appDir), { recursive: true });
   await cp(templateDir, appDir, {
     recursive: true,
     filter: (source) => !excludedFromClone(templateDir, source),
   });
 
-  const packagePath = path.join(appDir, "package.json");
-  const packageJson = JSON.parse(await readFile(packagePath, "utf8")) as Record<string, unknown>;
-  const identified = { ...packageJson, name: packageName };
+  // From here on the clone exists, so ANY failure has to take it with it:
+  // whatever went wrong, a half-made prospect-branded directory must never
+  // survive to block the next attempt with "refusing to overwrite".
+  try {
+    const packagePath = path.join(appDir, "package.json");
+    const packageJson = JSON.parse(await readFile(packagePath, "utf8")) as Record<string, unknown>;
+    const identified = { ...packageJson, name: packageName };
 
-  // An out-of-repo clone is nobody's workspace member: its `workspace:*` deps
-  // resolve to nothing, it inherits none of the root's pnpm settings, and its
-  // deploy uploads itself rather than the monorepo. Make it self-contained.
-  const standalone = isStandaloneApp(options.repoRoot, appDir);
-  if (standalone) {
-    const rootPackageJson = JSON.parse(
-      await readFile(path.join(options.repoRoot, "package.json"), "utf8"),
-    ) as { packageManager?: string };
-    const vendorSpecs = await vendorWorkspacePackages({ repoRoot: options.repoRoot, appDir });
-    const pinned = pinWorkspaceDependencies(identified, vendorSpecs, {
-      ...(rootPackageJson.packageManager === undefined ? {} : { packageManager: rootPackageJson.packageManager }),
-    });
-    await writeFile(packagePath, `${JSON.stringify(pinned, null, 2)}\n`);
-    await writeFile(
-      path.join(appDir, "pnpm-workspace.yaml"),
-      renderClonePnpmWorkspace(await readFile(path.join(options.repoRoot, "pnpm-workspace.yaml"), "utf8"), vendorSpecs),
-    );
-    await writeFile(path.join(appDir, ".dockerignore"), renderCloneDockerignore());
-  } else {
-    await writeFile(packagePath, `${JSON.stringify(identified, null, 2)}\n`);
+    if (standalone) {
+      const rootPackageJson = JSON.parse(
+        await readFile(path.join(options.repoRoot, "package.json"), "utf8"),
+      ) as { packageManager?: string };
+      const vendorSpecs = await vendorWorkspacePackages({ repoRoot: options.repoRoot, appDir });
+      const pinned = pinWorkspaceDependencies(identified, vendorSpecs, {
+        ...(rootPackageJson.packageManager === undefined ? {} : { packageManager: rootPackageJson.packageManager }),
+      });
+      await writeFile(packagePath, `${JSON.stringify(pinned, null, 2)}\n`);
+      await writeFile(
+        path.join(appDir, "pnpm-workspace.yaml"),
+        renderClonePnpmWorkspace(await readFile(path.join(options.repoRoot, "pnpm-workspace.yaml"), "utf8"), vendorSpecs),
+      );
+      await writeFile(path.join(appDir, ".dockerignore"), renderCloneDockerignore());
+    } else {
+      await writeFile(packagePath, `${JSON.stringify(identified, null, 2)}\n`);
+    }
+
+    const configPath = path.join(appDir, "demo.config.json");
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+    // Every clone gets the demo login wall (criterion 37: the final gate LOGS
+    // IN); the template itself stays anonymous by design and is never edited.
+    await injectDemoAuth(appDir, { id: args.id, prospect: args.prospect });
+
+    const appPath = displayAppPath(options.repoRoot, appDir);
+    const researchDir = path.join(appDir, "RESEARCH");
+    const researchReadme = path.join(researchDir, "README.md");
+    await mkdir(researchDir, { recursive: true });
+
+    const operatorScreenshots: OperatorScreenshot[] = [];
+    for (const [index, source] of (args.screenshots ?? []).entries()) {
+      const file = `operator-${index + 1}-${path.basename(source)}`;
+      await cp(source, path.join(researchDir, file));
+      operatorScreenshots.push({ file, provenance: "operator-provided", source });
+    }
+    if (operatorScreenshots.length > 0) {
+      await writeFile(
+        path.join(researchDir, operatorManifestName),
+        `${JSON.stringify({ screenshots: operatorScreenshots }, null, 2)}\n`,
+      );
+    }
+
+    await writeFile(researchReadme, researchStub(appPath, args.url, operatorScreenshots));
+
+    return { appDir, packageName, configPath, researchReadme, standalone };
+  } catch (error) {
+    await rm(appDir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
   }
-
-  const configPath = path.join(appDir, "demo.config.json");
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
-
-  // Every clone gets the demo login wall (criterion 37: the final gate LOGS
-  // IN); the template itself stays anonymous by design and is never edited.
-  await injectDemoAuth(appDir, { id: args.id, prospect: args.prospect });
-
-  const appPath = displayAppPath(options.repoRoot, appDir);
-  const researchDir = path.join(appDir, "RESEARCH");
-  const researchReadme = path.join(researchDir, "README.md");
-  await mkdir(researchDir, { recursive: true });
-
-  const operatorScreenshots: OperatorScreenshot[] = [];
-  for (const [index, source] of (args.screenshots ?? []).entries()) {
-    const file = `operator-${index + 1}-${path.basename(source)}`;
-    await cp(source, path.join(researchDir, file));
-    operatorScreenshots.push({ file, provenance: "operator-provided", source });
-  }
-  if (operatorScreenshots.length > 0) {
-    await writeFile(
-      path.join(researchDir, operatorManifestName),
-      `${JSON.stringify({ screenshots: operatorScreenshots }, null, 2)}\n`,
-    );
-  }
-
-  await writeFile(researchReadme, researchStub(appPath, args.url, operatorScreenshots));
-
-  return { appDir, packageName, configPath, researchReadme, standalone };
 }

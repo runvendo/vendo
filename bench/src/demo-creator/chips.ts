@@ -131,13 +131,28 @@ Write ${targetDerivedChips} example prompts a ${options.prospect} user would pla
 - Vary them: at least one that renders a view over data, and at least one that takes an action.
 - "chip" is a short label (2-5 words, sentence case). "prompt" is the full sentence typed into the composer.
 - "key" is a lowercase-hyphenated slug, unique.
+- "tools" lists the tool names from the surface above that the prompt needs, copied EXACTLY. At least one. This is checked against the surface and a prompt citing anything not listed above is discarded, so do not guess a name.
 
 Reply with JSON ONLY, no prose or code fences:
-{"chips":[{"key":"...","chip":"...","prompt":"..."}]}`;
+{"chips":[{"key":"...","chip":"...","prompt":"...","tools":["host_..."]}]}`;
 }
 
-/** Extracts the JSON object from a model reply that may carry fences or prose. */
-export function parseChipsReply(raw: string): DemoBeat[] {
+/**
+ * Extracts the pills from a model reply (which may carry fences or prose) and
+ * GROUNDS each one in the supplied surface.
+ *
+ * Shape and count are not evidence of anything: a model can return five
+ * beautifully-formed pills for capabilities the demo does not have, and a
+ * prospect clicking one gets a refusal. So every pill must cite the tools it
+ * needs, by exact name, and a pill citing anything outside `surface` is
+ * dropped as invented — the pills are deliberately written in domain language
+ * ("overdue invoices", not `host_listInvoices`), so the citation is the only
+ * honest link back to the real capability.
+ *
+ * The citations are validation input only; they never reach demo.config.json
+ * (its shape is fixed, and the chip strip has no use for them).
+ */
+export function parseChipsReply(raw: string, surface: readonly ExtractedTool[]): DemoBeat[] {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   if (start === -1 || end <= start) {
@@ -153,21 +168,37 @@ export function parseChipsReply(raw: string): DemoBeat[] {
   }
   const chips = (parsed as { chips?: unknown }).chips;
   if (!Array.isArray(chips)) throw new Error(`Chip derivation returned no "chips" array:\n${raw.slice(0, 500)}`);
+
+  const known = new Set(surface.map((tool) => tool.name));
   const beats: DemoBeat[] = [];
   const seen = new Set<string>();
+  const ungrounded: string[] = [];
   for (const entry of chips) {
     if (typeof entry !== "object" || entry === null) continue;
-    const { key, chip, prompt } = entry as Record<string, unknown>;
+    const { key, chip, prompt, tools } = entry as Record<string, unknown>;
     if (typeof key !== "string" || typeof chip !== "string" || typeof prompt !== "string") continue;
     const slug = key.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     if (slug === "" || chip.trim() === "" || prompt.trim() === "" || seen.has(slug)) continue;
+
+    // The grounding check. A pill citing no tool, or one the surface does not
+    // have, describes something this demo cannot do — drop it and say so.
+    const cited = Array.isArray(tools) ? tools.filter((name): name is string => typeof name === "string") : [];
+    const invented = cited.filter((name) => !known.has(name));
+    if (cited.length === 0 || invented.length > 0) {
+      ungrounded.push(`"${chip.trim()}" (${cited.length === 0 ? "cites no tool" : `unknown: ${invented.join(", ")}`})`);
+      continue;
+    }
+
     seen.add(slug);
     // No expectsView/expectsApproval: a derived pill is not a verification
     // contract, so `demo-beats` only needs it to settle cleanly.
     beats.push({ key: slug, chip: chip.trim(), prompt: prompt.trim() });
   }
   if (beats.length < minDerivedChips) {
-    throw new Error(`Chip derivation produced only ${beats.length} usable chips (need ${minDerivedChips}-${targetDerivedChips}):\n${raw.slice(0, 500)}`);
+    const dropped = ungrounded.length === 0 ? "" : `\nDropped as ungrounded: ${ungrounded.join("; ")}`;
+    throw new Error(
+      `Chip derivation produced only ${beats.length} usable chips (need ${minDerivedChips}-${targetDerivedChips}).${dropped}\n${raw.slice(0, 500)}`,
+    );
   }
   return beats.slice(0, targetDerivedChips);
 }
@@ -191,9 +222,15 @@ export function mergeBeats(existing: readonly DemoBeat[], derived: readonly Demo
 }
 
 export interface DeriveChipsResult {
-  /** Beats now in demo.config.json. */
+  /**
+   * The pills this stage derived from the tool surface. EMPTY when the app has
+   * no surface: with nothing to ground a pill in, the honest output is no
+   * pills — inventing them is the behavior this stage exists to replace.
+   */
+  chips: DemoBeat[];
+  /** What demo.config.json holds afterwards. Unchanged when `chips` is empty. */
   beats: DemoBeat[];
-  /** How many came from the tool surface. */
+  /** How many of `beats` came from the tool surface. */
   derived: number;
   /** How many hand/agent-authored beats were kept verbatim. */
   kept: number;
@@ -253,22 +290,28 @@ export async function runDeriveChips(
 
   const tools = await readExtractedTools(args.appDir);
   if (tools.length === 0) {
-    // No routes extracted yet (or none but auth plumbing). Leaving the config
-    // untouched is correct: inventing pills is exactly what this replaces.
-    write("[chips] no tool surface in .vendo/tools.json — leaving beats as they are");
+    // No surface to ground anything in, so this stage derives NOTHING — the
+    // whole point is that a pill names a real capability. The config is left
+    // exactly as found: the demo keeps whatever beats it was authored with
+    // (the template's strict schema requires at least one anyway), and no
+    // model is called.
+    write("[chips] no tool surface in .vendo/tools.json — deriving no chips");
     const kept = config.beats.filter((beat) => !isPlaceholderBeat(beat)).length;
-    return { beats: config.beats, derived: 0, kept, skipped: "no-tools" };
+    return { chips: [], beats: config.beats, derived: 0, kept, skipped: "no-tools" };
   }
 
   const model = io.model ?? defaultChipModel;
-  const derived = parseChipsReply(await model(buildChipsPrompt({ prospect: args.prospect ?? config.prospect, tools })));
-  const beats = mergeBeats(config.beats, derived);
-  const kept = beats.length - beats.filter((beat) => derived.some((candidate) => candidate.key === beat.key)).length;
+  const chips = parseChipsReply(
+    await model(buildChipsPrompt({ prospect: args.prospect ?? config.prospect, tools })),
+    tools,
+  );
+  const beats = mergeBeats(config.beats, chips);
+  const kept = beats.length - beats.filter((beat) => chips.some((candidate) => candidate.key === beat.key)).length;
 
   // Re-parse before writing: a derived beat that breaks the template's strict
   // schema must fail here, not at the app's next boot.
   const next = parseDemoConfig({ ...config, beats }, `derived demo config at "${configPath}"`);
   await writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`);
   write(`[chips] ${beats.length} pills from ${tools.length} extracted tools (${kept} kept, ${beats.length - kept} derived)`);
-  return { beats, derived: beats.length - kept, kept };
+  return { chips, beats, derived: beats.length - kept, kept };
 }

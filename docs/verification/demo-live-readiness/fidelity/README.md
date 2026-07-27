@@ -9,12 +9,13 @@ so building one can never leak a prospect's name into the OSS repo.
 | T1[1] `apps/demo-*` gitignored except the three real apps | PASS | `gitignore-check.log`; `scratch.test.ts` › "apps/demo-* gitignore" (runs real `git check-ignore`) |
 | T1[2] a clone in the scratch location runs `pnpm build` green | PASS | `scratch-clone-build.log` — real clone at `<os-tmp>/vendo-demos/demo-fidelity-proof-d`, `pnpm install` + `pnpm build` from that directory, 8 routes emitted |
 | T1 (narrative) the clone deploys from the scratch location | PARTIAL — plan proven, not executed | `deploy-dryrun-standalone.log`, `standalone-Dockerfile.txt`. No live Railway run: the contract forbids me deploying (the conductor deploys). |
-| T2[1] `VENDO_API_KEY` + no explicit slots ⇒ hosted store + Cloud connections | PASS (composition) | `apps/demo-template/src/vendo/server-config.test.ts` "deployed: leaves store + connections UNSET…". Not exercised against live Cloud: no `VENDO_API_KEY` exists yet (conductor provisions it). |
-| T2[1] the local pin composes the local store | PASS | same file, "local dev: DEMO_STORE=local pins the local PGlite store" |
+| T2[1] `VENDO_API_KEY` + no explicit slots ⇒ hosted store + Cloud connections | PASS (real composition) | `server-config.test.ts` › "deployed: VENDO_API_KEY with no explicit slots RESOLVES the hosted store + Cloud connections" — runs the REAL `createVendo` and asserts the adapters it selected (`vendo.store` satisfies the runtime's hosted-store predicate; `vendo.connections.posture === "cloud"`). Not exercised against live Cloud: no `VENDO_API_KEY` exists yet (conductor provisions it). |
+| T2[1] the local pin composes the local store | PASS (real composition) | same file, "local dev: DEMO_STORE=local RESOLVES a local store" — plus a keyless case proving neither composes without a key |
 | T2[1] caps guard + spend middleware remain wired | PASS | same file, "keeps the caps guard + spend middleware wrapped around the model" |
-| T3[1] N tools ⇒ 4-5 chips referencing real capabilities | PASS | `chips-live-demo.config.json` — a LIVE derivation over Maple's real 24-tool surface |
-| T3[1] explicit beats override derived | PASS | `bench/src/demo-creator/chips.test.ts` › `mergeBeats` + `runDeriveChips` "derives pills… kept 3, derived 2" |
-| T3[1] empty/missing tools.json ⇒ no chips, no crash | PASS | `chips.test.ts` "is a no-op with no tool surface: no chips, no crash, no model call" |
+| T3[1] N tools ⇒ 4-5 chips referencing real capabilities | PASS | `chips-live-demo.config.json` — a LIVE derivation over Maple's real 24-tool surface. Enforced, not just observed: every pill must cite the tools it needs by exact name and a pill citing anything outside the surface is dropped (`chips.test.ts` › "drops a pill citing a tool the surface does not have"). |
+| T3[1] explicit beats override derived | PASS | `chips.test.ts` › `mergeBeats` + `runDeriveChips` "derives pills… kept 3, derived 2" |
+| T3[1] empty/missing tools.json ⇒ NO chips, no crash | PASS | `chips.test.ts` › "derives NO chips with no tool surface" and "…when the surface holds only auth plumbing" — `chips` is `[]`, no model call, config untouched |
+| T1 a failed standalone create is retryable | PASS | `create.test.ts` › "a failed standalone create is retryable" (3 cases: stale workspace leaves nothing behind, the retry then succeeds unaided, and a post-copy failure removes the partial clone) |
 
 ## T1 — the leak fix, and the caveat it forced
 
@@ -73,9 +74,17 @@ output.
 **Gap, conductor-owned:** no live Cloud check. `flowlet/.env` carries
 `ANTHROPIC_API_KEY`, `COMPOSIO_API_KEY`, `OPENAI_API_KEY`, `THESYS_API_KEY`,
 `TAMBO_API_KEY` — no `VENDO_API_KEY`, which the contract says the conductor
-provisions with the managed "Demos" project. The posture is proven at the
-composition level (what `createVendo` receives), which is how demo-bank tests
-its own.
+provisions with the managed "Demos" project.
+
+What IS proven without one: the real `createVendo` runs under a dummy key and
+the adapters it resolved are asserted — `vendo.store` against the runtime's own
+hosted-store predicate, `vendo.connections.posture === "cloud"` — for the
+deployed, local-pin and keyless cases. That is composition, not argument
+inspection: unset slots are necessary but not sufficient, and what matters is
+which adapter came out the other side. The test also captures the runtime's own
+"Vendo Cloud is the hosted store for this deployment" warning as independent
+confirmation. What remains for a live key is only the wire behind those
+adapters — the console answering, and a real connect flow.
 
 ## T3 — pills from the product
 
@@ -93,19 +102,36 @@ template's placeholders in place — `ANTHROPIC_API_KEY` from
 
 | before (template placeholder) | after (derived from Maple's tools) |
 |---|---|
-| `TODO(creator): Dashboard of my data` | **Spending by category** — "Show me my spending by category for this month." |
-| `TODO(creator): Archive an item, with approval` | **Recurring subscriptions** — "Show me all the recurring charges and subscriptions on my account." |
-| `TODO(creator): Save this as an app` | **Send rent payment** — "Transfer $1,200 to my landlord from checking." |
-| | **Savings goals progress** — "Show me the progress on all my savings goals." |
-| | **Order dinner delivery** — "Order dinner delivery from my usual spot for tonight." |
+| `TODO(creator): Dashboard of my data` | **Spending by category** — "Show me my spending breakdown by category for this month." |
+| `TODO(creator): Archive an item, with approval` | **Send rent payment** — "Send $1,200 to my landlord from checking." |
+| `TODO(creator): Save this as an app` | **Find recurring subscriptions** — "List all my recurring charges and subscriptions so I can spot ones I forgot about." |
+| | **Order lunch delivery** — "Place a delivery order for lunch from my usual spot." |
+| | **Budgets vs actual spend** — "Show me my budgets alongside how much I've spent in each category so far." |
 
-Each names a capability Maple's extracted surface actually has (transfers,
-savings goals, `host_createOrder`). Full output: `chips-live-demo.config.json`.
+Every one of these survived the grounding check: the model had to cite the
+tools each prompt needs, by exact name, and those names were verified against
+Maple's surface before the pill was accepted. Full output:
+`chips-live-demo.config.json`.
 
 Accepted consequence: with the arc's three authored beats plus derived pills,
 `demo-beats` capture now plays up to five beats instead of three (~2 extra
 turns per run). Derived pills carry no expectation, so they only need to
 settle cleanly.
+
+## Scope — every file touched outside the pinned surfaces
+
+The contract pins `apps/demo-template` + `bench/src/demo-creator`. Three files
+outside those are in the diff; here is each one and why.
+
+| File | Change | Required by |
+|---|---|---|
+| `bench/src/demo-capture/hosts.ts` | `bootDemoHost` takes an optional `appDir` and, when the app is outside the repo, boots it from its own directory instead of `pnpm --filter <pkg>` at the repo root; the pre-boot key check accepts `VENDO_API_KEY` as well as `ANTHROPIC_API_KEY` (+21/−6) | **T1 and T2, strictly.** T1 moves the default clone outside the workspace, and a non-member cannot be booted by workspace filter — this is the only boot path the judge loop and the `demo-beats` capture have, so without it T1's own default breaks two pipeline stages. The key half is T2: a demo whose inference now rides `VENDO_API_KEY` would be refused at boot by a check that demanded a provider key. |
+| `bench/src/demo-capture/capture.ts` | one line, passing `appDir` into `bootDemoHost` | **T1, strictly.** The call site for config-driven hosts; without it the parameter above is never supplied and `demo-beats` still cannot boot a scratch clone. |
+| `packages/ui/src/chrome/chrome-css.ts` | comment only — a pointer to `LANE-REPORT.md` reworded | **NOT required by T1–T3.** It is required by the conductor's later hygiene directive: removing `LANE-REPORT.md` from the repo would otherwise leave this comment pointing at a file that no longer exists. Zero behavior change; the converged picks it referenced are enumerated inline directly below. Flagged rather than assumed — if the preference is a strictly T1–T3 diff, this one line reverts on its own, at the cost of a dangling reference. |
+
+No other file outside the pinned surfaces is touched, except the repo-root
+`.gitignore` (T1's own criterion) and the root scratch files the conductor
+directed be removed.
 
 ## Rulings taken while building (nothing was weakened)
 

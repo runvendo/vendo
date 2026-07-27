@@ -115,7 +115,7 @@ function stubStages(repoRoot: string, overrides: Partial<PipelineStages> = {}): 
         fonts: { families: [], faceSrcs: [], webfontLinks: [] },
       },
     })),
-    chips: vi.fn(async () => ({ beats: [], derived: 2, kept: 3 })),
+    chips: vi.fn(async () => ({ chips: [], beats: [], derived: 2, kept: 3 })),
     judge: vi.fn(async () => ({
       rounds: [],
       parked: false,
