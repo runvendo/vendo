@@ -376,9 +376,13 @@ Cloud defaults:
   no `E2B_API_KEY` is set;
 - the store slot becomes the Cloud hosted store when you passed no `store` —
   threads, apps, records, grants, and audit then persist in Vendo Cloud
-  instead of local PGlite. Pass `store: createStore(...)` to keep data local.
+  instead of local PGlite. Pass `store: createStore(...)` to keep data local;
+- the knowledge slot becomes the Cloud knowledge engine when you passed no
+  `knowledge`, and the agent gets its `vendo_knowledge_search` tool over the
+  corpus you connected in the console. Pass `knowledge: lexicalKnowledge()` (or
+  any adapter) to keep retrieval yours — see [knowledge](./knowledge.md).
 
-An explicitly passed adapter or BYO key always wins over both defaults.
+An explicitly passed adapter or BYO key always wins over these defaults.
 
 Use the [actAs preset recipes](./act-as-presets.md) to wire Auth.js, Supabase
 Auth, Clerk, Auth0, or a host-owned generic JWT without changing the

@@ -37,4 +37,4 @@ export {
   type KnowledgeConfig,
   type KnowledgeSourceConfig,
 } from "./ingest/index.js";
-export { lexicalKnowledge } from "./local/lexical.js";
+export { bindKnowledgeStore, lexicalKnowledge } from "./local/lexical.js";

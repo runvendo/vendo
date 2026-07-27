@@ -46,13 +46,14 @@ import {
   type RunId,
   type SecretsProvider,
   type SemanticsFile,
+  type StoreAdapter,
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
   type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type PolicyFile, type VendoGuard } from "@vendoai/guard";
-import { createKnowledgeTools } from "@vendoai/knowledge";
+import { bindKnowledgeStore, cloudKnowledge, createKnowledgeTools } from "@vendoai/knowledge";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import {
   adoptEphemeralSubject,
@@ -600,13 +601,32 @@ function selectConnectors(configured: Connector[] | undefined, connectorApps?: s
   return [];
 }
 
-/** ADAPTER RULE, knowledge seam: which KnowledgeAdapter (if any) backs the
-    `vendo_knowledge_search` tool. v1 precedence: an explicitly passed adapter
-    or nothing — no VENDO_API_KEY cloud default yet (that arrives with the
-    hosted knowledge engine, K3); unconfigured means the tool simply does not
-    compose, so the agent never advertises a knowledge base the host lacks. */
-function selectKnowledge(configured: KnowledgeAdapter | undefined): KnowledgeAdapter | undefined {
-  return configured;
+/** ADAPTER RULE, knowledge seam (ENG-368): which KnowledgeAdapter (if any)
+    backs the `vendo_knowledge_search` tool. Precedence, top to bottom:
+      1. an explicitly passed adapter always wins — including the no-key BYO
+         paths (`httpKnowledge({ url })`, `lexicalKnowledge()`), which is how a
+         Cloud subscriber keeps its own engine by construction. A zero-config
+         `lexicalKnowledge()` is handed the composed store here
+         (bindKnowledgeStore), so the host never plumbs one;
+      2. VENDO_API_KEY makes the Cloud engine the default for the seam the host
+         left unfilled (VENDO_CLOUD_URL overrides the console base URL) —
+         the same rung every other Cloud-backed seam above already has;
+      3. nothing configured at all: no adapter, no tool. That silence is
+         intended — the agent must not advertise a knowledge base the host
+         does not have — and it is the ONLY silent outcome. A key that is
+         wrong or a console that is down surfaces on first use (the client
+         raises `cloud-required`; the tool answers "unavailable" and warns the
+         operator with the cause), per the Cloud rule that key problems appear
+         on the first real service call, never at a validate endpoint.
+    The adapters themselves never read the environment. */
+function selectKnowledge(
+  configured: KnowledgeAdapter | undefined,
+  store: StoreAdapter,
+): KnowledgeAdapter | undefined {
+  if (configured !== undefined) return bindKnowledgeStore(configured, store);
+  const cloud = cloudKeyOptions();
+  if (cloud === undefined) return undefined;
+  return cloudKnowledge(cloud);
 }
 
 /** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
@@ -1738,7 +1758,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   actions.add(apps.agentTools());
   // Knowledge K1 — the tool exists exactly when an adapter is configured;
   // no adapter, no `vendo_knowledge_search` in any descriptor surface.
-  const knowledge = selectKnowledge(config.knowledge);
+  const knowledge = selectKnowledge(config.knowledge, store);
   if (knowledge !== undefined) actions.add(createKnowledgeTools(knowledge));
   // Knowledge k8 (ENG-368) — the prompt index rides exactly when the tool
   // composes. Byte-stable at a fixed sync state, refreshed when the sync
