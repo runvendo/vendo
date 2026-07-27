@@ -12,7 +12,7 @@ so building one can never leak a prospect's name into the OSS repo.
 | T2[1] `VENDO_API_KEY` + no explicit slots ⇒ hosted store + Cloud connections | PASS (real composition) | `server-config.test.ts` › "deployed: VENDO_API_KEY with no explicit slots RESOLVES the hosted store + Cloud connections" — runs the REAL `createVendo` and asserts the adapters it selected (`vendo.store` satisfies the runtime's hosted-store predicate; `vendo.connections.posture === "cloud"`). Not exercised against live Cloud: no `VENDO_API_KEY` exists yet (conductor provisions it). |
 | T2[1] the local pin composes the local store | PASS (real composition) | same file, "local dev: DEMO_STORE=local RESOLVES a local store" — plus a keyless case proving neither composes without a key |
 | T2[1] caps guard + spend middleware remain wired | PASS | same file, "keeps the caps guard + spend middleware wrapped around the model" |
-| T3[1] N tools ⇒ 4-5 chips referencing real capabilities | PASS | `chips-live-demo.config.json` — a LIVE derivation over Maple's real 24-tool surface. Enforced, not just observed: every pill must cite the tools it needs by exact name and a pill citing anything outside the surface is dropped (`chips.test.ts` › "drops a pill citing a tool the surface does not have"). |
+| T3[1] N tools ⇒ chips referencing real capabilities | PASS | `chips-live-demo.config.json` — a LIVE derivation over Maple's real 24-tool surface, 5/5 pills surviving grounding with nothing culled. Enforced two ways: the cited tool names must exist, AND the visible chip+prompt must share a meaningful token with the cited capability's name/description (`chips.test.ts` › "DROPS a pill citing a real tool whose visible text is placeholder filler"). |
 | T3[1] explicit beats override derived | PASS | `chips.test.ts` › `mergeBeats` + `runDeriveChips` "derives pills… kept 3, derived 2" |
 | T3[1] empty/missing tools.json ⇒ NO chips, no crash | PASS | `chips.test.ts` › "derives NO chips with no tool surface" and "…when the surface holds only auth plumbing" — `chips` is `[]`, no model call, config untouched |
 | T1 a failed standalone create is retryable | PASS | `create.test.ts` › "a failed standalone create is retryable" (3 cases: stale workspace leaves nothing behind, the retry then succeeds unaided, and a post-copy failure removes the partial clone) |
@@ -102,16 +102,44 @@ template's placeholders in place — `ANTHROPIC_API_KEY` from
 
 | before (template placeholder) | after (derived from Maple's tools) |
 |---|---|
-| `TODO(creator): Dashboard of my data` | **Spending by category** — "Show me my spending breakdown by category for this month." |
-| `TODO(creator): Archive an item, with approval` | **Send rent payment** — "Send $1,200 to my landlord from checking." |
-| `TODO(creator): Save this as an app` | **Find recurring subscriptions** — "List all my recurring charges and subscriptions so I can spot ones I forgot about." |
-| | **Order lunch delivery** — "Place a delivery order for lunch from my usual spot." |
-| | **Budgets vs actual spend** — "Show me my budgets alongside how much I've spent in each category so far." |
+| `TODO(creator): Dashboard of my data` | **Show spending by category** — "Show me my spending by category for this period." |
+| `TODO(creator): Archive an item, with approval` | **Show budget progress** — "Show my budgets and how much I've spent so far in each category." |
+| `TODO(creator): Save this as an app` | **Send money to a friend** — "Transfer $50 from checking to Alex." |
+| | **Order dinner delivery** — "Place a delivery order for dinner tonight." |
+| | **List recurring subscriptions** — "List all my recurring charges and subscriptions." |
 
-Every one of these survived the grounding check: the model had to cite the
-tools each prompt needs, by exact name, and those names were verified against
-Maple's surface before the pill was accepted. Full output:
-`chips-live-demo.config.json`.
+All five survived grounding and nothing was culled, which is the number that
+matters: a stricter check is only worth having if it does not also throw away
+good pills. Full output: `chips-live-demo.config.json`.
+
+### How grounding works (deterministic, no judge model)
+
+A cited tool name existing is NOT enough — that is the model's own say-so, and
+filler like `c0`/`p0` attached to a real tool name would pass it. So each pill
+faces two checks:
+
+1. **Citation.** Every name in the pill's `tools` must exist in
+   `.vendo/tools.json`.
+2. **Lexical.** The visible chip + prompt and the cited capability's name +
+   description are both normalized — camelCase split, lowercased, split on
+   non-alphanumerics, stopwords and the `host_` prefix removed, trailing "s"
+   folded — and must share at least one meaningful token.
+
+camelCase splitting is load-bearing: tool names are `host_createOrder`, and
+splitting on non-alphanumerics alone yields `createorder`, which matches no
+human sentence. Two-character tokens are dropped as noise, which is also what
+reduces `c0`/`p0` to nothing at all.
+
+A pill failing either check is DROPPED and the reason logged. If that leaves
+fewer than the target, the stage ships fewer — it never pads. A short strip of
+pills that all work beats a full one carrying a pill that refuses when a
+prospect clicks it.
+
+Also hardened from this live run: the reply extractor no longer spans
+first-brace to last-brace. A model answered, wrote "Wait, I need a single JSON
+object", then emitted a corrected one — the old span swallowed all three
+fragments and failed on valid output. It now scans complete top-level objects
+(string- and escape-aware) and takes the last one carrying chips.
 
 Accepted consequence: with the arc's three authored beats plus derived pills,
 `demo-beats` capture now plays up to five beats instead of three (~2 extra

@@ -1,32 +1,32 @@
 {
-  "id": "fidelity-proof-e",
+  "id": "fidelity-proof-g",
   "prospect": "Maple",
   "ctaUrl": "https://cal.com/yousefhelal",
   "beats": [
     {
       "key": "spending-by-category",
-      "prompt": "Show me my spending breakdown by category for this month.",
-      "chip": "Spending by category"
+      "prompt": "Show me my spending by category for this period.",
+      "chip": "Show spending by category"
     },
     {
-      "key": "send-rent",
-      "prompt": "Send $1,200 to my landlord from checking.",
-      "chip": "Send rent payment"
+      "key": "budget-progress",
+      "prompt": "Show my budgets and how much I've spent so far in each category.",
+      "chip": "Show budget progress"
     },
     {
-      "key": "find-subscriptions",
-      "prompt": "List all my recurring charges and subscriptions so I can spot ones I forgot about.",
-      "chip": "Find recurring subscriptions"
+      "key": "transfer-to-friend",
+      "prompt": "Transfer $50 from checking to Alex.",
+      "chip": "Send money to a friend"
     },
     {
-      "key": "order-lunch",
-      "prompt": "Place a delivery order for lunch from my usual spot.",
-      "chip": "Order lunch delivery"
+      "key": "order-dinner",
+      "prompt": "Place a delivery order for dinner tonight.",
+      "chip": "Order dinner delivery"
     },
     {
-      "key": "budget-vs-spend",
-      "prompt": "Show me my budgets alongside how much I've spent in each category so far.",
-      "chip": "Budgets vs actual spend"
+      "key": "recurring-subscriptions",
+      "prompt": "List all my recurring charges and subscriptions.",
+      "chip": "List recurring subscriptions"
     }
   ],
   "caps": {

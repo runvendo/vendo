@@ -21,9 +21,10 @@ import type { DemoBeat, DemoConfig } from "demo-template/demo-config";
 
 /** How many pills the strip shows at most, derived and explicit together. */
 export const maxChips = 5;
-/** How many the derivation aims for when the surface allows it. */
+/** How many the derivation aims for when the surface allows it. It is a
+ * TARGET, not a floor: grounding drops whatever it must and the stage ships
+ * fewer pills rather than padding the strip with ones that do not work. */
 export const targetDerivedChips = 5;
-const minDerivedChips = 4;
 
 /** The `TODO(creator): ` fence `demo:create` puts on the template's samples —
  * a placeholder is NOT an explicit beat and loses to a derived one. */
@@ -37,7 +38,53 @@ export function isPlaceholderBeat(beat: DemoBeat): boolean {
 export interface ExtractedTool {
   name: string;
   description?: string;
+  summary?: string;
   risk?: string;
+}
+
+/**
+ * Glue that carries no capability meaning. Kept deliberately tight: a token
+ * wrongly treated as meaningful can let an unrelated chip through (the failure
+ * this check exists to stop), while a meaningful token wrongly dropped only
+ * costs us a pill — and shipping fewer pills is the safe direction.
+ */
+const stopwords = new Set([
+  "a", "all", "am", "an", "and", "any", "are", "as", "at", "be", "been", "but", "by", "can", "did", "do",
+  "does", "for", "from", "get", "had", "has", "have", "her", "him", "his", "how", "its", "just", "let",
+  "make", "may", "me", "mine", "more", "most", "much", "must", "my", "new", "not", "now", "off", "one",
+  "only", "onto", "our", "out", "over", "own", "per", "please", "put", "should", "so", "some", "such",
+  "than", "that", "the", "their", "them", "then", "there", "these", "they", "this", "those", "through",
+  "too", "under", "until", "use", "very", "was", "way", "were", "what", "when", "where", "which", "while",
+  "who", "why", "will", "with", "would", "you", "your",
+  // The extraction prefix itself, and HTTP verbs that ride generated descriptions.
+  "host", "vendo", "api", "delete", "patch", "post", "put",
+])
+
+/**
+ * Text → the set of meaningful tokens it carries.
+ *
+ * camelCase is split BEFORE lowercasing: tool names are `host_createOrder`,
+ * and splitting on non-alphanumerics alone would yield the single token
+ * `createorder`, which matches no human sentence — the name half of the
+ * grounding check would be dead weight. A trailing "s" is folded so
+ * "invoice"/"invoices" agree; two-character tokens are dropped as noise (this
+ * is also what reduces placeholder text like "c0"/"p0" to nothing at all).
+ */
+export function meaningfulTokens(text: string): Set<string> {
+  return new Set(
+    text
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length > 2 && !stopwords.has(token))
+      .map((token) => (token.length > 3 && token.endsWith("s") ? token.slice(0, -1) : token)),
+  )
+}
+
+/** What a capability is "about": its name (minus the extraction prefix) plus
+ * whatever prose the extractor recorded for it. */
+export function capabilityTokens(tool: ExtractedTool): Set<string> {
+  return meaningfulTokens(`${tool.name} ${tool.summary ?? ""} ${tool.description ?? ""}`)
 }
 
 /**
@@ -65,6 +112,7 @@ export async function readExtractedTools(appDir: string): Promise<ExtractedTool[
     .map((tool) => ({
       name: String(tool["name"] ?? ""),
       ...(typeof tool["description"] === "string" ? { description: tool["description"] } : {}),
+      ...(typeof tool["summary"] === "string" ? { summary: tool["summary"] } : {}),
       ...(typeof tool["risk"] === "string" ? { risk: tool["risk"] } : {}),
     }))
     .filter((tool) => tool.name !== "" && isProductTool(tool.name));
@@ -131,10 +179,60 @@ Write ${targetDerivedChips} example prompts a ${options.prospect} user would pla
 - Vary them: at least one that renders a view over data, and at least one that takes an action.
 - "chip" is a short label (2-5 words, sentence case). "prompt" is the full sentence typed into the composer.
 - "key" is a lowercase-hyphenated slug, unique.
-- "tools" lists the tool names from the surface above that the prompt needs, copied EXACTLY. At least one. This is checked against the surface and a prompt citing anything not listed above is discarded, so do not guess a name.
+- "tools" lists the tool names from the surface above that the prompt needs, copied EXACTLY. At least one. Do not guess a name.
+- Two automatic checks discard a pill, so write to pass them: the cited names must exist in the surface above, AND the visible chip+prompt must share at least one real word with the cited capability's name or description. Say "invoices" for a tool about invoices — a pill whose wording has nothing in common with what it cites is thrown away.
 
 Reply with JSON ONLY, no prose or code fences:
 {"chips":[{"key":"...","chip":"...","prompt":"...","tools":["host_..."]}]}`;
+}
+
+/**
+ * Pulls the `chips` array out of a model reply.
+ *
+ * Not "first `{` to last `}`": observed live, a model answered with one
+ * object, wrote "Wait, I need a single JSON object", then emitted the corrected
+ * one — and spanning brace-to-brace swallowed all three fragments into
+ * something unparseable. So scan for COMPLETE top-level objects (brace depth,
+ * string- and escape-aware) and take the LAST one that actually carries chips:
+ * when a model corrects itself, its final answer is the one it means.
+ */
+function extractChipsArray(raw: string): unknown[] | undefined {
+  const candidates: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') inString = true;
+    else if (character === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0 && start !== -1) {
+        candidates.push(raw.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+  for (const candidate of candidates.reverse()) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    const chips = (parsed as { chips?: unknown }).chips;
+    if (Array.isArray(chips) && chips.length > 0) return chips;
+  }
+  return undefined;
 }
 
 /**
@@ -152,27 +250,20 @@ Reply with JSON ONLY, no prose or code fences:
  * The citations are validation input only; they never reach demo.config.json
  * (its shape is fixed, and the chip strip has no use for them).
  */
-export function parseChipsReply(raw: string, surface: readonly ExtractedTool[]): DemoBeat[] {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end <= start) {
-    throw new Error(`Chip derivation returned no JSON object:\n${raw.slice(0, 500)}`);
+export function parseChipsReply(
+  raw: string,
+  surface: readonly ExtractedTool[],
+  onDropped?: (message: string) => void,
+): DemoBeat[] {
+  const chips = extractChipsArray(raw);
+  if (chips === undefined) {
+    throw new Error(`Chip derivation returned no usable {"chips": [...]} object:\n${raw.slice(0, 800)}`);
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1));
-  } catch (error) {
-    throw new Error(
-      `Chip derivation returned unparseable JSON (${error instanceof Error ? error.message : String(error)}):\n${raw.slice(0, 500)}`,
-    );
-  }
-  const chips = (parsed as { chips?: unknown }).chips;
-  if (!Array.isArray(chips)) throw new Error(`Chip derivation returned no "chips" array:\n${raw.slice(0, 500)}`);
 
-  const known = new Set(surface.map((tool) => tool.name));
+  const byName = new Map(surface.map((tool) => [tool.name, tool]));
   const beats: DemoBeat[] = [];
   const seen = new Set<string>();
-  const ungrounded: string[] = [];
+  const dropped: string[] = [];
   for (const entry of chips) {
     if (typeof entry !== "object" || entry === null) continue;
     const { key, chip, prompt, tools } = entry as Record<string, unknown>;
@@ -180,12 +271,26 @@ export function parseChipsReply(raw: string, surface: readonly ExtractedTool[]):
     const slug = key.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     if (slug === "" || chip.trim() === "" || prompt.trim() === "" || seen.has(slug)) continue;
 
-    // The grounding check. A pill citing no tool, or one the surface does not
-    // have, describes something this demo cannot do — drop it and say so.
+    // (1) The citation must name capabilities this demo actually has.
     const cited = Array.isArray(tools) ? tools.filter((name): name is string => typeof name === "string") : [];
-    const invented = cited.filter((name) => !known.has(name));
-    if (cited.length === 0 || invented.length > 0) {
-      ungrounded.push(`"${chip.trim()}" (${cited.length === 0 ? "cites no tool" : `unknown: ${invented.join(", ")}`})`);
+    const unknown = cited.filter((name) => !byName.has(name));
+    if (cited.length === 0 || unknown.length > 0) {
+      dropped.push(`"${chip.trim()}" (${cited.length === 0 ? "cites no tool" : `unknown tool: ${unknown.join(", ")}`})`);
+      continue;
+    }
+
+    // (2) …and the VISIBLE text must actually be about one of them. Without
+    // this the citation is just the model's own say-so: filler like "c0"/"p0"
+    // attached to a real tool name would sail through and reach a prospect.
+    const visible = meaningfulTokens(`${chip} ${prompt}`);
+    const grounded = cited.some((name) => {
+      for (const token of capabilityTokens(byName.get(name) as ExtractedTool)) {
+        if (visible.has(token)) return true;
+      }
+      return false;
+    });
+    if (!grounded) {
+      dropped.push(`"${chip.trim()}" (text shares nothing with ${cited.join(", ")})`);
       continue;
     }
 
@@ -194,11 +299,10 @@ export function parseChipsReply(raw: string, surface: readonly ExtractedTool[]):
     // contract, so `demo-beats` only needs it to settle cleanly.
     beats.push({ key: slug, chip: chip.trim(), prompt: prompt.trim() });
   }
-  if (beats.length < minDerivedChips) {
-    const dropped = ungrounded.length === 0 ? "" : `\nDropped as ungrounded: ${ungrounded.join("; ")}`;
-    throw new Error(
-      `Chip derivation produced only ${beats.length} usable chips (need ${minDerivedChips}-${targetDerivedChips}).${dropped}\n${raw.slice(0, 500)}`,
-    );
+  // Ship fewer, never pad: a short strip of pills that all work beats a full
+  // one carrying a pill that refuses when a prospect clicks it.
+  if (dropped.length > 0) {
+    onDropped?.(`${dropped.length} chip(s) dropped as ungrounded: ${dropped.join("; ")}`);
   }
   return beats.slice(0, targetDerivedChips);
 }
@@ -304,7 +408,16 @@ export async function runDeriveChips(
   const chips = parseChipsReply(
     await model(buildChipsPrompt({ prospect: args.prospect ?? config.prospect, tools })),
     tools,
+    (message) => write(`[chips] ${message}`),
   );
+  if (chips.length === 0) {
+    // Grounding rejected everything. Shipping the demo's existing beats
+    // untouched is the honest outcome — the alternative is padding the strip
+    // with pills that refuse when a prospect clicks them.
+    write("[chips] nothing survived grounding — leaving the demo's beats untouched");
+    const keptOnly = config.beats.filter((beat) => !isPlaceholderBeat(beat)).length;
+    return { chips: [], beats: config.beats, derived: 0, kept: keptOnly };
+  }
   const beats = mergeBeats(config.beats, chips);
   const kept = beats.length - beats.filter((beat) => chips.some((candidate) => candidate.key === beat.key)).length;
 
