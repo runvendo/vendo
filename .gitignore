@@ -35,15 +35,18 @@ apps/demo-*
 !apps/demo-accounting/
 !apps/demo-template/
 
-# Factory lane scratch at the repo ROOT — a lane's working notes, contract and
-# park file are its own, never the repo's. Two of these (progress.md, log.md)
-# had already leaked onto main and are removed in the same change that adds
-# these rules. Root-anchored on purpose: docs/ and package dirs may legitimately
-# carry a file of the same name.
+# Factory lane scratch at the repo ROOT — a lane's working notes, contract,
+# park file and report are its own, never the repo's. Four of these had already
+# leaked onto main (progress.md, log.md, HANDOFF-harness.md, LANE-REPORT.md)
+# and are removed in the same change that adds these rules. Root-anchored on
+# purpose: docs/ and package dirs may legitimately carry a file of the same
+# name. HANDOFF*.md covers the per-lane contracts the conductor compiles
+# (HANDOFF-<lane>.md) as well as a bare HANDOFF.md.
 /progress.md
 /log.md
 /PARKED.md
-/HANDOFF.md
+/HANDOFF*.md
+/LANE-REPORT.md
 
 # Vendo demo runtime state (PGlite) — never committed.
 apps/*/.vendo/data/
