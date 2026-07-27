@@ -35,6 +35,12 @@ anything that would improve the result. Append every Q&A here.
 - F2: criterion-26 evidence must be IN lane commits (PNGs were gitignored); screenshots with visible measured timings + cache-miss progress sequence under docs/verification/demo-live-readiness/hygiene/.
 - F3: committed store-assertion script reads obsolete doc.nodes/doc.components; fix to doc.tree.nodes and commit passing output.
 
+**2026-07-26 post-merge addendum (PR #601 merged; bot triage round, branch demo-hygiene-followup off current origin/main):**
+- A1: chip pre-generation idempotency keys on the PROMPT (not chip.key) — an edited prompt regenerates; test: change a prompt, re-seed, manifest pairs the new prompt with a NEW app.
+- A2: Cadence assistant/overlay threads pass discoverability="quiet" like Maple; test or screenshot.
+- A3: pregenerateChips guards concurrent runs (boot + reset overlap) with an in-flight lock; unit test with two concurrent calls.
+Full suite green once, commit, STATUS: DONE with sha. No PR — conductor lands it.
+
 
 ## Operating loop
 1. GATHER: read progress.md + this file. Pick the first unfinished,

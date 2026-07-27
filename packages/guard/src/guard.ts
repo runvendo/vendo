@@ -281,6 +281,25 @@ class GuardImplementation implements VendoGuard {
     return (await this.#checkWithMetadata(call, descriptor, ctx)).decision;
   }
 
+  /** genqa defect 1 — a preview of `check()`'s verdict for a caller that is
+   *  about to make (or ask the SDK to make) the REAL, dispatching call
+   *  itself: a "run" verdict here never spends the write-budget/call-rate
+   *  breakers, because the caller's own follow-up (calling `check()` again,
+   *  or executing through a guard-bound registry) will spend it for real
+   *  moments later. An "ask"/"block" verdict is unaffected — it parks/audits
+   *  exactly as `check()` does, because for those outcomes THIS is the only
+   *  evaluation that ever runs. Optional on `VendoGuard` (feature-detected,
+   *  packages/agent tools.ts): a guard that omits it falls back to plain
+   *  `check()`, restoring the double-count this exists to avoid rather than
+   *  breaking a caller that only implements the base `Guard` interface. */
+  async previewCheck(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<GuardDecision> {
+    return (await this.#checkWithMetadata(call, descriptor, ctx, false)).decision;
+  }
+
   async report(event: AuditEvent): Promise<void> {
     const normalized: AuditEvent = {
       ...event,
@@ -460,13 +479,44 @@ class GuardImplementation implements VendoGuard {
     return { posture: "unconfigured" };
   }
 
+  /**
+   * genqa defect 1 (double-count): a "run" verdict here mutates the call-rate
+   * window (#recordCall) and the write budget (below) as a side effect —
+   * `check()`'s documented/tested contract is a fresh, un-memoized
+   * evaluation every time (repeat calls with the identical id legitimately
+   * expect a different answer once policy/ctx/state changes — see
+   * policy.test.ts and approval-replay.test.ts), so those side effects can
+   * never be skipped by remembering a PAST call's id or inputs.
+   *
+   * The agent bridge (packages/agent tools.ts) calls `guard.check()` twice
+   * for what is, structurally, ONE logical call: once from the AI SDK's
+   * `needsApproval` hook (a preview — "should the SDK pause before running
+   * this?") and, when that preview says no, again moments later from
+   * `execute()` (the REAL, dispatching check, reached through the
+   * guard-bound registry — there is no unguarded path around it). Both
+   * charge the SAME breakers for what the caller experiences as one call.
+   *
+   * `commitRun` is the fix: it distinguishes "decide, and if this resolves
+   * to run, CHARGE for it" (the default — `check()`'s existing public
+   * contract, and `bind().execute()`'s internal use) from "decide, without
+   * charging a run" (the PREVIEW-ONLY seam `previewCheck()` below exposes).
+   * A previewed "run" is deliberately un-committed: the caller who asked to
+   * preview is never the one who gets to spend the budget — the very next
+   * real check (moments later, same call) does that once, for real. A
+   * previewed "ask"/"block" is unaffected either way — parking and audit
+   * already happen exactly once, because the SDK never calls `execute()` at
+   * all for a call its own preview paused.
+   */
   async #checkWithMetadata(
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
+    commitRun = true,
   ): Promise<CompletedDecision> {
     const effectiveDescriptor = await this.#effectiveDescriptor(call, descriptor, ctx);
-    const callsTripped = this.#recordCall(ctx.principal.subject);
+    const callsTripped = commitRun
+      ? this.#recordCall(ctx.principal.subject)
+      : this.#peekCallsTripped(ctx.principal.subject);
     const metadata = await this.#pipeline(call, effectiveDescriptor, ctx);
     let draft = metadata.decision;
 
@@ -496,7 +546,9 @@ class GuardImplementation implements VendoGuard {
       // (which is all writesTripped can be) always park.
       if ((callsTripped || writesTripped) && !neverParkAppRead(effectiveDescriptor, ctx)) {
         draft = { action: "ask", decidedBy: "breaker" };
-      } else if (write) {
+      } else if (write && commitRun) {
+        // Uncommitted preview: the run is real, but the SPEND is not — the
+        // moments-later real check (execute, commitRun=true) does this once.
         this.#writeCounts.set(runKey, { count: writes + 1, touchedAt: Date.now() });
       }
     }
@@ -597,6 +649,19 @@ class GuardImplementation implements VendoGuard {
     active.push(at);
     this.#callWindows.set(subject, active);
     return active.length > this.#maxCallsPerMinute;
+  }
+
+  /** `#recordCall`'s read-only twin for `previewCheck` (commitRun=false): the
+   *  same "would this trip the per-minute breaker" verdict, +1 for the call
+   *  this preview itself represents (the moments-later real check registers
+   *  it for real), but never touches `#callWindows` — a preview must answer
+   *  truthfully without spending the window slot the real check still owes. */
+  #peekCallsTripped(subject: string): boolean {
+    const cutoff = Date.now() - 60_000;
+    const active = (this.#callWindows.get(subject) ?? []).filter(
+      (timestamp) => timestamp > cutoff,
+    );
+    return active.length + 1 > this.#maxCallsPerMinute;
   }
 
   /**

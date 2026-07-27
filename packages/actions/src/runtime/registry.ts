@@ -141,13 +141,18 @@ interface RegistryConfig {
   /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
   capabilities?: CapabilitiesFile;
   /** Inject the v3 overrides doc directly instead of reading
-   *  `.vendo/overrides.json` from `dir` — the hosted-config seam (cse lane 3):
-   *  the umbrella passes cloud-published overrides here when there is no local
-   *  file. Takes precedence over the file read (mirrors `tools`/`capabilities`).
-   *  The provider form is resolved ONCE through the memoized loadHost (boot-once,
-   *  no hot-swap) and MAY be async so the umbrella can await a first-request
-   *  cloud fetch; resolving to undefined falls back to the `dir` file read.
-   *  `tools.json` always comes from `dir`. */
+   *  `.vendo/overrides.json` from `dir`. Two callers share this seam: the
+   *  unified try surface (Task 15a) passes an in-memory doc for non-file
+   *  hosts, and the hosted-config seam (cse lane 3) lets the umbrella pass
+   *  cloud-published overrides when there is no local file. Takes precedence
+   *  over the file read whole-file (mirrors `tools`/`capabilities`), and the
+   *  corrections apply to host and connector tools the same way the dir
+   *  read's do (mergeOverride at load). The provider form is resolved ONCE
+   *  through the memoized loadHost (boot-once, no hot-swap) and MAY be async
+   *  so the umbrella can await a first-request cloud fetch; resolving to
+   *  undefined falls back to the `dir` file read. `tools.json` always comes
+   *  from `dir`. The resolved doc is validated at load with the authored-file
+   *  posture: a malformed doc throws `validation` loudly. */
   overrides?: OverridesFileV3 | (() => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>);
   /**
    * 04 §6: the guard-bound execution seam every compound step routes through.
@@ -742,6 +747,16 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     }
   }
 
+  function parseOverrides(value: unknown, source: string): OverridesFileV3 {
+    try {
+      return overridesFileV3Schema.parse(value);
+    } catch (cause) {
+      throw new VendoError("validation", `Invalid Vendo actions file ${source}`, {
+        cause: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+
   // The product's core promise, warned at the seam that knows: an agent with
   // zero live host tools serves users it cannot help (field case: an
   // extraction stripped to tools: [] shipped a silently useless agent).
@@ -769,14 +784,20 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const configuredCapabilities = config.capabilities === undefined
         ? undefined
         : parseCapabilities(config.capabilities, "config.capabilities");
-      // cse lane 3 — an injected overrides doc (hosted config) resolved ONCE
-      // through this memoized loadHost. The provider form may be async so the
-      // umbrella can await a first-request cloud fetch (reliable for the
-      // security-relevant enablement path); it resolves to undefined when the
-      // surface is not cloud-owned, letting the dir read below handle the file.
-      const injectedOverrides = typeof config.overrides === "function"
+      // cse lane 3 — an injected overrides doc (hosted config or the try
+      // surface's in-memory profile) resolved ONCE through this memoized
+      // loadHost. The provider form may be async so the umbrella can await a
+      // first-request cloud fetch (reliable for the security-relevant
+      // enablement path); it resolves to undefined when the surface is not
+      // cloud-owned, letting the dir read below handle the file. The resolved
+      // doc parses loudly (Task 15a posture: a malformed injected doc must
+      // never be silently ignored).
+      const resolvedOverrides = typeof config.overrides === "function"
         ? await (config.overrides as () => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>)()
         : config.overrides;
+      const injectedOverrides = resolvedOverrides === undefined
+        ? undefined
+        : parseOverrides(resolvedOverrides, "config.overrides");
       if (!config.dir) {
         return {
           tools: configuredTools ?? [],
@@ -789,11 +810,19 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       }
       // Format v3 (cse lane 1): each file parses per its own format tag — v1
       // keeps its exact v1 errors, everything else must be v3 and fails loud.
-      // An injected overrides doc (cse lane 3 hosted config) wins over the
-      // overrides.json read; tools.json still comes from the dir.
+      // An injected overrides doc (cse lane 3 hosted config, or the unified
+      // try surface's in-memory profile.overrides) wins over the
+      // overrides.json read — AND config.tools (profile.tools) skips the
+      // tools.json read the same way. This isn't just precedence: on a
+      // filesystem-less venue (a Worker on workerd) the disk leg must never
+      // run at all when the in-memory piece already fully substitutes for it
+      // — see readOptionalVendoJson's non-ENOENT handling for the residual
+      // reads that DO still run.
       const [toolsFile, overridesFileRead] = await Promise.all([
-        readOptionalVendoJson(config.dir, "tools.json", (value) =>
-          vendoFileVersion(value) === 1 ? toolsFileSchema.parse(value) : toolsFileV3Schema.parse(value)),
+        configuredTools !== undefined
+          ? Promise.resolve(undefined)
+          : readOptionalVendoJson(config.dir, "tools.json", (value) =>
+            vendoFileVersion(value) === 1 ? toolsFileSchema.parse(value) : toolsFileV3Schema.parse(value)),
         injectedOverrides !== undefined
           ? Promise.resolve(undefined)
           : readOptionalVendoJson(config.dir, "overrides.json", (value) =>
@@ -810,8 +839,13 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // ingest through the legacy fold rather than silently dropping authored
       // work; overrides.json-carried entries win by name (the sync path's
       // conflicted-state posture), the file's unique entries are added.
+      // config.capabilities (profile.capabilities) wins outright over the
+      // whole file below, so — same as tools.json above — the disk leg is
+      // skipped entirely rather than read-then-discarded.
       const fullyV3 = toolsV3 !== undefined && overridesV3 !== undefined;
-      const capabilitiesFile = await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value));
+      const capabilitiesFile = configuredCapabilities !== undefined
+        ? undefined
+        : await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value));
       const legacy: LegacyVendoFiles = {
         ...(toolsV1 === undefined ? {} : { tools: toolsV1 }),
         ...(overridesV1 === undefined ? {} : { overrides: overridesV1 }),

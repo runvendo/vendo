@@ -43,6 +43,10 @@
       "types": "./dist/cli/extract/index.d.ts",
       "default": "./dist/cli/extract/index.js"
     },
+    "./try": {
+      "types": "./dist/try.d.ts",
+      "default": "./dist/try.js"
+    },
     "./react": {
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"
@@ -94,6 +98,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
     "@vendoai/actions": "workspace:*",
     "@vendoai/agent": "workspace:*",
     "@vendoai/apps": "workspace:*",
@@ -134,7 +139,6 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "3.0.12",
     "@auth/core": "^0.34.3",
     "@clerk/backend": "^3.11.7",
     "@mastra/core": "1.51.0",

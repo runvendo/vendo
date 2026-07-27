@@ -58,9 +58,12 @@ Vendo Cloud is optional. When `VENDO_API_KEY` is set, init validates it and
 states the plan and what it unlocks; when it is absent, init prints one calm
 line and offers `vendo login` only when a starter key would help.
 
-To see every Vendo surface and state (streaming, approvals, slots, the
-workspace page) against scripted data first — no model key, no wiring — run
-`npx vendo playground`.
+To see your product's agent before installing anything, run `npx vendo try`
+from your app's repo: a read-only pass extracts tools and theme, a live local
+demo opens in seconds, and the AI engine ladder deepens it in the background.
+Nothing is written to your repo and no key is required; with zero keys the
+surfaces serve against scripted data. (`vendo try` replaces the retired
+`vendo playground`.)
 
 ## AI polish (tool judgment and theme)
 

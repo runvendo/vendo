@@ -28,8 +28,11 @@ function PageSurface() {
       <div className="fl-page-body">
         <div className="fl-page-pane">
           {/* demo-refresh Part 6 — the scenario ladder as starter cards on the
-              empty landing (same set the overlay's thread shows). */}
-          <VendoThread suggestions={suggestions} />
+              empty landing (same set the overlay's thread shows).
+              discoverability="quiet" matches Maple: the fire-once
+              greeting-as-tutorial would otherwise replace the cards+chips on
+              the FIRST-ever visit (and burn the flag). */}
+          <VendoThread suggestions={suggestions} discoverability="quiet" />
         </div>
       </div>
       {activityOpen ? (

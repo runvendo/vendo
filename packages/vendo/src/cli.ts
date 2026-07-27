@@ -10,15 +10,16 @@ import { runExtractApply } from "./cli/extract/apply.js";
 import { runInit, type InitOptions } from "./cli/init.js";
 import { runKnowledge } from "./cli/knowledge/index.js";
 import { runMcp } from "./cli/mcp/index.js";
-import { runPlayground } from "./cli/playground.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
+import { runTry } from "./cli/try.js";
 
 const HELP = `vendo — install your product's agent
 
 Usage: vendo <command> [dir] [options]
 
 Commands:
+  try             See your product's agent before installing: profile this repo read-only, serve a live local demo
   init [dir]      Set up Vendo: wire the handler, extract tools + theme, resolve a model key
   login           Claim a Vendo Cloud key: approve in the browser; the key lands in .env.local
   doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
@@ -27,7 +28,6 @@ Advanced:
   sync [dir]      Re-extract tools and baselines, then AI-enrich entries the code diff affected (keyless: structural only; --strict is the CI gate)
   eject <surface> [dir]  Copy a shipped chrome surface's presentation source into your repo (--list to see surfaces)
   extract [dir]   Apply a coding agent's extraction draft through the deterministic guards (--apply <draft.json>)
-  playground      Render every Vendo surface against scripted data in the browser — no model key needed
   knowledge <verb> Sync local docs/glossary/API sources into the product knowledge base (add, list, remove, sync)
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API
@@ -44,7 +44,7 @@ Options:
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
-  --engine <name>            Init/sync: pin the AI engine (claude, codex, npx) instead of first-available
+  --engine <name>            Init/try/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
   --url <url>                Doctor/server-json: mounted wire base or public MCP URL
@@ -52,8 +52,9 @@ Options:
   --review                   Sync only: show the AI enrichment narrative and confirm before writing
   --full                     Sync only: force full re-enrichment instead of the watermark diff
   --no-watermark             Sync only: workspace-internal sync — no watermark bookkeeping, no AI enrichment
-  --port <port>              Playground only: listen on a fixed port (default: any free port)
-  --no-open                  Playground only: print the URL without opening the browser
+  --port <port>              Try only: listen on a fixed port (default: any free port)
+  --no-open                  Try only: print the URL without opening the browser
+  --no-ai                    Try only: skip the background AI deepening (the demo stays on the deterministic profile)
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
@@ -82,7 +83,9 @@ const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "
     bad value fails as loudly as an unknown flag, with the valid choices. */
 const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
 const INIT_FRAMEWORK_VALUES = ["next", "express", "custom"];
-const INIT_ENGINE_VALUES = ["claude", "codex", "npx"];
+/** The user-facing engine families (extraction.ts's ENGINE_FAMILIES values) —
+    one ladder, so `init --engine` and `try --engine` accept the same names. */
+const ENGINE_VALUES = ["claude", "codex", "npx"];
 const EXTRACT_FLAGS = new Set(["--force"]);
 const EXTRACT_VALUE_OPTIONS = ["--apply"];
 const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
@@ -115,31 +118,45 @@ function optionErrors(args: string[], flags: Set<string>, valueOptions: string[]
   return errors;
 }
 
-/** Playground follows the ENG-335 rule too: unknown flags fail loudly. */
-function playgroundOptionErrors(args: string[]): { errors: string[]; port?: number } {
+/** `vendo try` follows the ENG-335 rule too: unknown flags (and stray
+    positionals — try always profiles the cwd) fail loudly, and a bad
+    --engine names the valid families instead of silently running keyless. */
+function tryOptionErrors(args: string[]): { errors: string[]; port?: number; engine?: string } {
   const errors: string[] = [];
   let port: number | undefined;
-  const parsePort = (value: string | undefined, flag: string): void => {
+  let engine: string | undefined;
+  const parsePort = (value: string | undefined): void => {
     const parsed = value !== undefined && /^\d+$/.test(value) ? Number(value) : NaN;
     if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535) port = parsed;
-    else errors.push(`${flag} requires a port number (1-65535)`);
+    else errors.push("--port requires a port number (1-65535)");
+  };
+  const parseEngine = (value: string | undefined): void => {
+    if (value !== undefined && ENGINE_VALUES.includes(value)) engine = value;
+    else errors.push(`--engine must be one of ${ENGINE_VALUES.join(", ")} (example: vendo try --engine claude)`);
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
-    if (arg === "--no-open") continue;
-    if (arg === "--port") {
+    if (arg === "--no-open" || arg === "--no-ai") continue;
+    if (arg === "--port" || arg === "--engine") {
       const value = args[index + 1];
-      parsePort(value !== undefined && value.startsWith("--") ? undefined : value, "--port");
-      if (value !== undefined && !value.startsWith("--")) index += 1;
+      const usable = value !== undefined && !value.startsWith("--");
+      (arg === "--port" ? parsePort : parseEngine)(usable ? value : undefined);
+      if (usable) index += 1;
       continue;
     }
     if (arg.startsWith("--port=")) {
-      parsePort(arg.slice("--port=".length), "--port");
+      parsePort(arg.slice("--port=".length));
       continue;
     }
-    errors.push(arg.startsWith("--") ? `unknown option: ${arg}` : `unexpected argument: ${arg}`);
+    if (arg.startsWith("--engine=")) {
+      parseEngine(arg.slice("--engine=".length));
+      continue;
+    }
+    errors.push(arg.startsWith("--")
+      ? `unknown option: ${arg}`
+      : `unexpected argument: ${arg} — try profiles the current directory; cd there and rerun`);
   }
-  return { errors, port };
+  return { errors, port, engine };
 }
 
 function target(args: string[]): string {
@@ -194,8 +211,8 @@ export async function main(argv: string[]): Promise<number> {
       problems.push("--cloud-key must be a Vendo Cloud key (vnd_ + 40 hex; `vendo login` issues one)");
     }
     const engine = option(args, "--engine");
-    if (engine !== undefined && !INIT_ENGINE_VALUES.includes(engine)) {
-      problems.push(`--engine must be one of ${INIT_ENGINE_VALUES.join(", ")} (example: vendo init --engine codex)`);
+    if (engine !== undefined && !ENGINE_VALUES.includes(engine)) {
+      problems.push(`--engine must be one of ${ENGINE_VALUES.join(", ")} (example: vendo init --engine codex)`);
     }
     if (cloudKey !== undefined && args.includes("--byo")) {
       problems.push("--cloud-key and --byo answer the same question — pass one or the other");
@@ -271,19 +288,39 @@ export async function main(argv: string[]): Promise<number> {
       yes: args.includes("--yes"),
     });
   }
-  if (command === "playground") {
-    const { errors, port } = playgroundOptionErrors(args);
+  if (command === "refine") {
+    // Retired in #568 (format v3): `vendo sync` now owns AI enrichment of
+    // .vendo (compounds/briefs live in .vendo/overrides.json), and the try
+    // surface's refine panel carries the conversational-correction loop —
+    // the refine ENGINE lives on there (src/refine.ts).
+    console.error("vendo refine was retired — `vendo sync` AI-enriches .vendo now (compounds and briefs live in .vendo/overrides.json), and `vendo try` offers conversational corrections in its refine panel. Run: vendo sync");
+    return 1;
+  }
+  if (command === "try") {
+    const { errors, port, engine } = tryOptionErrors(args);
     if (errors.length > 0) {
-      console.error(`vendo playground: ${errors.join("; ")}\n\n${HELP}`);
+      console.error(`vendo try: ${errors.join("; ")}\n\n${HELP}`);
       return 1;
     }
-    return runPlayground({ port, open: !args.includes("--no-open") });
+    return runTry({
+      port,
+      open: !args.includes("--no-open"),
+      ai: !args.includes("--no-ai"),
+      ...(engine === undefined ? {} : { engine }),
+    });
+  }
+  if (command === "playground") {
+    // Retired: `vendo try` absorbed the playground's job (the scripted
+    // surfaces still serve when try runs keyless or outside a repo). The
+    // bundle machinery lives on in cli/playground.ts and cli/playground/.
+    console.error("vendo playground was retired — `vendo try` does the same job (and more): scripted surfaces with no model key, plus a live profile of your repo when run inside one. Run: vendo try");
+    return 1;
   }
   if (command === "sync") {
     const problems = optionErrors(args, SYNC_FLAGS, SYNC_VALUE_OPTIONS);
     const engine = option(args, "--engine");
-    if (engine !== undefined && !INIT_ENGINE_VALUES.includes(engine)) {
-      problems.push(`--engine must be one of ${INIT_ENGINE_VALUES.join(", ")} (example: vendo sync --engine codex)`);
+    if (engine !== undefined && !ENGINE_VALUES.includes(engine)) {
+      problems.push(`--engine must be one of ${ENGINE_VALUES.join(", ")} (example: vendo sync --engine codex)`);
     }
     if (args.includes("--review") && args.includes("--json")) {
       problems.push("--review is interactive and cannot combine with --json");

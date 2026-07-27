@@ -30,8 +30,10 @@ export type OpenSurface =
    * The build turn terminally FAILED (model error, quota, timeout): the app
    * will never become servable. The embed resolves promptly to the failed
    * vocabulary with this reason instead of polling to its build deadline.
+   * `prompt` (when the failed record carries it) feeds the retry affordance —
+   * re-issuing the exact create instead of the capped title.
    */
-  | { kind: "failed"; reason: string; retryable?: boolean };
+  | { kind: "failed"; reason: string; retryable?: boolean; prompt?: string };
 
 /** Existing-agents polish — the flag-gated build-window answer: what
  *  `GET /apps/:id/open?pending=1` returns while the app is not yet servable

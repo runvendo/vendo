@@ -176,19 +176,94 @@ describe("existing-agents embeds", () => {
       await waitFor(() => expect(screen.getByText(/couldn't finish/i)).toBeDefined());
       // The honest reason is shown, not just the generic failed beat.
       expect(screen.getByText("quota exhausted")).toBeDefined();
-      // A non-retryable failure carries no retry hint.
+      // A non-retryable failure carries no retry affordance.
       expect(screen.queryByText(/Retryable/)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
       // Resolved terminally — no skeletons still building.
       expect(screen.queryByRole("status")).toBeNull();
     });
 
-    it("shows the retry hint when the terminal failure is retryable", async () => {
+    it("shows a retry BUTTON when the terminal failure is retryable — never a dead embed (speed-core, criterion 8)", async () => {
       const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry", title: "Retry tracker" };
-      wire.state.failedApps.set("app_retry", { reason: "generation failed", retryable: true });
+      // The shape the build watchdog persists: terminal, retryable, with the
+      // original prompt riding the record so the retry re-issues it exactly.
+      wire.state.failedApps.set("app_retry", {
+        reason: "the build never finished — the server-side build task stalled or died without reporting a failure.",
+        retryable: true,
+        prompt: "Build a subscriptions tracker with all my recurring charges and their renewal dates",
+      });
       mount(<VendoAppEmbed refValue={doomed} />);
       await waitFor(() => expect(screen.getByText(/couldn't finish/i)).toBeDefined());
-      expect(screen.getByText("generation failed")).toBeDefined();
-      expect(screen.getByText(/Retryable — ask for the app again/)).toBeDefined();
+      expect(screen.getByText(/the build never finished/)).toBeDefined();
+      expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
+    });
+
+    it("retry re-issues the create with the persisted prompt and resolves into the fresh build", async () => {
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry2", title: "Net worth…" };
+      wire.state.failedApps.set("app_retry2", {
+        reason: "the build never finished",
+        retryable: true,
+        prompt: "Build me a net-worth dashboard with my total balance and recent transactions",
+      });
+      mount(<VendoAppEmbed refValue={doomed} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+      // The EXACT persisted prompt is re-issued, not the capped embed title.
+      await waitFor(() => expect(wire.requests).toContainEqual(
+        expect.objectContaining({
+          method: "POST",
+          path: "/apps",
+          body: { prompt: "Build me a net-worth dashboard with my total balance and recent transactions" },
+        }),
+      ));
+      // The embed leaves the failed vocabulary and resolves into the new app.
+      await waitFor(() => expect(screen.getByText(/app surface/)).toBeDefined(), { timeout: 5000 });
+      expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    });
+
+    it("actions on the retried app target the REPLACEMENT app id, never the dead record (checker F5)", async () => {
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_dead", title: "Refresh board" };
+      wire.state.failedApps.set("app_dead", {
+        reason: "the build never finished",
+        retryable: true,
+        prompt: "Refresh board [with-button]",
+      });
+      mount(<VendoAppEmbed refValue={doomed} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+      // The replacement build serves an action-bound button; click THROUGH it.
+      const refresh = await screen.findByRole("button", { name: "Refresh data" }, { timeout: 5000 });
+      fireEvent.click(refresh);
+      await waitFor(() => {
+        const calls = wire.requests.filter((item) => item.method === "POST" && item.path.endsWith("/call"));
+        expect(calls.length).toBeGreaterThan(0);
+        for (const call of calls) expect(call.path).not.toContain("app_dead");
+        expect(calls.at(-1)?.path).toMatch(/^\/apps\/app_\d+\/call$/);
+      });
+    });
+
+    it("retry falls back to the embed title when the failed record predates the prompt field", async () => {
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry3", title: "Budget board" };
+      wire.state.failedApps.set("app_retry3", { reason: "generation failed", retryable: true });
+      mount(<VendoAppEmbed refValue={doomed} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+      await waitFor(() => expect(wire.requests).toContainEqual(
+        expect.objectContaining({ method: "POST", path: "/apps", body: { prompt: "Budget board" } }),
+      ));
+    });
+
+    it("a failed retry resolves back to the failed vocabulary with the retry button, never a blank", async () => {
+      const doomed: VendoAppRef = { kind: "vendo/app-ref@1", appId: "app_retry4", title: "Alerts inbox" };
+      wire.state.failedApps.set("app_retry4", { reason: "generation failed", retryable: true, prompt: "An alerts inbox" });
+      wire.state.failures.push({
+        method: "POST",
+        path: "/apps",
+        code: "validation",
+        message: "the model could not produce a valid app",
+        status: 400,
+      });
+      mount(<VendoAppEmbed refValue={doomed} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+      await waitFor(() => expect(screen.getByText(/could not produce a valid app/)).toBeDefined());
+      expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
     });
 
     it("resolves the build beat into the app when the build lands mid-poll", async () => {
