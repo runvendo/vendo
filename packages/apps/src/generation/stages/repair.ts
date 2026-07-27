@@ -923,6 +923,9 @@ export const structuredRepair = async (
         noValidFix: result.noValidFixCount,
         rebinds: result.wrapperRebinds,
         ms: Date.now() - repairStart,
+        // Why the rounds were spent for nothing — the residual issues the
+        // caller falls back to the free-form loop with.
+        ...(result.document !== undefined || result.issues.length === 0 ? {} : { issues: [...result.issues] }),
       });
     }
     return result;

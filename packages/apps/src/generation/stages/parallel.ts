@@ -120,6 +120,8 @@ export interface RegionParallelResult {
   fallback?: "no-outline" | "sections-failed" | "assembly-invalid";
   sectionsPlanned?: number;
   sectionsLanded?: number;
+  /** assembly-invalid only: the validation issues the assembled app failed on. */
+  issues?: readonly string[];
 }
 
 export interface RegionParallelHooks {
@@ -146,6 +148,7 @@ export const regionParallelCreate = async (
       ...(result.sectionsPlanned === undefined ? {} : { sectionsPlanned: result.sectionsPlanned }),
       ...(result.sectionsLanded === undefined ? {} : { sectionsLanded: result.sectionsLanded }),
       ms: Date.now() - parallelStart,
+      ...(result.issues === undefined || result.issues.length === 0 ? {} : { issues: [...result.issues] }),
     });
     return result;
   };
@@ -208,5 +211,5 @@ export const regionParallelCreate = async (
       return finish({ document: islandRepaired.document, sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
     }
   }
-  return finish({ fallback: "assembly-invalid", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount });
+  return finish({ fallback: "assembly-invalid", sectionsPlanned: outline.sections.length, sectionsLanded: landedCount, issues: validated.issues });
 };

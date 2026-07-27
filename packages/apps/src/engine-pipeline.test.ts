@@ -921,3 +921,75 @@ describe("end pass (flagged, polish-only, structurally cannot break)", () => {
     expect(calls).toBe(1);
   });
 });
+
+/** The failure reason must ride the diagnostics stream, not just the console.
+ *  A cockpit/bench run generates in a subprocess, so the `[vendo] gen full
+ *  invalid …` log line is swallowed and a failed run reads only as "model
+ *  could not produce a valid app" — the reason is exactly the signal that
+ *  format and guardrail work needs. */
+describe("validation issues on the diagnostics stream", () => {
+  const clean = '<App name="Single"><MetricCard label="Revenue" value="$42k"/></App>';
+  // Every rooted node is a heading: the live "title and no content" class
+  // (prompt "create a component with a big Y", 2026-07-26).
+  const titleOnly = '<App name="Big Y"><Text text="Y" variant="heading"/></App>';
+  const islandTools = [{ name: "host_metric", description: "Revenue metric", risk: "read" }];
+  const fabricating = [
+    '<App name="HQ"><Query id="metric" tool="host_metric"/><MetricCard label="Revenue" value={metric.total}/><Sparky/><Island name="Sparky">',
+    "export default function Sparky() {",
+    "  const [rows, setRows] = useState([]);",
+    "  useEffect(() => { tools.host_metric({}).then((r) => setRows(r.rows)); }, []);",
+    "  return <p>{rows.length * 0.92}</p>;",
+    "}",
+    "</Island></App>",
+  ].join("\n");
+
+  it("a valid:false full-lane attempt carries its issues on the event", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const model = scriptedLanguageModel(() => titleOnly);
+
+    await expect(
+      modelEngine.create({ prompt: "create a component with a big Y" }, deps(model, {
+        onPipeline: (event: Record<string, unknown>) => events.push(event),
+      })),
+    ).rejects.toThrow("model could not produce a valid app");
+
+    const full = events.filter(({ stage }) => stage === "full");
+    expect(full.length).toBeGreaterThan(0);
+    for (const event of full) {
+      expect(event).toMatchObject({ valid: false });
+      expect(event.issues).toEqual(
+        expect.arrayContaining([expect.stringContaining("the app has a title and no content")]),
+      );
+    }
+  });
+
+  it("a valid attempt carries no issues (the field is the failure reason, not noise)", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const model = scriptedLanguageModel(() => clean);
+
+    await modelEngine.create({ prompt: "Build it" }, deps(model, {
+      onPipeline: (event: Record<string, unknown>) => events.push(event),
+    }));
+
+    expect(events).toEqual([expect.objectContaining({ stage: "full", valid: true })]);
+    expect(events[0] && "issues" in events[0]).toBe(false);
+  });
+
+  it("an island repair that fails to converge carries the issues it left standing", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    // The island repair returns the SAME fabricating source: still invalid.
+    const model = scriptedLanguageModel(() => fabricating);
+
+    await expect(
+      modelEngine.create({ prompt: "Build a revenue HQ" }, deps(model, {
+        tools: islandTools,
+        toolShapes: metricShapes,
+        onPipeline: (event: Record<string, unknown>) => events.push(event),
+      })),
+    ).rejects.toThrow("model could not produce a valid app");
+
+    const islandRepair = events.find(({ stage }) => stage === "island-repair");
+    expect(islandRepair).toMatchObject({ repaired: false });
+    expect((islandRepair?.issues as string[]).some((issue) => issue.startsWith('island "Sparky"'))).toBe(true);
+  });
+});
