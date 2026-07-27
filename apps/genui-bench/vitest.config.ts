@@ -7,6 +7,13 @@ export default defineConfig({
     include: ["**/*.test.ts", "**/*.test.tsx"],
     exclude: ["node_modules/**", ".next/**", "runs/**"],
     passWithNoTests: true,
+    server: {
+      deps: {
+        // These SDKs import their own .css from JS; inline them so vite
+        // transforms the css instead of node choking on the extension.
+        inline: [/@thesysai\/genui-sdk/, /@crayonai\//, /@openuidev\//],
+      },
+    },
   },
   resolve: {
     alias: {

@@ -1,0 +1,83 @@
+/**
+ * Contract test for the Thesys C1 adapter against the recorded fixture
+ * (hand-authored from documented response shapes — see the fixture's _note).
+ * The fixture plays back through the real openai client via its fetch seam;
+ * no live API calls, ever.
+ */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createThesysC1Adapter, type ThesysC1Raw } from "./thesys-c1";
+import type { HostFixture } from "../runner/types";
+
+const fixture = JSON.parse(
+  readFileSync(join(__dirname, "__fixtures__", "thesys-c1.recorded.json"), "utf8"),
+) as { toolCallCompletion: unknown; finalCompletion: unknown };
+
+const host: HostFixture = {
+  name: "maple",
+  catalog: {},
+  tools: [
+    { name: "host_listAccounts", description: "List the user's accounts", risk: "low" },
+  ],
+  shapes: {},
+  theme: {},
+  execute: vi.fn(async () => [{ id: "a1", name: "Everyday Checking", balance: 4280.12 }]),
+};
+
+function fetchFromScript(completions: unknown[]): typeof fetch {
+  let call = 0;
+  return vi.fn(async () => {
+    const body = completions[Math.min(call, completions.length - 1)];
+    call += 1;
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+}
+
+describe("thesys-c1 adapter", () => {
+  beforeEach(() => {
+    process.env.THESYS_API_KEY = "test-key";
+  });
+  afterEach(() => {
+    delete process.env.THESYS_API_KEY;
+    vi.restoreAllMocks();
+  });
+
+  it("returns no-key without THESYS_API_KEY", async () => {
+    delete process.env.THESYS_API_KEY;
+    const adapter = createThesysC1Adapter({ fetch: fetchFromScript([]) });
+    await expect(adapter.generate("hi", host)).resolves.toEqual({ status: "no-key" });
+  });
+
+  it("parses the recorded fixture into an ok LaneResult, executing host tools through the fixture", async () => {
+    const adapter = createThesysC1Adapter({
+      fetch: fetchFromScript([fixture.toolCallCompletion, fixture.finalCompletion]),
+    });
+    const result = await adapter.generate("show my account balances at a glance", host);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    const raw = result.raw as ThesysC1Raw;
+    expect(raw.c1Response).toContain("<content>");
+    expect(raw.c1Response).toContain("Your accounts");
+    // The runTools loop routed the model's tool call to the fixture executor.
+    expect(host.execute).toHaveBeenCalledWith("host_listAccounts", {});
+    // Full conversation captured for the internals drawer.
+    expect(Array.isArray(raw.messages)).toBe(true);
+    expect(raw.messages.length).toBeGreaterThanOrEqual(3); // user, assistant tool call, tool result, final
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("never throws: transport errors become status failed", async () => {
+    const boom = vi.fn(async () => {
+      throw new Error("connect ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    const adapter = createThesysC1Adapter({ fetch: boom });
+    const result = await adapter.generate("hi", host);
+    expect(result.status).toBe("failed");
+    // The openai client wraps transport failures as APIConnectionError.
+    if (result.status === "failed") expect(result.error).toMatch(/connection error/i);
+  });
+});
