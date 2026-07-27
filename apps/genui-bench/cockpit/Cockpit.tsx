@@ -23,6 +23,7 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
   const [enabledLanes, setEnabledLanes] = useState<LaneName[]>([...ALL_LANES]);
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [current, setCurrent] = useState<RunRecord | null>(null);
+  const [compare, setCompare] = useState<RunRecord | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,13 +42,46 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
     return () => clearInterval(timer);
   }, [refreshRuns]);
 
-  const selectRun = useCallback(async (id: string) => {
-    const res = await fetch(`/api/runs/${id}`);
-    if (!res.ok) return;
-    const record = (await res.json()) as RunRecord;
-    setCurrent(record);
-    setHost(record.request.host);
-  }, []);
+  /** Click = load read-only; ⌥-click = split-compare against the current
+   *  run (clicking the compare run again clears it). */
+  const selectRun = useCallback(
+    async (id: string, altKey: boolean) => {
+      if (altKey && compare?.id === id) {
+        setCompare(null);
+        return;
+      }
+      const res = await fetch(`/api/runs/${id}`);
+      if (!res.ok) return;
+      const record = (await res.json()) as RunRecord;
+      if (altKey && current && current.id !== id) {
+        setCompare(record);
+      } else {
+        setCurrent(record);
+        setCompare(null);
+        setHost(record.request.host);
+      }
+    },
+    [compare, current],
+  );
+
+  /** Pin = label in run.json ("baseline" by default); toggle unpins. */
+  const togglePin = useCallback(
+    async (run: RunRecord) => {
+      let pin: string | null = null;
+      if (!run.pin) {
+        const label = typeof window.prompt === "function" ? window.prompt("Pin label", "baseline") : "baseline";
+        if (label === null) return; // cancelled
+        pin = label.trim() === "" ? "baseline" : label.trim();
+      }
+      const res = await fetch("/api/pin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: run.id, pin }),
+      });
+      if (res.ok) void refreshRuns();
+    },
+    [refreshRuns],
+  );
 
   const fireRun = useCallback(async () => {
     const request: RunRequest = {
@@ -58,6 +92,7 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
     };
     setRunning(true);
     setError(null);
+    setCompare(null);
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -97,16 +132,23 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
       />
       {error && <div className="gp-error" role="alert">{error}</div>}
       <div className="main">
-        <HistoryRail runs={runs} selectedId={current?.id ?? null} onSelect={(id) => void selectRun(id)} />
+        <HistoryRail
+          runs={runs}
+          selectedId={current?.id ?? null}
+          compareId={compare?.id ?? null}
+          onSelect={(id, altKey) => void selectRun(id, altKey)}
+          onTogglePin={(run) => void togglePin(run)}
+        />
         <PaneGrid
           panes={panes}
           lanes={gridLanes}
           record={current}
+          compare={compare}
           running={running}
           host={fixture}
         />
       </div>
-      <InternalsDrawer record={current} />
+      <InternalsDrawer record={current} compare={compare} />
     </div>
   );
 }
