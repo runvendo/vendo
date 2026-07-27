@@ -9,21 +9,16 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createThesysC1Adapter, type ThesysC1Raw } from "./thesys-c1";
 import type { HostFixture } from "../runner/types";
+import { stubHostFixture } from "../fixtures/stub";
 
 const fixture = JSON.parse(
   readFileSync(join(__dirname, "__fixtures__", "thesys-c1.recorded.json"), "utf8"),
 ) as { toolCallCompletion: unknown; finalCompletion: unknown };
 
-const host: HostFixture = {
-  name: "maple",
-  catalog: {},
-  tools: [
-    { name: "host_listAccounts", description: "List the user's accounts", risk: "low" },
-  ],
-  shapes: {},
-  theme: {},
+const host: HostFixture = stubHostFixture("maple", {
+  tools: [{ name: "host_listAccounts", description: "List the user's accounts", risk: "low" }],
   execute: vi.fn(async () => [{ id: "a1", name: "Everyday Checking", balance: 4280.12 }]),
-};
+});
 
 function fetchFromScript(completions: unknown[]): typeof fetch {
   let call = 0;

@@ -45,7 +45,6 @@ import {
   type NormalizedCatalog,
   type ShapeType,
   type Tree,
-  type VendoTheme,
 } from "@vendoai/core";
 import {
   MAX_OUTPUT_TOKENS,
@@ -211,7 +210,7 @@ export function createVendoAdapter(overrides: VendoAdapterOverrides = {}): LaneA
           catalog: host.catalog as NormalizedCatalog,
           tools: host.tools as HostToolInfo[],
           toolShapes: host.shapes as Readonly<Record<string, ShapeType>>,
-          theme: host.theme as VendoTheme,
+          theme: host.theme,
           // production PipelineConfig defaults — deliberately no `pipeline` key
           onPipeline: (event) => events.push(event),
         };

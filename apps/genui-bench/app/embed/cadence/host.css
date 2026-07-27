@@ -1,0 +1,6 @@
+/* Cadence's REAL stylesheet, compiled for this document only — see the twin
+   comment in ../maple/host.css. Maple and Cadence both define
+   `--color-surface`/`--color-ink` with different values, which is precisely
+   why each host gets its own document instead of a shared, scoped layer. */
+@import "../../../../demo-accounting/src/app/globals.css";
+@source "../../../../demo-accounting/src";

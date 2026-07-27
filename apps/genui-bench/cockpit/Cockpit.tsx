@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { validateModelChoice, type RunModel } from "../runner/models";
 import type { HostName, LaneName, RunRecord, RunRequest } from "../runner/types";
 import type { PaneComponent } from "./pane-props";
 import { ALL_LANES } from "./lane-meta";
-import { makeClientFixture } from "./client-fixture";
 import { TopBar } from "./TopBar";
 import { PromptRow } from "./PromptRow";
 import { HistoryRail } from "./HistoryRail";
@@ -135,7 +134,9 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
     }
   }, [prompt, host, enabledLanes, model, refreshRuns]);
 
-  const fixture = useMemo(() => makeClientFixture(host), [host]);
+  // A loaded run renders against the host it was generated for; the picker
+  // only decides the NEXT run's host.
+  const paneHost = current?.request.host ?? host;
   const gridLanes = current?.request.lanes ?? enabledLanes;
 
   return (
@@ -173,7 +174,7 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
           record={current}
           compare={compare}
           running={running}
-          host={fixture}
+          host={paneHost}
         />
       </div>
       <InternalsDrawer record={current} compare={compare} />

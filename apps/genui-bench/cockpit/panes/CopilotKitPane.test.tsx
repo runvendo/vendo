@@ -7,16 +7,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import CopilotKitPane from "./CopilotKitPane";
 import type { CopilotKitRaw } from "../../lanes/copilotkit";
-import type { HostFixture, LaneResult } from "../../runner/types";
+import type { LaneResult } from "../../runner/types";
 
-const host: HostFixture = {
-  name: "maple",
-  catalog: {},
-  tools: [],
-  shapes: {},
-  theme: {},
-  execute: async () => ({}),
-};
 
 const raw: CopilotKitRaw = {
   model: "anthropic/claude-sonnet-4.5",
@@ -51,7 +43,7 @@ afterEach(cleanup);
 
 describe("CopilotKitPane", () => {
   it("renders intents through the harness registry with the asymmetry footnote", () => {
-    const { container } = render(<CopilotKitPane lane="copilotkit" result={okResult} host={host} />);
+    const { container } = render(<CopilotKitPane lane="copilotkit" result={okResult} host="maple" runId="run_test" />);
     expect(container.querySelector('[data-harness="chart"]')).toBeTruthy();
     expect(screen.getByText("Account balances")).toBeTruthy();
     expect(screen.getByText("Everyday Checking")).toBeTruthy();
@@ -61,7 +53,7 @@ describe("CopilotKitPane", () => {
   });
 
   it("renders the no-key state", () => {
-    render(<CopilotKitPane lane="copilotkit" result={{ status: "no-key" }} host={host} />);
+    render(<CopilotKitPane lane="copilotkit" result={{ status: "no-key" }} host="maple" runId="run_test" />);
     expect(screen.getByText(/no key/)).toBeTruthy();
   });
 
@@ -70,7 +62,8 @@ describe("CopilotKitPane", () => {
       <CopilotKitPane
         lane="copilotkit"
         result={{ status: "failed", startedAt: 0, durationMs: 5, error: "runtime down" }}
-        host={host}
+        host="maple"
+        runId="run_test"
       />,
     );
     expect(screen.getByText(/failed: runtime down/)).toBeTruthy();

@@ -32,6 +32,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -39,6 +40,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "jsdom": "^29.1.1",
+    "tailwindcss": "^4",
     "tsx": "^4.19.0",
     "typescript": "^5",
     "vitest": "^3.2.4"

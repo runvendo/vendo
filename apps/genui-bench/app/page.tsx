@@ -1,5 +1,8 @@
 "use client";
 
+// The cockpit chrome sheet lives on this route, not in the root layout, so the
+// /embed/<host> documents the Vendo pane frames stay free of it (see layout).
+import "./globals.css";
 import type { LaneName } from "../runner/types";
 import type { PaneComponent } from "../cockpit/pane-props";
 import { Cockpit } from "../cockpit/Cockpit";

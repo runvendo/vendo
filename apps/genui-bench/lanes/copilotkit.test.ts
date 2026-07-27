@@ -9,20 +9,17 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCopilotKitAdapter, type CopilotKitRaw } from "./copilotkit";
 import type { HostFixture } from "../runner/types";
+import { stubHostFixture } from "../fixtures/stub";
 
 const fixture = JSON.parse(
   readFileSync(join(__dirname, "__fixtures__", "copilotkit.recorded.json"), "utf8"),
 ) as { rounds: string[] };
 
 function makeHost(): HostFixture {
-  return {
-    name: "maple",
-    catalog: {},
+  return stubHostFixture("maple", {
     tools: [{ name: "host_listAccounts", description: "List the user's accounts", risk: "low" }],
-    shapes: {},
-    theme: {},
     execute: vi.fn(async () => [{ id: "a1", name: "Everyday Checking", balance: 4280.12 }]),
-  };
+  });
 }
 
 function handlerFromRounds(rounds: string[]) {

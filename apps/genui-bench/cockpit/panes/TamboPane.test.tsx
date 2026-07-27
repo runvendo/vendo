@@ -10,19 +10,13 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import TamboPane from "./TamboPane";
 import { createTamboAdapter, type TamboThreadLike } from "../../lanes/tambo";
 import type { HostFixture, LaneResult } from "../../runner/types";
+import { stubHostFixture } from "../../fixtures/stub";
 
 const fixture = JSON.parse(
   readFileSync(join(__dirname, "..", "..", "lanes", "__fixtures__", "tambo.recorded.json"), "utf8"),
 ) as { thread: TamboThreadLike };
 
-const host: HostFixture = {
-  name: "maple",
-  catalog: {},
-  tools: [],
-  shapes: {},
-  theme: {},
-  execute: async () => ({}),
-};
+const host: HostFixture = stubHostFixture("maple");
 
 /** The pane is proved end to end from the live recording: the real adapter
  *  extracts the recorded thread, the pane renders what it produced. */
@@ -38,7 +32,7 @@ afterEach(cleanup);
 
 describe("TamboPane", () => {
   it("renders component picks through the harness registry with the asymmetry footnote", () => {
-    const { container } = render(<TamboPane lane="tambo" result={okResult} host={host} />);
+    const { container } = render(<TamboPane lane="tambo" result={okResult} host="maple" runId="run_test" />);
     expect(container.querySelector('[data-harness="chart"]')).toBeTruthy();
     expect(screen.getByText("Account balances")).toBeTruthy();
     // Both live picks label the same accounts, hence getAllByText.
@@ -47,7 +41,7 @@ describe("TamboPane", () => {
   });
 
   it("renders the live table pick whose rows came back index-keyed rather than as arrays", () => {
-    const { container } = render(<TamboPane lane="tambo" result={okResult} host={host} />);
+    const { container } = render(<TamboPane lane="tambo" result={okResult} host="maple" runId="run_test" />);
     const table = container.querySelector('[data-harness="table"]');
     expect(table).toBeTruthy();
     expect(table?.querySelectorAll("tbody tr").length).toBe(3);
@@ -56,7 +50,7 @@ describe("TamboPane", () => {
   });
 
   it("renders the no-key state", () => {
-    render(<TamboPane lane="tambo" result={{ status: "no-key" }} host={host} />);
+    render(<TamboPane lane="tambo" result={{ status: "no-key" }} host="maple" runId="run_test" />);
     expect(screen.getByText(/no key/)).toBeTruthy();
   });
 
@@ -65,7 +59,8 @@ describe("TamboPane", () => {
       <TamboPane
         lane="tambo"
         result={{ status: "failed", startedAt: 0, durationMs: 5, error: "service down" }}
-        host={host}
+        host="maple"
+        runId="run_test"
       />,
     );
     expect(screen.getByText(/failed: service down/)).toBeTruthy();

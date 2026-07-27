@@ -11,15 +11,13 @@ import type { GeneratedAppDocument, GenerationDependencies, PipelineEvent } from
 import { createVendoAdapter, transformModelParams, type ModelCallParams } from "./vendo";
 import { MAX_OUTPUT_TOKENS, PRODUCTION_MODEL, findModel, type BenchModel } from "../runner/models";
 import type { HostFixture } from "../runner/types";
+import { stubHostFixture } from "../fixtures/stub";
 
-const fixture: HostFixture = {
-  name: "maple",
+const fixture: HostFixture = stubHostFixture("maple", {
   catalog: [],
   tools: [{ name: "host_getProfile", description: "profile", risk: "read" }],
   shapes: { host_getProfile: { kind: "object", fields: { name: { kind: "string" } } } },
-  theme: {},
-  execute: async () => ({}),
-};
+});
 
 const generatedDocument: GeneratedAppDocument = {
   format: VENDO_APP_FORMAT,
