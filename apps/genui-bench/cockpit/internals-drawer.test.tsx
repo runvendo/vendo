@@ -87,3 +87,43 @@ test("split-compare stacks both runs' timelines", () => {
   screen.getByText('<App id="run-a" />');
   screen.getByText('<App id="run-b" />');
 });
+
+/** A failed run must show WHY at a glance — the gap found live 2026-07-26:
+ *  the cockpit said only "model could not produce a valid app" while the
+ *  engine knew the exact validation issues. */
+test("timeline: a failing stage renders its validation issues under the attempt", () => {
+  const issues = [
+    'tree root "root" renders an empty layout; keep at least one attached, visible node',
+    "the app has a title and no content",
+  ];
+  const failed = record("run-fail", {
+    lanes: {
+      vendo: {
+        status: "failed",
+        startedAt: 1,
+        durationMs: 24691,
+        error: `model could not produce a valid app: ${issues.join(" | ")}`,
+        events: [
+          { stage: "full", attempt: 0, valid: false, ms: 6984, issues },
+          { stage: "repair", rounds: 2, repaired: false, noValidFix: 1, ms: 3100, issues: [issues[1]!] },
+        ] as PipelineEvent[],
+      },
+    },
+  });
+
+  const { container } = render(<InternalsDrawer record={failed} />);
+
+  // Each issue reads under its own attempt, not buried in a JSON blob.
+  expect(container.querySelectorAll(".ev-issue")).toHaveLength(3);
+  expect(screen.getAllByText(issues[0]!)).toHaveLength(1);
+  expect(screen.getAllByText(issues[1]!)).toHaveLength(2);
+
+  // The attempt line counts them; the failure line still carries the reason.
+  screen.getByText("full-lane attempt 0 · invalid · 2 issues");
+  screen.getByText(`model could not produce a valid app: ${issues.join(" | ")}`);
+});
+
+test("timeline: a valid attempt renders no issue rows", () => {
+  const { container } = render(<InternalsDrawer record={record("run-ok")} />);
+  expect(container.querySelectorAll(".ev-issue")).toHaveLength(0);
+});

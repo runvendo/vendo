@@ -196,6 +196,19 @@ function renderWire(document: AppDocument): string | undefined {
   }
 }
 
+/**
+ * A self-explanatory failure string. A validation VendoError's message is the
+ * generic "model could not produce a valid app" — the reason lives in its
+ * `detail`, a string[] of validation issues. Duck-typed rather than
+ * `instanceof`: the engine's @vendoai/core instance need not be ours.
+ */
+export function failureReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const detail = (error as { detail?: unknown } | null)?.detail;
+  const issues = Array.isArray(detail) ? detail.filter((issue): issue is string => typeof issue === "string") : [];
+  return issues.length === 0 ? message : `${message}: ${issues.join(" | ")}`;
+}
+
 export function createVendoAdapter(overrides: VendoAdapterOverrides = {}): LaneAdapter {
   return {
     name: "vendo",
@@ -230,7 +243,7 @@ export function createVendoAdapter(overrides: VendoAdapterOverrides = {}): LaneA
           status: "failed",
           startedAt,
           durationMs: Date.now() - startedAt,
-          error: error instanceof Error ? error.message : String(error),
+          error: failureReason(error),
           events,
         };
       }
