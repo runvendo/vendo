@@ -39,6 +39,7 @@ export async function waitForDeployedReady(url: string, options: {
   timeoutMs?: number;
   pollMs?: number;
   onPoll?: (status: string) => void;
+  signal?: AbortSignal;
 } = {}): Promise<void> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 20 * 60 * 1000;
@@ -46,6 +47,7 @@ export async function waitForDeployedReady(url: string, options: {
   const deadline = Date.now() + timeoutMs;
   let last = "";
   while (Date.now() < deadline) {
+    if (options.signal?.aborted) throw options.signal.reason instanceof Error ? options.signal.reason : new Error("ready-wait aborted");
     try {
       const response = await fetchImpl(url, { redirect: "follow", signal: AbortSignal.timeout(20_000) });
       if (response.ok) return;
@@ -95,6 +97,8 @@ export interface FinalGateIo {
   fetchImpl?: typeof fetch;
   write?: (line: string) => void;
   env?: NodeJS.ProcessEnv;
+  /** The pipeline's wall-clock-cap signal (checked at every step boundary). */
+  signal?: AbortSignal;
 }
 
 export interface FinalGateResult {
@@ -117,6 +121,7 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
   const generationBeat = pickGenerationBeat(beats);
 
   const record = async (step: string, ok: boolean, detail: string, screenshot?: string): Promise<void> => {
+    if (io.signal?.aborted) throw io.signal.reason instanceof Error ? io.signal.reason : new Error("gate aborted");
     steps.push({ step, ok, detail, ...(screenshot === undefined ? {} : { screenshot }) });
     write(`[gate] ${step}: ${ok ? "ok" : "FAIL"} — ${detail}`);
     await writeFile(reportPath, renderGateReport({ demoUrl: args.demoUrl, steps }));
@@ -126,6 +131,7 @@ export async function runFinalGate(args: FinalGateArgs, io: FinalGateIo = {}): P
   // (1) Service up (Railway build finishes minutes after deploy returns).
   await waitForDeployedReady(args.demoUrl, {
     ...(io.fetchImpl === undefined ? {} : { fetchImpl: io.fetchImpl }),
+    ...(io.signal === undefined ? {} : { signal: io.signal }),
     onPoll: (status) => write(`[gate] waiting for ${args.demoUrl} (${status})`),
   });
   await record("service-up", true, `${args.demoUrl} serves HTTP`);

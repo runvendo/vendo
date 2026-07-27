@@ -789,7 +789,7 @@ export interface DemoResearchResult {
   report: ResearchReport;
 }
 
-export async function runDemoResearch(args: DemoResearchArgs, options: { repoRoot: string }): Promise<DemoResearchResult> {
+export async function runDemoResearch(args: DemoResearchArgs, options: { repoRoot: string; signal?: AbortSignal }): Promise<DemoResearchResult> {
   const appDir = path.resolve(options.repoRoot, args.app);
   if (!existsSync(path.join(appDir, "demo.config.json"))) {
     throw new Error(`--app must point at a template-derived demo app, but there is no demo.config.json in "${appDir}"`);
@@ -803,6 +803,8 @@ export async function runDemoResearch(args: DemoResearchArgs, options: { repoRoo
   try {
     browser = await chromium.launch();
     for (const [index, url] of args.urls.entries()) {
+      // Pure-promise stage: honor the pipeline cap at the next await boundary.
+      if (options.signal?.aborted) throw options.signal.reason instanceof Error ? options.signal.reason : new Error("research aborted");
       let context: BrowserContext | undefined;
       try {
         context = await browser.newContext({ viewport: { width: 1440, height: 900 }, userAgent });

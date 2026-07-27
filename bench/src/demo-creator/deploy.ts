@@ -47,7 +47,7 @@ export interface ExecResult {
   stderr: string;
 }
 
-export type ExecFn = (command: string[], options: { cwd: string }) => Promise<ExecResult>;
+export type ExecFn = (command: string[], options: { cwd: string; signal?: AbortSignal }) => Promise<ExecResult>;
 
 export interface DemoDeployResult {
   serviceName: string;
@@ -283,7 +283,12 @@ async function loadDemoConfigModule(): Promise<typeof import("demo-template/demo
 }
 
 /** Shared spawn-based exec (argv array, no shell — secrets and ids are never
- * interpolated into a command string). Also used by reap.ts. */
+ * interpolated into a command string). Also used by reap.ts.
+ *
+ * Cancellation: children run in their own process group, and an aborted
+ * `signal` SIGKILLs the whole group — the pipeline's wall-clock cap must
+ * TERMINATE in-flight work (a `railway up` completing after the park would
+ * be a deploy-after-park), not merely stop awaiting it. */
 export const defaultExec: ExecFn = (command, options) =>
   new Promise((resolve, reject) => {
     const [file, ...args] = command;
@@ -291,13 +296,32 @@ export const defaultExec: ExecFn = (command, options) =>
       reject(new Error("empty command"));
       return;
     }
-    const child = spawn(file, args, { cwd: options.cwd, stdio: ["ignore", "pipe", "pipe"] });
+    if (options.signal?.aborted) {
+      reject(options.signal.reason instanceof Error ? options.signal.reason : new Error("exec aborted before start"));
+      return;
+    }
+    const child = spawn(file, args, { cwd: options.cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    const killGroup = (): void => {
+      if (child.exitCode !== null || child.pid === undefined) return;
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+    };
+    options.signal?.addEventListener("abort", killGroup, { once: true });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on("error", (error) => {
+      options.signal?.removeEventListener("abort", killGroup);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      options.signal?.removeEventListener("abort", killGroup);
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
   });
 
 export interface DeployIo {

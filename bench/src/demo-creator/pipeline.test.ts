@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { defaultExec } from "./deploy.js";
 import {
   DemoParkedError,
   parseDemoPipelineArgs,
@@ -280,26 +281,35 @@ describe("runDemoPipeline", () => {
     expect(result.demoUrl).toBeUndefined();
   });
 
-  it("parks when the wall-clock cap fires DURING an in-flight stage: aborts it, names the gaps, deploy never runs", async () => {
+  it("parks when the cap fires DURING an in-flight stage AND cancels it: the stage's subprocess verifiably exits, gaps are named, deploy never runs", async () => {
     const repoRoot = await makeRepoRoot();
-    // Research hangs far past the cap — the deadline must abort it mid-stage.
+    // Research spawns a REAL long-lived subprocess through the pipeline's
+    // threaded signal — exactly how child-spawning stages run. The cap must
+    // kill it, not merely stop awaiting it.
+    let researchChild: Promise<{ code: number }> | undefined;
     const stages = stubStages(repoRoot, {
-      research: vi.fn(() => new Promise(() => { /* never resolves */ })),
+      research: vi.fn((_args: unknown, options: { signal?: AbortSignal }) => {
+        researchChild = defaultExec(["sleep", "30"], { cwd: repoRoot, ...(options.signal === undefined ? {} : { signal: options.signal }) });
+        return researchChild.then(() => { throw new Error("killed"); }) as never;
+      }),
     });
     const started = Date.now();
     const rejection = await runDemoPipeline({ ...pipelineArgs, skipDeploy: false, skipCapture: false }, {
       repoRoot,
       stages,
       fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
+      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })), // install etc.; research spawns via defaultExec directly
       write: () => {},
-      capMs: 500, // fires while research is in flight
+      capMs: 700, // fires while research's sleep(30) is in flight
     }).catch((error: unknown) => error);
-    expect(Date.now() - started).toBeLessThan(5_000);
     expect(rejection).toBeInstanceOf(DemoParkedError);
     expect(String(rejection)).toMatch(/wall-clock cap during stage "research" \(aborted mid-stage\)/);
     expect(String(rejection)).toMatch(/not run:.*deploy/);
-    expect(stages.research).toHaveBeenCalled();
+    // Side effects ceased: the subprocess exited (a live sleep would hold
+    // this await for 30s) — and no deploy artifact exists.
+    const child = await researchChild;
+    expect(Date.now() - started).toBeLessThan(6_000);
+    expect(child?.code).not.toBe(0);
     expect(stages.deploy).not.toHaveBeenCalled();
     // Park keeps the evidence: the app dir survives with its timings so far.
     expect(existsSync(path.join(repoRoot, "apps", "demo-linear", "timings.json"))).toBe(true);

@@ -320,6 +320,8 @@ export interface JudgeLoopIo {
   write?: (line: string) => void;
   env?: NodeJS.ProcessEnv;
   runStage?: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
+  /** The pipeline's wall-clock-cap signal (checked each round; kills fix agents). */
+  signal?: AbortSignal;
 }
 
 export interface JudgeLoopResult {
@@ -367,6 +369,7 @@ No dimension was scored; provide the missing evidence (operator screenshots via 
   let parked = false;
 
   for (let round = 1; ; round += 1) {
+    if (io.signal?.aborted) throw io.signal.reason instanceof Error ? io.signal.reason : new Error("judge aborted");
     const roundResult = await runStage(`judge:round-${round}`, async () => {
       const outDir = path.join(researchDir, "judge", `round-${round}`);
       const builtScreens = await captureScreens({
@@ -416,7 +419,7 @@ No dimension was scored; provide the missing evidence (operator screenshots via 
           maxBudgetUsd: 5,
           timeoutMs: 12 * 60 * 1000,
           model,
-        }, { cwd: io.appDir, env });
+        }, { cwd: io.appDir, env, ...(io.signal === undefined ? {} : { signal: io.signal }) });
         costUsd += fix.costUsd ?? 0;
         if (fix.code !== 0) throw new Error(`Fix agent for ${dimension} failed (exit ${fix.code}):\n${fix.output.slice(0, 1000)}`);
       }

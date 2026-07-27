@@ -522,6 +522,8 @@ export interface RunAgentOptions {
   env: NodeJS.ProcessEnv;
   /** Extra read-only run (the plan agent): no Write/Edit. */
   readOnly?: boolean;
+  /** Aborting kills the agent subprocess (the pipeline's wall-clock cap). */
+  signal?: AbortSignal;
 }
 
 export type RunAgentFn = (job: Pick<AgentJob, "name" | "prompt" | "maxBudgetUsd" | "timeoutMs" | "model">, options: RunAgentOptions) => Promise<AgentRunResult>;
@@ -571,14 +573,18 @@ export const defaultRunAgent: RunAgentFn = (job, options) =>
       timedOut = true;
       child.kill("SIGKILL");
     }, job.timeoutMs);
+    const onAbort = (): void => { child.kill("SIGKILL"); };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
     child.on("error", (error) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
       reject(new Error(`Could not spawn the claude CLI for agent "${job.name}": ${error.message} — is claude on PATH?`));
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
       const parsed = parseAgentOutput(stdout);
       // A budget-exceeded/errored run can still exit 0 — is_error is truth.
       const effectiveCode = (code ?? 1) !== 0 ? (code ?? 1) : parsed.isError ? 1 : 0;
@@ -647,6 +653,8 @@ export interface RewriteIo {
   /** Timing hook — the pipeline passes its stage runner so rewrite substages
    * land in timings.json; defaults to a passthrough. */
   runStage?: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
+  /** The pipeline's wall-clock-cap signal: aborting kills agent subprocesses. */
+  signal?: AbortSignal;
 }
 
 export interface RewriteResult {
@@ -701,7 +709,7 @@ export async function runRewrite(args: RewriteArgs, io: RewriteIo): Promise<Rewr
   const plan = await runStage("rewrite:plan", async () => {
     const result = await runAgent(
       { name: "plan", prompt: buildPlanPrompt({ prospect: args.prospect, url: args.url }), maxBudgetUsd: 3, timeoutMs: 8 * 60 * 1000, model },
-      { cwd: io.appDir, env, readOnly: true },
+      { cwd: io.appDir, env, readOnly: true, ...(io.signal === undefined ? {} : { signal: io.signal }) },
     );
     if (result.code !== 0) throw new Error(`Plan agent failed (exit ${result.code}${result.timedOut ? ", timed out" : ""}):\n${result.output.slice(0, 1000)}`);
     const parsedPlan = parseRewritePlan(result.output);
@@ -716,7 +724,7 @@ export async function runRewrite(args: RewriteArgs, io: RewriteIo): Promise<Rewr
   await runStage("rewrite:agents", async () => {
     const jobs = buildAgentJobs({ prospect: args.prospect, plan: plan.plan, model, shellModel });
     write(`[rewrite] fan-out: ${jobs.map((job) => job.name).join(", ")} (parallel)`);
-    const results = await Promise.all(jobs.map((job) => runAgent(job, { cwd: io.appDir, env })));
+    const results = await Promise.all(jobs.map((job) => runAgent(job, { cwd: io.appDir, env, ...(io.signal === undefined ? {} : { signal: io.signal }) })));
     agents.push(...results);
     const failed = results.filter((result) => result.code !== 0);
     for (const result of results) {
@@ -761,7 +769,7 @@ ${errorTail}`,
         maxBudgetUsd: 6,
         timeoutMs: 12 * 60 * 1000,
         model,
-      }, { cwd: io.appDir, env });
+      }, { cwd: io.appDir, env, ...(io.signal === undefined ? {} : { signal: io.signal }) });
       agents.push(repair);
       if (repair.code !== 0) throw new Error(`Repair agent failed (exit ${repair.code}):\n${repair.output.slice(0, 1000)}`);
       const repairViolations = await verifyFencedFiles(io.appDir, fencedSnapshot);

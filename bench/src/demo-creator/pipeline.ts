@@ -119,8 +119,8 @@ export interface StageTiming {
 
 /** Stage seams so unit tests drive the pipeline without a browser/Railway. */
 export interface PipelineStages {
-  create: (args: DemoCreateArgs, options: { repoRoot: string }) => Promise<DemoCreateResult>;
-  research: (args: DemoResearchArgs, options: { repoRoot: string }) => Promise<DemoResearchResult>;
+  create: (args: DemoCreateArgs, options: { repoRoot: string; fetchImpl?: typeof fetch; signal?: AbortSignal }) => Promise<DemoCreateResult>;
+  research: (args: DemoResearchArgs, options: { repoRoot: string; signal?: AbortSignal }) => Promise<DemoResearchResult>;
   rewrite: (args: RewriteArgs, io: RewriteIo) => Promise<RewriteResult>;
   judge: (args: JudgeLoopArgs, io: JudgeLoopIo) => Promise<JudgeLoopResult>;
   deploy: (args: DemoDeployArgs, io: DeployIo) => Promise<DemoDeployResult>;
@@ -172,8 +172,16 @@ export function timingsPath(appDir: string): string {
 
 export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): Promise<DemoPipelineResult> {
   const stages = io.stages ?? defaultStages;
-  const exec = io.exec ?? defaultExec;
   const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
+
+  // The cap is a run-level AbortController: when it fires, every in-flight
+  // child process (creator agents, railway up, capture, builds) is killed via
+  // the threaded signal — the losing stage is CANCELLED, not just abandoned,
+  // so nothing (least of all a deploy) can complete after the park.
+  const capController = new AbortController();
+  const capSignal = capController.signal;
+  const baseExec = io.exec ?? defaultExec;
+  const exec: ExecFn = (command, options) => baseExec(command, { signal: capSignal, ...options });
 
   const timings: StageTiming[] = [];
   let appDir: string | undefined;
@@ -184,6 +192,8 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
 
   const deadline = Date.now() + (io.capMs ?? defaultCapMs);
   const capMinutes = Math.round((io.capMs ?? defaultCapMs) / 60000);
+  const capTimer = setTimeout(() => capController.abort(new Error(`the ${capMinutes}-minute wall-clock cap fired`)), Math.max(0, deadline - Date.now()));
+  capTimer.unref?.();
   const plannedStages = ["validate", "create", "install", "research", "rewrite", "judge", "capture", "deploy", "final-gate"];
   const stageCounts = new Map<string, number>();
 
@@ -211,18 +221,20 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
     const startedAt = new Date().toISOString();
     const t0 = performance.now();
     write(`[pipeline] ${rowName} started`);
-    let capTimer: NodeJS.Timeout | undefined;
+    let onCapAbort: (() => void) | undefined;
     try {
       const capFiredMidStage = new Promise<never>((_resolve, reject) => {
-        capTimer = setTimeout(
-          () => reject(parkAtCap(`during stage "${rowName}" (aborted mid-stage)`)),
-          Math.max(1, deadline - Date.now()),
-        );
-        capTimer.unref?.();
+        onCapAbort = () => reject(parkAtCap(`during stage "${rowName}" (aborted mid-stage)`));
+        if (capSignal.aborted) onCapAbort();
+        else capSignal.addEventListener("abort", onCapAbort, { once: true });
       });
-      return await Promise.race([fn(), capFiredMidStage]);
+      const stagePromise = fn();
+      // The aborted stage's own late rejection (killed subprocess etc.) is
+      // expected noise once the park has won the race.
+      void stagePromise.catch(() => undefined);
+      return await Promise.race([stagePromise, capFiredMidStage]);
     } finally {
-      clearTimeout(capTimer);
+      if (onCapAbort !== undefined) capSignal.removeEventListener("abort", onCapAbort);
       const ms = Math.round(performance.now() - t0);
       timings.push({ stage: rowName, startedAt, ms });
       write(`[pipeline] ${rowName} finished in ${ms}ms`);
@@ -244,7 +256,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       targetDir: args.targetDir,
       url: args.url,
       ...(args.screenshots === undefined ? {} : { screenshots: args.screenshots }),
-    }, { repoRoot: io.repoRoot, ...(io.fetchImpl === undefined ? {} : { fetchImpl: io.fetchImpl }) }));
+    }, { repoRoot: io.repoRoot, signal: capSignal, ...(io.fetchImpl === undefined ? {} : { fetchImpl: io.fetchImpl }) }));
     appDir = created.appDir;
 
     await stage("install", async () => {
@@ -256,7 +268,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
 
     await stage("research", () => stages.research(
       { app: appDir as string, urls: [args.url] },
-      { repoRoot: io.repoRoot },
+      { repoRoot: io.repoRoot, signal: capSignal },
     ));
 
     cleanupOnAbort = false;
@@ -267,7 +279,8 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
         appDir,
         write,
         runStage: stage,
-        ...(io.exec === undefined ? {} : { exec: io.exec }),
+        exec,
+        signal: capSignal,
       },
     );
 
@@ -280,7 +293,8 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
         repoRoot: io.repoRoot,
         write,
         runStage: stage,
-        ...(io.exec === undefined ? {} : { exec: io.exec }),
+        exec,
+        signal: capSignal,
       },
     );
     if (judge.parked) {
@@ -325,7 +339,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       // with pauses; demo:deploy is idempotent and the 2h cap bounds the run.
       for (let attempt = 1; ; attempt += 1) {
         try {
-          return await stages.deploy(deployArgs, { repoRoot: io.repoRoot, write });
+          return await stages.deploy(deployArgs, { repoRoot: io.repoRoot, write, exec });
         } catch (error) {
           write(`[pipeline] deploy attempt ${attempt} failed (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`);
           if (attempt >= 6) throw error;
@@ -342,7 +356,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
         outDir: path.join(appDir as string, "RESEARCH", "gate"),
         demoPassword: demoPassword(args.id, process.env),
       },
-      { write },
+      { write, signal: capSignal },
     ));
 
     return { appDir, appPath, timings, rewrite, judge, deploy, gate, demoUrl, ...(gifPath === undefined ? {} : { gifPath }) };
@@ -353,5 +367,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): P
       await rm(appDir, { recursive: true, force: true }).catch(() => undefined);
     }
     throw error;
+  } finally {
+    clearTimeout(capTimer);
   }
 }

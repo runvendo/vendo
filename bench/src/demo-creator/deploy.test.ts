@@ -94,6 +94,29 @@ describe("Dockerfile rendering", () => {
   });
 });
 
+describe("defaultExec cancellation", () => {
+  it("SIGKILLs the spawned process group when the signal aborts — side effects cease", async () => {
+    const { defaultExec } = await import("./deploy.js");
+    const controller = new AbortController();
+    const started = Date.now();
+    const running = defaultExec(["sleep", "30"], { cwd: tmpdir(), signal: controller.signal });
+    setTimeout(() => controller.abort(new Error("wall-clock cap fired")), 150);
+    // The close event resolving IS the subprocess exiting: a live sleep(30)
+    // would hold this promise for 30s.
+    const result = await running;
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(result.code).not.toBe(0);
+  });
+
+  it("refuses to start when the signal is already aborted", async () => {
+    const { defaultExec } = await import("./deploy.js");
+    const controller = new AbortController();
+    controller.abort(new Error("cap already fired"));
+    await expect(defaultExec(["sleep", "30"], { cwd: tmpdir(), signal: controller.signal }))
+      .rejects.toThrow("cap already fired");
+  });
+});
+
 describe("parseRailwayDomain", () => {
   // Samples are synthetic (probing `railway domain` live creates domains);
   // the parser is deliberately liberal: JSON first, then a domain regex.
