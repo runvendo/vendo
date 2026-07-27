@@ -19,6 +19,7 @@ import {
 } from "@vendoai/core";
 import { hasDefaultExport } from "../../pins.js";
 import type { HostToolInfo } from "../engine.js";
+import { islandSubstitutionViolations } from "./capability-substitution.js";
 
 /** Models wrap island TSX in a JSX template-literal expression (`{`…`}`)
  *  despite instructions; strip it deterministically, the way the engine's
@@ -238,6 +239,11 @@ export const prepareIslands = async (
     // arithmetic over tool-derived values is invented data (the FX-rate
     // class).
     for (const violation of islandDerivedValueViolations(source, requestText === undefined ? undefined : { requestText })) {
+      issues.push(`island "${name}" ${violation}`);
+    }
+    // D5 — a mutating tool called with a hand-typed target/amount is that tool
+    // repurposed for a capability the host lacks (the live Slack-memo transfer).
+    for (const violation of islandSubstitutionViolations(source, tools, requestText)) {
       issues.push(`island "${name}" ${violation}`);
     }
     // The ambient tools contract: literal member access only, every chain

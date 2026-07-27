@@ -29,6 +29,8 @@ import type {
   GenerationDependencies,
 } from "../engine.js";
 import { actionIssues } from "./actions.js";
+import { capabilitySubstitutionIssues } from "./capability-substitution.js";
+import { DISCLAIMER_TEXT } from "./disclaimer.js";
 import { literalDataIssues } from "./literals.js";
 import { prepareIslands } from "./islands.js";
 import { smokeRenderIslands } from "./smoke-render.js";
@@ -328,10 +330,11 @@ const catalogIssues = async (
 };
 
 /** The per-region unavailability line the repair stage substitutes for a node
- *  it cannot fix (stages/repair.ts disclaims through it). Declared HERE so the
- *  empty-document gate below can exempt it without a validation→stages import
- *  cycle; repair re-exports it for its existing importers. */
-export const DISCLAIMER_TEXT = "This part of the request isn't available on this host.";
+ *  it cannot fix (stages/repair.ts disclaims through it). Lives in
+ *  ./disclaimer.js so the empty-document gate below and the
+ *  capability-substitution gate can both quote it without an import cycle;
+ *  re-exported here, and by repair, for their existing importers. */
+export { DISCLAIMER_TEXT };
 
 /** Re-gate 2026-07-26 finding 3 — the title-only empty app (12 across arms
  *  A/B, reproducing on re-open): a document whose rooted tree renders nothing
@@ -479,6 +482,10 @@ export const validateCompiledCreate = async (
     issues.push(...literalDataIssues(compiled.tree, deps.catalog));
   }
   issues.push(...actionIssues(compiled.tree, deps.tools));
+  // D5 — a mutating action whose target/amount is hand-typed is a write tool
+  // repurposed for a capability the host lacks (the island half of the same
+  // gate runs inside prepareIslands).
+  issues.push(...capabilitySubstitutionIssues(compiled.tree, deps.tools, requestText));
   issues.push(...rootedRenderIssues(compiled.tree));
   issues.push(...emptyDocumentIssues(compiled.tree));
   if (issues.length > 0) return { issues };
@@ -522,6 +529,10 @@ export const validateEditedApp = async (
   app: AppDocument,
   deps: GenerationDependencies,
   source: AppDocument,
+  /** The edit instruction — the user text in scope, threaded into the
+   *  capability-substitution gate the same way create threads its request, so
+   *  a value the user themselves named is never read as a fabrication. */
+  requestText?: string,
 ): Promise<string[]> => {
   const validation = validateAppDocument(app);
   if (!validation.ok) return [validation.error.message];
@@ -537,6 +548,7 @@ export const validateEditedApp = async (
       ...await catalogIssues(sourceTreeValidation.tree, source.components, deps.catalog),
       ...literalDataIssues(sourceTreeValidation.tree, deps.catalog),
       ...actionIssues(sourceTreeValidation.tree, deps.tools),
+      ...capabilitySubstitutionIssues(sourceTreeValidation.tree, deps.tools, requestText),
     ])
     : new Set<string>();
   return [
@@ -544,5 +556,6 @@ export const validateEditedApp = async (
     ...(await catalogIssues(treeValidation.tree, app.components, deps.catalog)).filter((issue) => !sourceCatalogIssues.has(issue)),
     ...literalDataIssues(treeValidation.tree, deps.catalog).filter((issue) => !sourceCatalogIssues.has(issue)),
     ...actionIssues(treeValidation.tree, deps.tools).filter((issue) => !sourceCatalogIssues.has(issue)),
+    ...capabilitySubstitutionIssues(treeValidation.tree, deps.tools, requestText).filter((issue) => !sourceCatalogIssues.has(issue)),
   ];
 };
