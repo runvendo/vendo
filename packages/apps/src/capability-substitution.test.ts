@@ -147,6 +147,24 @@ describe("island source — capability substitution", () => {
     // operand.
     expect(violations[0]).not.toContain("action");
   });
+
+  // A gate that reads only plain decimals publishes its own bypass: the live
+  // defect's `amount: 1` sentinel is `0x1`, `1e0`, `+1` or `(1)` in four other
+  // spellings, all of them just as hand-typed.
+  it.each(["1e0", "0x1", "1_00", "+1", "(1)", "0b1", "0o1", ".5", "1.5e2"])(
+    "a fabricated amount spelled %s FAILS like a plain decimal",
+    (amount) => {
+      const source = island(`
+  const send = (row) => tools.host_transferMoney({ amount: ${amount}, recipient_name: row.name });`);
+      expect(islandSubstitutionViolations(source, tools, "let me pay a saved payee")).toHaveLength(1);
+    },
+  );
+
+  it("an arithmetic expression is still a reference, not a literal", () => {
+    const source = island(`
+  const send = (row, count) => tools.host_transferMoney({ amount: (count + 1), recipient_name: row.name });`);
+    expect(islandSubstitutionViolations(source, tools, "let me pay a saved payee")).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
