@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildChipsPrompt,
+  defaultChipModel,
   isPlaceholderBeat,
   maxChips,
   mergeBeats,
@@ -26,6 +27,18 @@ describe("parseDemoChipsArgs", () => {
       .toEqual({ app: "/tmp/demo-acme", prospect: "Acme" });
     expect(parseDemoChipsArgs(["--", "--app", "/tmp/demo-acme"])).toEqual({ app: "/tmp/demo-acme" });
     expect(() => parseDemoChipsArgs([])).toThrow("--app is required");
+  });
+});
+
+describe("defaultChipModel credential posture", () => {
+  // The demo this generates runs on VENDO_API_KEY, but the CREATOR harness is
+  // provider-bound end to end (judge + `claude` CLI too). An operator holding
+  // only a Cloud key must be told that here, not by an SDK 401 mid-pipeline.
+  it("names the missing key and why the Cloud key does not substitute", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("VENDO_API_KEY", "vk_test");
+    await expect(defaultChipModel("anything")).rejects.toThrow(/ANTHROPIC_API_KEY[\s\S]*VENDO_API_KEY/);
+    vi.unstubAllEnvs();
   });
 });
 

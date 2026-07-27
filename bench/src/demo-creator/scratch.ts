@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -62,11 +62,64 @@ export function tarballFileName(name: string, version: string): string {
 
 const execFileAsync = promisify(execFile);
 
+/** Newest file mtime anywhere under `dir`, or undefined if it does not exist
+ * or holds no files. */
+async function newestMtimeMs(dir: string): Promise<number | undefined> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return undefined; // no such directory
+  }
+  let newest: number | undefined;
+  const consider = (candidate: number | undefined): void => {
+    if (candidate !== undefined && (newest === undefined || candidate > newest)) newest = candidate;
+  };
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      consider(await newestMtimeMs(full));
+    } else if (entry.isFile()) {
+      consider((await stat(full).catch(() => undefined))?.mtimeMs);
+    }
+  }
+  return newest;
+}
+
+/**
+ * A clone is only "the exact Vendo in this tree" if the tarballs carry a build
+ * of the CURRENT source. `pnpm pack` ships whatever is on disk and `dist/` is
+ * gitignored, so a branch switch or an unbuilt edit leaves output that merely
+ * EXISTS — the demo would then run package code that does not match the
+ * checkout, silently, which is the exact failure this whole approach exists to
+ * avoid. Compare newest-source against newest-output and refuse rather than
+ * vendor something stale.
+ */
+async function assertFreshBuild(name: string, packageDir: string): Promise<void> {
+  const distMtime = await newestMtimeMs(path.join(packageDir, "dist"));
+  if (distMtime === undefined) {
+    throw new Error(
+      `Cannot vendor "${name}": no build output in ${packageDir}/dist. Run \`pnpm build\` before creating a `
+      + "standalone demo clone — a clone vendors the built packages, not their sources.",
+    );
+  }
+  const srcMtime = await newestMtimeMs(path.join(packageDir, "src"));
+  if (srcMtime !== undefined && srcMtime > distMtime) {
+    throw new Error(
+      `Cannot vendor "${name}": ${packageDir}/src is newer than its dist/, so the build output is stale. `
+      + "Run `pnpm build` before creating a standalone demo clone — otherwise the demo would run package code "
+      + "that does not match this checkout.",
+    );
+  }
+}
+
 /**
  * Packs every publishable workspace package into `<appDir>/vendor/` and
- * returns the `file:` spec for each. Packing takes whatever is on disk, so a
- * tree that has not been built would produce tarballs missing their entry
- * points — caught here rather than three minutes later in `next build`.
+ * returns the `file:` spec for each. Packing takes whatever is on disk, so
+ * every buildable package is checked for present AND current output first
+ * ({@link assertFreshBuild}) — an unbuilt tree would otherwise produce
+ * tarballs missing their entry points, and a stale one would produce tarballs
+ * that quietly disagree with the checkout.
  */
 export async function vendorWorkspacePackages(options: {
   repoRoot: string;
@@ -87,12 +140,7 @@ export async function vendorWorkspacePackages(options: {
     }
     const { name, version } = parsed;
     if (typeof name !== "string" || typeof version !== "string" || parsed.private === true) continue;
-    if (parsed.scripts?.["build"] !== undefined && !existsSync(path.join(packageDir, "dist"))) {
-      throw new Error(
-        `Cannot vendor "${name}": no dist/ in ${packageDir}. Run \`pnpm build\` before creating a standalone demo clone — `
-        + "a clone vendors the built packages, not their sources.",
-      );
-    }
+    if (parsed.scripts?.["build"] !== undefined) await assertFreshBuild(name, packageDir);
     await execFileAsync("pnpm", ["pack", "--pack-destination", vendorDir], { cwd: packageDir });
     const tarball = tarballFileName(name, version);
     if (!existsSync(path.join(vendorDir, tarball))) {

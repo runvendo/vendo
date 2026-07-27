@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -12,6 +13,7 @@ import {
   renderCloneDockerignore,
   renderClonePnpmWorkspace,
   tarballFileName,
+  vendorWorkspacePackages,
 } from "./scratch.js";
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
@@ -69,6 +71,54 @@ describe("pinWorkspaceDependencies", () => {
     expect(() =>
       pinWorkspaceDependencies({ dependencies: { "@vendoai/nope": "workspace:*" } }, specs),
     ).toThrow(/@vendoai\/nope/);
+  });
+});
+
+/**
+ * The vendoring is only worth anything if the tarballs carry a build of the
+ * CURRENT source — otherwise a demo silently runs package code that disagrees
+ * with the checkout, which is precisely what vendoring exists to prevent.
+ * `dist/` is gitignored, so "it exists" is not the same as "it is current".
+ */
+describe("vendorWorkspacePackages build-freshness guard", () => {
+  async function fixture(options: { dist?: "fresh" | "stale" | "missing" }): Promise<{ repoRoot: string; appDir: string }> {
+    const repoRoot = await mkdtemp(path.join(tmpdir(), "vendo-vendor-"));
+    const packageDir = path.join(repoRoot, "packages", "core");
+    await mkdir(path.join(packageDir, "src"), { recursive: true });
+    await writeFile(
+      path.join(packageDir, "package.json"),
+      `${JSON.stringify({ name: "@vendoai/core", version: "9.9.9", main: "dist/index.js", scripts: { build: "tsc" } }, null, 2)}\n`,
+    );
+    if (options.dist === "stale") {
+      // Output written BEFORE the source it is supposed to be built from.
+      await mkdir(path.join(packageDir, "dist"), { recursive: true });
+      await writeFile(path.join(packageDir, "dist", "index.js"), "module.exports = {}\n");
+      await utimes(path.join(packageDir, "dist", "index.js"), new Date(1_000_000), new Date(1_000_000));
+    }
+    await writeFile(path.join(packageDir, "src", "index.ts"), "export {}\n");
+    if (options.dist === "fresh") {
+      await mkdir(path.join(packageDir, "dist"), { recursive: true });
+      await writeFile(path.join(packageDir, "dist", "index.js"), "module.exports = {}\n");
+    }
+    return { repoRoot, appDir: path.join(repoRoot, "clone") };
+  }
+
+  it("vendors a package whose dist is newer than its src", async () => {
+    const { repoRoot, appDir } = await fixture({ dist: "fresh" });
+    await expect(vendorWorkspacePackages({ repoRoot, appDir }))
+      .resolves.toEqual({ "@vendoai/core": "file:./vendor/vendoai-core-9.9.9.tgz" });
+  }, 30_000);
+
+  it("refuses a package whose src is newer than its dist, naming the fix", async () => {
+    const { repoRoot, appDir } = await fixture({ dist: "stale" });
+    await expect(vendorWorkspacePackages({ repoRoot, appDir }))
+      .rejects.toThrow(/@vendoai\/core.*stale[\s\S]*pnpm build/);
+  });
+
+  it("refuses a package with no build output at all", async () => {
+    const { repoRoot, appDir } = await fixture({ dist: "missing" });
+    await expect(vendorWorkspacePackages({ repoRoot, appDir }))
+      .rejects.toThrow(/no build output/);
   });
 });
 

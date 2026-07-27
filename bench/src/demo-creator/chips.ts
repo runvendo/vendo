@@ -81,9 +81,27 @@ function isProductTool(name: string): boolean {
  * so tests drive the derivation without a key. */
 export type ChipModelFn = (prompt: string) => Promise<string>;
 
-/** A cheap non-streaming call on the stock ai SDK. Lazy import for the same
- * reason as the judge's: only the commands that need a model pay for it. */
+/**
+ * A cheap non-streaming call on the stock ai SDK. Lazy import for the same
+ * reason as the judge's: only the commands that need a model pay for it.
+ *
+ * OPERATOR-side credential, deliberately NOT the Vendo ladder. The demo this
+ * generates rides VENDO_API_KEY (see apps/demo-template's Cloud posture), but
+ * the creator harness itself is Anthropic-bound end to end — the fidelity
+ * judge takes the same rung and the rewrite stage shells out to the `claude`
+ * CLI — so a chips stage that quietly fell back to the Cloud gateway would
+ * only move the failure to the next stage. Say so up front instead: without a
+ * provider key the whole pipeline is unusable, and an operator holding only a
+ * Cloud key needs to know that here rather than read an SDK 401.
+ */
 export const defaultChipModel: ChipModelFn = async (prompt) => {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error(
+      "demo:chips needs ANTHROPIC_API_KEY — the demo-creator harness runs on a provider key "
+      + "(so do the fidelity judge and the rewrite agents), even though the demo it generates runs on VENDO_API_KEY. "
+      + "Source the Flowlet .env, or pass your own model via the `model` seam.",
+    );
+  }
   const [{ createAnthropic }, { generateText }] = await Promise.all([
     import("@ai-sdk/anthropic"),
     import("ai"),

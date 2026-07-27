@@ -48,9 +48,13 @@ run is a separate explicit command.
     at the same version string, so pinning would demo a release-old Vendo
     (and today fails outright — workspace 0.4.8 exports `vendoModel`,
     published 0.4.8 does not).
-  - Run `pnpm build` at the repo root before creating a clone: vendoring
-    packs what is on disk, and `demo:create` refuses a package with no
-    `dist/`.
+  - Run `pnpm build` at the repo root before creating a clone: vendoring packs
+    what is on disk, so `demo:create` refuses any package whose `dist/` is
+    missing OR older than its `src/` — stale output would mean the demo runs
+    package code that disagrees with the checkout, silently.
+  - The creator harness itself runs on `ANTHROPIC_API_KEY` (chips, the
+    fidelity judge, and the `claude` CLI rewrite agents), even though the
+    demo it generates runs on `VENDO_API_KEY`.
   - `demo:deploy` follows the same split. In-repo apps deploy the monorepo
     (repo-root Docker context, turbo filter) exactly as before; a scratch
     clone deploys ITSELF — `railway up <appDir>`, a standalone Dockerfile,
