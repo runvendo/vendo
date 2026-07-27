@@ -47,7 +47,15 @@ export async function assembleSystemPrompt(
   // with a first-request cloud read so the brief resolves LIVE (a console
   // publish applies to the next turn with no restart). The string form is
   // unchanged.
-  system?: { product?: string | (() => string | undefined); catalog?: string; instructions?: string },
+  // `knowledge` accepts a resolver (knowledge k8): the umbrella locks it to
+  // the boot-time index (status() is async, compose is sync), so per-turn
+  // reads return the SAME bytes — prompt-cache stability is a hard criterion.
+  system?: {
+    product?: string | (() => string | undefined);
+    catalog?: string;
+    knowledge?: string | (() => string | undefined | Promise<string | undefined>);
+    instructions?: string;
+  },
   capabilityMiss = false,
   toolSearch = false,
 ): Promise<string> {
@@ -69,6 +77,12 @@ export async function assembleSystemPrompt(
   // agent places it, venue-gated.
   const catalog = system?.catalog?.trim();
   if (catalog && TREE_VENUES.has(ctx.venue)) sections.push(catalog);
+
+  // Knowledge k8 (ENG-368): the static index + usage guidance rides only the
+  // venues whose turns go through this assembler with a knowledge-capable
+  // surface (chat + app); automation and MCP rely on the tool descriptor.
+  const knowledge = (await (typeof system?.knowledge === "function" ? system.knowledge() : system?.knowledge))?.trim();
+  if (knowledge && TREE_VENUES.has(ctx.venue)) sections.push(knowledge);
 
   const instructions = system?.instructions?.trim();
   if (instructions) sections.push(instructions);

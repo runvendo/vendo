@@ -1125,6 +1125,10 @@ export async function runInit(options: InitOptions): Promise<number> {
         directions: [],
         rules: [
           { match: { risk: "destructive" }, action: "ask", note: "Review irreversible actions" },
+          // ENG-370 hardening: knowledge tools are read-class, so this rule
+          // must sit ABOVE the read→run rule (first match wins). MCP clients
+          // sit outside the product surface; hosts may harden ask → block.
+          { match: { tool: "vendo_knowledge_*", venue: "mcp" }, action: "ask", note: "Knowledge access from an MCP client" },
           { match: { risk: "read" }, action: "run" },
         ],
       }, null, 2)}\n`,

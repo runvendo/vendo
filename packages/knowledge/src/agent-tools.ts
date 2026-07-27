@@ -81,6 +81,56 @@ export interface KnowledgeToolsOptions {
       "weak". Default 0 — never triggers, so score-less/constant-score engines
       (the memory adapter) never falsely refuse. */
   weakScoreThreshold?: number;
+  /** ENG-370 rate breaker: per-principal calls per rolling minute before the
+      tool answers a loud "rate-limited" error. Explicit option wins over the
+      VENDO_KNOWLEDGE_MAX_CALLS_PER_MINUTE env knob; default 60. */
+  maxCallsPerMinute?: number;
+}
+
+/** ENG-370 default; the env knob is the operator escape hatch. */
+const MAX_CALLS_PER_MINUTE = 60;
+
+const maxCallsPerMinuteFromEnv = (): number | undefined => {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+  const configured = Number(env?.["VENDO_KNOWLEDGE_MAX_CALLS_PER_MINUTE"]);
+  return Number.isFinite(configured) && configured > 0 ? configured : undefined;
+};
+
+/** ENG-370 — a small in-memory rolling-minute breaker keyed by principal
+    subject (guard.ts #recordCall is the house pattern, including the
+    once-per-minute sweep that bounds the map for process lifetime). Scoped
+    per registry instance; the tool composes once per createVendo, so the
+    window is per-process like the guard's. */
+class CallRateBreaker {
+  #windows = new Map<string, number[]>();
+  #lastSweepAt = 0;
+  readonly #limit: number;
+
+  constructor(limit: number) {
+    this.#limit = limit;
+  }
+
+  /** Records one call and reports whether it EXCEEDS the per-minute limit
+      (call 61 of a 60-limit window trips; timestamps older than 60s fall out,
+      so the window resets on its own). */
+  record(subject: string): boolean {
+    const at = Date.now();
+    const cutoff = at - 60_000;
+    this.#sweep(at);
+    const active = (this.#windows.get(subject) ?? []).filter((timestamp) => timestamp > cutoff);
+    active.push(at);
+    this.#windows.set(subject, active);
+    return active.length > this.#limit;
+  }
+
+  #sweep(at: number): void {
+    if (at - this.#lastSweepAt < 60_000) return;
+    this.#lastSweepAt = at;
+    const cutoff = at - 60_000;
+    for (const [subject, timestamps] of this.#windows) {
+      if (!timestamps.some((timestamp) => timestamp > cutoff)) this.#windows.delete(subject);
+    }
+  }
 }
 
 interface KnowledgeSearchInput {
@@ -181,6 +231,7 @@ export function createKnowledgeTools(
   options: KnowledgeToolsOptions = {},
 ): ToolRegistry {
   const threshold = options.weakScoreThreshold ?? 0;
+  const breaker = new CallRateBreaker(options.maxCallsPerMinute ?? maxCallsPerMinuteFromEnv() ?? MAX_CALLS_PER_MINUTE);
 
   // The status()-verified refusal (checker round 1): an empty/weak search
   // from a SICK engine must not pass as an honest refusal or not-found — the
@@ -218,6 +269,18 @@ export function createKnowledgeTools(
     async execute(call, ctx: RunContext): Promise<ToolOutcome> {
       if (call.tool !== VENDO_KNOWLEDGE_SEARCH_TOOL) {
         return { status: "error", error: { code: "not-found", message: `Unknown tool: ${call.tool}` } };
+      }
+      // ENG-370 breaker — LOUD, never a silent empty result. "rate-limited"
+      // is the house wire code for this condition (Cloud device-login speaks
+      // it); deliberately NOT a VendoErrorCode, so it never rides VendoError.
+      if (breaker.record(ctx.principal.subject)) {
+        return {
+          status: "error",
+          error: {
+            code: "rate-limited",
+            message: "Knowledge search is rate-limited for this user (too many calls in the last minute) — wait before retrying.",
+          },
+        };
       }
       let input: KnowledgeSearchInput;
       try {
