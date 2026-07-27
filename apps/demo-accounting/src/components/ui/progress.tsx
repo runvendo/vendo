@@ -1,4 +1,4 @@
-import { cn } from "@/lib/cn"
+import { cn } from "../../lib/cn"
 
 /** Thin document-collection meter. Turns verified-green when complete. */
 export function ProgressBar({

@@ -1,9 +1,9 @@
 "use client"
 
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
-import { cn } from "@/lib/cn"
-import { formatUSD } from "@/lib/money"
-import type { SpendingSlice } from "@/server/types"
+import { cn } from "../../lib/cn"
+import { formatUSD } from "../../lib/money"
+import type { SpendingSlice } from "../../server/types"
 import { categoryColor, categoryLabel } from "./colors"
 
 interface DonutProps {

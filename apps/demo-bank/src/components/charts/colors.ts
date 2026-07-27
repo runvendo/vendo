@@ -1,4 +1,4 @@
-import type { Category } from "@/server/types"
+import type { Category } from "../../server/types"
 
 /** One shared, restrained category color scale. Muted and harmonious — warm greys, sage, clay — never neon. */
 export const CATEGORY_COLORS: Record<Category, string> = {

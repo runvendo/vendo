@@ -131,6 +131,60 @@ describe("VendoPane", () => {
     expect(calls.filter((call) => call.body.tool === "host_transferMoney").length).toBe(before);
   });
 
+  it("renders the host's own registry components instead of the Unknown-component notice", async () => {
+    const hostDoc: AppDocument = {
+      format: VENDO_APP_FORMAT,
+      id: "app_bench_host",
+      name: "Net worth",
+      ui: "tree",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "root",
+        nodes: [
+          { id: "root", component: "Stack", children: ["card"] },
+          {
+            id: "card",
+            component: "MapleNetWorthCard",
+            source: "host",
+            props: { valueCents: 5_490_715, series: [5_329_117, 5_490_715], changeLabel: "▲ 2.3% this month" },
+          },
+        ],
+      },
+    };
+    render(
+      <VendoPane lane="vendo" result={{ ...okResult, document: hostDoc }} host={host} />,
+    );
+    await waitFor(() => expect(screen.queryByText(/Unknown component/)).toBeNull());
+    // NetWorthView's own markup: the range switcher it renders for the series.
+    expect(screen.getByText("1W")).toBeTruthy();
+  });
+
+  it("resolves the Cadence registry for the cadence host", async () => {
+    const cadenceDoc: AppDocument = {
+      format: VENDO_APP_FORMAT,
+      id: "app_bench_cadence",
+      name: "Doc status",
+      ui: "tree",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "root",
+        nodes: [
+          { id: "root", component: "Stack", children: ["badge"] },
+          { id: "badge", component: "CadenceStatusBadge", source: "host", props: { text: "Needs review", variant: "review" } },
+        ],
+      },
+    };
+    render(
+      <VendoPane
+        lane="vendo"
+        result={{ ...okResult, document: cadenceDoc }}
+        host={{ ...host, name: "cadence" }}
+      />,
+    );
+    await waitFor(() => expect(screen.queryByText(/Unknown component/)).toBeNull());
+    expect(screen.getByText("Needs review")).toBeTruthy();
+  });
+
   it("shows the failure vocabulary for a failed lane result", () => {
     render(
       <VendoPane
