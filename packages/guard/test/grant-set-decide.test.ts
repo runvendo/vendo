@@ -208,6 +208,62 @@ describe("grant-set decide atomicity (real store transaction)", () => {
     expect(committed).toBe(2);
   });
 
+  it("when the ROLLBACK itself also fails, the partial state is loud: named error + setRollbackFailed audit — never silent", async () => {
+    const sqlStore = await store();
+    // Two injected faults: the second member's decided-status write throws
+    // (triggering compensation), and the first member's restore-to-pending
+    // write throws too (the rollback fails). The set must surface BOTH
+    // loudly: a conflict error naming the approvals to review, and a
+    // setRollbackFailed audit record — the one state that can never be quiet.
+    let failCommitFor: string | undefined;
+    let failRestoreFor: string | undefined;
+    const faulty: PGliteStore = {
+      ...sqlStore,
+      records: (collection: string) => {
+        const records = sqlStore.records(collection);
+        if (collection !== "vendo_approvals") return records;
+        return {
+          get: (id: string) => records.get(id),
+          delete: (id: string) => records.delete(id),
+          list: (query?: Parameters<typeof records.list>[0]) => records.list(query),
+          atomic: records.atomic,
+          put: async (record: Parameters<typeof records.put>[0]) => {
+            const status = (record.data as { status?: string }).status;
+            if (record.id === failCommitFor && status !== "pending") {
+              failCommitFor = undefined;
+              throw new Error("injected: commit write failed");
+            }
+            if (record.id === failRestoreFor && status === "pending") {
+              failRestoreFor = undefined;
+              throw new Error("injected: restore write failed");
+            }
+            return records.put(record);
+          },
+        };
+      },
+    } as PGliteStore;
+    const guard = guardOf(faulty);
+    const [a, b] = await parkPair(guard);
+    const [first, second] = [a, b].sort();
+    failCommitFor = second!;
+    failRestoreFor = first!;
+
+    await expect(guard.approvals.decide([a, b], { approve: true }, alice))
+      .rejects.toMatchObject({
+        code: "conflict",
+        message: expect.stringContaining(`Review these approvals in Activity before retrying: ${first}`),
+      });
+
+    // The partial state is visible, not swallowed: the first member kept its
+    // committed decision (restore failed), the second stayed pending, and the
+    // ledger carries the rollback-failure record.
+    expect(await statusOf(sqlStore, first!)).toBe("approved");
+    expect(await statusOf(sqlStore, second!)).toBe("pending");
+    const audit = await guard.audit.query({ principal: alice, limit: 50 });
+    expect(audit.events.some(event =>
+      (event.detail as { setRollbackFailed?: boolean } | undefined)?.setRollbackFailed === true)).toBe(true);
+  });
+
   it("single-id decides keep the strict one-time transition (same-direction re-decide still conflicts)", async () => {
     const sqlStore = await store();
     const guard = guardOf(sqlStore);
