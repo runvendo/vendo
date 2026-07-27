@@ -340,6 +340,19 @@ async function main(): Promise<void> {
           : verified.length / rows.filter((row) => row.verifications.length > 0).length,
       verifyLatencyMsP50: percentile(verified.map((entry) => entry.latencyMs), 50),
       verifyLatencyMsP95: percentile(verified.map((entry) => entry.latencyMs), 95),
+      // Round 2: what verification costs a VERIFIED TURN is the sum of that
+      // turn's calls — a chat→deep turn pays twice, so per-call percentiles
+      // may never be published under a per-turn label.
+      verifiedTurnVerifyMsP50: percentile(
+        rows.filter((row) => row.verifications.length > 0)
+          .map((row) => row.verifications.reduce((total, entry) => total + entry.latencyMs, 0)),
+        50,
+      ),
+      verifiedTurnVerifyMsP95: percentile(
+        rows.filter((row) => row.verifications.length > 0)
+          .map((row) => row.verifications.reduce((total, entry) => total + entry.latencyMs, 0)),
+        95,
+      ),
       turnLatencyMsP50: percentile(rows.map((row) => row.latencyMs), 50),
       turnLatencyMsP95: percentile(rows.map((row) => row.latencyMs), 95),
     };

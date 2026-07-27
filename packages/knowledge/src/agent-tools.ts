@@ -449,7 +449,27 @@ export function createKnowledgeTools(
             await verifyEmptiness();
             return envelope({ outcome: "not-found" });
           }
-          return envelope({ outcome: "answered", hits: result.hits.slice(0, MAX_HITS).map(toCitation) });
+          // K15 round 2: a lookup is still a hits-returning search — "every
+          // search that returns hits" has no schema carve-out. A glossary hit
+          // for the right term but the wrong fact is exactly the near-miss the
+          // check exists for. Scores play no part here (they never did on this
+          // path); the verdict, when there is one, is the arbiter.
+          const lookupTurn: Turn = { budgetMs: turnBudgetMs, spentMs: 0 };
+          const lookupCall = await adjudicate(input.query, result.hits, lookupTurn);
+          const lookupHits = result.hits.slice(0, MAX_HITS).map(toCitation);
+          const lookupMark = lookupCall.unverified === true ? { unverified: true as const } : {};
+          if (lookupCall.verdict?.supported === false) {
+            // Verifier-produced refusal: the engine just returned scored hits,
+            // so it is alive — same reasoning as the query path's skipped
+            // status() check.
+            return envelope({
+              outcome: "insufficient-evidence",
+              hits: lookupHits,
+              message: lookupCall.verdict.gap,
+              ...lookupMark,
+            });
+          }
+          return envelope({ outcome: "answered", hits: lookupHits, ...lookupMark });
         }
 
         // K14/K15 — one verification state per turn: the shared time budget,

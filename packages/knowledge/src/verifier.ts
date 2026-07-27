@@ -97,19 +97,67 @@ export interface EntailmentVerifierOptions {
     the tool falls open MARKED — the honest outcome for a check that did not
     really run. Twelve characters is the shortest thing that can name a missing
     fact; the placeholder list is the set a model reaches for when it has
-    nothing to say. */
+    nothing to say.
+
+    Round 2: length alone let boilerplate through — "not enough info",
+    "insufficient information", "the answer is unknown" all cleared 12
+    characters while naming nothing, and a refusal justified by junk evidence
+    is the exact failure this verifier exists to kill. So a gap must also be
+    SPECIFIC: after normalizing, at least one word must be something other
+    than generic refusal vocabulary — a fact, a topic, a framework — or the
+    verdict is invalid and the tool falls open MARKED. */
 const MIN_GAP_CHARS = 12;
 const GAP_PLACEHOLDERS = new Set(["n/a", "na", "none", "null", "unknown", "no gap", "nogap", "-", "—"]);
+/** Words that appear in every generic refusal and name nothing. A gap made
+    ONLY of these is boilerplate however long it is; one word outside this set
+    ("Vue", "pricing", "APY") is what makes a gap actionable. */
+const GAP_BOILERPLATE_WORDS = new Set([
+  // articles, pronouns, copulas, prepositions, conjunctions
+  "the", "a", "an", "it", "its", "this", "that", "these", "those", "there",
+  "is", "are", "was", "were", "be", "been", "being", "to", "of", "for",
+  "from", "in", "on", "at", "by", "as", "with", "within", "about", "or",
+  "and", "but", "so", "than", "then", "here", "given",
+  // negation and modality (apostrophes are stripped before matching)
+  "not", "no", "nor", "cannot", "cant", "can", "could", "would", "should",
+  "will", "wont", "does", "do", "did", "doesnt", "dont", "didnt", "isnt",
+  "arent", "wasnt", "werent",
+  // the generic nouns of a refusal
+  "answer", "answers", "question", "questions", "info", "information",
+  "data", "evidence", "context", "detail", "details", "fact", "facts",
+  "specifics", "content", "knowledge", "documentation", "docs", "doc",
+  "document", "documents", "passage", "passages", "source", "sources",
+  "snippet", "snippets", "text", "result", "results", "search", "gap",
+  // the generic verbs of a refusal
+  "cover", "covers", "covered", "covering", "state", "states", "stated",
+  "say", "says", "said", "mention", "mentions", "mentioned", "provide",
+  "provides", "provided", "contain", "contains", "contained", "include",
+  "includes", "included", "address", "addresses", "addressed", "answered",
+  "determine", "determined", "specify", "specified", "exist", "exists",
+  "found", "find",
+  // the generic qualifiers of a refusal
+  "enough", "insufficient", "sufficient", "unknown", "unclear",
+  "unavailable", "available", "missing", "lacking", "present", "specific",
+  "relevant", "related", "needed", "required", "necessary", "directly",
+  "explicitly", "only", "any", "some", "none", "more",
+]);
+
+const isUsableGap = (value: string): boolean => {
+  const gap = value.trim();
+  if (gap.length < MIN_GAP_CHARS) return false;
+  if (GAP_PLACEHOLDERS.has(gap.toLowerCase().replace(/[.!]+$/, ""))) return false;
+  const words = gap
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .split(/[^a-z0-9/-]+/)
+    .filter((word) => word.length > 0);
+  return words.some((word) => !GAP_BOILERPLATE_WORDS.has(word));
+};
 
 const verdictSchema = z.object({
   supported: z.boolean(),
-  gap: z.string().refine(
-    (value) => {
-      const gap = value.trim();
-      return gap.length >= MIN_GAP_CHARS && !GAP_PLACEHOLDERS.has(gap.toLowerCase().replace(/[.!]+$/, ""));
-    },
-    { message: "gap must name the fact that is present or missing, not a placeholder" },
-  ),
+  gap: z.string().refine(isUsableGap, {
+    message: "gap must name the specific fact that is present or missing — not a placeholder, not boilerplate like \"not enough information\"",
+  }),
 });
 
 /** The standard, written for the failure the calibration actually found:

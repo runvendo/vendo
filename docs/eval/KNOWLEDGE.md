@@ -153,8 +153,9 @@ labelled questions.
 | **False refusals** per pass | 3/60 · 3/60 | 2/60 (run A) · 3/60 (run B) |
 | Searches the check read | 94/94 — 100% | 59-60/94 — 63% |
 | Verifier calls per search | 1.37-1.39 | 0.93-0.98 |
-| Verifier latency, verified turn | p50 1.7-1.8s · p95 3.4-4.1s | p50 1.8-2.0s · p95 3.3-5.0s |
-| Whole tool call | p50 3.5-3.7s · p95 6.7-6.8s | p50 2.4-2.6s · p95 6.0-6.6s |
+| Verifier latency per verified turn (its calls, summed) | p50 2.5-2.6s · p95 5.0s | p50 3.2-3.7s · p95 5.0s |
+| Verifier latency per call | p50 1.7-1.8s · p95 3.4-4.1s | p50 1.8-2.0s · p95 3.3-5.0s |
+| Whole tool call | p50 3.5-3.7s · p95 6.7-6.8s | p50 2.3-2.6s · p95 6.0-6.6s |
 
 **Does the spec's zero-false-answer bar hold? No.** The best configuration
 still answered 7 and 10 of 34 unanswerable questions on its two passes. What
@@ -191,9 +192,11 @@ contain any information about installing a Python SDK".
 `claude-haiku-4-5` list prices with a ~1.1k-token prompt and a ~60-token
 verdict — ≈$0.0013 a call — that is **≈$0.0018 per search** ungated, ≈$0.0013
 gated. The per-call price is a list-price estimate; the call count is
-measured. Latency is measured throughout: the check adds p50 ~1.8s to a
-verified turn, and the per-turn budget bounds its share of one tool call at 5s
-however many times it verifies.
+measured. Latency is measured throughout: the check adds p50 ~2.5s of
+verification to a verified turn — the SUM of that turn's calls, which is more
+than one call's median of ~1.7-1.8s because many turns verify twice — and the
+per-turn budget bounds its share of one tool call at 5s however many times it
+verifies (the p95 sitting at 5.0s is that wall doing its job).
 
 ### Sizing the per-turn budget, by measurement
 
@@ -255,4 +258,4 @@ calibration runs are).
 | 2026-07-26 | lexical | 0.100 | 0.055 | — (offline) | Calibration at K7 landing, natural questions. Retrieval baseline is weak (unnormalized term-frequency scoring; long common-token docs dominate; schema lookup honestly empty for question-shaped text) and the REFUSAL LAYER IS RED: off-corpus questions return junk hits, so the shipped zero-hits weakness policy answers them (6/60 golden items retrieved; 0/15 refusal items refused). Bars seeded at measured floors; lexical stays out of the per-PR gate until refusals go honest — this row is the suite catching a real quality gap, not noise |
 | 2026-07-27 | agentset (replay) | — | — | — | WITHDRAWN. K14's verifier table ("false answers 47% → 3%") was a replay with reconstructed passages and a hand-computed outcome, not a live run; superseded by the row below. The harness and artifact are deleted |
 | 2026-07-28 | agentset (live, band-gated) | — | — | — | K15 first measurement of K14's gated design, 94 questions × 3 passes × two runs: false answers 19/12/9 and 16/12/10 of 34 (worst 19/34 — 56%), false refusals 2-3/60, only 59-60/94 searches read. The gate was removed on the strength of this row |
-| 2026-07-28 | agentset (live, ungated — ships) | — | — | — | The check on every hits-returning search: false answers 7/34 and 10/34 (worst 10/34 — 29%), false refusals 3/60, 94/94 searches read, 1.37-1.39 calls/search, verifier p50 1.7-1.8s, tool call p50 3.5-3.7s / p95 6.8s. **The zero-false-answer bar still does NOT hold**, which is why the check ships off by default |
+| 2026-07-28 | agentset (live, ungated — ships) | — | — | — | The check on every hits-returning search: false answers 7/34 and 10/34 (worst 10/34 — 29%), false refusals 3/60, 94/94 searches read, 1.37-1.39 calls/search, verifier p50 1.7-1.8s per call (2.5-2.6s summed per verified turn), tool call p50 3.5-3.7s / p95 6.8s. **The zero-false-answer bar still does NOT hold**, which is why the check ships off by default |

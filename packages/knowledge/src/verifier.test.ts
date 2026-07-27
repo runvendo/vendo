@@ -118,6 +118,34 @@ describe("entailmentVerifier (K14 T2)", () => {
     }
   });
 
+  it("gives NO verdict on a BOILERPLATE gap — junk evidence never justifies a refusal", async () => {
+    // Round 2 (checker's three probes): all of these cleared the 12-character
+    // bar while naming nothing. A refusal must be able to say WHAT is missing;
+    // a verdict that cannot is invalid output, and the tool falls open MARKED.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (const gap of ["not enough info", "insufficient information", "the answer is unknown"]) {
+        const verifier = entailmentVerifier({ model: scriptedModel(JSON.stringify({ supported: false, gap })) });
+        await expect(verifier.verify({ question: "q", passages })).resolves.toBeUndefined();
+      }
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("keeps a SPECIFIC gap that a generic-refusal filter could over-match", async () => {
+    // The specificity rule is one content word, not fancy NLP: these read like
+    // refusals but each names the thing that is missing, so they must survive.
+    for (const gap of [
+      "the docs cover React, not Vue",
+      "no information about pricing tiers",
+      "the passages describe setup, not the APY formula",
+    ]) {
+      const verifier = entailmentVerifier({ model: scriptedModel(JSON.stringify({ supported: false, gap })) });
+      await expect(verifier.verify({ question: "q", passages })).resolves.toEqual({ supported: false, gap });
+    }
+  });
+
   it("keeps a real gap, trimmed", async () => {
     const verifier = entailmentVerifier({
       model: scriptedModel(JSON.stringify({ supported: false, gap: "  the passages never mention Vue  " })),

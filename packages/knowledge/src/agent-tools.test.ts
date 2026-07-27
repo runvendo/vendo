@@ -610,13 +610,43 @@ describe("tool policy: the evidence check runs on EVERY hits-returning search (K
     expect(envelope.unverified).toBeUndefined();
   });
 
-  it("never consults the verifier on a schema lookup — a different score space", async () => {
+  it("verifies schema lookups too — every hits-returning search, no carve-out", async () => {
+    // Round 2: this row previously pinned ZERO verifier calls on lookups. A
+    // glossary hit for the right term but the wrong fact is exactly the
+    // near-miss the check exists for.
     const verifier = stubVerifier(false);
-    await search(
+    const envelope = await envelopeOf(await search(
       createKnowledgeTools(scoredAdapter(0.75), { verifier }),
       { query: "APY", lookup: true },
-    );
-    expect(verifier.calls).toHaveLength(0);
+    ));
+    expect(verifier.calls).toHaveLength(1);
+    expect(envelope.outcome).toBe("insufficient-evidence");
+    expect(envelope.message).toBe("the passages do not cover it");
+  });
+
+  it("a supported lookup answers unmarked; a no-verdict lookup answers MARKED", async () => {
+    const supported = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), { verifier: stubVerifier(true) }),
+      { query: "APY", lookup: true },
+    ));
+    expect(supported.outcome).toBe("answered");
+    expect(supported.unverified).toBeUndefined();
+
+    const noVerdict = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), { verifier: stubVerifier(undefined) }),
+      { query: "APY", lookup: true },
+    ));
+    expect(noVerdict.outcome).toBe("answered");
+    expect(noVerdict.unverified).toBe(true);
+  });
+
+  it("a lookup without a verifier is untouched — today's behavior exactly", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), {}),
+      { query: "APY", lookup: true },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBeUndefined();
   });
 });
 
