@@ -252,15 +252,24 @@ describe("knowledge resolution — misconfiguration is audible", () => {
     const vendo = await compose();
     const outcome = await search(vendo);
 
-    // The tool EXISTS (a wrong key is a configured host), the end user hears
-    // the contract's honest "unavailable", and the operator — the only one
-    // who can fix a rejected key — gets the cause in the server log. Setup
-    // guidance stays out of the model's context on purpose: it is operator
-    // text and must not reach an end user through the answer.
+    // The tool EXISTS — a wrong key is a configured host, not an absent one.
     expect(await hasKnowledgeTool(vendo)).toBe(true);
     expect(outcome).toMatchObject({ status: "ok", output: { outcome: "unavailable", hits: [] } });
-    expect(JSON.stringify(outcome)).not.toMatch(/vendo login|VENDO_API_KEY/);
-    expect(warn.mock.calls.flat().join(" ")).toMatch(/rejected the API key/);
+
+    // HALF ONE — the model is TOLD WHY. An outcome with no reason is the
+    // silence this lane exists to kill: the agent could not tell a rejected
+    // key from a network blip, so it said neither.
+    const output = (outcome as { output: { message?: string } }).output;
+    expect(output.message).toMatch(/rejected the API key/);
+
+    // HALF TWO — the remediation is the OPERATOR's, and only theirs. It must
+    // reach the server log (they are the only one who can act on it) and must
+    // not reach the model, which would put our infra setup instructions in
+    // front of a bank's end user.
+    const logged = warn.mock.calls.flat().join(" ");
+    expect(logged).toMatch(/rejected the API key/);
+    expect(logged).toMatch(/vendo login/);
+    expect(JSON.stringify(outcome)).not.toMatch(/vendo login/);
   });
 
   it("an unreachable console is unavailable-with-a-reason, never an empty corpus", async () => {
@@ -275,7 +284,13 @@ describe("knowledge resolution — misconfiguration is audible", () => {
     // "unavailable" and not "insufficient-evidence": an engine that cannot be
     // reached has not told us the corpus is empty, and the agent must not say
     // it looked and found nothing.
-    expect(outcome).toMatchObject({ status: "ok", output: { outcome: "unavailable" } });
+    // Both audiences again: the reason rides the envelope to the model, and
+    // the same cause lands in the operator's log. An outage carries no
+    // remediation clause, so the statement IS the whole message.
+    expect(outcome).toMatchObject({
+      status: "ok",
+      output: { outcome: "unavailable", message: expect.stringMatching(/unreachable/) },
+    });
     expect(warn.mock.calls.flat().join(" ")).toMatch(/unreachable/);
   });
 });
