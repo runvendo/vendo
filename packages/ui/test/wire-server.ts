@@ -263,6 +263,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
      *  grant-set fields (pendingGrants/grantSetId), the payload an older
      *  server emits — new clients must parse and render it unchanged. */
     legacyAutomationsPayload: false,
+    /** H2 harness: the engine's in-decision disarm silently fails (its store
+     *  write threw and the guard swallowed the subscriber error) — the deny
+     *  decisions land but the automation row stays enabled. */
+    denyDisarmFails: false,
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
@@ -631,7 +635,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
         // in the SAME decision (the automations engine's decide subscriber);
         // a partial deny leaves it armed (05 §6 — ungranted steps park at
         // fire time). Mirror both so panels render the real post-deny state.
-        if (body.decision?.approve !== true) {
+        if (body.decision?.approve !== true && !state.denyDisarmFails) {
           const deniedApps = new Set(state.approvals
             .filter(item => ids.includes(item.id) && item.ctx.venue === "automation" && item.ctx.appId !== undefined)
             .map(item => item.ctx.appId));

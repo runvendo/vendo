@@ -1,7 +1,7 @@
 import type { ApprovalRequest, AppId, Trigger } from "@vendoai/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { APPROVALS_DECIDED_EVENT } from "../client-impl.js";
-import { useVendoTheme } from "../context.js";
+import { useVendoContext, useVendoTheme } from "../context.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
 import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
@@ -100,6 +100,7 @@ function nextRunLabel(trigger: Trigger | undefined, lastStartedAt: string | unde
 export function AutomationsPanel() {
   const automations = useAutomations();
   const approvals = useApprovals();
+  const { client } = useVendoContext();
   const theme = useVendoTheme();
   const [plans, setPlans] = useState<Record<AppId, RunPlan | undefined>>({});
   const [runs, setRuns] = useState<Record<AppId, RunRecord[] | undefined>>({});
@@ -217,18 +218,41 @@ export function AutomationsPanel() {
 
   /** Decide the app's WHOLE grant set with one wire call (atomic per
       criterion: all granted or none — the guard lands the batch all-or-none,
-      and a denied set disarms its automation inside the SAME decision, so no
-      second request exists to fail after the asks are gone). The announcement
-      carries the set id so a thread parked on this set resumes from here. A
-      thrown decide surfaces in the card (visible error + the actions stay,
-      so retrying is one click). */
-  const decideSet = async (asks: ApprovalRequest[], grantSetId: string | undefined, approve: boolean) => {
+      and a wholly denied set disarms its automation inside the SAME decision).
+      The announcement carries the set id so a thread parked on this set
+      resumes from here. A thrown decide surfaces in the card (visible error +
+      the actions stay, so retrying is one click). After a deny, the panel
+      VERIFIES the disarm landed and repairs with an explicit disable when it
+      did not; a failed repair surfaces in the panel alert with the row
+      honestly still Enabled and the toggle as the retry — a denied automation
+      is never silently left enabled. */
+  const decideSet = async (appId: AppId, asks: ApprovalRequest[], grantSetId: string | undefined, approve: boolean) => {
     await approvals.decide(
       asks.map(ask => ask.id),
       { approve },
       grantSetId === undefined ? undefined : { grantSetId },
     );
     await automations.refresh();
+    if (approve) return;
+    const [entries, grants] = await Promise.all([client.automations.list(), client.grants.list()]);
+    const entry = entries.find(candidate => candidate.app.id === appId);
+    const stillArmed = entry !== undefined && entry.enabled && (entry.pendingGrants ?? 0) === 0;
+    // The engine keeps a PARTIALLY granted automation armed by design (its
+    // ungranted steps park at fire time) — repair only a consent moment that
+    // granted nothing yet left the row enabled.
+    const grantedSomething = grants.some(grant =>
+      grant.appId === appId
+      && grant.source === "automation"
+      && grant.duration === "standing"
+      && grant.revokedAt === undefined);
+    if (!stillArmed || grantedSomething) return;
+    try {
+      await automations.disable(appId);
+    } catch (reason) {
+      setError(`The permissions were denied, but switching the automation off failed (${
+        reason instanceof Error ? reason.message : String(reason)
+      }). It is still enabled — use its toggle to turn it off.`);
+    }
   };
 
   // Evaluated once per render (not once per automation): matchMedia is cheap but
@@ -435,7 +459,7 @@ export function AutomationsPanel() {
                   }))}
                   state="parked"
                   onDecide={async approve => {
-                    await decideSet(pendingAsks, entry.grantSetId, approve);
+                    await decideSet(appId, pendingAsks, entry.grantSetId, approve);
                     if (approve) celebrateEnable(appId);
                   }}
                 />

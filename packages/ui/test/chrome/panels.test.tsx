@@ -157,6 +157,71 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("false"));
   });
 
+  it("H2: decisions succeed but the DISABLE step fails — visible retryable error, never a silent enabled+denied automation", async () => {
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher" }));
+    await screen.findByLabelText("Standing access — Invoice watcher");
+    // The engine's in-decision disarm fails silently server-side, AND the
+    // panel's explicit repair disable fails too — the worst case.
+    wire.state.denyDisarmFails = true;
+    wire.state.failures.push({
+      method: "POST",
+      path: "/automations/app_auto/disable",
+      code: "sandbox-unavailable",
+      message: "Store briefly unavailable",
+      status: 503,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+
+    // The DECISIONS landed (both asks decided, card gone)...
+    await waitFor(() => expect(screen.queryByLabelText("Standing access — Invoice watcher")).toBeNull());
+    expect(wire.state.approvals.filter(item => item.ctx.appId === "app_auto")).toHaveLength(0);
+    // ...the panel attempted the repair disable...
+    await waitFor(() => expect(wire.requests).toContainEqual(expect.objectContaining({
+      method: "POST",
+      path: "/automations/app_auto/disable",
+    })));
+    // ...and its failure is VISIBLE: the alert names the still-enabled
+    // automation and points at the retry; the row honestly reads enabled.
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("It is still enabled");
+    expect(alert.textContent).toContain("Store briefly unavailable");
+    expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("true");
+
+    // Retry IS the toggle: the next disable succeeds and the row disarms.
+    fireEvent.click(screen.getByRole("switch", { name: "Enable Invoice watcher" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("false"));
+  });
+
+  it("H2 guardrail: the repair never disarms a PARTIALLY granted automation (05 §6 law)", async () => {
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    fireEvent.click(await screen.findByRole("switch", { name: "Enable Invoice watcher" }));
+    await screen.findByLabelText("Standing access — Invoice watcher");
+    // The consent moment granted the automation something: a live
+    // automation-source standing grant exists for this app.
+    wire.state.denyDisarmFails = true; // row stays enabled — correctly, per the law
+    wire.state.grants.push({
+      id: "grt_partial",
+      subject: "user_1",
+      tool: "host_email_send",
+      descriptorHash: "sha256:fixture",
+      scope: { kind: "tool" },
+      duration: "standing",
+      source: "automation",
+      appId: "app_auto",
+      grantedAt: "2026-07-11T12:00:00.000Z",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Standing access — Invoice watcher")).toBeNull());
+    // No repair disable fired, no error raised — the armed row is the law.
+    expect(wire.requests.filter(request => request.path === "/automations/app_auto/disable")).toHaveLength(0);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("switch", { name: "Enable Invoice watcher" }).getAttribute("aria-checked")).toBe("true");
+  });
+
   it("backward-compat: a legacy payload WITHOUT pendingGrants/grantSetId still parses, renders, and decides", async () => {
     // An older server: /automations entries and the enable result carry none
     // of the grant-set fields. The panel must render unchanged — the set card

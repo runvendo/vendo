@@ -151,6 +151,63 @@ describe("grant-set decide atomicity (real store transaction)", () => {
     expect(["approved", "denied"]).toContain(statusA);
   });
 
+  it("a member COMMIT failure compensates: second member's status write fails, the first rolls back, retry lands all-or-none", async () => {
+    const sqlStore = await store();
+    // Wrap the REAL store: the FIRST decided-status write for the injected id
+    // throws (a storage fault mid-batch); everything else — including the
+    // compensation's restore-to-pending writes — passes through untouched.
+    let failStatusWriteFor: string | undefined;
+    const faulty: PGliteStore = {
+      ...sqlStore,
+      records: (collection: string) => {
+        const records = sqlStore.records(collection);
+        if (collection !== "vendo_approvals") return records;
+        return {
+          get: (id: string) => records.get(id),
+          delete: (id: string) => records.delete(id),
+          list: (query?: Parameters<typeof records.list>[0]) => records.list(query),
+          atomic: records.atomic,
+          put: async (record: Parameters<typeof records.put>[0]) => {
+            const status = (record.data as { status?: string }).status;
+            if (record.id === failStatusWriteFor && status !== "pending") {
+              failStatusWriteFor = undefined;
+              throw new Error("injected: approval-status write failed");
+            }
+            return records.put(record);
+          },
+        };
+      },
+    } as PGliteStore;
+    const guard = guardOf(faulty);
+    const [a, b] = await parkPair(guard);
+    let committed = 0;
+    guard.onApprovalDecision(() => {
+      committed += 1;
+    });
+    const [first, second] = [a, b].sort();
+    failStatusWriteFor = second!;
+    const remember = { scope: { kind: "tool" as const }, duration: "standing" as const };
+
+    await expect(guard.approvals.decide([a, b], { approve: true, remember }, alice))
+      .rejects.toThrow("injected: approval-status write failed");
+
+    // All-or-none against the storage fault: the FIRST member (already
+    // approved + granted) rolled back — both pending, no grants survive, no
+    // subscriber ever observed the doomed set.
+    expect(await statusOf(sqlStore, first!)).toBe("pending");
+    expect(await statusOf(sqlStore, second!)).toBe("pending");
+    expect(await guard.grants.list(alice)).toHaveLength(0);
+    expect(committed).toBe(0);
+    expect(await guard.approvals.pending(alice)).toHaveLength(2);
+
+    // Failed-retryable: the same decision retried lands the whole set.
+    await guard.approvals.decide([a, b], { approve: true, remember }, alice);
+    expect(await statusOf(sqlStore, a)).toBe("approved");
+    expect(await statusOf(sqlStore, b)).toBe("approved");
+    expect(await guard.grants.list(alice)).toHaveLength(2);
+    expect(committed).toBe(2);
+  });
+
   it("single-id decides keep the strict one-time transition (same-direction re-decide still conflicts)", async () => {
     const sqlStore = await store();
     const guard = guardOf(sqlStore);
