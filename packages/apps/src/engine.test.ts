@@ -2334,8 +2334,11 @@ describe("action-wiring honesty guard", () => {
   }) as unknown as Parameters<typeof modelEngine.create>[1];
 
   it("repairs a mutating action that carries no payload", async () => {
+    // The repair BINDS the row context rather than hand-typing an id: a
+    // fabricated target on a mutating action is capability substitution (D5),
+    // so `payload:{clientId:"c1"}` is no longer a valid repair.
     const wrong = '<App name="Remind"><Button label="Send Reminder" onClick="host_remind"/></App>';
-    const right = '<App name="Remind"><Button label="Send Reminder" onClick={{action:"host_remind",payload:{clientId:"c1"}}}/></App>';
+    const right = '<App name="Remind"><Query id="clients" tool="host_clients" input={{}}/><Button label="Send Reminder" onClick={{action:"host_remind",payload:{clientId:clients.0.id}}}/></App>';
     const prompts: string[] = [];
     const model = scriptedLanguageModel((call) => {
       prompts.push(promptText(call));
@@ -2343,12 +2346,15 @@ describe("action-wiring honesty guard", () => {
     });
     const document = await modelEngine.create(
       { prompt: "Overdue invoices with a reminder button" },
-      actionDeps(model, [{ name: "host_remind", description: "Send a reminder", risk: "write" }]),
+      actionDeps(model, [
+        { name: "host_remind", description: "Send a reminder", risk: "write" },
+        { name: "host_clients", description: "List clients", risk: "read" },
+      ]),
     );
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain("no payload");
     expect((document.tree as { nodes: Array<{ props?: Record<string, unknown> }> }).nodes.at(-1)?.props?.onClick)
-      .toEqual({ action: "host_remind", payload: { clientId: "c1" } });
+      .toEqual({ action: "host_remind", payload: { clientId: { $path: "/clients/0/id" } } });
   });
 
   it("repairs a submit button wired to a read-only tool", async () => {

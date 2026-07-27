@@ -715,7 +715,7 @@ const editTree = async (
           app.componentTools = {};
         }
         if (extensionIssues.length === 0) {
-          const validationIssues = [...islandIssues, ...await validateEditedApp(app, deps, input.app)];
+          const validationIssues = [...islandIssues, ...await validateEditedApp(app, deps, input.app, input.instruction)];
           if (validationIssues.length === 0) {
             return { kind: "document", document: withoutId(app) };
           }

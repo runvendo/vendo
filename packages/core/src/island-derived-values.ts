@@ -53,8 +53,11 @@ const isUnitConversionValue = (value: number): boolean => {
 };
 
 /** Every number the user typed in the request, plus its cent-scaled ×100
- *  form ("a $200 budget" arrives in the island as 20000 integer cents). */
-const requestNumberValues = (requestText: string): Set<number> => {
+ *  form ("a $200 budget" arrives in the island as 20000 integer cents).
+ *  Exported because the capability-substitution gate makes the same carve-out
+ *  for a mutating call's amount operand — one definition of "the user's own
+ *  number", not two. */
+export const requestNumberValues = (requestText: string): Set<number> => {
   const values = new Set<number>();
   for (const match of requestText.matchAll(/\d[\d,]*(?:\.\d+)?/g)) {
     const value = Number(match[0].replaceAll(",", ""));
