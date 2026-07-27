@@ -1,0 +1,13 @@
+{
+  "name": "stress",
+  "prompts": [
+    "show me every account, and under each one its transactions grouped by month with a running balance",
+    "which of my subscriptions went up in price this year, and by how much each",
+    "let me split last week's grocery charge between me and two other people, then send them each a request",
+    "compare this month against the same month last year, side by side, and tell me what changed",
+    "build me a savings goal tracker: pick a target, show progress from my current balances, and let me adjust the monthly amount",
+    "show anything unusual in my spending",
+    "let me edit the category on any transaction inline, and keep a running total per category as I do",
+    "give me one screen I could show my accountant"
+  ]
+}
