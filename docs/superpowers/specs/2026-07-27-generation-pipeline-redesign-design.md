@@ -1,6 +1,7 @@
 # Generation pipeline redesign — constrain by structure, not by prose
 
-**Date:** 2026-07-27 · **Status:** DRAFT, awaiting Yousef sign-off
+**Date:** 2026-07-27 · **Status:** decisions 1 & 3 SIGNED (Yousef, 2026-07-27);
+decision 2 (island end-state) still open and non-blocking
 **Evidence base:** genui-bench playground (PR #625), island-escape measurement
 2026-07-27 (`apps/genui-bench/measurements/`), live competitor comparison.
 
@@ -129,13 +130,17 @@ development.
   smaller and by islands becoming rare; must be proven, not assumed.
 - **Scope.** This is four workstreams. Sequenced, each independently landable.
 
-## Open questions for sign-off
+## Decisions (Yousef, 2026-07-27)
 
-1. **Vocabulary ambition** — how far toward answer-shapes? A conservative set
-   (~10 composites covering the measured island cases) or a broad push toward
-   C1-scale coverage (~80)?
-2. **Island policy end-state** — should islands eventually require an explicit
-   host opt-in (a capability the host enables), or stay always-available but
-   structurally discouraged?
-3. **Sequencing vs. speed** — D5 (safety gate) can ship immediately and alone.
-   Ship it first as its own PR, or hold it with the wave?
+1. **Vocabulary ambition: SIGNED — the conservative ~10 composites**, chosen by
+   triaging the measured island cases, not by copying C1's catalogue. Breadth
+   can follow once the first ten prove out.
+3. **Sequencing: SIGNED — D5 (capability-substitution gate) ships NOW**, on its
+   own PR, ahead of the wave. It is a safety fix, not a quality tradeoff.
+
+### Still open (non-blocking)
+
+2. **Island policy end-state** — should islands eventually require explicit host
+   opt-in (a capability the host enables), or stay always-available but
+   structurally discouraged? Deferred until the composites land and we can see
+   how much island demand actually remains.
