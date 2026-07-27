@@ -186,9 +186,10 @@ export function createToolSearchSession(options: ToolSearchSessionOptions): Tool
       }
       tools[VENDO_TOOLS_SEARCH_TOOL_NAME] = dynamicTool({
         description:
-          "Search ALL of this product's tools and connected-service tools by intent, and LOAD the matches so you can call them this run. "
-          + "Results may include tools for services the user has NOT connected yet — calling one is safe and correct: the user is prompted to connect in-line. "
-          + "Use this whenever no currently-available tool fits the ask.",
+          "Search this product's tools and connected-service tools by intent, and LOAD the matches so you can call them this run. "
+          + "Use this only when no currently-available tool fits the ask — never to browse or enumerate what exists. "
+          + "Results may include tools for services the user has NOT connected yet; an unconnected service surfaces an inline connect card "
+          + "WITHOUT its tools running, so do not keep calling tools of a service you know is unconnected.",
         inputSchema: jsonSchema(SEARCH_INPUT_SCHEMA),
         execute: async (input): Promise<ToolOutcome> => {
           const parsed = input as { query?: unknown; limit?: unknown } | null;

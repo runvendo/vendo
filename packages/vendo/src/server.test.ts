@@ -754,6 +754,72 @@ describe("09 §3 public wire", () => {
     expect(explicitNames).not.toContain("gmail_GMAIL_SEND_EMAIL");
   });
 
+  it("connectorApps scopes the auto-composed cloud connector AND the connect catalog (criterion 9)", async () => {
+    // Same stub-console pattern as the connectors-seam test above: the wire
+    // serves a 3-toolkit catalog; the host scopes to gmail only.
+    const { createServer } = await import("node:http");
+    const stub = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://stub");
+      res.setHeader("content-type", "application/json");
+      if (url.pathname === "/api/v1/connections/catalog") {
+        res.end(JSON.stringify({ available: [
+          { toolkit: "gmail", connector: "composio", description: "Send and read email with Gmail" },
+          { toolkit: "slack", connector: "composio", description: "Post messages to Slack channels" },
+          { toolkit: "notion", connector: "composio", description: "Notion pages and databases" },
+        ] }));
+        return;
+      }
+      if (url.pathname === "/api/v1/tools") {
+        const toolkits = (url.searchParams.get("toolkits") ?? "").split(",").filter(Boolean);
+        res.end(JSON.stringify({ tools: toolkits.map((toolkit) => ({
+          slug: `${toolkit.toUpperCase()}_SEND_THING`,
+          toolkit,
+          description: `use ${toolkit}`,
+          inputParameters: { type: "object" },
+          tags: [],
+        })) }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end("{}");
+    });
+    await new Promise<void>((resolve) => stub.listen(0, "127.0.0.1", resolve));
+    const port = (stub.address() as { port: number }).port;
+    cleanups.push(async () => {
+      stub.close();
+      stub.closeAllConnections();
+    });
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    vi.stubEnv("VENDO_CLOUD_URL", `http://127.0.0.1:${port}`);
+
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-connector-apps-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: vi.fn(async () => principal),
+      store,
+      connectorApps: ["gmail"],
+    });
+    await vendo.handler(request("GET", "/status"));
+
+    // The executable surface holds exactly the scoped toolkit's tools.
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("gmail_GMAIL_SEND_THING");
+    expect(names.some((name) => name.startsWith("slack_") || name.startsWith("notion_"))).toBe(false);
+
+    // Discovery cannot reach outside the scope: an out-of-scope intent finds
+    // nothing to expand (index size == scoped set).
+    const matches = await vendo.actions.search("post a message to slack channels");
+    expect(matches.some((match) => match.name.startsWith("slack_"))).toBe(false);
+
+    // The connect dock's catalog stays in lockstep with the executable tools.
+    const catalogResponse = await vendo.handler(request("GET", "/connections/catalog"));
+    expect(catalogResponse.status).toBe(200);
+    const catalog = await catalogResponse.json() as { available: Array<{ toolkit: string }> };
+    expect(catalog.available.map((entry) => entry.toolkit)).toEqual(["gmail"]);
+  });
+
   it("wires the Cloud share/publish client into the apps seam from VENDO_API_KEY (adapter rule)", async () => {
     vi.stubEnv("VENDO_API_KEY", "vnd_apps_key");
     vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-apps.test");
