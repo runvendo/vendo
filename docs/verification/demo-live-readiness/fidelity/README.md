@@ -107,6 +107,38 @@ Accepted consequence: with the arc's three authored beats plus derived pills,
 turns per run). Derived pills carry no expectation, so they only need to
 settle cleanly.
 
+## Rulings taken while building (nothing was weakened)
+
+The contract left these to judgment; recording them here because the lane's
+scratch `progress.md` is no longer tracked in the repo.
+
+- **Vendoring over the two options the contract offered** — evidence at the
+  top of the T1 section.
+- **`demo:deploy` learned a second shape.** It used to refuse any app outside
+  the repo, so moving the default target would have broken the pipeline at its
+  last stage. In-repo apps keep today's plan byte-for-byte.
+- **Deploy sets `VENDO_API_KEY`.** It only ever set `ANTHROPIC_API_KEY`, so the
+  new Cloud posture would have reached a service with no usable key. It now
+  sets whichever of the two is present and requires at least one.
+- **The clone carries the root's security floors.** A standalone project
+  inherits none of the monorepo's pnpm settings, and the template pins
+  `next: 16.2.9` — below the root's `>=16.2.11` advisory floor.
+- **"Explicit wins" resolved per beat, not per config.** The pipeline's `beats`
+  agent authors all three arc beats, so a strict reading would make derivation
+  a permanent no-op. Non-placeholder beats are kept verbatim and first; derived
+  pills fill to a cap of five.
+- **A failed derivation does not sink a run.** It logs and continues on the
+  rewrite's beats — a wrong pill is a confusing chip, not a broken demo.
+
+## Gate
+
+`pnpm build && pnpm test && pnpm typecheck && pnpm lint`, green twice on the
+committed code. Run **serially** (`--concurrency=1`): at default turbo
+concurrency the suite failed twice on this machine in *different* untouched
+packages (`@vendoai/apps`, then `@vendoai-examples/mastra-agent`), each of
+which passes standalone, with load average 42 from other lanes running
+concurrently.
+
 ## Reproducing
 
 ```sh
