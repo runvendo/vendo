@@ -20,11 +20,23 @@ corpus/.repos/
 *.png
 bench/demo-capture/output/
 
-# ...except everything under docs/verification, which EXISTS to hold committed
-# evidence (screenshots, raw measurement logs). Without these negations every
-# lane has to remember `git add -f`, and evidence quietly goes missing.
-!docs/verification/**/*.png
+# ...except RAW MEASUREMENT DATA under docs/verification: logs, counters, and
+# sample sets are small, they diff, and a lane's claims are worthless without
+# them. Without this negation every lane has to remember `git add -f` and the
+# data quietly goes missing.
 !docs/verification/**/*.log
+
+# Media stays OUT. Screenshots, GIFs, and recordings are review artifacts with
+# a one-PR lifespan; committing them grew docs/ to 126MB and broke container
+# uploads (2026-07-27 cleanup). Attach them to the PR instead — see
+# docs/verification/README.md.
+docs/verification/**/*.png
+docs/verification/**/*.jpg
+docs/verification/**/*.jpeg
+docs/verification/**/*.gif
+docs/verification/**/*.webm
+docs/verification/**/*.mp4
+docs/verification/**/*.mov
 
 # Vendo demo runtime state (PGlite) — never committed.
 apps/*/.vendo/data/
