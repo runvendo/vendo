@@ -155,6 +155,8 @@ describe("island source — capability substitution", () => {
     "1e0", "0x1", "1_00", "+1", "(1)", "0b1", "0o1", ".5", "1.5e2",
     // Signs and parens peel in any order, with any spacing.
     "+ 1", "- 1", "-1", "-(1)", "( + 1 )", "+0x1", "- 1_00", "((1))", "- +1",
+    // Island source is TSX, so a type assertion is legal syntax around it.
+    "1 as number", "1 as const", "1 satisfies number", "1 as unknown as number", "(1 as const)",
   ])(
     "a fabricated amount spelled %s FAILS like a plain decimal",
     (amount) => {
@@ -166,7 +168,10 @@ describe("island source — capability substitution", () => {
 
   // The controls for the peeling loop: anything that is not JUST a number
   // behind wrappers must stay a reference.
-  it.each(["(count + 1)", "count + 1", "-count", "(count)", "+row.amount", "(a) + (1)"])(
+  it.each([
+    "(count + 1)", "count + 1", "-count", "(count)", "+row.amount", "(a) + (1)",
+    "count as number", "row.amount as const",
+  ])(
     "an expression spelled %s is still a reference, not a literal",
     (amount) => {
       const source = island(`

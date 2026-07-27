@@ -304,10 +304,14 @@ const NUMERIC_CORE =
  * A hand-typed number in ANY spelling, or undefined if the span is a reference.
  *
  * Peels the syntax that can wrap a bare number without making it anything else
- * — parens and unary signs, in any order, with any spacing — then tests the
+ * — parens, unary signs, and TS type assertions (island source is TSX, so
+ * `1 as const` is legal) — in any order, with any spacing, then tests the
  * core. Peeling in a loop rather than matching one big pattern is what closes
- * the class: `+ 1`, `-(1)` and `( + 0x1 )` are the same fabricated operand as
- * `1`, and enumerating spellings would leave the next combination open.
+ * the class: `+ 1`, `-(1)`, `( + 0x1 )` and `1 as number` are the same
+ * fabricated operand as `1`, and enumerating spellings would leave the next
+ * combination open. A mis-peel is harmless — whatever it yields still has to
+ * pass the core test, so the failure mode is "reads as a reference", which is
+ * the behaviour without any peeling at all.
  */
 const numericLiteral = (blanked: string): { text: string; value: number } | undefined => {
   let inner = blanked.trim();
@@ -315,12 +319,19 @@ const numericLiteral = (blanked: string): { text: string; value: number } | unde
   for (;;) {
     const unwrapped = unwrapParens(inner);
     const signed = /^([+-])\s*([\s\S]*)$/.exec(unwrapped);
-    if (signed === null) {
-      inner = unwrapped;
-      break;
+    if (signed !== null) {
+      if (signed[1] === "-") negative = !negative;
+      inner = (signed[2] as string).trim();
+      continue;
     }
-    if (signed[1] === "-") negative = !negative;
-    inner = (signed[2] as string).trim();
+    // `x as T` / `x satisfies T`, one assertion per pass so chains unwind.
+    const asserted = /^([\s\S]+?)\s+(?:as|satisfies)\s+[\w$][\w$.<>[\]|&, ]*$/.exec(unwrapped);
+    if (asserted !== null) {
+      inner = (asserted[1] as string).trim();
+      continue;
+    }
+    inner = unwrapped;
+    break;
   }
   if (!NUMERIC_CORE.test(inner)) return undefined;
   const magnitude = Number(inner.replace(/_/g, ""));
