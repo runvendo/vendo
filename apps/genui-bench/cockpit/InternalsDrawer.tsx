@@ -109,10 +109,15 @@ function Timeline({ events, error }: { events: PipelineEvent[]; error?: string }
       {events.map((event, index) => {
         const { tag, tone, message } = humanize(event);
         return (
-          <div className="ev" key={index}>
-            <span className="t">{"ms" in event && typeof event.ms === "number" ? formatDuration(event.ms) : "·"}</span>
-            <span className={`tag ${tone}`}>{tag}</span>
-            <span className="msg">{message}</span>
+          <div key={index}>
+            <div className="ev">
+              <span className="t">{"ms" in event && typeof event.ms === "number" ? formatDuration(event.ms) : "·"}</span>
+              <span className={`tag ${tone}`}>{tag}</span>
+              <span className="msg">{message}</span>
+            </div>
+            {issuesOf(event).map((issue, i) => (
+              <div className="ev-issue" key={i}>{issue}</div>
+            ))}
           </div>
         );
       })}
@@ -127,18 +132,30 @@ function Timeline({ events, error }: { events: PipelineEvent[]; error?: string }
   );
 }
 
+/** The validation issues a stage carries when it ended without a valid
+ *  document. Read structurally so stages that gain the field later (and older
+ *  records that never had it) both work. */
+function issuesOf(event: PipelineEvent): string[] {
+  const { issues } = event as { issues?: unknown };
+  return Array.isArray(issues) ? issues.filter((issue): issue is string => typeof issue === "string") : [];
+}
+
 type Tone = "ok" | "warn" | "err" | "info";
 
 /** One humanized line per PipelineEvent stage; unknown stages (future engine
  *  instrumentation) fall back to their raw payload so nothing is hidden. */
 function humanize(event: PipelineEvent): { tag: string; tone: Tone; message: string } {
   switch (event.stage) {
-    case "full":
+    case "full": {
+      const count = issuesOf(event).length;
       return {
         tag: "full",
         tone: event.valid ? "ok" : "warn",
-        message: `full-lane attempt ${event.attempt} · ${event.valid ? "valid" : "invalid"}`,
+        message: `full-lane attempt ${event.attempt} · ${event.valid ? "valid" : "invalid"}${
+          count === 0 ? "" : ` · ${count} issue${count === 1 ? "" : "s"}`
+        }`,
       };
+    }
     case "region-parallel":
       return event.fallback
         ? { tag: "regions", tone: "warn", message: `fell back to single lane: ${event.fallback}` }
@@ -176,6 +193,7 @@ function humanize(event: PipelineEvent): { tag: string; tone: Tone; message: str
     default: {
       // Future stages (guardrail verdicts, smoke render, …) still show up.
       const { stage, ...payload } = event as { stage: string } & Record<string, unknown>;
+      delete payload.issues; // rendered as its own rows below, not inline JSON
       return { tag: stage, tone: "info", message: JSON.stringify(payload) };
     }
   }

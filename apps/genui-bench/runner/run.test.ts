@@ -192,6 +192,46 @@ describe("executeRun", () => {
     expect(lane?.status).toBe("failed");
     if (lane?.status === "failed") expect(lane.error).toContain("cadence");
   });
+
+  /** The gap this closes: a failed run's `vendo.events.json` held only
+   *  {stage,attempt,valid,ms} and run.json only "model could not produce a
+   *  valid app". The reason existed in the engine and was thrown away, so
+   *  format/guardrail iteration had no signal off the console. */
+  it("a failed run records WHY: per-attempt issues in the artifact, the reason on the error", async () => {
+    const issues = [
+      'tree root "root" renders an empty layout; keep at least one attached, visible node',
+      "the app has a title and no content",
+    ];
+    const failingEvents: PipelineEvent[] = [
+      { stage: "full", attempt: 0, valid: false, ms: 6984, issues },
+      { stage: "full", attempt: 1, valid: false, ms: 10036, issues },
+    ];
+    const runsDir = tempRunsDir();
+    const record = await executeRun(
+      request({ lanes: ["vendo"] }),
+      fixtures,
+      [okAdapter({
+        generate: async () => ({
+          status: "failed" as const,
+          startedAt: 0,
+          durationMs: 24691,
+          error: `model could not produce a valid app: ${issues.join(" | ")}`,
+          events: failingEvents,
+        }),
+      })],
+      runsDir,
+      { readGitState: () => cleanGit },
+    );
+
+    const artifact = JSON.parse(readFileSync(join(runsDir, record.id, "vendo.events.json"), "utf8"));
+    expect(artifact).toEqual(failingEvents);
+
+    const loaded = loadRun(runsDir, record.id);
+    const vendo = loaded.lanes.vendo;
+    if (vendo?.status !== "failed") throw new Error(`expected failed, got ${vendo?.status}`);
+    expect(vendo.events).toEqual(failingEvents);
+    for (const issue of issues) expect(vendo.error).toContain(issue);
+  });
 });
 
 describe("store", () => {

@@ -6,9 +6,9 @@
  * captured up to the throw.
  */
 import { describe, expect, it } from "vitest";
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "@vendoai/core";
+import { VendoError, VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "@vendoai/core";
 import type { GeneratedAppDocument, GenerationDependencies, PipelineEvent } from "@vendoai/apps";
-import { createVendoAdapter, transformModelParams, type ModelCallParams } from "./vendo";
+import { createVendoAdapter, failureReason, transformModelParams, type ModelCallParams } from "./vendo";
 import { MAX_OUTPUT_TOKENS, PRODUCTION_MODEL, findModel, type BenchModel } from "../runner/models";
 import type { HostFixture } from "../runner/types";
 import { stubHostFixture } from "../fixtures/stub";
@@ -92,6 +92,44 @@ describe("vendo lane adapter", () => {
     expect(result.error).toContain("model exploded mid-pipeline");
     expect(result.events).toEqual([events[0]]);
     expect(typeof result.durationMs).toBe("number");
+  });
+
+  /** A generation failure's message is the generic "model could not produce a
+   *  valid app"; the reason rides the VendoError detail and the per-attempt
+   *  events. Both must survive into the LaneResult or a failed run in the
+   *  cockpit is unreadable. */
+  it("a validation failure is self-explanatory: the issues ride the error AND the events", async () => {
+    const issues = [
+      'tree root "root" renders an empty layout; keep at least one attached, visible node',
+      "the app has a title and no content",
+    ];
+    const invalidAttempt: PipelineEvent = { stage: "full", attempt: 0, valid: false, ms: 6984, issues };
+    const adapter = createVendoAdapter({
+      model: fakeModel,
+      engine: {
+        create: async (_input, deps) => {
+          deps.onPipeline?.(invalidAttempt);
+          throw new VendoError("validation", "model could not produce a valid app", issues);
+        },
+      },
+    });
+
+    const result = await adapter.generate("create a component with a big Y", fixture);
+    if (result.status !== "failed") throw new Error(`expected failed, got ${JSON.stringify(result)}`);
+    expect(result.error).toContain("model could not produce a valid app");
+    for (const issue of issues) expect(result.error).toContain(issue);
+    expect(result.events).toEqual([invalidAttempt]);
+  });
+});
+
+describe("failureReason", () => {
+  it("passes a plain error through untouched", () => {
+    expect(failureReason(new Error("api down"))).toBe("api down");
+    expect(failureReason("not an error")).toBe("not an error");
+  });
+
+  it("ignores a non-string-array detail", () => {
+    expect(failureReason(new VendoError("blocked", "nope", { why: "policy" }))).toBe("nope");
   });
 });
 
