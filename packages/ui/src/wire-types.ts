@@ -188,16 +188,23 @@ export interface RunPlan {
   grantsMissing: string[];
 }
 
-/** 07-automations §1 — one entry of `GET /automations`. */
+/** 07-automations §1 — one entry of `GET /automations`. `pendingGrants` /
+ *  `grantSetId` (additive) project the app's still-undecided standing-grant
+ *  asks so panels can render "waiting on N permissions" reload-safely. */
 export interface AutomationEntry {
   app: AppDocument;
   enabled: boolean;
+  pendingGrants?: number;
+  grantSetId?: string;
 }
 
-/** 07-automations §1 — what `POST /automations/:id/enable` returns. */
+/** 07-automations §1 — what `POST /automations/:id/enable` returns.
+ *  `grantSetId` (additive) names the ONE set the `missing` asks belong to;
+ *  present exactly when `missing` is non-empty. */
 export interface EnableResult {
   enabled: boolean;
   missing: ApprovalRequest[];
+  grantSetId?: string;
 }
 
 /** Existing-agents — what `GET /approvals/:id` returns for a parked BYO

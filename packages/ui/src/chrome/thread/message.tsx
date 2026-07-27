@@ -36,7 +36,7 @@ function CopyTurnButton({ text }: { text: string }) {
     (ENG-225), the article with its stream parts, and the settled-turn
     actions (Copy always; Edit on the last user turn, Regenerate on the
     last assistant turn — ENG-215). */
-export function ThreadMessage({ message, restored, risks, busy, activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast, sendMessage }: {
+export function ThreadMessage({ message, restored, risks, busy, activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast, sendMessage, respond }: {
   message: UIMessage;
   restored: boolean;
   risks: Map<string, RiskLabel>;
@@ -48,6 +48,8 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
   onRegenerateLast: () => void;
   /** The thread's send — connect cards use it for the post-connect continuation. */
   sendMessage?: (message: { text: string }) => unknown;
+  /** The thread's native approval response — grant-set cards resume with it. */
+  respond?: (response: { id: string; approved: boolean }) => void;
 }) {
   // ENG-225 — a user turn's attachments render BESIDE the bubble
   // (the designed .fl-turn-user-att block), not inside it; a
@@ -93,6 +95,8 @@ export function ThreadMessage({ message, restored, risks, busy, activeAssistantI
               // older cards settle into the Connected record (or nothing).
               connectLive={message.role === "assistant" && message.id === lastAssistantId}
               sendMessage={sendMessage}
+              siblingParts={message.parts}
+              respond={respond}
             />
           ))}
           {/* Knowledge K1 — the turn's knowledge trust surface (citation

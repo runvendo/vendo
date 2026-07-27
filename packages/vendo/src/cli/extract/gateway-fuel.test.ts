@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composeGatewayFuel,
+  EXTRACTION_MODEL_ID,
   INIT_PURPOSE_HEADER_NAME,
   INIT_PURPOSE_HEADER_VALUE,
 } from "./gateway-fuel.js";
@@ -36,7 +37,20 @@ describe("composeGatewayFuel", () => {
       ANTHROPIC_BASE_URL: "https://console.vendo.run/api/v1",
       ANTHROPIC_AUTH_TOKEN: "vnd_x",
       ANTHROPIC_CUSTOM_HEADERS: "x-vendo-purpose: init",
+      ANTHROPIC_MODEL: "vendo-extract",
     });
+  });
+
+  it("pins ANTHROPIC_MODEL to the gateway's curated extraction id (the gateway 400s Claude Code's default claude-* id)", () => {
+    const overlay = composeGatewayFuel({
+      env: { VENDO_API_KEY: "vnd_x" },
+      ownCredentialAvailable: false,
+    });
+    // The gateway only serves vendo-* family ids; Claude Code's own default is
+    // a claude-* id the gateway rejects (#617). Pinning here lands every rung's
+    // traffic on a valid gateway id without touching the curated contract.
+    expect(overlay?.ANTHROPIC_MODEL).toBe("vendo-extract");
+    expect(EXTRACTION_MODEL_ID).toBe("vendo-extract");
   });
 
   it("honors VENDO_CLOUD_URL, matching resolveCloudBaseUrl's endsWith('/api/v1') composition", () => {

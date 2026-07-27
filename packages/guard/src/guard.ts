@@ -849,6 +849,26 @@ class GuardImplementation implements VendoGuard {
     return receipt !== null;
   }
 
+  /** Releases transition receipts a BATCH decide won before its claim phase
+   *  failed — deleting a receipt re-opens the one-time transition. Only ever
+   *  called before ANY member of the batch committed, so a re-opened
+   *  transition can never re-decide a written row. Best-effort per receipt: a
+   *  failed delete leaves that approval claimed-but-undecided, which keeps
+   *  failing closed (conflict) rather than ever going partial. */
+  async #releaseApprovalTransitions(
+    transition: "decided" | "consumed",
+    approvalIds: string[],
+  ): Promise<void> {
+    const records = this.#store.records(APPROVAL_CLAIMS_COLLECTION);
+    for (const approvalId of approvalIds) {
+      try {
+        await records.delete(`${transition}:${approvalId}`);
+      } catch {
+        // Fail closed: the stuck receipt only makes later decides conflict.
+      }
+    }
+  }
+
   async #consumeApprovedCall(
     call: ToolCall,
     descriptor: ToolDescriptor,
@@ -993,9 +1013,21 @@ class GuardImplementation implements VendoGuard {
     decision: ApprovalDecision,
     principal: Principal,
   ): Promise<void> {
-    const normalizedIds = Array.isArray(ids) ? ids : [ids];
+    const normalizedIds = [...new Set(Array.isArray(ids) ? ids : [ids])];
     const store = this.#store.records(APPROVALS_COLLECTION);
+    // A multi-id decide is a SET decision (a grant set's one consent moment):
+    // it must land all-or-none — never a partially-granted set.
+    const batch = normalizedIds.length > 1;
+    const targetStatus = decision.approve ? "approved" : "denied";
 
+    // Phase 1 — validate the WHOLE batch before touching any state. A batch
+    // member already decided in the SAME direction is skipped (another
+    // surface got there first; the remainder still converges on the set's
+    // goal state — all granted / all denied). A member decided in the
+    // OPPOSITE direction makes that goal unreachable, so the whole batch
+    // conflicts with nothing written. Single-id decides keep the strict
+    // one-time-transition semantics (any prior decision conflicts).
+    const toDecide: Array<{ id: string; data: ReturnType<typeof approvalData> }> = [];
     for (const id of normalizedIds) {
       const record = await store.get(id);
       if (record === null) {
@@ -1006,75 +1038,55 @@ class GuardImplementation implements VendoGuard {
         throw new VendoError("not-found", `Approval ${id} was not found`);
       }
       if (data.status !== "pending") {
+        if (batch && data.status === targetStatus) continue;
         throw new VendoError("conflict", `Approval ${id} has already been decided`);
       }
-      // pending → decided happens once: the receipt's atomic insert picks a
-      // single winner, so a concurrent approve and deny can never both act —
-      // no contradictory audit records, and no live grant minted for an
-      // approval whose stored status says denied. The loser reports the same
-      // conflict a late decider sees.
-      if (!(await this.#claimApprovalTransition("decided", id, principal.subject))) {
-        throw new VendoError("conflict", `Approval ${id} has already been decided`);
+      toDecide.push({ id, data });
+    }
+
+    // Phase 2 — claim EVERY undecided member before committing ANY of them.
+    // pending → decided happens once: the receipt's atomic insert picks a
+    // single winner, so a concurrent approve and deny can never both act —
+    // no contradictory audit records, and no live grant minted for an
+    // approval whose stored status says denied. Sorted order makes racing
+    // set-deciders contend on the same first id (one wins the whole set, the
+    // other loses before holding anything); a lost claim releases the
+    // receipts this batch DID win, so a partial set can never commit.
+    toDecide.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const claimed: string[] = [];
+    for (const member of toDecide) {
+      if (await this.#claimApprovalTransition("decided", member.id, principal.subject)) {
+        claimed.push(member.id);
+        continue;
       }
-      const decidedAt = now();
-      const status = decision.approve ? "approved" : "denied";
-      await store.put({
-        id,
-        data: { ...data, status, decidedAt },
-        refs: { subject: principal.subject, status },
-      });
+      await this.#releaseApprovalTransitions("decided", claimed);
+      throw new VendoError("conflict", `Approval ${member.id} has already been decided`);
+    }
 
-      let grant: PermissionGrant | undefined;
-      if (decision.approve && decision.remember !== undefined) {
-        const duration = decision.remember.duration;
-        grant = {
-          id: makeId("grt_") as GrantId,
-          subject: principal.subject,
-          tool: data.request.call.tool,
-          descriptorHash: descriptorHash(data.request.descriptor),
-          scope: normalizeRememberedScope(decision.remember.scope, data.request),
-          duration,
-          ...(duration === "session"
-            ? { contextKey: data.sessionId }
-            : duration === "task"
-              ? { contextKey: data.request.ctx.trigger?.runId ?? data.sessionId }
-              : {}),
-          ...(data.request.ctx.appId === undefined ? {} : { appId: data.request.ctx.appId }),
-          source: normalizedIds.length > 1 ? "batch" : "chat",
-          grantedAt: decidedAt,
-        };
-        const refs: Record<string, string> = {
-          subject: grant.subject,
-          tool: grant.tool,
-        };
-        if (grant.appId !== undefined) refs.app_id = grant.appId;
-        await this.#store.records(GRANTS_COLLECTION).put({
-          id: grant.id,
-          data: grant,
-          refs,
-        });
+    // Phase 3 — commit, with COMPENSATION: holding every transition receipt
+    // protects the batch from other deciders, but not from the store itself
+    // failing mid-batch. A member write that throws rolls the already-applied
+    // members back (minted grants deleted, asks restored to pending, reversal
+    // audits written, transitions released) and rethrows the original failure
+    // — the set stays all-or-none against storage faults and the retry finds
+    // every ask pending again. If the rollback ITSELF fails, a loud audit
+    // records the partial state and the thrown error names the approvals to
+    // review — never silent partial grants. Subscriber callbacks fire only
+    // after EVERY member landed, so downstream effects (standing-grant
+    // minting, parked-call resumption) can never observe a set that later
+    // rolled back.
+    const applied: Array<{ id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId }> = [];
+    try {
+      for (const { id, data } of toDecide) {
+        await this.#commitDecidedMember(id, data, decision, normalizedIds.length > 1, principal, applied);
       }
-
-      const requestCtx = data.request.ctx;
-      await this.report({
-        id: makeId("aud_"),
-        at: now(),
-        kind: "approval",
-        principal: requestCtx.principal,
-        venue: requestCtx.venue,
-        presence: requestCtx.presence,
-        ...(requestCtx.appId === undefined ? {} : { appId: requestCtx.appId }),
-        ...(requestCtx.trigger === undefined ? {} : { trigger: requestCtx.trigger }),
-        tool: data.request.call.tool,
-        inputPreview: data.request.inputPreview,
-        detail: {
-          approved: decision.approve,
-          ...(grant === undefined ? {} : { grantId: grant.id }),
-        },
-      });
-
+    } catch (error) {
+      await this.#compensateDecidedMembers(applied, claimed, principal, error);
+      throw error;
+    }
+    for (const { id } of toDecide) {
       // A subscriber may re-enter the guard (e.g. re-execute the resumed
-      // call), so callbacks fire only after this approval's writes landed.
+      // call), so callbacks fire only after the WHOLE set's writes landed.
       // A returned thenable is awaited so decide() resolves only after
       // resumption work lands — fire-and-forget subscribers would otherwise
       // race the caller (e.g. a store closing under in-flight writes).
@@ -1086,6 +1098,157 @@ class GuardImplementation implements VendoGuard {
         }
       }
     }
+  }
+
+  /** One member's committed writes: the decided approval row, the optional
+   *  remembered grant, and the audit record. Every landed write is pushed
+   *  onto `applied` FIRST, so a failure anywhere leaves an exact rollback
+   *  plan for {@link #compensateDecidedMembers}. */
+  async #commitDecidedMember(
+    id: string,
+    data: ReturnType<typeof approvalData>,
+    decision: ApprovalDecision,
+    batch: boolean,
+    principal: Principal,
+    applied: Array<{ id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId }>,
+  ): Promise<void> {
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const decidedAt = now();
+    const status = decision.approve ? "approved" : "denied";
+    const entry: { id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId } = { id, prior: data };
+    await store.put({
+      id,
+      data: { ...data, status, decidedAt },
+      refs: { subject: principal.subject, status },
+    });
+    applied.push(entry);
+
+    let grant: PermissionGrant | undefined;
+    if (decision.approve && decision.remember !== undefined) {
+      const duration = decision.remember.duration;
+      grant = {
+        id: makeId("grt_") as GrantId,
+        subject: principal.subject,
+        tool: data.request.call.tool,
+        descriptorHash: descriptorHash(data.request.descriptor),
+        scope: normalizeRememberedScope(decision.remember.scope, data.request),
+        duration,
+        ...(duration === "session"
+          ? { contextKey: data.sessionId }
+          : duration === "task"
+            ? { contextKey: data.request.ctx.trigger?.runId ?? data.sessionId }
+            : {}),
+        ...(data.request.ctx.appId === undefined ? {} : { appId: data.request.ctx.appId }),
+        source: batch ? "batch" : "chat",
+        grantedAt: decidedAt,
+      };
+      const refs: Record<string, string> = {
+        subject: grant.subject,
+        tool: grant.tool,
+      };
+      if (grant.appId !== undefined) refs.app_id = grant.appId;
+      await this.#store.records(GRANTS_COLLECTION).put({
+        id: grant.id,
+        data: grant,
+        refs,
+      });
+      entry.grantId = grant.id;
+    }
+
+    const requestCtx = data.request.ctx;
+    await this.report({
+      id: makeId("aud_"),
+      at: now(),
+      kind: "approval",
+      principal: requestCtx.principal,
+      venue: requestCtx.venue,
+      presence: requestCtx.presence,
+      ...(requestCtx.appId === undefined ? {} : { appId: requestCtx.appId }),
+      ...(requestCtx.trigger === undefined ? {} : { trigger: requestCtx.trigger }),
+      tool: data.request.call.tool,
+      inputPreview: data.request.inputPreview,
+      detail: {
+        approved: decision.approve,
+        ...(grant === undefined ? {} : { grantId: grant.id }),
+      },
+    });
+  }
+
+  /** Rolls back the members a failed batch commit already applied: minted
+   *  grants are deleted, decided rows restored to pending, reversal audits
+   *  written (the ledger stays truthful about the round trip), and the
+   *  batch's transition receipts released so a retry finds every ask
+   *  decidable. When the rollback itself fails, a loud audit records the
+   *  partial state and the thrown error names the approvals to review —
+   *  a partially granted set is never silent. */
+  async #compensateDecidedMembers(
+    applied: Array<{ id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId }>,
+    claimed: string[],
+    principal: Principal,
+    cause: unknown,
+  ): Promise<void> {
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    let rollbackFailed = false;
+    for (const member of [...applied].reverse()) {
+      try {
+        if (member.grantId !== undefined) {
+          await this.#store.records(GRANTS_COLLECTION).delete(member.grantId);
+        }
+        await store.put({
+          id: member.id,
+          data: member.prior,
+          refs: { subject: principal.subject, status: "pending" },
+        });
+        const requestCtx = member.prior.request.ctx;
+        try {
+          await this.report({
+            id: makeId("aud_"),
+            at: now(),
+            kind: "approval",
+            principal: requestCtx.principal,
+            venue: requestCtx.venue,
+            presence: requestCtx.presence,
+            ...(requestCtx.appId === undefined ? {} : { appId: requestCtx.appId }),
+            tool: member.prior.request.call.tool,
+            inputPreview: member.prior.request.inputPreview,
+            detail: { setDecisionRolledBack: true },
+          });
+        } catch {
+          // The reversal itself landed; a missing reversal audit must not
+          // fail the compensation that keeps the set all-or-none.
+        }
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+    if (!rollbackFailed) {
+      // Every applied member is pending again — reopen the whole batch's
+      // transitions so the retry can decide the set cleanly.
+      await this.#releaseApprovalTransitions("decided", claimed);
+      return; // the caller rethrows the original storage failure
+    }
+    const partial = applied.map((member) => member.id).join(", ");
+    try {
+      await this.report({
+        id: makeId("aud_"),
+        at: now(),
+        kind: "approval",
+        principal,
+        venue: "chat",
+        presence: "present",
+        tool: "approvals.decide",
+        inputPreview: `set decision rollback FAILED — review: ${partial}`,
+        detail: { setRollbackFailed: true, approvals: partial },
+      });
+    } catch {
+      // The thrown conflict below still surfaces the partial state loudly.
+    }
+    throw new VendoError(
+      "conflict",
+      `The decision could not be applied to the whole set and rolling back also failed (${
+        cause instanceof Error ? cause.message : String(cause)
+      }). Review these approvals in Activity before retrying: ${partial}`,
+    );
   }
 
   async #listGrants(principal: Principal): Promise<PermissionGrant[]> {

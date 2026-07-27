@@ -101,6 +101,10 @@ interface AgentConfig {
     /** AGENT-1 (03 §3 item 4): catalog + theme summary, assembled by the
      *  umbrella; injected only for venues that render trees. */
     catalog?: string;
+    /** Knowledge k8 (ENG-368): static knowledge index + usage guidance,
+     *  assembled by the umbrella at boot (locked — never per-turn, so the
+     *  prompt stays cache-stable); venue-gated like the catalog. */
+    knowledge?: string | (() => string | undefined | Promise<string | undefined>);
     instructions?: string;
   };
   context?: {

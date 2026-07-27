@@ -74,6 +74,63 @@ describe("assembleSystemPrompt", () => {
     }
   });
 
+  it("knowledge k8: injects the knowledge index after the catalog, before instructions, on tree venues", async () => {
+    const guard = testGuard({}, ["Never disclose balances"]);
+    const index = "Knowledge\nThe host has a product knowledge base of 3 documents.";
+    for (const venue of ["chat", "app"] as const) {
+      const prompt = await assembleSystemPrompt(guard, ctx({ venue }), {
+        catalog: "Host components:\n- InvoiceTable: renders invoice line items",
+        knowledge: index,
+        instructions: "Prefer concise answers.",
+      });
+      expect(prompt).toContain(index);
+      expect(prompt.indexOf("InvoiceTable")).toBeLessThan(prompt.indexOf("Knowledge\n"));
+      expect(prompt.indexOf("Knowledge\n")).toBeLessThan(prompt.indexOf("Prefer concise answers."));
+    }
+  });
+
+  it("knowledge k8: omits the knowledge index for automation and MCP venues — descriptors carry the guidance there", async () => {
+    for (const venue of ["automation", "mcp"] as const) {
+      const prompt = await assembleSystemPrompt(testGuard({}, []), ctx({ venue }), {
+        knowledge: "Knowledge\nThe host has a product knowledge base of 3 documents.",
+        instructions: "Only this.",
+      });
+      expect(prompt).not.toContain("knowledge base");
+      expect(prompt.endsWith("Only this.")).toBe(true);
+    }
+  });
+
+  it("knowledge k8 P0: the ONLY knowledge content in any venue's prompt is the resolver's bytes — internal source names filtered upstream can never reappear", async () => {
+    // The umbrella's assembler filters internal sources out of the resolver
+    // output (knowledge-prompt.ts, unit-tested there). This sweep closes the
+    // loop at the prompt layer for ALL FOUR venues: tree venues carry the
+    // resolver bytes verbatim and nothing else knowledge-shaped; the other
+    // venues carry no knowledge block at all.
+    const guard = testGuard({}, []);
+    const filtered = "Knowledge\n4 documents — sources: help-center (docs).";
+    for (const venue of ["chat", "app"] as const) {
+      const prompt = await assembleSystemPrompt(guard, ctx({ venue }), { knowledge: filtered });
+      expect(prompt).toContain(filtered);
+      expect(prompt).not.toContain("secret-fraud-runbooks");
+    }
+    for (const venue of ["automation", "mcp"] as const) {
+      const prompt = await assembleSystemPrompt(guard, ctx({ venue }), { knowledge: filtered });
+      expect(prompt).not.toContain("Knowledge\n");
+      expect(prompt).not.toContain("help-center");
+    }
+  });
+
+  it("knowledge k8: awaits a knowledge RESOLVER and drops an undefined or blank resolution", async () => {
+    const guard = testGuard({}, []);
+    // The umbrella's boot-locked resolver is async — the first turn awaits it.
+    expect(await assembleSystemPrompt(guard, ctx(), { knowledge: async () => "Knowledge\n3 documents." }))
+      .toContain("Knowledge\n3 documents.");
+    expect(await assembleSystemPrompt(guard, ctx(), { knowledge: () => undefined, instructions: "Only this." }))
+      .toMatch(/Only this\.$/);
+    expect(await assembleSystemPrompt(guard, ctx(), { knowledge: async () => "   ", instructions: "Only this." }))
+      .toMatch(/Only this\.$/);
+  });
+
   it("AGENT-1: omits the catalog summary for venues that cannot render trees", async () => {
     const summary = "Host components:\n- InvoiceTable: renders invoice line items";
     for (const venue of ["automation", "mcp"] as const) {

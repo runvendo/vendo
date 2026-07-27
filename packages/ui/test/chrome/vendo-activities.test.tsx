@@ -110,6 +110,37 @@ describe("VendoActivities", () => {
     expect(screen.getAllByLabelText(/^Approval for/)).toHaveLength(1);
   });
 
+  it("pages an automation's grant SET as one card and decides every member with one call", async () => {
+    // Two automation standing asks for one app (a grant set) + the chat ask.
+    const setAsk = (id: string, tool: string): ApprovalRequest => ({
+      ...raisedApproval(),
+      id,
+      call: { id: `call_${id}`, tool, args: {} },
+      descriptor: { name: tool, description: `Descriptor for ${tool}.`, inputSchema: { type: "object" }, risk: "read" },
+      ctx: { principal: { kind: "user", subject: "user_1" }, venue: "automation", presence: "present", appId: "app_auto" },
+    });
+    wire.state.approvals = [...wire.state.approvals, setAsk("apr_set_1", "host_email_send"), setAsk("apr_set_2", "host_invoices_list")];
+    mount();
+
+    // The queue is 2 entries — the chat ask + ONE set entry (never 3).
+    expect(await screen.findByText("· 1 of 2")).toBeTruthy();
+    expect(await screen.findByLabelText("Approval for Email send")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    // The set slides into place as the grant-set card, named for its automation.
+    const card = await screen.findByLabelText("Standing access — Invoice watcher");
+    expect(card.textContent).toContain("needs 2 permissions");
+    fireEvent.click(screen.getByRole("button", { name: "Allow both & enable" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Standing access — Invoice watcher")).toBeNull());
+    // ONE decision covered every member ask.
+    expect(wire.requests).toContainEqual(expect.objectContaining({
+      method: "POST",
+      path: "/approvals/decide",
+      body: { ids: ["apr_set_1", "apr_set_2"], decision: { approve: true } },
+    }));
+  });
+
   it("polls so an approval raised elsewhere appears without a remount", async () => {
     wire.state.approvals = [];
     mount({ pollMs: 40 });

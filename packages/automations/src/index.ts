@@ -79,11 +79,17 @@ export interface RunPlan {
 
 /** 07 §1 */
 export interface AutomationsEngine {
-  /** Arm/disarm an app's trigger. Enabling runs the grant-capture flow (07 §3). */
-  enable(appId: AppId, ctx: RunContext): Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
+  /** Arm/disarm an app's trigger. Enabling runs the grant-capture flow (07 §3).
+   *  `grantSetId` (additive — 07 §1 amendment parked) names the ONE grant set
+   *  the `missing` asks belong to, so a single decision can settle them all;
+   *  present exactly when `missing` is non-empty. */
+  enable(appId: AppId, ctx: RunContext): Promise<{ enabled: boolean; missing: ApprovalRequest[]; grantSetId?: string }>;
   disable(appId: AppId, ctx: RunContext): Promise<void>;
-  /** The user's apps with a trigger. */
-  list(ctx: RunContext): Promise<Array<{ app: AppDocument; enabled: boolean }>>;
+  /** The user's apps with a trigger. `pendingGrants`/`grantSetId` (additive —
+   *  07 §1 amendment parked) project the app's still-undecided standing-grant
+   *  asks, so surfaces can show "waiting on N permissions" after a reload
+   *  instead of trusting an enable() result held in memory. */
+  list(ctx: RunContext): Promise<Array<{ app: AppDocument; enabled: boolean; pendingGrants?: number; grantSetId?: string }>>;
 
   // trigger ingestion — three kinds
   /** Schedules: call on a timer or from a serverless cron. */

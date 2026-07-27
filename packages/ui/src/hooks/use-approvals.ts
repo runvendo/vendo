@@ -11,15 +11,15 @@ export function useApprovals(options?: PollOptions): {
   error: Error | undefined;
   isLoading: boolean;
   refresh(): Promise<void>;
-  decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision): Promise<void>;
+  decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision, decideOptions?: { grantSetId?: string }): Promise<void>;
 } {
   const { client } = useVendoContext();
   const list = useCallback(() => client.approvals.pending(), [client]);
   const { data, error, isLoading, refresh } = useResource(list, [] as ApprovalRequest[], options);
 
   const decide = useCallback(
-    async (ids: ApprovalId | ApprovalId[], decision: ApprovalDecision) => {
-      await client.approvals.decide(ids, decision);
+    async (ids: ApprovalId | ApprovalId[], decision: ApprovalDecision, decideOptions?: { grantSetId?: string }) => {
+      await client.approvals.decide(ids, decision, decideOptions);
       await refresh();
     },
     [client, refresh],

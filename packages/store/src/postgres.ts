@@ -1,0 +1,57 @@
+/** @vendoai/store/postgres — the same store on a real Postgres, with the
+ *  PGlite dev-mode default cut out of the module graph entirely. The main
+ *  entry's graph carries the wasm Postgres (a multi-megabyte upload that a
+ *  serverless runtime can't even execute — a Cloudflare Worker importing it
+ *  silently crossed the bundle size ceiling in the field), so consumers that
+ *  only ever connect to a real Postgres import this entry instead. Identical
+ *  schema, records, blobs, secrets, and helpers; only the engine picker
+ *  differs. Purity is enforced by scripts/portability-gate.mjs and
+ *  src/postgres-entry.test.ts. */
+import { VendoError } from "@vendoai/core";
+import { createPostgresDb, type StoreConfig } from "./db-postgres.js";
+import { createStoreForDb, type VendoStore } from "./store.js";
+
+export type { VendoStore };
+
+/** StoreConfig for the Postgres-only entry: `url` is mandatory and the PGlite
+ *  `dataDir` does not exist here. */
+export interface PostgresStoreConfig extends Pick<StoreConfig, "encryption" | "allowUnencryptedSecrets"> {
+  url: string;
+}
+
+/** 02-store §1 — Postgres-only `createStore`. */
+export function createStore(config: PostgresStoreConfig): VendoStore {
+  if (!config.url) {
+    throw new VendoError(
+      "validation",
+      "@vendoai/store/postgres needs a Postgres connection string — pass { url }. "
+        + 'For the zero-config PGlite dev default, import createStore from "@vendoai/store" instead.',
+    );
+  }
+  return createStoreForDb(createPostgresDb(config.url), config);
+}
+
+// The rest of the store surface is engine-agnostic — the same modules the
+// main entry exports (keep this list in lockstep with index.ts).
+export {
+  DEDICATED_RECORD_COLLECTIONS,
+  RESERVED_COLLECTIONS,
+  type ReservedCollection,
+} from "./routing.js";
+export { eraseStore, type EraseReport, type EraseTable } from "./erase.js";
+export {
+  claimEphemeralSubject,
+  listStaleEphemeralSubjects,
+  registerEphemeralSubject,
+  sweepEphemeralSubjects,
+} from "./sessions.js";
+export { envSecrets, secretStore, storeSecrets } from "./secrets.js";
+export { appStore, type AppRow } from "./helpers/apps.js";
+export { threadStore, type ThreadRow } from "./helpers/threads.js";
+export { grantStore } from "./helpers/grants.js";
+export { auditStore, type AuditQuery } from "./helpers/audit.js";
+export { runStore, type RunRow } from "./helpers/runs.js";
+export {
+  adoptEphemeralSubject,
+  type SubjectMergeReport,
+} from "./helpers/subjects.js";

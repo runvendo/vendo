@@ -120,8 +120,20 @@ async function sendPrompt(page: Page, prompt: string): Promise<{ assistantTurns:
   const userTurns = await page.locator('article[data-role="user"]').count();
   const message = composer.getByRole("textbox", { name: "Message" });
   await message.waitFor({ state: "visible", timeout: 30_000 });
+  // A post-turn re-render can clear a just-filled composer, leaving Send
+  // disabled on empty input forever (struck a linear-issues beats run on its
+  // second beat) — re-fill until the button arms instead of clicking once.
+  const send = composer.getByRole("button", { name: "Send", exact: true });
+  const armDeadline = Date.now() + 60_000;
   await message.fill(prompt);
-  await composer.getByRole("button", { name: "Send", exact: true }).click();
+  while (!(await send.isEnabled().catch(() => false))) {
+    if (Date.now() > armDeadline) {
+      throw new Error(`Send never armed for prompt "${prompt.slice(0, 60)}…" — the composer stayed disabled or kept clearing`);
+    }
+    await page.waitForTimeout(500);
+    await message.fill(prompt);
+  }
+  await send.click();
   // The prompt must land in the thread as a user turn; otherwise the composer
   // swallowed the submit and every later wait would time out on nothing.
   await page.locator('article[data-role="user"]').nth(userTurns).waitFor({ state: "attached", timeout: 30_000 });
@@ -212,7 +224,11 @@ export async function waitForTurn(options: {
         hasView = turns > options.previousAssistantTurns
           && await lastAssistant.locator("[data-vendo-node-id]").count() > 0;
       }
-      if (turns > options.previousAssistantTurns && idle && hasView) return { approvals };
+      // `!busy` is load-bearing: the assistant article attaches the moment the
+      // turn STARTS streaming, and a composer that stays enabled mid-turn
+      // (template-derived demos) would otherwise settle the beat seconds in,
+      // before any view painted (struck the linear-issues pipeline run).
+      if (turns > options.previousAssistantTurns && idle && !busy && hasView) return { approvals };
     }
     await options.page.waitForTimeout(300);
   }

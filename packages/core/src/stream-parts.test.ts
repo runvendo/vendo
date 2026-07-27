@@ -3,6 +3,7 @@ import {
   toVendoWirePart,
   vendoApprovalPartSchema,
   vendoAutomationPartSchema,
+  vendoGrantSetPartSchema,
   vendoBuildFailedPartSchema,
   vendoCitationsPartSchema,
   vendoStepLimitPartSchema,
@@ -215,6 +216,51 @@ describe("vendoAutomationPartSchema", () => {
       appId: "app_auto",
       name: "",
       enabled: true,
+    }).success).toBe(false);
+  });
+});
+
+/** demo-live-readiness 2026-07 (additive): the grant-set consent card part. */
+describe("vendoGrantSetPartSchema", () => {
+  const permissions = [
+    { approvalId: "apr_1", tool: "host_getSpendingInsights", description: "See category totals.", risk: "read" },
+    { approvalId: "apr_2", tool: "host_listTransactions", risk: "read" },
+  ];
+
+  it("accepts a set of enumerated permissions keyed to a parked call", () => {
+    expect(vendoGrantSetPartSchema.safeParse({
+      type: "data-vendo-grant-set",
+      toolCallId: "mds_grant_weekly_1",
+      grantSetId: "gset_1",
+      appId: "app_demo_weekly",
+      name: "Weekly spending summary",
+      permissions,
+    }).success).toBe(true);
+  });
+
+  it("rejects an empty set, a missing grantSetId, and a wrong type literal", () => {
+    expect(vendoGrantSetPartSchema.safeParse({
+      type: "data-vendo-grant-set",
+      toolCallId: "mds_grant_weekly_1",
+      grantSetId: "gset_1",
+      appId: "app_demo_weekly",
+      name: "Weekly spending summary",
+      permissions: [],
+    }).success).toBe(false);
+    expect(vendoGrantSetPartSchema.safeParse({
+      type: "data-vendo-grant-set",
+      toolCallId: "mds_grant_weekly_1",
+      appId: "app_demo_weekly",
+      name: "Weekly spending summary",
+      permissions,
+    }).success).toBe(false);
+    expect(vendoGrantSetPartSchema.safeParse({
+      type: "data-vendo-approval",
+      toolCallId: "mds_grant_weekly_1",
+      grantSetId: "gset_1",
+      appId: "app_demo_weekly",
+      name: "Weekly spending summary",
+      permissions,
     }).success).toBe(false);
   });
 });

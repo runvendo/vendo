@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseDemoConfig } from "demo-template/demo-config";
-import { describe, expect, it } from "vitest";
-import { cloneExclusions, displayAppPath, parseDemoCreateArgs, runDemoCreate } from "./create.js";
+import { describe, expect, it, vi } from "vitest";
+import { cloneExclusions, displayAppPath, parseDemoCreateArgs, runDemoCreate, validateProspectUrl } from "./create.js";
 
 describe("displayAppPath", () => {
   it("prefers the repo-root-relative shape and falls back to absolute outside the repo", () => {
@@ -58,6 +58,28 @@ describe("parseDemoCreateArgs", () => {
   it("rejects a prospect --url that is not http(s)", () => {
     expect(() => parseDemoCreateArgs(["--id", "acme", "--prospect", "Acme", "--url", "not a url"]))
       .toThrow("--url must be an http(s) URL");
+  });
+
+  it("splits --screenshots on commas and drops empty segments", () => {
+    expect(parseDemoCreateArgs([
+      "--id", "acme", "--prospect", "Acme",
+      "--screenshots", "/tmp/a.png, /tmp/b.png,",
+    ])).toMatchObject({ screenshots: ["/tmp/a.png", "/tmp/b.png"] });
+  });
+
+  it("rejects an empty --screenshots list", () => {
+    expect(() => parseDemoCreateArgs(["--id", "acme", "--prospect", "Acme", "--screenshots", ","]))
+      .toThrow("--screenshots needs at least one image path");
+  });
+});
+
+describe("validateProspectUrl", () => {
+  it("passes on any sub-500 answer and fails naming the URL otherwise", async () => {
+    const ok = vi.fn().mockResolvedValue(new Response(null, { status: 403 }));
+    await expect(validateProspectUrl("https://x.example", { fetchImpl: ok as unknown as typeof fetch })).resolves.toBeUndefined();
+    const dead = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    await expect(validateProspectUrl("https://dead.invalid", { fetchImpl: dead as unknown as typeof fetch }))
+      .rejects.toThrow(/https:\/\/dead\.invalid/);
   });
 });
 
@@ -159,11 +181,70 @@ describe("runDemoCreate", () => {
 
   it("leaves a RESEARCH stub that records the prospect site and points at demo:research", async () => {
     const repoRoot = await writeRepoFixture();
-    const { appDir } = await runDemoCreate({ ...args, url: "https://acme.example/pricing" }, { repoRoot });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 })) as unknown as typeof fetch;
+    const { appDir } = await runDemoCreate({ ...args, url: "https://acme.example/pricing" }, { repoRoot, fetchImpl });
     const stub = await readFile(path.join(appDir, "RESEARCH", "README.md"), "utf8");
     expect(stub).toContain("demo:research");
     expect(stub).toContain("--app apps/demo-acme-widgets");
     expect(stub).toContain("https://acme.example/pricing");
+  });
+
+  it("copies operator screenshots into RESEARCH/ and indexes them with provenance", async () => {
+    const repoRoot = await writeRepoFixture();
+    const shotsDir = path.join(repoRoot, "shots");
+    await mkdir(shotsDir);
+    await writeFile(path.join(shotsDir, "board.png"), "png-bytes-a");
+    await writeFile(path.join(shotsDir, "issue.png"), "png-bytes-b");
+    const { appDir } = await runDemoCreate(
+      { ...args, screenshots: [path.join(shotsDir, "board.png"), path.join(shotsDir, "issue.png")] },
+      { repoRoot },
+    );
+    expect(await readFile(path.join(appDir, "RESEARCH", "operator-1-board.png"), "utf8")).toBe("png-bytes-a");
+    expect(await readFile(path.join(appDir, "RESEARCH", "operator-2-issue.png"), "utf8")).toBe("png-bytes-b");
+    const manifest = JSON.parse(await readFile(path.join(appDir, "RESEARCH", "manifest.json"), "utf8"));
+    expect(manifest).toEqual({
+      screenshots: [
+        { file: "operator-1-board.png", provenance: "operator-provided", source: path.join(shotsDir, "board.png") },
+        { file: "operator-2-issue.png", provenance: "operator-provided", source: path.join(shotsDir, "issue.png") },
+      ],
+    });
+  });
+
+  it("fails on a missing screenshot, naming the path, before touching disk", async () => {
+    const repoRoot = await writeRepoFixture();
+    const missing = path.join(repoRoot, "shots", "nope.png");
+    await expect(runDemoCreate({ ...args, screenshots: [missing] }, { repoRoot }))
+      .rejects.toThrow(`--screenshots file not found: ${missing}`);
+    expect(existsSync(path.join(repoRoot, "apps", "demo-acme-widgets"))).toBe(false);
+  });
+
+  it("injects the demo login wall into every clone", async () => {
+    const repoRoot = await writeRepoFixture();
+    const { appDir } = await runDemoCreate(args, { repoRoot });
+    const middleware = await readFile(path.join(appDir, "middleware.ts"), "utf8");
+    expect(middleware).toContain("vendo_demo_auth");
+    const login = await readFile(path.join(appDir, "src", "app", "login", "route.ts"), "utf8");
+    expect(login).toContain('action="/login"');
+    expect(login).toContain('"acme-widgets-demo"');
+    expect(login).toContain("DEMO_PASSWORD");
+  });
+
+  it("fails fast on an unreachable --url, naming it, with NO app dir left behind (criterion 33 at demo:create)", async () => {
+    const repoRoot = await writeRepoFixture();
+    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    await expect(runDemoCreate(
+      { ...args, url: "https://unreachable.invalid" },
+      { repoRoot, fetchImpl: fetchImpl as unknown as typeof fetch },
+    )).rejects.toThrow(/https:\/\/unreachable\.invalid/);
+    expect(existsSync(path.join(repoRoot, "apps", "demo-acme-widgets"))).toBe(false);
+  });
+
+  it("stays offline-capable without --url (no probe, clone succeeds)", async () => {
+    const repoRoot = await writeRepoFixture();
+    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("offline"));
+    const { appDir } = await runDemoCreate(args, { repoRoot, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(existsSync(appDir)).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("refuses an id that fails the demo.config slug rule, before touching disk", async () => {

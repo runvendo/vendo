@@ -80,11 +80,15 @@ export interface AutomationCardProps {
   trigger?: Trigger;
   /** The document's one-line description. */
   description?: string;
+  /** Standing-grant asks still undecided (grant sets): the state line reads
+   *  "Enabled · waiting on N permissions" until the set is granted. */
+  pendingGrants?: number;
 }
 
 /** The read-only automation card (same chrome as the panel's list entry). */
-export function AutomationCard({ name, enabled, trigger, description }: AutomationCardProps) {
+export function AutomationCard({ name, enabled, trigger, description, pendingGrants = 0 }: AutomationCardProps) {
   const flow = automationFlow(trigger);
+  const waiting = enabled && pendingGrants > 0;
   return (
     <ChromeRoot>
       <article className="fl-automation" data-vendo-automation-card="" aria-label={`Automation — ${name}`}>
@@ -97,8 +101,12 @@ export function AutomationCard({ name, enabled, trigger, description }: Automati
           <div>
             <div className="fl-auto-title">{name}</div>
             <div className="fl-auto-sub">
-              {enabled ? <span className="fl-auto-live" aria-hidden="true" /> : null}
-              {enabled ? "Enabled" : "Disabled"}
+              {enabled ? <span className={`fl-auto-live${waiting ? " fl-auto-wait" : ""}`} aria-hidden="true" /> : null}
+              {enabled
+                ? waiting
+                  ? `Enabled · waiting on ${pendingGrants} permission${pendingGrants === 1 ? "" : "s"}`
+                  : "Enabled"
+                : "Disabled"}
             </div>
             {description ? <div className="fl-auto-sub" style={{ display: "block" }}>{description}</div> : null}
           </div>
