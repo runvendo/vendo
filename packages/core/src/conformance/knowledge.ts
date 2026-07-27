@@ -153,6 +153,24 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
         const result = await adapter.search({ text: seed.internal.title }, ctx);
         assert(result.hits.every((hit) => hit.visibility === "public"), "internal content leaked into a default-context search");
       }),
+      adapterCase("R5 — internal stays invisible to default contexts across every intent and kinds filter (ENG-370)", async (adapter) => {
+        // The internal seed is glossary-kind, so the schema/kinds leg probes
+        // the exact surface the tool's lookup mode queries — visibility must
+        // be honored per-hit, never assumed from the query shape.
+        const probes: Array<Parameters<KnowledgeAdapter["search"]>[0]> = [
+          { text: seed.internal.title, intent: "deep" },
+          { text: seed.internal.title, intent: "schema" },
+          { text: seed.internal.title, intent: "schema", kinds: ["glossary", "api"] },
+          { text: seed.internal.title, kinds: [seed.internal.kind] },
+        ];
+        for (const query of probes) {
+          const result = await adapter.search(query, ctx);
+          assert(
+            result.hits.every((hit) => hit.visibility === "public" && hit.ref.docId !== seed.internal.id),
+            `internal content leaked into a default-context search (intent: ${query.intent ?? "chat"}, kinds: ${JSON.stringify(query.kinds ?? "unset")})`,
+          );
+        }
+      }),
       adapterCase("R5 — includeInternal surfaces internal content for trusted callers", async (adapter) => {
         const result = await adapter.search({ text: seed.internal.title }, { ...ctx, includeInternal: true });
         assert(

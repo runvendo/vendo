@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext } from "@playwright/test";
+import { operatorManifestName, type OperatorScreenshot } from "./create.js";
 
 /**
  * `demo:research` — evidence-gathering for the creator agent, not automated
@@ -464,20 +465,35 @@ export type ResearchPageEntry = ResearchPageCapture | ResearchPageFailure;
 export interface ResearchReport {
   capturedAt: string;
   urls: string[];
+  /** Operator-provided screenshots (from demo:create --screenshots), indexed
+   * FIRST: they outrank every crawled capture as brand evidence because they
+   * usually show logged-in product screens the crawler can't reach. */
+  operatorScreenshots: OperatorScreenshot[];
   pages: ResearchPageEntry[];
   palette: ResearchPalette;
   fonts: ResearchFonts;
+}
+
+/** Reads the create-stage manifest of operator screenshots; an app created
+ * without --screenshots simply has no manifest. */
+export async function readOperatorScreenshots(researchDir: string): Promise<OperatorScreenshot[]> {
+  const manifestPath = path.join(researchDir, operatorManifestName);
+  if (!existsSync(manifestPath)) return [];
+  const parsed = JSON.parse(await readFile(manifestPath, "utf8")) as { screenshots?: OperatorScreenshot[] };
+  return parsed.screenshots ?? [];
 }
 
 export function buildResearchReport(options: {
   urls: string[];
   pages: ResearchPageEntry[];
   capturedAt: string;
+  operatorScreenshots?: OperatorScreenshot[];
 }): ResearchReport {
   const samples = options.pages.flatMap((page) => ("error" in page ? [] : page.samples));
   return {
     capturedAt: options.capturedAt,
     urls: options.urls,
+    operatorScreenshots: options.operatorScreenshots ?? [],
     pages: options.pages,
     palette: aggregatePalette(samples),
     fonts: aggregateFonts(options.pages),
@@ -773,7 +789,7 @@ export interface DemoResearchResult {
   report: ResearchReport;
 }
 
-export async function runDemoResearch(args: DemoResearchArgs, options: { repoRoot: string }): Promise<DemoResearchResult> {
+export async function runDemoResearch(args: DemoResearchArgs, options: { repoRoot: string; signal?: AbortSignal }): Promise<DemoResearchResult> {
   const appDir = path.resolve(options.repoRoot, args.app);
   if (!existsSync(path.join(appDir, "demo.config.json"))) {
     throw new Error(`--app must point at a template-derived demo app, but there is no demo.config.json in "${appDir}"`);
@@ -787,6 +803,8 @@ export async function runDemoResearch(args: DemoResearchArgs, options: { repoRoo
   try {
     browser = await chromium.launch();
     for (const [index, url] of args.urls.entries()) {
+      // Pure-promise stage: honor the pipeline cap at the next await boundary.
+      if (options.signal?.aborted) throw options.signal.reason instanceof Error ? options.signal.reason : new Error("research aborted");
       let context: BrowserContext | undefined;
       try {
         context = await browser.newContext({ viewport: { width: 1440, height: 900 }, userAgent });
@@ -805,6 +823,7 @@ export async function runDemoResearch(args: DemoResearchArgs, options: { repoRoo
     urls: args.urls,
     pages,
     capturedAt: new Date().toISOString(),
+    operatorScreenshots: await readOperatorScreenshots(researchDir),
   });
   const reportPath = path.join(researchDir, "research.json");
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);

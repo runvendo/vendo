@@ -98,6 +98,7 @@ import {
   type CapabilitySurfaceSnapshot,
 } from "./capability-misses.js";
 import { catalogThemeSummary, mergeRuntimeCatalog, normalizeCatalogConfig, runtimeCatalogFromFile, runtimeCatalogFromJson } from "./catalog.js";
+import { knowledgeIndexResolver } from "./knowledge-prompt.js";
 import { bindVendoModelSlots } from "#dev-creds/model";
 // Models spec 2026-07-22 — `vendoModel(name?)` is the vendo model family
 // entry: the lazily-resolving env ladder createVendo composes when the host
@@ -1739,6 +1740,17 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // no adapter, no `vendo_knowledge_search` in any descriptor surface.
   const knowledge = selectKnowledge(config.knowledge);
   if (knowledge !== undefined) actions.add(createKnowledgeTools(knowledge));
+  // Knowledge k8 (ENG-368) — the prompt index rides exactly when the tool
+  // composes. Byte-stable at a fixed sync state, refreshed when the sync
+  // manifest changes (never rebuilt per-turn); knowledge.json is an
+  // ingestion input, not a config surface, so it reads through the raw
+  // fail-soft reader like catalog.json.
+  const knowledgeIndex = knowledge === undefined
+    ? undefined
+    : knowledgeIndexResolver(knowledge, {
+        readConfig: () => dotVendoFile("knowledge.json", surfaceRoot),
+        readManifest: () => dotVendoFile("knowledge-manifest.json", surfaceRoot),
+      });
   // #557 — the capability-miss surface is DEFERRED to first use behind a
   // memoized promise. Building it eagerly at compose would call
   // actions.descriptors() → loadHost → the cloud overrides fetch at module
@@ -1785,10 +1797,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     : () => resolveBrief(configCloud);
   const promptCatalog = catalogThemeSummary(catalog, theme);
   const hostInstructions = config.agent?.instructions?.trim();
-  const system = product !== undefined || hostInstructions || promptCatalog !== undefined
+  const system = product !== undefined || hostInstructions || promptCatalog !== undefined || knowledgeIndex !== undefined
     ? {
         ...(product === undefined ? {} : { product }),
         ...(promptCatalog === undefined ? {} : { catalog: promptCatalog }),
+        ...(knowledgeIndex === undefined ? {} : { knowledge: knowledgeIndex }),
         ...(hostInstructions ? { instructions: hostInstructions } : {}),
       }
     : undefined;

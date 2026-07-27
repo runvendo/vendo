@@ -2,6 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { displayAppPath, parseDemoCreateArgs, runDemoCreate, type DemoCreateResult } from "./create.js";
 import { parseDemoDeployArgs, runDemoDeploy } from "./deploy.js";
+import { parseDemoPipelineArgs, runDemoPipeline } from "./pipeline.js";
 import { parseDemoReapArgs, runDemoReap } from "./reap.js";
 import { parseDemoResearchArgs, runDemoResearch } from "./research.js";
 
@@ -9,13 +10,16 @@ const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 function usage(): string {
   return `Usage:
-  pnpm --filter @vendoai/bench demo:create -- --id SLUG --prospect NAME [--cta-url URL] [--target-dir DIR] [--url PROSPECT_SITE]
+  pnpm --filter @vendoai/bench demo:create -- --id SLUG --prospect NAME [--cta-url URL] [--target-dir DIR] [--url PROSPECT_SITE] [--screenshots a.png,b.png]
   pnpm --filter @vendoai/bench demo:research -- --app APP_DIR --url https://... [--url https://...]
   pnpm --filter @vendoai/bench demo:deploy -- --app apps/demo-SLUG [--project NAME] [--router-url URL] [--skip-registry] [--dry-run]
   pnpm --filter @vendoai/bench demo:reap -- [--router-url URL] [--project NAME] [--execute]
+  pnpm --filter @vendoai/bench demo:pipeline -- --id SLUG --prospect NAME --url PROSPECT_SITE [--screenshots a.png,b.png] [--cta-url URL] [--target-dir DIR] [--port N] [--skip-capture] [--skip-deploy]
 
 demo:create clones apps/demo-template into <target-dir>/demo-<id> (default apps/)
-and writes a TODO-fenced demo.config.json skeleton plus a RESEARCH/ pointer.
+and writes a TODO-fenced demo.config.json skeleton plus a RESEARCH/ pointer;
+--screenshots copies operator-provided product screenshots into RESEARCH/ as
+top-priority brand evidence (indexed with provenance in RESEARCH/manifest.json).
 demo:research captures each prospect URL's brand evidence (screenshots, title,
 theme-color, favicon, computed-style palette) into <APP_DIR>/RESEARCH/.
 demo:deploy ships one demo app to Railway (project vendo-demos by default) and
@@ -78,6 +82,19 @@ async function main(): Promise<void> {
     if (!result.dryRun && result.registryPayload !== undefined) {
       process.stdout.write(`\nLive at ${args.routerUrl.replace(/\/+$/, "")}/${result.registryPayload.id}\n`);
     }
+    return;
+  }
+  if (command === "pipeline") {
+    const args = parseDemoPipelineArgs(rest);
+    const result = await runDemoPipeline(args, { repoRoot });
+    const lines = [
+      `Pipeline finished for ${result.appPath}`,
+      ...(result.demoUrl === undefined ? [] : [`Live at ${result.demoUrl} (gate: ${result.gate?.steps.every((step) => step.ok) === true ? "PASS" : "see report"})`]),
+      ...(result.gifPath === undefined ? [] : [`GIF: ${result.gifPath}`]),
+      `Fidelity report: ${result.judge.reportPath}`,
+      `Timings: ${result.appPath}/timings.json`,
+    ];
+    process.stdout.write(`${lines.join("\n")}\n`);
     return;
   }
   if (command === "reap") {
