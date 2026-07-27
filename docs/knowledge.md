@@ -95,7 +95,9 @@ does not know. Nothing else changes — same tool, same outcomes, same UI.
 What it costs and what it buys, measured on the 94-question calibration corpus
 ([the full table](eval/KNOWLEDGE.md#the-verifier-pass-k14)): false answers
 47% → 3%, false refusals 12% → 7-8%, one extra model call on 65% of knowledge
-turns, median 1.6s and p95 3.6s added to those turns.
+turns — a second only when a rejected verdict escalates to a deep retry that
+comes back with different passages — and median 1.6s, p95 3.6s added to those
+turns.
 
 Three properties are worth knowing:
 

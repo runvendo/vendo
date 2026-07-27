@@ -122,7 +122,7 @@ cheap model reads the passages instead.
 |---|---|---|
 | **False answers** (unanswerable question answered) | **16/34 — 47%** | **1-2/34 — 3-6%** |
 | **False refusals** (answerable question refused) | **7/60 — 12%** | **4-6/60 — 7-10%** |
-| Turns paying a model call | 0 | 61/94 — 65% |
+| Turns paying a model call | 0 | 61/94 — 65% (one call; a second only if a rejected verdict escalates to a deep retry with different passages, which the replay does not simulate) |
 | Added latency on those turns | — | p50 1.6s · p95 3.6s · cap 5s |
 
 Ranges are the spread over repeated passes (a model verdict is not
