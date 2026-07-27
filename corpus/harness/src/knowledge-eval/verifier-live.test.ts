@@ -28,6 +28,7 @@ interface LiveRecord {
   outcome: string;
   unverified: boolean;
   latencyMs: number;
+  lookup?: true;
   searches: Array<{ intent: string; hits: Array<{ docId: string; score?: number }> }>;
   verifications: Array<{ verdict: "supported" | "unsupported" | "none"; latencyMs: number }>;
   falseAnswer: boolean;
@@ -63,13 +64,23 @@ const load = (file: string): LiveArtifact =>
 /** Every committed measurement. `ungated` marks the shipped configuration —
     its extra invariants (the check reads every hits-returning search; skipped
     or verdictless turns are MARKED) do not hold for the band-gated arm, whose
-    unchecked turns are exactly the evidence the gate was removed on. */
-const ARTIFACTS: Array<{ name: string; file: string; ungated: boolean }> = [
-  { name: "ungated run 2 (headline)", file: "agentset-verifier-live.json", ungated: true },
-  { name: "ungated run 1", file: "agentset-verifier-live-ungated-run1.json", ungated: true },
-  { name: "band-gated run A", file: "agentset-verifier-live-band-gated.json", ungated: false },
-  { name: "band-gated run B", file: "agentset-verifier-live-band-gated-run1.json", ungated: false },
-  { name: "band-gated 8s A/B arm", file: "agentset-verifier-live-band-gated-turn-budget-ab.json", ungated: false },
+    unchecked turns are exactly the evidence the gate was removed on. `shape`
+    is each run's labelled probe count per pass; `lookup` marks the targeted
+    schema-branch pass (round 3), which is proof of a code path, not part of
+    the query-path aggregate tables. */
+const ARTIFACTS: Array<{
+  name: string;
+  file: string;
+  ungated: boolean;
+  lookup: boolean;
+  shape: { answerable: number; unanswerable: number };
+}> = [
+  { name: "ungated run 2 (headline)", file: "agentset-verifier-live.json", ungated: true, lookup: false, shape: { answerable: 60, unanswerable: 34 } },
+  { name: "ungated run 1", file: "agentset-verifier-live-ungated-run1.json", ungated: true, lookup: false, shape: { answerable: 60, unanswerable: 34 } },
+  { name: "band-gated run A", file: "agentset-verifier-live-band-gated.json", ungated: false, lookup: false, shape: { answerable: 60, unanswerable: 34 } },
+  { name: "band-gated run B", file: "agentset-verifier-live-band-gated-run1.json", ungated: false, lookup: false, shape: { answerable: 60, unanswerable: 34 } },
+  { name: "band-gated 8s A/B arm", file: "agentset-verifier-live-band-gated-turn-budget-ab.json", ungated: false, lookup: false, shape: { answerable: 60, unanswerable: 34 } },
+  { name: "targeted schema/lookup pass", file: "agentset-verifier-live-lookup.json", ungated: true, lookup: true, shape: { answerable: 6, unanswerable: 6 } },
 ].map((entry) => ({ ...entry }));
 
 const loaded = ARTIFACTS.map((entry) => ({ ...entry, data: load(entry.file) }));
@@ -111,16 +122,17 @@ function derivedSummary(rows: LiveRecord[]): Record<string, number> {
   };
 }
 
-for (const { name, file, ungated, data } of loaded) {
+for (const { name, file, ungated, lookup, shape, data } of loaded) {
+  const perPassTotal = shape.answerable + shape.unanswerable;
   describe(`${name} (${file}) — the artifact is the evidence`, () => {
-    it("is a whole run: 94 labelled questions per pass, none dropped", () => {
+    it(`is a whole run: ${perPassTotal} labelled questions per pass, none dropped`, () => {
       expect(data.smokeRun).toBeUndefined();
       expect(data.perPass).toHaveLength(data.passes);
-      expect(data.records).toHaveLength(94 * data.passes);
+      expect(data.records).toHaveLength(perPassTotal * data.passes);
       for (let pass = 1; pass <= data.passes; pass += 1) {
         const rows = data.records.filter((record) => record.pass === pass);
-        expect(rows.filter((record) => record.label === "answerable")).toHaveLength(60);
-        expect(rows.filter((record) => record.label === "unanswerable")).toHaveLength(34);
+        expect(rows.filter((record) => record.label === "answerable")).toHaveLength(shape.answerable);
+        expect(rows.filter((record) => record.label === "unanswerable")).toHaveLength(shape.unanswerable);
       }
     });
 
@@ -187,7 +199,34 @@ for (const { name, file, ungated, data } of loaded) {
       it("says it ran ungated", () => {
         expect(data.gating).toMatch(/^none/);
       });
-    } else {
+    }
+
+    if (lookup) {
+      it("every record went through the SCHEMA branch: lookup-flagged, one schema-intent search", () => {
+        // Round 3: the live proof that `lookup: true` adjudicates. The lookup
+        // branch makes exactly one search, intent "schema" — a chat or deep
+        // intent here would mean the probe fell through to the query ladder
+        // and proved nothing about the schema branch.
+        for (const record of data.records) {
+          expect(record.lookup).toBe(true);
+          expect(record.searches).toHaveLength(1);
+          expect(record.searches[0]!.intent).toBe("schema");
+          if (record.searches[0]!.hits.length > 0) {
+            expect(record.verifications.length).toBeGreaterThan(0);
+          }
+        }
+      });
+
+      it("is the schema branch a host gets: lookups with hits carry a real verdict or the mark", () => {
+        for (const record of data.records) {
+          if (record.searches[0]!.hits.length === 0) continue;
+          const gotVerdict = record.verifications.some((entry) => entry.verdict !== "none");
+          expect(gotVerdict || record.unverified).toBe(true);
+        }
+      });
+    }
+
+    if (!ungated) {
       it("is labelled band-gated, so neither configuration is quoted as the other", () => {
         expect(file).toContain("band-gated");
         expect(data.band).toBeDefined();
@@ -245,7 +284,9 @@ describe("docs/eval/KNOWLEDGE.md quotes the runs it has", () => {
     const unanswerable = perPass[0]!.unanswerable!;
     const worstOf = (runs: LiveArtifact[]) =>
       Math.max(...runs.flatMap((run) => run.perPass.map((pass) => pass.falseAnswers!)));
-    const ungatedRuns = loaded.filter((entry) => entry.ungated).map((entry) => entry.data);
+    // The lookup pass is a code-path proof over a different probe set — it is
+    // quoted in its own section, never mixed into the query-path worst case.
+    const ungatedRuns = loaded.filter((entry) => entry.ungated && !entry.lookup).map((entry) => entry.data);
     const gatedRuns = loaded.filter((entry) => !entry.ungated).map((entry) => entry.data);
     for (const worst of [worstOf(ungatedRuns), worstOf(gatedRuns)]) {
       expect(doc).toContain(`**${worst}/${unanswerable} — ${Math.round((worst / unanswerable) * 100)}%**`);
@@ -286,7 +327,7 @@ describe("docs/eval/KNOWLEDGE.md quotes the runs it has", () => {
       p50: percentile(rows.map((record) => record.latencyMs), 50),
       p95: percentile(rows.map((record) => record.latencyMs), 95),
     });
-    const ungatedRuns = loaded.filter((entry) => entry.ungated).map((entry) => entry.data);
+    const ungatedRuns = loaded.filter((entry) => entry.ungated && !entry.lookup).map((entry) => entry.data);
     const gatedRuns = loaded
       .filter((entry) => !entry.ungated && !entry.file.includes("turn-budget-ab"))
       .map((entry) => entry.data);

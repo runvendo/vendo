@@ -85,6 +85,10 @@ interface Probe {
   label: "answerable" | "unanswerable";
   question: string;
   expectedDocIds: string[];
+  /** Round 3: this probe calls the tool with `lookup: true`, exercising the
+      schema-search branch (glossary/api kinds) instead of the chat→deep
+      ladder. */
+  lookup?: true;
 }
 
 /** One question, one pass, as the tool actually answered it. */
@@ -93,6 +97,8 @@ interface Record_ {
   id: string;
   label: Probe["label"];
   question: string;
+  /** Present when this record exercised the schema/lookup branch. */
+  lookup?: true;
   /** Every search the tool made, in order (chat, then deep if it escalated). */
   searches: Array<{ intent: string; hits: Array<{ docId: string; score?: number }> }>;
   verifications: Array<{ verdict: "supported" | "unsupported" | "none"; gap?: string; latencyMs: number }>;
@@ -130,6 +136,24 @@ function probes(): Probe[] {
       })),
     ),
   ];
+}
+
+/** The targeted lookup pass (checker round 3): the aggregate tables above are
+    query-path measurements; this is the live proof that the SCHEMA branch
+    adjudicates too. Existing labelled items, labels untouched — six golden
+    glossary-term questions the corpus defines, six refusal questions that ask
+    for a structured fact the corpus does not hold. Base questions only, no
+    paraphrases: the point is the code path, not another aggregate. */
+const LOOKUP_GOLDEN = ["sc-block", "sc-wire", "sc-guard-term", "sc-principal-term", "sc-adapter-term", "sc-intent-term"];
+const LOOKUP_REFUSALS = ["rf-sla", "rf-seat-pricing", "rf-refunds", "rf-soc2", "rf-gdpr", "rf-python-sdk"];
+
+function lookupProbes(): Probe[] {
+  const ids = new Set([...LOOKUP_GOLDEN, ...LOOKUP_REFUSALS]);
+  const selected = probes().filter((probe) => ids.has(probe.id));
+  if (selected.length !== ids.size) {
+    throw new Error(`lookup probe selection matched ${selected.length}/${ids.size} ids — fixture drift, refusing to run a partial set`);
+  }
+  return selected.map((probe) => ({ ...probe, lookup: true as const }));
 }
 
 async function pooled<T, R>(items: T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
@@ -195,7 +219,11 @@ async function main(): Promise<void> {
   const request = agentsetClient(process.env.AGENTSET_API_KEY);
   const corpus = readJson<{ docs: KnowledgeDoc[] }>(path.join(HERE, "fixtures/corpus.json"));
   const limit = Number(process.env.LIVE_LIMIT ?? 0);
-  const all = limit > 0 ? probes().slice(0, limit) : probes();
+  const lookupOnly = process.env.LIVE_LOOKUP === "1";
+  const all = lookupOnly ? lookupProbes() : limit > 0 ? probes().slice(0, limit) : probes();
+  if (lookupOnly) {
+    console.log(`LIVE_LOOKUP=1 — targeted schema/lookup pass over ${all.length} probes (lookup: true through the same tool path)`);
+  }
   if (limit > 0) {
     // A smoke run, not a measurement. Say so here AND in the artifact (the
     // record count and this flag are both in the file), so a partial run can
@@ -267,7 +295,11 @@ async function main(): Promise<void> {
 
         const startedAt = Date.now();
         const outcome = await tools.execute(
-          { id: `call_${probe.id}`, tool: "vendo_knowledge_search", args: { query: probe.question } },
+          {
+            id: `call_${probe.id}`,
+            tool: "vendo_knowledge_search",
+            args: { query: probe.question, ...(probe.lookup === true ? { lookup: true } : {}) },
+          },
           ctx(),
         );
         const latencyMs = Date.now() - startedAt;
@@ -281,6 +313,7 @@ async function main(): Promise<void> {
           id: probe.id,
           label: probe.label,
           question: probe.question,
+          ...(probe.lookup === true ? { lookup: true as const } : {}),
           searches,
           verifications: recorder.drain(),
           outcome: result,
@@ -361,7 +394,7 @@ async function main(): Promise<void> {
   const artifact = {
     version: 1,
     engine: "agentset",
-    kind: "verifier-live",
+    kind: lookupOnly ? "verifier-live-lookup" : "verifier-live",
     generated: "by corpus/harness/src/knowledge-eval/verifier-live.ts — do not hand-edit",
     generatedAt: stamp,
     fidelity: {
@@ -387,7 +420,7 @@ async function main(): Promise<void> {
   mkdirSync(BANDS_DIR, { recursive: true });
   const file = path.join(
     BANDS_DIR,
-    process.env.LIVE_OUT ?? "agentset-verifier-live.json",
+    process.env.LIVE_OUT ?? (lookupOnly ? "agentset-verifier-live-lookup.json" : "agentset-verifier-live.json"),
   );
   writeFileSync(file, `${JSON.stringify(artifact, null, 2)}\n`);
   console.log(`\nwrote ${path.relative(REPO, file)}`);

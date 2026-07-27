@@ -187,6 +187,21 @@ installed via the npm package @vendoai/vendo"), while its sibling paraphrase
 "the passages describe installing the JavaScript SDK via npm, but do not
 contain any information about installing a Python SDK".
 
+**The schema/lookup branch, proven live.** The tables above are query-path
+(chat→deep) measurements; `lookup: true` takes a different branch — one schema
+search over the glossary/api kinds — and that branch previously carried **no
+check at all**: any hit answered, no threshold ever applied. A targeted pass
+(`bands/agentset-verifier-live-lookup.json`, recomputed by the same guard)
+proves the branch with 12 existing labelled probes — six glossary-term golden
+questions the corpus defines, six fact-lookup refusal questions it does not —
+three passes, same namespace-and-sweep discipline. Result: **false answers 0/6
+and false refusals 0/6 on every pass.** The row that earns the branch its
+verifier: five of the six unanswerable lookups DID return schema hits
+(adjacent glossary/API entries), which the unchecked branch would have
+answered; the verifier refused all five with a named gap, and the sixth
+returned no hits and answered an honest not-found. Verification here is one
+call per lookup (this branch never escalates), p50 1.5-2.0s.
+
 **Cost.** Measured, and counting the second call a chat→deep escalation makes:
 **1.37-1.39 verifier calls per search** ungated (0.93-0.98 gated). At
 `claude-haiku-4-5` list prices with a ~1.1k-token prompt and a ~60-token
