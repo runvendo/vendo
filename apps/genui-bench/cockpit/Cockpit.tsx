@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { validateModelChoice, type RunModel } from "../runner/models";
 import type { HostName, LaneName, RunRecord, RunRequest } from "../runner/types";
 import type { PaneComponent } from "./pane-props";
 import { ALL_LANES } from "./lane-meta";
@@ -12,6 +13,22 @@ import { PaneGrid } from "./PaneGrid";
 import { InternalsDrawer } from "./InternalsDrawer";
 
 const POLL_MS = 5000;
+const MODEL_KEY = "genui-bench:model";
+
+/** Last model choice survives a reload; a stale/invalid stored choice (model
+ *  list changed under it) falls back to the engine default rather than
+ *  failing every run. */
+function storedModel(): RunModel | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(MODEL_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as RunModel;
+    return validateModelChoice(parsed) === undefined ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The cockpit: one RunRecord loaded at a time, runs fired through
  *  POST /api/run (the same executeRun the CLI uses), history polled from
@@ -21,6 +38,7 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
   const [prompt, setPrompt] = useState("");
   const packRef = useRef<RunRequest["packRef"]>(undefined);
   const [enabledLanes, setEnabledLanes] = useState<LaneName[]>([...ALL_LANES]);
+  const [model, setModel] = useState<RunModel | null>(storedModel);
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [current, setCurrent] = useState<RunRecord | null>(null);
   const [compare, setCompare] = useState<RunRecord | null>(null);
@@ -84,12 +102,19 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
     [refreshRuns],
   );
 
+  const chooseModel = useCallback((next: RunModel | null) => {
+    setModel(next);
+    if (next) window.localStorage.setItem(MODEL_KEY, JSON.stringify(next));
+    else window.localStorage.removeItem(MODEL_KEY);
+  }, []);
+
   const fireRun = useCallback(async () => {
     const request: RunRequest = {
       prompt: prompt.trim(),
       host,
       lanes: enabledLanes,
       ...(packRef.current ? { packRef: packRef.current } : {}),
+      ...(model ? { model } : {}),
     };
     setRunning(true);
     setError(null);
@@ -108,7 +133,7 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
       setRunning(false);
       void refreshRuns();
     }
-  }, [prompt, host, enabledLanes, refreshRuns]);
+  }, [prompt, host, enabledLanes, model, refreshRuns]);
 
   const fixture = useMemo(() => makeClientFixture(host), [host]);
   const gridLanes = current?.request.lanes ?? enabledLanes;
@@ -128,6 +153,8 @@ export function Cockpit({ panes }: { panes: Record<LaneName, PaneComponent> }) {
             lanes.includes(lane) ? lanes.filter((l) => l !== lane) : [...lanes, lane],
           )
         }
+        model={model}
+        onModelChange={chooseModel}
         running={running}
         onRun={() => void fireRun()}
       />
