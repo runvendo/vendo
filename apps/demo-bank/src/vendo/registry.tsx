@@ -1,9 +1,9 @@
 import type { ComponentRegistry } from "@vendoai/core";
 import { z } from "zod";
-import { Sparkline } from "@/components/charts/sparkline";
-import { Donut } from "@/components/charts/donut";
-import { NetWorthView } from "@/components/home/net-worth-view";
-import type { SpendingSlice } from "@/server/types";
+import { Sparkline } from "../components/charts/sparkline";
+import { Donut } from "../components/charts/donut";
+import { NetWorthView } from "../components/home/net-worth-view";
+import type { SpendingSlice } from "../server/types";
 
 function MapleSparkline({ data, height = 28 }: { data: number[]; height?: number }) {
   // Mid-stream renders can mount the component before its props bind (the

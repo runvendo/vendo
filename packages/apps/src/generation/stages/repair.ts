@@ -20,6 +20,7 @@ import type {
   GenerationDependencies,
   PipelineContext,
 } from "../engine.js";
+import { modelCallParams } from "../../model-params.js";
 import { actionBindingsInProps, actionFaults, hasPayload } from "../validation/actions.js";
 import { literalDataFaults } from "../validation/literals.js";
 import { DISCLAIMER_TEXT } from "../validation/validate.js";
@@ -607,7 +608,7 @@ export const strictToolCall = async (
         } as never,
       },
       toolChoice: { type: "tool", toolName },
-      temperature: 0,
+      ...modelCallParams(deps.model),
       maxRetries: 0,
     });
     const call = result.toolCalls.find((candidate) => candidate.toolName === toolName);
@@ -922,6 +923,9 @@ export const structuredRepair = async (
         noValidFix: result.noValidFixCount,
         rebinds: result.wrapperRebinds,
         ms: Date.now() - repairStart,
+        // Why the rounds were spent for nothing — the residual issues the
+        // caller falls back to the free-form loop with.
+        ...(result.document !== undefined || result.issues.length === 0 ? {} : { issues: [...result.issues] }),
       });
     }
     return result;

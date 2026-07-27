@@ -1,0 +1,136 @@
+{
+  "_note": "RECORDED FROM LIVE 2026-07-26: real @tambo-ai/client 1.2.0 run against their hosted service (host maple, prompt \"show my account balances at a glance\"). Thread id and message ids are scrubbed to stable placeholders. Two things this file exists to pin, both surprises vs the earlier hand-authored guess: (1) component blocks arrive in their OWN assistant messages, one per pick, not alongside the text; (2) every pick carries Tambo display metadata (_tambo_statusMessage/_tambo_completionStatusMessage) mixed into props, and the table rows come back as index-keyed objects rather than arrays. The duplicated user-message text is an upstream @tambo-ai/client artifact (its optimistic user message is dispatched once per stream segment) and is recorded as-is. CI never calls the live API.",
+  "thread": {
+    "id": "thr_recorded",
+    "messages": [
+      {
+        "id": "msg_recorded_1",
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "show my account balances at a glanceshow my account balances at a glance"
+          }
+        ],
+        "createdAt": "2026-07-27T03:36:33.973Z"
+      },
+      {
+        "id": "msg_recorded_2",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "call_recorded",
+            "name": "host_listAccounts",
+            "input": {
+              "_tambo_statusMessage": "Fetching your accounts and balances",
+              "_tambo_completionStatusMessage": "Fetched your account balances"
+            }
+          },
+          {
+            "type": "text",
+            "text": "Here are your account balances at a glance (USD):\n\n- **Everyday Checking (••4832):** **$12,846.50**\n- **High-Yield Savings (••9917):** **$34,060.65**\n- **Maple Rewards Card (••2201):** **-$1,289.40** (owed)\n\nI also put them into a quick chart and table on screen for easy comparison."
+          }
+        ],
+        "createdAt": "2026-07-27T03:36:35.989Z",
+        "reasoning": [
+          ""
+        ],
+        "reasoningDurationMS": 1201
+      },
+      {
+        "id": "msg_recorded_4",
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "toolUseId": "call_recorded",
+            "content": [
+              {
+                "type": "text",
+                "text": "[{\"id\":\"acc_checking\",\"name\":\"Everyday Checking\",\"kind\":\"checking\",\"mask\":\"4832\",\"balance\":1284650,\"accountNumber\":\"****4832\",\"sparkline\":[1212400,1240180,1198320,1265910,1284650]},{\"id\":\"acc_savings\",\"name\":\"High-Yield Savings\",\"kind\":\"savings\",\"mask\":\"9917\",\"balance\":3406065,\"accountNumber\":\"****9917\",\"sparkline\":[3180000,3255500,3310020,3368400,3406065]},{\"id\":\"acc_credit\",\"name\":\"Maple Rewards Card\",\"kind\":\"credit\",\"mask\":\"2201\",\"balance\":-128940,\"accountNumber\":\"****2201\",\"sparkline\":[-98200,-112450,-104310,-121780,-128940]}]"
+              }
+            ]
+          }
+        ],
+        "createdAt": "2026-07-27T03:36:37.762Z"
+      },
+      {
+        "id": "msg_recorded_5",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "component",
+            "id": "block_recorded_6",
+            "name": "chart",
+            "props": {
+              "_tambo_statusMessage": "Creating a quick balances overview",
+              "_tambo_completionStatusMessage": "Shown your balances overview",
+              "title": "Account balances",
+              "data": [
+                {
+                  "label": "Everyday Checking (••4832)",
+                  "value": 12846.5
+                },
+                {
+                  "label": "High-Yield Savings (••9917)",
+                  "value": 34060.65
+                },
+                {
+                  "label": "Maple Rewards Card (••2201)",
+                  "value": -1289.4
+                }
+              ]
+            },
+            "streamingState": "done"
+          }
+        ],
+        "createdAt": "2026-07-27T03:36:39.111Z"
+      },
+      {
+        "id": "msg_recorded_7",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "component",
+            "id": "block_recorded_8",
+            "name": "table",
+            "props": {
+              "_tambo_statusMessage": "Formatting balances",
+              "_tambo_completionStatusMessage": "Balances ready",
+              "title": "Balances (USD)",
+              "columns": [
+                "Account",
+                "Type",
+                "Balance"
+              ],
+              "rows": [
+                {
+                  "0": "Everyday Checking (••4832)",
+                  "1": "checking",
+                  "2": 12846.5
+                },
+                {
+                  "0": "High-Yield Savings (••9917)",
+                  "1": "savings",
+                  "2": 34060.65
+                },
+                {
+                  "0": "Maple Rewards Card (••2201)",
+                  "1": "credit",
+                  "2": -1289.4
+                }
+              ]
+            },
+            "streamingState": "done"
+          }
+        ],
+        "createdAt": "2026-07-27T03:36:41.745Z"
+      }
+    ],
+    "status": "idle",
+    "createdAt": "2026-07-27T03:36:33.973Z",
+    "updatedAt": "2026-07-27T03:36:48.110Z",
+    "lastRunCancelled": false
+  }
+}

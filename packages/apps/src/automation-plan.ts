@@ -6,6 +6,7 @@ import {
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { Cron } from "croner";
+import { modelCallParams } from "./model-params.js";
 import { distinctIssues, type HostToolInfo } from "./engine.js";
 
 /**
@@ -116,7 +117,7 @@ const generatePlanText = async (
 ): Promise<{ text?: string; issues: string[] }> => {
   try {
     const { streamText } = await import("ai");
-    const result = streamText({ model, system, prompt, temperature: 0, maxRetries: 0 });
+    const result = streamText({ model, system, prompt, ...modelCallParams(model), maxRetries: 0 });
     let text = "";
     for await (const delta of result.textStream) text += delta;
     return { text, issues: [] };

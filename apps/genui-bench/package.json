@@ -1,0 +1,48 @@
+{
+  "name": "genui-bench",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "bench": "tsx cli.ts",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@copilotkit/react-core": "1.63.2",
+    "@copilotkit/runtime": "1.63.2",
+    "@crayonai/react-core": "0.7.7",
+    "@crayonai/react-ui": "0.9.16",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "lucide-react": "^0.562.0",
+    "@tambo-ai/client": "1.2.0",
+    "@thesysai/genui-sdk": "0.10.3",
+    "@vendoai/apps": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/guard": "workspace:*",
+    "@vendoai/ui": "workspace:*",
+    "next": "16.2.11",
+    "openai": "^6.49.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/react": "^16.0.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4",
+    "tsx": "^4.19.0",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}

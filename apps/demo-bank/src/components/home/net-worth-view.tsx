@@ -183,6 +183,12 @@ export function NetWorthView({
 }: NetWorthViewProps) {
   const [range, setRange] = useState<NetWorthRange>(initialRange)
   const animated = useCountUp(valueCents)
+  // Mid-stream renders can mount the card before its `$path`-bound props bind
+  // — `series` is then undefined and slicing it throws. Render nothing until
+  // data arrives, exactly like the sibling registry components
+  // (MapleSparkline / MapleSpendingDonut in src/vendo/registry.tsx). Hooks
+  // above stay unconditional.
+  if (!series?.length) return null
   const tail = TAIL[range]
   const sliced = tail === Number.POSITIVE_INFINITY ? series : series.slice(-tail)
   return (

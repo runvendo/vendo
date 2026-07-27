@@ -1,8 +1,8 @@
 import type { ComponentRegistry } from "@vendoai/core";
 import { z } from "zod";
-import { MissingDocsHero } from "@/components/dashboard/missing-docs-hero";
-import { Badge, type BadgeVariant } from "@/components/ui/badge";
-import { ProgressBar } from "@/components/ui/progress";
+import { MissingDocsHero } from "../components/dashboard/missing-docs-hero";
+import { Badge, type BadgeVariant } from "../components/ui/badge";
+import { ProgressBar } from "../components/ui/progress";
 
 function CadenceStatusBadge({
   text,

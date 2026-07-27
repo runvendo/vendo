@@ -1,0 +1,13 @@
+{
+  "name": "cadence",
+  "prompts": [
+    "which clients still owe me money, oldest first",
+    "show me where my money went last quarter",
+    "let me chase every overdue invoice in one go",
+    "what's missing before I can close the books this month",
+    "show revenue by client with a chart, and let me drill into one",
+    "build me a deadline board for the next 30 days",
+    "which clients are least profitable once I account for time spent",
+    "one screen that answers: can I afford to hire someone"
+  ]
+}
