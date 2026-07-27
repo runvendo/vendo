@@ -4,7 +4,8 @@
  * AppDocument renders through the production @vendoai/ui pipeline exactly the
  * way apps/demo-bank mounts a generated app — VendoProvider (theme) →
  * AppFrame → PayloadView/TreeView with the production Kit registry, prewired
- * primitives, and jailed generated components. The ONLY substitution is the
+ * primitives, the host's own component registry (see panes/host-registries),
+ * and jailed generated components. The ONLY substitution is the
  * tool transport: where demo-bank's embed calls client.apps.call (the vendo
  * server's guard path), this pane POSTs {host, tool, input} to /api/tools,
  * which executes the host fixture's canned-data tools. Queries resolve
@@ -19,6 +20,7 @@ import type { AppDocument, Json, ToolOutcome, TreeQuery, VendoTheme } from "@ven
 import { VendoProvider } from "@vendoai/ui";
 import { AppFrame } from "@vendoai/ui/tree";
 import type { HostFixture, LaneResult } from "../runner/types";
+import { hostComponents } from "./panes/host-registries";
 import type { PaneProps } from "./pane-props";
 
 /** The pane's tool transport — the one production substitution. */
@@ -105,6 +107,7 @@ function VendoDocument({
           payload: document.tree,
           ...(document.components === undefined ? {} : { components: document.components }),
         }}
+        components={hostComponents[host.name]}
         data={data}
         onAction={onAction}
       />

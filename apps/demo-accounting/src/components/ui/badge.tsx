@@ -1,4 +1,4 @@
-import { cn } from "@/lib/cn"
+import { cn } from "../../lib/cn"
 
 export type BadgeVariant = "missing" | "overdue" | "review" | "verified" | "neutral"
 
