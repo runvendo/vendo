@@ -23,7 +23,7 @@ import {
   type VendoTheme,
   type WireCompileResult,
 } from "@vendoai/core";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "../pins.js";
 import { createContract } from "./contracts/create.js";
 import { editContract } from "./contracts/edit.js";
@@ -91,6 +91,15 @@ export interface PipelineConfig {
    *  `false` disables. Catches the crash classes the 2026-07-21 gate shipped
    *  (React #310 hooks-in-map, undefined names, unguarded-data throws). */
   smokeRender?: boolean;
+  /** The data-sighted verify's rebind arm (re-gate 2026-07-26: wrong-data-
+   *  binding is the top model-error class in every arm and the copy-only
+   *  verify caught none of them). Under `endPass` + this flag, the verify may
+   *  point a lying binding at the right field — but only through structured
+   *  repair's closed fix space (a strict enum of real, kind-compatible field
+   *  paths; at most 2 rebinds; full revalidation or the original ships).
+   *  Opt-in while the A/B (verify-with-rebind vs verify-without) is measured;
+   *  default OFF. */
+  rebind?: boolean;
 }
 
 /** Opt-in per-stage diagnostics: rounds, no-valid-fix take-rate,
@@ -100,11 +109,18 @@ export type PipelineEvent =
   | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; ms: number }
   | { stage: "region-parallel"; fallback?: "no-outline" | "sections-failed" | "assembly-invalid"; sectionsPlanned?: number; sectionsLanded?: number; ms: number }
   | { stage: "end-pass"; applied: boolean; ms: number }
-  | { stage: "data-verify"; applied: boolean; ms: number }
+  // data-verify: `relabels` counts ALL surviving copy-pass ops (Set/Unset/
+  // Remove/SetName — the ≤4-op budget), `rebinds` the strict-enum binding
+  // repoints (≤2) applied by the rebind arm (pipeline.rebind).
+  | { stage: "data-verify"; applied: boolean; relabels: number; rebinds: number; ms: number }
   // demo-latency lane — island-scoped repair: when EVERY validation issue is
   // island-scoped, only the offending island sources are rewritten (one small
   // model call) instead of regenerating the whole app (a full-lane attempt).
-  | { stage: "island-repair"; islands: number; repaired: boolean; ms: number };
+  | { stage: "island-repair"; islands: number; repaired: boolean; ms: number }
+  // speed-core (criterion 1) — one event per FULL-lane attempt in the create
+  // loop, so the full→island-repair ordering is provable from the pipeline
+  // event stream alone. Additive; existing stages never renamed.
+  | { stage: "full"; attempt: number; valid: boolean; ms: number };
 
 export interface GenerationDependencies {
   model: LanguageModel;
@@ -254,6 +270,25 @@ const extractWire = (text: string): string => {
   return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
 };
 
+// Anthropic prompt-caching breakpoint (mirrors packages/agent/src/agent.ts's
+// CACHE_BREAKPOINT). providerOptions.anthropic is ignored by every other
+// provider and by the test mocks, so marking the breakpoint degrades to a
+// no-op off-Anthropic.
+const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } as const;
+
+/** The generation prompt as a two-message model prompt with the stable prefix
+ *  (the contract: role, tree/edit dialect, component catalog, host tool +
+ *  field semantics, design rules) marked cacheable. The system message is the
+ *  END of the stable prefix — identical across back-to-back generations for a
+ *  deployment — so Anthropic re-reads it from cache instead of re-billing it.
+ *  The user message is the per-request variable tail (the request / the app
+ *  being edited / repair issues) and is deliberately left OUT of the cached
+ *  prefix. WHAT the model sees is unchanged — only the prefix is marked. */
+const cacheableGenerationMessages = (system: string, prompt: string): ModelMessage[] => [
+  { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
+  { role: "user", content: prompt },
+];
+
 /** Stream the wire, compiling each accumulated prefix (throttled) into a
  *  valid-while-partial tree for the onPartial seam. */
 const streamWire = async (
@@ -319,8 +354,7 @@ const streamWire = async (
     let streamError: unknown;
     const result = streamText({
       model: deps.model,
-      system,
-      prompt,
+      messages: cacheableGenerationMessages(system, prompt),
       temperature: 0,
       maxRetries: 0,
       onError: ({ error }) => { streamError = error; },
@@ -367,7 +401,7 @@ export const verifyDocumentAgainstData = async (
   deps,
   hostComponents: deps.catalog.map(({ name }) => name),
   startedAt: Date.now(),
-  validate: (compiled) => validateCompiledCreate(compiled, deps),
+  validate: (compiled) => validateCompiledCreate(compiled, deps, userRequest),
 });
 
 const withoutId = (app: AppDocument): GeneratedAppDocument => {
@@ -402,8 +436,7 @@ const generateWireText = async (
     const { streamText } = await import("ai");
     const result = streamText({
       model: deps.model,
-      system,
-      prompt,
+      messages: cacheableGenerationMessages(system, prompt),
       temperature: 0,
       maxRetries: 0,
     });
@@ -620,10 +653,13 @@ const editTree = async (
           model: Object.fromEntries(Object.entries(all).filter((entry) => !isPinned(entry))),
         });
         const patchedIslands = splitIslands(patched.components);
-        const prepared = await prepareIslands(patchedIslands.model, deps.tools, hostComponents);
+        // The edit instruction is the user text in scope here; both prepares
+        // get the SAME text so a carried-over issue stays byte-identical for
+        // the pre-existing-issue filter below.
+        const prepared = await prepareIslands(patchedIslands.model, deps.tools, hostComponents, input.instruction);
         // Pre-existing island issues never block an unrelated edit (same
         // filtering rule as catalog/action issues in validateEditedApp).
-        const sourcePrepared = await prepareIslands(splitIslands(input.app.components ?? {}).model, deps.tools, hostComponents);
+        const sourcePrepared = await prepareIslands(splitIslands(input.app.components ?? {}).model, deps.tools, hostComponents, input.instruction);
         const sourceIslandIssues = new Set(sourcePrepared.issues);
         const islandIssues = prepared.issues.filter((issue) => !sourceIslandIssues.has(issue));
         const nextComponents = { ...patchedIslands.pinned, ...prepared.components };
@@ -722,6 +758,11 @@ export const modelEngine: GenerationEngine = {
     const startedAt = Date.now();
     const hostComponents = deps.catalog.map(({ name }) => name);
     const basePrompt = `TASK: CREATE_APP\nUSER_REQUEST: ${input.prompt}`;
+    // Island-scoped repair budget, shared by EVERY path that rewrites islands
+    // (the region-parallel assembly rescue and the create loop below), so the
+    // bounded worst case holds whichever path spends it (checker F3): at most
+    // 2 island rewrites per create, then one full retry + a structured round.
+    let islandRepairRounds = 2;
     // Pipeline context: structured repair / region-parallel / end pass all
     // validate through the ONE create validator; the island-scoped repair
     // rides along so the region-parallel path can rescue island-only failures.
@@ -729,9 +770,11 @@ export const modelEngine: GenerationEngine = {
       deps,
       hostComponents,
       startedAt,
-      validate: (compiled) => validateCompiledCreate(compiled, deps),
+      validate: (compiled) => validateCompiledCreate(compiled, deps, input.prompt),
       repairIslands: (compiled, repairIssues) => {
         logInvalidLane("assembly", repairIssues);
+        if (islandRepairRounds <= 0) return Promise.resolve({});
+        islandRepairRounds -= 1;
         return repairIslandsScoped(compiled, repairIssues, input.prompt, pipelineContext);
       },
     };
@@ -765,7 +808,7 @@ export const modelEngine: GenerationEngine = {
         const paintDeps = deps.paint?.model === undefined ? gatedDeps : { ...gatedDeps, model: deps.paint.model };
         const paint = await streamWire(paintDeps, tier0Contract(deps), basePrompt, hostComponents, { lane: "paint", thinking: false, startedAt });
         if (paint.compiled !== undefined) {
-          const validated = await validateCompiledCreate(paint.compiled, deps);
+          const validated = await validateCompiledCreate(paint.compiled, deps, input.prompt);
           if (validated.document !== undefined) {
             resident = validated.document;
             residentLayout = layoutHeader(paint.compiled);
@@ -815,12 +858,22 @@ export const modelEngine: GenerationEngine = {
     await paintPromise;
     let issues: string[] = [];
     // Structured repair budget: at most 2 strict rounds per create, then the
-    // free-form regeneration loop takes over. The island-scoped repair has
-    // its own single-round budget: one rescue per create (a second identical
-    // failure means the class isn't converging).
+    // free-form regeneration loop takes over. Island-scoped repair is the
+    // FIRST resort (speed-core): when EVERY issue is island-scoped and
+    // source-fixable, the shared island budget (declared with the pipeline
+    // context above) is drained before any ~60s full-lane regeneration; a
+    // budget that exhausts without converging caps the ladder at ONE further
+    // full-lane retry whose structured round gains the island-disclaim arm —
+    // the signed bounded worst case: exhaustion → one retry → a structured
+    // repair round. Regenerating the whole app kept reproducing the same
+    // island class in the 5-9 minute live failures.
     let repairRounds = deps.pipeline?.structuredRepair === false ? 0 : 2;
-    let islandRepairRounds = 1;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    let attemptCap = 3;
+    for (let attempt = 0; attempt < attemptCap; attempt += 1) {
+      const attemptStart = Date.now();
+      const emitFull = (valid: boolean): void => {
+        deps.onPipeline?.({ stage: "full", attempt, valid, ms: Date.now() - attemptStart });
+      };
       const output = await streamWire(
         gatedDeps,
         createContract(deps),
@@ -832,24 +885,45 @@ export const modelEngine: GenerationEngine = {
       );
       issues = distinctIssues(issues, output.issues);
       if (output.compiled !== undefined) {
-        const validated = await validateCompiledCreate(output.compiled, deps);
+        const validated = await validateCompiledCreate(output.compiled, deps, input.prompt);
+        emitFull(validated.document !== undefined);
         if (validated.document !== undefined) return finish(validated.document);
         logInvalidLane("full", validated.issues);
         issues = distinctIssues(issues, validated.issues);
-        // demo-latency lane — when EVERY issue is island-scoped, rewrite just
-        // those islands (one small call) instead of burning another ~60s
-        // full-lane attempt on the same failure class.
-        if (islandRepairRounds > 0 && islandIssueNames(validated.issues) !== undefined) {
-          islandRepairRounds -= 1;
-          const islandRepaired = await repairIslandsScoped(output.compiled, validated.issues, input.prompt, pipelineContext);
-          if (islandRepaired.document !== undefined) return finish(islandRepaired.document);
+        // speed-core — when EVERY issue is island-scoped, rewrite just those
+        // islands (one small call per round, before any full-lane retry)
+        // instead of burning another ~60s full-lane attempt on the same
+        // failure class. Island issues are invisible to the structured
+        // repair's closed fix space (it derives from the compile result
+        // alone), so they only reach it through the disclaim arm below.
+        let islandDisclaimNames: string[] | undefined;
+        const islandNames = islandIssueNames(validated.issues);
+        if (islandNames !== undefined) {
+          if (islandRepairRounds > 0) {
+            while (islandRepairRounds > 0) {
+              islandRepairRounds -= 1;
+              const islandRepaired = await repairIslandsScoped(output.compiled, validated.issues, input.prompt, pipelineContext);
+              if (islandRepaired.document !== undefined) return finish(islandRepaired.document);
+            }
+            // Exhausted without converging: at most ONE further full-lane
+            // retry, never the remaining attempt ladder.
+            attemptCap = Math.min(attemptCap, attempt + 2);
+          } else {
+            // The post-exhaustion attempt reproduced the island class: this
+            // attempt's structured round runs WITH the island-disclaim arm —
+            // the bounded sequence's terminal round.
+            islandDisclaimNames = islandNames;
+            attemptCap = Math.min(attemptCap, attempt + 2);
+          }
         }
         if (repairRounds > 0) {
-          const repaired = await structuredRepair(output.compiled, input.prompt, pipelineContext, repairRounds);
+          const repaired = await structuredRepair(output.compiled, input.prompt, pipelineContext, repairRounds, islandDisclaimNames);
           repairRounds -= repaired.rounds;
           if (repaired.document !== undefined) return finish(repaired.document);
           issues = distinctIssues(issues, repaired.issues);
         }
+      } else {
+        emitFull(false);
       }
     }
     // Never a white box: a failed full lane falls back to the resident

@@ -15,6 +15,7 @@ export const LOCAL_VENDO_PACKAGE_NAMES = [
   "@vendoai/agent",
   "@vendoai/actions",
   "@vendoai/guard",
+  "@vendoai/knowledge",
   "@vendoai/mcp",
   "@vendoai/apps",
   "@vendoai/automations",

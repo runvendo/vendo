@@ -327,6 +327,81 @@ const catalogIssues = async (
   return issues;
 };
 
+/** The per-region unavailability line the repair stage substitutes for a node
+ *  it cannot fix (stages/repair.ts disclaims through it). Declared HERE so the
+ *  empty-document gate below can exempt it without a validation→stages import
+ *  cycle; repair re-exports it for its existing importers. */
+export const DISCLAIMER_TEXT = "This part of the request isn't available on this host.";
+
+/** Re-gate 2026-07-26 finding 3 — the title-only empty app (12 across arms
+ *  A/B, reproducing on re-open): a document whose rooted tree renders nothing
+ *  data-bearing or interactive beyond headings/copy in layout containers.
+ *  Content is any generated island, host component, node with a data/state/
+ *  action binding, or Kit/prewired component beyond the copy-only set below.
+ *  An honest `Disclaimer` IS content — it is the legal move when no tool
+ *  backs the ask — so a title+Disclaimer app passes untouched. So does the
+ *  repair stage's DISCLAIMER_TEXT region substitution: disclaimed regions are
+ *  a deliberate repair outcome, and the runtime's disclaimer-only gate
+ *  (isDisclaimerOnlyTree, 0.4.5 defect D) already fails a build whose EVERY
+ *  region was disclaimed away with the sharper host-capability reason —
+ *  bouncing those trees back to repair here would fight that mechanism.
+ *
+ *  Text is variant-aware: the shell class this gate targets is the bare
+ *  heading (sometimes plus a caption/label) — so only the heading/caption/
+ *  label variants count as shell material. A static Text carrying real BODY
+ *  copy (default variant, non-empty string) IS content: purely informational
+ *  apps are legitimate, and the @vendoai-corpus/express-host e2e's scripted
+ *  body-copy app 400'ing at create was this gate's first false positive. */
+const COPY_ONLY_COMPONENTS: ReadonlySet<string> = new Set([
+  "Stack", "Row", "Grid", "Surface", "Divider", "Skeleton", "Card", "Text", "Badge",
+]);
+
+/** Text variants that read as chrome, not body copy. */
+const SHELL_TEXT_VARIANTS: ReadonlySet<string> = new Set(["heading", "caption", "label"]);
+
+/** A Text node whose static string is real body copy (default/body variant,
+ *  non-empty text). Bound values are handled by the binding check instead. */
+const isBodyCopyText = (node: TreeV2["nodes"][number]): boolean => {
+  if (node.component !== "Text") return false;
+  const variant = node.props?.["variant"];
+  if (typeof variant === "string" && SHELL_TEXT_VARIANTS.has(variant)) return false;
+  const text = node.props?.["text"];
+  return typeof text === "string" && text.trim().length > 0;
+};
+
+/** Any data/state/action binding reachable in a props value. */
+const hasRuntimeBinding = (value: unknown): boolean => {
+  if (isRuntimeBound(value)) return true;
+  if (Array.isArray(value)) return value.some(hasRuntimeBinding);
+  if (isRecord(value)) return Object.values(value).some(hasRuntimeBinding);
+  return false;
+};
+
+const emptyDocumentIssues = (tree: TreeV2): string[] => {
+  const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
+  const pending = [tree.root];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const id = pending.pop();
+    if (id === undefined || visited.has(id)) continue;
+    visited.add(id);
+    const node = nodes.get(id);
+    if (node === undefined) continue;
+    pending.push(...(node.children ?? []));
+    if (node.source === "generated" || node.source === "host") return [];
+    if (!COPY_ONLY_COMPONENTS.has(node.component)) return [];
+    // Containment, not equality: the repair recompile merges adjacent Text
+    // nodes, so a disclaimed region can arrive embedded in a longer string.
+    if (node.component === "Text" && typeof node.props?.["text"] === "string"
+      && node.props["text"].includes(DISCLAIMER_TEXT)) return [];
+    if (isBodyCopyText(node)) return [];
+    if (node.props !== undefined && Object.values(node.props).some(hasRuntimeBinding)) return [];
+  }
+  return [
+    "the app has a title and no content — every rooted node is a heading, static copy, or an empty layout container. Add the sections that answer the ask (tables, stats, charts, forms, or islands over real tool data), or an honest Disclaimer stating why the data can't be shown if nothing can.",
+  ];
+};
+
 const rootedRenderIssues = (tree: TreeV2): string[] => {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const pending = [tree.root];
@@ -365,6 +440,10 @@ const rootedRenderIssues = (tree: TreeV2): string[] => {
 export const validateCompiledCreate = async (
   compiled: WireCompileResult,
   deps: GenerationDependencies,
+  /** The user's request text, threaded into the island law-1 scan so the
+   *  user's own numbers are never refused as invented data (rematch
+   *  2026-07-25 rows H12/H14). Absent → no carve-out. */
+  requestText?: string,
 ): Promise<{ document?: GeneratedAppDocument; issues: string[] }> => {
   const issues: string[] = [];
   if (!compiled.complete) issues.push("wire did not parse to a complete <App> document");
@@ -375,7 +454,7 @@ export const validateCompiledCreate = async (
   } else if (name.length > APP_NAME_MAX_CHARS) {
     issues.push(`App name="${name}" is ${name.length} characters — name is the app's display title (at most ${APP_NAME_MAX_CHARS} characters); write a short human title, never the request echoed back`);
   }
-  const prepared = await prepareIslands(compiled.components, deps.tools, deps.catalog.map(({ name: componentName }) => componentName));
+  const prepared = await prepareIslands(compiled.components, deps.tools, deps.catalog.map(({ name: componentName }) => componentName), requestText);
   const components = Object.keys(prepared.components).length === 0 ? undefined : prepared.components;
   issues.push(...prepared.issues);
   if (deps.tools !== undefined) {
@@ -401,6 +480,7 @@ export const validateCompiledCreate = async (
   }
   issues.push(...actionIssues(compiled.tree, deps.tools));
   issues.push(...rootedRenderIssues(compiled.tree));
+  issues.push(...emptyDocumentIssues(compiled.tree));
   if (issues.length > 0) return { issues };
   // The smoke-render gate (crash classes the 2026-07-21 gate shipped: React
   // #310 hooks-in-map, undefined names, unguarded-data throws). Runs LAST,

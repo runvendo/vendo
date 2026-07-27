@@ -2,6 +2,7 @@ import type {
   Guard,
   Json,
   Principal,
+  RiskLabel,
   RunContext,
   StoreAdapter,
   ToolDescriptor,
@@ -19,6 +20,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { connectPage } from "./connect-page.js";
 import type { HostOAuthAdapter } from "./oauth/adapter.js";
 import type { AppsPort } from "./apps-port.js";
 import { handleFederation } from "./oauth/federation.js";
@@ -103,6 +105,41 @@ export interface McpDoorConfig {
   remoteAs?: { issuer: string; jwksUri?: string; audience: string };
   /** Enable the generic signed login-federation handshake at `{mount}/federate`. */
   federation?: { secret: string };
+  /**
+   * The tool menu this door offers — the host's curated `surfaces.mcp` list,
+   * resolved by the umbrella (`registry.surfaceMenu("mcp")`) and passed in.
+   * Absent = offer the whole bound surface. The door never reads `.vendo`
+   * files itself: block layering forbids mcp importing actions, so the
+   * composition seam owns the file and the door owns the wire.
+   *
+   * CURATION, NOT SECURITY. A name outside the menu is neither listed nor
+   * callable, but the refusal is the SAME in-band not-found an unknown tool
+   * gets — the menu leaks nothing and grants nothing. Vendo's own `vendo_*`
+   * tools (the apps ride-alongs and any runtime tool the registry owns) are
+   * never curated away: they are the product's plumbing, not the host's API.
+   *
+   * The provider form exists because composition is synchronous while resolving
+   * the menu is not (it reads the authored file through the registry).
+   *
+   * The door calls it FRESH for every listing and every call, and deliberately
+   * does not memoize — not even the resolved value, and never a rejection. The
+   * bound registry grows at runtime (a lazy connector's `expandToolkits`, an
+   * `add()`), so a menu frozen at the first request would leave every
+   * late-arriving tool invisible AND uncallable until the process restarted;
+   * caching a failed read would freeze the door just as permanently. The
+   * registry memoizes its own load underneath, so re-asking costs a map lookup.
+   * Providers passed here must therefore be cheap and side-effect free.
+   *
+   * Resolving to `undefined` means unrestricted.
+   */
+  menuTools?: string[] | (() => string[] | undefined | Promise<string[] | undefined>);
+  /**
+   * The product name shown to PEOPLE (the connect page) and advertised on the
+   * server card. Wins over the `package.json` name the door otherwise reads,
+   * which is a package id and is often not what the product is called. Set it
+   * when the two differ.
+   */
+  productName?: string;
 }
 
 export interface McpDoor {
@@ -193,7 +230,7 @@ class Door {
       const identity = await this.#hostIdentity();
       // SEP-2127 remains a draft; this deliberately minimal shape tracks it.
       return json({
-        name: identity.name,
+        name: this.#config.productName ?? identity.name,
         version: identity.version,
         description: identity.description,
         protocol_versions: ["2025-11-25"],
@@ -237,6 +274,17 @@ class Door {
         && (this.#config.oauth.authorize !== undefined || this.#config.oauth.session !== undefined)
         ? handleFederation(req, resourceUri(origin, mount), this.#config.federation.secret, this.#config.oauth)
         : notFound();
+    }
+    if (endpoint.kind === "connect") {
+      // The one door page for PEOPLE: no session, no token, nothing a client
+      // could not already read off the public server card.
+      if (req.method !== "GET") return notFound();
+      const identity = await this.#hostIdentity();
+      return connectPage({
+        productName: this.#config.productName ?? identity.name,
+        mcpUrl: resourceUri(origin, this.#config.mount ?? mount),
+        ...(this.#config.theme === undefined ? {} : { theme: this.#config.theme }),
+      });
     }
     if (!["GET", "POST", "DELETE"].includes(req.method)) return notFound();
     return this.#handleMcp(req, mount);
@@ -382,8 +430,25 @@ class Door {
     }
   }
 
+  /**
+   * Resolve the menu FRESH for every listing and every call. It is deliberately
+   * not memoized: the registry behind the provider grows at runtime (a lazy
+   * connector's `expandToolkits`, an `add()`), and a door that froze its menu at
+   * the first request would leave every late-arriving tool invisible AND
+   * uncallable until the process restarted. The registry memoizes its own load,
+   * so re-asking costs a map lookup. A rejected resolution is likewise never
+   * cached — a transient read failure must not permanently freeze the door.
+   */
+  async #menu(): Promise<Set<string> | undefined> {
+    const configured = this.#config.menuTools;
+    const names = typeof configured === "function" ? await configured() : configured;
+    return names === undefined ? undefined : new Set(names);
+  }
+
   async #listedTools(): Promise<Tool[]> {
-    const descriptors = await this.#config.tools.descriptors();
+    const menu = await this.#menu();
+    const descriptors = (await this.#config.tools.descriptors())
+      .filter((descriptor) => offeredAtDoor(menu, descriptor.name));
     const appsConfigured = this.#config.apps !== undefined;
     // The bound registry's descriptors are served VERBATIM — name, description,
     // and inputSchema are the registry's, never the door's (10-mcp §2/§4). But a
@@ -393,8 +458,18 @@ class Door {
     // door's `_meta.ui` to those listings (FIX E). Execution still routes through
     // the registry (one guard decision), and #callTool unwraps its OpenSurface
     // output into a shim-renderable payload.
-    const tools: Tool[] = descriptors.map(({ name, description, inputSchema }) => {
-      const tool: Tool = { name, description, inputSchema: inputSchema as Tool["inputSchema"] };
+    const tools: Tool[] = descriptors.map(({ name, description, inputSchema, risk, title }) => {
+      // A generated tools.json can carry title: "" (the authored file's schema
+      // forbids it, the machine layer's does not). An empty label is worse than
+      // none — a client would render a blank menu row — so it reads as absent.
+      const label = title === undefined || title.trim() === "" ? undefined : title;
+      const tool: Tool = {
+        name,
+        description,
+        inputSchema: inputSchema as Tool["inputSchema"],
+        ...(label === undefined ? {} : { title: label }),
+        annotations: toolAnnotations(risk, label),
+      };
       if (appsConfigured && APP_TOOL_NAMES.has(name)) tool._meta = appUiMeta();
       return tool;
     });
@@ -416,7 +491,10 @@ class Door {
     identity: HostIdentity,
   ): Promise<CallToolResult> {
     const descriptors = await this.#config.tools.descriptors();
-    if (!descriptors.some((descriptor) => descriptor.name === name)) {
+    // An off-menu name answers exactly like a name that does not exist: the
+    // menu decides what this door OFFERS, and offering nothing is the whole
+    // refusal (the guard, not the menu, is what stops a call that IS offered).
+    if (!offeredAtDoor(await this.#menu(), name) || !descriptors.some((descriptor) => descriptor.name === name)) {
       if (this.#config.apps !== undefined && APP_TOOL_NAMES.has(name)) {
         return this.#callAppsTool(name, args, state, identity);
       }
@@ -619,7 +697,7 @@ class Door {
 }
 
 function endpointFor(path: string): {
-  kind: "mcp" | "authorize" | "token" | "revoke" | "register" | "federate";
+  kind: "mcp" | "authorize" | "token" | "revoke" | "register" | "federate" | "connect";
   mount: string;
 } {
   for (const [suffix, kind] of [
@@ -628,6 +706,7 @@ function endpointFor(path: string): {
     ["/revoke", "revoke"],
     ["/register", "register"],
     ["/federate", "federate"],
+    ["/connect", "connect"],
   ] as const) {
     if (path.endsWith(suffix)) return { kind, mount: path.slice(0, -suffix.length) };
   }
@@ -731,12 +810,14 @@ function notFound(): Response {
 const APP_TOOL_DESCRIPTORS: ToolDescriptor[] = [
   {
     name: "vendo_apps_list",
+    title: "List saved apps",
     description: "List the current user's saved Vendo apps",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     risk: "read",
   },
   {
     name: "vendo_apps_open",
+    title: "Open a saved app",
     description: "Open a saved Vendo app",
     inputSchema: {
       type: "object",
@@ -748,6 +829,7 @@ const APP_TOOL_DESCRIPTORS: ToolDescriptor[] = [
   },
   {
     name: "vendo_apps_call",
+    title: "Use a saved app",
     description: "Run an interaction from a saved Vendo app",
     inputSchema: {
       type: "object",
@@ -765,6 +847,36 @@ const APP_TOOL_DESCRIPTORS: ToolDescriptor[] = [
 
 const APP_TOOL_NAMES = new Set(APP_TOOL_DESCRIPTORS.map((descriptor) => descriptor.name));
 
+/** Vendo's own reserved tool namespace. A per-surface menu curates the HOST's
+ *  API; the runtime's own tools (apps viewer, and anything else the umbrella
+ *  registers under this prefix) are plumbing and are never curated away —
+ *  the agent side of the same rule lives in the umbrella. Duplicated as a
+ *  literal because block layering keeps mcp off the agent/actions packages. */
+const VENDO_TOOL_PREFIX = "vendo_";
+
+/** Whether a curated door offers `name`. Asked by BOTH the listing and the call
+ *  path, so a curated door cannot advertise one surface and answer to another. */
+function offeredAtDoor(menu: Set<string> | undefined, name: string): boolean {
+  return menu === undefined || name.startsWith(VENDO_TOOL_PREFIX) || menu.has(name);
+}
+
+/**
+ * 10-mcp §2 — the MCP annotation hints derived from Vendo's ONE risk label, so
+ * a client can warn a person before a write and colour a destructive call
+ * without re-deriving intent from prose. Hints only: the guard is what actually
+ * decides, and a client is free to ignore these (per the MCP spec). `title`
+ * rides along here too — the spec moved it to a top-level field, but clients
+ * that predate that move still read `annotations.title`, so the door emits
+ * both and neither can drift from the other.
+ */
+function toolAnnotations(risk: RiskLabel, title?: string): NonNullable<Tool["annotations"]> {
+  return {
+    ...(title === undefined ? {} : { title }),
+    readOnlyHint: risk === "read",
+    destructiveHint: risk === "destructive",
+  };
+}
+
 /** 10-mcp §4 — the MCP Apps `_meta` that advertises the shim resource so a host
  * client preloads the tree renderer. A non-renderable result (e.g. a list) is
  * contained gracefully by the shim's core-§8 format dispatch. */
@@ -776,10 +888,12 @@ function appTools(): Tool[] {
   // 10-mcp §4 names both vendo_apps_list and vendo_apps_open as carrying
   // _meta.ui.resourceUri; all three ride-along tools advertise the shim so the
   // host can preload it.
-  return APP_TOOL_DESCRIPTORS.map(({ name, description, inputSchema }) => ({
+  return APP_TOOL_DESCRIPTORS.map(({ name, title, description, inputSchema, risk }) => ({
     name,
+    ...(title === undefined ? {} : { title }),
     description,
     inputSchema: inputSchema as Tool["inputSchema"],
+    annotations: toolAnnotations(risk, title),
     _meta: appUiMeta(),
   }));
 }
@@ -949,19 +1063,39 @@ function escapeCssValue(value: string): string {
 
 async function readHostIdentity(): Promise<HostIdentity> {
   const fallback = { name: "vendo", version: "0.0.0", description: "Vendo MCP server" };
+  const path = typeof process === "undefined" ? undefined : `${process.cwd()}/package.json`;
+  // The generic fallback used to be machine-only (a server-card field). The
+  // connect page puts it in front of a person, where "vendo" reads as a bug in
+  // the host's product. Say so once, naming the file that was tried.
+  const warnFallback = (reason: string): HostIdentity => {
+    if (!identityFallbackWarned) {
+      identityFallbackWarned = true;
+      console.warn(
+        `[vendo] mcp door: could not read a product name from ${path ?? "the host package"} (${reason}); `
+        + "the server card and the connect page will say \"vendo\". Pass `mcp: { productName }` "
+        + "or run the door from the host's package root.",
+      );
+    }
+    return fallback;
+  };
   try {
-    if (typeof process === "undefined") return fallback;
+    if (path === undefined) return warnFallback("no filesystem on this runtime");
     const { readFile } = await import("node:fs/promises");
-    const raw = await readFile(`${process.cwd()}/package.json`, "utf8");
+    const raw = await readFile(path, "utf8");
     const pkg = JSON.parse(raw) as Record<string, unknown>;
-    const name = typeof pkg.name === "string" ? pkg.name : fallback.name;
+    if (typeof pkg.name !== "string") return warnFallback("it declares no name");
+    const name = pkg.name;
     const version = typeof pkg.version === "string" ? pkg.version : fallback.version;
     const description = typeof pkg.description === "string" ? pkg.description : `${name} MCP server`;
     return { name, version, description };
-  } catch {
-    return fallback;
+  } catch (error) {
+    return warnFallback(error instanceof Error ? error.message : String(error));
   }
 }
+
+/** Once per process: a missing product name is a deployment fact, not a
+ *  per-request event. */
+let identityFallbackWarned = false;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";

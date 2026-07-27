@@ -124,6 +124,27 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
       const status = assertParses<{ docs: number }>(knowledgeStatusSchema, await adapter.status(), "status is invalid");
       if (opts.posture.write) assert(status.docs >= 1, "status.docs did not reflect seeded documents");
     }),
+
+    adapterCase("R4 — scores are optional, but where present they never increase down the ranking (ENG-366)", async (adapter) => {
+      const scores = (await adapter.search({ text: seed.public.title }, ctx)).hits
+        .filter((hit) => hit.score !== undefined)
+        .map((hit) => hit.score!);
+      for (let index = 1; index < scores.length; index += 1) {
+        assert(
+          scores[index]! <= scores[index - 1]!,
+          "a later hit scored higher than an earlier one — hits must be ordered most-relevant-first",
+        );
+      }
+    }),
+
+    adapterCase("R3 — schema intent stays honest under a kinds filter (ENG-366)", async (adapter) => {
+      const result = assertParses<{ hits: unknown[] }>(
+        knowledgeSearchResultSchema,
+        await adapter.search({ text: "zz_absent_term_never_seeded_zz", intent: "schema", kinds: ["glossary", "api"] }, ctx),
+        "kinds-filtered schema-intent result is invalid",
+      );
+      assert(result.hits.length === 0, "schema intent with a kinds filter fuzzy-matched an absent term");
+    }),
   ];
 
   if (opts.posture.visibility === "enforced") {
@@ -151,6 +172,16 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
         assertParses(knowledgeFetchResultSchema, fetched, "trusted internal fetch result is invalid");
       }));
     }
+  }
+
+  if (opts.posture.visibility === "public-only") {
+    cases.push(adapterCase("R2 — public-only posture: every hit is public and includeInternal changes nothing (ENG-366)", async (adapter) => {
+      const plain = await adapter.search({ text: seed.public.title }, ctx);
+      assert(plain.hits.length > 0, "public-only search returned nothing for the seeded public doc");
+      assert(plain.hits.every((hit) => hit.visibility === "public"), "a public-only corpus surfaced a non-public hit — the posture is the host's attestation");
+      const trusted = await adapter.search({ text: seed.public.title }, { ...ctx, includeInternal: true });
+      assert(trusted.hits.every((hit) => hit.visibility === "public"), "includeInternal surfaced non-public content from a public-only corpus");
+    }));
   }
 
   if (opts.posture.fetch) {
@@ -198,6 +229,57 @@ export function knowledgeAdapterConformance(opts: KnowledgeConformanceOptions): 
         assert(limited.hits[0]!.ref.docId === unlimited.hits[0]!.ref.docId, "limit changed the ranking — the limited top hit differs from the unlimited top hit");
       } finally {
         await adapter.remove?.([sibling.id]);
+      }
+    }));
+    cases.push(adapterCase("R1 — upsert resolves only once documents are searchable, no settle wait (ENG-366)", async (adapter) => {
+      const fresh: KnowledgeDoc = {
+        id: "doc_conformance_resolved",
+        kind: "docs",
+        visibility: "public",
+        title: "Conformance resolution barrier",
+        text: "Conformance resolution barrier body content.",
+        source: "conformance/resolution.md",
+      };
+      try {
+        await adapter.upsert?.([fresh]);
+        // Immediately: a resolved upsert IS the searchability signal.
+        const result = await adapter.search({ text: fresh.title }, ctx);
+        assert(
+          result.hits.some((hit) => hit.ref.docId === fresh.id),
+          "a doc was not searchable the moment its upsert resolved — engines with async indexing must await searchability",
+        );
+      } finally {
+        await adapter.remove?.([fresh.id]);
+      }
+    }));
+    cases.push(adapterCase("R1 — remove empties search for the id and unknown ids are no-ops (ENG-366)", async (adapter) => {
+      await adapter.remove?.([seed.public.id]);
+      const result = await adapter.search({ text: seed.public.title }, ctx);
+      assert(!result.hits.some((hit) => hit.ref.docId === seed.public.id), "a removed doc remained searchable");
+      // Unknown ids resolve as no-ops — a throw here is non-conformant.
+      await adapter.remove?.(["doc_conformance_never_existed"]);
+    }));
+    cases.push(adapterCase("R3 — limit k truncates the unlimited ranking to its exact prefix (ENG-366)", async (adapter) => {
+      const siblings: KnowledgeDoc[] = ["a", "b"].map((suffix) => ({
+        id: `doc_conformance_prefix_${suffix}`,
+        kind: "docs",
+        visibility: "public",
+        title: `${seed.public.title} appendix ${suffix}`,
+        text: `Conformance prefix content ${suffix}.`,
+        source: `conformance/prefix-${suffix}.md`,
+      }));
+      try {
+        await adapter.upsert?.(siblings);
+        const unlimited = await adapter.search({ text: seed.public.title, limit: 10 }, ctx);
+        assert(unlimited.hits.length >= 3, "seeding two siblings did not produce three hits — prefix truncation cannot be exercised");
+        const limited = await adapter.search({ text: seed.public.title, limit: 2 }, ctx);
+        const identity = (hit: { ref: { docId: string; chunkId?: string } }): string => `${hit.ref.docId} ${hit.ref.chunkId ?? ""}`;
+        assert(
+          JSON.stringify(limited.hits.map(identity)) === JSON.stringify(unlimited.hits.slice(0, 2).map(identity)),
+          "limit: 2 did not return the unlimited ranking's exact two-hit prefix — limit must truncate, never re-rank",
+        );
+      } finally {
+        await adapter.remove?.(siblings.map((doc) => doc.id));
       }
     }));
   }

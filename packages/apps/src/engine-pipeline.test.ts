@@ -613,6 +613,161 @@ describe("island-scoped repair (demo-latency lane)", () => {
     expect(document.components?.Sparky).not.toContain("0.92");
   });
 
+  // speed-core lane — island repair is the FIRST resort (criteria 1-3): the
+  // ordering, the untouched attempt counter on success, and the bounded worst
+  // case once the island budget exhausts on a non-converging class.
+  it("criterion 1+2: island repair runs BEFORE any full-lane regeneration, and a success leaves the attempt counter at one (PipelineEvent order alone)", async () => {
+    const events: Array<{ stage: string; attempt?: number; valid?: boolean }> = [];
+    const model = scriptedLanguageModel((call) => {
+      if (isIslandRepairCall(call)) return fixedIsland;
+      return fabricating;
+    });
+
+    await modelEngine.create(
+      { prompt: "Build a revenue HQ" },
+      deps(model, {
+        tools,
+        toolShapes: metricShapes,
+        onPipeline: (event: { stage: string }) => events.push(event),
+      }),
+    );
+
+    // The ONE event stream proves the order: one full-lane attempt (invalid),
+    // then the island repair — never a second full lane (criterion 2: the
+    // attempt counter is unchanged when island repair succeeds).
+    expect(events.map(({ stage }) => stage)).toEqual(["full", "island-repair"]);
+    expect(events[0]).toMatchObject({ stage: "full", attempt: 0, valid: false });
+    expect(events[1]).toMatchObject({ stage: "island-repair", islands: 1, repaired: true });
+  });
+
+  it("criterion 1 under regionParallel: a failed parallel path still reaches island repair before a full-lane retry", async () => {
+    // The outline planner fails (no outline → single-stream fallback), the
+    // full lane emits the island-only failure, and island repair must still
+    // run before any second full attempt.
+    const lanes: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      if (isOutlineCall(call)) { lanes.push("outline"); return "not a tool call"; }
+      if (isIslandRepairCall(call)) { lanes.push("island-repair"); return fixedIsland; }
+      lanes.push("full");
+      return fabricating;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue HQ" },
+      deps(model, { tools, toolShapes: metricShapes, pipeline: { regionParallel: true } }),
+    );
+
+    expect(lanes).toEqual(["outline", "full", "island-repair"]);
+    expect(document.components?.Sparky).not.toContain("0.92");
+  });
+
+  it("criterion 3: island repair failing twice on the same class allows exactly ONE full-lane retry, then a structured repair round", async () => {
+    // The retry's output carries a repairable binding error (a different,
+    // closed-space class), so the bounded sequence ends in a structured round.
+    const bindingBroken = '<App name="HQ"><Query id="metric" tool="host_metric"/><MetricCard label="Revenue" value={metric.missing_field}/></App>';
+    const lanes: string[] = [];
+    let fullCalls = 0;
+    const model = scriptedLanguageModel((call) => {
+      if (isIslandRepairCall(call)) { lanes.push("island-repair"); return fabricating; } // still fabricating: round fails
+      if (isRepairCall(call)) { lanes.push("strict-repair"); return { tool: "apply_fixes", input: { fix_0: "/metric/total" } }; }
+      lanes.push("full");
+      fullCalls += 1;
+      return fullCalls === 1 ? fabricating : bindingBroken;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue HQ" },
+      deps(model, { tools, toolShapes: metricShapes }),
+    );
+
+    expect(lanes).toEqual(["full", "island-repair", "island-repair", "full", "strict-repair"]);
+    expect((document.tree as { nodes: Nodes }).nodes.at(-1)?.props?.value).toEqual({ $path: "/metric/total" });
+  });
+
+  it("criterion 3 (signed sequence): island exhaustion → exactly ONE full retry → a structured repair round (island-disclaim arm)", async () => {
+    // Every lane keeps reproducing the same fabricating island: two island
+    // rounds fail, ONE full retry reproduces the class, and the structured
+    // round that follows carries the island-disclaim arm — the terminal
+    // honest outcome, never a third full attempt.
+    const lanes: string[] = [];
+    let repairTool: unknown;
+    const model = scriptedLanguageModel((call) => {
+      if (isIslandRepairCall(call)) { lanes.push("island-repair"); return fabricating; }
+      if (isRepairCall(call)) {
+        lanes.push("strict-repair");
+        repairTool = call.tools?.[0];
+        return { tool: "apply_fixes", input: { fix_0: NO_VALID_FIX } };
+      }
+      lanes.push("full");
+      return fabricating;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "Build a revenue HQ" },
+      deps(model, { tools, toolShapes: metricShapes }),
+    );
+
+    expect(lanes).toEqual(["full", "island-repair", "island-repair", "full", "strict-repair"]);
+    // The strict round's fix space carried the island-disclaim arm.
+    expect(JSON.stringify(repairTool)).toContain("Island \\\"Sparky\\\"");
+    // The non-converging island became an honest disclaimer; its source is gone.
+    expect(document.components?.Sparky).toBeUndefined();
+    expect(JSON.stringify(document.tree)).toContain("isn't available on this host");
+  });
+
+  it("criterion 3 + F3: assembly-path island repairs consume the SHARED budget — the bounded sequence holds across paths", async () => {
+    // Region-parallel assembles an island-only-broken app; the assembly
+    // rescue spends round 1 (and fails), the single-stream fallback's failure
+    // spends round 2, and exhaustion then follows the signed sequence: one
+    // full retry, then the structured island-disclaim round. Never 2+2 rounds.
+    const outline = {
+      tool: "plan_outline",
+      input: {
+        appName: "HQ",
+        sharedFacts: "",
+        sections: [
+          { id: "s1", brief: "Revenue summary", tools: ["host_metric"], coupledWithPrevious: false },
+          { id: "s2", brief: "Trend", tools: ["host_metric"], coupledWithPrevious: false },
+        ],
+      },
+    };
+    const brokenSection = [
+      '<App name="HQ"><Sparky/><Island name="Sparky">',
+      "export default function Sparky() {",
+      "  const [rows, setRows] = useState([]);",
+      "  useEffect(() => { tools.host_metric({}).then((r) => setRows(r.rows)); }, []);",
+      "  return <p>{rows.length * 0.92}</p>;",
+      "}",
+      "</Island></App>",
+    ].join("\n");
+    const lanes: string[] = [];
+    const model = scriptedLanguageModel((call) => {
+      const text = promptText(call);
+      if (isOutlineCall(call)) { lanes.push("outline"); return outline; }
+      if (isIslandRepairCall(call)) { lanes.push("island-repair"); return fabricating; } // never converges
+      if (isRepairCall(call)) { lanes.push("strict-repair"); return { tool: "apply_fixes", input: { fix_0: NO_VALID_FIX } }; }
+      if (text.includes("OUTLINE_SECTION s1")) {
+        lanes.push("s1");
+        return '<App name="HQ"><Query id="s1_metric" tool="host_metric"/><MetricCard label="Revenue" value={s1_metric.total}/></App>';
+      }
+      if (text.includes("OUTLINE_SECTION s2")) { lanes.push("s2"); return brokenSection; }
+      lanes.push("full");
+      return fabricating;
+    });
+
+    const document = await modelEngine.create(
+      { prompt: "A revenue HQ" },
+      deps(model, { tools, toolShapes: metricShapes, pipeline: { regionParallel: true } }),
+    );
+
+    // Exactly TWO island repairs total (1 assembly + 1 loop — the shared
+    // budget), one full attempt + one retry, then the structured round.
+    expect(lanes.filter((lane) => lane === "island-repair")).toHaveLength(2);
+    expect(lanes.filter((lane) => lane === "full")).toHaveLength(2);
+    expect(lanes.at(-1)).toBe("strict-repair");
+    expect(document.components?.Sparky).toBeUndefined();
+  });
+
   it("leaves mixed (island + tree) failure sets to the existing repair/retry flow", async () => {
     // A dead submit button (tree issue) beside a broken island: the closed
     // island class does not apply, so the island repair must not fire.

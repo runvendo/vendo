@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
+import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
 import { askYesNo } from "./extract/extraction.js";
 import { readPreviousToolsState, runSyncEnrichment, type SyncEnrichmentOptions } from "./enrich/pass.js";
 import { syncSemantics } from "./semantics.js";
@@ -172,11 +173,18 @@ async function sync(options: SyncOptions): Promise<number> {
     // --no-watermark (workspace-internal syncs) skips the pass entirely.
     // Fail-soft like everything else in sync — the exit code never changes.
     if (options.noWatermark !== true) {
+      // The enrichment credential resolves from this env, so the project's
+      // dotenv must be visible: `vendo login` and BYO keys land in `.env.local`
+      // / `.env`, and a fresh shell that never `source`d them would otherwise
+      // sync structural-only with no signal why (#567). Reuse doctor's parser
+      // (never hand-roll) — real process env still wins over both files.
+      // Precedence end to end: explicit > process.env > .env.local > .env.
+      const enrichEnv = mergeEnvOverDotEnv(await readDotEnvFallback(root), process.env);
       try {
         await runSyncEnrichment({
           root,
           vendoDir,
-          env: process.env,
+          env: enrichEnv,
           note,
           warn: noteError,
           previous: previousTools,

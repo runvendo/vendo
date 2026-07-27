@@ -99,6 +99,11 @@ import {
   applyVendoRootPaste as defaultApplyVendoRootPaste,
   type VendoRootPasteResult,
 } from "./vendo-root-paste.js";
+import {
+  runKnowledgeEval as defaultRunKnowledgeEval,
+  type KnowledgeEvalDeps,
+  type KnowledgeEvalOptions,
+} from "./knowledge-eval/run.js";
 
 const usage = `Usage:
   pnpm corpus --help
@@ -110,6 +115,7 @@ const usage = `Usage:
   pnpm corpus ai [repo...] [--model <id>]... [--json] [--strict]
   pnpm corpus install-eval [fixture...] [--model <id>] [--dry-run] [--json] [--strict]
                            [--turn-budget <n>] [--time-budget-ms <ms>] [--max-budget-usd <usd>]
+  pnpm corpus knowledge-eval [--engine memory]... [--json] [--strict]
 
 Commands:
   validate  Load and validate corpus/manifest.json.
@@ -124,6 +130,11 @@ Commands:
             headless Claude Code, machine scoring, report under corpus/reports/.
             Spends real model money per live run; never part of pnpm test or CI. --dry-run scores a
             canned transcript without invoking the agent.
+  knowledge-eval  Run the knowledge eval (docs/eval/KNOWLEDGE.md): fixture corpus into each
+            selected engine, golden-set retrieval metrics (recall@5, MRR per intent), refusal
+            hard-fails, and each engine's ratcheted bars. Repeat --engine for the per-engine
+            comparison (engine columns). Deterministic and offline for the memory engine;
+            model-costed judge legs run nightly, never here.
 `;
 
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -164,6 +175,7 @@ export interface CorpusCliDependencies {
   createExtractionHarness?: (sdkDir: string) => ExtractionHarness;
   runAiRepoMatrix?: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
   runInstallEval?: (options: InstallEvalCommandOptions, deps: InstallEvalDeps) => Promise<number>;
+  runKnowledgeEval?: (options: KnowledgeEvalOptions, deps: KnowledgeEvalDeps) => Promise<number>;
 }
 
 interface ResolvedDeps {
@@ -199,6 +211,7 @@ interface ResolvedDeps {
   createExtractionHarness: (sdkDir: string) => ExtractionHarness;
   runAiRepoMatrix: (options: RunAiRepoMatrixOptions) => Promise<AiRepoResult>;
   runInstallEval: (options: InstallEvalCommandOptions, deps: InstallEvalDeps) => Promise<number>;
+  runKnowledgeEval: (options: KnowledgeEvalOptions, deps: KnowledgeEvalDeps) => Promise<number>;
 }
 
 interface RunCommandOptions {
@@ -252,7 +265,37 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     createExtractionHarness: deps.createExtractionHarness ?? corpusExtractionHarness,
     runAiRepoMatrix: deps.runAiRepoMatrix ?? defaultRunAiRepoMatrix,
     runInstallEval: deps.runInstallEval ?? defaultRunInstallEvalCommand,
+    runKnowledgeEval: deps.runKnowledgeEval ?? defaultRunKnowledgeEval,
   };
+}
+
+export function parseKnowledgeEvalArgs(args: readonly string[]): KnowledgeEvalOptions {
+  const engines: string[] = [];
+  let json = false;
+  let strict = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg === "--engine") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("-")) throw new Error("--engine needs an engine name");
+      engines.push(value);
+      index += 1;
+    } else if (arg.startsWith("--engine=")) {
+      engines.push(arg.slice("--engine=".length));
+    } else if (arg === "--json") {
+      json = true;
+    } else if (arg === "--strict") {
+      strict = true;
+    } else if (arg === "--help" || arg === "-h") {
+      throw new Error(usage);
+    } else {
+      throw new Error(`Unknown knowledge-eval option: ${arg}`);
+    }
+  }
+
+  return { engines: engines.length > 0 ? engines : ["memory"], json, strict };
 }
 
 function parseLayer(value: string | undefined): 1 | 2 | 3 {
@@ -1086,6 +1129,16 @@ export async function runCli(args = process.argv.slice(2), providedDeps: CorpusC
 
     if (command === "ai") {
       return await runAiCommand(parseAiArgs(args.slice(1)), deps);
+    }
+
+    if (command === "knowledge-eval") {
+      return await deps.runKnowledgeEval(parseKnowledgeEvalArgs(args.slice(1)), {
+        stdout: deps.stdout,
+        stderr: deps.stderr,
+        now: deps.now,
+        workspaceRoot: deps.workspaceRoot,
+        createContext: deps.createContext,
+      });
     }
 
     if (command === "install-eval") {

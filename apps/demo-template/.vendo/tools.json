@@ -1,5 +1,5 @@
 {
-  "format": "vendo/tools@3",
+  "format": "vendo/tools@1",
   "tools": [
     {
       "name": "host_archiveItem",
@@ -22,8 +22,7 @@
         "operationId": "archiveItem",
         "method": "POST",
         "path": "/api/items/{id}/archive"
-      },
-      "srcHash": "sha256:2ca8a64aab13b4a5e72eaf875edbfc4e27f18325f8361a0b52479a049c542e33"
+      }
     },
     {
       "name": "host_listItems",
@@ -38,15 +37,7 @@
         "operationId": "listItems",
         "method": "GET",
         "path": "/api/items"
-      },
-      "srcHash": "sha256:2ca8a64aab13b4a5e72eaf875edbfc4e27f18325f8361a0b52479a049c542e33"
+      }
     }
-  ],
-  "domains": {
-    "has": [
-      "archive item",
-      "items"
-    ],
-    "hasNot": []
-  }
+  ]
 }

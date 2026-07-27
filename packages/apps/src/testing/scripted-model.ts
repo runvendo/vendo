@@ -4,6 +4,10 @@ export interface ScriptedModelCall {
   prompt: Array<{
     role: string;
     content: string | Array<{ type?: string; text?: string }>;
+    /** Per-message provider hints (e.g. the Anthropic ephemeral cache
+     *  breakpoint the generation prompt sets on its stable prefix). Present in
+     *  the normalized LanguageModelV2 prompt so tests can assert on it. */
+    providerOptions?: Record<string, unknown>;
   }>;
   /** W4 pipeline — the tool definitions the caller passed (strict tool-use
    *  calls), so tests can assert on the generated fix-space schema. */
@@ -136,6 +140,8 @@ export const basicLanguageModel = (): LanguageModel => scriptedLanguageModel((ca
   }
   const name = markedValue(prompt, "USER_REQUEST: ");
   // v2 spec §2 — creates are wire markup; quotes in the derived name would
-  // break the attribute, so strip them.
-  return `<App name="${name.replaceAll('"', "'")}"><Text text="${name.replaceAll('"', "'")}"/></App>`;
+  // break the attribute, so strip them. The Disclaimer keeps the fixture past
+  // the empty-document gate (a bare heading is the re-gate 2026-07-26
+  // title-only fail class) without needing tools or data.
+  return `<App name="${name.replaceAll('"', "'")}"><Text text="${name.replaceAll('"', "'")}"/><Disclaimer reason="Scripted fixture app."/></App>`;
 });

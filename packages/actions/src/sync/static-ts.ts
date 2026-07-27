@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type TS from "typescript";
 import { resolveImportSource } from "./common.js";
+import { noteRejectedCompiler, unsupportedCompiler, type RejectedCompiler } from "./compiler-gate.js";
 
 /**
  * Shared static TypeScript-source machinery for the compiler-API extractors
@@ -17,16 +18,23 @@ export const MAX_RESOLVE_DEPTH = 16;
 
 /** Resolve the TypeScript compiler from the host package (fail-closed). The
  * fallback require targets our own devDependency so tests and monorepo dev
- * work without a host install. */
+ * work without a host install. A compiler that loads but fails the capability
+ * probe (compiler-gate.ts) degrades exactly like a load failure. */
 export function loadTypescript(root: string): Ts | null {
   const requireFrom = [path.join(root, "package.json"), import.meta.url];
+  let rejected: RejectedCompiler | null = null;
   for (const base of requireFrom) {
+    let candidate: Ts;
     try {
-      return createRequire(base)("typescript") as Ts;
+      candidate = createRequire(base)("typescript") as Ts;
     } catch {
-      // Try the next resolution base.
+      continue; // Try the next resolution base.
     }
+    const tooOld = unsupportedCompiler(candidate);
+    if (tooOld === null) return candidate;
+    rejected = tooOld;
   }
+  if (rejected !== null) noteRejectedCompiler(rejected);
   return null;
 }
 

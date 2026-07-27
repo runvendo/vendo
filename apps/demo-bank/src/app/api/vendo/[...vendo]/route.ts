@@ -1,6 +1,7 @@
 import { nextVendoHandler } from "@vendoai/vendo/server";
 import { vendo } from "@/vendo/server";
 import { publicVendoRequest } from "@/vendo/request";
+import { chipThreadsResponse } from "@/vendo/chips-response";
 import { scriptedThreadsResponse } from "@/demo-script/engine";
 
 export const runtime = "nodejs";
@@ -15,6 +16,10 @@ export const POST = async (request: Request) => {
   // invoking the model; everything else passes through untouched.
   const scripted = await scriptedThreadsResponse(request);
   if (scripted !== null) return scripted;
+  // "Try this" chips: a chip prompt with a pre-generated app attaches it
+  // instantly; a cache miss falls through to normal live generation.
+  const chip = await chipThreadsResponse(request);
+  if (chip !== null) return chip;
   return handler.POST(publicVendoRequest(request));
 };
 export const PUT = (request: Request) => handler.PUT(publicVendoRequest(request));

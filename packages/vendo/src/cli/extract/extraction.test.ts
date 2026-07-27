@@ -97,7 +97,7 @@ describe("composeInstructions", () => {
 });
 
 describe("applyDraft (deterministic verification)", () => {
-  it("applies descriptions, risk raises, critical marks, and wakes reasoned tools", async () => {
+  it("applies descriptions, risk raises, and critical marks; refuses to wake a scanner-disabled tool (#553)", async () => {
     const root = await fixture();
     const summary = await applyDraft({
       root,
@@ -111,11 +111,17 @@ describe("applyDraft (deterministic verification)", () => {
         ],
       },
     });
-    expect(summary).toMatchObject({ described: 3, riskRaised: 1, critical: 1, woken: 1, briefWritten: true, refused: [] });
+    // Restrictive-only doctrine: descriptions still land (additive), but the
+    // enable attempt is refused — a scanner-disabled tool is woken by hand in
+    // overrides.json, never by an AI draft.
+    expect(summary).toMatchObject({ described: 3, riskRaised: 1, critical: 1, briefWritten: true });
+    expect(summary.refused).toHaveLength(1);
+    expect(summary.refused[0]).toMatch(/host_admin_unclassified.*enabling a disabled tool refused.*overrides\.json/);
     const overrides = await readOverrides(root);
     expect(overrides.tools["host_invoices_list"]).toEqual({ description: "List invoices, filterable by status." });
     expect(overrides.tools["host_invoices_create"]).toMatchObject({ risk: "destructive", critical: true });
-    expect(overrides.tools["host_admin_unclassified"]).toMatchObject({ disabled: false, risk: "destructive" });
+    // The additive annotation applies; the loosening (disabled/risk) does not.
+    expect(overrides.tools["host_admin_unclassified"]).toEqual({ description: "Reset all demo data." });
     expect(await readFile(join(root, ".vendo", "brief.md"), "utf8")).toContain("consumer bank");
   });
 
@@ -248,7 +254,7 @@ describe("applyDraft (deterministic verification)", () => {
     expect(overrides.tools["host_admin_unclassified"]?.disabled).toBeUndefined();
   });
 
-  it("a reasoned wake carries the model's grade without a false downgrade refusal (Greptile P1)", async () => {
+  it("refuses to wake a scanner-disabled tool even with reasoning and a risk; the description still lands (#553)", async () => {
     const root = await fixture();
     const summary = await applyDraft({
       root,
@@ -261,21 +267,25 @@ describe("applyDraft (deterministic verification)", () => {
         }],
       },
     });
-    // The static "destructive" was a fail-closed placeholder, not evidence:
-    // the wake applies the model's grade with NO contradictory refusal line.
-    expect(summary).toMatchObject({ woken: 1, refused: [] });
+    // Enabling is a loosening — refused regardless of reasoning; only the
+    // additive description survives, and the tool stays disabled.
+    expect(summary.described).toBe(1);
+    expect(summary.refused).toHaveLength(1);
+    expect(summary.refused[0]).toMatch(/enabling a disabled tool refused/);
     const overrides = await readOverrides(root);
-    expect(overrides.tools["host_admin_unclassified"]).toMatchObject({ disabled: false, risk: "read" });
+    expect(overrides.tools["host_admin_unclassified"]).toEqual({ description: "Lists admin settings." });
+    expect(overrides.tools["host_admin_unclassified"]).not.toHaveProperty("disabled");
+    expect(overrides.tools["host_admin_unclassified"]).not.toHaveProperty("risk");
   });
 
-  it("a wake never replaces a human-set risk or reverses a human disable decision", async () => {
+  it("a refused wake never touches a human-set risk, and a human disable decision is never reversed (#553)", async () => {
     const root = await fixture({
       format: "vendo/overrides@1",
       tools: {
         host_admin_unclassified: { risk: "destructive" },
       },
     });
-    const woken = await applyDraft({
+    const refused = await applyDraft({
       root,
       tools: TOOLS,
       draft: {
@@ -283,8 +293,11 @@ describe("applyDraft (deterministic verification)", () => {
         tools: [{ name: "host_admin_unclassified", description: "d", disabled: false, risk: "read", reasoning: "r" }],
       },
     });
-    expect(woken.woken).toBe(1);
-    expect((await readOverrides(root)).tools["host_admin_unclassified"]).toMatchObject({ disabled: false, risk: "destructive" });
+    expect(refused.refused).toHaveLength(1);
+    expect(refused.refused[0]).toMatch(/enabling a disabled tool refused/);
+    // The human-authored risk is left exactly as written; the tool stays disabled.
+    expect((await readOverrides(root)).tools["host_admin_unclassified"]).toMatchObject({ risk: "destructive", description: "d" });
+    expect((await readOverrides(root)).tools["host_admin_unclassified"]).not.toHaveProperty("disabled");
 
     const humanDisabled = await fixture({
       format: "vendo/overrides@1",
@@ -298,7 +311,9 @@ describe("applyDraft (deterministic verification)", () => {
         tools: [{ name: "host_admin_unclassified", description: "d", disabled: false, risk: "read", reasoning: "r" }],
       },
     });
-    expect(kept.woken).toBe(0);
+    // A human already decided (disabled: true) — the AI draft cannot reverse it,
+    // and no refusal noise is needed because the human's decision simply wins.
+    expect(kept.refused).toEqual([]);
     expect((await readOverrides(humanDisabled)).tools["host_admin_unclassified"]?.disabled).toBe(true);
   });
 

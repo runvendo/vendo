@@ -61,6 +61,24 @@ export interface ActionsRegistry extends ToolRegistry {
   /** The per-turn initial loadout: host/eager tools first, then the given
    * (connected) toolkits' tools — never an alphabetical slice of the catalog. */
   loadoutSeed(connectedToolkits: string[]): Promise<string[]>;
+  /**
+   * The tool menu one SURFACE offers, resolved from `.vendo/overrides.json`'s
+   * `surfaces` block. `undefined` means unrestricted — the surface offers
+   * everything it would have offered before menus existed.
+   *
+   * An explicit `surfaces.<surface>.tools` wins, in the host's authored order.
+   * Absent, `agent` is unrestricted and `mcp` falls back to the default door
+   * menu: every merged, enabled tool whose post-override `audience` is
+   * `"end-user"` or ungraded — the tools a product's own customer could
+   * legitimately call, which is exactly who is on the far end of an MCP client.
+   *
+   * CURATION, NOT SECURITY. A menu changes what a surface OFFERS; the guard,
+   * `disabled`, and audience exclusions decide what may RUN, and none of them
+   * consult this. A menu entry naming an unknown or disabled tool is therefore
+   * a typo, not a breach: it warns once per boot and is ignored, and the rest
+   * of the menu still applies (a bad label must never take a host down).
+   */
+  surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined>;
 }
 
 /** CORE-2 (wave 5): `grant` and `mcpConsent` are first-class optional fields
@@ -123,13 +141,18 @@ interface RegistryConfig {
   /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
   capabilities?: CapabilitiesFile;
   /** Inject the v3 overrides doc directly instead of reading
-   *  `.vendo/overrides.json` from `dir` — the hosted-config seam (cse lane 3):
-   *  the umbrella passes cloud-published overrides here when there is no local
-   *  file. Takes precedence over the file read (mirrors `tools`/`capabilities`).
-   *  The provider form is resolved ONCE through the memoized loadHost (boot-once,
-   *  no hot-swap) and MAY be async so the umbrella can await a first-request
-   *  cloud fetch; resolving to undefined falls back to the `dir` file read.
-   *  `tools.json` always comes from `dir`. */
+   *  `.vendo/overrides.json` from `dir`. Two callers share this seam: the
+   *  unified try surface (Task 15a) passes an in-memory doc for non-file
+   *  hosts, and the hosted-config seam (cse lane 3) lets the umbrella pass
+   *  cloud-published overrides when there is no local file. Takes precedence
+   *  over the file read whole-file (mirrors `tools`/`capabilities`), and the
+   *  corrections apply to host and connector tools the same way the dir
+   *  read's do (mergeOverride at load). The provider form is resolved ONCE
+   *  through the memoized loadHost (boot-once, no hot-swap) and MAY be async
+   *  so the umbrella can await a first-request cloud fetch; resolving to
+   *  undefined falls back to the `dir` file read. `tools.json` always comes
+   *  from `dir`. The resolved doc is validated at load with the authored-file
+   *  posture: a malformed doc throws `validation` loudly. */
   overrides?: OverridesFileV3 | (() => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>);
   /**
    * 04 §6: the guard-bound execution seam every compound step routes through.
@@ -149,6 +172,10 @@ type Dispatch =
 interface LoadedRegistry {
   descriptors: ToolDescriptor[];
   dispatch: Map<string, Dispatch>;
+  /** Post-override audience per registered tool name — provenance the
+   *  descriptor surface deliberately drops, kept here because the door's
+   *  default menu is defined in terms of it. Absent name = ungraded. */
+  audience: Map<string, ExtractedToolV3["audience"]>;
 }
 
 const STRIPPED_HEADERS = new Set([
@@ -175,6 +202,7 @@ function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
     inputSchema: tool.inputSchema,
     risk: tool.risk,
     ...(tool.critical !== undefined ? { critical: tool.critical } : {}),
+    ...(tool.title !== undefined ? { title: tool.title } : {}),
   };
 }
 
@@ -188,6 +216,7 @@ function mergeOverride<T extends ToolDescriptor & Pick<ExtractedToolV3, "audienc
     ...(override.risk !== undefined ? { risk: override.risk } : {}),
     ...(override.critical !== undefined ? { critical: override.critical } : {}),
     ...(override.description !== undefined ? { description: override.description } : {}),
+    ...(override.title !== undefined ? { title: override.title } : {}),
     ...(override.disabled !== undefined ? { disabled: override.disabled } : {}),
     ...(override.audience !== undefined ? { audience: override.audience } : {}),
     // v3: overrides correct semantics field-by-field, never wholesale.
@@ -718,9 +747,21 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
     }
   }
 
+  function parseOverrides(value: unknown, source: string): OverridesFileV3 {
+    try {
+      return overridesFileV3Schema.parse(value);
+    } catch (cause) {
+      throw new VendoError("validation", `Invalid Vendo actions file ${source}`, {
+        cause: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+
   // The product's core promise, warned at the seam that knows: an agent with
   // zero live host tools serves users it cannot help (field case: an
   // extraction stripped to tools: [] shipped a silently useless agent).
+  /** One warning per surface per boot, however often the menu is resolved. */
+  const surfaceMenuWarned = new Set<string>();
   let zeroLiveWarned = false;
   const warnZeroLiveTools = (host: LoadedHost): LoadedHost => {
     if (zeroLiveWarned) return host;
@@ -743,14 +784,20 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const configuredCapabilities = config.capabilities === undefined
         ? undefined
         : parseCapabilities(config.capabilities, "config.capabilities");
-      // cse lane 3 — an injected overrides doc (hosted config) resolved ONCE
-      // through this memoized loadHost. The provider form may be async so the
-      // umbrella can await a first-request cloud fetch (reliable for the
-      // security-relevant enablement path); it resolves to undefined when the
-      // surface is not cloud-owned, letting the dir read below handle the file.
-      const injectedOverrides = typeof config.overrides === "function"
+      // cse lane 3 — an injected overrides doc (hosted config or the try
+      // surface's in-memory profile) resolved ONCE through this memoized
+      // loadHost. The provider form may be async so the umbrella can await a
+      // first-request cloud fetch (reliable for the security-relevant
+      // enablement path); it resolves to undefined when the surface is not
+      // cloud-owned, letting the dir read below handle the file. The resolved
+      // doc parses loudly (Task 15a posture: a malformed injected doc must
+      // never be silently ignored).
+      const resolvedOverrides = typeof config.overrides === "function"
         ? await (config.overrides as () => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>)()
         : config.overrides;
+      const injectedOverrides = resolvedOverrides === undefined
+        ? undefined
+        : parseOverrides(resolvedOverrides, "config.overrides");
       if (!config.dir) {
         return {
           tools: configuredTools ?? [],
@@ -763,11 +810,19 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       }
       // Format v3 (cse lane 1): each file parses per its own format tag — v1
       // keeps its exact v1 errors, everything else must be v3 and fails loud.
-      // An injected overrides doc (cse lane 3 hosted config) wins over the
-      // overrides.json read; tools.json still comes from the dir.
+      // An injected overrides doc (cse lane 3 hosted config, or the unified
+      // try surface's in-memory profile.overrides) wins over the
+      // overrides.json read — AND config.tools (profile.tools) skips the
+      // tools.json read the same way. This isn't just precedence: on a
+      // filesystem-less venue (a Worker on workerd) the disk leg must never
+      // run at all when the in-memory piece already fully substitutes for it
+      // — see readOptionalVendoJson's non-ENOENT handling for the residual
+      // reads that DO still run.
       const [toolsFile, overridesFileRead] = await Promise.all([
-        readOptionalVendoJson(config.dir, "tools.json", (value) =>
-          vendoFileVersion(value) === 1 ? toolsFileSchema.parse(value) : toolsFileV3Schema.parse(value)),
+        configuredTools !== undefined
+          ? Promise.resolve(undefined)
+          : readOptionalVendoJson(config.dir, "tools.json", (value) =>
+            vendoFileVersion(value) === 1 ? toolsFileSchema.parse(value) : toolsFileV3Schema.parse(value)),
         injectedOverrides !== undefined
           ? Promise.resolve(undefined)
           : readOptionalVendoJson(config.dir, "overrides.json", (value) =>
@@ -784,8 +839,13 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // ingest through the legacy fold rather than silently dropping authored
       // work; overrides.json-carried entries win by name (the sync path's
       // conflicted-state posture), the file's unique entries are added.
+      // config.capabilities (profile.capabilities) wins outright over the
+      // whole file below, so — same as tools.json above — the disk leg is
+      // skipped entirely rather than read-then-discarded.
       const fullyV3 = toolsV3 !== undefined && overridesV3 !== undefined;
-      const capabilitiesFile = await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value));
+      const capabilitiesFile = configuredCapabilities !== undefined
+        ? undefined
+        : await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value));
       const legacy: LegacyVendoFiles = {
         ...(toolsV1 === undefined ? {} : { tools: toolsV1 }),
         ...(overridesV1 === undefined ? {} : { overrides: overridesV1 }),
@@ -849,6 +909,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const registryLists = await Promise.all(added.map((registry) => cachedDescriptors(registry)));
       const reserved = new Map<string, Dispatch | undefined>();
       const descriptors: ToolDescriptor[] = [];
+      const audience = new Map<string, ExtractedToolV3["audience"]>();
       // The primitive table compound steps validate against: post-override host +
       // connector tools ONLY — never compounds, never `add()`-registry tools.
       const primitives = new Map<string, PrimitiveStepTarget>();
@@ -863,6 +924,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       for (const extracted of host.tools) {
         const merged = mergeOverride({ ...extracted }, host.overrides.tools[extracted.name]);
         const descriptor = descriptorOf(merged);
+        if (merged.audience !== undefined) audience.set(merged.name, merged.audience);
         const disabled = merged.disabled === true;
         register(merged.name, "host tools", disabled ? undefined : { kind: "host", descriptor, tool: merged });
         primitives.set(merged.name, { risk: merged.risk, disabled });
@@ -877,6 +939,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
           const merged = mergeOverride(rawDescriptor, host.overrides.tools[rawDescriptor.name]);
           // audience/semantics are override provenance, not descriptor surface.
           const { disabled: _disabled, audience: _audience, semantics: _semantics, ...descriptor } = merged;
+          if (merged.audience !== undefined) audience.set(descriptor.name, merged.audience);
           register(
             descriptor.name,
             `connector ${connector.name}`,
@@ -920,6 +983,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
           }
           continue;
         }
+        if (compound.audience !== undefined) audience.set(compound.name, compound.audience);
         register(compound.name, "capabilities", { kind: "compound", descriptor: descriptorOf(compound), tool: compound });
       }
 
@@ -950,7 +1014,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // Runtime dispatch keeps only enabled entries once all collision checks ran.
       const dispatch = new Map<string, Dispatch>();
       for (const [name, entry] of reserved) if (entry) dispatch.set(name, entry);
-      return { descriptors, dispatch };
+      return { descriptors, dispatch, audience };
     })();
     return loadedPromise;
   }
@@ -1027,6 +1091,40 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
         if (connectedToolkits.some((toolkit) => descriptor.name.startsWith(`${toolkit}_`))) connected.push(descriptor.name);
       }
       return [...eager, ...connected];
+    },
+
+    async surfaceMenu(surface: "agent" | "mcp"): Promise<string[] | undefined> {
+      const [{ dispatch, audience }, host] = await Promise.all([load(), loadHost()]);
+      const authored = host.overrides.surfaces?.[surface];
+      if (authored !== undefined) {
+        // A menu is a FILTER, not a validated reference list. The authored set
+        // is returned whole and matched against the live surface at use time,
+        // because the surface grows: a lazy connector's tools do not exist at
+        // boot, and dropping their names here would make them permanently
+        // unreachable the moment they DO arrive. Unmatched names simply never
+        // match anything, which is what a filter should do.
+        const unmatched = authored.tools.filter((name) => !dispatch.has(name));
+        if (unmatched.length > 0 && !surfaceMenuWarned.has(surface)) {
+          surfaceMenuWarned.add(surface);
+          console.warn(
+            unmatched.length === authored.tools.length
+              ? `[vendo] surfaces.${surface}.tools in .vendo/overrides.json matches no registered tool at all `
+                + `(${unmatched.join(", ")}). If these are not lazy connector tools awaiting expansion, this surface `
+                + "will offer nothing — check for typos or re-run `vendo sync`."
+              : `[vendo] surfaces.${surface}.tools in .vendo/overrides.json names tools that are not registered right `
+                + `now: ${unmatched.join(", ")}. They stay on the menu (a lazy connector tool matches once expanded); `
+                + "if that is not what they are, check for a typo, a disabled tool, or re-run `vendo sync`.",
+          );
+        }
+        return [...authored.tools];
+      }
+      if (surface === "agent") return undefined;
+      // The default door menu: an MCP client speaks for a person, so offer the
+      // tools that person's own auth admits. Ungraded reads as end-user.
+      return [...dispatch.keys()].filter((name) => {
+        const grade = audience.get(name);
+        return grade === undefined || grade === "end-user";
+      });
     },
 
     async search(query: string, options?: ToolSearchOptions): Promise<ToolSearchMatch[]> {

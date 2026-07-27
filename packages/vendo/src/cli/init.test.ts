@@ -1221,7 +1221,7 @@ describe("vendo init (zero-question)", () => {
     expect(theme.colors.accent).toBe("#2b7fff");
   });
 
-  it("fills next/font gaps via the model pass and prints the one-glance summary", async () => {
+  it("derives an applied next/font family deterministically — the model's fontFamily proposal never overrides it — and prints the one-glance summary", async () => {
     const root = await fixture();
     await writeFile(join(root, "app", "layout.tsx"),
       'import "./global.css";\n' +
@@ -1239,12 +1239,18 @@ describe("vendo init (zero-question)", () => {
     expect(await run(root, sink, {
       yes: true,
       aiPolish: true,
-      extract: { harnesses: [themeHarness({ slots: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" } })] },
+      // The model still proposes a fontFamily — it must be IGNORED: the
+      // aliased next/font import (Inter as FontSans, applied on the body)
+      // derives deterministically, and exact-derived reads are never
+      // overwritten (font-stack.ts; extraction-quality-1 lane).
+      extract: { harnesses: [themeHarness({ slots: { fontFamily: "Comic Sans MS, fantasy" } })] },
     })).toBe(0);
 
     expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
       colors: { background: "#fafafa", surface: "#ffffff", text: "#171717", muted: "#737373", accent: "#2b7fff" },
-      typography: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" },
+      // The source declares no fallback tail, so the derived stack is the
+      // bare family plus the generic — full source-declared stack semantics.
+      typography: { fontFamily: "Inter, sans-serif" },
       radius: { medium: "6px" },
     });
     const logs = sink.logs.join("\n");

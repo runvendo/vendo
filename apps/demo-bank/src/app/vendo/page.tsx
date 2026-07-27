@@ -3,9 +3,16 @@
 import { VendoActivities, VendoThread } from "@vendoai/ui/chrome";
 import { VendoStage } from "@vendoai/ui/voice";
 import { VendoRoot } from "@/components/vendo/VendoRoot";
+import { useTryThisChips } from "@/components/vendo/use-try-this-chips";
 import { mapleScenarios } from "@/vendo/scenarios";
 
 export default function VendoTabPage() {
+  // "Try this" chips (demo-hygiene): pre-generated prompts as pill chips one
+  // tier below the scenario cards. An empty cache keeps the ORIGINAL
+  // mapleScenarios reference (and no extra render, see useTryThisChips), so
+  // the first-visit landing contract — one render, cards only — holds.
+  const chips = useTryThisChips();
+  const suggestions = chips.length === 0 ? mapleScenarios : [...mapleScenarios, ...chips];
   return (
     <div
       style={{
@@ -36,7 +43,7 @@ export default function VendoTabPage() {
             clickable instead of being flex-squeezed under the sibling
             surfaces (the column above scrolls when the floor doesn't fit). */}
         <div style={{ flex: "1 0 auto", minHeight: 420, display: "flex", flexDirection: "column" }}>
-          <VendoThread suggestions={mapleScenarios} discoverability="quiet" />
+          <VendoThread suggestions={suggestions} discoverability="quiet" />
         </div>
         {/* The docked voice surface keeps a fixed slot below the thread — it
             never shrinks into a sliver whose chrome paints over the thread

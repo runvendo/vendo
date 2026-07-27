@@ -302,20 +302,31 @@ const renderOne = async (
   // secrets are readable), require inside the island scope is stubbed, memory
   // is capped, and the main thread hard-terminates on timeout. This is a
   // robustness gate at the model trust level, not a substitute for the jail.
-  const worker = new modules.Worker(WORKER_SOURCE, {
-    eval: true,
-    workerData: {
-      compiled,
-      toolResults,
-      paths: modules.paths,
-      reactNames: ISLAND_AMBIENT_REACT_NAMES,
-      kitNames: ISLAND_AMBIENT_KIT_NAMES,
-    },
-    env: {},
-    resourceLimits: { maxOldGenerationSizeMb: 256 },
-    stderr: true,
-    stdout: true,
-  });
+  let worker: InstanceType<WorkerModules["Worker"]>;
+  try {
+    worker = new modules.Worker(WORKER_SOURCE, {
+      eval: true,
+      workerData: {
+        compiled,
+        toolResults,
+        paths: modules.paths,
+        reactNames: ISLAND_AMBIENT_REACT_NAMES,
+        kitNames: ISLAND_AMBIENT_KIT_NAMES,
+      },
+      env: {},
+      resourceLimits: { maxOldGenerationSizeMb: 256 },
+      stderr: true,
+      stdout: true,
+    });
+  } catch {
+    // The environment cannot construct a worker thread at all — verified on
+    // real workerd (Cloudflare Workers): `node:worker_threads` resolves and
+    // exports `Worker`, but the constructor throws synchronously ("The
+    // Worker method is not implemented"), since Workers has no OS-thread
+    // model. Same policy as an unresolvable react/jsdom/esbuild: this is an
+    // environment failure, not an island defect — skip the gate silently.
+    return [];
+  }
   try {
     return await new Promise<string[]>((resolve) => {
       let ready = false;

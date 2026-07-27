@@ -30,6 +30,7 @@ describe("doctor error-code registry", () => {
         "E-CLOUD-001": "VENDO_API_KEY is set but not usable",
         "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",
         "E-DEP-002": "the running wire serves a different @vendoai/vendo version than this CLI (split-brain install)",
+        "E-DEP-003": "the installed zod predates the zod/v3 + zod/v4 subpaths the AI SDK imports (zod < 3.25)",
         "E-DEV-001": "the dev server could not be started for the probe",
         "E-LIVE-001": "/status returned an invalid composition response",
         "E-LIVE-002": "/status is unreachable",

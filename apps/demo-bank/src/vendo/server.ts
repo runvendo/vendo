@@ -1,31 +1,40 @@
 import { composioConnector } from "@vendoai/actions";
+import { memoryKnowledgeAdapter } from "@vendoai/core/conformance";
 import { vendoAutoJudge } from "@vendoai/guard";
 import { createStore } from "@vendoai/store";
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo, vendoModel } from "@vendoai/vendo/server";
 import { authSecret, resolveMapleSubject } from "@/server/users";
+import { mapleKnowledgeDocs } from "./knowledge";
 import { mapleMcpConfig } from "./mcp-config";
 import { mapleRegistry } from "./registry";
 
 const composioApiKey = process.env.COMPOSIO_API_KEY;
 
+// One preset fills all three identity seams (09-vendo §2.1): the
+// request→Principal resolver, the away/MCP actAs seam, and the door's
+// OAuth adapter. `user` maps an Auth.js subject to the seeded Maple
+// identity; returning null means "not a Maple user" — the principal
+// resolves to anonymous and away/MCP minting for that subject declines.
+// Exported so chip pre-generation (chips-seed.ts) can mint the same away
+// session the automations path mints — a background seed has no request.
+export const mapleAuth = authJs({
+  secret: authSecret,
+  user: (subject) => {
+    const user = resolveMapleSubject(subject);
+    return user ? { display: user.display, email: user.email } : null;
+  },
+});
+
 export const vendo = createVendo({
   // Model + store slots stay UNSET (demo-refresh Part 2): the env ladder
   // resolves them — locally ANTHROPIC_API_KEY, deployed VENDO_API_KEY — and
-  // the unset store composes the local default. Known deliberate regression
-  // until the model-family lane lands: paint rides the main model.
-  // One preset fills all three identity seams (09-vendo §2.1): the
-  // request→Principal resolver, the away/MCP actAs seam, and the door's
-  // OAuth adapter. `user` maps an Auth.js subject to the seeded Maple
-  // identity; returning null means "not a Maple user" — the principal
-  // resolves to anonymous and away/MCP minting for that subject declines.
-  auth: authJs({
-    secret: authSecret,
-    user: (subject) => {
-      const user = resolveMapleSubject(subject);
-      return user ? { display: user.display, email: user.email } : null;
-    },
-  }),
+  // the unset store composes the local default. With the agent slot on the
+  // ladder, paint invisibility applies (resolveModels): the paint lane
+  // composes the family fast pick — vendo-paint on Cloud, the provider's
+  // fast model on BYO — so the demo runs the fast two-lane path with no
+  // hardcoded model names (speed-core lane; BYO rule).
+  auth: mapleAuth,
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
   catalog: mapleRegistry,
@@ -50,14 +59,22 @@ export const vendo = createVendo({
     experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
-    // demo-refresh Part 5 — the full v4 generation pipeline.
+    // speed-core ruling (2026-07-26, supersedes demo-refresh Part 5):
+    // regionParallel is OFF for the demos — live evidence
+    // (docs/verification/demo-live-readiness/speed-core/after.md) showed its
+    // serial outline + assembly-invalid fallback made creates SLOWER on this
+    // surface (p50 55s vs 31.4s without it). endPass stays on: the runtime
+    // rides it as the data-sighted verify. structuredRepair and smokeRender
+    // are default-on and island repair is the engine's first resort.
     pipeline: {
-      exemplarContract: true,
-      structuredRepair: true,
-      regionParallel: true,
       endPass: true,
     },
   },
+  // Knowledge K1 — the product knowledge base behind `vendo_knowledge_search`
+  // (citation chips + structured refusal in the chat). The in-memory dev
+  // adapter carries Maple's help-center corpus; a real engine slots in here
+  // unchanged (same KnowledgeAdapter seam).
+  knowledge: memoryKnowledgeAdapter({ docs: mapleKnowledgeDocs }),
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
   // BYO Composio when Maple brings its own key; otherwise the slot stays

@@ -216,6 +216,29 @@ or remove the direct `@vendoai/vendo` dependency from `package.json` (the
 `vendoai` umbrella provides it) and reinstall. Re-run doctor after the dev
 server restarts.
 
+### E-DEP-003 {#E-DEP-003}
+
+**Symptom:** The installed `zod` is older than 3.25; the message names the
+exact version found. Without the fix, `next build` (or any bundling build)
+fails with `Package path ./v3 is not exported from package zod` — a
+module-not-found deep inside `ai`.
+
+**Cause:** The AI SDK (`ai@6`) imports the `zod/v3` and `zod/v4` subpaths,
+which first ship in zod 3.25. When the app pins an older zod (a common
+`^3.2x` range resolving below 3.25), the app's own pin wins the installed
+tree, and the build breaks the moment Vendo's wiring pulls `ai` into the
+bundle. `vendo init` detects this and offers the bump; this check catches
+hosts that declined or predate that detection.
+
+**Fix:** Bump zod within v3 (3.25 satisfies the common `^3.2x` ranges and
+keeps zod 3 semantics):
+
+```bash
+npm install zod@^3.25.0
+```
+
+Hosts already on zod 4 are unaffected (zod 4 exposes both subpaths).
+
 ## Ejected UI
 
 ### E-UI-001 {#E-UI-001}
