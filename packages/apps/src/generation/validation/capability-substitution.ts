@@ -293,18 +293,40 @@ const unwrapParens = (text: string): string => {
   return inner;
 };
 
-// Every JS spelling of a hand-typed number, not just plain decimals: a sign,
-// hex/octal/binary, exponents, numeric separators. `0x1` is `1` wearing a hat,
+// The core of a hand-typed number once its wrappers are peeled: decimal,
+// hex/octal/binary, exponent, numeric separators. `0x1` is `1` wearing a hat,
 // and a gate that reads only `1` is a gate with a published bypass. Loose by
 // design — the Number() round-trip below rejects whatever this lets through.
-const NUMERIC_LITERAL =
-  /^[+-]?(?:0[xX][\da-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|\d[\d_]*(?:\.[\d_]*)?(?:[eE][+-]?\d+)?|\.\d[\d_]*(?:[eE][+-]?\d+)?)$/;
+const NUMERIC_CORE =
+  /^(?:0[xX][\da-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|\d[\d_]*(?:\.[\d_]*)?(?:[eE][+-]?\d+)?|\.\d[\d_]*(?:[eE][+-]?\d+)?)$/;
 
+/**
+ * A hand-typed number in ANY spelling, or undefined if the span is a reference.
+ *
+ * Peels the syntax that can wrap a bare number without making it anything else
+ * — parens and unary signs, in any order, with any spacing — then tests the
+ * core. Peeling in a loop rather than matching one big pattern is what closes
+ * the class: `+ 1`, `-(1)` and `( + 0x1 )` are the same fabricated operand as
+ * `1`, and enumerating spellings would leave the next combination open.
+ */
 const numericLiteral = (blanked: string): { text: string; value: number } | undefined => {
-  const inner = unwrapParens(blanked);
-  if (!NUMERIC_LITERAL.test(inner)) return undefined;
-  const value = Number(inner.replace(/_/g, ""));
-  return Number.isFinite(value) ? { text: inner, value } : undefined;
+  let inner = blanked.trim();
+  let negative = false;
+  for (;;) {
+    const unwrapped = unwrapParens(inner);
+    const signed = /^([+-])\s*([\s\S]*)$/.exec(unwrapped);
+    if (signed === null) {
+      inner = unwrapped;
+      break;
+    }
+    if (signed[1] === "-") negative = !negative;
+    inner = (signed[2] as string).trim();
+  }
+  if (!NUMERIC_CORE.test(inner)) return undefined;
+  const magnitude = Number(inner.replace(/_/g, ""));
+  if (!Number.isFinite(magnitude)) return undefined;
+  // `text` quotes what the model actually typed, so repair sees its own token.
+  return { text: blanked.trim(), value: negative ? -magnitude : magnitude };
 };
 
 /**
