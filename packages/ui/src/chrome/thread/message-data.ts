@@ -87,6 +87,8 @@ export function grantSetByCall(messages: UIMessage[]): Map<string, {
     }
   }
   return sets;
+}
+
 /** Knowledge K1 — what a turn's `data-vendo-citations` parts add up to.
     Chips render only ANSWERED citations (a refusal's weak hits stay off the
     chip row — mockup state 2 shows the searched-line alone); the flags carry

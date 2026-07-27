@@ -261,6 +261,10 @@ describe("vendoGrantSetPartSchema", () => {
       appId: "app_demo_weekly",
       name: "Weekly spending summary",
       permissions,
+    }).success).toBe(false);
+  });
+});
+
 /** Knowledge K1 (additive): the citation-chips part `vendo_knowledge_search`
     results ride to the UI. */
 describe("vendoCitationsPartSchema", () => {
