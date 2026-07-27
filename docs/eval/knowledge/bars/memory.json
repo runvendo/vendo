@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-25T00:00:00.000Z",
+  "toleranceRationale": "The memory engine matches by whole-query substring and every golden item's memoryQuery was authored until its expected docs retrieve at rank 1, so retrieval is deterministic and perfect by construction: bars sit at exactly 1.0 with zero headroom. Any dip means the fixture corpus, the golden set, and the memoryQuery values drifted apart (a doc id renamed, a phrase edited out) — a mechanical breakage this gate exists to catch, not retrieval-quality noise. No judge.* bars: the memory leg never runs the model-costed judge (per-PR carve-out in docs/eval/KNOWLEDGE.md). Raising or lowering any bar requires a PR editing this file with a one-line justification.",
+  "bars": {
+    "recall@5": 1,
+    "mrr": 1,
+    "recall@5.chat": 1,
+    "mrr.chat": 1,
+    "recall@5.deep": 1,
+    "mrr.deep": 1,
+    "recall@5.schema": 1,
+    "mrr.schema": 1
+  }
+}

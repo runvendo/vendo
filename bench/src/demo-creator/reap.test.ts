@@ -63,6 +63,24 @@ describe("selectReapable", () => {
       .toEqual([expect.objectContaining({ reason: "expired" })]);
   });
 
+  it("skips permanent rows regardless of expiry (even stale or absent expiresAt)", () => {
+    const rows = [
+      row({ id: "maple", permanent: true, expiresAt: "2020-01-01T00:00:00Z" }),
+      { ...row({ id: "forever", permanent: true }), expiresAt: undefined },
+    ];
+    expect(selectReapable(rows, now)).toEqual([]);
+  });
+
+  it("still reaps a killed permanent row (an explicit kill outranks permanence)", () => {
+    expect(selectReapable([row({ id: "maple", permanent: true, killed: true })], now))
+      .toEqual([expect.objectContaining({ reason: "killed" })]);
+  });
+
+  it("treats a missing expiresAt on a NON-permanent row as reapable (fail closed)", () => {
+    expect(selectReapable([{ ...row({ id: "stranded" }), expiresAt: undefined }], now))
+      .toEqual([expect.objectContaining({ reason: "invalid-expiry" })]);
+  });
+
   it("treats an unparseable expiresAt as reapable (fail closed, like the router)", () => {
     expect(selectReapable([row({ id: "bad", expiresAt: "not-a-date" })], now))
       .toEqual([expect.objectContaining({ reason: "invalid-expiry" })]);

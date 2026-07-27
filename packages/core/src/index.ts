@@ -1,6 +1,7 @@
 /** @vendoai/core — the shapes everything speaks (docs/archive/contracts/01-core.md). */
 export * from "./app-document.js";
 export * from "./audit.js";
+export * from "./build-deadlines.js";
 export * from "./catalog.js";
 export * from "./capability-miss.js";
 export * from "./descriptor-hash.js";
@@ -18,6 +19,7 @@ export * from "./jail-modules.js";
 export * from "./jcs.js";
 export * from "./knowledge.js";
 export * from "./knowledge-wire.js";
+export * from "./meter-exhausted.js";
 export * from "./kit/index.js";
 export * from "./principal.js";
 export * from "./reshape.js";

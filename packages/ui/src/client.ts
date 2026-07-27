@@ -151,4 +151,8 @@ export interface VendoClient {
   status(): Promise<VendoStatus>;
 }
 
-export { createVendoClient } from "./client-impl.js";
+export {
+  APPROVALS_DECIDED_EVENT,
+  createVendoClient,
+  type ApprovalsDecidedDetail,
+} from "./client-impl.js";

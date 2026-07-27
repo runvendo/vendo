@@ -161,19 +161,25 @@ function inferSlot(name: string | undefined): VendoModelSlot {
   return "agent";
 }
 
-/** Process-level slot config fed by createVendo({ models }) — the v1 judge
- *  plumbing (spec: models.judge is consumed only when the host wired a judge
- *  whose model came from a string, i.e. vendoModel("vendo-judge")). The judge
- *  model lives inside the host's Judge closure where composition cannot reach
- *  it, so the string travels through this module-level slot instead; the
- *  last createVendo in the process wins (multiple createVendo instances with
- *  different models.judge are out of scope for v1). @internal */
-const configuredSlotModels: { judge?: string | LanguageModel } = {};
+/** The controller behind each vendoModel()/devModel() instance, so composition
+ *  can bind per-instance slot config onto exactly the model the host handed it
+ *  (bindVendoModelSlots below). WeakMap: holding a model never leaks its
+ *  controller past the model's own lifetime. @internal */
+const controllersByModel = new WeakMap<object, DevModelController>();
 
-/** @internal — called by createVendo; not public API. */
-export function configureVendoModelSlots(models: { judge?: string | LanguageModel } | undefined): void {
-  if (models?.judge === undefined) delete configuredSlotModels.judge;
-  else configuredSlotModels.judge = models.judge;
+/** Bind createVendo's `models` slot config onto ONE vendoModel-built instance
+ *  (spec: models.judge is consumed only by a judge the host wired from
+ *  vendoModel("vendo-judge") — the model rides Judge.model so composition can
+ *  reach it). Per instance, replacing the former process-level registry whose
+ *  last createVendo won. A BYO model object (or anything else that is not a
+ *  vendoModel instance) is a deliberate no-op: explicit models never change
+ *  behavior. @internal — called by createVendo; not public API. */
+export function bindVendoModelSlots(
+  model: unknown,
+  models: { judge?: string | LanguageModel } | undefined,
+): void {
+  if (model === null || typeof model !== "object") return;
+  controllersByModel.get(model)?.configureSlots(models);
 }
 
 /** Bundler-proof dynamic import: this module runs inside the host's dev server
@@ -197,9 +203,33 @@ async function dynamicImport(url: string): Promise<Record<string, unknown>> {
   }
 }
 
-async function importHostModule(root: string, specifier: string): Promise<Record<string, unknown>> {
+/** Host-root resolution first, vendo's own copy as the provider fallback.
+ *
+ *  Precedence: the HOST's install always wins when present — their version,
+ *  their module instance, so the `ai` SDK never sees two copies of one
+ *  provider in a repo that has it (the dual-package hazard). Only when the
+ *  host root resolves nothing do we resolve from vendo's own module context
+ *  (createRequire off import.meta.url): @ai-sdk/anthropic ships as a real
+ *  dependency of @vendoai/vendo, so an ANTHROPIC_API_KEY — or VENDO_API_KEY
+ *  via the Anthropic-compatible Cloud gateway — lights up live chat under
+ *  `npx vendo try` with nothing installed in the repo. Scoped to @ai-sdk/*
+ *  provider modules; arbitrary specifiers keep strict host-root resolution.
+ *  (Exported for the resolution tests; the injectable seam is `importModule`.) */
+export async function importHostModule(root: string, specifier: string): Promise<Record<string, unknown>> {
   const require = createRequire(join(root, "package.json"));
-  return await dynamicImport(pathToFileURL(require.resolve(specifier)).href);
+  try {
+    return await dynamicImport(pathToFileURL(require.resolve(specifier)).href);
+  } catch (hostError) {
+    if (!specifier.startsWith("@ai-sdk/")) throw hostError;
+    try {
+      const self = createRequire(import.meta.url);
+      return await dynamicImport(pathToFileURL(self.resolve(specifier)).href);
+    } catch {
+      // The host's failure is the honest one to surface — "not installed in
+      // this app" plus the install command, same as before the fallback.
+      throw hostError;
+    }
+  }
 }
 
 export class DevModelController {
@@ -210,6 +240,8 @@ export class DevModelController {
   private readonly name: string | undefined;
   private resolution: Promise<Resolution> | null = null;
   private announced = false;
+  /** Per-instance slot config bound by createVendo (bindVendoModelSlots). */
+  private slotModels: { judge?: string | LanguageModel } = {};
 
   constructor(options: VendoModelOptions & { name?: string } = {}) {
     this.root = options.root ?? process.cwd();
@@ -217,6 +249,14 @@ export class DevModelController {
     this.importModule = options.importModule ?? importHostModule;
     this.name = nonBlank(options.name);
     this.slot = options.slot ?? inferSlot(this.name);
+  }
+
+  /** Bind createVendo's `models` slot config to THIS instance (see
+   *  bindVendoModelSlots). Composition runs before the first model call, so
+   *  the lazy resolution below always sees the bound config. */
+  configureSlots(models: { judge?: string | LanguageModel } | undefined): void {
+    if (models?.judge === undefined) delete this.slotModels.judge;
+    else this.slotModels.judge = models.judge;
   }
 
   /** Resolve the credential once per process; state it on the server log once.
@@ -249,7 +289,7 @@ export class DevModelController {
       if (legacy !== undefined) return legacy;
     }
     if (this.slot === "judge") {
-      const configured = configuredSlotModels.judge;
+      const configured = this.slotModels.judge;
       if (typeof configured === "string" && nonBlank(configured) !== undefined) return configured.trim();
     }
     if (this.name !== undefined) return this.name;
@@ -288,7 +328,7 @@ export class DevModelController {
     // Explicit model object configured for this slot (models.judge) — the
     // "explicit object wins" tier: no credential resolution, no pins.
     if (this.slot === "judge") {
-      const configured = configuredSlotModels.judge;
+      const configured = this.slotModels.judge;
       if (configured !== undefined && typeof configured !== "string") {
         this.announce("explicit models.judge model object");
         return { mode: "delegate", model: configured as unknown as LanguageModelV3Like };
@@ -348,6 +388,9 @@ function lazyModel(controller: DevModelController, provider: string, modelId: st
     doGenerate: (callOptions) => controller.doGenerate(callOptions),
     doStream: (callOptions) => controller.doStream(callOptions),
   };
+  // Registered so composition can bind per-instance slot config onto exactly
+  // this model (bindVendoModelSlots).
+  controllersByModel.set(model, controller);
   return model as unknown as LanguageModel;
 }
 

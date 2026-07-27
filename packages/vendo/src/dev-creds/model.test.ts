@@ -1,9 +1,14 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import Module from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LanguageModel } from "ai";
 import {
   DevModelController,
-  configureVendoModelSlots,
+  bindVendoModelSlots,
   devModel,
+  importHostModule,
   NO_CREDENTIAL_MESSAGE,
   vendoModel,
 } from "./model.js";
@@ -185,9 +190,97 @@ describe("devModel (env-resolving default model)", () => {
   });
 });
 
-describe("vendoModel (the vendo model family entry)", () => {
-  afterEach(() => configureVendoModelSlots(undefined));
+// The vendo-shipped provider fallback (unified try surface follow-up): the
+// umbrella ships @ai-sdk/anthropic as a real dependency, so a key alone lights
+// up live chat under `npx vendo try` on repos with no @ai-sdk install. These
+// tests exercise the REAL resolution path (no importModule seam): host-root
+// resolution against a temp fixture repo, vendo's own module context as the
+// provider fallback.
+describe("provider module resolution (host first, vendo's copy as fallback)", () => {
+  const cleanup: Array<() => Promise<void>> = [];
+  afterEach(async () => {
+    for (const dispose of cleanup.splice(0).reverse()) await dispose();
+  });
 
+  async function fixtureRoot(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-model-fallback-"));
+    cleanup.push(() => rm(root, { recursive: true, force: true }));
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "fixture", version: "0.0.0" }));
+    return root;
+  }
+
+  /** Vitest exports NODE_PATH pointing at the workspace's .pnpm store, which
+   *  makes EVERY bare specifier resolve from any root. Real hosts don't run
+   *  with that; drop it (Module._initPaths re-reads NODE_PATH — mutating the
+   *  Module.globalPaths snapshot does nothing) so host-root resolution
+   *  honestly fails for the fixture, the way the 0.4.x E2E cert proved it
+   *  does in the field. */
+  async function withoutGlobalPaths<Result>(run: () => Promise<Result>): Promise<Result> {
+    const initPaths = (Module as unknown as { _initPaths: () => void })._initPaths;
+    const saved = process.env["NODE_PATH"];
+    delete process.env["NODE_PATH"];
+    initPaths();
+    try {
+      return await run();
+    } finally {
+      process.env["NODE_PATH"] = saved;
+      initPaths();
+    }
+  }
+
+  it("falls back to vendo's own @ai-sdk/anthropic when the host has no provider install", async () => {
+    const root = await fixtureRoot();
+    const controller = new DevModelController({ root, env: { ANTHROPIC_API_KEY: "sk-a" } });
+    const resolution = await withoutGlobalPaths(() => controller.resolve());
+    expect(resolution.mode).toBe("delegate");
+    if (resolution.mode !== "delegate") return;
+    // The model is the real vendo-shipped provider's, constructed and callable.
+    expect(resolution.model.provider).toContain("anthropic");
+    expect(resolution.model.modelId).toBe("claude-sonnet-4-6");
+  });
+
+  it("prefers the host's own provider install over vendo's copy", async () => {
+    const root = await fixtureRoot();
+    // A fake host install: their version, their module instance, must win —
+    // dual copies of one provider are the ai-SDK dual-package hazard.
+    const moduleDir = join(root, "node_modules", "@ai-sdk", "anthropic");
+    await mkdir(moduleDir, { recursive: true });
+    await writeFile(
+      join(moduleDir, "package.json"),
+      JSON.stringify({ name: "@ai-sdk/anthropic", version: "0.0.0", type: "module", main: "index.js" }),
+    );
+    await writeFile(
+      join(moduleDir, "index.js"),
+      `export function createAnthropic() {
+        return (modelId) => ({
+          specificationVersion: "v3",
+          provider: "host-anthropic",
+          modelId,
+          supportedUrls: {},
+          doGenerate: async () => ({ from: "host" }),
+          doStream: async () => ({ from: "host" }),
+        });
+      }
+      `,
+    );
+    const controller = new DevModelController({ root, env: { ANTHROPIC_API_KEY: "sk-a" } });
+    expect(await controller.doGenerate({ prompt: [] })).toEqual({ from: "host" });
+  });
+
+  it("scopes the fallback to @ai-sdk/* provider modules only", async () => {
+    const root = await fixtureRoot();
+    await withoutGlobalPaths(async () => {
+      // zod resolves from vendo's own context, but it is not a provider
+      // module: arbitrary specifiers keep strict host-root resolution.
+      await expect(importHostModule(root, "zod")).rejects.toThrow();
+      // The provider module DOES fall back from the same fixture root.
+      const loaded = await importHostModule(root, "@ai-sdk/anthropic");
+      expect(typeof loaded["createAnthropic"]).toBe("function");
+    });
+  });
+});
+
+describe("vendoModel (the vendo model family entry)", () => {
   it("is an ai-SDK LanguageModel and devModel stays a working deprecated alias", () => {
     const model = vendoModel(undefined, { env: {} }) as unknown as Record<string, unknown>;
     expect(model.specificationVersion).toBe("v3");
@@ -326,25 +419,49 @@ describe("vendoModel (the vendo model family entry)", () => {
     }))).toBe("vendo-judge");
   });
 
-  it("feeds models.judge (string) into vendoModel(\"vendo-judge\") via configureVendoModelSlots", async () => {
-    configureVendoModelSlots({ judge: "vendo-strong" });
+  it("binds models.judge (string) onto ONE vendoModel(\"vendo-judge\") instance via bindVendoModelSlots", async () => {
+    const bound = vendoModel("vendo-judge", {
+      env: { VENDO_API_KEY: "vnd_x" },
+      importModule: scriptedProvider("createAnthropic"),
+    });
+    bindVendoModelSlots(bound, { judge: "vendo-strong" });
+    expect(await resolvedId(bound)).toBe("vendo-strong");
+    // The binding is PER INSTANCE: a second judge model in the same process
+    // keeps its own (unbound) resolution — no last-createVendo-wins registry.
     expect(await resolvedId(vendoModel("vendo-judge", {
       env: { VENDO_API_KEY: "vnd_x" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("vendo-strong");
-    // Env pin still outranks the configured string.
-    expect(await resolvedId(vendoModel("vendo-judge", {
+    }))).toBe("vendo-judge");
+    // Env pin still outranks the bound string.
+    const pinned = vendoModel("vendo-judge", {
       env: { VENDO_API_KEY: "vnd_x", VENDO_MODEL_JUDGE: "vendo-fast" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("vendo-fast");
+    });
+    bindVendoModelSlots(pinned, { judge: "vendo-strong" });
+    expect(await resolvedId(pinned)).toBe("vendo-fast");
     // Non-judge slots never read the judge config.
-    expect(await resolvedId(vendoModel(undefined, {
+    const agent = vendoModel(undefined, {
       env: { VENDO_API_KEY: "vnd_x" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("vendo");
+    });
+    bindVendoModelSlots(agent, { judge: "vendo-strong" });
+    expect(await resolvedId(agent)).toBe("vendo");
   });
 
-  it("feeds models.judge (explicit LanguageModel object) straight through — it wins over env pins", async () => {
+  it("two instances bind independently — each createVendo gets ITS OWN models.judge", async () => {
+    const options = () => ({
+      env: { VENDO_API_KEY: "vnd_x" },
+      importModule: scriptedProvider("createAnthropic"),
+    });
+    const first = vendoModel("vendo-judge", options());
+    const second = vendoModel("vendo-judge", options());
+    bindVendoModelSlots(first, { judge: "vendo-strong" });
+    bindVendoModelSlots(second, { judge: "vendo-fast" });
+    expect(await resolvedId(first)).toBe("vendo-strong");
+    expect(await resolvedId(second)).toBe("vendo-fast");
+  });
+
+  it("binds models.judge (explicit LanguageModel object) straight through — it wins over env pins", async () => {
     const explicit = {
       specificationVersion: "v3",
       provider: "host",
@@ -353,10 +470,25 @@ describe("vendoModel (the vendo model family entry)", () => {
       doGenerate: async () => ({ modelId: "host-judge" }),
       doStream: async () => ({ modelId: "host-judge" }),
     } as unknown as LanguageModel;
-    configureVendoModelSlots({ judge: explicit });
-    expect(await resolvedId(vendoModel("vendo-judge", {
+    const bound = vendoModel("vendo-judge", {
       env: { VENDO_API_KEY: "vnd_x", VENDO_MODEL_JUDGE: "vendo-fast" },
       importModule: scriptedProvider("createAnthropic"),
-    }))).toBe("host-judge");
+    });
+    bindVendoModelSlots(bound, { judge: explicit });
+    expect(await resolvedId(bound)).toBe("host-judge");
+  });
+
+  it("binding a BYO model object (not a vendoModel instance) is a no-op", () => {
+    const byo = {
+      specificationVersion: "v3",
+      provider: "host",
+      modelId: "host-model",
+      supportedUrls: {},
+      doGenerate: async () => ({ modelId: "host-model" }),
+      doStream: async () => ({ modelId: "host-model" }),
+    } as unknown as LanguageModel;
+    expect(() => bindVendoModelSlots(byo, { judge: "vendo-strong" })).not.toThrow();
+    expect(() => bindVendoModelSlots(undefined, { judge: "vendo-strong" })).not.toThrow();
+    expect((byo as unknown as { modelId: string }).modelId).toBe("host-model");
   });
 });

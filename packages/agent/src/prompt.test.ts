@@ -86,3 +86,43 @@ describe("assembleSystemPrompt", () => {
     }
   });
 });
+
+/** Demo-refresh 2026-07-23: presentation discipline — rendered views own the
+ * data; the reply around them stays out of the way. Venue-gated with the
+ * catalog (only surfaces that render trees need it). */
+describe("presentation discipline", () => {
+  it("rides tree venues (chat/app)", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx());
+    expect(prompt).toContain("Presentation");
+    expect(prompt).toContain("never restate its data");
+    const appPrompt = await assembleSystemPrompt(testGuard({}, []), ctx({ venue: "app" }));
+    expect(appPrompt).toContain("Presentation");
+  });
+
+  it("stays out of automation and MCP venues", async () => {
+    for (const venue of ["automation", "mcp"] as const) {
+      const prompt = await assembleSystemPrompt(testGuard({}, []), ctx({ venue }));
+      expect(prompt).not.toContain("Presentation");
+    }
+  });
+});
+
+/** Discovery-discipline 2026-07-25 (criterion 12): tool discovery gets a hard
+ * budget so a connector catalog can never become an agent side-quest. Rides
+ * only when tool search is configured — without the meta-tool there is
+ * nothing to budget. */
+describe("discovery budget", () => {
+  it("rides the prompt when tool search is enabled", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, true);
+    expect(prompt).toContain("Discovery budget");
+    expect(prompt).toContain("at most 2");
+    expect(prompt).toMatch(/unconnected/i);
+  });
+
+  it("stays out when tool search is off", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx(), undefined, false, false);
+    expect(prompt).not.toContain("Discovery budget");
+    const defaulted = await assembleSystemPrompt(testGuard({}, []), ctx());
+    expect(defaulted).not.toContain("Discovery budget");
+  });
+});

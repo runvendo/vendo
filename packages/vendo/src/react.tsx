@@ -11,7 +11,9 @@ import { useMemo, type ComponentProps } from "react";
 // if a future ui export is missing here.
 export {
   // client.ts
+  APPROVALS_DECIDED_EVENT,
   createVendoClient,
+  type ApprovalsDecidedDetail,
   type VendoClient,
   type VendoClientConfig,
   // context.ts
@@ -44,6 +46,7 @@ export {
   useConnections,
   useConnectorCatalog,
   useGrants,
+  useApprovalSheetPresentation,
   useMobileTakeover,
   type MobileTakeover,
   type PollOptions,

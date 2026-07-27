@@ -1,4 +1,10 @@
-import { VendoError, type VendoErrorCode } from "@vendoai/core";
+import {
+  VendoError,
+  formatMeterExhausted,
+  meterExhaustedDetail,
+  parseMeterExhausted,
+  type VendoErrorCode,
+} from "@vendoai/core";
 import { deploymentIdentityHeaders } from "./deployment-identity.js";
 
 /** Console-client plumbing shared by the Cloud adapters (cloudSandbox,
@@ -49,6 +55,17 @@ export async function raiseCloudError(
     ? error.message
     : `Vendo Cloud ${service} request failed with ${response.status}`;
   if (response.status === 402 || response.status === 401) {
+    // Pricing v3 (spec §5): a meter refusal carries the stable code
+    // `meter-exhausted` and the structured body — surface it as OUR crafted
+    // sentence (meter, figures, reset date, the two exits) so the safe
+    // stream-error rail and the CLI print something actionable, with the
+    // structured fields preserved on `detail`. The body is the only source
+    // of truth; no client-side entitlement checks exist. Anything else on
+    // 402/401 keeps the ENG-295 cloud-required mapping.
+    const refusal = parseMeterExhausted(payload);
+    if (refusal !== undefined) {
+      throw new VendoError("cloud-required", formatMeterExhausted(refusal), meterExhaustedDetail(refusal));
+    }
     throw new VendoError("cloud-required", message);
   }
   const code = typeof error?.code === "string" ? error.code : undefined;

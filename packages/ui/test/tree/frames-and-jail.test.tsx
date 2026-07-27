@@ -302,6 +302,32 @@ describe("generated component jail structure", () => {
     expect(iframe.style.height).toBe("8192px");
   });
 
+  it("skeletons an island error while STREAMING instead of showing the error note", async () => {
+    // A partial island may reference names only the final document provides
+    // (the observed class: a host registry component inside island scope).
+    // Mid-stream that crash is a transient, not a verdict — the loud note is
+    // for final payloads only.
+    const streamingTree = {
+      formatVersion: VENDO_TREE_FORMAT_V2,
+      root: "root",
+      nodes: [{ id: "root", component: "Partial", source: "generated" }],
+      components: { Partial: "export default function Partial() { return <MapleSpendingDonut /> }" },
+      streaming: true,
+    } as UIPayload;
+
+    render(<TreeView tree={streamingTree} components={{}} onAction={ok} />);
+    const iframe = screen.getByTitle("Generated component: Partial") as HTMLIFrameElement;
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "error", message: "MapleSpendingDonut is not defined" },
+    }));
+
+    await waitFor(() => expect(screen.queryByTitle("Generated component: Partial")).toBeNull());
+    expect(screen.queryByRole("note", { name: "Generated component error" })).toBeNull();
+    expect(document.querySelector('[data-primitive="Skeleton"]')).not.toBeNull();
+  });
+
   it("contains a generated component that renders no content", async () => {
     const generatedTree: UIPayload = {
       formatVersion: VENDO_TREE_FORMAT_V2,

@@ -11,15 +11,16 @@ import { playgroundFixtures, playgroundToolMeta } from "./fixtures.js";
 import type { PlaygroundScenario } from "./scenarios.js";
 
 /**
- * Types the scenario's opening turn into the mounted chrome's own composer and
- * submits it — the send travels the REAL path (draft state, user bubble,
- * transport). Scoped to `root` first so several embeds on one page each drive
- * their own composer; falls back to the document for surfaces that portal to
- * the body (the overlay). Retries briefly while the surface mounts.
+ * Types an opening turn into the mounted chrome's own composer and submits it
+ * — the send travels the REAL path (draft state, user bubble, transport).
+ * Scoped to `root` first so several embeds on one page each drive their own
+ * composer; falls back to the document for surfaces that portal to the body
+ * (the overlay). Retries briefly while the surface mounts. Shared with the
+ * try surface's live mode (try-surface-live.tsx), where the same submit rides
+ * the live wire transport instead of the scripted one — one seam, both modes.
  */
-function useAutoSend(scenario: PlaygroundScenario, root?: HTMLElement): void {
+export function useAutoSend(prompt: string | undefined, root?: HTMLElement): void {
   useEffect(() => {
-    const prompt = scenario.autoSend;
     if (!prompt) return;
     let tries = 0;
     let submitTimer: ReturnType<typeof setTimeout> | undefined;
@@ -44,7 +45,9 @@ function useAutoSend(scenario: PlaygroundScenario, root?: HTMLElement): void {
       clearInterval(timer);
       clearTimeout(submitTimer);
     };
-  }, [scenario, root]);
+    // Prompt (not the scenario object) as the dep: safe because every mount
+    // site keys its surface, so a scenario/chip switch remounts and re-fires.
+  }, [prompt, root]);
 }
 
 export function ScenarioMount({ scenario, theme, root }: {
@@ -58,7 +61,7 @@ export function ScenarioMount({ scenario, theme, root }: {
     () => (scenario.script ? new ScriptedTransport(scenario.script, { speed: scenario.speed ?? 1 }) : undefined),
     [scenario],
   );
-  useAutoSend(scenario, root);
+  useAutoSend(scenario.autoSend, root);
   // No explicit `connectors` prop: the surfaces resolve the auto catalog from
   // the fake client (fake-client.ts), so the tray demos search + scroll over
   // a realistic host's toolkit breadth.

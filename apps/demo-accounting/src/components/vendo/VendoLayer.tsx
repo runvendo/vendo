@@ -3,8 +3,24 @@
 import { useEffect, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useVendoOverlay } from "@vendoai/ui";
-import { VendoOverlay, VendoPalette, type VendoCommand } from "@vendoai/ui/chrome";
+import { VendoOverlay, VendoPalette, VendoThread, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
+import { CadenceMark } from "@/components/brand";
+import { cadenceScenarios } from "@/vendo/scenarios";
+import { useTryThisChips } from "./use-try-this-chips";
 import { VendoRoot } from "./VendoRoot";
+
+/** The overlay's thread with the Cadence scenario cards on the empty landing,
+ *  plus the pre-generated "try this" pill chips one tier below (demo-hygiene;
+ *  absent while the chip cache is empty).
+ *  Module-scope so the component identity is stable across VendoLayer renders. */
+function CadenceThread(props: VendoThreadProps) {
+  const chips = useTryThisChips()
+  const suggestions = chips.length === 0 ? cadenceScenarios : [...cadenceScenarios, ...chips]
+  // discoverability="quiet" matches Maple: the fire-once greeting-as-tutorial
+  // would otherwise replace the cards+chips on the FIRST-ever visit (and burn
+  // the flag), so the demo's opening beat showed generic chips until a reload.
+  return <VendoThread {...props} suggestions={suggestions} discoverability="quiet" />;
+}
 
 async function resetDemo(): Promise<void> {
   try {
@@ -17,9 +33,10 @@ async function resetDemo(): Promise<void> {
 export function VendoLayer({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const floatingSurface = !pathname?.startsWith("/assistant");
-  // ENG-220: Cmd/Ctrl+K drives the supported programmatic overlay API instead
-  // of DOM-poking the launcher; the launcher itself is the ui package's
-  // default fixed bottom-right pill.
+  // ENG-220: Cmd/Ctrl+K drives the supported programmatic overlay API and
+  // stays as the power path. demo-refresh Part 4: the launcher pill is branded
+  // ("Ask Cadence" + the brand's green full stop) as the visible front door;
+  // the sidebar link keeps the full-page route reachable under the same name.
   const overlay = useVendoOverlay();
   const { toggle, close, open } = overlay;
   const router = useRouter();
@@ -58,7 +75,17 @@ export function VendoLayer({ children }: { children: ReactNode }) {
   return (
     <VendoRoot>
       {children}
-      {floatingSurface ? <VendoOverlay {...overlay.overlayProps} /> : null}
+      {floatingSurface ? (
+        <VendoOverlay
+          {...overlay.overlayProps}
+          launcher={{
+            position: "bottom-right",
+            label: "Ask Cadence",
+            icon: <CadenceMark className="h-3.5 w-3.5" />,
+          }}
+          thread={CadenceThread}
+        />
+      ) : null}
       {/* ENG-230: the command palette surface, mounted app-wide. Distinct
           chord (Cmd/Ctrl+J) so it never fights the overlay's own ⌘K toggle. */}
       <VendoPalette

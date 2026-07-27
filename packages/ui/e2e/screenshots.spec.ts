@@ -8,6 +8,7 @@ const shots = [
   { scenario: "palette", file: "palette", ready: '[role="dialog"][aria-label="Vendo assistant"]' },
   { scenario: "approval", file: "approval", ready: 'article[aria-label="Approval for Delete invoice"]' },
   { scenario: "thread-humanized", file: "thread-humanized", ready: 'article[aria-label="Approval for Transfer funds"]' },
+  { scenario: "thread-citations", file: "thread-citations", ready: "[data-vendo-citations]" },
   { scenario: "activity", file: "activity", ready: 'table[aria-describedby], table' },
   { scenario: "automations", file: "automations", ready: '[role="switch"]' },
   { scenario: "notice", file: "notice", ready: '[role="region"][aria-label="Vendo is running without a policy"]' },
@@ -23,6 +24,14 @@ for (const shot of shots) {
     await openScenario(page, shot.scenario);
     await expect(page.locator(shot.ready).first()).toBeVisible();
     if (shot.scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
+    if (shot.scenario === "thread-citations") {
+      // All three Surface-2 states settled, with the first citation popover
+      // expanded (the mockup's "one expanded" grounded state).
+      await expect(page.locator("[data-vendo-knowledge-searched]")).toBeVisible();
+      await expect(page.locator("[data-vendo-knowledge-unavailable]")).toBeVisible();
+      await page.locator(".fl-cite-btn").first().click();
+      await expect(page.locator(".fl-cite--open .fl-cite-pop")).toBeVisible();
+    }
     if (shot.scenario === "stage") await expect(page.getByText("Revenue is ready")).toBeVisible();
     if (shot.scenario === "appframe") await expect(page.frameLocator('section[aria-label="HTTP app frame same-origin"] iframe').getByText("Local HTTP app")).toBeVisible();
     await page.screenshot({ path: screenshotPath(shot.file), fullPage: true, animations: "disabled" });

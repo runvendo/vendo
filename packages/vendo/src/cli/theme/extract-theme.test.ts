@@ -236,7 +236,19 @@ describe("applyThemeDraft (merges a parsed theme-stage artifact onto an exact-on
   });
 
   it("headingFamily inherits fontFamily when neither is exact but the model fills fontFamily", async () => {
-    const summary = await baseSummary();
+    // Fonts wired through a separate module (invoify shape) are invisible to
+    // the deterministic derivation — fontFamily genuinely stays needed here.
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": [
+        'import { outfit } from "@/lib/fonts";',
+        'import "./globals.css";',
+        "export default function Layout({ children }) { return <html className={outfit.className}><body>{children}</body></html>; }",
+      ].join("\n"),
+      "app/globals.css": ":root { --border: #ecebe8; }\n",
+    });
+    const summary = await extractTheme(root);
+    expect(summary.needed).toContain("fontFamily");
     const merged = applyThemeDraft(summary, { slots: { fontFamily: "Geist, sans-serif" } });
     expect(merged.slots.headingFamily).toBe("Geist, sans-serif");
     expect(merged.matched["headingFamily"]).toBe("(inherit) fontFamily");
@@ -278,6 +290,132 @@ describe("applyThemeDraft (merges a parsed theme-stage artifact onto an exact-on
     const merged = applyThemeDraft(summary, { slots: { mutedText: "not-a-color" } });
     expect(merged.usedModel).toBe(false);
     expect(merged.slots.accent).toBe(summary.slots.accent); // untouched default
+  });
+});
+
+describe("extractTheme deterministic body-font-stack derivation (full source stacks, corpus evidence 2026-07-25)", () => {
+  it("skateshop shape (e954d543): tailwind config var head + default spread emits the FULL source-declared stack", async () => {
+    const root = await fixture({
+      "package.json": "{}\n",
+      "src/app/layout.tsx": [
+        'import "@/styles/globals.css"',
+        'import { GeistMono } from "geist/font/mono"',
+        'import { GeistSans } from "geist/font/sans"',
+        "export default function RootLayout({ children }) {",
+        '  return <html lang="en"><body className={cn("min-h-screen bg-background font-sans antialiased", GeistSans.variable, GeistMono.variable)}>{children}</body></html>;',
+        "}",
+      ].join("\n"),
+      "src/styles/globals.css": ":root { --background: 0 0% 100%; --radius: 0.5rem; }\n",
+      "tailwind.config.ts": [
+        'import { fontFamily } from "tailwindcss/defaultTheme"',
+        "export default {",
+        "  theme: {",
+        "    extend: {",
+        "      fontFamily: {",
+        '        sans: ["var(--font-geist-sans)", ...fontFamily.sans],',
+        '        mono: ["var(--font-geist-mono)", ...fontFamily.mono],',
+        '        heading: ["var(--font-heading)", ...fontFamily.sans],',
+        "      },",
+        "    },",
+        "  },",
+        "}",
+      ].join("\n"),
+    });
+
+    const result = await extractTheme(root);
+
+    expect(result.slots.fontFamily).toBe("Geist Sans, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji");
+    expect(result.matched["fontFamily"]).toBe("tailwind.config fontFamily.sans");
+    expect(result.needed).not.toContain("fontFamily");
+  });
+
+  it("vercel-commerce shape (3761e52e): Tailwind v4 + one applied geist font emits family + default tail", async () => {
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": [
+        'import { GeistSans } from "geist/font/sans";',
+        'import "./globals.css";',
+        "export default async function RootLayout({ children }) {",
+        '  return <html lang="en" className={GeistSans.variable}><body>{children}</body></html>;',
+        "}",
+      ].join("\n"),
+      "app/globals.css": '@import "tailwindcss";\n@plugin "@tailwindcss/typography";\n',
+    });
+
+    const result = await extractTheme(root);
+
+    expect(result.slots.fontFamily).toBe("Geist Sans, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji");
+    expect(result.needed).not.toContain("fontFamily");
+  });
+
+  it("umami shape (af1b6c6e): a single next/font family without Tailwind stays short — no invented tail", async () => {
+    const root = await fixture({
+      "package.json": "{}\n",
+      "src/app/layout.tsx": [
+        "import { Inter } from 'next/font/google';",
+        "import './global.css';",
+        "const inter = Inter({ subsets: ['latin'], display: 'swap', variable: '--font-inter' });",
+        "export default function ({ children }) {",
+        "  return <html lang=\"en\" className={`${inter.className} ${inter.variable}`}><body>{children}</body></html>;",
+        "}",
+      ].join("\n"),
+      "src/app/global.css": ":root { --base-color: #fafafa; }\n",
+    });
+
+    const result = await extractTheme(root);
+
+    expect(result.slots.fontFamily).toBe("Inter, sans-serif");
+    expect(result.matched["fontFamily"]).toBe("(next/font) Inter");
+  });
+
+  it("a CSS --font-sans whose refs are next/font variables resolves through the layout bindings", async () => {
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": [
+        'import { Outfit } from "next/font/google";',
+        'import "./globals.css";',
+        'const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });',
+        "export default function Layout({ children }) { return <html className={outfit.variable}><body>{children}</body></html>; }",
+      ].join("\n"),
+      "app/globals.css": ":root { --font-sans: var(--font-outfit), sans-serif; }\n",
+    });
+
+    const result = await extractTheme(root);
+
+    expect(result.slots.fontFamily).toBe("Outfit, sans-serif");
+    expect(result.matched["fontFamily"]).toBe("--font-sans (next/font vars)");
+  });
+
+  it("counter-example: an exact short --font-sans stays short — nothing is appended or expanded", async () => {
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": 'import "./globals.css";\nexport default function Layout({ children }) { return <html><body>{children}</body></html>; }\n',
+      "app/globals.css": ":root { --font-sans: Inter, sans-serif; }\n",
+    });
+
+    const result = await extractTheme(root);
+
+    expect(result.slots.fontFamily).toBe("Inter, sans-serif");
+    expect(result.matched["fontFamily"]).toBe("--font-sans");
+  });
+
+  it("counter-example: ambiguous font evidence leaves the slot to the staged pass", async () => {
+    const root = await fixture({
+      "package.json": "{}\n",
+      "app/layout.tsx": [
+        'import { Inter, Lora } from "next/font/google";',
+        'import "./globals.css";',
+        "const inter = Inter({});",
+        "const lora = Lora({});",
+        "export default function Layout({ children }) { return <html className={inter.className + lora.className}><body>{children}</body></html>; }",
+      ].join("\n"),
+      "app/globals.css": ":root { --border: #dedede; }\n",
+    });
+
+    const result = await extractTheme(root);
+
+    expect(result.needed).toContain("fontFamily");
+    expect(result.slots.fontFamily).toBe("system-ui, sans-serif");
   });
 });
 

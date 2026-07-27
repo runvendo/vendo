@@ -47,6 +47,16 @@ export interface LiveTurnOptions {
 const DOCTOR_PROBE_PROMPT =
   "This is a Vendo doctor health check. Reply in one short sentence confirming you can respond.";
 
+/** Terminal hardening for server-supplied error detail: strip C0 controls
+ *  (except \n and \t) and DEL so escape sequences can never drive the
+ *  operator's terminal, and cap the length so a runaway string can't flood
+ *  the verdict. */
+const ERROR_DETAIL_MAX = 300;
+// eslint-disable-next-line no-control-regex -- stripping control chars is the point
+const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+const sanitizeErrorDetail = (text: string): string =>
+  text.replace(CONTROL_CHARS, "").slice(0, ERROR_DETAIL_MAX);
+
 /** POST one seeded turn to the live wire and stream the reply — mirrors the
  *  init finale's route (`POST {base}/threads`, UI-message SSE frames). Exit 0
  *  means a user would have gotten an answer: a non-empty text reply arrived. */
@@ -118,12 +128,21 @@ async function readTurnStream(
       buffer = buffer.slice(frameEnd + 2);
       if (!frame.startsWith("data: ") || frame === "data: [DONE]") continue;
       try {
-        const part = JSON.parse(frame.slice("data: ".length)) as { type?: string; delta?: string };
+        const part = JSON.parse(frame.slice("data: ".length)) as { type?: string; delta?: string; errorText?: unknown };
         if (part.type === "text-delta" && typeof part.delta === "string") {
           text += part.delta;
           onDelta?.(part.delta);
         } else if (part.type === "error") {
-          error = "the turn returned an error frame";
+          // A "Vendo: "-prefixed errorText is the agent's OWN safe error
+          // (wireErrorMessage) — e.g. the pricing-v3 meter-exhausted refusal
+          // sentence — so doctor prints it, same as the thread banner, but
+          // terminal-hardened first: C0 controls stripped (a raw ESC must
+          // never drive the operator's terminal) and length-capped. Anything
+          // else keeps the generic line (ENG-214 posture); no new probes,
+          // this is the existing live-turn check.
+          error = typeof part.errorText === "string" && part.errorText.startsWith("Vendo: ")
+            ? sanitizeErrorDetail(part.errorText.slice("Vendo: ".length))
+            : "the turn returned an error frame";
         }
       } catch {
         // skip malformed frame

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { capturedPinBaselineSchema } from "@vendoai/actions";
 import {
   VENDO_APP_FORMAT,
+  VENDO_POLICY_FORMAT,
   VENDO_TREE_FORMAT_V2,
   VendoError,
   type AppDocument,
@@ -751,6 +752,72 @@ describe("09 §3 public wire", () => {
     const explicit = await compose({ connectors: [] });
     const explicitNames = (await explicit.actions.descriptors()).map((descriptor) => descriptor.name);
     expect(explicitNames).not.toContain("gmail_GMAIL_SEND_EMAIL");
+  });
+
+  it("connectorApps scopes the auto-composed cloud connector AND the connect catalog (criterion 9)", async () => {
+    // Same stub-console pattern as the connectors-seam test above: the wire
+    // serves a 3-toolkit catalog; the host scopes to gmail only.
+    const { createServer } = await import("node:http");
+    const stub = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://stub");
+      res.setHeader("content-type", "application/json");
+      if (url.pathname === "/api/v1/connections/catalog") {
+        res.end(JSON.stringify({ available: [
+          { toolkit: "gmail", connector: "composio", description: "Send and read email with Gmail" },
+          { toolkit: "slack", connector: "composio", description: "Post messages to Slack channels" },
+          { toolkit: "notion", connector: "composio", description: "Notion pages and databases" },
+        ] }));
+        return;
+      }
+      if (url.pathname === "/api/v1/tools") {
+        const toolkits = (url.searchParams.get("toolkits") ?? "").split(",").filter(Boolean);
+        res.end(JSON.stringify({ tools: toolkits.map((toolkit) => ({
+          slug: `${toolkit.toUpperCase()}_SEND_THING`,
+          toolkit,
+          description: `use ${toolkit}`,
+          inputParameters: { type: "object" },
+          tags: [],
+        })) }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end("{}");
+    });
+    await new Promise<void>((resolve) => stub.listen(0, "127.0.0.1", resolve));
+    const port = (stub.address() as { port: number }).port;
+    cleanups.push(async () => {
+      stub.close();
+      stub.closeAllConnections();
+    });
+    vi.stubEnv("VENDO_API_KEY", "vnd_test_key");
+    vi.stubEnv("VENDO_CLOUD_URL", `http://127.0.0.1:${port}`);
+
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-connector-apps-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: vi.fn(async () => principal),
+      store,
+      connectorApps: ["gmail"],
+    });
+    await vendo.handler(request("GET", "/status"));
+
+    // The executable surface holds exactly the scoped toolkit's tools.
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("gmail_GMAIL_SEND_THING");
+    expect(names.some((name) => name.startsWith("slack_") || name.startsWith("notion_"))).toBe(false);
+
+    // Discovery cannot reach outside the scope: an out-of-scope intent finds
+    // nothing to expand (index size == scoped set).
+    const matches = await vendo.actions.search("post a message to slack channels");
+    expect(matches.some((match) => match.name.startsWith("slack_"))).toBe(false);
+
+    // The connect dock's catalog stays in lockstep with the executable tools.
+    const catalogResponse = await vendo.handler(request("GET", "/connections/catalog"));
+    expect(catalogResponse.status).toBe(200);
+    const catalog = await catalogResponse.json() as { available: Array<{ toolkit: string }> };
+    expect(catalog.available.map((entry) => entry.toolkit)).toEqual(["gmail"]);
   });
 
   it("wires the Cloud share/publish client into the apps seam from VENDO_API_KEY (adapter rule)", async () => {
@@ -1727,7 +1794,7 @@ describe("app design rules (spec 2026-07-20)", () => {
     },
   }) as unknown as LanguageModel;
 
-  const APP_WIRE = '<App name="Design check"><Text text="ok"/></App>';
+  const APP_WIRE = '<App name="Design check"><Text text="ok"/><Disclaimer reason="Fixture app."/></App>';
   const flatPrompt = (prompt: Array<{ content: string | Array<{ text?: string }> }>): string =>
     prompt.map((message) => typeof message.content === "string"
       ? message.content
@@ -1821,11 +1888,14 @@ describe("app design rules (spec 2026-07-20)", () => {
     expect(sections.every((section) => section.startsWith("File rules: airy layouts."))).toBe(true);
   });
 
-  it("re-resolves cloud overrides semantics/domains per generation — a cold snapshot that warms is NOT locked (cse lane 3, #557 review)", async () => {
-    // The trap: a local tools.json contributes a DEFINED merge (domains here),
-    // so a boot-once memoize would lock the local-only result on the first
-    // (cold-snapshot) generation and drop cloud-owned overrides for the process
-    // lifetime. Live per-generation resolution picks up cloud on the next gen.
+  it("re-resolves cloud overrides semantics/domains per generation — merged live, not locked (cse lane 3, #557)", async () => {
+    // The trap: memoizing the semantics provider would lock its first result for
+    // the process lifetime. It must re-resolve per generation so both a local
+    // tools.json edit AND the cloud-owned overrides keep applying. NOTE (#557):
+    // enablement now resolves the overrides surface AUTHORITATIVELY on the first
+    // request (the generation's own descriptors() read awaits it), which also
+    // warms the shared config snapshot — so the cloud-owned domains are picked
+    // up as soon as the first generation, no longer only after a cold window.
     const root = await mkdtemp(join(tmpdir(), "vendo-cloud-overrides-"));
     await mkdir(join(root, ".vendo"), { recursive: true });
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
@@ -1842,15 +1912,9 @@ describe("app design rules (spec 2026-07-20)", () => {
     vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
     vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-overrides.test");
     const cloudOverrides = { format: "vendo/overrides@3", tools: {}, domains: { has: ["cloud_ledger"], hasNot: [] } };
-    // Gate the config fetch so the snapshot stays COLD through the first
-    // generation and warms only before the second — a deterministic cold start
-    // (an instant mock would race the generation's own awaits).
-    let releaseFetch = (): void => undefined;
-    const fetchGate = new Promise<void>((resolve) => { releaseFetch = resolve; });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/api/v1/config")) {
-        await fetchGate;
         return Response.json(
           { version: "rel_1", config: { "overrides.json": JSON.stringify(cloudOverrides) } },
           { headers: { etag: '"rel_1"' } },
@@ -1870,21 +1934,146 @@ describe("app design rules (spec 2026-07-20)", () => {
     const domainsLine = (all: string[]): string =>
       all.filter((p) => p.includes("DATA DOMAINS")).join("\n");
 
-    // First generation: cold snapshot (fetch gated) → local-only domains.
+    // First generation: local domains always apply; this generation's own
+    // descriptors() read also resolves the cloud-owned overrides (enablement,
+    // #557) and warms the shared config snapshot for what follows.
     await vendo.apps.create({ prompt: "Build a dashboard" }, ctx);
     expect(domainsLine(prompts)).toContain("local_ledger");
-    expect(domainsLine(prompts)).not.toContain("cloud_ledger");
 
-    // Release the config fetch and let it settle, then generate again.
-    releaseFetch();
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    // Edit the LOCAL tools.json and generate again: the change is reflected,
+    // proving the semantics provider is re-resolved live per generation (not
+    // memoized), and the cloud-owned overrides still merge in.
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [],
+      domains: { has: ["local_ledger_v2"], hasNot: [] },
+    }));
     prompts.length = 0;
     await vendo.apps.create({ prompt: "Build another dashboard" }, ctx);
 
-    // The SECOND generation reflects the cloud-owned overrides — proving the
-    // provider is re-resolved live, not locked on the cold first read.
+    expect(domainsLine(prompts)).toContain("local_ledger_v2");
     expect(domainsLine(prompts)).toContain("cloud_ledger");
-    expect(domainsLine(prompts)).toContain("local_ledger");
+  });
+});
+
+describe("#557 cloud overrides tool ENABLEMENT (disabled/audience)", () => {
+  const toolsFileV3 = (names: string[]) => ({
+    format: "vendo/tools@3",
+    tools: names.map((name) => ({
+      name,
+      description: name,
+      inputSchema: { type: "object" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: `/${name}`, argsIn: "query" },
+    })),
+  });
+  const overridesDoc = (tools: Record<string, unknown>) =>
+    JSON.stringify({ format: "vendo/overrides@3", tools });
+
+  async function composeWithCloud(options: {
+    tools: string[];
+    localOverrides?: unknown;
+    cloudConfigDoc?: Record<string, string> | null;
+    gate?: boolean;
+  }): Promise<{ vendo: Vendo; fetchMock: ReturnType<typeof vi.fn>; releaseFetch: () => void }> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-557-"));
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify(toolsFileV3(options.tools)));
+    if (options.localOverrides !== undefined) {
+      await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(options.localOverrides));
+    }
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    cleanups.push(async () => { process.chdir(originalCwd); await rm(root, { recursive: true, force: true }); });
+
+    vi.stubEnv("E2B_API_KEY", "");
+    vi.stubEnv("VENDO_API_KEY", "vnd_557_key");
+    vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-557.test");
+
+    let releaseFetch = (): void => undefined;
+    const gate = new Promise<void>((resolve) => { releaseFetch = resolve; });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/config")) {
+        if (options.gate) await gate;
+        return Response.json(
+          { version: "rel_1", config: options.cloudConfigDoc ?? null },
+          { headers: { etag: '"rel_1"' } },
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const store = await tempStore("vendo-557-store-");
+    await store.ensureSchema();
+    // connectors:[] avoids the cloud tools connector's descriptor fetch — the
+    // only config fetch under test is /api/v1/config (the overrides read).
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store, connectors: [] });
+    cleanups.push(async () => { await vendo.store.close(); });
+    return { vendo, fetchMock, releaseFetch };
+  }
+
+  it("constructs with a key WITHOUT any config fetch at compose (deferred missSurface — portability)", async () => {
+    const { fetchMock } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { disabled: true } }) },
+    });
+    // Nothing has served a tool yet, so no compose-time console I/O happened.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a cloud-published overrides.json disabling a tool removes it from the served surface", async () => {
+    const { vendo, fetchMock } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { disabled: true } }) },
+    });
+    const names = (await vendo.actions.descriptors()).map((d) => d.name).filter((n) => n.startsWith("host_")).sort();
+    expect(names).toEqual(["host_a"]);
+    expect(fetchMock).toHaveBeenCalled();
+    const outcome = await vendo.actions.execute({ id: "c1", tool: "host_b", args: {} }, ctx);
+    expect(outcome).toMatchObject({ status: "error", error: { code: "not-found" } });
+  });
+
+  it("NEVER serves a cloud-disabled tool on a cold first load — the first serve AWAITS the overrides fetch", async () => {
+    const { vendo, releaseFetch } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      gate: true,
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { disabled: true } }) },
+    });
+    // The very first serve must not resolve before the cloud overrides fetch
+    // does — no tool is exposed on a cold boot ahead of the override.
+    const pending = vendo.actions.descriptors();
+    const raced = await Promise.race([
+      pending.then(() => "resolved" as const),
+      new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 50)),
+    ]);
+    expect(raced).toBe("pending");
+    releaseFetch();
+    const names = (await pending).map((d) => d.name).filter((n) => n.startsWith("host_")).sort();
+    expect(names).toEqual(["host_a"]); // host_b never became live
+  });
+
+  it("narrows a tool's audience via cloud overrides (default MCP door drops non-end-user tools)", async () => {
+    const { vendo } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { audience: "internal" } }) },
+    });
+    const menu = await vendo.actions.surfaceMenu("mcp");
+    expect(menu).toContain("host_a");
+    expect(menu).not.toContain("host_b");
+  });
+
+  it("a local .vendo/overrides.json wins — enablement is decided from the file, not a cloud fetch", async () => {
+    const { vendo, fetchMock } = await composeWithCloud({
+      tools: ["host_a", "host_b"],
+      localOverrides: { format: "vendo/overrides@3", tools: { host_a: { disabled: true } } },
+      cloudConfigDoc: { "overrides.json": overridesDoc({ host_b: { disabled: true } }) },
+    });
+    const names = (await vendo.actions.descriptors()).map((d) => d.name).filter((n) => n.startsWith("host_")).sort();
+    // The LOCAL file decides (host_a disabled); the cloud doc is not consulted.
+    expect(names).toEqual(["host_b"]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -2047,7 +2236,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
               {
                 type: "text-delta",
                 id: "generation",
-                delta: '<Text text="Ready"/></Stack></App>',
+                delta: '<Text text="Ready"/><Disclaimer reason="Fixture app."/></Stack></App>',
               },
               { type: "text-end", id: "generation" },
               { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
@@ -2109,7 +2298,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
     expect(views.length).toBeGreaterThanOrEqual(3);
     expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }, { id: "stack-1" }] });
     expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
-    expect(views.at(-1)?.data.payload.nodes).toHaveLength(3);
+    expect(views.at(-1)?.data.payload.nodes).toHaveLength(4);
     expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
   });
 });
@@ -2170,6 +2359,169 @@ describe("ENG-252 agent.loadout through createVendo", () => {
     expect(toolNamesPerCall[0]).toContain("host_beta");
     expect(toolNamesPerCall[0]).not.toContain("host_alpha");
     expect(toolNamesPerCall[0]).toContain("vendo_tools_search");
+  });
+});
+
+describe("surfaces.agent through createVendo", () => {
+  /** A .vendo pair whose overrides curate the AGENT surface. */
+  async function curatedRoot(surfaces: unknown): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-surfaces-agent-"));
+    const previousCwd = process.cwd();
+    cleanups.push(async () => {
+      process.chdir(previousCwd);
+      await rm(root, { recursive: true, force: true });
+    });
+    await mkdir(join(root, ".vendo"));
+    const tool = (name: string, description: string) => ({
+      name,
+      description,
+      inputSchema: { type: "object" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: `/api/${name}`, argsIn: "query" },
+    });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [tool("host_listAccounts", "List accounts"), tool("host_exportLedger", "Export the raw ledger to CSV")],
+    }));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
+      format: "vendo/overrides@3",
+      tools: {},
+      ...(surfaces === undefined ? {} : { surfaces }),
+    }));
+    process.chdir(root);
+    return root;
+  }
+
+  function recordingModel(scripted: Array<"search" | "text">) {
+    const toolNamesPerCall: string[][] = [];
+    let call = 0;
+    return { toolNamesPerCall, model: async () => {
+      const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+      return new MockLanguageModelV3({
+        doStream: async (req) => {
+          toolNamesPerCall.push(((req as { tools?: Array<{ name: string }> }).tools ?? []).map((tool) => tool.name));
+          const step = scripted[Math.min(call, scripted.length - 1)] ?? "text";
+          call += 1;
+          const finish = {
+            type: "finish" as const,
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: step === "search" ? "tool-calls" as const : "stop" as const, raw: undefined },
+          };
+          return {
+            stream: simulateReadableStream({
+              chunks: step === "search"
+                ? [
+                  {
+                    type: "tool-call" as const,
+                    toolCallId: "call_search",
+                    toolName: "vendo_tools_search",
+                    input: JSON.stringify({ query: "export the raw ledger" }),
+                  },
+                  finish,
+                ]
+                : [
+                  { type: "text-start" as const, id: "t1" },
+                  { type: "text-delta" as const, id: "t1", delta: "Done." },
+                  { type: "text-end" as const, id: "t1" },
+                  finish,
+                ],
+            }),
+          };
+        },
+      });
+    } };
+  }
+
+  it("offers the agent only its curated menu — and never gates Vendo's own vendo_* tools", async () => {
+    await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
+    const store = await tempStore("vendo-surfaces-agent-store-");
+    const recorder = recordingModel(["text"]);
+    const vendo = createVendo({
+      model: await recorder.model() as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+    });
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_surface_agent",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
+    expect(recorder.toolNamesPerCall[0]).not.toContain("host_exportLedger");
+    expect(recorder.toolNamesPerCall[0]).toContain("vendo_tools_search");
+    // The registry itself is untouched — the door and the host's own code still
+    // see the whole surface; only what the AGENT is offered is curated.
+    expect((await vendo.actions.descriptors()).map((entry) => entry.name)).toContain("host_exportLedger");
+  });
+
+  it("never materializes an off-menu tool-search hit into a callable tool", async () => {
+    await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
+    const store = await tempStore("vendo-surfaces-agent-search-store-");
+    const recorder = recordingModel(["search", "text"]);
+    const vendo = createVendo({
+      model: await recorder.model() as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+    });
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_surface_search",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "export the raw ledger" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    // The model searched for the excluded tool by its exact description and the
+    // step AFTER the search still does not offer it.
+    expect(recorder.toolNamesPerCall.length).toBeGreaterThanOrEqual(2);
+    expect(recorder.toolNamesPerCall.at(-1)).not.toContain("host_exportLedger");
+  });
+
+  it("binds an explicit agent.loadout to the menu — host config chooses within it, never around it", async () => {
+    await curatedRoot({ agent: { tools: ["host_listAccounts"] } });
+    const store = await tempStore("vendo-surfaces-agent-loadout-store-");
+    const recorder = recordingModel(["text"]);
+    const vendo = createVendo({
+      model: await recorder.model() as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      // The host names BOTH tools in its explicit loadout; the menu still wins.
+      agent: { loadout: ["host_listAccounts", "host_exportLedger"] },
+    });
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_surface_loadout",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
+    expect(recorder.toolNamesPerCall[0]).not.toContain("host_exportLedger");
+    expect(recorder.toolNamesPerCall[0]).toContain("vendo_tools_search");
+  });
+
+  it("without a surfaces block the agent surface is unchanged", async () => {
+    await curatedRoot(undefined);
+    const store = await tempStore("vendo-surfaces-agent-none-store-");
+    const recorder = recordingModel(["text"]);
+    const vendo = createVendo({
+      model: await recorder.model() as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+    });
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_surface_none",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+
+    expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
+    expect(recorder.toolNamesPerCall[0]).toContain("host_exportLedger");
   });
 });
 
@@ -2866,6 +3218,401 @@ describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects 
     const reader = response.body!.getReader();
     while (!(await reader.read()).done) { /* drain */ }
     expect(await (await beat(vendo, "thr_done")).json()).toEqual({ active: false });
+  });
+});
+
+describe("unified try surface (Task 4) — profileDir + fetch seams", () => {
+  /** A minimal on-disk profile (tools.json + theme.json) in a temp root that
+   *  is NOT the process cwd — exactly the shape `npx vendo try` writes. */
+  async function tempProfile(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-dir-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [{
+        name: "host_invoices_list",
+        description: "GET /api/invoices",
+        inputSchema: { type: "object", properties: {}, additionalProperties: true },
+        risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+      }],
+    }));
+    await writeFile(join(root, ".vendo", "theme.json"), JSON.stringify({
+      colors: {
+        background: "#fff", surface: "#fff", text: "#111", muted: "#777",
+        accent: "#00f", accentText: "#fff", danger: "#f00", border: "#ddd",
+      },
+      typography: { fontFamily: "Inter", baseSize: "16px" },
+      radius: { small: "4px", medium: "8px", large: "16px" },
+      density: "comfortable",
+      motion: "reduced",
+    }));
+    return root;
+  }
+
+  it("reads the .vendo profile from profileDir, not the process cwd", async () => {
+    const root = await tempProfile();
+    const store = await tempStore("vendo-profile-dir-store-");
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+    });
+
+    // The cwd (this package) has no .vendo/, so the tool can only have come
+    // from the profileDir read.
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_invoices_list");
+  });
+
+  it("threads config.fetch into route-tool execution; the real network is never touched", async () => {
+    const root = await tempProfile();
+    const store = await tempStore("vendo-profile-fetch-store-");
+    vi.stubEnv("VENDO_BASE_URL", "https://host.example");
+    const syntheticFetch = vi.fn(async () => new Response(
+      JSON.stringify([{ id: "inv_1" }]),
+      { headers: { "content-type": "application/json" } },
+    ));
+    const realFetch = vi.fn(async () => { throw new Error("real network reached"); });
+    vi.stubGlobal("fetch", realFetch);
+
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+      fetch: syntheticFetch as unknown as typeof fetch,
+    });
+    const outcome = await vendo.actions.execute(
+      { id: "call_try_fetch", tool: "host_invoices_list", args: {} },
+      ctx,
+    );
+
+    expect(outcome).toEqual({ status: "ok", output: [{ id: "inv_1" }] });
+    expect(syntheticFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = syntheticFetch.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(String(url)).toBe("https://host.example/api/invoices");
+    expect(init.method).toBe("GET");
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("unified try surface (Task 15a) — in-memory profile", () => {
+  const profileTheme = {
+    colors: {
+      background: "#fff", surface: "#fff", text: "#111", muted: "#777",
+      accent: "#00f", accentText: "#fff", danger: "#f00", border: "#ddd",
+    },
+    typography: { fontFamily: "Inter", baseSize: "16px" },
+    radius: { small: "4px", medium: "8px", large: "16px" },
+    density: "comfortable" as const,
+    motion: "reduced" as const,
+  };
+
+  function profileTool(name: string) {
+    return {
+      name,
+      description: `GET tool ${name}`,
+      inputSchema: { type: "object", properties: {}, additionalProperties: true },
+      risk: "read" as const,
+      binding: { kind: "route" as const, method: "GET" as const, path: `/api/${name}`, argsIn: "query" as const },
+    };
+  }
+
+  /** Pin the cwd to an EMPTY temp dir so no `.vendo/` exists anywhere the
+   *  composition could read from — everything must come from `profile`. */
+  async function emptyCwd(): Promise<void> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-mem-"));
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    cleanups.push(async () => {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    });
+  }
+
+  /** A mock model that records every prompt it is streamed (the 03 §3 prompt
+   *  wiring test's capture, shared by the profile-seam tests below). */
+  async function promptCapture(): Promise<{
+    model: LanguageModel;
+    prompts: Array<Array<{ role: string; content: unknown }>>;
+  }> {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const prompts: Array<Array<{ role: string; content: unknown }>> = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        prompts.push(structuredClone(prompt) as never);
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "t1" },
+              { type: "text-delta", id: "t1", delta: "Hi." },
+              { type: "text-end", id: "t1" },
+              {
+                type: "finish",
+                usage: {
+                  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 0, text: 0, reasoning: 0 },
+                },
+                finishReason: { unified: "stop", raw: undefined },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    return { model: model as unknown as LanguageModel, prompts };
+  }
+
+  async function runTurn(vendo: Vendo, threadId: string): Promise<void> {
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId,
+      message: { id: `m_${threadId}`, role: "user", parts: [{ type: "text", text: "Hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+  }
+
+  function systemContent(prompts: Array<Array<{ role: string; content: unknown }>>): string {
+    const system = prompts[0]?.find((message) => message.role === "system");
+    expect(system).toBeDefined();
+    return typeof system!.content === "string" ? system!.content : JSON.stringify(system!.content);
+  }
+
+  /** A profileDir fixture carrying tools.json + theme.json + brief.md — the
+   *  disk half the precedence and equivalence tests below compose against.
+   *  The theme's fontFamily is distinctive so "came from the disk file" is
+   *  assertable in the system prompt's theme summary. */
+  async function diskProfile(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-disk-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [profileTool("host_from_disk")],
+    }));
+    await writeFile(join(root, ".vendo", "theme.json"), JSON.stringify({
+      ...profileTheme,
+      typography: { fontFamily: "Disk Grotesk", baseSize: "16px" },
+    }));
+    await writeFile(join(root, ".vendo", "brief.md"), "Disk brief for the profile seam.\n");
+    return root;
+  }
+
+  it("composes from ONLY the in-memory profile: tools + overrides list, brief and theme ride the system prompt", async () => {
+    await emptyCwd();
+    const store = await tempStore("vendo-profile-mem-store-");
+    const { model, prompts } = await promptCapture();
+
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      profile: {
+        tools: [profileTool("host_invoices_list"), profileTool("host_dangerous")],
+        overrides: { format: "vendo/overrides@3", tools: { host_dangerous: { disabled: true } } },
+        theme: profileTheme,
+        brief: "Maple is a neobank for freelancers.",
+      },
+    });
+
+    // The actions surface lists the in-memory tools with the in-memory
+    // overrides applied — nothing was ever read from disk.
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_invoices_list");
+    expect(names).not.toContain("host_dangerous");
+
+    // A wire turn works, and the system prompt carries the in-memory brief
+    // (Product section) plus the theme summary — where the server surfaces
+    // the theme to the model.
+    await runTurn(vendo, "thr_profile_mem");
+    const content = systemContent(prompts);
+    expect(content).toContain("Product\nMaple is a neobank for freelancers.");
+    expect(content).toContain("comfortable");
+    expect(content).toContain("Inter");
+  });
+
+  it("pieces are independent: in-memory profile.tools beat the profileDir tools.json while the unset theme + brief pieces are read from disk", async () => {
+    const root = await diskProfile();
+    const store = await tempStore("vendo-profile-prec-store-");
+    const { model, prompts } = await promptCapture();
+
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+      profile: { tools: [profileTool("host_in_memory")] },
+    });
+
+    // The in-memory tools piece wins over the profileDir tools.json…
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_in_memory");
+    expect(names).not.toContain("host_from_disk");
+
+    // …while the pieces the profile left UNSET still resolve from the
+    // profileDir files: the disk theme's distinctive fontFamily rides the
+    // system prompt's theme summary, and the disk brief rides Product.
+    await runTurn(vendo, "thr_profile_prec");
+    const content = systemContent(prompts);
+    expect(content).toContain("Disk Grotesk");
+    expect(content).toContain("Product\nDisk brief for the profile seam.");
+  });
+
+  it("workerd portability regression: profile.tools skips the tools.json disk read entirely (a malformed file there is never opened)", async () => {
+    // Reproduces the real-workerd failure class's PRIMARY fix: a supplied
+    // in-memory profile piece must make the disk leg never run at all.
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-workerd-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    // Malformed tools.json: if the actions registry ever opened this file,
+    // JSON.parse would throw and kill every turn. profile.tools IS supplied
+    // below, so the primary fix (skip-when-supplied) means it is never
+    // opened — proven by composing successfully despite the garbage bytes.
+    await writeFile(join(root, ".vendo", "tools.json"), "{ not valid json, must never be read");
+
+    const store = await tempStore("vendo-profile-workerd-store-");
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+      profile: { tools: [profileTool("host_in_memory")] },
+    });
+
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_in_memory");
+  });
+
+  it("a residual overrides.json read that hits a REAL fs error (EISDIR) fails CLOSED instead of silently going live", async () => {
+    // The other half of the fix is narrower than a blanket degrade:
+    // overrides.json absent is MORE permissive than present (a disabled
+    // tool or audience exclusion vanishes), so a present-but-unreadable file
+    // on a real filesystem must still throw, exactly like before the
+    // workerd fix — only ENOENT and workerd's code-less unenv failure
+    // degrade (registry.ts/host-files.ts). overrides.json here is a
+    // DIRECTORY, not a file — profile.overrides is left UNSET, so this is a
+    // residual read, and reading a directory throws Node's real EISDIR, a
+    // genuine fail-closed fs error class (not workerd's code-less shim).
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-eisdir-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [profileTool("host_from_disk")],
+    }));
+    await mkdir(join(root, ".vendo", "overrides.json"));
+
+    const store = await tempStore("vendo-profile-eisdir-store-");
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+    });
+
+    await expect(vendo.actions.descriptors()).rejects.toMatchObject({ name: "VendoError", code: "validation" });
+  });
+
+  it("unset equivalence: `profile` unset and `profile: {}` compose identical observable state", async () => {
+    const root = await diskProfile();
+
+    // The same minimal host, observed through the seam's outputs: the
+    // descriptor list, and the system prompt (brief + theme surface).
+    async function observe(profile?: CreateVendoConfig["profile"]): Promise<{ names: string[]; system: string }> {
+      const store = await tempStore("vendo-profile-equiv-store-");
+      const { model, prompts } = await promptCapture();
+      const vendo = createVendo({
+        model,
+        principal: async () => principal,
+        store,
+        profileDir: root,
+        ...(profile === undefined ? {} : { profile }),
+      });
+      const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name).sort();
+      await runTurn(vendo, "thr_profile_equiv");
+      return { names, system: systemContent(prompts) };
+    }
+
+    const unset = await observe();
+    const empty = await observe({});
+
+    // Pin the property directly: an empty profile changes NOTHING observable.
+    expect(empty.names).toEqual(unset.names);
+    expect(empty.system).toBe(unset.system);
+
+    // And the shared state is the real disk profile, not two empty surfaces.
+    expect(unset.names).toContain("host_from_disk");
+    expect(unset.system).toContain("Product\nDisk brief for the profile seam.");
+    expect(unset.system).toContain("Disk Grotesk");
+  });
+
+  it("profile.policy configures the guard in-memory: posture leaves \"unconfigured\" and a blocking rule actually enforces through guardedTools", async () => {
+    await emptyCwd();
+    const store = await tempStore("vendo-profile-policy-store-");
+
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profile: {
+        tools: [profileTool("host_invoices_list")],
+        policy: {
+          format: VENDO_POLICY_FORMAT,
+          directions: ["Hosted try venue demo policy, held in memory."],
+          rules: [{ match: { tool: "host_invoices_list" }, action: "block", note: "in-memory lockdown" }],
+        },
+      },
+    });
+    await vendo.store.ensureSchema();
+
+    // The posture the "running without a policy" banner reads: configured.
+    expect(vendo.guard.status().posture).toBe("rules");
+
+    // And it is a REAL policy, not a cosmetic posture flip — the rule blocks
+    // through guardedTools, the guard-bound path chat/apps/automations ride
+    // (mirrors the local venue's carried-policy enforcement test in
+    // cli/try/server.test.ts).
+    const outcome = await vendo.guardedTools.execute(
+      { id: "call_profile_policy", tool: "host_invoices_list", args: {} },
+      { principal, venue: "chat", presence: "present", sessionId: "session_profile_policy" },
+    );
+    expect(outcome).toMatchObject({ status: "blocked", reason: "in-memory lockdown" });
+  });
+
+  it("explicit config.policy wins over profile.policy, and an unset piece keeps the \"unconfigured\" posture", async () => {
+    await emptyCwd();
+
+    // Explicit wins: the in-memory piece runs everything, the explicit knob
+    // blocks — the block decides, so config.policy took precedence.
+    const explicit = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store: await tempStore("vendo-profile-policy-prec-"),
+      policy: { rules: [{ match: {}, action: "block", note: "explicit config wins" }] },
+      profile: {
+        tools: [profileTool("host_invoices_list")],
+        policy: { format: VENDO_POLICY_FORMAT, rules: [{ match: {}, action: "run" }] },
+      },
+    });
+    await explicit.store.ensureSchema();
+    const outcome = await explicit.guardedTools.execute(
+      { id: "call_profile_policy_prec", tool: "host_invoices_list", args: {} },
+      { principal, venue: "chat", presence: "present", sessionId: "session_profile_policy_prec" },
+    );
+    expect(outcome).toMatchObject({ status: "blocked", reason: "explicit config wins" });
+
+    // Unset piece → unchanged: no policy anywhere still reports the honest
+    // "unconfigured" posture.
+    const unset = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store: await tempStore("vendo-profile-policy-unset-"),
+      profile: { tools: [profileTool("host_invoices_list")] },
+    });
+    expect(unset.guard.status().posture).toBe("unconfigured");
   });
 });
 

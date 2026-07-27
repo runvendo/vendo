@@ -488,6 +488,52 @@
         }
       }
     },
+    "/api/demo/chips": {
+      "get": {
+        "operationId": "listDemoChips",
+        "summary": "Demo control: the signed-in user's pre-generated \"try this\" chip prompts. Empty until chip pre-generation has run for this user.",
+        "responses": {
+          "200": {
+            "description": "The chip manifest (key + prompt per chip)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "chips": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "prompt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "prompt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "chips"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/demo/simulate/upload": {
       "post": {
         "operationId": "simulateClientUpload",

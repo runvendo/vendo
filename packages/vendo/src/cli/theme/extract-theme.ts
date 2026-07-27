@@ -4,6 +4,7 @@ import { z } from "zod";
 import { contrastingText, normalizeColor, normalizeLength, resolveCssVarRefs } from "./color.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
 import { ENTRY_FILE_CANDIDATES } from "./entry-candidates.js";
+import { deriveBodyFontStack } from "./font-stack.js";
 import { walk } from "./walk.js";
 
 /**
@@ -251,6 +252,8 @@ function lastLightDecl(vars: CssVarDecl[], names: string[]): CssVarDecl | undefi
 function normalizeFontStack(value: string): string {
   // Quotes are optional CSS syntax around family names, not identity: "Outfit"
   // and Outfit are the same family (unquoted multi-word names are valid too).
+  // The stack itself is preserved in full — every source-declared fallback
+  // entry stays; only a stack with no generic at all gets `sans-serif`.
   const stack = value.split(",")
     .map((part) => part.trim().replace(/^(["'])(.*)\1$/, "$2").trim())
     .filter(Boolean)
@@ -408,6 +411,26 @@ export async function extractTheme(targetDir: string): Promise<ThemeSummary> {
   const context = await gatherContext(targetDir);
   const vars: CssVarDecl[] = context.css.flatMap((file) => parseCssVars(file.content, file.path));
   const exact = readExact(vars);
+  // No CSS `--font-sans`: the body stack may still be deterministically
+  // derivable from the Tailwind config / next/font conventions (font-stack.ts)
+  // — same exact-read status, so the staged model pass never re-guesses it.
+  if (exact.values.fontFamily === undefined) {
+    const declaredSans = lastLightDecl(vars, ["--font-sans"]);
+    const derived = deriveBodyFontStack({
+      layout: context.layout?.content ?? null,
+      tailwindConfig: context.tailwindConfig?.content ?? null,
+      cssText: context.css.map((file) => file.content).join("\n"),
+      resolveCssVar: (name) => {
+        const decl = lastLightDecl(vars, [name]);
+        return decl === undefined ? null : resolveCssVarRefs(decl.value, vars);
+      },
+      ...(declaredSans === undefined ? {} : { cssFontSans: declaredSans.value }),
+    });
+    if (derived !== null && isSafeFontStack(derived.value)) {
+      exact.values.fontFamily = normalizeFontStack(derived.value);
+      exact.matched.fontFamily = derived.provenance;
+    }
+  }
   const needed = SLOT_KEYS.filter((slot) => exact.values[slot] === undefined);
   const { slots, matched, defaulted } = assembleTheme(exact.values, exact.matched, {});
 

@@ -65,3 +65,9 @@ body {
    beneath the generated view (same consent surface as the chat path). */
 .cadence-approval-inflow .fl-approval { animation: cadence-approval-in 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes cadence-approval-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* demo-refresh Part 6: Cadence ships FOUR scenario starter cards; the chrome's
+   landing panel is sized for one card row (min(360px, 80vh)) and clips the
+   wrapped second row. Give the landing room for both rows (!important beats
+   the runtime-injected chrome stylesheet, which loads after this file). */
+.fl-overlay-panel:has(.fl-landing) { height: min(472px, 80vh) !important; }

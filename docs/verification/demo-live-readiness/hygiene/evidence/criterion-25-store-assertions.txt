@@ -1,0 +1,15 @@
+manifest entries: 5
+subs: appId=app_335b2be1-2205-40f8-8c49-be2a0e118ca5 subject=vendo-demo name="Subscriptions Tracker" ui=tree treeNodes=8 treeQueries=2 fixture=false
+dining: appId=app_690c1b63-dab1-4d04-9d43-ff9e8d1d895c subject=vendo-demo name="Dining Budget Breakdown" ui=tree treeNodes=10 treeQueries=2 fixture=false
+bills: appId=app_abdea7e2-9180-40f2-a267-7b4b0ab88852 subject=vendo-demo name="Bills due next week" ui=tree treeNodes=7 treeQueries=1 fixture=false
+goal: appId=app_fe635db1-5498-4527-99e0-2abc844fbe0f subject=vendo-demo name="Lisbon Trip Savings Tracker" ui=tree treeNodes=4 treeQueries=0 fixture=false
+cards: appId=app_28311d1d-19dd-4721-bf2b-6c029dc4542e subject=vendo-demo name="Card spending breakdown" ui=tree treeNodes=9 treeQueries=2 fixture=false
+PASS: all 5 chip apps are real pipeline-generated store rows
+
+manifest entries: 5
+deadlines: appId=app_dd994c07-3e3a-4e8f-92b1-87c7074814fd subject=8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01 name="Deadlines hitting next week" ui=tree treeNodes=6 treeQueries=0 fixture=false
+quiet: appId=app_8d469a0c-2fd8-4efb-94b3-d843f9299dc6 subject=8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01 name="Clients gone quiet" ui=tree treeNodes=7 treeQueries=0 fixture=false
+turnaround: appId=app_0173b1ca-9ef6-4af6-8825-71d88a000d1e subject=8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01 name="Document turnaround tracker" ui=tree treeNodes=16 treeQueries=2 fixture=false
+onepager: appId=app_7882e554-edb7-4493-9375-053c39825403 subject=8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01 name="Client status" ui=tree treeNodes=12 treeQueries=1 fixture=false
+workload: appId=app_17eff7a2-9ebf-4cf7-8d2f-b0f0dcbaeb19 subject=8d0158a1-bf6c-4e32-9dc4-8b17c1e14a01 name="Team Workload This Month" ui=tree treeNodes=29 treeQueries=2 fixture=false
+PASS: all 5 chip apps are real pipeline-generated store rows

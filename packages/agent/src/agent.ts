@@ -2,6 +2,8 @@ import {
   VENDO_APP_BUILD_FAILED_PREFIX,
   VENDO_APPS_CREATE_TOOL,
   VendoError,
+  formatMeterExhausted,
+  meterExhaustedFromError,
   toVendoWirePart,
   type AgentRunner,
   type ApprovalId,
@@ -9,6 +11,8 @@ import {
   type RunContext,
   type StoreAdapter,
   type ThreadId,
+  type ToolCall,
+  type ToolOutcome,
   type ToolRegistry,
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
@@ -116,6 +120,11 @@ interface AgentConfig {
    *  rest through search; searched-in tools execute through the same guard-bound
    *  registry as any initially-enabled tool. */
   toolSearch?: ToolSearchConfig;
+  /** Discovery-discipline 2026-07-25: a pre-guard short-circuit. A non-undefined
+   *  outcome (the umbrella wires the connect gate's check) means the call will
+   *  not run — needsApproval must NOT consult the guard (no approval minted);
+   *  execute() returns the outcome from the (gate-wrapped) registry instead. */
+  preflight?: (call: ToolCall, ctx: RunContext) => Promise<ToolOutcome | undefined>;
 }
 
 // Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
@@ -370,6 +379,17 @@ function wireErrorMessage(error: unknown): string {
     const { message, code } = error as { message: string; code: string };
     return `Vendo: ${message} (${code})`;
   }
+  // Pricing v3 (spec §5): the Cloud model gateway's meter refusal reaches this
+  // gate as a provider APICallError (statusCode 402, the structured refusal as
+  // its response body), never as a VendoError. Only OUR formatter's sentence —
+  // meter, figures, reset date, the two exits, all from the parsed structured
+  // fields — travels; the raw body/provider internals still never do, so the
+  // ENG-214 policy holds. The refusal body is the only source of truth (no
+  // client-side entitlement checks); any other 402 stays the generic string.
+  const refusal = meterExhaustedFromError(error);
+  if (refusal !== undefined) {
+    return `Vendo: ${formatMeterExhausted(refusal)} (cloud-required)`;
+  }
   return "An error occurred while generating the response.";
 }
 
@@ -430,6 +450,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
         input.ctx,
         config.system,
         config.capabilityMiss !== undefined,
+        config.toolSearch !== undefined,
       );
 
       const stream = createUIMessageStream<UIMessage>({
@@ -458,6 +479,17 @@ export function createAgent(config: AgentConfig): VendoAgent {
               seedNames = undefined;
             }
           }
+          // The host's curated surface menu, resolved beside the seed. A failure
+          // degrades to unrestricted (the composition seam owns the warning);
+          // an empty menu is a real answer and must not read as "unrestricted".
+          let menuNames: readonly string[] | undefined;
+          if (config.toolSearch?.menu !== undefined) {
+            try {
+              menuNames = await config.toolSearch.menu(input.ctx);
+            } catch {
+              menuNames = undefined;
+            }
+          }
           const bridgeOptions = {
             registry: config.tools,
             guard: config.guard,
@@ -465,6 +497,9 @@ export function createAgent(config: AgentConfig): VendoAgent {
             writer,
             toolOutputCap: config.context?.toolOutputCap,
             ...(missDetector === undefined ? {} : { onCall: missDetector.onCall }),
+            ...(config.preflight === undefined ? {} : { preflight: config.preflight }),
+            // Fresh per turn: one connect card per unconnected service.
+            connectCards: new Set<string>(),
           };
           const tools = await buildAgentTools(bridgeOptions);
           missDetector?.attach(tools);
@@ -475,6 +510,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
                 descriptors: await config.tools.descriptors(),
                 loaded: loadedFor(thread.id),
                 ...(seedNames === undefined ? {} : { seedNames }),
+                ...(menuNames === undefined ? {} : { menuNames }),
                 // Search hits expanded mid-turn resolve to full descriptors and
                 // materialize into the LIVE toolset — prepareStep re-reads the
                 // active names each step, so they are callable next step.

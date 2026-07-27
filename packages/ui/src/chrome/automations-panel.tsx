@@ -6,8 +6,8 @@ import { useAutomations } from "../hooks/use-automations.js";
 import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 import { formatAuditTime } from "./activity-semantics.js";
 import { ApprovalCard } from "./approval-card.js";
+import { automationFlow } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { humanizeToolName } from "./humanize.js";
 
 const ENABLE_CELEBRATION_MS = 3_100;
 const REDUCED_ENABLE_CELEBRATION_MS = 900;
@@ -92,47 +92,10 @@ function nextRunLabel(trigger: Trigger | undefined, lastStartedAt: string | unde
   return null;
 }
 
-function triggerLabel(trigger: Trigger): { title: string; sub: string } {
-  const source = trigger.on;
-  if (source.kind === "schedule") {
-    if (source.every) return { title: `Every ${source.every}`, sub: "Schedule" };
-    if (source.at) return { title: source.at, sub: "Scheduled once" };
-    return { title: source.cron ?? "Scheduled", sub: "Schedule" };
-  }
-  if (source.kind === "external") {
-    return { title: humanizeToolName(source.event), sub: humanizeToolName(source.connector) };
-  }
-  return { title: humanizeToolName(source.event), sub: "Host event" };
-}
-
-function automationFlow(trigger: Trigger | undefined): {
-  trigger: { title: string; sub: string };
-  action: { title: string; sub: string };
-} | undefined {
-  if (!trigger) return undefined;
-  if (trigger.run.kind === "agentic") {
-    const prompt = trigger.run.prompt.trim();
-    if (!prompt) return undefined;
-    return {
-      trigger: triggerLabel(trigger),
-      action: {
-        title: prompt.length > 68 ? `${prompt.slice(0, 67).trimEnd()}…` : prompt,
-        sub: "Agent run",
-      },
-    };
-  }
-  const firstStep = trigger.run.steps[0];
-  if (!firstStep) return undefined;
-  return {
-    trigger: triggerLabel(trigger),
-    action: {
-      title: humanizeToolName(firstStep.tool),
-      sub: trigger.run.steps.length === 1 ? "1 action" : `${trigger.run.steps.length} steps`,
-    },
-  };
-}
-
-/** 08-ui §4; 07-automations §5 — controls, grant capture, previews, history, kill switch. */
+/** 08-ui §4; 07-automations §5 — controls, grant capture, previews, history, kill switch.
+    The trigger/flow labels (triggerLabel, automationFlow) moved to
+    automation-card.tsx (2026-07 demo feedback), shared with the read-only
+    in-thread AutomationCard. */
 export function AutomationsPanel() {
   const automations = useAutomations();
   const approvals = useApprovals();

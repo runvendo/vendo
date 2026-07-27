@@ -8,15 +8,21 @@
  * otherwise the original document ships.
  */
 import {
-  compileWireV2,
   compileWirePatchV2,
   printWireV2,
   isPathBinding,
   isStateBinding,
   type TreeV2,
-  type WireCompileResult,
 } from "@vendoai/core";
 import type { GeneratedAppDocument, PipelineContext } from "../engine.js";
+import {
+  buildRebindSchema,
+  deriveRebindSlots,
+  NO_VALID_FIX,
+  rebindChoices,
+  strictToolCall,
+} from "./repair.js";
+import { recompile } from "../wire-options.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -111,18 +117,9 @@ export const extractEdit = (text: string): string => {
   return close === -1 ? text.slice(start) : text.slice(start, close + closeTag.length);
 };
 
-/** Re-print then re-compile a patched/spliced tree so it goes back through
- *  the ONE create validator exactly as model wire would. */
-export const recompile = (
-  base: { tree: TreeV2; components: Record<string, string>; name?: string },
-  context: PipelineContext,
-): WireCompileResult => compileWireV2(
-  printWireV2(base, { includeIds: false }),
-  {
-    hostComponents: [...context.hostComponents],
-    ...(context.deps.toolShapes === undefined ? {} : { toolShapes: context.deps.toolShapes }),
-  },
-);
+// recompile moved to ../wire-options.js (it belongs with the compile options
+// it applies); re-exported so existing importers keep their path.
+export { recompile };
 
 /** The end pass. Runs only under the `endPass` flag (the default flips when
  *  the A/B earns it); a patch survives only if it compiles clean, applies at
@@ -212,10 +209,73 @@ export const dataDigest = (data: Record<string, unknown>, capBytes = 6000): stri
   return digest.length > capBytes ? `${digest.slice(0, capBytes)}\n… (digest truncated)` : digest;
 };
 
+/** How many bindings one verify pass may repoint. Deliberately small: a
+ *  rebind is surgery, and an app needing more than two is a generation
+ *  failure the verify pass must not paper over. */
+const REBIND_CAP = 2;
+
+const REBIND_SYSTEM = `You verify Vendo apps against the ACTUAL data their queries returned. For each listed binding, keep it (answer ${NO_VALID_FIX}) unless the resolved value contradicts the node's label or the user's ask — a label claiming "total", "all accounts", or "this week" bound to a single row's value, a swapped series, a wrong-category field. Then choose the field path whose value makes the claim true. Every answer comes from that binding's enum; there is no other fix.`;
+
+/** The rebind arm of the data-sighted verify (pipeline.rebind, default OFF).
+ *  Re-gate 2026-07-26: wrong-data-binding is the top model-error class in
+ *  every arm, and the copy-only pass — which ran on every B/C create and
+ *  applied 15 patches — caught NONE of them: a relabel can make a lying
+ *  label honest but cannot point a binding at the right field.
+ *
+ *  Built from structured repair's parts: ONE strict tool call over the
+ *  closed fix space (deriveRebindSlots/buildRebindSchema — enums of real,
+ *  kind-compatible field paths plus the keep arm). NO free-text binding edit
+ *  exists on this path: the model only picks enum values, the splice is
+ *  deterministic, and the rebound tree recompiles and re-validates in full.
+ *  Any failure — a failed call, an out-of-enum answer (the whole patch
+ *  drops, never clamps), more than REBIND_CAP rebinds, a validation miss —
+ *  returns undefined and the incoming document ships unchanged. */
+const rebindPass = async (
+  document: GeneratedAppDocument,
+  userRequest: string,
+  resolvedData: Record<string, unknown>,
+  context: PipelineContext,
+): Promise<{ document: GeneratedAppDocument; rebinds: number } | undefined> => {
+  const { deps } = context;
+  const base = {
+    tree: structuredClone(document.tree) as unknown as TreeV2,
+    components: { ...(document.components ?? {}) },
+    name: document.name,
+  };
+  const slots = deriveRebindSlots(base.tree, deps, resolvedData);
+  if (slots.length === 0) return undefined;
+  const wire = printWireV2(base, { includeIds: true });
+  const chosen = await strictToolCall(
+    deps,
+    "rebind_bindings",
+    "For each listed binding choose the correct field path from its closed enum, or the no-valid-fix arm to keep the current binding.",
+    buildRebindSchema(slots),
+    REBIND_SYSTEM,
+    `USER_ASK: ${userRequest}\nCURRENT_APP (wire markup; id attributes are your anchors):\n${wire}\nACTUAL data the queries returned (trimmed sample; top-level keys are query names — a field path /query/field points into that query's value):\n${dataDigest(resolvedData)}`,
+  );
+  if (chosen === undefined) return undefined;
+  const picks = rebindChoices(slots, chosen);
+  if (picks === undefined || picks.length === 0 || picks.length > REBIND_CAP) return undefined;
+  const nodes = new Map(base.tree.nodes.map((node) => [node.id, node]));
+  for (const pick of picks) {
+    const bound = nodes.get(pick.nodeId)?.props?.[pick.prop];
+    if (!isPathBinding(bound) || bound.$path !== pick.from) return undefined;
+    // Only $path moves; $reshape and friends ride along unchanged (the kind
+    // filter kept the delivered kind, so the reshape still applies).
+    (bound as { $path: string }).$path = pick.to;
+  }
+  const validated = await context.validate(recompile(base, context));
+  if (validated.document === undefined) return undefined;
+  return { document: validated.document, rebinds: picks.length };
+};
+
 /** The data-sighted verification pass. Same survival gauntlet as the end
  *  pass — compile clean, ≤4 ops, copy-only structural guard, full
  *  revalidation — so it structurally cannot break the app; the only new
- *  input is the resolved data digest. The caller owns the flag decision. */
+ *  input is the resolved data digest. Under `pipeline.rebind` the strict
+ *  rebind arm runs FIRST (see rebindPass) so the copy pass then relabels
+ *  against the corrected bindings; the resolved data stays valid either way
+ *  because neither arm may touch queries. The caller owns the flag decision. */
 export const dataSightedVerify = async (
   document: GeneratedAppDocument,
   userRequest: string,
@@ -224,15 +284,25 @@ export const dataSightedVerify = async (
 ): Promise<GeneratedAppDocument> => {
   const { deps } = context;
   const startedAtMs = Date.now();
+  let relabels = 0;
+  let rebinds = 0;
+  let working = document;
   const finish = (verified: GeneratedAppDocument): GeneratedAppDocument => {
-    deps.onPipeline?.({ stage: "data-verify", applied: verified !== document, ms: Date.now() - startedAtMs });
+    deps.onPipeline?.({ stage: "data-verify", applied: verified !== document, relabels, rebinds, ms: Date.now() - startedAtMs });
     return verified;
   };
   try {
+    if (deps.pipeline?.rebind === true) {
+      const rebound = await rebindPass(document, userRequest, resolvedData, context);
+      if (rebound !== undefined) {
+        working = rebound.document;
+        rebinds = rebound.rebinds;
+      }
+    }
     const base = {
-      tree: structuredClone(document.tree) as unknown as TreeV2,
-      components: { ...(document.components ?? {}) },
-      name: document.name,
+      tree: structuredClone(working.tree) as unknown as TreeV2,
+      components: { ...(working.components ?? {}) },
+      name: working.name,
     };
     const wire = printWireV2(base, { includeIds: true });
     const model = deps.paint?.model ?? deps.model;
@@ -248,18 +318,20 @@ export const dataSightedVerify = async (
       hostComponents: [...context.hostComponents],
       ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
     });
-    if (!patched.complete || patched.issues.length > 0 || patched.bindingErrors.length > 0) return finish(document);
-    if (patched.appliedOps === 0 || patched.appliedOps > 4 || patched.extensionOps.length > 0) return finish(document);
+    if (!patched.complete || patched.issues.length > 0 || patched.bindingErrors.length > 0) return finish(working);
+    if (patched.appliedOps === 0 || patched.appliedOps > 4 || patched.extensionOps.length > 0) return finish(working);
     if (endPassViolations(base.tree, patched.tree, base.components, patched.components).length > 0) {
-      return finish(document);
+      return finish(working);
     }
     const validated = await context.validate(recompile({
       tree: patched.tree,
       components: patched.components,
       ...(patched.name === undefined ? {} : { name: patched.name }),
     }, context));
-    return finish(validated.document ?? document);
+    if (validated.document === undefined) return finish(working);
+    relabels = patched.appliedOps;
+    return finish(validated.document);
   } catch {
-    return finish(document);
+    return finish(working);
   }
 };

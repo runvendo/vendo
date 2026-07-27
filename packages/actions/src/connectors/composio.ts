@@ -1,4 +1,4 @@
-import { VendoError, type RunContext, type ToolCall, type ToolDescriptor, type ToolOutcome } from "@vendoai/core";
+import { debugConnectorHttp, VendoError, type RunContext, type ToolCall, type ToolDescriptor, type ToolOutcome } from "@vendoai/core";
 import type { Connector, ConnectorAccount, ConnectorAccountIdentity, ConnectorCatalogEntry, ToolkitIndexEntry } from "./connector.js";
 import { composioToolRisk } from "./composio-risk.js";
 import { normalizeToolName } from "./names.js";
@@ -107,6 +107,7 @@ export function composioConnector(config: {
   ): Promise<{ ok: boolean; status: number; payload: unknown }> {
     const url = new URL(`${baseUrl}${path}`);
     for (const [key, value] of Object.entries(options.query ?? {})) url.searchParams.set(key, value);
+    debugConnectorHttp("composio", options.method ?? "GET", path);
     const response = await fetch(url, {
       method: options.method ?? "GET",
       headers: {
@@ -292,6 +293,10 @@ export function composioConnector(config: {
   return {
     name: "composio",
 
+    // Feeds the pre-guard connect check: every Composio tool runs on a
+    // per-user connected account.
+    toolkitOf: (tool) => normalizedToRaw.get(tool)?.toolkit,
+
     discoveryIndex: () => (indexPromise ??= buildIndex()),
 
     async expandToolkits(toolkits: string[]): Promise<boolean> {
@@ -336,6 +341,10 @@ export function composioConnector(config: {
           : undefined;
         descriptors.push({
           name,
+          // The connectable toolkit gating this tool's usefulness (01-core §4
+          // `ToolDescriptor.toolkit`): downstream seams skip work for
+          // unconnected toolkits (the apps runtime's create-time shape probes).
+          toolkit,
           description: typeof item.description === "string" ? item.description : raw,
           inputSchema:
             item.input_parameters && typeof item.input_parameters === "object" && !Array.isArray(item.input_parameters)

@@ -1,6 +1,7 @@
 import {
   VENDO_APP_REF_KIND,
   VendoError,
+  effectiveAppBuildUiDeadlineMs,
   parseVendoToolEnvelope,
   type ApprovalDecision,
   type ToolOutcome,
@@ -30,9 +31,12 @@ import { LONG_TEXT_CAP, truncateHead } from "./truncate.js";
 
 /** While the build streams the wire has nothing to serve yet, so the embed
  *  polls open(); a build that never lands resolves to the failed vocabulary
- *  instead of an eternal beat. */
+ *  instead of an eternal beat. The cutoff derives from the ONE shared
+ *  build-deadline constant (@vendoai/core, speed-core lane) and strictly
+ *  exceeds the server build watchdog, so the watchdog's terminal record —
+ *  with its honest reason and retry affordance — always lands first. */
 const APP_POLL_MS = 1200;
-const APP_BUILD_DEADLINE_MS = 5 * 60_000;
+const APP_BUILD_DEADLINE_MS = effectiveAppBuildUiDeadlineMs();
 /** 0.4.5 E2E cert (defect D) — the wire client has no fetch timeout, so one
  *  hung open() used to freeze the self-scheduling poll (and with it the
  *  deadline check) forever. Each poll races this cap; a timed-out poll keeps
@@ -215,8 +219,16 @@ export function VendoApprovalEmbed({ refValue }: VendoApprovalEmbedProps) {
 export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
   const { client, components } = useVendoContext();
   const { appId, title } = refValue;
+  // Retry (criterion 8, speed-core): a retryable terminal failure re-issues
+  // the create; the fresh build gets its own id, so the poll loop keys on
+  // activeAppId rather than the ref's original.
+  const [activeAppId, setActiveAppId] = useState(appId);
   const [surface, setSurface] = useState<OpenSurface>();
-  const [failed, setFailed] = useState<{ reason: string; retryable?: boolean }>();
+  const [failed, setFailed] = useState<{ reason: string; retryable?: boolean; prompt?: string }>();
+
+  useEffect(() => {
+    setActiveAppId(appId);
+  }, [appId]);
 
   useEffect(() => {
     setSurface(undefined);
@@ -225,7 +237,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     let cancelled = false;
     let done = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const resolveFailed = (failure: { reason: string; retryable?: boolean }): void => {
+    const resolveFailed = (failure: { reason: string; retryable?: boolean; prompt?: string }): void => {
       done = true;
       setFailed(failure);
     };
@@ -253,7 +265,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
     // beat into the failed vocabulary.
     const attempt = async () => {
       try {
-        const next = await withPollTimeout(client.apps.open(appId, { pending: true }), APP_OPEN_TIMEOUT_MS);
+        const next = await withPollTimeout(client.apps.open(activeAppId, { pending: true }), APP_OPEN_TIMEOUT_MS);
         if (cancelled || done) return;
         // A terminal build failure resolves the embed PROMPTLY with its
         // reason — the same in-place resolution a denied/expired approval
@@ -262,6 +274,7 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
           resolveFailed({
             reason: next.reason,
             ...(next.retryable === undefined ? {} : { retryable: next.retryable }),
+            ...(next.prompt === undefined ? {} : { prompt: next.prompt }),
           });
           return;
         }
@@ -288,7 +301,25 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
       clearTimeout(deadlineTimer);
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [client, appId]);
+  }, [client, activeAppId]);
+
+  // Re-issue the create: the persisted prompt when the failed record carries
+  // it (the exact original request), else the ref title (a capped collapse of
+  // the prompt — all older records offer). The building beat returns while
+  // the create runs; the fresh app id re-arms the poll loop above.
+  const retry = useCallback(async () => {
+    const prompt = failed?.prompt ?? title;
+    setSurface(undefined);
+    setFailed(undefined);
+    try {
+      const created = await client.apps.create({ prompt });
+      setActiveAppId(created.id);
+    } catch (reason) {
+      // The retried build failed too: back to the failed vocabulary with the
+      // button still armed — never a silent blank.
+      setFailed({ reason: asError(reason).message, retryable: true, prompt });
+    }
+  }, [client, failed, title]);
 
   const building = surface === undefined && failed === undefined;
   return (
@@ -309,14 +340,21 @@ export function VendoAppEmbed({ refValue }: VendoAppEmbedProps) {
             <AppFrame
               surface={surface}
               components={components}
-              onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})}
+              // Actions bind to the app actually being SHOWN: after a retry
+              // that is the replacement build's id, never the original failed
+              // record (checker F5).
+              onAction={({ action, payload }) => client.apps.call(activeAppId, action, payload ?? {})}
             />
           ) : failed !== undefined ? (
             <>
               <BeatLine state="error">{title} — couldn't finish</BeatLine>
               <div className="fl-approval-more">{failed.reason}</div>
               {failed.retryable === true && (
-                <div className="fl-approval-more">Retryable — ask for the app again to rebuild it.</div>
+                <div className="fl-approval-actions">
+                  <button className="fl-btn fl-btn-primary" type="button" onClick={() => void retry()}>
+                    Try again
+                  </button>
+                </div>
               )}
             </>
           ) : (

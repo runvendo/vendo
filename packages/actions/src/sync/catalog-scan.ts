@@ -4,6 +4,7 @@ import type { JsonSchema } from "@vendoai/core";
 import type tsTypes from "typescript";
 import type { CatalogEntry } from "../formats.js";
 import { walk } from "./common.js";
+import { COMPILER_FLOOR, noteRejectedCompiler, unsupportedCompiler } from "./compiler-gate.js";
 import { parseModule, resolveIdentifier, zodFromExpression, type FileModule, type StaticExtraction } from "./static-ts.js";
 
 let ts: typeof tsTypes;
@@ -651,6 +652,16 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
     return {
       entries: [],
       warnings: [`component catalog scan skipped: TypeScript compiler unavailable; install typescript for sync-time extraction (${error instanceof Error ? error.message : String(error)})`],
+      discovered: 0,
+      registered: 0,
+    };
+  }
+  const tooOld = unsupportedCompiler(ts);
+  if (tooOld !== null) {
+    noteRejectedCompiler(tooOld);
+    return {
+      entries: [],
+      warnings: [`component catalog scan skipped: host typescript ${tooOld.version} is older than the >=${COMPILER_FLOOR} extraction floor`],
       discovered: 0,
       registered: 0,
     };

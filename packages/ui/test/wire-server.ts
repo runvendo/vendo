@@ -226,7 +226,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // #492 — apps whose build turn terminally FAILED: a flagged open poll
     // answers {kind:"failed"} with the reason (the record exists as a failure),
     // so the embed resolves promptly instead of spinning to its deadline.
-    failedApps: new Map<string, { reason: string; retryable?: boolean }>(),
+    failedApps: new Map<string, { reason: string; retryable?: boolean; prompt?: string }>(),
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
@@ -368,6 +368,82 @@ export async function createWireServer(options: WireServerOptions = {}) {
           const hangResponse = createUIMessageStreamResponse({ stream: hangChunks });
           hangResponse.headers.set("x-vendo-thread-id", threadId);
           await sendFetchResponse(hangResponse, response);
+          return;
+        }
+        if (sentText.includes("[tool-after-text]")) {
+          // Demo-latency lane — a turn that streams prose FIRST, then starts a
+          // tool call and holds while it "executes": the shape of an agent turn
+          // that narrates a plan and then works through host tools. The live
+          // activity affordance (status ribbon) must narrate the running call
+          // even though visible text already exists in the turn (the observed
+          // dead-air class). Gated on threadReplyGate, then the call completes
+          // and the turn closes with text.
+          const toolAfterTextChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_tool_after_text",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_plan" });
+              writer.write({ type: "text-delta", id: "text_plan", delta: "Here is the plan — pulling your data now." });
+              writer.write({ type: "text-end", id: "text_plan" });
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_after_text",
+                toolName: "host_list_transactions",
+                input: {},
+                dynamic: true,
+              });
+              await state.threadReplyGate;
+              writer.write({
+                type: "tool-output-available",
+                toolCallId: "call_after_text",
+                output: { rows: [] },
+                dynamic: true,
+              } as UIMessageChunk);
+              writer.write({ type: "text-start", id: "text_done" });
+              writer.write({ type: "text-delta", id: "text_done", delta: "All done." });
+              writer.write({ type: "text-end", id: "text_done" });
+            },
+          });
+          const toolAfterTextResponse = createUIMessageStreamResponse({ stream: toolAfterTextChunks });
+          toolAfterTextResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(toolAfterTextResponse, response);
+          return;
+        }
+        if (sentText.includes("[settled-gap]")) {
+          // 2026-07 loading-state audit — the between-steps gap: prose has
+          // streamed AND the tool call has fully settled, but the turn is
+          // still busy (the model deciding its next step). Nothing used to
+          // narrate this moment; the quiet Working ribbon must hold the floor
+          // until the closing text arrives (gated on threadReplyGate).
+          const settledGapChunks = createUIMessageStream<UIMessage>({
+            originalMessages: [input.message],
+            generateId: () => "msg_assistant_settled_gap",
+            execute: async ({ writer }) => {
+              writer.write({ type: "text-start", id: "text_plan" });
+              writer.write({ type: "text-delta", id: "text_plan", delta: "Here is the plan — pulling your data now." });
+              writer.write({ type: "text-end", id: "text_plan" });
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: "call_settled_gap",
+                toolName: "host_list_transactions",
+                input: {},
+                dynamic: true,
+              });
+              writer.write({
+                type: "tool-output-available",
+                toolCallId: "call_settled_gap",
+                output: { rows: [] },
+                dynamic: true,
+              } as UIMessageChunk);
+              await state.threadReplyGate;
+              writer.write({ type: "text-start", id: "text_done" });
+              writer.write({ type: "text-delta", id: "text_done", delta: "All done." });
+              writer.write({ type: "text-end", id: "text_done" });
+            },
+          });
+          const settledGapResponse = createUIMessageStreamResponse({ stream: settledGapChunks });
+          settledGapResponse.headers.set("x-vendo-thread-id", threadId);
+          await sendFetchResponse(settledGapResponse, response);
           return;
         }
         if (sentText.includes("[stream-long]")) {
@@ -558,7 +634,18 @@ export async function createWireServer(options: WireServerOptions = {}) {
       }
       if (url.pathname === "/apps" && method === "GET") return json(response, state.apps);
       if (url.pathname === "/apps" && method === "POST") {
-        const created = app(`app_${state.apps.length + 1}`, (parsedBody as { prompt: string }).prompt);
+        const prompt = (parsedBody as { prompt: string }).prompt;
+        const created = app(`app_${state.apps.length + 1}`, prompt);
+        // speed-core F5 — a prompt tagged [with-button] builds an app whose
+        // root is an action-bound Button, so embed tests can click THROUGH
+        // the served app and assert which app id the call targets.
+        if (prompt.includes("[with-button]")) {
+          created.tree = {
+            formatVersion: "vendo-genui/v2",
+            root: "root",
+            nodes: [{ id: "root", component: "Button", props: { label: "Refresh data", onClick: { $action: "host_refresh" } } }],
+          } as AppDocument["tree"];
+        }
         state.apps.push(created);
         return json(response, created);
       }
@@ -601,7 +688,12 @@ export async function createWireServer(options: WireServerOptions = {}) {
           // record exists), so the embed shows the reason promptly.
           if (action === "open" && method === "GET" && state.failedApps.has(id)) {
             const failure = state.failedApps.get(id)!;
-            return json(response, { kind: "failed", reason: failure.reason, ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }) });
+            return json(response, {
+              kind: "failed",
+              reason: failure.reason,
+              ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
+              ...(failure.prompt === undefined ? {} : { prompt: failure.prompt }),
+            });
           }
           // The real wire's flag-gated build-window answer: a flagged open
           // poll gets a quiet 200 pending envelope instead of the 404.

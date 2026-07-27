@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedCatalog } from "@vendoai/core";
-import { sampleFromShape, smokeRenderIslands } from "./generation/validation/smoke-render.js";
+import { isWorkerLoadablePath, resolveWorkerModulePaths, sampleFromShape, smokeRenderIslands } from "./generation/validation/smoke-render.js";
 import { modelEngine } from "./engine.js";
 import { scriptedLanguageModel, type ScriptedModelCall } from "./testing/index.js";
 
@@ -82,6 +82,77 @@ export default function ClientList() {
   );
 }
 `;
+
+describe("isWorkerLoadablePath", () => {
+  it("accepts absolute filesystem paths and rejects bundler externals wrappers", () => {
+    // Live 2026-07-23 — under a Turbopack dev server, createRequire().resolve
+    // returns an externals WRAPPER id instead of throwing; passing it to the
+    // worker's plain require failed EVERY island-bearing app with a fake
+    // island-crash issue. Wrappers must route to the next resolver / skip.
+    expect(isWorkerLoadablePath("/Users/dev/app/node_modules/jsdom/lib/api.js")).toBe(true);
+    expect(isWorkerLoadablePath("C:\\dev\\app\\node_modules\\jsdom\\lib\\api.js")).toBe(true);
+    expect(isWorkerLoadablePath("[externals]/jsdom [external] (jsdom, cjs)")).toBe(false);
+    expect(isWorkerLoadablePath("jsdom")).toBe(false);
+  });
+
+  it("rejects NON-STRING resolve results — the Turbopack production numeric module id", () => {
+    // Rematch gate 2026-07-25 (docs/eval/runs/2026-07-25-rematch): under a
+    // Turbopack-bundled `next start` server, createRequire().resolve("react")
+    // returned Turbopack's NUMERIC module id (constant 429302 on both hosts);
+    // require(429302) in the worker crashed EVERY island-bearing app and
+    // 65/90 creates were refused. A non-string is never a loadable path.
+    expect(isWorkerLoadablePath(429302)).toBe(false);
+    expect(isWorkerLoadablePath(undefined)).toBe(false);
+    expect(isWorkerLoadablePath(null)).toBe(false);
+    expect(isWorkerLoadablePath({ id: "/real/path.js" })).toBe(false);
+  });
+});
+
+describe("resolveWorkerModulePaths", () => {
+  const absolute = (specifier: string): string => `/repo/node_modules/${specifier}/index.js`;
+
+  it("treats a resolver returning Turbopack numeric module ids as environment-unresolvable (gate skips, never a refusal)", () => {
+    // The 2026-07-25 rematch signature: every specifier resolves to the same
+    // bundler-internal number. No resolver qualifies → undefined → the gate
+    // skips per the esbuild precedent instead of refusing every island.
+    expect(resolveWorkerModulePaths([() => ({ resolve: () => 429302 })])).toBeUndefined();
+  });
+
+  it("falls through a numeric-id resolver to one returning real absolute paths", () => {
+    const paths = resolveWorkerModulePaths([
+      () => ({ resolve: () => 429302 }),
+      () => ({ resolve: absolute }),
+    ]);
+    expect(paths).toEqual({
+      react: absolute("react"),
+      reactDom: absolute("react-dom"),
+      reactDomClient: absolute("react-dom/client"),
+      jsdom: absolute("jsdom"),
+    });
+  });
+
+  it("rejects a resolver where ANY single specifier resolves non-string or to a wrapper id", () => {
+    const oneNumeric = (specifier: string): unknown => (specifier === "jsdom" ? 429302 : absolute(specifier));
+    expect(resolveWorkerModulePaths([() => ({ resolve: oneNumeric })])).toBeUndefined();
+    const oneWrapper = (specifier: string): unknown =>
+      (specifier === "jsdom" ? "[externals]/jsdom [external] (jsdom, cjs)" : absolute(specifier));
+    expect(resolveWorkerModulePaths([() => ({ resolve: oneWrapper })])).toBeUndefined();
+  });
+
+  it("treats throwing resolvers (and an empty resolver list) as environment-unresolvable", () => {
+    const throwing = (): { resolve: (specifier: string) => unknown } => ({
+      resolve: () => { throw new Error("Cannot find module"); },
+    });
+    expect(resolveWorkerModulePaths([throwing])).toBeUndefined();
+    expect(resolveWorkerModulePaths([throwing, () => ({ resolve: absolute })])).toEqual({
+      react: absolute("react"),
+      reactDom: absolute("react-dom"),
+      reactDomClient: absolute("react-dom/client"),
+      jsdom: absolute("jsdom"),
+    });
+    expect(resolveWorkerModulePaths([])).toBeUndefined();
+  });
+});
 
 describe("smokeRenderIslands", () => {
   it("fails an island calling useState inside a .map with a teaching message", async () => {

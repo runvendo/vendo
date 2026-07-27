@@ -1,7 +1,12 @@
 -- Cadence's two seeded demo users. The uuids are pinned and MUST match
 -- src/server/users.ts: offline JWT verification, actAs claims, and this seed
 -- all agree on the same Supabase user ids. Both users share the demo
--- password "cadence-demo" (hashed here; GoTrue verifies it on login).
+-- password (hashed here; GoTrue verifies it on login) whose single source of
+-- truth is cadenceDemoPassword() in src/server/users.ts — the 'cadence-demo'
+-- literals below must match its default.
+--
+-- The seed CONVERGES: re-applying over a drifted row (changed password or
+-- email) repairs it — `do nothing` would leave the drift in place forever.
 
 insert into auth.users (
   instance_id,
@@ -50,7 +55,10 @@ values
     now(),
     '', '', '', '', ''
   )
-on conflict (id) do nothing;
+on conflict (id) do update set
+  encrypted_password = excluded.encrypted_password,
+  email = excluded.email,
+  updated_at = now();
 
 insert into auth.identities (
   id,
@@ -83,4 +91,6 @@ values
     now(),
     now()
   )
-on conflict (provider_id, provider) do nothing;
+on conflict (provider_id, provider) do update set
+  identity_data = excluded.identity_data,
+  updated_at = now();

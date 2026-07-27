@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-26T00:00:00.000Z",
+  "toleranceRationale": "Calibrated from the lexical engine's first honest run over the fixture corpus at K7 landing (2026-07-26), measured on the NATURAL questions (real engines never see memoryQuery): recall@5 0.100, mrr 0.055 (chat 0.139/0.082, deep 0.125/0.042, schema 0/0). Bars sit at those measured values rounded down to three decimals — floors, not targets: they exist so lexical retrieval can only improve, and they document how weak the baseline genuinely is (raw unnormalized term-frequency scoring lets long common-token documents dominate natural-question queries, and schema-intent exact lookup honestly matches nothing for question-shaped text). NOTE: the refusal layer is RED for this engine at baseline (off-corpus questions still return lexical junk hits, so the shipped zero-hits weakness policy answers them) — that is a hard failure by design and is why the per-PR CI workflow runs the memory engine only; wire lexical into a scheduled row once the engine or tool policy refuses honestly. Raising or lowering any bar requires a PR editing this file with a one-line justification.",
+  "bars": {
+    "recall@5": 0.1,
+    "mrr": 0.054,
+    "recall@5.chat": 0.138,
+    "mrr.chat": 0.081,
+    "recall@5.deep": 0.125,
+    "mrr.deep": 0.041,
+    "recall@5.schema": 0,
+    "mrr.schema": 0
+  }
+}

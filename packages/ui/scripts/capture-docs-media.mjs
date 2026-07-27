@@ -1,7 +1,7 @@
 // docs-site UI-section media: hero screenshots + signature motion loops.
 //
 // Sources:
-//   - the built `vendo playground` bundle (packages/vendo/dist) for the real
+//   - the built playground bundle (packages/vendo/dist) for the real
 //     product surfaces incl. the theme editor — `?embed=1#<scenario>` renders
 //     one surface alone on the light porcelain page;
 //   - the packages/ui e2e vite harness for the two surfaces the playground

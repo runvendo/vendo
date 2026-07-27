@@ -65,7 +65,14 @@ export interface ToolConsequence {
   post: string;
 }
 
-export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta): ToolPresentation {
+export function toolPresentation(
+  name: string,
+  args?: unknown,
+  meta?: ToolMeta,
+  /** The descriptor's authored label, when the caller has the descriptor
+      (approval surfaces do; a bare tool beat does not). */
+  descriptorTitle?: string,
+): ToolPresentation {
   const toolkit = toolkitFromToolName(name);
   const logoUrl = toolkit ? toolkitLogoUrl(toolkit) : undefined;
   const flat = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
@@ -74,7 +81,7 @@ export function toolPresentation(name: string, args?: unknown, meta?: ToolMeta):
     : typeof flat.schedule === "string" ? flat.schedule
     : undefined;
   const eyebrow = trigger ? "Automation · needs your approval" : "Needs your approval";
-  const title = toolTitle(name, meta);
+  const title = toolTitle(name, meta, descriptorTitle);
 
   let description = meta?.description;
   let sub: string | undefined;
@@ -157,6 +164,32 @@ export function StatusRibbon({ part, stepIndex, stepTotal, risk = "read" }: {
       </span>
       {elapsed >= 0.1 ? <span className="fl-ribbon-time" aria-hidden="true">{elapsed.toFixed(1)}s</span> : null}
       {stepTotal > 1 ? <span className="fl-ribbon-count">step {stepIndex} of {stepTotal}</span> : null}
+    </div>
+  );
+}
+
+/** 2026-07 loading-state audit — the between-steps voice. The StatusRibbon
+    narrates a LIVE tool part; but a busy turn also has quieter moments with
+    no live part and no streaming text (the model deciding the next step
+    after its prose settled, the gap between one settled call and the next
+    input-start). Those used to show nothing. This is the same ribbon shell
+    with a generic label and its own elapsed clock (reset per mount), so
+    every waiting moment keeps a calm, specific voice. */
+export function WorkingRibbon({ label = "Working" }: { label?: string }) {
+  const startRef = useRef(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = setInterval(() => {
+      setElapsed((Date.now() - startRef.current) / 1000);
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="fl-ribbon fl-ribbon--working" role="status" aria-live="polite">
+      <span className="fl-beat-orb" aria-hidden="true" />
+      <span className="fl-ribbon-label">{label}&hellip;</span>
+      {elapsed >= 0.1 ? <span className="fl-ribbon-time" aria-hidden="true">{elapsed.toFixed(1)}s</span> : null}
     </div>
   );
 }

@@ -46,15 +46,19 @@ function displayName(option: ConnectorOption): string {
   return toolkitDisplayName(option.toolkit);
 }
 
-/** The dock button in the composer row. Renders nothing when the effective
-    catalog is empty — an explicit `connectors={[]}`, or an auto catalog that
-    resolved to nothing. The inner component owns the /connections fetch, so a
-    thread whose catalog is empty never polls accounts; auto mode costs one
-    shared /connections/catalog read (useConnectorCatalog). */
+/** The dock button in the composer row. Hidden only when the host explicitly
+    passed `connectors={[]}` ("no connectors, ever") or while the auto catalog
+    is still in flight (no flash). An auto catalog that FAILED or resolved to
+    nothing keeps the button (2026-07 demo feedback — the dock used to vanish
+    whenever /connections wasn't configured): the tray owns the honest
+    error/empty state instead. The inner component owns the /connections
+    fetch, so a hidden dock never polls accounts; auto mode costs one shared
+    /connections/catalog read (useConnectorCatalog). */
 export const ConnectDockButton = forwardRef<HTMLButtonElement, { open: boolean; onToggle(): void }>(
   function ConnectDockButton(props, ref) {
-    const { options, resolved } = useConnectorCatalog();
-    if (!resolved || options.length === 0) return null;
+    const { options, resolved, explicit } = useConnectorCatalog();
+    if (!resolved) return null;
+    if (explicit && options.length === 0) return null;
     return <DockButtonInner {...props} buttonRef={ref} />;
   },
 );
@@ -111,7 +115,7 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
   closing?: boolean;
 }) {
   const { client } = useVendoContext();
-  const { options: connectors } = useConnectorCatalog();
+  const { options: connectors, resolved, failed, retry } = useConnectorCatalog();
   const { connections, refresh } = useConnections();
   const [query, setQuery] = useState("");
   const [connecting, setConnecting] = useState<string>();
@@ -297,8 +301,25 @@ export function ConnectTray({ onClose, anchorRef, closing = false }: {
             <ul className="fl-picker-grid" style={{ listStyle: "none", margin: 0 }}>{rows.available.map(item)}</ul>
           </>
         ) : null}
-        {rows.connected.length === 0 && rows.available.length === 0 ? (
-          <div className="fl-auto-sub" role="status">No matching tools</div>
+        {failed ? (
+          // The auto catalog fetch failed — say so and offer a retry (the
+          // dock button no longer hides on this; connected accounts above
+          // stay listed, the /connections read is independent).
+          <div className="fl-auto-sub" role="status">
+            Couldn&rsquo;t load the available tools.{" "}
+            <button type="button" className="fl-more" onClick={retry}>Try again</button>
+          </div>
+        ) : rows.connected.length === 0 && rows.available.length === 0 ? (
+          // The honest empty voice, in order of specificity: a search that
+          // matched nothing, the catalog still in flight, and a catalog that
+          // genuinely has nothing to offer yet.
+          query.length > 0 ? (
+            <div className="fl-auto-sub" role="status">No matching tools</div>
+          ) : !resolved ? (
+            <div className="fl-auto-sub" role="status">Loading available tools&hellip;</div>
+          ) : (
+            <div className="fl-auto-sub" role="status">No tools are available to connect yet.</div>
+          )
         ) : null}
       </div>
     </div>

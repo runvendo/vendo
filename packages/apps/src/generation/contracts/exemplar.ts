@@ -54,8 +54,8 @@ export const CONTRACT_EXEMPLARS: ReadonlyArray<{ title: string; request: string;
       <Stat label="Invoices overdue" value={acme_getReceivables({}).overdueCount}/>
       <Stat label="Oldest due" value={acme_getReceivables({}).oldestDueDate} format="date"/>
     </Row>
-    <DataTable rows={acme_listInvoices({status:"overdue"}).data} sortBy="dueDate asc" searchable columns={[{key:"clientName",label:"Client"},{key:"amountCents",label:"Amount",format:"money",align:"end"},{key:"dueDate",label:"Due",format:"date"},{key:"status",label:"Status"}]} emptyState="No overdue invoices — nothing to chase."/>
-    <Button label="Send reminder for the most overdue" onClick={{action:"acme_sendReminder", payload:{invoiceId: acme_listInvoices({status:"overdue"}).data.0.id}}}/>
+    <DataTable rows={acme_listInvoices({status:"overdue"})} sortBy="dueDate asc" searchable columns={[{key:"clientName",label:"Client"},{key:"amountCents",label:"Amount",format:"money",align:"end"},{key:"dueDate",label:"Due",format:"date"},{key:"status",label:"Status"}]} emptyState="No overdue invoices — nothing to chase."/>
+    <Button label="Send reminder for the most overdue" onClick={{action:"acme_sendReminder", payload:{invoiceId: acme_listInvoices({status:"overdue"}).0.id}}}/>
     <BarChart data={acme_getReceivables({}).byMonth} xKey="month" series={["overdueCents"]} format="money" emptyState="No history to chart yet."/>
   </Stack>
 </App>`,
@@ -70,7 +70,7 @@ export default function PayInvoicePanel() {
   const [invoices, setInvoices] = useState([]);
   const [invoiceId, setInvoiceId] = useState("");
   const [phase, setPhase] = useState("idle");
-  useEffect(() => { tools.acme_listInvoices({ status: "open" }).then((r) => setInvoices(r.data ?? [])); }, []);
+  useEffect(() => { tools.acme_listInvoices({ status: "open" }).then((r) => setInvoices(Array.isArray(r) ? r : [])); }, []);
   const pay = async () => {
     setPhase("sending");
     const result = await tools.acme_payInvoice({ invoiceId });
@@ -92,7 +92,7 @@ export default function PayInvoicePanel() {
 }
     </Island>
     <PayInvoicePanel/>
-    <DataTable rows={acme_listInvoices({status:"open"}).data} columns={[{key:"clientName",label:"Client"},{key:"amountCents",label:"Amount",format:"money",align:"end"},{key:"dueDate",label:"Due",format:"date"}]} emptyState="No open invoices."/>
+    <DataTable rows={acme_listInvoices({status:"open"})} columns={[{key:"clientName",label:"Client"},{key:"amountCents",label:"Amount",format:"money",align:"end"},{key:"dueDate",label:"Due",format:"date"}]} emptyState="No open invoices."/>
     <Disclaimer title="Autopay isn't available" reason="No tool on this host manages autopay, so it can't be set up here. Any open invoice can be paid above."/>
   </Stack>
 </App>`,
@@ -103,16 +103,16 @@ export default function PayInvoicePanel() {
   wire: `<App name="Latest invoice">
   <Stack gap={5}>
     <Row gap={3}>
-      <Text variant="heading" text={acme_listInvoices({}).data.0.clientName}/>
-      <EnumBadge value={acme_listInvoices({}).data.0.status}/>
+      <Text variant="heading" text={acme_listInvoices({}).0.clientName}/>
+      <EnumBadge value={acme_listInvoices({}).0.status}/>
     </Row>
     <Row gap={4}>
-      <Stat label="Amount" value={acme_listInvoices({}).data.0.amountCents} format="money"/>
-      <Stat label="Due" value={acme_listInvoices({}).data.0.dueDate} format="date"/>
-      <Stat label="Invoice #" value={acme_listInvoices({}).data.0.number}/>
+      <Stat label="Amount" value={acme_listInvoices({}).0.amountCents} format="money"/>
+      <Stat label="Due" value={acme_listInvoices({}).0.dueDate} format="date"/>
+      <Stat label="Invoice #" value={acme_listInvoices({}).0.number}/>
     </Row>
-    <DataTable rows={acme_listInvoices({}).data.0.lineItems} columns={[{key:"description",label:"Item"},{key:"amountCents",label:"Amount",format:"money",align:"end"}]} emptyState="No line items on this invoice."/>
-    <Button label="Send reminder" onClick={{action:"acme_sendReminder", payload:{invoiceId: acme_listInvoices({}).data.0.id}}}/>
+    <DataTable rows={acme_listInvoices({}).0.lineItems} columns={[{key:"description",label:"Item"},{key:"amountCents",label:"Amount",format:"money",align:"end"}]} emptyState="No line items on this invoice."/>
+    <Button label="Send reminder" onClick={{action:"acme_sendReminder", payload:{invoiceId: acme_listInvoices({}).0.id}}}/>
   </Stack>
 </App>`,
   why: "A detail page, not a dashboard: identity first (name + live status), the facts row, then the record's contents. Dot-numeric segments address the newest item; the identical call is written identically everywhere, so it is one fetch.",
@@ -132,7 +132,7 @@ Work in this order:
 6. Design the gaps. Empty is not missing: when a tool provides the right data but it may come back empty (a fresh account, zero rows yet), emit the requested component anyway, bound to that tool — every Kit component renders a designed empty state, and a written emptyState with a next step beats a blank region. Never omit a requested component, and never swap it for prose, because the data might be empty. A part of the ask NO tool can serve is different: build the parts that are feasible, give an infeasible action a plain Disclaimer where its control would have appeared (never a dead control), and explain missing DATA once — a single <Callout title="About this view"> as the last section — never prose inside a Stat or tile-sized node, never a scatter of per-tile notes. A static, self-contained utility ask (calculator, converter, reference card) needs no host data at all: build it as an island with local logic.
 7. Choose charts by what the data says. Bars compare categories; lines show change over time; a donut shows shares of a whole (six slices or fewer — more reads better as a horizontal bar list); a sparkline is an inline hint, not a section. One chart per fact — never two visualizations of the same numbers.
 8. Restraint is the brand. Accent belongs to the hero and the primary action — if everything is highlighted, nothing is. Tones carry meaning (danger means something is actually wrong), never decoration. Whitespace separates sections; it is structure, not waste.
-9. Keep the details quiet. Right-align money and numbers in tables. Sentence case for labels and titles. Human-form timestamps unless the ask is an audit trail.
+9. Keep the details quiet. Right-align money and numbers in tables. Sentence case for labels and titles. Human-form timestamps unless the ask is an audit trail. No emojis, ever — not in titles, labels, copy, or island text; an icon need is met with a plain glyph or nothing.
 10. Wear the host's brand. Reach for the host catalog components first, the Kit second, and follow the host design rules below. The bar: the app looks like the host shipped it.
 </building_great_apps>`;
 
@@ -145,14 +145,14 @@ const exemplarPrinciples = `<principles>
 
 const exemplarGrammar = (): string => `<wire_grammar>
 - One <App name="..."> contains the whole app. name is the app's display title — at most ${APP_NAME_MAX_CHARS} characters, human and specific ("Overdue invoices"), never the ask echoed back. Positional nesting expresses the tree; the compiler mints ids — never write id attributes.
-- Data binds inline: rows={host_listInvoices({limit:20}).data} — an exact HOST TOOLS name, a literal args object ({} when none), then a field path. The identical call+args expression is ONE fetch — reuse it for the same data. <Query id="name" tool="..." input={{...}}/> declarations (bound as {name.field.path}) also work.
-- The field path goes through the tool's response envelope exactly as TOOL RESPONSE SHAPES declares it — when a shape shows {data: {...}}, the path is host_getClient({id:"..."}).data.name, never a guessed top-level field.
-- A binding is one call plus a plain field path — components handle computation, sorting, and formatting. Address list items with dot-numeric segments: {host_listAccounts({}).data.0.name}. A binding may end with one bounded | op(...) pipe; the common need is display format on a legacy text slot: value={x.dueDate | format(date)} — Kit components format themselves and never need it, and cents money always rides the Kit (<Money cents={...}/>, a format:"money" column), never a legacy slot.
+- Data binds inline: rows={host_listInvoices({limit:20})} — an exact HOST TOOLS name, a literal args object ({} when none), then a field path (empty when the tool's result IS the rows). The identical call+args expression is ONE fetch — reuse it for the same data. <Query id="name" tool="..." input={{...}}/> declarations (bound as {name.field.path}) also work.
+- The field path goes through the tool's response shape EXACTLY as TOOL RESPONSE SHAPES declares it — never assumed. A tool shown as "X[]" IS the rows: bind the call with no property first, never a guessed ".data"/".items"/".rows". Only when a shape shows a named field (e.g. {data: {...}}) does the path go through it: host_getClient({id:"..."}).data.name.
+- A binding is one call plus a plain field path — components handle computation, sorting, and formatting. Address list items with dot-numeric segments straight off the shape: {host_listAccounts({}).0.name} when the shape is an array, or {host_getPortfolio({}).accounts.0.name} when the shape names an "accounts" field. A binding may end with one bounded | op(...) pipe; the common need is display format on a legacy text slot: value={x.dueDate | format(date)} — Kit components format themselves and never need it, and cents money always rides the Kit (<Money cents={...}/>, a format:"money" column), never a legacy slot.
 - Args are literal JSON: a call's input never comes from another call's result. For a dependent lookup, use an <Island> with ambient tools.
-- Actions are on* attributes naming a host tool, with the context they act on bound into payload: onClick={{action:"host_sendReminder", payload:{invoiceId: host_listInvoices({}).data.0.id}}}.
+- Actions are on* attributes naming a host tool, with the context they act on bound into payload: onClick={{action:"host_sendReminder", payload:{invoiceId: host_listInvoices({}).0.id}}} (host_listInvoices' shape is an array; path through a named field instead when the shape has one).
 - <Island name="PascalName"> holds TSX with an export default component, rendered in a sandboxed frame and referenced as <PascalName/>. Already in scope (write no imports): React and its hooks, the entire Kit (${ISLAND_AMBIENT_KIT_NAMES.join(", ")}), and fmt helpers (fmt.money(cents), fmt.dateTime(iso), fmt.percent(ratio), fmt.num(n)).
 - Host catalog components render on the host page — use them as tree nodes. An island's sandbox has only the ambient Kit: inside island source, the Kit equivalent is the correct choice (a host component name there can never render).
-- Islands read and act ONLY through the ambient tools API — await tools.host_listInvoices({}), the tool name as a literal member access, args matching the tool's (input: …) sketch. There is no network. A mutating call resolves {status:"pending-approval"} and its effect lands after the user approves — render an awaiting-approval state. A labeled field whose value is empty renders an em dash (—) in the value position — never a bare label with nothing after it. Empty data must not crash an island: default every list before use (const rows = result.data ?? []) and never .map/.length a possibly-undefined value.
+- Islands read and act ONLY through the ambient tools API — await tools.host_listInvoices({}), the tool name as a literal member access, args matching the tool's (input: …) sketch. There is no network. A read tool resolves with the tool's output EXACTLY as TOOL RESPONSE SHAPES shows it — a tool shaped "X[]" resolves the array itself, not a {data:[...]} wrapper. A mutating call resolves {status:"pending-approval"} and its effect lands after the user approves — render an awaiting-approval state. A labeled field whose value is empty renders an em dash (—) in the value position — never a bare label with nothing after it. Empty data must not crash an island: default every list before use (const rows = Array.isArray(result) ? result : [], or the same Array.isArray guard on result.<field> when the shape names a field) and never .map/.length a value that might not be an array.
 - A chart belongs in the Kit chart (BarChart, LineChart, DonutChart, Sparkline, Progress), never a hand-rolled island — the Kit charts draw a designed empty frame on empty data for free.
 - Island styling (until the utility sheet ships): inline styles over the host tokens — var(--vendo-color-background|surface|text|muted|accent|accent-text|danger|border), var(--vendo-font-family), var(--vendo-radius-small|medium|large). The frame sits on the host page's light background.
 - Compose regions in the tree so the app streams in — an island is one region, never the whole app.

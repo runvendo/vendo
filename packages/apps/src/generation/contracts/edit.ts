@@ -26,6 +26,6 @@ Ops (attribute-only elements unless noted):
 - <Island name="PascalName">raw TSX with a default export</Island> adds or replaces a generated component; <RemoveIsland name="PascalName"/> deletes it. Island rules:
 ${islandContract()}
 - <SetName name="..."/> renames the app; <SetDescription text="..."/> sets its description.
-Emit at least one op. Keep patches minimal and local to the instruction.`,
+Emit at least one op. Keep patches minimal and local to the instruction. No emojis, ever, in any text an op introduces.`,
 }, ...generationPromptSections(deps).filter(({ id }) =>
   id === "clock" || id === "component-styling" || id === "catalog" || id === "theme" || id === "design-rules" || id === "remixable-slots")]);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { islandToolFallbackManifest, islandVendoActionNames, type Json, type ToolOutcome } from "@vendoai/core";
 import { ContainedNotice } from "../notice.js";
+import { FormingSkeleton } from "../forming-skeleton.js";
 import { JAIL_RUNTIME_SOURCE } from "./runtime-bundle.gen.js";
 
 const MAX_JAIL_HEIGHT = 8_192;
@@ -105,6 +106,10 @@ export interface JailedComponentProps {
    * either way, nothing the iframe claims is ever trusted.
    */
   toolManifest?: readonly string[];
+  /** True while the payload is a mid-stream partial: an island crash is a
+   *  transient (its source may still be rewritten before ship), so the loud
+   *  error note yields to the forming skeleton until the final payload. */
+  streaming?: boolean;
   onAction(action: string, payload?: Json): Promise<ToolOutcome>;
   onStateSet(key: string, value: Json): void;
 }
@@ -157,6 +162,7 @@ export function JailedComponent({
   furnishing,
   themeVars,
   toolManifest,
+  streaming,
   onAction,
   onStateSet,
 }: JailedComponentProps) {
@@ -312,6 +318,12 @@ export function JailedComponent({
   }, [allowedActions, effectiveProps, furnishing, manifest, onAction, onStateSet, source, themeVars]);
 
   if (error) {
+    // Mid-stream, a crash is not a verdict: the island's source may still be
+    // rewritten (or restructured to use the host registry properly) before the
+    // final payload ships. Hold the silhouette; the note is for final payloads.
+    if (streaming === true) {
+      return <FormingSkeleton name={name} />;
+    }
     return <ContainedNotice label="Generated component error">{`${name}: ${error}`}</ContainedNotice>;
   }
 

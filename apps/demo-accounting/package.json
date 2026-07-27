@@ -13,7 +13,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "3.0.12",
     "@vendoai/actions": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
@@ -34,6 +33,7 @@
   "devDependencies": {
     "@ai-sdk/provider": "3.0.2",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
