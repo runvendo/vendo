@@ -1,0 +1,1111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vendo Knowledge — UI mockups (2026-07-25)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Mockup shell (not product): the strip that switches surfaces
+   ============================================================ */
+:root{
+  /* Vendo brand kit */
+  --porcelain:#FAFAF8;
+  --card:#FFFFFF;
+  --ink:#17171A;
+  --ink-90:rgba(23,23,26,.9);
+  --muted:#6F6E77;
+  --faint:#9B9AA3;
+  --border:rgba(23,23,26,.08);
+  --border-strong:rgba(23,23,26,.16);
+  --ultra:#4338CA;
+  --ultra-soft:rgba(67,56,202,.08);
+  --peri:#818CF8;
+  --ok:#256E4D;
+  --ok-soft:rgba(37,110,77,.09);
+  --danger:#B23B2E;
+  --danger-soft:rgba(178,59,46,.07);
+  --warn-text:#8A6A2E;
+  --warn-soft:rgba(240,180,41,.13);
+  --warn-border:rgba(240,180,41,.38);
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 1px 2px rgba(23,23,26,.04), 0 4px 16px rgba(23,23,26,.04);
+  --shadow-pop:0 2px 6px rgba(23,23,26,.08), 0 12px 32px rgba(23,23,26,.12);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:#EFEEEA;
+  font-family:'Onest',system-ui,-apple-system,'Segoe UI',sans-serif;
+  color:var(--ink);
+  letter-spacing:-.011em;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;letter-spacing:inherit;cursor:pointer}
+input,select,textarea{font:inherit;letter-spacing:inherit;color:inherit}
+
+.mock-strip{
+  display:flex;align-items:center;gap:16px;
+  padding:10px 24px;
+  background:#E7E6E1;
+  border-bottom:1px dashed rgba(23,23,26,.22);
+}
+.mock-strip .mock-label{font-size:12px;color:#5C5B63;font-weight:500}
+.mock-strip .mock-label strong{color:var(--ink);font-weight:600}
+.mock-seg{display:flex;background:rgba(23,23,26,.07);border-radius:8px;padding:3px;gap:2px}
+.mock-seg button{
+  border:0;background:transparent;border-radius:6px;padding:5px 14px;
+  font-size:12.5px;font-weight:500;color:#5C5B63;
+  transition:color .12s ease;
+}
+.mock-seg button[aria-selected="true"]{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(23,23,26,.1)}
+.mock-note{margin-left:auto;font-size:11.5px;color:#8A8990}
+
+/* ============================================================
+   SURFACE 1 — Vendo Cloud console · Knowledge
+   ============================================================ */
+.console{
+  display:flex;min-height:900px;background:var(--porcelain);
+}
+/* ---- sidebar ---- */
+.side{
+  width:224px;flex:none;display:flex;flex-direction:column;
+  padding:20px 12px 20px;border-right:1px solid var(--border);
+}
+.wordmark{
+  display:flex;align-items:center;gap:8px;padding:2px 10px 0;
+  font-size:17px;font-weight:700;letter-spacing:-.02em;
+}
+.wordmark .dot{width:8px;height:8px;border-radius:50%;background:var(--ultra);margin-top:1px}
+.side .org{
+  margin:18px 0 20px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;
+  background:var(--card);
+}
+.side .org .name{font-size:13px;font-weight:600}
+.side .org .env{font-size:11.5px;color:var(--muted);margin-top:1px}
+.nav{display:flex;flex-direction:column;gap:1px}
+.nav a{
+  display:flex;align-items:center;gap:10px;
+  padding:7px 10px;border-radius:7px;
+  font-size:13px;color:var(--muted);text-decoration:none;font-weight:500;
+}
+.nav a svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.nav a:hover{color:var(--ink);background:rgba(23,23,26,.04)}
+.nav a.active{color:var(--ink);font-weight:600;background:rgba(23,23,26,.055)}
+.side .foot{margin-top:auto;padding:0 10px;font-size:11.5px;color:var(--faint)}
+
+/* ---- page ---- */
+.page{flex:1;min-width:0;padding:32px 40px 56px;max-width:1120px}
+.page-head h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em}
+.page-head p{margin:6px 0 0;font-size:13.5px;color:var(--muted);max-width:620px;line-height:1.55}
+
+.tabs{
+  display:flex;gap:4px;margin:24px 0 0;border-bottom:1px solid var(--border);
+}
+.tabs button{
+  border:0;background:none;padding:9px 12px 11px;margin-bottom:-1px;
+  font-size:13.5px;font-weight:500;color:var(--muted);
+  border-bottom:2px solid transparent;
+  display:flex;align-items:center;gap:7px;
+  transition:color .12s ease;
+}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-selected="true"]{color:var(--ink);font-weight:600;border-bottom-color:var(--ink)}
+.tabs .count{
+  font-size:11px;font-weight:600;color:var(--ultra);
+  background:var(--ultra-soft);border-radius:99px;padding:1px 7px 2px;
+}
+.tabpanel{padding-top:24px}
+[hidden]{display:none !important}
+
+/* ---- shared primitives ---- */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;
+  border:1px solid transparent;transition:transform .12s ease,background .12s ease,border-color .12s ease;
+  white-space:nowrap;
+}
+.btn:active{transform:scale(.97)}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.btn-ink{background:var(--ink);color:#fff}
+.btn-ink:hover{background:#2A2A2F}
+.btn-ghost{background:var(--card);color:var(--ink);border-color:var(--border-strong)}
+.btn-ghost:hover{border-color:rgba(23,23,26,.3)}
+.btn-quiet{background:transparent;color:var(--muted);border-color:transparent;font-weight:500;padding:8px 10px}
+.btn-quiet:hover{color:var(--ink);background:rgba(23,23,26,.045)}
+.btn-sm{padding:5px 11px;font-size:12.5px;border-radius:7px}
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:11px;font-weight:600;border-radius:99px;padding:2.5px 9px;
+  letter-spacing:.01em;
+}
+.badge-ok{color:var(--ok);background:var(--ok-soft)}
+.badge-err{color:var(--danger);background:var(--danger-soft)}
+.badge-ro{color:var(--muted);background:rgba(23,23,26,.06)}
+.badge-live{color:var(--ultra);background:var(--ultra-soft)}
+.badge-kind{color:var(--muted);background:rgba(23,23,26,.05);font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.06em;padding:2.5px 7px}
+.sdot{width:7px;height:7px;border-radius:50%;flex:none}
+.sdot-ok{background:#3BA271}
+.sdot-err{background:#D64B3C}
+
+/* ---- Sources ---- */
+.section-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.section-bar .meta{font-size:13px;color:var(--muted)}
+.section-bar .spacer{flex:1}
+.src-list{display:flex;flex-direction:column;gap:10px}
+.src{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  box-shadow:var(--shadow-card);
+}
+.src-row{display:flex;align-items:center;gap:16px;padding:16px 18px}
+.src-icon{
+  width:36px;height:36px;flex:none;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);background:var(--porcelain);
+}
+.src-icon svg{width:17px;height:17px;stroke:var(--ink);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.src-icon.mono{font-weight:700;font-size:15px}
+.src-main{flex:1;min-width:0}
+.src-name{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.src-sub{font-size:12.5px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px}
+.src-sub .sep{color:rgba(23,23,26,.25)}
+.src-count{font-size:13px;color:var(--muted);flex:none;width:88px;text-align:right}
+.src-count strong{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.src-actions{display:flex;align-items:center;gap:4px;flex:none}
+.src-err{
+  margin:0 18px 14px 70px;
+  display:flex;align-items:center;gap:12px;
+  background:var(--danger-soft);border:1px solid rgba(178,59,46,.18);
+  border-radius:9px;padding:10px 12px;
+}
+.src-err p{margin:0;flex:1;font-size:12.5px;color:#8F3227;line-height:1.5}
+.src-err .btn{background:var(--card)}
+.guarantee{
+  display:flex;align-items:flex-start;gap:10px;
+  margin-top:20px;padding:0 4px;
+  font-size:12.5px;color:var(--muted);line-height:1.55;max-width:640px;
+}
+.guarantee svg{width:15px;height:15px;flex:none;margin-top:1px;stroke:var(--muted);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---- Documents ---- */
+.docs-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.search{
+  display:flex;align-items:center;gap:8px;flex:1;max-width:320px;
+  background:var(--card);border:1px solid var(--border);border-radius:8px;
+  padding:7px 11px;color:var(--faint);
+}
+.search svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+.search input{border:0;outline:0;background:none;flex:1;font-size:13px;color:var(--ink)}
+.search input::placeholder{color:var(--faint)}
+.filter{
+  display:flex;align-items:center;gap:6px;
+  background:var(--card);border:1px solid var(--border);border-radius:8px;
+  padding:7px 11px;font-size:12.5px;font-weight:500;color:var(--ink);
+}
+.filter .flabel{color:var(--faint);font-weight:500}
+.filter svg{width:12px;height:12px;stroke:var(--muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.docs-split{
+  display:flex;gap:0;background:var(--card);
+  border:1px solid var(--border);border-radius:12px;overflow:hidden;
+  box-shadow:var(--shadow-card);min-height:560px;
+}
+.doc-list{width:336px;flex:none;border-right:1px solid var(--border);padding:8px;overflow:auto}
+.doc-item{
+  width:100%;text-align:left;border:0;background:none;
+  padding:11px 12px;border-radius:8px;display:block;
+}
+.doc-item + .doc-item{margin-top:1px}
+.doc-item:hover{background:rgba(23,23,26,.035)}
+.doc-item[aria-selected="true"]{background:rgba(23,23,26,.055)}
+.doc-item .t{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+.doc-item .m{font-size:11.5px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.doc-item .m .sep{color:rgba(23,23,26,.22)}
+.doc-item.excluded .t{color:var(--faint);font-weight:500;text-decoration:line-through;text-decoration-color:rgba(23,23,26,.25);text-decoration-thickness:1px}
+.doc-pane{flex:1;min-width:0;display:flex;flex-direction:column}
+.doc-banner{
+  display:flex;align-items:center;gap:10px;
+  padding:12px 24px;border-bottom:1px solid var(--border);
+  background:var(--porcelain);font-size:12.5px;color:var(--muted);
+}
+.doc-banner svg{width:14px;height:14px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.doc-banner .spacer{flex:1}
+.doc-banner.excl{background:rgba(23,23,26,.045)}
+.doc-body{padding:28px 32px;overflow:auto;flex:1}
+.doc-body h2{margin:0 0 4px;font-size:19px;font-weight:700;letter-spacing:-.015em}
+.doc-meta{font-size:12px;color:var(--faint);margin-bottom:20px;display:flex;gap:6px;align-items:center}
+.doc-meta .sep{color:rgba(23,23,26,.2)}
+.prose{font-size:13.5px;line-height:1.7;color:var(--ink-90);max-width:600px}
+.prose h3{font-size:13.5px;font-weight:650;margin:18px 0 6px}
+.prose p{margin:0 0 10px}
+.prose ul{margin:0 0 10px;padding-left:20px}
+.prose li{margin:3px 0}
+.prose.dim{color:var(--faint)}
+/* editor */
+.editor{padding:24px 32px;display:flex;flex-direction:column;gap:14px;flex:1}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.field input[type=text],.field .selectbox{
+  border:1px solid var(--border-strong);border-radius:8px;background:var(--card);
+  padding:9px 12px;font-size:13.5px;outline:none;
+}
+.field input[type=text]:focus{border-color:var(--ultra);box-shadow:0 0 0 3px rgba(67,56,202,.12)}
+/* Tiptap-style rich-text editor */
+.rte{border:1px solid var(--border-strong);border-radius:10px;background:var(--card);overflow:hidden}
+.rte-bar{
+  display:flex;align-items:center;gap:2px;
+  padding:6px 8px;border-bottom:1px solid var(--border);background:var(--porcelain);
+}
+.rte-sel{
+  display:flex;align-items:center;gap:7px;padding:4px 9px;border-radius:6px;
+  font-size:12px;font-weight:500;color:var(--ink);border:0;background:none;
+}
+.rte-sel:hover{background:rgba(23,23,26,.05)}
+.rte-sel svg{width:11px;height:11px;stroke:var(--muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rte-btn{
+  width:27px;height:27px;border-radius:6px;border:0;background:none;color:var(--muted);
+  display:flex;align-items:center;justify-content:center;font-size:12.5px;
+}
+.rte-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.rte-btn:hover{background:rgba(23,23,26,.05);color:var(--ink)}
+.rte-btn.active{background:rgba(23,23,26,.08);color:var(--ink)}
+.rte-btn .glyph-b{font-weight:700;font-size:12.5px}
+.rte-btn .glyph-i{font-style:italic;font-family:Georgia,serif;font-size:13px}
+.rte-div{width:1px;height:16px;background:rgba(23,23,26,.12);margin:0 5px;flex:none}
+.rte-body{padding:18px 20px 22px;min-height:264px;font-size:13.5px;line-height:1.7;color:var(--ink-90);cursor:text}
+.rte-body h3{font-size:14.5px;font-weight:650;margin:0 0 6px;color:var(--ink)}
+.rte-body h3 + p, .rte-body ol, .rte-body ul{margin-top:0}
+.rte-body p{margin:0 0 10px}
+.rte-body ol,.rte-body ul{margin:0 0 14px;padding-left:22px}
+.rte-body li{margin:3px 0}
+.rte-body .caret-line{position:relative}
+.rte-body .caret{display:inline-block;width:1.5px;height:1.05em;background:var(--ink);vertical-align:-2px;margin-left:1px}
+.field-row{display:flex;gap:14px}
+.field-row .field{flex:1}
+.selectbox{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:500}
+.selectbox svg{width:12px;height:12px;stroke:var(--muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.editor-foot{display:flex;align-items:center;gap:12px;margin-top:2px}
+.editor-foot .status{font-size:12px;color:var(--faint)}
+
+/* ---- Gaps ---- */
+.gap-list{display:flex;flex-direction:column;gap:10px}
+.gap{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  box-shadow:var(--shadow-card);padding:16px 18px;
+  display:flex;gap:16px;align-items:flex-start;
+}
+.gap-rank{
+  width:36px;height:36px;flex:none;border-radius:9px;
+  background:var(--porcelain);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;
+}
+.gap-main{flex:1;min-width:0}
+.gap-q{font-size:14.5px;font-weight:600;letter-spacing:-.01em;line-height:1.4}
+.gap-meta{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:12px;color:var(--muted)}
+.gap-meta strong{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.gap-meta .sep{color:rgba(23,23,26,.22)}
+.gap-vars{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+.gap-vars span{
+  font-size:12.5px;color:var(--muted);
+  padding-left:12px;border-left:2px solid rgba(23,23,26,.1);line-height:1.5;
+}
+.gap .btn{flex:none;margin-top:2px}
+.gap-freq{width:72px;flex:none;margin-top:5px}
+.gap-freq .bar{height:4px;border-radius:2px;background:rgba(23,23,26,.07);overflow:hidden}
+.gap-freq .bar i{display:block;height:100%;border-radius:2px;background:var(--peri)}
+.gap-freq .n{font-size:11px;color:var(--faint);margin-top:5px;text-align:left;font-variant-numeric:tabular-nums}
+.empty{
+  border:1px dashed rgba(23,23,26,.18);border-radius:12px;
+  padding:64px 24px;text-align:center;
+}
+.empty .ico{
+  width:44px;height:44px;margin:0 auto 16px;border-radius:50%;
+  background:var(--ok-soft);display:flex;align-items:center;justify-content:center;
+}
+.empty .ico svg{width:20px;height:20px;stroke:var(--ok);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.empty h3{margin:0;font-size:15px;font-weight:650}
+.empty p{margin:6px auto 0;font-size:13px;color:var(--muted);max-width:400px;line-height:1.55}
+
+/* ---- Playground ---- */
+.pg-input{
+  display:flex;gap:10px;align-items:center;
+  background:var(--card);border:1px solid var(--border-strong);border-radius:10px;
+  padding:6px 6px 6px 14px;box-shadow:var(--shadow-card);max-width:720px;
+}
+.pg-input svg{width:15px;height:15px;flex:none;stroke:var(--faint);fill:none;stroke-width:1.8;stroke-linecap:round}
+.pg-input input{flex:1;border:0;outline:0;font-size:14px;background:none}
+.pg-input input::placeholder{color:var(--faint)}
+.pg-hint{font-size:12px;color:var(--faint);margin:10px 2px 0}
+.run{margin-top:28px;max-width:720px}
+.run-q{
+  display:flex;align-items:baseline;gap:10px;margin-bottom:10px;
+}
+.run-q .qlabel{font-size:11px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;flex:none}
+.run-q .qtext{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.verdict{
+  display:flex;align-items:center;gap:10px;
+  border-radius:10px;padding:11px 14px;font-size:13px;font-weight:600;
+  margin-bottom:12px;
+}
+.verdict svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.verdict small{font-weight:500;opacity:.85}
+.verdict-yes{background:var(--ok-soft);color:var(--ok)}
+.verdict-no{background:rgba(23,23,26,.055);color:var(--ink)}
+.passages{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  box-shadow:var(--shadow-card);overflow:hidden;
+}
+.passage{display:flex;gap:16px;padding:14px 18px}
+.passage + .passage{border-top:1px solid var(--border)}
+.passage.below{background:var(--porcelain)}
+.p-score{width:118px;flex:none}
+.p-score .num{font-family:var(--mono);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.passage.below .p-score .num{color:var(--faint)}
+.p-bar{position:relative;height:5px;border-radius:3px;background:rgba(23,23,26,.07);margin-top:7px}
+.p-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--ultra)}
+.passage.below .p-bar i{background:rgba(23,23,26,.22)}
+.p-bar .tick{
+  position:absolute;top:-3.5px;bottom:-3.5px;width:2px;border-radius:1px;
+  background:var(--ink);opacity:.55;
+}
+.p-bar .ticklabel{
+  position:absolute;top:calc(100% + 7px);transform:translateX(-50%);
+  font-size:9.5px;font-weight:600;color:var(--faint);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;
+}
+.p-main{flex:1;min-width:0}
+.p-doc{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.p-doc .origin{font-size:11.5px;color:var(--faint);font-weight:500}
+.passage.below .p-doc{color:var(--muted)}
+.p-snippet{font-size:12.5px;color:var(--muted);line-height:1.6;margin-top:4px}
+.p-snippet mark{background:rgba(129,140,248,.22);color:inherit;border-radius:2px;padding:0 1px}
+.passage.below .p-snippet{color:var(--faint)}
+
+/* ============================================================
+   SURFACE 2 — embedded chat (host: Acme Billing, default vendo theme)
+   ============================================================ */
+.hostwrap{background:#F4F4F5;min-height:900px;padding-bottom:64px}
+.hostbar{
+  display:flex;align-items:center;gap:12px;
+  background:#fff;border-bottom:1px solid #E3E3E8;
+  padding:12px 32px;
+}
+.hostlogo{
+  width:26px;height:26px;border-radius:7px;background:#1A1A1E;color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;
+}
+.hostname{font-size:14.5px;font-weight:650;color:#1A1A1E;letter-spacing:-.01em}
+.hostnav{display:flex;gap:22px;margin-left:28px;font-size:13px;color:#6B6B76}
+.hostnav b{color:#1A1A1E;font-weight:600}
+.hostuser{margin-left:auto;width:26px;height:26px;border-radius:50%;background:#E3E3E8;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#6B6B76}
+.chat-grid{
+  display:flex;gap:24px;justify-content:center;
+  padding:36px 32px 0;align-items:flex-start;
+}
+.chat-col{width:424px;flex:none}
+.chat-caption{
+  font-size:11px;font-weight:600;color:#8A8990;text-transform:uppercase;letter-spacing:.07em;
+  margin:0 4px 10px;display:flex;align-items:center;gap:8px;
+}
+.chat-caption .cnum{
+  width:16px;height:16px;border-radius:50%;background:rgba(23,23,26,.08);
+  display:flex;align-items:center;justify-content:center;font-size:9.5px;color:#5C5B63;
+}
+/* the actual embedded surface — tokens mirror packages/ui defaults */
+.vsurface{
+  --v-bg:#ffffff; --v-surface:#f7f7f8; --v-text:#1a1a1e; --v-muted:#6b6b76;
+  --v-accent:#111111; --v-border:#e3e3e8;
+  --v-bubble:#ececee; /* fg 7% over surface */
+  background:var(--v-bg);border:1px solid var(--v-border);border-radius:16px;
+  box-shadow:0 1px 2px rgba(20,21,26,.05), 0 12px 32px rgba(20,21,26,.07);
+  display:flex;flex-direction:column;overflow:visible;
+  font-size:14px;color:var(--v-text);
+}
+.v-head{
+  display:flex;align-items:center;gap:9px;
+  padding:12px 16px;border-bottom:1px solid var(--v-border);
+  border-radius:16px 16px 0 0;background:var(--v-bg);
+}
+.v-head .aname{font-size:13px;font-weight:600}
+.v-head .astatus{font-size:11.5px;color:var(--v-muted);margin-left:auto;display:flex;align-items:center;gap:5px}
+.v-head .astatus .sdot{width:6px;height:6px}
+.v-avatar{
+  width:22px;height:22px;border-radius:50%;background:var(--v-text);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex:none;
+}
+.v-msgs{display:flex;flex-direction:column;gap:14px;padding:18px 16px 10px;min-height:330px}
+.v-user{
+  align-self:flex-end;max-width:82%;
+  background:var(--v-bubble);color:var(--v-text);
+  border:1px solid var(--v-border);
+  border-radius:16px 16px 6px 16px;
+  padding:9px 14px;font-size:14px;line-height:1.5;letter-spacing:-.006em;
+  box-shadow:0 1px 2px rgba(20,21,26,.06);
+}
+.v-assistant{align-self:flex-start;max-width:92%;font-size:14px;line-height:1.65;letter-spacing:-.006em}
+.v-assistant p{margin:0 0 8px}
+.v-assistant p:last-child{margin-bottom:0}
+/* citation chips */
+.v-cites{margin-top:10px}
+.v-cites .clabel{
+  font-size:10.5px;font-weight:600;color:var(--v-muted);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;
+}
+.v-chiprow{display:flex;flex-wrap:wrap;gap:6px}
+.v-chip{
+  position:relative;
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--v-border);background:var(--v-surface);
+  border-radius:8px;padding:4.5px 10px;
+  font-size:12px;font-weight:500;color:var(--v-text);
+  transition:border-color .12s ease,background .12s ease;
+}
+.v-chip svg{width:11.5px;height:11.5px;flex:none;stroke:var(--v-muted);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.v-chip:hover,.v-chip.open{border-color:rgba(20,21,26,.25);background:#fff}
+/* chip popover (snippet preview) */
+.v-pop{
+  position:absolute;left:0;top:calc(100% + 8px);width:292px;z-index:5;
+  background:#fff;border:1px solid var(--v-border);border-radius:10px;
+  box-shadow:0 2px 6px rgba(20,21,26,.08),0 14px 36px rgba(20,21,26,.14);
+  padding:12px 14px;text-align:left;cursor:default;
+  display:none;
+}
+.v-chip.open .v-pop,.v-chip:hover .v-pop{display:block}
+.v-pop .ptitle{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+.v-pop .ptitle svg{width:12px;height:12px;stroke:var(--v-muted)}
+.v-pop .psnippet{
+  font-size:12px;color:var(--v-muted);line-height:1.6;margin:7px 0 9px;
+  border-left:2px solid var(--v-border);padding-left:9px;
+}
+.v-pop .psnippet mark{background:rgba(20,21,26,.07);color:inherit;border-radius:2px;padding:0 1px}
+.v-pop .porigin{font-size:11px;color:#9a9aa2;display:flex;align-items:center;gap:5px}
+.v-pop .porigin .sep{color:#d5d5da}
+/* refusal indicator */
+.v-searched{
+  display:flex;align-items:center;gap:7px;margin-top:10px;
+  font-size:11.5px;color:var(--v-muted);
+}
+.v-searched svg{width:12.5px;height:12.5px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+/* knowledge unavailable flag */
+.v-unavail{
+  display:flex;align-items:flex-start;gap:9px;margin-top:10px;
+  background:rgba(240,180,41,.12);border:1px solid rgba(240,180,41,.35);
+  border-radius:10px;padding:9px 12px;
+  font-size:12px;color:#8a6a2e;line-height:1.55;
+}
+.v-unavail svg{width:13px;height:13px;flex:none;margin-top:2px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+/* composer */
+.v-composer{
+  display:flex;align-items:center;gap:8px;
+  margin:10px 12px 12px;padding:6px 6px 6px 14px;
+  border:1px solid var(--v-border);border-radius:12px;background:#fff;
+  box-shadow:0 1px 2px rgba(20,21,26,.04);
+}
+.v-composer .placeholder{flex:1;font-size:13.5px;color:#9a9aa2}
+.v-send{
+  width:30px;height:30px;border-radius:9px;background:var(--v-accent);border:0;
+  display:flex;align-items:center;justify-content:center;flex:none;
+}
+.v-send svg{width:14px;height:14px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.v-foot{
+  text-align:center;font-size:10px;color:#b3b3ba;padding:0 0 10px;letter-spacing:.01em;
+}
+</style>
+</head>
+<body>
+
+<!-- ======================= mock switcher (not product) ======================= -->
+<div class="mock-strip">
+  <span class="mock-label"><strong>vendo knowledge</strong> · UI mockups</span>
+  <div class="mock-seg" role="tablist">
+    <button role="tab" aria-selected="true" data-surface="console">Surface 1 · Cloud console</button>
+    <button role="tab" aria-selected="false" data-surface="chat">Surface 2 · Embedded chat citations</button>
+  </div>
+  <span class="mock-note">spec: 2026-07-24-knowledge-block-design.md · for review, not production</span>
+</div>
+
+<!-- ============================================================
+     SURFACE 1 — console
+     ============================================================ -->
+<div class="console" id="surface-console">
+  <aside class="side">
+    <div class="wordmark"><span class="dot"></span>vendo</div>
+    <div class="org">
+      <div class="name">Acme Billing</div>
+      <div class="env">production · acme-billing</div>
+    </div>
+    <nav class="nav">
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Overview</a>
+      <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 12h6M12 9v6"/></svg>Agent</a>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M9 17H6a4 4 0 010-8h.5M15 7h3a4 4 0 010 8h-.5M8 12h8"/></svg>Connections</a>
+      <a href="#" class="active"><svg viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 19a2 2 0 012-2h13"/></svg>Knowledge</a>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>Automations</a>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Usage</a>
+      <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 00-2-1.2L14 3h-4l-.5 2.6a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 005 12a7 7 0 00.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 002 1.2L10 21h4l.5-2.6a7 7 0 002-1.2l2.4 1 2-3.4-2-1.6A7 7 0 0019 12z"/></svg>Settings</a>
+    </nav>
+    <div class="foot">yousef@acmebilling.com</div>
+  </aside>
+
+  <main class="page">
+    <header class="page-head">
+      <h1>Knowledge</h1>
+      <p>What your agent knows. Connect your docs, review what's indexed, and see the questions your documentation doesn't answer yet.</p>
+    </header>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="sources">Sources</button>
+      <button role="tab" aria-selected="false" data-tab="documents">Documents</button>
+      <button role="tab" aria-selected="false" data-tab="gaps">Gaps <span class="count">4</span></button>
+      <button role="tab" aria-selected="false" data-tab="playground">Playground</button>
+    </div>
+
+    <!-- ================= Sources ================= -->
+    <section class="tabpanel" id="tab-sources">
+      <div class="section-bar">
+        <span class="meta">4 sources · 263 documents indexed</span>
+        <span class="spacer"></span>
+        <button class="btn btn-quiet btn-sm"><svg viewBox="0 0 24 24"><path d="M12 3v12M6 9l6-6 6 6"/><path d="M4 21h16"/></svg>Upload files</button>
+        <button class="btn btn-ghost btn-sm">Connect Notion</button>
+        <button class="btn btn-ghost btn-sm">Connect Drive</button>
+        <button class="btn btn-ink btn-sm"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Crawl a URL</button>
+      </div>
+
+      <div class="src-list">
+        <!-- healthy crawled site -->
+        <div class="src">
+          <div class="src-row">
+            <div class="src-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg></div>
+            <div class="src-main">
+              <div class="src-name">docs.acmebilling.com</div>
+              <div class="src-sub"><span class="sdot sdot-ok"></span>Synced 2 h ago<span class="sep">·</span>re-crawls daily<span class="sep">·</span>Crawled site</div>
+            </div>
+            <div class="src-count"><strong>128</strong> docs</div>
+            <div class="src-actions">
+              <button class="btn btn-quiet btn-sm">Sync now</button>
+              <button class="btn btn-quiet btn-sm">Remove</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- failing Notion -->
+        <div class="src">
+          <div class="src-row">
+            <div class="src-icon mono">N</div>
+            <div class="src-main">
+              <div class="src-name">Support wiki <span class="badge badge-err">Sync failing</span></div>
+              <div class="src-sub"><span class="sdot sdot-err"></span>Failing since Tue, Jul 21<span class="sep">·</span>last good sync 4 d ago<span class="sep">·</span>Notion</div>
+            </div>
+            <div class="src-count"><strong>42</strong> docs</div>
+            <div class="src-actions">
+              <button class="btn btn-quiet btn-sm">Remove</button>
+            </div>
+          </div>
+          <div class="src-err">
+            <p>Notion returned 401 — the integration token was revoked. The agent is still answering from the last good copy.</p>
+            <button class="btn btn-ghost btn-sm">Fix connection</button>
+          </div>
+        </div>
+
+        <!-- console docs -->
+        <div class="src">
+          <div class="src-row">
+            <div class="src-icon"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
+            <div class="src-main">
+              <div class="src-name">Console docs</div>
+              <div class="src-sub"><span class="sdot sdot-ok"></span>Live — edits publish immediately<span class="sep">·</span>Written in this console</div>
+            </div>
+            <div class="src-count"><strong>6</strong> docs</div>
+            <div class="src-actions">
+              <button class="btn btn-quiet btn-sm">New doc</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- developer door -->
+        <div class="src">
+          <div class="src-row">
+            <div class="src-icon"><svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></div>
+            <div class="src-main">
+              <div class="src-name">Product docs <span class="badge badge-ro">Read-only · managed by CI</span></div>
+              <div class="src-sub"><span class="sdot sdot-ok"></span>Pushed 41 min ago<span class="sep">·</span>vendo sync<span class="sep">·</span><span style="font-family:var(--mono);font-size:11.5px">main @ 4c1f2ea</span></div>
+            </div>
+            <div class="src-count"><strong>87</strong> docs</div>
+            <div class="src-actions">
+              <button class="btn btn-quiet btn-sm" style="color:var(--faint);cursor:default">Managed in repo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="guarantee">
+        <svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span>Removing a source deletes its documents from the search index and from Vendo's canonical copies in one operation. Nothing is retained.</span>
+      </div>
+    </section>
+
+    <!-- ================= Documents ================= -->
+    <section class="tabpanel" id="tab-documents" hidden>
+      <div class="docs-toolbar">
+        <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg><input placeholder="Search 263 documents"></div>
+        <div class="filter"><span class="flabel">Source</span>All<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+        <div class="filter"><span class="flabel">Kind</span>All<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+        <div class="filter"><span class="flabel">Visibility</span>All<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn btn-ink btn-sm"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New console doc</button>
+      </div>
+
+      <div class="docs-split">
+        <div class="doc-list">
+          <button class="doc-item" aria-selected="true" data-pane="pane-synced">
+            <div class="t">Refunds &amp; cancellations</div>
+            <div class="m">docs.acmebilling.com<span class="sep">·</span>docs<span class="sep">·</span>public</div>
+          </button>
+          <button class="doc-item" data-pane="">
+            <div class="t">Pricing tiers</div>
+            <div class="m">docs.acmebilling.com<span class="sep">·</span>docs<span class="sep">·</span>public</div>
+          </button>
+          <button class="doc-item" data-pane="pane-editor">
+            <div class="t">Pausing a subscription <span class="badge badge-live">Console</span></div>
+            <div class="m">Console docs<span class="sep">·</span>docs<span class="sep">·</span>public</div>
+          </button>
+          <button class="doc-item" data-pane="pane-api">
+            <div class="t">invoice object <span class="badge badge-kind">API</span></div>
+            <div class="m">Product docs (vendo sync)<span class="sep">·</span>api<span class="sep">·</span>public</div>
+          </button>
+          <button class="doc-item" data-pane="">
+            <div class="t">seat <span class="badge badge-kind">Glossary</span></div>
+            <div class="m">Product docs (vendo sync)<span class="sep">·</span>glossary<span class="sep">·</span>public</div>
+          </button>
+          <button class="doc-item excluded" data-pane="pane-excluded">
+            <div class="t">Legacy checkout migration <span class="badge badge-ro">Excluded</span></div>
+            <div class="m">docs.acmebilling.com<span class="sep">·</span>docs<span class="sep">·</span>public</div>
+          </button>
+          <button class="doc-item" data-pane="">
+            <div class="t">Dunning &amp; failed payments</div>
+            <div class="m">Support wiki<span class="sep">·</span>docs<span class="sep">·</span>internal</div>
+          </button>
+        </div>
+
+        <!-- synced, read-only -->
+        <div class="doc-pane" id="pane-synced">
+          <div class="doc-banner">
+            <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
+            Synced from docs.acmebilling.com — read-only. Fix a page by editing a console copy; re-crawls never overwrite your work.
+            <span class="spacer"></span>
+            <button class="btn btn-quiet btn-sm">Exclude from agent</button>
+            <button class="btn btn-ghost btn-sm">Fix this page</button>
+          </div>
+          <div class="doc-body">
+            <h2>Refunds &amp; cancellations</h2>
+            <div class="doc-meta">docs.acmebilling.com/billing/refunds<span class="sep">·</span>docs · public<span class="sep">·</span>last crawled 2 h ago</div>
+            <div class="prose">
+              <p>You can cancel your Acme Billing subscription at any time from <strong>Settings → Plan</strong>. Cancellation takes effect at the end of the current billing period — you keep full access until then.</p>
+              <h3>Refunds for annual plans</h3>
+              <p>Annual plans canceled within 30 days of purchase are refunded in full, automatically, to the original payment method. After 30 days we refund the unused months on a pro-rata basis when you contact support.</p>
+              <h3>Refunds for monthly plans</h3>
+              <p>Monthly charges are non-refundable once the billing period has started, with two exceptions:</p>
+              <ul>
+                <li>You were charged after canceling — refunded in full within 3 business days.</li>
+                <li>A duplicate charge on the same invoice — the duplicate is voided immediately.</li>
+              </ul>
+              <h3>Mid-cycle cancellations</h3>
+              <p>If you cancel mid-cycle we do not charge again, and any metered overage already accrued is billed on the final invoice. Seats removed mid-cycle are credited to that invoice.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- excluded doc -->
+        <div class="doc-pane" id="pane-excluded" hidden>
+          <div class="doc-banner excl">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.5 5.5l13 13"/></svg>
+            Excluded from the agent — kept in Vendo, never searched, and it stays excluded across re-crawls.
+            <span class="spacer"></span>
+            <button class="btn btn-ghost btn-sm">Restore to agent</button>
+          </div>
+          <div class="doc-body">
+            <h2 style="color:var(--muted)">Legacy checkout migration</h2>
+            <div class="doc-meta">docs.acmebilling.com/guides/legacy-checkout<span class="sep">·</span>docs · public<span class="sep">·</span>excluded by maria@acmebilling.com · Jul 18</div>
+            <div class="prose dim">
+              <p>This guide covers migrating from Checkout v1, which was sunset in March 2024. The steps below reference API endpoints that no longer exist.</p>
+              <p>Checkout v1 sessions were created with <code>POST /v1/checkout</code> and redirected buyers to pay.acmebilling.com. To migrate, replace each session call with a Payment Link or a Checkout v2 session…</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- console doc editor -->
+        <div class="doc-pane" id="pane-editor" hidden>
+          <div class="doc-banner">
+            <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            Console doc — written here, indexed like any other document. Saving publishes to the agent immediately.
+          </div>
+          <div class="editor">
+            <div class="field">
+              <label>Title</label>
+              <input type="text" value="Pausing a subscription">
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label>Kind</label>
+                <div class="selectbox">Docs<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+              </div>
+              <div class="field">
+                <label>Visibility</label>
+                <div class="selectbox">Public<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+              </div>
+            </div>
+            <div class="field">
+              <label>Body</label>
+              <div class="rte">
+                <div class="rte-bar">
+                  <button class="rte-sel">Paragraph<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+                  <span class="rte-div"></span>
+                  <button class="rte-btn" title="Bold"><span class="glyph-b">B</span></button>
+                  <button class="rte-btn" title="Italic"><span class="glyph-i">I</span></button>
+                  <span class="rte-div"></span>
+                  <button class="rte-btn" title="Bulleted list"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg></button>
+                  <button class="rte-btn active" title="Numbered list"><svg viewBox="0 0 24 24"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 5.5L5.5 4v4M4 11h2.5L4 14h2.5M4 17h2.5v3H4"/></svg></button>
+                  <span class="rte-div"></span>
+                  <button class="rte-btn" title="Link"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1.5 1.5"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1.5-1.5"/></svg></button>
+                  <button class="rte-btn" title="Code"><svg viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></svg></button>
+                  <button class="rte-btn" title="Table"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 10h16M10 5v14"/></svg></button>
+                </div>
+                <div class="rte-body">
+                  <p>You can pause your subscription instead of canceling. Pausing keeps your account, data, and settings intact while billing stops.</p>
+                  <h3>How to pause</h3>
+                  <ol>
+                    <li>Go to <strong>Settings → Plan</strong> and choose “Pause subscription”.</li>
+                    <li>Pick a duration — 1, 2, or 3 months. We won't invoice you during the pause.</li>
+                    <li class="caret-line">Your subscription resumes automatically at the end of the pause, or earlier if you press “Resume” any time.<span class="caret"></span></li>
+                  </ol>
+                  <h3>What pausing does not do</h3>
+                  <ul>
+                    <li>Metered usage already accrued this cycle is still billed on your next invoice.</li>
+                    <li>API keys stay active in read-only mode; write calls return <em>402</em> while paused.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div class="editor-foot">
+              <button class="btn btn-ink">Save — live immediately</button>
+              <button class="btn btn-quiet">Discard changes</button>
+              <span class="status">Last saved 3 min ago by you</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- api doc -->
+        <div class="doc-pane" id="pane-api" hidden>
+          <div class="doc-banner">
+            <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
+            Synced via <span style="font-family:var(--mono);font-size:11.5px">vendo sync</span> — read-only. Edit the source file in your repo; changes land on the next push.
+            <span class="spacer"></span>
+            <button class="btn btn-quiet btn-sm">Exclude from agent</button>
+          </div>
+          <div class="doc-body">
+            <h2>invoice object</h2>
+            <div class="doc-meta">docs/api/invoice.md<span class="sep">·</span>api · public<span class="sep">·</span>pushed 41 min ago · main @ 4c1f2ea</div>
+            <div class="prose">
+              <p>An <code style="font-family:var(--mono);font-size:12px;background:rgba(23,23,26,.05);border-radius:4px;padding:1px 5px">invoice</code> represents one billing event for a customer — subscription renewals, seat changes, and metered overage all land on invoices.</p>
+              <h3>Fields</h3>
+              <ul>
+                <li><strong>id</strong> — <span style="font-family:var(--mono);font-size:12px">inv_…</span>, unique per invoice.</li>
+                <li><strong>status</strong> — draft → open → paid, or void / uncollectible.</li>
+                <li><strong>amount_due</strong> — integer, minor units (cents). Never a float.</li>
+                <li><strong>lines[]</strong> — line items; each carries a seat count or a metered quantity, never both.</li>
+                <li><strong>attempt_count</strong> — dunning attempts so far; capped at 4 before the invoice is marked uncollectible.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Gaps ================= -->
+    <section class="tabpanel" id="tab-gaps" hidden>
+      <div class="section-bar">
+        <span class="meta">Questions users asked that your docs couldn't answer · grouped · last 90 days</span>
+        <span class="spacer"></span>
+        <button class="btn btn-quiet btn-sm" id="gaps-toggle">Preview empty state</button>
+      </div>
+
+      <div class="gap-list" id="gaps-full">
+        <div class="gap">
+          <div class="gap-rank">1</div>
+          <div class="gap-main">
+            <div class="gap-q">Can I pause my subscription instead of canceling?</div>
+            <div class="gap-meta"><strong>31×</strong> asked<span class="sep">·</span>5 phrasings<span class="sep">·</span>last seen 2 h ago</div>
+            <div class="gap-vars">
+              <span>“is there a way to freeze my account for the summer”</span>
+              <span>“can i put billing on hold without losing my data”</span>
+            </div>
+          </div>
+          <div class="gap-freq"><div class="bar"><i style="width:100%"></i></div><div class="n">31 asks</div></div>
+          <button class="btn btn-ghost btn-sm">Write the answer</button>
+        </div>
+
+        <div class="gap">
+          <div class="gap-rank">2</div>
+          <div class="gap-main">
+            <div class="gap-q">Do you support purchase orders for annual plans?</div>
+            <div class="gap-meta"><strong>17×</strong> asked<span class="sep">·</span>3 phrasings<span class="sep">·</span>last seen 5 h ago</div>
+          </div>
+          <div class="gap-freq"><div class="bar"><i style="width:55%"></i></div><div class="n">17 asks</div></div>
+          <button class="btn btn-ghost btn-sm">Write the answer</button>
+        </div>
+
+        <div class="gap">
+          <div class="gap-rank">3</div>
+          <div class="gap-main">
+            <div class="gap-q">How do I change the billing email on my account?</div>
+            <div class="gap-meta"><strong>9×</strong> asked<span class="sep">·</span>2 phrasings<span class="sep">·</span>last seen yesterday</div>
+          </div>
+          <div class="gap-freq"><div class="bar"><i style="width:29%"></i></div><div class="n">9 asks</div></div>
+          <button class="btn btn-ghost btn-sm">Write the answer</button>
+        </div>
+
+        <div class="gap">
+          <div class="gap-rank">4</div>
+          <div class="gap-main">
+            <div class="gap-q">Can we get a copy of your SOC 2 report?</div>
+            <div class="gap-meta"><strong>6×</strong> asked<span class="sep">·</span>1 phrasing<span class="sep">·</span>last seen 2 d ago</div>
+          </div>
+          <div class="gap-freq"><div class="bar"><i style="width:19%"></i></div><div class="n">6 asks</div></div>
+          <button class="btn btn-ghost btn-sm">Write the answer</button>
+        </div>
+        <div class="guarantee">
+          <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          <span>“Write the answer” opens a pre-titled console doc in the editor. Save it and the gap clears — refusal → gap → new doc → answered.</span>
+        </div>
+      </div>
+
+      <div class="empty" id="gaps-empty" hidden>
+        <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg></div>
+        <h3>No gaps — your docs are covering everything users ask</h3>
+        <p>When the agent can't find an answer for a real user question, it shows up here so you can write the missing page. Questions are kept for 90 days.</p>
+      </div>
+    </section>
+
+    <!-- ================= Playground ================= -->
+    <section class="tabpanel" id="tab-playground" hidden>
+      <div class="pg-input">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg>
+        <input placeholder="Ask what a user would ask…">
+        <button class="btn btn-ink">Run search</button>
+      </div>
+      <p class="pg-hint">Runs the exact <span style="font-family:var(--mono)">knowledge_search</span> the agent runs — same engine, same evidence bar. The answer to “why did the agent say it doesn't know?”</p>
+
+      <!-- run 1: would answer -->
+      <div class="run">
+        <div class="run-q"><span class="qlabel">Query</span><span class="qtext">“how do refunds work if I cancel mid-cycle?”</span></div>
+        <div class="verdict verdict-yes">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
+          Would answer<small>&nbsp;— 2 passages clear the evidence bar. The agent cites them.</small>
+        </div>
+        <div class="passages">
+          <div class="passage">
+            <div class="p-score">
+              <div class="num">0.82</div>
+              <div class="p-bar"><i style="width:82%"></i><span class="tick" style="left:55%"><span class="ticklabel">answer bar</span></span></div>
+            </div>
+            <div class="p-main">
+              <div class="p-doc">Refunds &amp; cancellations<span class="origin">docs.acmebilling.com · docs</span></div>
+              <div class="p-snippet">…if you <mark>cancel mid-cycle</mark> we do not charge again, and any metered overage already accrued is billed on the final invoice. Seats removed <mark>mid-cycle</mark> are credited…</div>
+            </div>
+          </div>
+          <div class="passage">
+            <div class="p-score">
+              <div class="num">0.71</div>
+              <div class="p-bar"><i style="width:71%"></i><span class="tick" style="left:55%"></span></div>
+            </div>
+            <div class="p-main">
+              <div class="p-doc">Billing FAQ<span class="origin">Support wiki · docs</span></div>
+              <div class="p-snippet">…monthly charges are non-refundable once the period starts, but annual plans <mark>canceled</mark> within 30 days are <mark>refunded</mark> in full, automatically…</div>
+            </div>
+          </div>
+          <div class="passage below">
+            <div class="p-score">
+              <div class="num">0.44</div>
+              <div class="p-bar"><i style="width:44%"></i><span class="tick" style="left:55%"></span></div>
+            </div>
+            <div class="p-main">
+              <div class="p-doc">Pricing tiers<span class="origin">docs.acmebilling.com · docs</span></div>
+              <div class="p-snippet">Below the bar — retrieved, not cited. …all plans are billed per seat per month, with annual billing at a 20% discount…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- run 2: would refuse -->
+      <div class="run">
+        <div class="run-q"><span class="qlabel">Query</span><span class="qtext">“do you offer on-prem deployment?”</span></div>
+        <div class="verdict verdict-no">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/><path d="M8.5 11h5"/></svg>
+          Would refuse<small>&nbsp;— nothing clears the evidence bar. The agent says it doesn't know, and this lands in Gaps.</small>
+        </div>
+        <div class="passages">
+          <div class="passage below">
+            <div class="p-score">
+              <div class="num">0.31</div>
+              <div class="p-bar"><i style="width:31%"></i><span class="tick" style="left:55%"><span class="ticklabel">answer bar</span></span></div>
+            </div>
+            <div class="p-main">
+              <div class="p-doc">Security overview<span class="origin">docs.acmebilling.com · docs</span></div>
+              <div class="p-snippet">…Acme Billing runs in AWS us-east-1 and eu-central-1. Data is encrypted at rest and in transit…</div>
+            </div>
+          </div>
+          <div class="passage below">
+            <div class="p-score">
+              <div class="num">0.19</div>
+              <div class="p-bar"><i style="width:19%"></i><span class="tick" style="left:55%"></span></div>
+            </div>
+            <div class="p-main">
+              <div class="p-doc">Pricing tiers<span class="origin">docs.acmebilling.com · docs</span></div>
+              <div class="p-snippet">…Enterprise includes SSO, audit logs, a dedicated success manager, and custom invoicing terms…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============================================================
+     SURFACE 2 — embedded chat citations (host: Acme Billing)
+     ============================================================ -->
+<div class="hostwrap" id="surface-chat" hidden>
+  <div class="hostbar">
+    <div class="hostlogo">A</div>
+    <div class="hostname">Acme Billing</div>
+    <nav class="hostnav"><span>Invoices</span><span>Customers</span><span>Plans</span><b>Help</b></nav>
+    <div class="hostuser">YH</div>
+  </div>
+
+  <div class="chat-grid">
+    <!-- 1 · grounded with citations -->
+    <div class="chat-col">
+      <div class="chat-caption"><span class="cnum">1</span>Grounded answer · citation chips (one expanded)</div>
+      <div class="vsurface">
+        <div class="v-head">
+          <div class="v-avatar">A</div><span class="aname">Acme Assistant</span>
+          <span class="astatus"><span class="sdot sdot-ok"></span>Online</span>
+        </div>
+        <div class="v-msgs">
+          <div class="v-user">Can I get a refund if I cancel mid-cycle?</div>
+          <div class="v-assistant">
+            <p>Yes — it depends on your plan. On a <strong>monthly plan</strong>, canceling mid-cycle stops future charges but the current month isn't refunded; any metered overage you've already used is billed on your final invoice, and seats you remove are credited to it.</p>
+            <p>On an <strong>annual plan</strong>, you get a full automatic refund within 30 days of purchase, and a pro-rata refund of unused months after that if you contact support.</p>
+            <div class="v-cites">
+              <div class="clabel">Sources</div>
+              <div class="v-chiprow">
+                <span class="v-chip open">
+                  <svg viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 19a2 2 0 012-2h13"/></svg>
+                  Refunds &amp; cancellations
+                  <span class="v-pop">
+                    <span class="ptitle"><svg viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 19a2 2 0 012-2h13"/></svg>Refunds &amp; cancellations</span>
+                    <span class="psnippet">“If you <mark>cancel mid-cycle</mark> we do not charge again, and any metered overage already accrued is billed on the final invoice. Seats removed mid-cycle are credited…”</span>
+                    <span class="porigin">docs.acmebilling.com<span class="sep">·</span>Product docs<span class="sep">·</span>public</span>
+                  </span>
+                </span>
+                <span class="v-chip">
+                  <svg viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 19a2 2 0 012-2h13"/></svg>
+                  Billing FAQ
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="v-composer"><span class="placeholder">Ask about billing…</span><button class="v-send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>
+        <div class="v-foot">Powered by Acme Billing</div>
+      </div>
+    </div>
+
+    <!-- 2 · refusal -->
+    <div class="chat-col">
+      <div class="chat-caption"><span class="cnum">2</span>Refusal · not in the docs</div>
+      <div class="vsurface">
+        <div class="v-head">
+          <div class="v-avatar">A</div><span class="aname">Acme Assistant</span>
+          <span class="astatus"><span class="sdot sdot-ok"></span>Online</span>
+        </div>
+        <div class="v-msgs">
+          <div class="v-user">Do you integrate with QuickBooks Desktop?</div>
+          <div class="v-assistant">
+            <p>I don't have anything in the Acme Billing documentation about QuickBooks Desktop, so I'd rather not guess. The docs do cover the QuickBooks <strong>Online</strong> integration — happy to walk you through that instead, or you can ask support@acmebilling.com about Desktop.</p>
+            <div class="v-searched">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg>
+              Searched the knowledge base — no matching documentation
+            </div>
+          </div>
+        </div>
+        <div class="v-composer"><span class="placeholder">Ask about billing…</span><button class="v-send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>
+        <div class="v-foot">Powered by Acme Billing</div>
+      </div>
+    </div>
+
+    <!-- 3 · knowledge unavailable -->
+    <div class="chat-col">
+      <div class="chat-caption"><span class="cnum">3</span>Knowledge unavailable · unverified answer</div>
+      <div class="vsurface">
+        <div class="v-head">
+          <div class="v-avatar">A</div><span class="aname">Acme Assistant</span>
+          <span class="astatus"><span class="sdot sdot-ok"></span>Online</span>
+        </div>
+        <div class="v-msgs">
+          <div class="v-user">Which plans include SSO?</div>
+          <div class="v-assistant">
+            <p>From what I can see in your account, SSO is typically part of higher tiers — for most billing products that means the Enterprise plan, and your workspace settings show an SSO section that's currently locked.</p>
+            <div class="v-unavail">
+              <svg viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5"/><path d="M12 18.2v.1"/></svg>
+              <span>I couldn't check the docs just now — the knowledge base is temporarily unreachable, so this answer isn't verified against Acme Billing's documentation.</span>
+            </div>
+          </div>
+        </div>
+        <div class="v-composer"><span class="placeholder">Ask about billing…</span><button class="v-send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>
+        <div class="v-foot">Powered by Acme Billing</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// surface switcher
+document.querySelectorAll('.mock-seg button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mock-seg button').forEach(b => b.setAttribute('aria-selected', b === btn));
+    document.getElementById('surface-console').hidden = btn.dataset.surface !== 'console';
+    document.getElementById('surface-chat').hidden = btn.dataset.surface !== 'chat';
+  });
+});
+// console tabs
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', b === btn));
+    ['sources','documents','gaps','playground'].forEach(t => {
+      document.getElementById('tab-' + t).hidden = t !== btn.dataset.tab;
+    });
+  });
+});
+// documents master-detail
+document.querySelectorAll('.doc-item').forEach(item => {
+  item.addEventListener('click', () => {
+    if (!item.dataset.pane) return;
+    document.querySelectorAll('.doc-item').forEach(i => i.setAttribute('aria-selected', i === item));
+    document.querySelectorAll('.doc-pane').forEach(p => p.hidden = p.id !== item.dataset.pane);
+  });
+});
+// gaps empty-state preview
+const gapsToggle = document.getElementById('gaps-toggle');
+gapsToggle.addEventListener('click', () => {
+  const empty = document.getElementById('gaps-empty');
+  const full = document.getElementById('gaps-full');
+  const showEmpty = empty.hidden;
+  empty.hidden = !showEmpty;
+  full.hidden = showEmpty;
+  gapsToggle.textContent = showEmpty ? 'Show gaps' : 'Preview empty state';
+});
+</script>
+</body>
+</html>
