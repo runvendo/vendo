@@ -81,6 +81,28 @@ Load-bearing decisions:
   smoke render → done + cost); tabs for raw wire text, final AppDocument
   JSON, and each competitor's raw request/response.
 
+## Model controls (Yousef addition 2026-07-26)
+
+Playing with the model is part of the loop, so model choice is a
+first-class run input, not an env var.
+
+- **Scope: Anthropic models + sampling.** Per-run picker across the
+  current Claude line (Fable 5, Opus 5, Sonnet 5, Haiku 4.5) plus
+  temperature and thinking-budget controls. Multi-provider was
+  considered and declined for v1: extra deps/keys, and the contracts are
+  Claude-tuned so cross-provider results would mislead.
+- **Where:** a model control in the cockpit prompt row (collapsed by
+  default, remembers last choice) and CLI flags `--model`,
+  `--temperature`, `--thinking`.
+- **RunRequest gains** `model?: {id, temperature?, thinkingBudget?}`;
+  RunRecord therefore stamps it, so history shows which model produced
+  which app and split-compare doubles as a model A/B.
+- **Applies to the Vendo lane** (the engine under study). Competitor
+  lanes keep their own model defaults — their pane footnote states the
+  model they used so comparisons stay honest.
+- Default = the engine's production default model, so an untouched run
+  measures what ships.
+
 ## Runs, history, pinning
 
 - `runs/<id>/run.json`: prompt, host, timestamp, git SHA + dirty-diff
