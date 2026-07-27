@@ -182,6 +182,23 @@ export function createKnowledgeTools(
 ): ToolRegistry {
   const threshold = options.weakScoreThreshold ?? 0;
 
+  // The operator's channel for an engine that is failing. The model's
+  // "unavailable" tells the END USER the docs cannot be checked; it can never
+  // tell the OPERATOR that their key was rejected — nobody reads a chat
+  // transcript for that. Deduped by message so a permanently broken engine
+  // costs one line per distinct cause, not one per turn, and deliberately
+  // NOT carried into the tool output: setup guidance ("run `vendo login`")
+  // is operator text and must not reach an end user through the model.
+  const warned = new Set<string>();
+  const warnEngineFailure = (error: unknown): void => {
+    const message = error instanceof VendoError
+      ? `${error.code}: ${error.message}`
+      : error instanceof Error ? error.message : String(error);
+    if (warned.has(message)) return;
+    warned.add(message);
+    console.warn(`[vendo] knowledge engine failed — ${VENDO_KNOWLEDGE_SEARCH_TOOL} answers "unavailable" until this is fixed: ${message}`);
+  };
+
   // The status()-verified refusal (checker round 1): an empty/weak search
   // from a SICK engine must not pass as an honest refusal or not-found — the
   // emptiness is unverifiable. Consulted only on the zero/weak paths (a
@@ -265,9 +282,11 @@ export function createKnowledgeTools(
           outcome: "insufficient-evidence",
           hits: deep.hits.slice(0, MAX_HITS).map(toCitation),
         });
-      } catch {
+      } catch (error) {
         // The loud engine-outage rule: a thrown adapter is NEVER a silent
-        // empty result — the model and the UI both see "unavailable".
+        // empty result — the model and the UI both see "unavailable", and the
+        // operator gets the actual cause in the server log.
+        warnEngineFailure(error);
         return envelope({ outcome: "unavailable", hits: [] });
       }
     },

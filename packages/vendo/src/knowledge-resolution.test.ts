@@ -126,11 +126,13 @@ describe("knowledge resolution — the VENDO_API_KEY cloud rung (#623)", () => {
     const vendo = await compose();
     const outcome = await search(vendo, "how long do transfers take");
 
-    // The outcome stays the contract's `unavailable` — but the REASON must
-    // reach both the model and the operator's logs.
+    // The tool EXISTS (a wrong key is a configured host), the end user hears
+    // the contract's honest "unavailable", and the operator — who is the only
+    // one who can fix a rejected key — gets the cause in the server log.
+    // Setup guidance stays out of the model's context on purpose: it is
+    // operator text and must not reach an end user through the answer.
+    expect(await hasKnowledgeTool(vendo)).toBe(true);
     expect(outcome).toMatchObject({ status: "ok", output: { outcome: "unavailable" } });
-    const output = (outcome as { output: { message?: string } }).output;
-    expect(output.message).toMatch(/rejected the API key/);
     expect(warn.mock.calls.flat().join(" ")).toMatch(/rejected the API key/);
   });
 });
