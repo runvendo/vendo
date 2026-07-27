@@ -7,6 +7,9 @@
  * engine was 42/94. This script is the honest version of that measurement, and
  * every claim it makes is recomputable from the records it writes:
  *
+ *   0. NO score gate: the verifier reads every search that returns hits, which is
+ *      what the tool now ships (K14 gated it on a calibrated band; the gated
+ *      arm is kept as `agentset-verifier-live-band-gated*.json` for comparison).
  *   1. Passages come from a REAL Agentset search against a namespace ingested
  *      with the SAME corpus the 94 labels were written against
  *      (`fixtures/corpus.json`, byte-identical to the calibration's inputs).
@@ -40,7 +43,6 @@ import {
   KNOWLEDGE_VERIFY_TURN_BUDGET_MS,
   type KnowledgeVerdict,
   type KnowledgeVerifier,
-  type KnowledgeVerifyBand,
 } from "@vendoai/knowledge";
 import { vendoModel } from "@vendoai/vendo/server";
 import {
@@ -192,7 +194,6 @@ const percentile = (values: number[], p: number): number => {
 async function main(): Promise<void> {
   const request = agentsetClient(process.env.AGENTSET_API_KEY);
   const corpus = readJson<{ docs: KnowledgeDoc[] }>(path.join(HERE, "fixtures/corpus.json"));
-  const band = readJson<{ band: KnowledgeVerifyBand }>(path.join(BANDS_DIR, "agentset.json")).band;
   const limit = Number(process.env.LIVE_LIMIT ?? 0);
   const all = limit > 0 ? probes().slice(0, limit) : probes();
   if (limit > 0) {
@@ -203,7 +204,7 @@ async function main(): Promise<void> {
   }
   const answerable = all.filter((probe) => probe.label === "answerable").length;
   console.log(
-    `corpus ${corpus.docs.length} docs · ${answerable} answerable + ${all.length - answerable} unanswerable · band [${band.low}, ${band.high}] · ${PASSES} passes`,
+    `corpus ${corpus.docs.length} docs · ${answerable} answerable + ${all.length - answerable} unanswerable · UNGATED (every hits-returning search is verified) · ${PASSES} passes`,
   );
 
   const stamp = new Date().toISOString();
@@ -259,7 +260,6 @@ async function main(): Promise<void> {
           },
         };
         const tools = createKnowledgeTools(observed, {
-          verifyBand: band,
           verifier: recorder.verifier,
           ...(TURN_BUDGET_MS === undefined ? {} : { verifyTurnBudgetMs: TURN_BUDGET_MS }),
           ...(WEAK_SCORE_THRESHOLD === undefined ? {} : { weakScoreThreshold: WEAK_SCORE_THRESHOLD }),
@@ -313,16 +313,31 @@ async function main(): Promise<void> {
     const unanswerable = rows.filter((row) => row.label === "unanswerable");
     const answerableRows = rows.filter((row) => row.label === "answerable");
     const verified = rows.flatMap((row) => row.verifications);
+    const falseAnswers = unanswerable.filter((row) => row.falseAnswer);
     return {
       pass,
-      falseAnswers: unanswerable.filter((row) => row.falseAnswer).length,
+      falseAnswers: falseAnswers.length,
       unanswerable: unanswerable.length,
+      // Why each false answer happened, in three exhaustive buckets — every
+      // false answer lands in exactly one, and the test re-derives them.
+      falseAnswersNeverVerified: falseAnswers.filter((row) => row.verifications.length === 0).length,
+      falseAnswersNoVerdict: falseAnswers.filter((row) => row.verifications.length > 0 && row.unverified).length,
+      falseAnswersVerifierSaidSupported:
+        falseAnswers.filter((row) => row.verifications.length > 0 && !row.unverified).length,
       falseRefusals: answerableRows.filter((row) => row.falseRefusal).length,
       answerable: answerableRows.length,
       turnsVerified: rows.filter((row) => row.verifications.length > 0).length,
       verifications: verified.length,
       noVerdict: verified.filter((entry) => entry.verdict === "none").length,
       unverifiedResults: rows.filter((row) => row.unverified).length,
+      // Cost inputs, counted not assumed: a turn can verify twice, so calls
+      // per search and calls per VERIFIED search are different numbers and
+      // both are published.
+      verificationsPerSearch: rows.length === 0 ? 0 : verified.length / rows.length,
+      verificationsPerVerifiedSearch:
+        rows.filter((row) => row.verifications.length > 0).length === 0
+          ? 0
+          : verified.length / rows.filter((row) => row.verifications.length > 0).length,
       verifyLatencyMsP50: percentile(verified.map((entry) => entry.latencyMs), 50),
       verifyLatencyMsP95: percentile(verified.map((entry) => entry.latencyMs), 95),
       turnLatencyMsP50: percentile(rows.map((row) => row.latencyMs), 50),
@@ -345,7 +360,7 @@ async function main(): Promise<void> {
       namespaceId,
       sweep,
     },
-    band,
+    gating: "none — the verifier runs on every search that returns hits",
     turnBudgetMs: TURN_BUDGET_MS ?? KNOWLEDGE_VERIFY_TURN_BUDGET_MS,
     weakScoreThreshold: WEAK_SCORE_THRESHOLD ?? 0,
     perCallCapMs: KNOWLEDGE_VERIFY_TIMEOUT_MS,

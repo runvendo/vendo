@@ -10,7 +10,6 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 
-import { inVerifyBand, type KnowledgeVerifyBand } from "./band.js";
 import { KNOWLEDGE_VERIFY_TIMEOUT_MS, type KnowledgeVerdict, type KnowledgeVerifier } from "./verifier.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
@@ -104,18 +103,15 @@ export interface KnowledgeToolsOptions {
       tool answers a loud "rate-limited" error. Explicit option wins over the
       VENDO_KNOWLEDGE_MAX_CALLS_PER_MINUTE env knob; default 60. */
   maxCallsPerMinute?: number;
-  /** K14 — the score interval where `weakScoreThreshold` provably cannot
-      decide (band.ts, per-engine like the bars). Inside it the verifier
-      adjudicates; outside it nothing changes. No band, no verification.
+  /** The evidence check. Present = it runs on EVERY search that would return
+      hits; absent = today's behavior, unchanged.
 
-      The band ROUTES the model call, it never decides the answer: inside it
-      the verifier is the arbiter, outside it the host's own threshold decides
-      exactly as it did before the verifier existed. Composing a verifier
-      therefore moves no threshold — see knowledgeToolOptions in
-      packages/vendo/src/server.ts. */
-  verifyBand?: KnowledgeVerifyBand;
-  /** K14 — the adjudicator for band scores. No verifier, no verification:
-      the band alone changes nothing. */
+      Deliberately NOT score-gated (spec §The verifier pass, "not
+      threshold-gated"). K14 gated it on a calibrated band and the live run
+      showed the cost of that: four unanswerable questions per pass scored
+      outside the band, were never checked, and were answered by the
+      threshold. Gating the check on the number it exists to replace
+      reintroduces the thing being fixed. */
   verifier?: KnowledgeVerifier;
   /** K15 — the whole turn's verification budget, shared by every verification
       one tool call makes. Default KNOWLEDGE_VERIFY_TURN_BUDGET_MS. */
@@ -260,19 +256,6 @@ function isWeak(hits: KnowledgeHit[], threshold: number): boolean {
   return hits.every((hit) => typeof hit.score === "number" && hit.score < threshold);
 }
 
-/** The statistic the band is calibrated on: the best score a search came back
-    with (the calibration's "top hit score"). Taken as the MAX rather than the
-    first hit — adapters order by their own relevance, which is not always the
-    raw score. Undefined when nothing scored: an engine that emits no scores
-    can have no band decision, exactly as it has no threshold decision. */
-function topScore(hits: KnowledgeHit[]): number | undefined {
-  let top: number | undefined;
-  for (const hit of hits) {
-    if (typeof hit.score === "number" && (top === undefined || hit.score > top)) top = hit.score;
-  }
-  return top;
-}
-
 /** Identity of a hit set, so a deep retry that returned the same passages as
     the chat search reuses its verdict instead of paying a second model call
     to re-read the same text. */
@@ -319,7 +302,6 @@ export function createKnowledgeTools(
   // K14 — the verifier composes only as a PAIR: a calibrated band saying where
   // the score is useless, and something to ask instead. Either alone leaves
   // the shipped path untouched.
-  const band = options.verifier === undefined ? undefined : options.verifyBand;
   const verifier = options.verifier;
   const turnBudgetMs = options.verifyTurnBudgetMs ?? KNOWLEDGE_VERIFY_TURN_BUDGET_MS;
 
@@ -358,14 +340,14 @@ export function createKnowledgeTools(
     await adapter.status();
   };
 
-  // K14/K15 — the band decision for one search.
+  // The evidence check for one search. Runs whenever there is a verifier and
+  // there are hits — no score decides whether we bother.
   //
   // Three shapes come back:
   //   { verdict }          the verifier read the passages and decided;
   //   { unverified: true } it was asked and gave nothing back (timeout, no
   //                        model, unusable output, or no turn budget left);
-  //   {}                   it was never in play — no band, no verifier, no
-  //                        scores, or a score outside the band.
+  //   {}                   it was never in play — no verifier, or no hits.
   // The last two both fall open to the shipped threshold decision, so a broken
   // or slow verifier costs latency at worst, never an answer the host would
   // otherwise have got. Only the middle one is MARKED: the answer says "I
@@ -375,9 +357,7 @@ export function createKnowledgeTools(
     hits: KnowledgeHit[],
     turn: Turn,
   ): Promise<Adjudication> => {
-    if (band === undefined || verifier === undefined || hits.length === 0) return {};
-    const top = topScore(hits);
-    if (top === undefined || !inVerifyBand(top, band)) return {};
+    if (verifier === undefined || hits.length === 0) return {};
     const key = hitSetKey(hits);
     if (turn.memoKey === key) return turn.memo ?? {};
     // The turn budget, not just the per-call cap: the deep retry gets what the

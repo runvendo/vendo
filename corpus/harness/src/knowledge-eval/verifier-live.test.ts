@@ -35,13 +35,30 @@ interface LivePass {
   pass: number;
   falseAnswers: number;
   unanswerable: number;
+  falseAnswersNeverVerified: number;
+  falseAnswersNoVerdict: number;
+  falseAnswersVerifierSaidSupported: number;
   falseRefusals: number;
   answerable: number;
   turnsVerified: number;
   verifications: number;
   noVerdict: number;
   unverifiedResults: number;
+  verificationsPerSearch: number;
+  verificationsPerVerifiedSearch: number;
+  verifyLatencyMsP50: number;
+  verifyLatencyMsP95: number;
+  turnLatencyMsP50: number;
+  turnLatencyMsP95: number;
 }
+
+/** The run script's percentile, duplicated so the test derives rather than
+    trusts (nearest-rank, floor). */
+const percentile = (values: number[], p: number): number => {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))]!;
+};
 
 const artifact = JSON.parse(readFileSync(ARTIFACT, "utf8")) as {
   passes: number;
@@ -53,11 +70,10 @@ const artifact = JSON.parse(readFileSync(ARTIFACT, "utf8")) as {
 const doc = readFileSync(DOC, "utf8");
 
 describe("the live verifier run (K15 T4) — the artifact is the evidence", () => {
-  it("is a whole run: 94 labelled questions × 3 passes, none dropped", () => {
+  it("is a whole run: 94 labelled questions per pass, none dropped", () => {
     expect(artifact.smokeRun).toBeUndefined();
-    expect(artifact.passes).toBe(3);
-    expect(artifact.records).toHaveLength(94 * 3);
-    for (let pass = 1; pass <= 3; pass += 1) {
+    expect(artifact.records).toHaveLength(94 * artifact.passes);
+    for (let pass = 1; pass <= artifact.passes; pass += 1) {
       const rows = artifact.records.filter((record) => record.pass === pass);
       expect(rows.filter((record) => record.label === "answerable")).toHaveLength(60);
       expect(rows.filter((record) => record.label === "unanswerable")).toHaveLength(34);
@@ -76,38 +92,89 @@ describe("the live verifier run (K15 T4) — the artifact is the evidence", () =
     }
   });
 
-  it("marks every no-verdict turn unverified, and no other turn", () => {
-    // The fail-open contract, observed on live traffic: a turn whose
-    // verification produced nothing says so; a turn that got a verdict does
-    // not claim it could not check.
+  it("marks a turn unverified exactly when something went unchecked", () => {
+    // The fail-open contract, observed on live traffic. Two ways a turn can go
+    // unchecked: a verification came back with no verdict, or the per-turn
+    // budget ran out before the second one could start (the tool skips rather
+    // than spend a request that cannot finish). Both must be marked; a turn
+    // where every search got a verdict must NOT be.
     for (const record of artifact.records) {
-      expect(record.unverified).toBe(record.verifications.some((entry) => entry.verdict === "none"));
+      const searchesWithHits = record.searches.filter((entry) => entry.hits.length > 0).length;
+      const noVerdict = record.verifications.some((entry) => entry.verdict === "none");
+      const skipped = record.verifications.length < searchesWithHits;
+      expect(record.unverified).toBe(noVerdict || skipped);
     }
   });
 
-  it("re-derives every per-pass aggregate from the records", () => {
+  it("re-derives EVERY published per-pass aggregate from the records", () => {
+    // Every field the doc can quote is re-derived here. A summary that drifts
+    // from its own records — the K14 failure — is a red test.
     for (const summary of artifact.perPass) {
       const rows = artifact.records.filter((record) => record.pass === summary.pass);
       const verifications = rows.flatMap((record) => record.verifications);
+      const verifiedTurns = rows.filter((record) => record.verifications.length > 0);
+      const falseAnswers = rows.filter((record) => record.falseAnswer);
       expect({
-        falseAnswers: rows.filter((record) => record.falseAnswer).length,
+        falseAnswers: falseAnswers.length,
         unanswerable: rows.filter((record) => record.label === "unanswerable").length,
+        falseAnswersNeverVerified: falseAnswers.filter((r) => r.verifications.length === 0).length,
+        falseAnswersNoVerdict: falseAnswers.filter((r) => r.verifications.length > 0 && r.unverified).length,
+        falseAnswersVerifierSaidSupported:
+          falseAnswers.filter((r) => r.verifications.length > 0 && !r.unverified).length,
         falseRefusals: rows.filter((record) => record.falseRefusal).length,
         answerable: rows.filter((record) => record.label === "answerable").length,
-        turnsVerified: rows.filter((record) => record.verifications.length > 0).length,
+        turnsVerified: verifiedTurns.length,
         verifications: verifications.length,
         noVerdict: verifications.filter((entry) => entry.verdict === "none").length,
         unverifiedResults: rows.filter((record) => record.unverified).length,
+        verificationsPerSearch: verifications.length / rows.length,
+        verificationsPerVerifiedSearch:
+          verifiedTurns.length === 0 ? 0 : verifications.length / verifiedTurns.length,
+        verifyLatencyMsP50: percentile(verifications.map((entry) => entry.latencyMs), 50),
+        verifyLatencyMsP95: percentile(verifications.map((entry) => entry.latencyMs), 95),
+        turnLatencyMsP50: percentile(rows.map((record) => record.latencyMs), 50),
+        turnLatencyMsP95: percentile(rows.map((record) => record.latencyMs), 95),
       }).toEqual({
         falseAnswers: summary.falseAnswers,
         unanswerable: summary.unanswerable,
+        falseAnswersNeverVerified: summary.falseAnswersNeverVerified,
+        falseAnswersNoVerdict: summary.falseAnswersNoVerdict,
+        falseAnswersVerifierSaidSupported: summary.falseAnswersVerifierSaidSupported,
         falseRefusals: summary.falseRefusals,
         answerable: summary.answerable,
         turnsVerified: summary.turnsVerified,
         verifications: summary.verifications,
         noVerdict: summary.noVerdict,
         unverifiedResults: summary.unverifiedResults,
+        verificationsPerSearch: summary.verificationsPerSearch,
+        verificationsPerVerifiedSearch: summary.verificationsPerVerifiedSearch,
+        verifyLatencyMsP50: summary.verifyLatencyMsP50,
+        verifyLatencyMsP95: summary.verifyLatencyMsP95,
+        turnLatencyMsP50: summary.turnLatencyMsP50,
+        turnLatencyMsP95: summary.turnLatencyMsP95,
       });
+    }
+  });
+
+  it("accounts for every false answer: the three causes are exhaustive", () => {
+    // The published decomposition must add up. The first version of it did
+    // not — it mixed the run's total no-verdicts into the false-answer subset
+    // and the buckets summed to less than the total.
+    for (const summary of artifact.perPass) {
+      expect(
+        summary.falseAnswersNeverVerified
+        + summary.falseAnswersNoVerdict
+        + summary.falseAnswersVerifierSaidSupported,
+      ).toBe(summary.falseAnswers);
+    }
+  });
+
+  it("verifies EVERY search that returned hits — no score gate survived", () => {
+    // F1: the shipped tool no longer gates the check on a band. Any turn whose
+    // first search returned hits must carry at least one verification.
+    for (const record of artifact.records) {
+      const firstSearchHits = record.searches[0]?.hits.length ?? 0;
+      if (firstSearchHits > 0) expect(record.verifications.length).toBeGreaterThan(0);
     }
   });
 });
@@ -116,8 +183,6 @@ const perPassHeadline = [...artifact.perPass].sort((a, b) => a.pass - b.pass);
 
 describe("docs/eval/KNOWLEDGE.md quotes the runs it has", () => {
   const perPass = perPassHeadline;
-  const worstFalseAnswers = Math.max(...perPass.map((pass) => pass.falseAnswers));
-  const worstFalseRefusals = Math.max(...perPass.map((pass) => pass.falseRefusals));
 
   it("states each pass's false-answer count", () => {
     for (const pass of perPass) {
@@ -125,51 +190,90 @@ describe("docs/eval/KNOWLEDGE.md quotes the runs it has", () => {
     }
   });
 
-  it("states the TRUE worst case, never a wider range than was observed", () => {
-    const pct = (count: number, total: number) => Math.round((count / total) * 100);
-    expect(doc).toContain(
-      `**${worstFalseAnswers}/${perPass[0]!.unanswerable} — ${pct(worstFalseAnswers, perPass[0]!.unanswerable)}%**`,
-    );
-    expect(doc).toContain(
-      `**${worstFalseRefusals}/${perPass[0]!.answerable} — ${pct(worstFalseRefusals, perPass[0]!.answerable)}%**`,
-    );
-    // The withdrawn K14 claim must not read as a live result anywhere.
+  it("never quotes the withdrawn K14 claim as a live result", () => {
     const claimLines = doc.split("\n").filter((line) => line.includes("47% → 3%"));
+    expect(claimLines.length).toBeGreaterThan(0);
     for (const line of claimLines) expect(line).toMatch(/WITHDRAWN|replay/i);
+  });
+
+  it("quotes the shipped configuration's decomposition, row by row", () => {
+    // Each cause has its own row in the doc's decomposition table; the row
+    // must carry this run's number for it.
+    const row = (needle: string): string => {
+      const line = doc.split("\n").find((candidate) => candidate.startsWith(`| ${needle}`));
+      expect(line, `no decomposition row starting "| ${needle}"`).toBeDefined();
+      return line!;
+    };
+    for (const pass of perPass) {
+      expect(row("Never verified")).toContain(String(pass.falseAnswersNeverVerified));
+      expect(row("No verdict")).toContain(String(pass.falseAnswersNoVerdict));
+      expect(row("The verifier read")).toContain(String(pass.falseAnswersVerifierSaidSupported));
+    }
+  });
+
+  it("quotes a cost that counts the second verifier call", () => {
+    // A turn can verify twice, so calls-per-search is not the share of
+    // searches that verified. The doc must quote the measured call count.
+    expect(perPass[0]!.verificationsPerSearch).toBeGreaterThan(1);
+    expect(doc).toContain(perPass[0]!.verificationsPerSearch.toFixed(2));
   });
 
   it("says plainly whether the spec's bar is met", () => {
     expect(doc).toContain("Does the spec's zero-false-answer bar hold? No.");
   });
 
-  it("states the band's routing share the records show", () => {
+  it("states the share of searches the check actually read", () => {
     expect(doc).toContain(`${perPass[0]!.turnsVerified}/94`);
   });
 });
 
-describe("the second run of the shipped configuration is reported too", () => {
-  // Reporting the kinder of two runs of the same configuration is the exact
-  // shape of the K14 failure, so the sibling artifact is committed and its
-  // per-pass counts must appear in the doc as well.
-  const second = JSON.parse(
-    readFileSync(path.join(REPO, "docs/eval/knowledge/bands/agentset-verifier-live-run1.json"), "utf8"),
-  ) as { perPass: LivePass[]; records: LiveRecord[] };
+describe("every committed run is reported, not just the kind ones", () => {
+  // Publishing the friendlier of several runs is the exact shape of the K14
+  // failure. Every committed artifact's false-answer counts must appear in the
+  // table, and the worst number anywhere must be the one the doc calls worst.
+  const sibling = (file: string) =>
+    JSON.parse(readFileSync(path.join(REPO, "docs/eval/knowledge/bands", file), "utf8")) as {
+      perPass: LivePass[];
+      records: LiveRecord[];
+      gating?: string;
+    };
 
-  it("is a whole run", () => {
-    expect(second.records).toHaveLength(94 * 3);
-  });
+  const UNGATED_RUN1 = "agentset-verifier-live-ungated-run1.json";
+  const GATED = [
+    "agentset-verifier-live-band-gated.json",
+    "agentset-verifier-live-band-gated-run1.json",
+    "agentset-verifier-live-band-gated-turn-budget-ab.json",
+  ];
 
-  it("has its false-answer counts in the table", () => {
-    for (const pass of second.perPass) {
+  it("the second ungated run is whole, and its numbers are in the table", () => {
+    const run = sibling(UNGATED_RUN1);
+    expect(run.records).toHaveLength(94);
+    for (const pass of run.perPass) {
       expect(doc).toContain(`${pass.falseAnswers}/${pass.unanswerable}`);
     }
   });
 
-  it("does not quietly beat the headline run: the WORST of both is what the doc calls worst", () => {
-    const worstOfBoth = Math.max(
-      ...second.perPass.map((pass) => pass.falseAnswers),
-      ...perPassHeadline.map((pass) => pass.falseAnswers),
-    );
-    expect(worstOfBoth).toBe(Math.max(...perPassHeadline.map((pass) => pass.falseAnswers)));
+  it("the band-gated runs are whole, and their numbers are in the table", () => {
+    for (const file of GATED) {
+      const run = sibling(file);
+      expect(run.records.length % 94).toBe(0);
+      for (const pass of run.perPass) {
+        expect(doc).toContain(`${pass.falseAnswers}/${pass.unanswerable}`);
+      }
+    }
+  });
+
+  it("states the worst pass of EACH configuration, never the kinder one", () => {
+    const unanswerable = artifact.perPass[0]!.unanswerable;
+    const worstOf = (runs: Array<{ perPass: LivePass[] }>) =>
+      Math.max(...runs.flatMap((run) => run.perPass.map((pass) => pass.falseAnswers)));
+    for (const worst of [worstOf([artifact, sibling(UNGATED_RUN1)]), worstOf(GATED.map(sibling))]) {
+      expect(doc).toContain(`**${worst}/${unanswerable} — ${Math.round((worst / unanswerable) * 100)}%**`);
+    }
+  });
+
+  it("keeps the gated runs labelled as gated, so neither config is quoted as the other", () => {
+    for (const file of GATED) expect(file).toContain("band-gated");
+    expect(artifact.gating).toMatch(/^none/);
   });
 });

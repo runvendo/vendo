@@ -3,14 +3,15 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 
 /**
- * Knowledge K14 — the verifier pass.
+ * The verifier pass.
  *
- * Inside the band (band.ts) the retrieval score carries no signal, so a cheap
- * model reads what the search actually returned and answers one question: do
- * these passages support answering this question at all? Not supported → the
- * tool returns its existing insufficient-evidence outcome and the agent says
- * it does not know, instead of writing a confident answer over adjacent-topic
- * evidence.
+ * A retrieval score cannot separate "we know this" from "we don't" — the cloud
+ * calibration found the two populations overlapping across almost their whole
+ * width. So a cheap model reads what the search actually returned and answers
+ * one question: do these passages support answering this question at all? Not
+ * supported → the tool returns its existing insufficient-evidence outcome and
+ * the agent says it does not know, instead of writing a confident answer over
+ * adjacent-topic evidence.
  *
  * Three properties are load-bearing, because the alternative to a wrong answer
  * must never be no answers at all:
@@ -89,9 +90,26 @@ export interface EntailmentVerifierOptions {
   instructions?: string;
 }
 
+/** The gap is load-bearing, not decoration: it rides the refusal into the
+    model's context and into gap logging, so "" or "N/A" is a verdict with the
+    evidence torn off. The schema rejects those, which means the model retries
+    (generateObject) and, if it will not comply, the call yields NO VERDICT and
+    the tool falls open MARKED — the honest outcome for a check that did not
+    really run. Twelve characters is the shortest thing that can name a missing
+    fact; the placeholder list is the set a model reaches for when it has
+    nothing to say. */
+const MIN_GAP_CHARS = 12;
+const GAP_PLACEHOLDERS = new Set(["n/a", "na", "none", "null", "unknown", "no gap", "nogap", "-", "—"]);
+
 const verdictSchema = z.object({
   supported: z.boolean(),
-  gap: z.string(),
+  gap: z.string().refine(
+    (value) => {
+      const gap = value.trim();
+      return gap.length >= MIN_GAP_CHARS && !GAP_PLACEHOLDERS.has(gap.toLowerCase().replace(/[.!]+$/, ""));
+    },
+    { message: "gap must name the fact that is present or missing, not a placeholder" },
+  ),
 });
 
 /** The standard, written for the failure the calibration actually found:
@@ -170,7 +188,7 @@ export function entailmentVerifier(options: EntailmentVerifierOptions): Knowledg
         ]);
         return result === undefined
           ? undefined
-          : { supported: result.object.supported, gap: result.object.gap };
+          : { supported: result.object.supported, gap: result.object.gap.trim() };
       } catch (error) {
         const cause = error instanceof Error ? error.message : String(error);
         if (!warned.has(cause)) {

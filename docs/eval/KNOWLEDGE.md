@@ -114,109 +114,106 @@ The cloud calibration ([vendo-web
 established that **no score threshold separates answerable from unanswerable
 questions** on the Agentset engine: answerable questions span 0.674-0.866,
 unanswerable ones 0.597-0.783, and the best bar (0.7211) still lets 16 of 34
-unanswerable questions through while refusing 7 of 60 answerable ones. The
-answer is the *band* — the overlap region, where the score is spent and a
-cheap model reads the passages instead.
+unanswerable questions through while refusing 7 of 60 answerable ones. So a
+cheap model reads the passages instead of trusting the number.
 
-### The live measurement (K15)
+The first design spent that model call only inside the *band* — the region
+where the two populations overlap and the score is provably useless. The live
+measurement below is why it no longer does: the questions outside the band
+were the ones nobody was checking.
 
-Run against the real engine, through the real tool, with real model calls:
+### The live measurement
+
+Run against the real engine, through the real tool, with real model calls.
 `bands/agentset-verifier-live.json` carries a record per question per pass
 (retrieved doc ids and scores, the verdict and its stated gap, the final
-outcome, wall-clock latency), and **every number below recomputes from those
-records** — `verifier-live.test.ts` re-derives the table in CI and fails if the
-two ever disagree.
+outcome, wall-clock latency) and **every number below recomputes from those
+records** — `verifier-live.test.ts` re-derives each published aggregate in CI
+and fails if the doc drifts off its data.
 
-Configuration measured: 59-doc fixture corpus in a throwaway Agentset
-namespace · band [0.6735, 0.7835] · `weakScoreThreshold` 0 (main's default,
-which is what a Cloud host runs) · per-call cap 5s · per-turn budget 5s ·
-verifier model `claude-haiku-4-5` on the `knowledgeVerifier` slot · 94
-questions × 3 passes. The shipped configuration was measured **twice**, on
-separate namespaces (`agentset-verifier-live.json` and
-`…-live-run1.json`); both runs are committed and both are reported, because
-reporting the kinder of two runs is how a table stops being evidence.
+Two configurations were measured, and both are published, because the
+difference between them is the finding:
 
-| | pass 1 | pass 2 | pass 3 | worst |
-|---|---|---|---|---|
-| **False answers**, run A | 19/34 — 56% | 12/34 — 35% | 9/34 — 26% | **19/34 — 56%** |
-| **False answers**, run B | 16/34 — 47% | 12/34 — 35% | 10/34 — 29% | 16/34 — 47% |
-| **False refusals**, run A | 2/60 — 3% | 2/60 | 2/60 | **2/60 — 3%** |
-| **False refusals**, run B | 3/60 — 5% | 3/60 | 3/60 | 3/60 — 5% |
-| Turns the band routed to the verifier | 59/94 — 63% | 59/94 | 59/94 | — |
-| Verifications (a turn can verify twice) | 87 | 90 | 92 | — |
-| No verdict → answered, flagged unverified | 14 | 9 | 4 | 14 |
-| Verifier latency on a verified turn | p50 2.01s · p95 5.00s | p50 1.88s · p95 4.05s | p50 1.83s · p95 3.33s | — |
-| Whole tool call | p50 2.57s · p95 6.60s | p50 2.42s · p95 6.21s | p50 2.58s · p95 6.04s | max 8.2s |
+- **ungated (what ships)** — the check reads every search that returns hits.
+  `agentset-verifier-live.json`, `…-live-ungated-run1.json`, one pass each.
+- **band-gated (K14's design, removed)** — the check ran only where the score
+  landed inside the calibrated band [0.6735, 0.7835].
+  `…-live-band-gated.json`, `…-run1.json`, `…-turn-budget-ab.json`, three
+  passes each.
 
-(Rows without a run label are run A; run B's are within one or two of them and
-are in its artifact.)
+Everything else is identical: 59-doc fixture corpus in a throwaway Agentset
+namespace, `weakScoreThreshold` 0 (main's default), per-call cap 5s, per-turn
+budget 5s, verifier `claude-haiku-4-5` on the `knowledgeVerifier` slot, all 94
+labelled questions.
 
-**Does the spec's zero-false-answer bar hold? No.** Over six passes the
-refusal set lost between 9 and 19 of its 34 questions to confident answers —
-the worst pass is exactly the 47-56% the score bar alone gets wrong. Pass-to-
-pass spread is large because a model verdict is not deterministic, which is
-itself worth knowing: a single pass of this eval cannot certify anything.
+| | ungated (ships) | band-gated (removed) |
+|---|---|---|
+| **False answers** per pass | 7/34 · 10/34 | 19/34 · 12/34 · 9/34 (run A) · 16/34 · 12/34 · 10/34 (run B) |
+| **worst observed** | **10/34 — 29%** | **19/34 — 56%** |
+| **False refusals** per pass | 3/60 · 3/60 | 2/60 (run A) · 3/60 (run B) |
+| Searches the check read | 94/94 — 100% | 59-60/94 — 63% |
+| Verifier calls per search | 1.37-1.39 | 0.93-0.98 |
+| Verifier latency, verified turn | p50 1.7-1.8s · p95 3.4-4.1s | p50 1.8-2.0s · p95 3.3-5.0s |
+| Whole tool call | p50 3.5-3.7s · p95 6.7-6.8s | p50 2.4-2.6s · p95 6.0-6.6s |
 
-The verifier's *judgement* is sound — over run A it returned 160 unsupported
-against 82 supported verdicts and produced refusals a threshold alone would
-never have made. What fails is everything around it. The false answers
-decompose into three causes:
+**Does the spec's zero-false-answer bar hold? No.** The best configuration
+still answered 7 and 10 of 34 unanswerable questions on its two passes. What
+removing the gate bought is real and large — the worst pass went from 19/34 to
+10/34, and the false-refusal side did not get worse — but "much better" is not
+the bar, and this is why the check ships **off by default**.
 
-1. **Outside the band, so never verified — 4 every pass.** The band routes;
-   what it does not route is decided by the host's `weakScoreThreshold`, and
-   main's default is 0, which answers anything with hits. Three of these score
-   *below* the band (0.597, 0.628, 0.670) and one lands 0.0001 above its top
-   edge (0.7836 against a high of 0.7835 — the same knife-edge that motivated
-   the band, now at the band's own boundary, because a band fitted to the
-   extremes of one run does not transfer exactly to the next).
-2. **No verdict — 14, 9, 4 in run A.** The verification did not come back in
-   time, so the tool answered as it would have without a verifier and flagged
-   the result `unverified`. This is the fail-open path working as designed,
-   and it is the largest single cause and the most volatile one.
-3. **A genuine miss — the remainder, one to three per pass.** The verifier
-   read the passages and called them sufficient. Example: "Is there a pip
-   package for Vendo?" against passages about the npm package returned
-   *supported* ("the passages state that Vendo is installed via the npm
-   package @vendoai/vendo"), while its sibling paraphrase "How do I install
-   the Vendo Python SDK?" was correctly refused with the gap "the passages
-   describe installing the JavaScript SDK via npm, but do not contain any
-   information about installing a Python SDK".
+**Where the remaining false answers come from.** Three exhaustive causes, one
+per false answer, recomputed per pass by the run script and re-derived by the
+test (`falseAnswersNeverVerified` + `falseAnswersNoVerdict` +
+`falseAnswersVerifierSaidSupported` = `falseAnswers`):
 
-The practical reading: **the verifier is a second opinion, not a refusal
-policy.** It can only improve questions the band routes to it, it cannot
-refuse when it has no verdict, and on an engine whose threshold is 0 the
-questions it never sees are answered by default. Zero false answers needs the
-verifier *and* a calibrated threshold under it; that threshold is the host's
-to set (enabling the verifier deliberately moves nobody's threshold — K15 T2),
-and the Cloud engine's shipped default is 0. Whether the Cloud engine should
-default to its measured bar (0.7211) as an engine default, independent of the
-verifier, is a live-behaviour decision and is filed, not taken.
+| cause | ungated | band-gated (run A) |
+|---|---|---|
+| Never verified — outside the gate | **0** | 4 · 4 · 4 |
+| No verdict — timed out, answered and flagged `unverified` | 4 · 8 | 12 · 6 · 3 |
+| The verifier read the passages and said supported | 3 · 2 | 3 · 2 · 2 |
 
-**Cost.** One cheap-model call on 63% of searches (0.95 calls per search over
-run A). At `claude-haiku-4-5` list prices with a ~1.1k-token prompt and a
-~60-token verdict that is ≈ $0.0013 per verified search, ≈ $0.0008 per search
-overall — an estimate from the measured call count and list prices, not a
-billing readout. Added latency is measured, not estimated: p50 1.8-2.0s on a
-verified turn, and the per-turn budget bounds the verifier's share of one tool
-call at 5s however many times it verifies.
+Removing the gate zeroed the first row, which is the whole reason it was
+removed: those four questions per pass were never looked at, three of them
+scoring *below* the band and one 0.0001 above its top edge (0.7836 against a
+high of 0.7835 — the knife-edge that motivated the band, reappearing at the
+band's own boundary). The dominant remaining cause is the timeout, which is
+the fail-open path working as designed: those answers ship flagged. The last
+row is the verifier being wrong — e.g. "Is there a pip package for Vendo?"
+against npm passages returned *supported* ("the passages state that Vendo is
+installed via the npm package @vendoai/vendo"), while its sibling paraphrase
+"How do I install the Vendo Python SDK?" was correctly refused with the gap
+"the passages describe installing the JavaScript SDK via npm, but do not
+contain any information about installing a Python SDK".
+
+**Cost.** Measured, and counting the second call a chat→deep escalation makes:
+**1.37-1.39 verifier calls per search** ungated (0.93-0.98 gated). At
+`claude-haiku-4-5` list prices with a ~1.1k-token prompt and a ~60-token
+verdict — ≈$0.0013 a call — that is **≈$0.0018 per search** ungated, ≈$0.0013
+gated. The per-call price is a list-price estimate; the call count is
+measured. Latency is measured throughout: the check adds p50 ~1.8s to a
+verified turn, and the per-turn budget bounds its share of one tool call at 5s
+however many times it verifies.
 
 ### Sizing the per-turn budget, by measurement
 
 A turn that escalates chat→deep verifies twice, so the per-call cap alone let
 one tool call spend ~10s on verification. The per-turn budget bounds that. Its
 size was chosen by running the whole corpus both ways rather than by taste
-(`bands/agentset-verifier-turn-budget-ab.json` is the 8s arm, 3 passes, same
-corpus, same day as run B):
+(`bands/agentset-verifier-live-band-gated-turn-budget-ab.json` is the 8s arm,
+3 passes, same corpus and same day as band-gated run B):
 
 | per-turn budget | false answers | false refusals | no verdict | tool call p95 |
 |---|---|---|---|---|
-| **5s (shipped)** | 16 · 12 · 10 | 3 · 3 · 3 | 37 | 6.5s |
-| 8s | 16 · 12 · 11 | 2 · 2 · 2 | 25 | 8.1s |
+| **5s (shipped)** | 16/34 · 12/34 · 10/34 | 3/60 | 37 | 6.5s |
+| 8s | 16/34 · 12/34 · 11/34 | 2/60 | 25 | 8.1s |
 
 The worst case is identical. Eight seconds buys about one answerable question
 per pass and twelve fewer unverified flags, and costs 1.6s at p95 on a call
 the user is waiting through. Five seconds ships; the trade is one constant
-(`KNOWLEDGE_VERIFY_TURN_BUDGET_MS`) if that judgement ever changes.
+(`KNOWLEDGE_VERIFY_TURN_BUDGET_MS`) if that judgement ever changes. (That A/B
+predates the gate's removal, so both its arms are band-gated; what it compares
+is the budget, which the gate does not interact with.)
 
 **Tuning discipline.** This is a model-costed leg, so the frozen-set posture
 above applies: the verifier's standard was written from the calibration's
@@ -257,4 +254,5 @@ calibration runs are).
 | 2026-07-25 | memory | 1.000 | 1.000 | — (offline) | Calibration run at authoring time; bars seeded at measured values |
 | 2026-07-26 | lexical | 0.100 | 0.055 | — (offline) | Calibration at K7 landing, natural questions. Retrieval baseline is weak (unnormalized term-frequency scoring; long common-token docs dominate; schema lookup honestly empty for question-shaped text) and the REFUSAL LAYER IS RED: off-corpus questions return junk hits, so the shipped zero-hits weakness policy answers them (6/60 golden items retrieved; 0/15 refusal items refused). Bars seeded at measured floors; lexical stays out of the per-PR gate until refusals go honest — this row is the suite catching a real quality gap, not noise |
 | 2026-07-27 | agentset (replay) | — | — | — | WITHDRAWN. K14's verifier table ("false answers 47% → 3%") was a replay with reconstructed passages and a hand-computed outcome, not a live run; superseded by the row below. The harness and artifact are deleted |
-| 2026-07-28 | agentset (live) | — | — | — | K15 verifier pass, live engine + real tool + real model, 94 questions × 3 passes × two runs: false answers 19/12/9 and 16/12/10 of 34 (worst 19/34 — 56%), false refusals 2-3/60, band routed 59-60/94 turns, verifier p50 1.8-2.0s, tool call p50 2.5s / p95 6.6s. **The zero-false-answer bar does NOT hold** — see §The verifier pass for the three causes |
+| 2026-07-28 | agentset (live, band-gated) | — | — | — | K15 first measurement of K14's gated design, 94 questions × 3 passes × two runs: false answers 19/12/9 and 16/12/10 of 34 (worst 19/34 — 56%), false refusals 2-3/60, only 59-60/94 searches read. The gate was removed on the strength of this row |
+| 2026-07-28 | agentset (live, ungated — ships) | — | — | — | The check on every hits-returning search: false answers 7/34 and 10/34 (worst 10/34 — 29%), false refusals 3/60, 94/94 searches read, 1.37-1.39 calls/search, verifier p50 1.7-1.8s, tool call p50 3.5-3.7s / p95 6.8s. **The zero-false-answer bar still does NOT hold**, which is why the check ships off by default |

@@ -103,6 +103,31 @@ describe("entailmentVerifier (K14 T2)", () => {
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
+  it("gives NO verdict when the model returns an EMPTY or placeholder gap", async () => {
+    // A verdict whose gap is torn off is not a verdict: it reaches the refusal
+    // and the gap log carrying nothing. Better to fall open marked than to
+    // refuse a user with "I don't know — N/A".
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (const gap of ["", "   ", "N/A", "none", "-"]) {
+        const verifier = entailmentVerifier({ model: scriptedModel(JSON.stringify({ supported: false, gap })) });
+        await expect(verifier.verify({ question: "q", passages })).resolves.toBeUndefined();
+      }
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("keeps a real gap, trimmed", async () => {
+    const verifier = entailmentVerifier({
+      model: scriptedModel(JSON.stringify({ supported: false, gap: "  the passages never mention Vue  " })),
+    });
+    await expect(verifier.verify({ question: "q", passages })).resolves.toEqual({
+      supported: false,
+      gap: "the passages never mention Vue",
+    });
+  });
+
   it("caps a verification at the measured five seconds by default", () => {
     expect(KNOWLEDGE_VERIFY_TIMEOUT_MS).toBe(5000);
   });

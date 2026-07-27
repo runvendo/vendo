@@ -26,14 +26,6 @@ export {
   type KnowledgeResultOutcome,
   type KnowledgeToolsOptions,
 } from "./agent-tools.js";
-/** Knowledge K14 — the verification band: where the evidence score carries no
-    signal and the verifier adjudicates instead. */
-export {
-  deriveVerifyBand,
-  inVerifyBand,
-  type KnowledgeScorePopulations,
-  type KnowledgeVerifyBand,
-} from "./band.js";
 export { cloudKnowledge, type CloudKnowledgeOptions } from "./cloud.js";
 export { KNOWLEDGE_CHUNKS_COLLECTION, KNOWLEDGE_DOCS_COLLECTION } from "./collections.js";
 export { httpKnowledge, type HttpKnowledgeOptions } from "./http.js";

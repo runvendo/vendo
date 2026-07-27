@@ -84,14 +84,19 @@ of unanswerable questions still cleared it. No bar fixes that — it is a
 property of embedding similarity, which cannot tell "how to install in a
 framework" from "how to install in **your** framework".
 
-So on the Cloud engine, in the score region where the bar provably cannot
-decide (the *band*, calibrated in
-[`docs/eval/knowledge/bands/agentset.json`](eval/knowledge/bands/agentset.json)),
-the tool asks a cheap model one question before answering: can this question
-be answered from the passages the search actually returned? If not, the tool
-returns its ordinary `insufficient-evidence` outcome — carrying the gap the
-verifier named, so the agent can say *what* the docs do not cover — and the
-agent says it does not know. Same tool, same outcomes, same UI.
+So there is an opt-in check on the Cloud engine. Turn it on with
+`VENDO_KNOWLEDGE_VERIFY=on` and, before the tool returns, a cheap model reads
+the passages the search actually returned and answers one question: can this
+question be answered from these alone? If not, the tool returns its ordinary
+`insufficient-evidence` outcome — carrying the gap the verifier named, so the
+agent can say *what* the docs do not cover — and the agent says it does not
+know. Same tool, same outcomes, same UI.
+
+The check is **not** gated on the retrieval score. An earlier version ran it
+only inside the score band where the bar was provably useless, and the live run
+showed the cost: four unanswerable questions per pass scored outside that band,
+were never checked, and were answered. A check gated on the number it exists to
+replace inherits that number's blind spots.
 
 Measured live against Agentset over the 94-question corpus: see
 [the table](eval/KNOWLEDGE.md#the-verifier-pass) for per-pass numbers, the
@@ -99,15 +104,18 @@ worst case, added latency and per-search cost.
 
 Five properties are worth knowing:
 
-- **It is on by default, and `off` is one variable.** Set
-  `VENDO_KNOWLEDGE_VERIFY=off` to keep the pure-threshold behavior, with the
-  47% false-answer rate that implies. Anything that is neither `on` nor `off`
-  fails loudly at startup rather than leaving you with a trust feature you
-  think is running.
-- **Turning it on changes no threshold.** The band decides *who* adjudicates,
-  never *what* is decided: your `weakScoreThreshold` behaves exactly as it did
-  before, and a score outside the band is answered or refused by the same rule
-  as always, with no model call.
+- **It is OFF by default, and `on` is one variable.** It ships off because the
+  live measurement says it does not deliver the thing it exists for: with the
+  check on, the corpus still answered a quarter to a half of its unanswerable
+  questions, while costing a model call per search and seconds of latency on a
+  call your user is waiting through. That is a trade to opt into with your eyes
+  open, not a default. Anything that is neither `on` nor `off` fails loudly at
+  startup rather than leaving you with a trust feature you think is running.
+- **Turning it on changes no threshold.** Your `weakScoreThreshold` is exactly
+  what you set it to; every search the check cannot read (no model, timeout,
+  unusable answer) is decided by that threshold as before. When there IS a
+  verdict the verdict decides, in both directions: it refuses evidence the
+  score liked, and answers evidence the score did not.
 - **It only applies to the Cloud engine.** Scores are engine-relative, so a
   number calibrated on one engine means nothing on another. Local lexical, BYO
   and self-hosted engines are untouched.

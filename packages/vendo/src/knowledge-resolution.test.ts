@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +7,7 @@ import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CLOUD_KNOWLEDGE_VERIFY_BAND, createVendo, type CreateVendoConfig, type Vendo } from "./server.js";
+import { createVendo, type CreateVendoConfig, type Vendo } from "./server.js";
 
 /**
  * The knowledge RESOLUTION MATRIX (ENG-368, issue #623).
@@ -43,8 +42,8 @@ beforeEach(() => {
   // must never decide what this suite observes.
   vi.stubEnv("VENDO_API_KEY", "");
   vi.stubEnv("VENDO_CLOUD_URL", "");
-  // Same hazard for the verifier switch: a developer who turned it off in
-  // their shell must not change what these rows observe. Unset = ON (K15).
+  // Same hazard for the verifier switch: a developer who turned it on in
+  // their shell must not change what these rows observe. Unset = OFF.
   vi.stubEnv("VENDO_KNOWLEDGE_VERIFY", "");
 });
 
@@ -310,24 +309,24 @@ describe("knowledge resolution — misconfiguration is audible", () => {
 });
 
 /**
- * K14/K15 — the verification band at the composition seam.
+ * The evidence check at the composition seam.
  *
- * The Cloud engine is the one engine whose refusal behavior was calibrated
- * against a live run (docs/eval/knowledge/bands/agentset.json), and the
- * calibration's finding was that no score threshold separates answerable from
- * unanswerable questions. So the Cloud engine — and only the Cloud engine —
- * composes with the band, and inside the band a cheap model decides. K15: it
- * is ON by default, and composing it moves NO threshold. Every row below uses
- * an IN-BAND score (0.75), the region where the threshold alone would answer,
- * so the verifier's effect is the only thing observed.
+ * It is OFF by default (conductor ruling, checker round 1): the live run says
+ * it does not clear the zero-false-answer bar it exists for, while adding a
+ * model call per search and seconds of latency, so shipping it on would be a
+ * product decision nobody made. `VENDO_KNOWLEDGE_VERIFY=on` opts in, and only
+ * the Cloud engine composes it (scores and corpora differ per engine; nothing
+ * else has been measured). It is NOT score-gated: rows below use scores from
+ * across the range and every one of them is read.
  */
-describe("knowledge verification band (K14/K15) — where the score cannot decide", () => {
+describe("knowledge evidence check — composition seam", () => {
   const IN_BAND = 0.75;
 
-  /** The switch: unset means ON, so rows only touch it to turn it off. */
+  /** The switch: unset means OFF, so rows that want the check ask for it. */
   const verifySwitch = (value: string): void => {
     vi.stubEnv("VENDO_KNOWLEDGE_VERIFY", value);
   };
+  const optIn = (): void => verifySwitch("on");
 
   /** A verifier-slot model object answering with a fixed verdict. */
   function verdictModel(supported: boolean): LanguageModel & { calls: number } {
@@ -336,7 +335,18 @@ describe("knowledge verification band (K14/K15) — where the score cannot decid
       doGenerate: async () => {
         calls += 1;
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ supported, gap: "test" }) }],
+          // A real gap, not "test": the verdict schema rejects placeholders,
+          // so a stub that emits one would silently yield NO verdict and this
+          // suite would be asserting the fail-open path by accident.
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              supported,
+              gap: supported
+                ? "the passages state the wire transfer limit the question asks for"
+                : "the passages cover transfers generally but never state this limit",
+            }),
+          }],
           finishReason: { unified: "stop" as const, raw: undefined },
           usage: {
             inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
@@ -362,6 +372,7 @@ describe("knowledge verification band (K14/K15) — where the score cannot decid
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
+    optIn();
     const knowledgeVerifier = verdictModel(false);
     const vendo = await compose({ models: { knowledgeVerifier } });
     const result = await search(vendo);
@@ -376,6 +387,7 @@ describe("knowledge verification band (K14/K15) — where the score cannot decid
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
+    optIn();
     const vendo = await compose({ models: { knowledgeVerifier: verdictModel(true) } });
     const result = await search(vendo);
     expect(outcomeOf(result)).toBe("answered");
@@ -384,29 +396,29 @@ describe("knowledge verification band (K14/K15) — where the score cannot decid
     expect(unverifiedFlag(result)).toBeUndefined();
   });
 
-  it("is ON by default: an untouched Cloud host gets the check (K15, Yousef 2026-07-28)", async () => {
+  it("is OFF by default: an untouched Cloud host keeps today's behavior and spends nothing", async () => {
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
     const knowledgeVerifier = verdictModel(false);
     const vendo = await compose({ models: { knowledgeVerifier } });
-    expect(outcomeOf(await search(vendo))).toBe("insufficient-evidence");
-    expect(knowledgeVerifier.calls).toBeGreaterThan(0);
+    const result = await search(vendo);
+    expect(outcomeOf(result)).toBe("answered");
+    expect(knowledgeVerifier.calls).toBe(0);
+    // A host that never turned the check on is not "unverified" — it declined
+    // the check, and the amber treatment would be a lie.
+    expect(unverifiedFlag(result)).toBeUndefined();
   });
 
-  it("VENDO_KNOWLEDGE_VERIFY=off is the explicit opt-out — today's pure-threshold behavior", async () => {
+  it("VENDO_KNOWLEDGE_VERIFY=off is the same as unset", async () => {
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
     verifySwitch("off");
     const knowledgeVerifier = verdictModel(false);
     const vendo = await compose({ models: { knowledgeVerifier } });
-    const result = await search(vendo);
-    expect(outcomeOf(result)).toBe("answered");
+    expect(outcomeOf(await search(vendo))).toBe("answered");
     expect(knowledgeVerifier.calls).toBe(0);
-    // A host that switched the check OFF is not "unverified" — it declined the
-    // check, and the amber treatment would be a lie.
-    expect(unverifiedFlag(result)).toBeUndefined();
   });
 
   it("a typo in VENDO_KNOWLEDGE_VERIFY fails loudly — never a silently-off trust feature", async () => {
@@ -419,6 +431,7 @@ describe("knowledge verification band (K14/K15) — where the score cannot decid
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
+    optIn();
     const judge = verdictModel(false);
     const knowledgeVerifier = verdictModel(false);
     const vendo = await compose({ models: { judge, knowledgeVerifier } });
@@ -428,9 +441,9 @@ describe("knowledge verification band (K14/K15) — where the score cannot decid
   });
 
   it("a host's own engine is never held to another engine's calibration", async () => {
-    // Scores are engine-relative: 0.75 means nothing here, so there is no
-    // band, no verification, and the host's adapter answers exactly as it
-    // does today.
+    // The check is Cloud-only: a host's own engine composes no verifier at
+    // all, so its adapter answers exactly as it does today.
+    optIn();
     const knowledgeVerifier = verdictModel(false);
     const vendo = await compose({
       knowledge: {
@@ -457,6 +470,7 @@ describe("knowledge verification band (K14/K15) — where the score cannot decid
     const wire = wireRouter({ score: IN_BAND });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
+    optIn();
     // The Cloud key resolves the verifier slot through the console gateway, so
     // strip it from the model ladder's view: no key, no provider module, no
     // verdict. The tool must answer the way it would have with no verifier at
@@ -477,25 +491,40 @@ describe("knowledge verification band (K14/K15) — where the score cannot decid
     }
   });
 
-  it("moves NO threshold: a below-band score answers exactly as it did before the verifier existed", async () => {
+  it("moves NO threshold: with the check ON but silent, every score decides as it did before", async () => {
     // The K14 regression: enabling verification also swapped the weak-score
     // threshold from 0 to the Cloud bar 0.7211, so a 0.61 score started
     // refusing without a single model call. Two decisions, two lives.
     const wire = wireRouter({ score: 0.61 });
     vi.stubGlobal("fetch", wire.fetch);
     withKey();
-    const knowledgeVerifier = verdictModel(false);
-    const vendo = await compose({ models: { knowledgeVerifier } });
-    const result = await search(vendo);
-    expect(outcomeOf(result)).toBe("answered");
-    expect(knowledgeVerifier.calls).toBe(0);
-    expect(unverifiedFlag(result)).toBeUndefined();
+    optIn();
+    // A model that never yields a usable verdict: the threshold is left to
+    // decide, exactly as it does with no verifier composed.
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const vendo = await compose({
+        models: { knowledgeVerifier: { doGenerate: undefined } as unknown as LanguageModel },
+      });
+      expect(outcomeOf(await search(vendo))).toBe("answered");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
-  it("composes the band the calibration committed — not a number typed into the seam", async () => {
-    const band = JSON.parse(
-      readFileSync(join(import.meta.dirname, "../../../docs/eval/knowledge/bands/agentset.json"), "utf8"),
-    ) as { band: { low: number; high: number } };
-    expect(CLOUD_KNOWLEDGE_VERIFY_BAND).toEqual(band.band);
+  it("is NOT score-gated: a score K14's band excluded is still read", async () => {
+    // 0.61 sat below the old band and was answered unchecked; three of the
+    // live run's persistent false answers were exactly that shape.
+    const wire = wireRouter({ score: 0.61 });
+    vi.stubGlobal("fetch", wire.fetch);
+    withKey();
+    optIn();
+    const knowledgeVerifier = verdictModel(false);
+    const vendo = await compose({ models: { knowledgeVerifier } });
+    expect(outcomeOf(await search(vendo))).toBe("insufficient-evidence");
+    expect(knowledgeVerifier.calls).toBeGreaterThan(0);
   });
 });

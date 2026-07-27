@@ -635,38 +635,23 @@ function selectKnowledge(
   return cloudKnowledge(cloud);
 }
 
-/** K14/K15 — where the CLOUD engine's score provably cannot decide whether we
-    know something, measured against the live engine over the eval corpus and
-    committed at `docs/eval/knowledge/bands/agentset.json` (16 of 34
-    unanswerable questions cleared the best possible bar, 7 of 60 answerable
-    ones fell below it, and every one of those 16 sits inside this interval).
-    Inside the band the verifier reads the passages; outside it, nothing about
-    this host's behavior changes.
+/** The verifier is OFF by default (conductor ruling, checker round 1).
+    `VENDO_KNOWLEDGE_VERIFY=on` turns it on for the Cloud engine.
 
-    K15: the band is ALL that composes. K14 also swapped the host's weak-score
-    threshold to the Cloud bar 0.7211 whenever verification was enabled, which
-    silently re-decided searches the verifier never saw (a 0.61 score went from
-    answered to refused with no model call). Routing work and deciding truth
-    are two different jobs: this number picks WHO decides, never WHAT is
-    decided, and enabling the verifier moves no threshold at all.
-
-    Deliberately NOT applied to any other engine: a number from one engine's
-    score space says nothing about another's, and a self-hosted or BYO engine
-    that has not been calibrated keeps today's behavior. */
-export const CLOUD_KNOWLEDGE_VERIFY_BAND = { low: 0.6735, high: 0.7835 } as const;
-
-/** The verifier is ON by default for the Cloud engine (Yousef, 2026-07-28):
-    the measured trade is worth taking, and a trust feature that ships off is a
-    trust feature nobody gets. `VENDO_KNOWLEDGE_VERIFY=off` is the explicit
-    opt-out — keyless and BYO hosts are never forced into model spend, and a
-    host who wants today's behavior keeps it with one variable.
+    It ships off because the live measurement says it does not clear the bar it
+    exists for: on the 94-question corpus it still answered 9-19 of 34
+    unanswerable questions per pass (docs/eval/KNOWLEDGE.md), while adding a
+    model call per search and seconds of latency to a call the user waits
+    through. Shipping that on by default would be a product decision nobody
+    made. Hosts who want the trade — fewer confident wrong answers, at that
+    cost — opt in with one variable.
 
     A value that is neither on nor off is a TYPO, and a typo that silently
     means "off" is how a host thinks it has a trust feature it does not. Loud,
     like every other env knob here (positiveIntegerEnv). */
 function knowledgeVerifyEnabled(): boolean {
   const raw = environment("VENDO_KNOWLEDGE_VERIFY")?.trim().toLowerCase();
-  if (raw === undefined || raw === "") return true;
+  if (raw === undefined || raw === "") return false;
   if (["on", "true", "1"].includes(raw)) return true;
   if (["off", "false", "0"].includes(raw)) return false;
   throw new VendoError(
@@ -675,17 +660,23 @@ function knowledgeVerifyEnabled(): boolean {
   );
 }
 
-/** The tool options for the composed engine. The calibrated band rides the
-    Cloud engine (scores are engine-relative; nothing else is calibrated), and
-    the verifier model is the family's cheap pick on its own
+/** The tool options for the composed engine: the verifier, and nothing else.
+
+    It is NOT score-gated. K14 ran it only inside a calibrated band, and the
+    live run showed what that costs — four unanswerable questions per pass
+    scored outside the band, were never checked, and were answered by the
+    threshold. A check gated on the number it exists to replace inherits that
+    number's blind spots (spec §The verifier pass: "not threshold-gated ... it
+    runs on every search that would return hits").
+
+    The verifier model is the family's cheap pick on its own
     `knowledgeVerifier` slot — pinnable with VENDO_MODEL_KNOWLEDGE_VERIFIER or
     `models.knowledgeVerifier`, beside `judge` rather than borrowing it. A rung
     that resolves to nothing simply yields no verdict: the tool answers as it
     would have without a verifier and marks the result unverified, which is why
     this can never make knowledge unavailable.
 
-    NOTE the one thing this function must never do: change a threshold. It
-    composes a band and a verifier, nothing else. */
+    NOTE the one thing this function must never do: change a threshold. */
 function knowledgeToolOptions(
   hostConfigured: boolean,
   models: ModelsConfig | undefined,
@@ -693,7 +684,7 @@ function knowledgeToolOptions(
   if (hostConfigured || !knowledgeVerifyEnabled()) return {};
   const model = vendoModel(undefined, { slot: "knowledgeVerifier" });
   bindVendoModelSlots(model, models);
-  return { verifyBand: CLOUD_KNOWLEDGE_VERIFY_BAND, verifier: entailmentVerifier({ model }) };
+  return { verifier: entailmentVerifier({ model }) };
 }
 
 /** ADAPTER RULE (docs/superpowers/specs/2026-07-17-vendo-cloud-definition-design.md):
