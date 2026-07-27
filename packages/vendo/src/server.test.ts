@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { capturedPinBaselineSchema } from "@vendoai/actions";
 import {
   VENDO_APP_FORMAT,
+  VENDO_POLICY_FORMAT,
   VENDO_TREE_FORMAT_V2,
   VendoError,
   type AppDocument,
@@ -3151,6 +3152,401 @@ describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects 
     const reader = response.body!.getReader();
     while (!(await reader.read()).done) { /* drain */ }
     expect(await (await beat(vendo, "thr_done")).json()).toEqual({ active: false });
+  });
+});
+
+describe("unified try surface (Task 4) — profileDir + fetch seams", () => {
+  /** A minimal on-disk profile (tools.json + theme.json) in a temp root that
+   *  is NOT the process cwd — exactly the shape `npx vendo try` writes. */
+  async function tempProfile(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-dir-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [{
+        name: "host_invoices_list",
+        description: "GET /api/invoices",
+        inputSchema: { type: "object", properties: {}, additionalProperties: true },
+        risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+      }],
+    }));
+    await writeFile(join(root, ".vendo", "theme.json"), JSON.stringify({
+      colors: {
+        background: "#fff", surface: "#fff", text: "#111", muted: "#777",
+        accent: "#00f", accentText: "#fff", danger: "#f00", border: "#ddd",
+      },
+      typography: { fontFamily: "Inter", baseSize: "16px" },
+      radius: { small: "4px", medium: "8px", large: "16px" },
+      density: "comfortable",
+      motion: "reduced",
+    }));
+    return root;
+  }
+
+  it("reads the .vendo profile from profileDir, not the process cwd", async () => {
+    const root = await tempProfile();
+    const store = await tempStore("vendo-profile-dir-store-");
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+    });
+
+    // The cwd (this package) has no .vendo/, so the tool can only have come
+    // from the profileDir read.
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_invoices_list");
+  });
+
+  it("threads config.fetch into route-tool execution; the real network is never touched", async () => {
+    const root = await tempProfile();
+    const store = await tempStore("vendo-profile-fetch-store-");
+    vi.stubEnv("VENDO_BASE_URL", "https://host.example");
+    const syntheticFetch = vi.fn(async () => new Response(
+      JSON.stringify([{ id: "inv_1" }]),
+      { headers: { "content-type": "application/json" } },
+    ));
+    const realFetch = vi.fn(async () => { throw new Error("real network reached"); });
+    vi.stubGlobal("fetch", realFetch);
+
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+      fetch: syntheticFetch as unknown as typeof fetch,
+    });
+    const outcome = await vendo.actions.execute(
+      { id: "call_try_fetch", tool: "host_invoices_list", args: {} },
+      ctx,
+    );
+
+    expect(outcome).toEqual({ status: "ok", output: [{ id: "inv_1" }] });
+    expect(syntheticFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = syntheticFetch.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(String(url)).toBe("https://host.example/api/invoices");
+    expect(init.method).toBe("GET");
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("unified try surface (Task 15a) — in-memory profile", () => {
+  const profileTheme = {
+    colors: {
+      background: "#fff", surface: "#fff", text: "#111", muted: "#777",
+      accent: "#00f", accentText: "#fff", danger: "#f00", border: "#ddd",
+    },
+    typography: { fontFamily: "Inter", baseSize: "16px" },
+    radius: { small: "4px", medium: "8px", large: "16px" },
+    density: "comfortable" as const,
+    motion: "reduced" as const,
+  };
+
+  function profileTool(name: string) {
+    return {
+      name,
+      description: `GET tool ${name}`,
+      inputSchema: { type: "object", properties: {}, additionalProperties: true },
+      risk: "read" as const,
+      binding: { kind: "route" as const, method: "GET" as const, path: `/api/${name}`, argsIn: "query" as const },
+    };
+  }
+
+  /** Pin the cwd to an EMPTY temp dir so no `.vendo/` exists anywhere the
+   *  composition could read from — everything must come from `profile`. */
+  async function emptyCwd(): Promise<void> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-mem-"));
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    cleanups.push(async () => {
+      process.chdir(originalCwd);
+      await rm(root, { recursive: true, force: true });
+    });
+  }
+
+  /** A mock model that records every prompt it is streamed (the 03 §3 prompt
+   *  wiring test's capture, shared by the profile-seam tests below). */
+  async function promptCapture(): Promise<{
+    model: LanguageModel;
+    prompts: Array<Array<{ role: string; content: unknown }>>;
+  }> {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const prompts: Array<Array<{ role: string; content: unknown }>> = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        prompts.push(structuredClone(prompt) as never);
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "t1" },
+              { type: "text-delta", id: "t1", delta: "Hi." },
+              { type: "text-end", id: "t1" },
+              {
+                type: "finish",
+                usage: {
+                  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 0, text: 0, reasoning: 0 },
+                },
+                finishReason: { unified: "stop", raw: undefined },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    return { model: model as unknown as LanguageModel, prompts };
+  }
+
+  async function runTurn(vendo: Vendo, threadId: string): Promise<void> {
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId,
+      message: { id: `m_${threadId}`, role: "user", parts: [{ type: "text", text: "Hello" }] },
+    }));
+    expect(turn.status).toBe(200);
+    await turn.text();
+  }
+
+  function systemContent(prompts: Array<Array<{ role: string; content: unknown }>>): string {
+    const system = prompts[0]?.find((message) => message.role === "system");
+    expect(system).toBeDefined();
+    return typeof system!.content === "string" ? system!.content : JSON.stringify(system!.content);
+  }
+
+  /** A profileDir fixture carrying tools.json + theme.json + brief.md — the
+   *  disk half the precedence and equivalence tests below compose against.
+   *  The theme's fontFamily is distinctive so "came from the disk file" is
+   *  assertable in the system prompt's theme summary. */
+  async function diskProfile(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-disk-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [profileTool("host_from_disk")],
+    }));
+    await writeFile(join(root, ".vendo", "theme.json"), JSON.stringify({
+      ...profileTheme,
+      typography: { fontFamily: "Disk Grotesk", baseSize: "16px" },
+    }));
+    await writeFile(join(root, ".vendo", "brief.md"), "Disk brief for the profile seam.\n");
+    return root;
+  }
+
+  it("composes from ONLY the in-memory profile: tools + overrides list, brief and theme ride the system prompt", async () => {
+    await emptyCwd();
+    const store = await tempStore("vendo-profile-mem-store-");
+    const { model, prompts } = await promptCapture();
+
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      profile: {
+        tools: [profileTool("host_invoices_list"), profileTool("host_dangerous")],
+        overrides: { format: "vendo/overrides@3", tools: { host_dangerous: { disabled: true } } },
+        theme: profileTheme,
+        brief: "Maple is a neobank for freelancers.",
+      },
+    });
+
+    // The actions surface lists the in-memory tools with the in-memory
+    // overrides applied — nothing was ever read from disk.
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_invoices_list");
+    expect(names).not.toContain("host_dangerous");
+
+    // A wire turn works, and the system prompt carries the in-memory brief
+    // (Product section) plus the theme summary — where the server surfaces
+    // the theme to the model.
+    await runTurn(vendo, "thr_profile_mem");
+    const content = systemContent(prompts);
+    expect(content).toContain("Product\nMaple is a neobank for freelancers.");
+    expect(content).toContain("comfortable");
+    expect(content).toContain("Inter");
+  });
+
+  it("pieces are independent: in-memory profile.tools beat the profileDir tools.json while the unset theme + brief pieces are read from disk", async () => {
+    const root = await diskProfile();
+    const store = await tempStore("vendo-profile-prec-store-");
+    const { model, prompts } = await promptCapture();
+
+    const vendo = createVendo({
+      model,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+      profile: { tools: [profileTool("host_in_memory")] },
+    });
+
+    // The in-memory tools piece wins over the profileDir tools.json…
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_in_memory");
+    expect(names).not.toContain("host_from_disk");
+
+    // …while the pieces the profile left UNSET still resolve from the
+    // profileDir files: the disk theme's distinctive fontFamily rides the
+    // system prompt's theme summary, and the disk brief rides Product.
+    await runTurn(vendo, "thr_profile_prec");
+    const content = systemContent(prompts);
+    expect(content).toContain("Disk Grotesk");
+    expect(content).toContain("Product\nDisk brief for the profile seam.");
+  });
+
+  it("workerd portability regression: profile.tools skips the tools.json disk read entirely (a malformed file there is never opened)", async () => {
+    // Reproduces the real-workerd failure class's PRIMARY fix: a supplied
+    // in-memory profile piece must make the disk leg never run at all.
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-workerd-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    // Malformed tools.json: if the actions registry ever opened this file,
+    // JSON.parse would throw and kill every turn. profile.tools IS supplied
+    // below, so the primary fix (skip-when-supplied) means it is never
+    // opened — proven by composing successfully despite the garbage bytes.
+    await writeFile(join(root, ".vendo", "tools.json"), "{ not valid json, must never be read");
+
+    const store = await tempStore("vendo-profile-workerd-store-");
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+      profile: { tools: [profileTool("host_in_memory")] },
+    });
+
+    const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name);
+    expect(names).toContain("host_in_memory");
+  });
+
+  it("a residual overrides.json read that hits a REAL fs error (EISDIR) fails CLOSED instead of silently going live", async () => {
+    // The other half of the fix is narrower than a blanket degrade:
+    // overrides.json absent is MORE permissive than present (a disabled
+    // tool or audience exclusion vanishes), so a present-but-unreadable file
+    // on a real filesystem must still throw, exactly like before the
+    // workerd fix — only ENOENT and workerd's code-less unenv failure
+    // degrade (registry.ts/host-files.ts). overrides.json here is a
+    // DIRECTORY, not a file — profile.overrides is left UNSET, so this is a
+    // residual read, and reading a directory throws Node's real EISDIR, a
+    // genuine fail-closed fs error class (not workerd's code-less shim).
+    const root = await mkdtemp(join(tmpdir(), "vendo-profile-eisdir-"));
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@1",
+      tools: [profileTool("host_from_disk")],
+    }));
+    await mkdir(join(root, ".vendo", "overrides.json"));
+
+    const store = await tempStore("vendo-profile-eisdir-store-");
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profileDir: root,
+    });
+
+    await expect(vendo.actions.descriptors()).rejects.toMatchObject({ name: "VendoError", code: "validation" });
+  });
+
+  it("unset equivalence: `profile` unset and `profile: {}` compose identical observable state", async () => {
+    const root = await diskProfile();
+
+    // The same minimal host, observed through the seam's outputs: the
+    // descriptor list, and the system prompt (brief + theme surface).
+    async function observe(profile?: CreateVendoConfig["profile"]): Promise<{ names: string[]; system: string }> {
+      const store = await tempStore("vendo-profile-equiv-store-");
+      const { model, prompts } = await promptCapture();
+      const vendo = createVendo({
+        model,
+        principal: async () => principal,
+        store,
+        profileDir: root,
+        ...(profile === undefined ? {} : { profile }),
+      });
+      const names = (await vendo.actions.descriptors()).map((descriptor) => descriptor.name).sort();
+      await runTurn(vendo, "thr_profile_equiv");
+      return { names, system: systemContent(prompts) };
+    }
+
+    const unset = await observe();
+    const empty = await observe({});
+
+    // Pin the property directly: an empty profile changes NOTHING observable.
+    expect(empty.names).toEqual(unset.names);
+    expect(empty.system).toBe(unset.system);
+
+    // And the shared state is the real disk profile, not two empty surfaces.
+    expect(unset.names).toContain("host_from_disk");
+    expect(unset.system).toContain("Product\nDisk brief for the profile seam.");
+    expect(unset.system).toContain("Disk Grotesk");
+  });
+
+  it("profile.policy configures the guard in-memory: posture leaves \"unconfigured\" and a blocking rule actually enforces through guardedTools", async () => {
+    await emptyCwd();
+    const store = await tempStore("vendo-profile-policy-store-");
+
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store,
+      profile: {
+        tools: [profileTool("host_invoices_list")],
+        policy: {
+          format: VENDO_POLICY_FORMAT,
+          directions: ["Hosted try venue demo policy, held in memory."],
+          rules: [{ match: { tool: "host_invoices_list" }, action: "block", note: "in-memory lockdown" }],
+        },
+      },
+    });
+    await vendo.store.ensureSchema();
+
+    // The posture the "running without a policy" banner reads: configured.
+    expect(vendo.guard.status().posture).toBe("rules");
+
+    // And it is a REAL policy, not a cosmetic posture flip — the rule blocks
+    // through guardedTools, the guard-bound path chat/apps/automations ride
+    // (mirrors the local venue's carried-policy enforcement test in
+    // cli/try/server.test.ts).
+    const outcome = await vendo.guardedTools.execute(
+      { id: "call_profile_policy", tool: "host_invoices_list", args: {} },
+      { principal, venue: "chat", presence: "present", sessionId: "session_profile_policy" },
+    );
+    expect(outcome).toMatchObject({ status: "blocked", reason: "in-memory lockdown" });
+  });
+
+  it("explicit config.policy wins over profile.policy, and an unset piece keeps the \"unconfigured\" posture", async () => {
+    await emptyCwd();
+
+    // Explicit wins: the in-memory piece runs everything, the explicit knob
+    // blocks — the block decides, so config.policy took precedence.
+    const explicit = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store: await tempStore("vendo-profile-policy-prec-"),
+      policy: { rules: [{ match: {}, action: "block", note: "explicit config wins" }] },
+      profile: {
+        tools: [profileTool("host_invoices_list")],
+        policy: { format: VENDO_POLICY_FORMAT, rules: [{ match: {}, action: "run" }] },
+      },
+    });
+    await explicit.store.ensureSchema();
+    const outcome = await explicit.guardedTools.execute(
+      { id: "call_profile_policy_prec", tool: "host_invoices_list", args: {} },
+      { principal, venue: "chat", presence: "present", sessionId: "session_profile_policy_prec" },
+    );
+    expect(outcome).toMatchObject({ status: "blocked", reason: "explicit config wins" });
+
+    // Unset piece → unchanged: no policy anywhere still reports the honest
+    // "unconfigured" posture.
+    const unset = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => principal,
+      store: await tempStore("vendo-profile-policy-unset-"),
+      profile: { tools: [profileTool("host_invoices_list")] },
+    });
+    expect(unset.guard.status().posture).toBe("unconfigured");
   });
 });
 

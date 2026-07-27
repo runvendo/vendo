@@ -72,7 +72,7 @@ describe("build-failure lifecycle (#492)", () => {
     });
 
     const surface = await runtime.open(appId!, ctx);
-    expect(surface).toEqual({ kind: "failed", reason: "generation failed", retryable: true });
+    expect(surface).toEqual({ kind: "failed", reason: "generation failed", retryable: true, prompt: "A weather board" });
   });
 
   it("persists a failed record for every throwing build, so open() never leaves the embed pending", async () => {
@@ -149,7 +149,7 @@ describe("build-failure lifecycle (#492)", () => {
       expect((rejection as VendoError).message).toBe(`app build failed: ${line}`);
       const rows = await store.records("vendo_apps").list({});
       const surface = await runtime.open(rows.records[0]!.id, ctx);
-      expect(surface).toEqual({ kind: "failed", reason: line, retryable: false });
+      expect(surface).toEqual({ kind: "failed", reason: line, retryable: false, prompt: "Dashboard" });
     } finally {
       errorSpy.mockRestore();
     }
@@ -178,7 +178,7 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
       const rows = await store.records("vendo_apps").list({});
       expect(rows.records).toHaveLength(1);
       const surface = await runtime.open(rows.records[0]!.id, ctx);
-      expect(surface).toEqual({ kind: "failed", reason: HOST_CAPABILITY_MISS_REASON, retryable: false });
+      expect(surface).toEqual({ kind: "failed", reason: HOST_CAPABILITY_MISS_REASON, retryable: false, prompt: "one stat tile that says hello" });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("app build failed"));
     } finally {
       errorSpy.mockRestore();
@@ -199,12 +199,14 @@ describe("defect D — silent degenerate/hung builds fail loudly", () => {
         expect(rows.records).toHaveLength(1);
         expect(rows.records[0]?.data).toMatchObject({
           subject: "user_ada",
-          doc: { buildFailed: { retryable: true } },
+          // speed-core criterion 8 — the record carries the exact prompt so
+          // the embed's retry affordance can re-issue the create.
+          doc: { buildFailed: { retryable: true, prompt: "Dashboard" } },
         });
       }, { timeout: 3_000 });
       const rows = await store.records("vendo_apps").list({});
       const surface = await runtime.open(rows.records[0]!.id, context("user_ada"));
-      expect(surface).toMatchObject({ kind: "failed", retryable: true });
+      expect(surface).toMatchObject({ kind: "failed", retryable: true, prompt: "Dashboard" });
       expect((surface as { reason: string }).reason).toContain("never finished");
     } finally {
       delete process.env["VENDO_APP_BUILD_WATCHDOG_MS"];

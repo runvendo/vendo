@@ -1,4 +1,4 @@
-import { catalogFileSchema } from "@vendoai/actions";
+import { catalogFileSchema, type CatalogFile } from "@vendoai/actions";
 import type {
   ComponentCatalog,
   ComponentRegistry,
@@ -70,6 +70,19 @@ function parseIssue(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Task 15a: the parsed-catalog leg of runtimeCatalogFromJson, exported so an
+ * in-memory `profile.catalog` (already the catalog@1 file shape) normalizes
+ * through the SAME validator-building path as the disk read. */
+export function runtimeCatalogFromFile(parsed: CatalogFile): NormalizedCatalog {
+  return parsed.entries.map((entry) => ({
+    name: entry.name,
+    description: entry.description,
+    propsSchema: diskPropsValidator(entry.propsSchema, entry.name),
+    propsJsonSchema: entry.propsSchema,
+    ...(entry.examples === undefined ? {} : { examples: entry.examples }),
+  }));
+}
+
 /**
  * Strictly parses catalog@1. Disk entries carry their JSON Schema for
  * prompting AND validation: the same document drives both (04 §1).
@@ -80,14 +93,7 @@ export function runtimeCatalogFromJson(
 ): NormalizedCatalog {
   if (raw === undefined) return [];
   try {
-    const parsed = catalogFileSchema.parse(JSON.parse(raw));
-    return parsed.entries.map((entry) => ({
-      name: entry.name,
-      description: entry.description,
-      propsSchema: diskPropsValidator(entry.propsSchema, entry.name),
-      propsJsonSchema: entry.propsSchema,
-      ...(entry.examples === undefined ? {} : { examples: entry.examples }),
-    }));
+    return runtimeCatalogFromFile(catalogFileSchema.parse(JSON.parse(raw)));
   } catch (error) {
     console.error(
       `[vendo] Failed to load host components from ${file}: ${parseIssue(error)}. Run "vendo sync" to regenerate the file.`,

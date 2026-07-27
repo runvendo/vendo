@@ -239,11 +239,20 @@ export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options
     const needsApproval = options.guard
       ? async (input: unknown, { toolCallId }: { toolCallId: string }): Promise<boolean> => {
           try {
-            const decision = await options.guard!.check(
-              { id: toolCallId, tool: descriptor.name, args: input },
-              descriptor,
-              options.ctx,
-            );
+            // genqa defect 1 (double-count): this is a PREVIEW — when it
+            // answers false, the SDK calls `execute` moments later for the
+            // SAME toolCallId, which re-enters the guard for real through
+            // `options.registry.execute` (the guard-bound registry; no
+            // unguarded path). `check()` alone would charge the write-budget
+            // and call-rate breakers on BOTH passes for one logical call,
+            // halving the effective budget. `previewCheck` (feature-detected;
+            // falls back to `check()` for a guard that predates it) answers
+            // identically but never commits a "run" verdict's spend — only
+            // the real call below does.
+            const call: ToolCall = { id: toolCallId, tool: descriptor.name, args: input };
+            const decision = options.guard!.previewCheck !== undefined
+              ? await options.guard!.previewCheck(call, descriptor, options.ctx)
+              : await options.guard!.check(call, descriptor, options.ctx);
             if (decision.action !== "ask") return false;
             writePart(options.writer, approvalPart(
               toolCallId,

@@ -30,11 +30,11 @@ export const vendo = createVendo({
     ].join("\n"),
   },
   apps: {
-    // demo-refresh Part 5 — the full v4 generation pipeline.
+    // speed-core ruling (2026-07-26, supersedes demo-refresh Part 5): same
+    // amended config as demo-bank — regionParallel OFF (live evidence:
+    // docs/verification/demo-live-readiness/speed-core/after.md), endPass on
+    // (the runtime's data-sighted verify), everything else default.
     pipeline: {
-      exemplarContract: true,
-      structuredRepair: true,
-      regionParallel: true,
       endPass: true,
     },
   },

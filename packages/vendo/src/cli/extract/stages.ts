@@ -315,13 +315,28 @@ export function normalizeSurfaces(
   return surfaces.map((surface) => ({ ...surface, slug: slugify(surface.name, taken) }));
 }
 
+/** Stage lifecycle statuses reported through `onStage`: "started" plus the
+ *  terminal trio the try profile's stage schema understands. */
+export type StagedStageStatus = "started" | "done" | "failed" | "skipped";
+
 export interface StagedExtractionInput {
+  /** The repo the harness explores (every `harness.run` is rooted here). */
   root: string;
   env: Record<string, string | undefined>;
   harness: ExtractionHarness;
   tools: StaticTool[];
   appName: string;
   onProgress?: (line: string) => void;
+  /** Where the `.vendo/` artifacts live — the stage artifact writes and the
+   *  failed-brief fallback read. Defaults to `root` (init/extract behavior);
+   *  `vendo try` splits the two so the harness explores the HOST repo while
+   *  every write stays under the temp profile root (zero-commit). */
+  artifactRoot?: string;
+  /** Structured stage lifecycle hook (the try surface's deepening stream) —
+   *  purely additive narration over the same points `onProgress` covers.
+   *  Stages: survey · drafts (the whole per-surface loop) · cross-check ·
+   *  brief · theme (only when the theme stage actually runs). */
+  onStage?: (stage: "survey" | "drafts" | "cross-check" | "brief" | "theme", status: StagedStageStatus) => void;
   /** Optional theme stage input — omitted entirely when the caller has no
    *  theme extraction to do (e.g. init running without a theme pass). */
   theme?: {
@@ -349,8 +364,9 @@ function message(error: unknown): string {
  *  anything usable (the error names the failed stage); partial failures
  *  degrade with notes instead. */
 export async function runStagedExtraction(input: StagedExtractionInput): Promise<StagedExtractionResult> {
-  const { root, env, harness, tools, appName, onProgress } = input;
-  const artifactDir = join(root, ".vendo", "data", "extract");
+  const { root, env, harness, tools, appName, onProgress, onStage } = input;
+  const artifactRoot = input.artifactRoot ?? root;
+  const artifactDir = join(artifactRoot, ".vendo", "data", "extract");
   await rm(artifactDir, { recursive: true, force: true });
   const notes: string[] = [];
 
@@ -380,6 +396,7 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
   const surveyModel = env["VENDO_EXTRACTION_SURVEY_MODEL"];
   let survey: Survey | null = null;
   onProgress?.("survey: mapping API surfaces");
+  onStage?.("survey", "started");
   try {
     survey = await runStage(
       "survey",
@@ -390,7 +407,9 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
       // model even when the caller pinned the new var.
       surveyModel === undefined ? env : { ...env, VENDO_MODEL_EXTRACT: surveyModel, VENDO_EXTRACTION_MODEL: surveyModel },
     );
+    onStage?.("survey", "done");
   } catch (error) {
+    onStage?.("survey", "failed");
     notes.push(`survey stage failed (${message(error)}) — drafting all ${tools.length} tools as one surface`);
   }
   const surfaces = normalizeSurfaces(survey, tools, notes);
@@ -401,6 +420,7 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
   const missedSurfaces: string[] = [];
   let failures = 0;
   let lastError = "";
+  onStage?.("drafts", "started");
   for (const surface of surfaces) {
     onProgress?.(`drafting "${surface.name}" (${surface.tools.length} tools)`);
     try {
@@ -429,13 +449,16 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
     }
   }
   if (surfaces.length > 0 && failures === surfaces.length) {
+    onStage?.("drafts", "failed");
     throw new Error(`draft stage failed for every surface (${lastError})`);
   }
+  onStage?.("drafts", "done");
 
   // Cross-check: amendments only, within the draft schema. applyDraft remains
   // the gate — an amendment can no more downgrade risk than a draft can.
   if (drafted.size > 0) {
     onProgress?.("cross-check: consistency pass over the combined draft");
+    onStage?.("cross-check", "started");
     try {
       const artifact = await runStage(
         "cross-check",
@@ -453,23 +476,32 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
         // the risk/critical/wake judgment the focused pass produced.
         drafted.set(amendment.name, { ...existing, ...amendment });
       }
+      onStage?.("cross-check", "done");
     } catch (error) {
+      onStage?.("cross-check", "failed");
       notes.push(`cross-check stage failed (${message(error)}) — using the uncross-checked drafts`);
     }
+  } else {
+    onStage?.("cross-check", "skipped");
   }
 
   // Brief: drafted from what the earlier stages learned; on failure the
   // current brief stands (applyDraft's hand-written-brief guard still wins).
   let brief: string | null = null;
   onProgress?.("brief: drafting the product brief");
+  onStage?.("brief", "started");
   try {
     brief = (await runStage("brief", composeBriefInstructions({ appName, survey, drafted: [...drafted.values()] }), briefSchema, env)).brief;
+    onStage?.("brief", "done");
   } catch (error) {
+    onStage?.("brief", "failed");
     notes.push(`brief stage failed (${message(error)}) — keeping the current brief`);
   }
   const briefFromStage = brief !== null;
   if (brief === null) {
-    const current = ((await readOptional(join(root, ".vendo", "brief.md"))) ?? "").trim();
+    // The "current brief" is an ARTIFACT, so the fallback reads it from the
+    // artifact root — same file as before for every caller that doesn't split.
+    const current = ((await readOptional(join(artifactRoot, ".vendo", "brief.md"))) ?? "").trim();
     brief = current === "" ? BRIEF_TEMPLATE : current;
   }
 
@@ -483,6 +515,7 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
     const brandNeeded = themeInput.needed.filter((slot) => BRAND_SLOTS.includes(slot));
     if (brandNeeded.length > 0) {
       onProgress?.("theme: filling brand slots");
+      onStage?.("theme", "started");
       try {
         theme = await runStage(
           "theme",
@@ -495,7 +528,9 @@ export async function runStagedExtraction(input: StagedExtractionInput): Promise
           modelThemeSchema,
           env,
         );
+        onStage?.("theme", "done");
       } catch (error) {
+        onStage?.("theme", "failed");
         notes.push(`theme stage failed (${message(error)}) — exact reads and defaults stand`);
       }
     }

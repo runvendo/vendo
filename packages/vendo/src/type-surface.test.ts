@@ -57,6 +57,12 @@ const HOST_FACING_TYPES = [
   "Connector",
   "ExtractedTool",
   "SyncReport",
+  // actions — the file shapes the in-memory createVendo({ profile }) pieces
+  // name (Task 15a); SemanticsFile/VendoTheme ride the core `export type *`.
+  "CapabilitiesFile",
+  "CatalogFile",
+  "OverridesFile",
+  "SemanticsFile",
   // guard
   "Judge",
   "PolicyConfig",
@@ -95,15 +101,16 @@ afterEach(() => {
   for (const path of fixtures.splice(0)) rmSync(path, { force: true });
 });
 
-/** Type-check a fixture that `import type`s `names` from the source root entry.
- *  Returns tsc's combined output on failure, or null when it exits clean. */
-function typecheckImports(names: string[]): string | null {
+/** Type-check a fixture that `import type`s `names` from a source entry
+ *  (the root by default). Returns tsc's combined output on failure, or null
+ *  when it exits clean. */
+function typecheckImports(names: string[], entry = "./src/index.js"): string | null {
   // Written at the package root so `./src/index.js` and node_modules both
   // resolve; a unique name keeps parallel runs isolated and out of the build
   // (tsconfig `include` is `src/**`, so a root-level file is never compiled).
   const fixturePath = join(packageDir, `.type-surface.${process.pid}.${Math.random().toString(36).slice(2)}.ts`);
   fixtures.push(fixturePath);
-  writeFileSync(fixturePath, `import type { ${names.join(", ")} } from "./src/index.js";\n`);
+  writeFileSync(fixturePath, `import type { ${names.join(", ")} } from "${entry}";\n`);
   try {
     execFileSync(
       process.execPath,
@@ -121,6 +128,24 @@ function typecheckImports(names: string[]): string | null {
 describe("09-vendo §1 — umbrella root type surface", () => {
   it("re-exports every host-facing type from the source root entry", () => {
     const failure = typecheckImports(HOST_FACING_TYPES);
+    expect(failure, failure ?? "").toBeNull();
+  });
+
+  it("names the profile piece types beside createVendo on the server entry (Task 15a)", () => {
+    // The hosted try venue composes typed createVendo({ profile }) pieces
+    // from @vendoai/vendo/server alone — every piece type must resolve there.
+    const failure = typecheckImports(
+      [
+        "CreateVendoConfig",
+        "CapabilitiesFile",
+        "CatalogFile",
+        "ExtractedTool",
+        "OverridesFileV3",
+        "SemanticsFile",
+        "VendoTheme",
+      ],
+      "./src/server.js",
+    );
     expect(failure, failure ?? "").toBeNull();
   });
 

@@ -278,29 +278,30 @@ the three components, and their props.
 ## Theming
 
 Every component above re-themes from one token file. Extract it with
-`vendo init`, or hand-edit `.vendo/theme.json`; the playground's theme editor
-emits a valid file from whatever look you land on. See
+`vendo init`, or hand-edit `.vendo/theme.json`; the try surface's theme
+editor emits a valid file from whatever look you land on. See
 [Theming](/connect/theming) for the full token reference.
 
-<Frame caption="The playground's theme editor: presets, per-token colors, any Google Font, radius, density, motion.">
-  <img src="/images/ui/hero-theme-editor.png" alt="The Vendo playground theme editor open over the activities surface" />
+<Frame caption="The try surface's theme editor: presets, per-token colors, any Google Font, radius, density, motion.">
+  <img src="/images/ui/hero-theme-editor.png" alt="The Vendo try surface theme editor open over the activities surface" />
 </Frame>
 
 ## Try every surface live
 
-The hosted playground renders each surface against scripted data: no model
-key, no database, nothing to install. Use the **Theme** button inside it to
-edit every theme token live, copy a ready `.vendo/theme.json`, and share a
-themed link.
+The hosted try surface below runs the same components. Paste your product's
+domain to see them re-themed to your brand on generated data, or explore as
+is. Use the **Theme** button inside it to edit every theme token live, copy a
+ready `.vendo/theme.json`, and share a themed link.
 
 <iframe
   src="https://vendo.run/playground"
-  title="Vendo playground: every surface, scripted data, no model key"
+  title="The hosted Vendo try surface: paste a domain, see every surface in your brand"
   width="100%"
   height="720"
   style={{ border: "1px solid #e5e5e5", borderRadius: "12px" }}
 />
 
 If the embeds on this page do not load, open
-[vendo.run/playground](https://vendo.run/playground) directly, or run it
-locally with `npx vendoai playground`.
+[vendo.run/playground](https://vendo.run/playground) directly, or run
+`npx vendo try` from your app's repo for the real thing: your tools, your
+theme, nothing written. See [Try Vendo](/try).

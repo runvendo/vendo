@@ -35,6 +35,10 @@ export interface AppBuildFailure {
   reason: string;
   retryable?: boolean;
   at: IsoDateTime;
+  /** The create prompt that failed, persisted so a retry affordance can
+   *  re-issue the EXACT create (the record's name is a capped collapse of it,
+   *  too lossy to replay). Absent on records from before this field. */
+  prompt?: string;
 }
 
 /** 01-core §9 */
@@ -80,6 +84,7 @@ const appBuildFailureSchema = z.object({
   reason: z.string(),
   retryable: z.boolean().optional(),
   at: isoDateTimeSchema,
+  prompt: z.string().optional(),
 }).passthrough() satisfies z.ZodType<AppBuildFailure>;
 
 /** 01-core §9 */

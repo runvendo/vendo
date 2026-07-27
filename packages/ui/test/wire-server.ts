@@ -226,7 +226,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // #492 — apps whose build turn terminally FAILED: a flagged open poll
     // answers {kind:"failed"} with the reason (the record exists as a failure),
     // so the embed resolves promptly instead of spinning to its deadline.
-    failedApps: new Map<string, { reason: string; retryable?: boolean }>(),
+    failedApps: new Map<string, { reason: string; retryable?: boolean; prompt?: string }>(),
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     // ENG-214 — how many upcoming /threads turns die MID-stream (a partial
@@ -634,7 +634,18 @@ export async function createWireServer(options: WireServerOptions = {}) {
       }
       if (url.pathname === "/apps" && method === "GET") return json(response, state.apps);
       if (url.pathname === "/apps" && method === "POST") {
-        const created = app(`app_${state.apps.length + 1}`, (parsedBody as { prompt: string }).prompt);
+        const prompt = (parsedBody as { prompt: string }).prompt;
+        const created = app(`app_${state.apps.length + 1}`, prompt);
+        // speed-core F5 — a prompt tagged [with-button] builds an app whose
+        // root is an action-bound Button, so embed tests can click THROUGH
+        // the served app and assert which app id the call targets.
+        if (prompt.includes("[with-button]")) {
+          created.tree = {
+            formatVersion: "vendo-genui/v2",
+            root: "root",
+            nodes: [{ id: "root", component: "Button", props: { label: "Refresh data", onClick: { $action: "host_refresh" } } }],
+          } as AppDocument["tree"];
+        }
         state.apps.push(created);
         return json(response, created);
       }
@@ -677,7 +688,12 @@ export async function createWireServer(options: WireServerOptions = {}) {
           // record exists), so the embed shows the reason promptly.
           if (action === "open" && method === "GET" && state.failedApps.has(id)) {
             const failure = state.failedApps.get(id)!;
-            return json(response, { kind: "failed", reason: failure.reason, ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }) });
+            return json(response, {
+              kind: "failed",
+              reason: failure.reason,
+              ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
+              ...(failure.prompt === undefined ? {} : { prompt: failure.prompt }),
+            });
           }
           // The real wire's flag-gated build-window answer: a flagged open
           // poll gets a quiet 200 pending envelope instead of the 404.

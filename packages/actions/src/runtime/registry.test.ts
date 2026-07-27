@@ -3,7 +3,19 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Spies on the ONE seam the registry's disk reads flow through
+// (readOptionalVendoJson → node:fs/promises's readFile). Defaults to the
+// real implementation for every existing test in this file; the
+// "in-memory profile skips the disk leg" describe block below is the only
+// place that asserts call counts or overrides the implementation.
+const { readFileMock } = vi.hoisted(() => ({ readFileMock: vi.fn() }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  readFileMock.mockImplementation(actual.readFile);
+  return { ...actual, readFile: readFileMock };
+});
 import {
   VENDO_OVERRIDES_FORMAT,
   VENDO_TOOLS_FORMAT,
@@ -992,6 +1004,175 @@ describe("zero-live-host-tools boot warning", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("in-memory overrides (unified try surface Task 15a, rebased on the v3 injection seam)", () => {
+  it("applies config.overrides to in-memory tools exactly like a dir read's overrides.json", async () => {
+    const actions = createActions({
+      tools: [routeTool("host_probe"), routeTool("host_hidden")],
+      overrides: {
+        format: VENDO_OVERRIDES_FORMAT_V3,
+        tools: {
+          host_probe: { risk: "destructive", critical: true, description: "Overridden host" },
+          host_hidden: { disabled: true },
+        },
+      },
+    });
+
+    await expect(actions.descriptors()).resolves.toEqual([
+      { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "destructive", critical: true },
+    ]);
+    await expect(actions.execute({ id: "1", tool: "host_hidden", args: {} }, ctx)).resolves.toMatchObject({
+      status: "error",
+      error: { code: "not-found" },
+    });
+  });
+
+  it("config.overrides wins over the dir's overrides.json (in-memory precedence, whole-file)", async () => {
+    const root = await tempVendo(
+      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
+      { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_probe: { disabled: true } } },
+    );
+    const actions = createActions({
+      dir: root,
+      overrides: { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_probe: { description: "kept live" } } },
+    });
+
+    // The disk file's disable never applies: the in-memory file replaces it whole.
+    const descriptors = await actions.descriptors();
+    expect(descriptors.map((descriptor) => descriptor.name)).toEqual(["host_probe"]);
+    expect(descriptors[0]!.description).toBe("kept live");
+  });
+
+  it("rejects a malformed config.overrides loudly (same posture as config.capabilities)", async () => {
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      overrides: { format: "not-overrides", tools: {} } as never,
+    });
+    await expect(actions.descriptors()).rejects.toMatchObject({ name: "VendoError", code: "validation" });
+  });
+
+  it("carries injected compounds and briefs (v3: they live in overrides.json)", async () => {
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      overrides: {
+        format: VENDO_OVERRIDES_FORMAT_V3,
+        tools: {},
+        compounds: [{
+          name: "host_probe_flow",
+          description: "host_probe_flow flow",
+          inputSchema: { type: "object" },
+          risk: "read",
+          binding: { kind: "compound", steps: [{ id: "a", tool: "host_probe" }] },
+        }],
+        briefs: [{ name: "probe", text: "call host_probe first", tools: ["host_probe"] }],
+      },
+    });
+    await expect(actions.descriptors()).resolves.toEqual([
+      { name: "host_probe", description: "host_probe", inputSchema: { type: "object" }, risk: "read" },
+      { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "read" },
+    ]);
+    await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first", tools: ["host_probe"] }]);
+  });
+});
+
+describe("in-memory profile pieces skip the disk leg entirely (workerd portability)", () => {
+  // On workerd, an fs read that unenv doesn't implement throws a CODE-LESS
+  // error, unlike Node's ENOENT (see host-files.test.ts and host-files.ts's
+  // narrowed catch: ENOENT + code-less degrade, every other real fs error
+  // code still throws — fail-closed for overrides.json in particular). The
+  // primary fix here is that a supplied in-memory piece must make loadHost
+  // skip its disk leg entirely — proven by a zero-call assertion, not just
+  // by the composed result (the composed result alone can't tell "skipped"
+  // from "read and discarded").
+  beforeEach(() => {
+    // The shared mock records every read across the whole file (every other
+    // describe block's tests hit real disk); clear its call log before each
+    // test here so the zero-calls assertions below only see THIS test's
+    // reads.
+    readFileMock.mockClear();
+  });
+
+  afterEach(async () => {
+    // Restore the shared mock's default (delegate to the real fs) — the
+    // last test below installs a path-conditional override.
+    const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    readFileMock.mockReset();
+    readFileMock.mockImplementation(actual.readFile);
+  });
+
+  it("config.tools skips the tools.json read — the dir's own (different) tools.json is never even opened", async () => {
+    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_from_disk")] });
+    const actions = createActions({ dir: root, tools: [routeTool("host_in_memory")] });
+
+    const names = (await actions.descriptors()).map((d) => d.name);
+    expect(names).toEqual(["host_in_memory"]);
+    expect(readFileMock.mock.calls.some(([path]) => String(path).endsWith("tools.json"))).toBe(false);
+  });
+
+  it("config.capabilities skips the capabilities.json read — the dir's own file is never even opened", async () => {
+    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] });
+    await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
+      format: "vendo/capabilities@1",
+      tools: [{
+        name: "disk_compound",
+        description: "disk_compound flow",
+        inputSchema: { type: "object" },
+        risk: "read",
+        binding: { kind: "compound", steps: [{ id: "a", tool: "host_probe" }] },
+      }],
+    }));
+    const actions = createActions({
+      dir: root,
+      capabilities: { format: "vendo/capabilities@1", tools: [] },
+    });
+
+    const names = (await actions.descriptors()).map((d) => d.name);
+    expect(names).not.toContain("disk_compound");
+    expect(readFileMock.mock.calls.some(([path]) => String(path).endsWith("capabilities.json"))).toBe(false);
+  });
+
+  it("a residual overrides.json read that fails with a CODE-LESS error (workerd unenv class) degrades to absent instead of killing the composition", async () => {
+    // config.tools IS supplied (its own disk leg is skipped above), but
+    // config.overrides is NOT — this is the residual read that still has to
+    // run, and it must survive a code-less failure the way ENOENT already
+    // does (host-files.ts's narrowed catch — the other half of the fix).
+    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT_V3, tools: [] });
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({ format: VENDO_OVERRIDES_FORMAT_V3, tools: {} }));
+    const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    readFileMock.mockImplementation(async (path: unknown, ...rest: unknown[]) => {
+      if (String(path).endsWith("overrides.json")) {
+        throw Object.assign(new Error("not implemented"), { code: undefined });
+      }
+      return (actual.readFile as (...args: unknown[]) => Promise<unknown>)(path, ...rest);
+    });
+
+    const actions = createActions({ dir: root, tools: [routeTool("host_in_memory")] });
+    await expect(actions.descriptors()).resolves.toEqual([
+      { name: "host_in_memory", description: "host_in_memory", inputSchema: { type: "object" }, risk: "read" },
+    ]);
+  });
+
+  it("a residual overrides.json read that fails with a REAL fs error code (EACCES) still THROWS — fail closed, not open", async () => {
+    // Same shape as the test above, but the failure carries a real fs error
+    // code (a present-but-unreadable file on a real filesystem — e.g. a
+    // volume-mount permission mismatch). overrides.json absent is MORE
+    // permissive than present (a disabled tool / audience exclusion
+    // vanishes), so this must NOT silently degrade to "no overrides" — that
+    // would fail OPEN. Only ENOENT and a code-less failure (workerd) degrade.
+    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT_V3, tools: [] });
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({ format: VENDO_OVERRIDES_FORMAT_V3, tools: {} }));
+    const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    readFileMock.mockImplementation(async (path: unknown, ...rest: unknown[]) => {
+      if (String(path).endsWith("overrides.json")) {
+        throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      }
+      return (actual.readFile as (...args: unknown[]) => Promise<unknown>)(path, ...rest);
+    });
+
+    const actions = createActions({ dir: root, tools: [routeTool("host_in_memory")] });
+    await expect(actions.descriptors()).rejects.toMatchObject({ name: "VendoError", code: "validation" });
   });
 });
 
