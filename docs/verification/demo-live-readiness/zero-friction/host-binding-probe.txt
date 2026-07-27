@@ -1,17 +1,33 @@
-Live host-binding probes — Maple prod build, DEMO_AUTOLOGIN=1,
-VENDO_BASE_URL=http://127.0.0.1:4300 (2026-07-26).
+Live host-binding matrix — prod builds, DEMO_AUTOLOGIN=1,
+VENDO_BASE_URL=http://127.0.0.1:4300 (Maple) / :4301 (Cadence). 2026-07-26.
+Only the exact configured authority may mint.
 
-1) TRUE demo Host  =>  mints
-HTTP/1.1 200 OK
-set-cookie: authjs.session-token=eyJhbGciOiJkaXIiLCJlbmMiO
+--- Maple (:4300, /accounts) ---
+MINTED   Host: 127.0.0.1:4300
+no-mint  Host: victim.example   (+ X-Forwarded-Host: 127.0.0.1:4300)
+no-mint  Host: victim.example@127.0.0.1:4300
+no-mint  Host: 127.0.0.1:4300#victim.example
+no-mint  Host: 127.0.0.1:4300/victim.example
+no-mint  Host: 127.0.0.1:4300?victim.example
+no-mint  Host: 127.0.0.1:4300@victim.example
+no-mint  Host: 127.0.0.1:4300:4300
+no-mint  Host: [127.0.0.1]:4300
+no-mint  Host: 127..0.0.1:4300
+no-mint  Host: 127.0.0.1:9999
 
-2) Foreign Host + X-Forwarded-Host spoofing the demo origin  =>  NO mint
-HTTP/1.1 307 Temporary Redirect
-location: /login?returnTo=%2Faccounts
+--- Cadence (:4301, /clients) ---
+MINTED   Host: 127.0.0.1:4301
+no-mint  Host: victim.example   (+ X-Forwarded-Host: 127.0.0.1:4301)
+no-mint  Host: victim.example@127.0.0.1:4301
+no-mint  Host: 127.0.0.1:4301#victim.example
+no-mint  Host: 127.0.0.1:4301/victim.example
+no-mint  Host: 127.0.0.1:4301?victim.example
+no-mint  Host: 127.0.0.1:4301@victim.example
+no-mint  Host: 127.0.0.1:4301:4301
+no-mint  Host: [127.0.0.1]:4301
+no-mint  Host: 127..0.0.1:4301
+no-mint  Host: 127.0.0.1:9999
 
-3) Non-default port on the right hostname  =>  NO mint
-HTTP/1.1 307 Temporary Redirect
-location: /login?returnTo=%2Faccounts
-
-Server-side warning logged for the refusals:
+Server-side refusal warning (logged once per process):
 [maple] DEMO_AUTOLOGIN=1 but request Host "victim.example" is not the configured demo origin (http://127.0.0.1:4300) — refusing to auto-mint sessions.
+[cadence] DEMO_AUTOLOGIN=1 but request Host "victim.example" is not the configured demo origin (http://127.0.0.1:4301) — refusing to auto-mint sessions.

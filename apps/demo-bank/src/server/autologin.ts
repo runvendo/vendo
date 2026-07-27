@@ -18,23 +18,50 @@ const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 let warnedHostMismatch = false;
 
+/**
+ * A bare authority: hostname labels plus an optional port, nothing else.
+ * The Host header is NEVER parsed as a URL — `new URL("http://" + host)`
+ * silently accepts `evil.example@demos.vendo.run`, `demos.vendo.run#evil`
+ * and `demos.vendo.run/evil`, reinterpreting or discarding everything
+ * outside the authority, so a foreign host smuggles the demo host past the
+ * comparison. Anything with `@`, `/`, `#`, `?`, whitespace, brackets, an
+ * empty label, or a second colon fails here and never mints.
+ */
+const HOST_AUTHORITY = /^[A-Za-z0-9.-]+(:[0-9]{1,5})?$/;
+
+const DEFAULT_PORTS: Record<string, string> = { "http:": "80", "https:": "443" };
+
+/** Strictly validate + normalize an authority for comparison: lowercase
+ * hostname, default port for the scheme dropped. Null = reject. */
+function normalizeHost(rawHost: string, protocol: string): string | null {
+  if (!HOST_AUTHORITY.test(rawHost)) return null;
+  const [hostname, port] = rawHost.split(":");
+  if (!hostname || hostname.split(".").some((label) => label.length === 0)) return null;
+  if (port !== undefined) {
+    const numeric = Number(port);
+    if (!Number.isInteger(numeric) || numeric < 1 || numeric > 65535) return null;
+    if (String(numeric) !== DEFAULT_PORTS[protocol]) return `${hostname.toLowerCase()}:${numeric}`;
+  }
+  return hostname.toLowerCase();
+}
+
 /** The one host an auto-login deployment may serve: the operator-set public
  * origin (VENDO_BASE_URL — the same origin the cookie policy and the door
- * already trust). FAIL CLOSED: no configured origin, no blank host, no
- * loopback exception — local runs must set VENDO_BASE_URL explicitly.
- * Comparison is by parsed URL host (case-insensitive hostname, default
- * ports collapsed: DEMOS.VENDO.RUN:443 over https == demos.vendo.run),
- * never raw strings. */
+ * already trust). FAIL CLOSED: no configured origin, no valid bare
+ * authority, no loopback exception — local runs must set VENDO_BASE_URL
+ * explicitly. Both sides are normalized the SAME strict way. */
 function isDemoHost(rawHost: string): boolean {
   const base = process.env.VENDO_BASE_URL;
   if (!base || !rawHost) return false;
+  let configured: URL;
   try {
-    const origin = new URL(base);
-    const request = new URL(`${origin.protocol}//${rawHost}`);
-    return request.host === origin.host;
+    configured = new URL(base);
   } catch {
     return false;
   }
+  const expected = normalizeHost(configured.host, configured.protocol);
+  const actual = normalizeHost(rawHost, configured.protocol);
+  return expected !== null && actual !== null && expected === actual;
 }
 
 /**
@@ -50,7 +77,8 @@ function isDemoHost(rawHost: string): boolean {
  */
 export function demoAutologinActive(request: Request): boolean {
   if (process.env.DEMO_AUTOLOGIN !== "1") return false;
-  const host = request.headers.get("host")?.trim() ?? "";
+  // NOT trimmed: whitespace must fail the authority check, not be sanitized.
+  const host = request.headers.get("host") ?? "";
   if (isDemoHost(host)) return true;
   if (!warnedHostMismatch) {
     warnedHostMismatch = true;

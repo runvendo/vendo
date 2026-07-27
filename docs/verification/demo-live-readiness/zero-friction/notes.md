@@ -51,19 +51,34 @@ against local **prod builds** (`pnpm build` + `next start`):
 
 The autologin decision reads the **Host header only** — Railway passes the
 real public host there, while `X-Forwarded-Host` is attacker-settable and
-`request.url` is derived — and compares it to `VENDO_BASE_URL` as a parsed
-URL host (case-insensitive, default ports collapsed). Missing/blank Host,
-or no configured origin, never mints.
+`request.url` is derived. The header is **never parsed as a URL**: it must
+first match a strict bare authority (`^[A-Za-z0-9.-]+(:[0-9]{1,5})?$`, no
+empty labels), and only then is it lowercased, stripped of the scheme's
+default port, and compared to the `VENDO_BASE_URL` host normalized the same
+way. Missing/blank Host, or no configured origin, never mints.
+
+Why the regex comes first: `new URL("http://" + host)` accepts
+`victim.example@demos.vendo.run` (userinfo), `demos.vendo.run#victim` and
+`demos.vendo.run/victim`, discarding or reinterpreting everything outside
+the authority — so a foreign Host would smuggle the demo host past a
+`URL.host` comparison. All three minted before this fix.
 
 Unit-tested per host: foreign Host + `X-Forwarded-Host: <demo origin>` ⇒ no
 mint; missing Host ⇒ no mint; no `VENDO_BASE_URL` (even loopback) ⇒ no
 mint; demo origin ⇒ mint; `DEMOS.VENDO.RUN`, `demos.vendo.run:443`,
 `Demos.Vendo.Run:443` ⇒ mint, `demos.vendo.run:8443` ⇒ no mint.
 
-Probed live against the running demo servers (output in the run log): the
-spoofed request (`Host: victim.example` + `X-Forwarded-Host: 127.0.0.1:4300`)
-got the normal redirect-to-login with no Set-Cookie and the server logged
-the loud one-time mismatch warning; the true demo Host minted.
+Unit tests also cover every URL-smuggling form (`@`, `/`, `#`, `?`,
+embedded whitespace, brackets, double colon, empty label) as explicit
+no-mint cases. Leading/trailing whitespace cannot reach the gate — the
+Fetch `Headers` layer strips optional whitespace (RFC 9110) before the app
+sees the value.
+
+`host-binding-probe.txt` holds the LIVE curl matrix against both prod
+builds: the exact configured authority is the only value that mints;
+X-Forwarded-Host spoofing, all three URL-smuggling strings, brackets,
+double colon, empty label and a wrong port all refuse, with the loud
+server-side warning logged per host.
 
 ## Known pre-existing (out of scope)
 

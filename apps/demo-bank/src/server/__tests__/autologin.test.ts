@@ -155,6 +155,34 @@ describe("proxy auto-login behavior", () => {
     expect(response.headers.get("set-cookie")).toContain("__Secure-authjs.session-token=")
   })
 
+  it("rejects malformed authorities that a URL parser would smuggle the demo host through", async () => {
+    vi.stubEnv("DEMO_AUTOLOGIN", "1")
+    vi.stubEnv("VENDO_BASE_URL", "http://127.0.0.1:4300")
+    const smuggled = [
+      "victim.example@127.0.0.1:4300", // userinfo — URL.host would be the demo host
+      "127.0.0.1:4300#victim.example", // fragment — discarded by a URL parser
+      "127.0.0.1:4300/victim.example", // path — discarded by a URL parser
+      "127.0.0.1:4300?victim.example", // query — discarded by a URL parser
+      // Leading/trailing whitespace never reaches the gate: the Fetch
+      // Headers layer strips optional whitespace (RFC 9110) on the way in,
+      // so the app only ever sees the bare value. Embedded whitespace
+      // survives, and the authority check rejects it:
+      "127.0.0.1:4300\tx",
+      "127.0.0.1 4300",
+      "[127.0.0.1]:4300", // brackets
+      "127.0.0.1:4300:4300", // double colon
+      "127..0.0.1:4300", // empty label
+      ".127.0.0.1:4300", // leading dot ⇒ empty label
+      "127.0.0.1:4300@victim.example", // demo host in the userinfo position
+    ]
+    for (const host of smuggled) {
+      const response = await proxy(
+        new NextRequest("http://127.0.0.1:4300/accounts", { headers: { host } }),
+      )
+      expect(response.headers.get("set-cookie"), `Host: ${JSON.stringify(host)}`).toBeNull()
+    }
+  })
+
   it("host comparison is normalized: case-insensitive hostname and default-port equivalence", async () => {
     vi.stubEnv("DEMO_AUTOLOGIN", "1")
     vi.stubEnv("VENDO_BASE_URL", "https://demos.vendo.run")
