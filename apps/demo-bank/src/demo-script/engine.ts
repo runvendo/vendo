@@ -331,16 +331,24 @@ async function confirmTransfer(
  *  interception can tell WHICH automation the decision arms. */
 const GRANT_CALL_PATTERN = new RegExp(`^${SCRIPT_CALL_PREFIX}grant_(weekly|lowbalance)_`);
 
+/** The consent line before the set card, count-aware (a re-run may have fewer
+ *  grants still missing than the full surface). */
+const grantConsentLine = (count: number): string =>
+  count === 1
+    ? "To run this while you're away it needs one standing permission — review and approve below."
+    : `To run this while you're away it needs ${count === 2 ? "two" : String(count)} standing permissions — review and approve them below.`;
+
 function grantCallId(key: AutomationKey): string {
   return `${SCRIPT_CALL_PREFIX}grant_${key}_${globalThis.crypto.randomUUID().slice(0, 8)}`;
 }
 
 /** Enable a seeded automation through the REAL engine; the returned `missing`
- *  are the standing-grant asks enable() minted (guard approvals). */
+ *  are the standing-grant asks enable() minted (guard approvals), all members
+ *  of the one `grantSetId` set. */
 async function enableAutomation(
   ctx: RunContext,
   key: AutomationKey,
-): Promise<{ enabled: boolean; missing: ApprovalRequest[] }> {
+): Promise<{ enabled: boolean; missing: ApprovalRequest[]; grantSetId?: string }> {
   try {
     return await vendo.automations.enable(demoAppId(key, ctx.principal.subject), ctx);
   } catch {
@@ -349,51 +357,70 @@ async function enableAutomation(
 }
 
 /** The WHOLE automation card, in-thread: the `data-vendo-automation` part the
- *  chrome renders with the same card vocabulary as Workspace → Automations. */
+ *  chrome renders with the same card vocabulary as Workspace → Automations.
+ *  Streamed under a stable reconciliation id, so the approval resume's
+ *  re-emission flips the SAME card from "waiting on N permissions" to live. */
 async function automationCardPart(writer: Writer, ctx: RunContext, key: AutomationKey): Promise<void> {
   const appId = demoAppId(key, ctx.principal.subject);
   const app = await vendo.apps.get(appId, ctx);
   if (app === null) return;
   const entries = await vendo.automations.list(ctx);
+  const entry = entries.find((candidate) => candidate.app.id === appId);
   write(writer, toVendoWirePart({
     type: "data-vendo-automation",
     appId,
     name: app.name,
-    enabled: entries.some((entry) => entry.app.id === appId && entry.enabled),
+    enabled: entry?.enabled === true,
     ...(app.trigger === undefined ? {} : { trigger: app.trigger }),
     ...(app.description === undefined ? {} : { description: app.description }),
-  }) as UIMessageChunk);
+    ...(entry?.pendingGrants === undefined ? {} : { pendingGrants: entry.pendingGrants }),
+  }, `vendo-automation:${appId}`) as UIMessageChunk);
 }
 
-/** Surface ONE of enable()'s standing-grant asks as the in-thread approval
- *  card — the same wire order as the transfer beat (the guard's flat approval
- *  part, then the native request that parks the tool part). Approving decides
- *  the REAL guard approval over the wire; the automations engine's decision
- *  subscriber mints the standing grant. */
-function surfaceStandingGrant(writer: Writer, key: AutomationKey, ask: ApprovalRequest): void {
+/** Surface the WHOLE grant set enable() minted as ONE in-thread consent card:
+ *  the `data-vendo-grant-set` part enumerating every permission, keyed to one
+ *  parked native call (the set's first guard ask carries the native approval
+ *  id). Approve on the card decides EVERY member ask over the wire in one
+ *  call — the automations engine's decision subscriber mints the grants —
+ *  then the native response resumes this turn. */
+async function surfaceGrantSet(
+  writer: Writer,
+  ctx: RunContext,
+  key: AutomationKey,
+  asks: ApprovalRequest[],
+  grantSetId: string,
+): Promise<void> {
+  const app = await vendo.apps.get(demoAppId(key, ctx.principal.subject), ctx);
+  const name = app?.name ?? (key === "weekly" ? "Weekly spending summary" : "Low balance alert");
   const toolCallId = grantCallId(key);
-  write(writer, { type: "tool-input-start", toolCallId, toolName: ask.call.tool, dynamic: true });
-  // The ask's own inputPreview ("Allow <name> to use <tool> while you're
-  // away (standing, this app only)") IS the honest consent copy — ride it as
-  // a FIELD of the input object so the card shows exactly what the wire
-  // approval records. Never a bare string: this part persists into thread
-  // history, and the real agent's replay (convertToModelMessages → Anthropic)
-  // requires `tool_use.input` to be an object — a string 400s the first real
-  // prompt sent in the same thread ("Input should be an object").
+  const firstAsk = asks[0]!;
+  write(writer, { type: "tool-input-start", toolCallId, toolName: firstAsk.call.tool, dynamic: true });
+  // The asks' own inputPreviews ARE the honest consent copy — ride them as a
+  // FIELD of the input object. Never a bare string: this part persists into
+  // thread history, and the real agent's replay (convertToModelMessages →
+  // Anthropic) requires `tool_use.input` to be an object — a string 400s the
+  // first real prompt sent in the same thread ("Input should be an object").
   write(writer, {
     type: "tool-input-available",
     toolCallId,
-    toolName: ask.call.tool,
-    input: { permission: ask.inputPreview },
+    toolName: firstAsk.call.tool,
+    input: { permissions: asks.map((ask) => ask.inputPreview) },
     dynamic: true,
   });
   write(writer, toVendoWirePart({
-    type: "data-vendo-approval",
+    type: "data-vendo-grant-set",
     toolCallId,
-    risk: ask.descriptor.risk,
-    approvalId: ask.id,
+    grantSetId,
+    appId: demoAppId(key, ctx.principal.subject),
+    name,
+    permissions: asks.map((ask) => ({
+      approvalId: ask.id,
+      tool: ask.call.tool,
+      ...(ask.descriptor.description.length === 0 ? {} : { description: ask.descriptor.description }),
+      risk: ask.descriptor.risk,
+    })),
   }) as UIMessageChunk);
-  write(writer, { type: "tool-approval-request", approvalId: ask.id, toolCallId });
+  write(writer, { type: "tool-approval-request", approvalId: firstAsk.id, toolCallId });
 }
 
 /** Whether the signed-in user already has an active Gmail account (the
@@ -463,12 +490,14 @@ async function automationArmedConfirmation(context: BeatContext, key: Automation
   );
 }
 
-/** The approval-resume leg for a standing-grant decision (cards c/e). The
- *  in-thread card already decided the surfaced guard approval over the wire;
- *  here we settle the parked tool part, sweep any SIBLING asks the same
- *  enable() minted (a multi-step doc mints one per tool — the demo bundles
- *  them into the one consent moment), and stream the confirmation. On deny,
- *  the automation is switched back off so nothing sits half-armed. */
+/** The approval-resume leg for a grant-SET decision (cards c/e). The deciding
+ *  surface (the in-thread set card or the workspace panel) already settled
+ *  the WHOLE set over the wire with ONE decision — the automations engine's
+ *  subscriber minted (or discarded) every grant; nothing is bulk-approved
+ *  silently here. This leg settles the parked tool part, re-emits the
+ *  automation card so "waiting on N permissions" flips live in place, and
+ *  streams the confirmation. On deny, the automation is switched back off so
+ *  nothing sits half-armed. */
 async function automationGrantResume(
   context: BeatContext,
   key: AutomationKey,
@@ -477,20 +506,12 @@ async function automationGrantResume(
 ): Promise<void> {
   const { writer, ctx, signal } = context;
   const appId = demoAppId(key, ctx.principal.subject);
-  const siblings = async (): Promise<string[]> => {
-    const pending = await vendo.guard.approvals.pending(ctx.principal);
-    return pending.filter((ask) => ask.ctx.appId === appId).map((ask) => ask.id);
-  };
   if (!approved) {
     write(writer, { type: "tool-output-denied", toolCallId });
-    try {
-      const rest = await siblings();
-      if (rest.length > 0) await vendo.guard.approvals.decide(rest, { approve: false }, ctx.principal);
-      await vendo.automations.disable(appId, ctx);
-    } catch {
-      // The store is the demo's own; a failed cleanup only leaves the row
-      // enabled-but-ungranted, which the panel shows honestly.
-    }
+    // No disable call here: the automations engine already disarmed the app
+    // inside the deny decision itself (its decide subscriber) — the card
+    // re-emission below reads the settled, disabled row.
+    await automationCardPart(writer, ctx, key);
     await streamText(
       writer,
       "No problem — I've switched the automation off. Nothing will run, and the declined request is recorded in Activity.",
@@ -504,12 +525,9 @@ async function automationGrantResume(
     output: { status: "ok", output: { standingGrant: "recorded", appId } },
     dynamic: true,
   });
-  try {
-    const rest = await siblings();
-    if (rest.length > 0) await vendo.guard.approvals.decide(rest, { approve: true }, ctx.principal);
-  } catch {
-    // Leftover asks stay visible in the workspace queue — honest, not fatal.
-  }
+  // Same reconciliation id as the arming turn's card: the row flips from
+  // "Enabled · waiting on N permissions" to live in place (mockup §2).
+  await automationCardPart(writer, ctx, key);
   await automationArmedConfirmation(context, key);
 }
 
@@ -524,21 +542,20 @@ async function weeklyBeat(context: BeatContext): Promise<void> {
   await beat(400, 700);
   await streamText(writer, "Setting up your Friday digest — creating the automation now.", signal);
   await beat(600, 900);
-  const { enabled, missing } = await enableAutomation(ctx, "weekly");
+  const { enabled, missing, grantSetId } = await enableAutomation(ctx, "weekly");
   if (!enabled) {
     await streamText(writer, "I couldn't arm the weekly schedule — try Reset demo to restore the automation, then run this again.", signal);
     return;
   }
   await automationCardPart(writer, ctx, "weekly");
   await beat(700, 1000); // the card lands, then the consent moment
-  const ask = missing[0];
-  if (ask !== undefined) {
-    await streamText(writer, "To run this while you're away it needs one standing permission — review and approve below.", signal);
+  if (missing.length > 0) {
+    await streamText(writer, grantConsentLine(missing.length), signal);
     await beat(500, 800);
-    surfaceStandingGrant(writer, "weekly", ask);
-    return; // the turn parks on the approval; the resume continues it
+    await surfaceGrantSet(writer, ctx, "weekly", missing, grantSetId ?? `gset_weekly_${ctx.principal.subject}`);
+    return; // the turn parks on the set; the resume continues it
   }
-  // A re-run with the grant already standing: straight to the confirmation.
+  // A re-run with the grants already standing: straight to the confirmation.
   await automationArmedConfirmation(context, "weekly");
 }
 
@@ -560,19 +577,18 @@ async function lowBalanceBeat(context: BeatContext): Promise<void> {
       await beat(400, 700);
     }
   }
-  const { enabled, missing } = await enableAutomation(ctx, "lowbalance");
+  const { enabled, missing, grantSetId } = await enableAutomation(ctx, "lowbalance");
   if (!enabled) {
     await streamText(writer, "I couldn't arm the alert — try Reset demo to restore the automation, then run this again.", signal);
     return;
   }
   await automationCardPart(writer, ctx, "lowbalance");
   await beat(700, 1000);
-  const ask = missing[0];
-  if (ask !== undefined) {
-    await streamText(writer, "It checks your balance while you're away, so it needs one standing permission — review and approve below.", signal);
+  if (missing.length > 0) {
+    await streamText(writer, grantConsentLine(missing.length), signal);
     await beat(500, 800);
-    surfaceStandingGrant(writer, "lowbalance", ask);
-    return; // parked on the approval; the resume continues
+    await surfaceGrantSet(writer, ctx, "lowbalance", missing, grantSetId ?? `gset_lowbalance_${ctx.principal.subject}`);
+    return; // parked on the set; the resume continues
   }
   await automationArmedConfirmation(context, "lowbalance");
 }
@@ -675,6 +691,29 @@ type ApprovalToolPart = {
   approval?: { id?: string; approved?: boolean };
 };
 
+/** Criterion 23 (demo-live-readiness) — a parked scripted consent ABANDONED
+ *  by the next user prompt must resolve to a non-orphan state:
+ *  convertToModelMessages turns a part still in `approval-requested` into a
+ *  tool_use with NO tool_result, and the first real-agent prompt in the same
+ *  thread 400s on replay. Settling the dangling part as denied yields the
+ *  matched tool-approval-response + tool-result pair. Server-side the guard
+ *  asks simply stay pending — the workspace panel can still decide them. */
+function settleAbandonedScriptedApprovals(messages: UIMessage[]): void {
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    for (const part of message.parts) {
+      const candidate = part as unknown as ApprovalToolPart & {
+        approval?: { id?: string; approved?: boolean };
+      };
+      if (typeof candidate.toolCallId !== "string"
+        || !candidate.toolCallId.startsWith(SCRIPT_CALL_PREFIX)) continue;
+      if (candidate.state !== "approval-requested" && candidate.state !== "approval-responded") continue;
+      candidate.state = "output-denied";
+      candidate.approval = { id: candidate.approval?.id ?? "", approved: false };
+    }
+  }
+}
+
 /** The scripted approval this assistant upsert answers, if any. */
 function scriptedApprovalResponse(message: UIMessage): ApprovalToolPart | undefined {
   for (const part of message.parts) {
@@ -715,6 +754,9 @@ export async function scriptedThreadsResponse(request: Request): Promise<Respons
     const beat = matchBeat(userText(message));
     if (beat === undefined) return null;
     const thread = await loadScriptedThread(principal, body.threadId);
+    // A new prompt abandons any still-parked scripted consent: settle it to a
+    // non-orphan state BEFORE this turn persists over it (criterion 23).
+    settleAbandonedScriptedApprovals(thread.messages);
     upsertMessage(thread.messages, message);
     return scriptedStream(principal, thread, async (writer) => {
       write(writer, { type: "start", messageId: `msg_${SCRIPT_CALL_PREFIX}${globalThis.crypto.randomUUID().slice(0, 12)}` });

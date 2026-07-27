@@ -70,11 +70,13 @@ export const vendo = createVendo({
       endPass: true,
     },
   },
-  // Knowledge K1 — the product knowledge base behind `vendo_knowledge_search`
-  // (citation chips + structured refusal in the chat). The in-memory dev
-  // adapter carries Maple's help-center corpus; a real engine slots in here
-  // unchanged (same KnowledgeAdapter seam).
-  knowledge: memoryKnowledgeAdapter({ docs: mapleKnowledgeDocs }),
+  // Knowledge posture — the same shape as the store slot below. With
+  // VENDO_API_KEY set, the slot stays UNSET so the env ladder composes the
+  // Cloud knowledge engine and Maple answers from the corpus connected in the
+  // console; keyless (a laptop, a fork, CI), the in-memory dev adapter carries
+  // Maple's own help-center corpus so citation chips and refusal still demo
+  // with no account. The host never constructs a Cloud client itself.
+  ...(process.env.VENDO_API_KEY ? {} : { knowledge: memoryKnowledgeAdapter({ docs: mapleKnowledgeDocs }) }),
   policy: { file: ".vendo/policy.json" },
   mcp: mapleMcpConfig(),
   // BYO Composio when Maple brings its own key; otherwise the slot stays

@@ -227,6 +227,34 @@ describe("audit persistence, query, and export", () => {
     );
   });
 
+  it("a non-positive query limit answers empty (cursor passed through) instead of paging forever", async () => {
+    const sqlStore = await store();
+    const guard = createGuard({ store: sqlStore });
+    await guard.report(auditEvent({ id: "aud_1" }));
+
+    expect(await guard.audit.query({ principal: alice, limit: 0 })).toEqual({ events: [] });
+    expect(await guard.audit.query({ principal: alice, limit: -5, cursor: "c_1" }))
+      .toEqual({ events: [], cursor: "c_1" });
+  });
+
+  it("export pages past the 100-event batch — a ledger larger than one page streams completely", async () => {
+    const sqlStore = await store();
+    const guard = createGuard({ store: sqlStore });
+    const total = 120;
+    for (let index = 0; index < total; index += 1) {
+      await guard.report(auditEvent({
+        id: `aud_page_${String(index).padStart(3, "0")}`,
+        at: new Date(Date.parse("2026-01-01T00:00:00.000Z") + index * 1000).toISOString(),
+      }));
+    }
+
+    const lines = await collect(guard.audit.export({}));
+
+    expect(lines).toHaveLength(total);
+    const ids = lines.map((line) => (JSON.parse(line) as { id: string }).id);
+    expect(new Set(ids).size).toBe(total);
+  });
+
   it("exports full, parseable newline-delimited JSON and honors time bounds", async () => {
     const sqlStore = await store();
     const guard = createGuard({ store: sqlStore });

@@ -129,7 +129,37 @@
         "operationId": "getSpendingInsights",
         "summary": "Spending by category for the current period. Amounts are integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once before displaying, including any totals you compute.",
         "x-vendo-formats": { "amount": "cents" },
-        "responses": { "200": { "description": "Spending breakdown: { data: [{ category, amount }] } — amount is integer cents" } }
+        "responses": {
+          "200": {
+            "description": "Spending breakdown: { data: [{ category, amount }] } — amount is integer cents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The spending slices live under `data` — the array itself is `data`, never the response body.",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "description": "One slice per spending category, largest first.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "category": {
+                            "type": "string",
+                            "enum": ["dining", "groceries", "coffee", "transport", "subscriptions", "shopping", "income", "transfer", "housing", "other"]
+                          },
+                          "amount": { "type": "integer", "description": "Amount spent in integer cents." }
+                        },
+                        "required": ["category", "amount"]
+                      }
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/insights/cashflow": {

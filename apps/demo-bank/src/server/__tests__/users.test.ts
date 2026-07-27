@@ -42,6 +42,12 @@ describe("Maple seeded demo users", () => {
     expect(mapleDemoEmail()).toBe("custom@maple.test")
   })
 
+  it("passes MAPLE_DEMO_EMAIL through verbatim when password login is unconfigured (byte-identical to the pre-autologin code)", () => {
+    vi.stubEnv("NODE_ENV", "production") // production without MAPLE_DEMO_PASSWORD ⇒ no seeded users
+    vi.stubEnv("MAPLE_DEMO_EMAIL", " Custom@Maple.Test ")
+    expect(mapleDemoEmail()).toBe(" Custom@Maple.Test ")
+  })
+
   it("falls back to the local AUTH_SECRET outside production and requires it in production", () => {
     expect(authSecret()).toBe("maple-local-development-auth-secret")
     vi.stubEnv("AUTH_SECRET", "operator-secret")

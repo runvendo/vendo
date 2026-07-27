@@ -64,6 +64,10 @@ export const APPROVALS_DECIDED_EVENT = "vendo:approvals-decided";
 export interface ApprovalsDecidedDetail {
   ids: string[];
   approved: boolean;
+  /** The grant SET the decided ids settle (automations enable() capture),
+   *  when the deciding surface knows it — listeners match parked cards on
+   *  set membership as well as raw ids. Strictly additive. */
+  grantSetId?: string;
 }
 
 function announceApprovalsDecided(detail: ApprovalsDecidedDetail): void {
@@ -120,10 +124,14 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
     },
     approvals: {
       pending: () => readJson("/approvals"),
-      decide: async (ids, decision) => {
+      decide: async (ids, decision, options) => {
         const idList = Array.isArray(ids) ? ids : [ids];
         await json("/approvals/decide", "POST", { ids: idList, decision });
-        announceApprovalsDecided({ ids: idList, approved: decision.approve });
+        announceApprovalsDecided({
+          ids: idList,
+          approved: decision.approve,
+          ...(options?.grantSetId === undefined ? {} : { grantSetId: options.grantSetId }),
+        });
       },
       get: id => readJson(`/approvals/${idPath(id)}`),
     },

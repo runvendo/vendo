@@ -10,7 +10,7 @@ import { MorphToast, type MorphToastProps } from "../morph-toast.js";
 import { Composer, dragHasFiles, useComposer } from "./composer.js";
 import { MessageList } from "./message-list.js";
 import { useMessageWindow, useStickToBottom } from "./scrolling.js";
-import { approvalByCall, riskByCall, userText } from "./message-data.js";
+import { approvalByCall, grantSetByCall, riskByCall, userText } from "./message-data.js";
 
 /** Lane pick 4B — a rich landing suggestion: two-line starter card. */
 export interface VendoSuggestionCard {
@@ -157,6 +157,10 @@ export function VendoThread({
   const { setDraft, setQueued, textareaRef, send } = composerApi;
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const guardApprovals = useMemo(() => approvalByCall(thread.messages), [thread.messages]);
+  // Grant SETS (demo-live-readiness): a parked call claimed by a
+  // data-vendo-grant-set part renders the set card inline (ThreadPart) —
+  // ThreadApprovals must skip it — and its resume matches on set membership.
+  const grantSets = useMemo(() => grantSetByCall(thread.messages), [thread.messages]);
   // Approve-anywhere resume: a consent decided on ANY surface sharing the page
   // (activity panel, workspace queue, voice stage — they all decide through
   // client.approvals.decide, which announces the decided guard-approval ids)
@@ -180,6 +184,16 @@ export function VendoThread({
         if (!isToolUIPart(part) || part.state !== "approval-requested") continue;
         const nativeId = (part as { approval?: { id?: string } }).approval?.id;
         if (nativeId === undefined) continue;
+        // A call parked on a grant SET resumes when the announcement names its
+        // set (grantSetId) or decides ANY member ask — the set is decided
+        // atomically, so sibling-surface decisions never leave it parked.
+        const set = grantSets.get(part.toolCallId);
+        if (set !== undefined) {
+          const matchesSet = (detail.grantSetId !== undefined && detail.grantSetId === set.grantSetId)
+            || set.approvalIds.some(approvalId => decided.has(approvalId));
+          if (matchesSet) respondOnce({ id: nativeId, approved: detail.approved });
+          continue;
+        }
         const guardId = guardApprovals.get(part.toolCallId)?.approvalId;
         if (guardId === undefined || !decided.has(guardId)) continue;
         respondOnce({ id: nativeId, approved: detail.approved });
@@ -319,7 +333,11 @@ export function VendoThread({
     />
   );
 
-  const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart).filter(part => part.state === "approval-requested");
+  // Grant-set parked calls render their own inline card (ThreadPart), so the
+  // generic parked-approval list excludes them — one consent surface per ask.
+  const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart)
+    .filter((part): part is Extract<typeof part, { state: "approval-requested" }> =>
+      part.state === "approval-requested" && !grantSets.has(part.toolCallId));
 
   // Lane pick C1 — the live status ribbon: while the turn works through tool
   // calls, the ACTIVE call narrates above the composer — label · elapsed ·

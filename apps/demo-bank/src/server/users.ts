@@ -26,23 +26,28 @@ function demoPassword(): string | undefined {
   return process.env.MAPLE_DEMO_PASSWORD ?? (production() ? undefined : "maple-demo");
 }
 
-function seededUsers(): SeededUser[] {
-  const password = demoPassword();
-  if (!password) return [];
+/** WHO the seeded users are, independent of whether password login is
+ * configured — auto-login (DEMO_AUTOLOGIN) mints sessions from identity
+ * alone, so a deployed demo needs no password env at all. */
+function seededIdentities(): MapleDemoUser[] {
   return [
     {
       subject: "vendo-demo",
       display: "Yousef Helal",
       email: (process.env.MAPLE_DEMO_EMAIL ?? "yousef@maple.com").trim().toLowerCase(),
-      password,
     },
     {
       subject: "maple-mia",
       display: "Mia Nakamura",
       email: "mia@maple.com",
-      password,
     },
   ];
+}
+
+function seededUsers(): SeededUser[] {
+  const password = demoPassword();
+  if (!password) return [];
+  return seededIdentities().map((user) => ({ ...user, password }));
 }
 
 /** The seeded users without their password — for UI hints and tests. */
@@ -50,7 +55,15 @@ export function mapleDemoUsers(): MapleDemoUser[] {
   return seededUsers().map(({ subject, display, email }) => ({ subject, display, email }));
 }
 
-/** The primary demo user's email — login prefill and scripted flows. */
+/** The primary seeded user — the identity auto-login signs visitors in as. */
+export function primaryMapleUser(): MapleDemoUser {
+  return { ...seededIdentities()[0]! };
+}
+
+/** The primary demo user's email — login prefill and scripted flows.
+ * Deliberately NOT primaryMapleUser().email: when password login is
+ * unconfigured this has always returned the raw env value, and flag-absent
+ * behavior stays byte-identical. */
 export function mapleDemoEmail(): string {
   return seededUsers()[0]?.email ?? (process.env.MAPLE_DEMO_EMAIL ?? "yousef@maple.com");
 }

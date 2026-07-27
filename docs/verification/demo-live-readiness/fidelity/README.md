@@ -146,6 +146,29 @@ Accepted consequence: with the arc's three authored beats plus derived pills,
 turns per run). Derived pills carry no expectation, so they only need to
 settle cleanly.
 
+## Checker rounds
+
+Recorded here rather than in `progress.md`: that file is deliberately untracked
+now, and this merge proved the point by replacing the working copy with another
+lane's summary.
+
+**Round 1 — 4 findings.**
+
+| # | Finding | Fix |
+|---|---|---|
+| F1 (tamper) | Derivation validated JSON shape and count only, and the no-tools branch preserved existing beats instead of producing no chips | Pills must cite the tools they need; the no-tools branch yields `chips: []` and calls no model. Loose tests rewritten. |
+| F2 | The T2 test mocked `createVendo` and inspected arguments only | Added a layer running the REAL `createVendo`, asserting the adapters it resolved. |
+| F3 (real bug) | A failed standalone create left an unretryable partial clone | Freshness gate moved BEFORE the copy; any post-copy failure removes the clone. Three failure-path tests. |
+| F4 (scope) | Files touched outside the pinned surfaces | The table below. |
+
+**Round 2 — 1 finding (P0).** Round 1's grounding trusted the model's own
+`tools` field: it verified the cited NAME existed but never that the visible
+text had anything to do with it, so `c0`/`p0` filler citing a real tool passed.
+The fixtures used exactly that shape, which is how it survived a round.
+Grounding is now lexical and deterministic (see T3 above): a pill whose text
+shares no meaningful token with its cited capability is dropped, and if that
+leaves fewer than the target the stage ships fewer and never pads.
+
 ## Scope — every file touched outside the pinned surfaces
 
 The contract pins `apps/demo-template` + `bench/src/demo-creator`. Three files

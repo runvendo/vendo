@@ -84,6 +84,31 @@ describe("ThreadPart data-vendo-automation", () => {
     const card = screen.getByRole("article", { name: "Automation — Weekly spending summary" });
     expect(card.textContent).toContain("Fridays at 5:00 PM");
     expect(card.textContent).toContain("2 steps");
+    // Backward-compat: this is the OLD wire payload (no pendingGrants) — it
+    // renders the plain enabled state, never the waiting copy.
+    expect(card.textContent).toContain("Enabled");
+    expect(card.textContent).not.toContain("waiting on");
+  });
+
+  it("reads 'waiting on N permissions' while the part carries pendingGrants (grant sets)", () => {
+    render(
+      <VendoProvider client={client}>
+        <ThreadPart
+          part={part({
+            appId: "app_demo",
+            name: "Weekly spending summary",
+            enabled: true,
+            pendingGrants: 2,
+          })}
+          partKey="m-1"
+          role="assistant"
+          restored={false}
+          risks={new Map()}
+        />
+      </VendoProvider>,
+    );
+    const card = screen.getByRole("article", { name: "Automation — Weekly spending summary" });
+    expect(card.textContent).toContain("Enabled · waiting on 2 permissions");
   });
 
   it("ignores a malformed part (no appId/name)", () => {

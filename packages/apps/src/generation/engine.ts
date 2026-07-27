@@ -106,7 +106,10 @@ export interface PipelineConfig {
  *  region-parallel fallback reasons, end-pass adoption, wall-clock per stage.
  *  Powers live measurement and production observability. */
 export type PipelineEvent =
-  | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; ms: number }
+  // `rebinds` counts the deterministic wrapper-envelope repoints (an array
+  // prop bound to the `{ data: [...] }` wrapper); those cost no strict round,
+  // so a repair event can carry rounds: 0.
+  | { stage: "repair"; rounds: number; repaired: boolean; noValidFix: number; rebinds?: number; ms: number }
   | { stage: "region-parallel"; fallback?: "no-outline" | "sections-failed" | "assembly-invalid"; sectionsPlanned?: number; sectionsLanded?: number; ms: number }
   | { stage: "end-pass"; applied: boolean; ms: number }
   // data-verify: `relabels` counts ALL surviving copy-pass ops (Set/Unset/

@@ -549,6 +549,22 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-connect-done-ic { display: inline-grid; place-items: center; width: 15px; height: 15px;
   border-radius: 999px; background: var(--vendo-accent); color: var(--vendo-accent-fg); }
 .fl-connect-done-ic svg { width: 9px; height: 9px; }
+/* Grant-set consent card (demo-live-readiness mockup §2): the enumerated
+   permission rows under the standing-access head, and the settled outcome. */
+.fl-grantset { min-width: min(420px, 88%); }
+.fl-grants { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; }
+.fl-grant { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 9px 0; border-top: 1px solid color-mix(in srgb, var(--vendo-border) 68%, transparent); }
+.fl-grant:first-child { border-top: 1px solid var(--vendo-border); }
+.fl-grant-ic { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0;
+  border-radius: 8px; color: var(--vendo-accent); background: var(--vendo-accent-soft); }
+.fl-grant-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fl-grant-copy b { font: 600 12.8px/1.35 var(--vendo-font); color: var(--vendo-fg); overflow-wrap: anywhere; }
+.fl-grant-copy span { color: var(--vendo-fg-muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.fl-grant-check { display: grid; place-items: center; color: var(--vendo-accent); }
+.fl-grantset-outcome { display: flex; align-items: center; gap: 7px; margin-top: 12px; padding-top: 11px;
+  border-top: 1px solid var(--vendo-border); font: 600 12.5px/1 var(--vendo-font); color: var(--vendo-fg); }
+.fl-grantset[data-state="denied"] .fl-grantset-outcome { color: var(--vendo-fg-muted); font-weight: 500; }
 .fl-automation-approval { padding: 14px; }
 .fl-auto-approval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .fl-auto-approval-heading { min-width: 0; }
@@ -1000,6 +1016,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-auto-sub { font-size: 11.5px; color: var(--vendo-fg-muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
 .fl-auto-live { width: 6px; height: 6px; border-radius: 50%; background: var(--vendo-ok);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-ok) 16%, transparent); }
+/* Grant-set wait state (mockup §2): enabled but permissions outstanding. */
+.fl-auto-wait { background: var(--vendo-warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-warn) 18%, transparent); }
 .fl-auto-toggle { margin-left: auto; width: 40px; height: 23px; border-radius: 999px; background: var(--vendo-accent);
   position: relative; flex-shrink: 0; border: 0; cursor: pointer; }
 .fl-auto-toggle::after { content: ""; position: absolute; top: 2.5px; right: 2.5px; width: 18px; height: 18px;

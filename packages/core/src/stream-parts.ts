@@ -181,6 +181,9 @@ export interface VendoAutomationPart {
   trigger?: Trigger;
   /** The document's one-line description, when it has one. */
   description?: string;
+  /** Standing-grant asks still undecided (grant sets, additive): the card
+   *  reads "Enabled · waiting on N permissions" until the set is granted. */
+  pendingGrants?: number;
 }
 
 /** 2026-07 demo feedback */
@@ -191,8 +194,50 @@ export const vendoAutomationPartSchema = z.object({
   enabled: z.boolean(),
   trigger: triggerSchema.optional(),
   description: z.string().optional(),
+  pendingGrants: z.number().int().nonnegative().optional(),
 }).passthrough() satisfies z.ZodType<VendoAutomationPart>;
 
+/** demo-live-readiness 2026-07 (additive — 01 §16 amendment parked, same
+ *  footing as the automation part): streamed when arming an automation minted
+ *  a grant SET — multiple standing-grant asks that one consent moment decides
+ *  together. The chrome renders ONE card enumerating every permission with a
+ *  single Approve/Deny; `toolCallId` keys it to the parked native call the
+ *  decision settles, exactly like the approval part. Consumers that don't
+ *  recognize it ignore it (§15 forward-compat). */
+export interface VendoGrantSetPart {
+  type: "data-vendo-grant-set";
+  /** The parked native call this card settles, for placement beside its beat. */
+  toolCallId: string;
+  /** The set every permission below belongs to — one decision settles all
+   *  (mirrors the automations engine's enable() grantSetId). */
+  grantSetId: string;
+  appId: AppId;
+  /** The automation document's display name. */
+  name: string;
+  /** Every requested permission: its pending guard approval, the tool, the
+   *  descriptor's one-line description, and its risk. */
+  permissions: Array<{
+    approvalId: ApprovalId;
+    tool: string;
+    description?: string;
+    risk: RiskLabel;
+  }>;
+}
+
+/** demo-live-readiness 2026-07 */
+export const vendoGrantSetPartSchema = z.object({
+  type: z.literal("data-vendo-grant-set"),
+  toolCallId: z.string(),
+  grantSetId: z.string().min(1),
+  appId: appIdSchema,
+  name: z.string().min(1),
+  permissions: z.array(z.object({
+    approvalId: approvalIdSchema,
+    tool: z.string().min(1),
+    description: z.string().optional(),
+    risk: riskLabelSchema,
+  }).passthrough()).min(1),
+}).passthrough() satisfies z.ZodType<VendoGrantSetPart>;
 /** Knowledge K1 (additive — 01 §16 amendment parked, same footing as the
  *  step-limit part): the envelope tag `vendo_knowledge_search` carries on its
  *  ok-output. The agent tool-bridge keys on it to lift the FULL citation data

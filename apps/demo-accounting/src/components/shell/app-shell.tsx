@@ -1,5 +1,6 @@
 import { headers } from "next/headers"
-import { resolveCadenceSession } from "@/server/session"
+import { isAutologinToken } from "@/server/autologin"
+import { resolveCadenceSession, sessionToken } from "@/server/session"
 import { Sidebar } from "./sidebar"
 import { Topbar, type TopbarUser } from "./topbar"
 
@@ -11,13 +12,16 @@ const AVATARS: Record<string, string> = {
 async function sessionUser(): Promise<TopbarUser | undefined> {
   const cookie = (await headers()).get("cookie")
   if (!cookie) return undefined
-  const session = await resolveCadenceSession(
-    new Request("http://cadence.internal/", { headers: { cookie } }),
-  )
+  const request = new Request("http://cadence.internal/", { headers: { cookie } })
+  const session = await resolveCadenceSession(request)
   if (!session) return undefined
   return {
     display: session.display,
     avatarUrl: session.email ? AVATARS[session.email] : undefined,
+    // Chip gate: the claim rides only proxy-minted tokens (DEMO_AUTOLOGIN);
+    // a GoTrue credential login never carries it. The token was just verified
+    // by resolveCadenceSession above, so a decode-only claim read is safe.
+    autologin: isAutologinToken(sessionToken(request)),
   }
 }
 

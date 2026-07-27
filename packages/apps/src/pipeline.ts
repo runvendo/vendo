@@ -29,6 +29,10 @@ export {
   type SmokeRenderOptions,
 } from "./generation/validation/smoke-render.js";
 export {
+  wrapperArrayRebinds,
+  type WrapperArrayRebind,
+} from "./generation/validation/wrapper-array.js";
+export {
   DISCLAIMER_TEXT,
   isDisclaimerOnlyTree,
   NO_VALID_FIX,
