@@ -43,6 +43,17 @@ export interface ToolBridgeOptions {
   toolOutputCap?: number;
   gate?: (call: ToolCall) => ToolOutcome | undefined;
   onCall?: (call: ToolCall) => (outcome: ToolOutcome) => void;
+  /** Discovery-discipline 2026-07-25: a pre-guard short-circuit (the connect
+   * gate). A non-undefined outcome means the call cannot run — needsApproval
+   * skips the guard entirely (no approval minted; the ask would be answered
+   * by a card for a call that can never execute) and the registry's execute,
+   * wrapped by the same gate, returns the outcome on the tool channel. */
+  preflight?: (call: ToolCall, ctx: RunContext) => Promise<ToolOutcome | undefined>;
+  /** Per-TURN set of `<connector>:<toolkit>` keys that already rendered a
+   * connect card, so one unconnected service costs the user one card no
+   * matter how many of its tools the model called. Omit to disable deduping
+   * (the away runner has no card surface). */
+  connectCards?: Set<string>;
 }
 
 function writePart(
@@ -195,13 +206,21 @@ export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options
       } else if (outcome.status === "connect-required") {
         // The inline connect card (04-actions §3): emitted beside the native
         // tool part exactly like the approval part, keyed by toolCallId.
-        writePart(options.writer, {
-          type: "data-vendo-connect",
-          toolCallId,
-          connector: outcome.connect.connector,
-          toolkit: outcome.connect.toolkit,
-          message: outcome.connect.message,
-        });
+        // ONE card per service per turn: a step that calls two tools of the
+        // same unconnected service (gmail_SEND + gmail_FETCH) would otherwise
+        // stack two identical cards for one connect action. The model still
+        // receives every connect-required outcome — only the card is deduped.
+        const cardKey = `${outcome.connect.connector}:${outcome.connect.toolkit}`;
+        if (options.connectCards?.has(cardKey) !== true) {
+          options.connectCards?.add(cardKey);
+          writePart(options.writer, {
+            type: "data-vendo-connect",
+            toolCallId,
+            connector: outcome.connect.connector,
+            toolkit: outcome.connect.toolkit,
+            message: outcome.connect.message,
+          });
+        }
       } else if (
         outcome.status === "error"
         && descriptor.name === VENDO_APPS_CREATE_TOOL
@@ -238,6 +257,21 @@ export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options
 
     const needsApproval = options.guard
       ? async (input: unknown, { toolCallId }: { toolCallId: string }): Promise<boolean> => {
+          // Pre-guard short-circuit: a call preflight already rules out (an
+          // unconnected service) must not reach the guard — asking would mint
+          // an approval for a call that can never run. execute() then returns
+          // the same outcome (connect card) through the gate-wrapped registry.
+          if (options.preflight !== undefined) {
+            try {
+              const ruled = await options.preflight(
+                { id: toolCallId, tool: descriptor.name, args: input },
+                options.ctx,
+              );
+              if (ruled !== undefined) return false;
+            } catch {
+              // A broken preflight falls through to the normal guard path.
+            }
+          }
           try {
             // genqa defect 1 (double-count): this is a PREVIEW — when it
             // answers false, the SDK calls `execute` moments later for the

@@ -82,4 +82,10 @@ export interface Connector {
    * next descriptors() read. Returns true when anything NEW was expanded (the
    * registry then invalidates its load memo). Unknown toolkits are ignored. */
   expandToolkits?(toolkits: string[]): Promise<boolean>;
+  /** Optional: the toolkit one of this connector's loaded tools belongs to
+   * (undefined for names it does not serve). Present only on brokered
+   * connectors with PER-USER connections — it feeds the pre-guard connect
+   * check (discovery-discipline 2026-07-25), which must never gate a
+   * connector whose credentials are not per-user. */
+  toolkitOf?(tool: string): string | undefined;
 }
