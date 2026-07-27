@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "engine": "agentset",
+  "intent": "deep",
+  "band": {
+    "low": 0.6735,
+    "high": 0.7835
+  },
+  "method": "low = min(answerable), high = max(unanswerable) over the committed deep-intent populations, each rounded outward to four decimals. deriveVerifyBand in @vendoai/knowledge is that rule in code; band.test.ts re-derives this file from agentset-deep-scores.json and fails if they disagree.",
+  "measurements": "agentset-deep-scores.json",
+  "populations": {
+    "answerable": {
+      "n": 60,
+      "min": 0.673526225,
+      "median": 0.7845410825,
+      "max": 0.86608812
+    },
+    "unanswerable": {
+      "n": 34,
+      "min": 0.59736345,
+      "median": 0.719959375,
+      "max": 0.7834431
+    }
+  },
+  "shippedBar": 0.7211,
+  "coverage": {
+    "inBand": 61,
+    "inBandAnswerable": 30,
+    "inBandUnanswerable": 31,
+    "belowBand": 3,
+    "belowBandAllUnanswerable": true,
+    "aboveBand": 30,
+    "aboveBandAllAnswerable": true,
+    "total": 94
+  },
+  "baselineAtShippedBar": {
+    "falseAnswers": 16,
+    "unanswerable": 34,
+    "falseRefusals": 7,
+    "answerable": 60
+  },
+  "outsideBandAgreesWithShippedBar": true
+}
