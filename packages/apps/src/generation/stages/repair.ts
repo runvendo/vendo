@@ -20,6 +20,7 @@ import type {
   GenerationDependencies,
   PipelineContext,
 } from "../engine.js";
+import { modelCallParams } from "../../model-params.js";
 import { actionBindingsInProps, actionFaults, hasPayload } from "../validation/actions.js";
 import { literalDataFaults } from "../validation/literals.js";
 import { DISCLAIMER_TEXT } from "../validation/validate.js";
@@ -606,7 +607,7 @@ export const strictToolCall = async (
         } as never,
       },
       toolChoice: { type: "tool", toolName },
-      temperature: 0,
+      ...modelCallParams(deps.model),
       maxRetries: 0,
     });
     const call = result.toolCalls.find((candidate) => candidate.toolName === toolName);

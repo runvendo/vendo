@@ -24,6 +24,7 @@ import {
   type WireCompileResult,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
+import { modelCallParams } from "../model-params.js";
 import { hasDefaultExport, pinComponentName, pinForkSource, type PinBaseline } from "../pins.js";
 import { createContract } from "./contracts/create.js";
 import { editContract } from "./contracts/edit.js";
@@ -337,7 +338,7 @@ const streamWire = async (
       model: deps.model,
       system,
       prompt,
-      temperature: 0,
+      ...modelCallParams(deps.model),
       maxRetries: 0,
       onError: ({ error }) => { streamError = error; },
     });
@@ -420,7 +421,7 @@ const generateWireText = async (
       model: deps.model,
       system,
       prompt,
-      temperature: 0,
+      ...modelCallParams(deps.model),
       maxRetries: 0,
     });
     let text = "";
