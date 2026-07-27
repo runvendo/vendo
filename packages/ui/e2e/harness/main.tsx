@@ -1594,6 +1594,45 @@ const citationsThread: Thread = {
       ],
     },
     {
+      id: "cit_u4",
+      role: "user",
+      parts: [{ type: "text", text: "How do I export invoices to CSV?" }],
+    },
+    {
+      id: "cit_a4",
+      role: "assistant",
+      parts: [
+        {
+          // K15 — the evidence check was attempted and gave no verdict, so the
+          // answer ships (fail OPEN) carrying the amber unverified line beside
+          // its sources.
+          type: "data-vendo-citations",
+          data: {
+            toolCallId: "call_cit_4",
+            outcome: "answered",
+            unverified: true,
+            citations: [
+              {
+                docId: "doc-exports",
+                chunkId: "doc-exports#1",
+                title: "Exporting invoices",
+                source: "docs.acmebilling.com",
+                kind: "docs",
+                visibility: "public",
+                snippet: "Billing → Invoices → Export downloads the current filter as CSV. Scheduled "
+                  + "monthly exports can be delivered to email or an S3 bucket…",
+              },
+            ],
+          },
+        },
+        {
+          type: "text",
+          text: "Open **Billing → Invoices**, set the filter you want, and choose **Export** to download "
+            + "it as CSV. You can also schedule a monthly export to email or an S3 bucket.",
+        },
+      ],
+    },
+    {
       id: "cit_u3",
       role: "user",
       parts: [{ type: "text", text: "Which plans include SSO?" }],

@@ -29,6 +29,8 @@ for (const shot of shots) {
       // expanded (the mockup's "one expanded" grounded state).
       await expect(page.locator("[data-vendo-knowledge-searched]")).toBeVisible();
       await expect(page.locator("[data-vendo-knowledge-unavailable]")).toBeVisible();
+      // K15 — the fail-open mark renders beside its sources, not instead of them.
+      await expect(page.locator("[data-vendo-knowledge-unverified]")).toBeVisible();
       await page.locator(".fl-cite-btn").first().click();
       await expect(page.locator(".fl-cite--open .fl-cite-pop")).toBeVisible();
     }

@@ -84,38 +84,45 @@ of unanswerable questions still cleared it. No bar fixes that — it is a
 property of embedding similarity, which cannot tell "how to install in a
 framework" from "how to install in **your** framework".
 
-So on the Cloud engine there is an opt-in switch. Turn it on with
-`VENDO_KNOWLEDGE_VERIFY=on`, and in the score region where the bar provably
-cannot decide (the *band*, calibrated in
+So on the Cloud engine, in the score region where the bar provably cannot
+decide (the *band*, calibrated in
 [`docs/eval/knowledge/bands/agentset.json`](eval/knowledge/bands/agentset.json)),
 the tool asks a cheap model one question before answering: can this question
 be answered from the passages the search actually returned? If not, the tool
-returns its ordinary `insufficient-evidence` outcome and the agent says it
-does not know. Nothing else changes — same tool, same outcomes, same UI.
+returns its ordinary `insufficient-evidence` outcome — carrying the gap the
+verifier named, so the agent can say *what* the docs do not cover — and the
+agent says it does not know. Same tool, same outcomes, same UI.
 
-What it costs and what it buys, measured on the 94-question calibration corpus
-([the full table](eval/KNOWLEDGE.md#the-verifier-pass-k14)): false answers
-47% → 3%, false refusals 12% → 7-8%, one extra model call on 65% of knowledge
-turns — a second only when a rejected verdict escalates to a deep retry that
-comes back with different passages — and median 1.6s, p95 3.6s added to those
-turns.
+Measured live against Agentset over the 94-question corpus: see
+[the table](eval/KNOWLEDGE.md#the-verifier-pass) for per-pass numbers, the
+worst case, added latency and per-search cost.
 
-Four properties are worth knowing:
+Five properties are worth knowing:
 
-- **It is off until you turn it on.** This is a live behavior change — some
-  questions that used to get an answer now get a refusal, which is the point —
-  and it spends a model call on about two thirds of knowledge turns, so it
-  ships opt-in rather than arriving in a patch release. `off` and unset are
-  the same thing; anything that is neither `on` nor `off` fails loudly at
-  startup rather than leaving you with a trust feature you think is running.
+- **It is on by default, and `off` is one variable.** Set
+  `VENDO_KNOWLEDGE_VERIFY=off` to keep the pure-threshold behavior, with the
+  47% false-answer rate that implies. Anything that is neither `on` nor `off`
+  fails loudly at startup rather than leaving you with a trust feature you
+  think is running.
+- **Turning it on changes no threshold.** The band decides *who* adjudicates,
+  never *what* is decided: your `weakScoreThreshold` behaves exactly as it did
+  before, and a score outside the band is answered or refused by the same rule
+  as always, with no model call.
 - **It only applies to the Cloud engine.** Scores are engine-relative, so a
   number calibrated on one engine means nothing on another. Local lexical, BYO
-  and self-hosted engines are untouched, switch or no switch.
-- **It can never take knowledge away.** No model credential, a timeout past
-  5s, or an unusable response means *no verdict*, and the tool answers exactly
-  as it would have without a verifier.
-- **Turning it back off is one variable.** `VENDO_KNOWLEDGE_VERIFY=off`,
-  with the 47% false-answer rate that implies.
+  and self-hosted engines are untouched.
+- **It can never take knowledge away — and it says when it could not check.**
+  No model credential, a timeout past 5s, or an unusable response means *no
+  verdict*: the tool answers exactly as it would have without a verifier, and
+  flags the result `unverified`. The thread renders that as the amber "I
+  couldn't check this answer against the documentation" line beside the
+  sources, so a check that did not run never looks like one that passed.
+  Verification is capped per turn as well as per call, so a chat→deep
+  escalation cannot spend the cap twice.
+- **It has its own model slot.** `knowledgeVerifier` sits beside `judge`: pin
+  it with `VENDO_MODEL_KNOWLEDGE_VERIFIER` or `models.knowledgeVerifier`, and
+  the model that grades your answers stays independent of the one that gates
+  them. It defaults to your provider's cheap/fast model.
 
 ## Engines
 

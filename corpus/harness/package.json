@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "knowledge-verifier-replay": "node --import tsx src/knowledge-eval/verifier-replay.ts"
+    "knowledge-verifier-live": "node --import tsx src/knowledge-eval/verifier-live.ts"
   },
   "dependencies": {
     "@vendoai/actions": "workspace:*",
