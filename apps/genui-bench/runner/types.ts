@@ -1,4 +1,4 @@
-import type { AppDocument } from "@vendoai/core";
+import type { AppDocument, VendoTheme } from "@vendoai/core";
 import type { PipelineEvent } from "@vendoai/apps";
 import type { RunModel } from "./models";
 
@@ -64,7 +64,9 @@ export interface HostFixture {
   catalog: unknown;                // NormalizedCatalog (from @vendoai/core)
   tools: unknown[];                // HostToolInfo[] (from @vendoai/apps)
   shapes: unknown;                 // shape cards, bench demo-bank-surface pattern
-  theme: unknown;                  // host theme tokens for the renderer
+  /** The host's real .vendo/theme.json, schema-parsed: the engine stamps it
+   *  into generation and /embed/<host> hands it to VendoProvider. */
+  theme: VendoTheme;
   /** Canned-data executor: same names as `tools`; throws VendoError for unknown tool. */
   execute(tool: string, input: Record<string, unknown>): Promise<unknown>;
 }

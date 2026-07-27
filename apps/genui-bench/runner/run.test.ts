@@ -7,6 +7,7 @@ import { listRuns, loadRun, saveRun, setPin } from "./store";
 import type { AppDocument } from "@vendoai/core";
 import type { PipelineEvent } from "@vendoai/apps";
 import type { HostFixture, HostName, LaneAdapter, RunRecord, RunRequest } from "./types";
+import { stubHostFixture } from "../fixtures/stub";
 
 const DOCUMENT: AppDocument = {
   format: "vendo/app@2",
@@ -19,14 +20,7 @@ const EVENTS: PipelineEvent[] = [
   { stage: "repair", rounds: 1, repaired: true, noValidFix: 0, ms: 50 },
 ];
 
-const fixture: HostFixture = {
-  name: "maple",
-  catalog: {},
-  tools: [],
-  shapes: {},
-  theme: {},
-  execute: async () => ({}),
-};
+const fixture: HostFixture = stubHostFixture("maple");
 
 const fixtures: Partial<Record<HostName, HostFixture>> = { maple: fixture };
 

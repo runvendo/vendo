@@ -91,6 +91,23 @@ Working in a git worktree (or keeping keys outside the repo)? There is no
 `set -a; source /path/to/.env; set +a` — before `bench run` or `dev`. The dev
 server inherits the environment it was started with.
 
+## How the Vendo pane renders
+
+The pane is an iframe onto this app's own `/embed/<host>?run=<id>` route. That
+route boots the production runtime (`VendoProvider` with the host's real
+`.vendo/theme.json` → `AppFrame` → Kit + the host's component registry) inside
+a document whose only stylesheet is the demo host's own `globals.css`, so a
+generated app gets the exact CSS context `apps/demo-bank` gives it — brand
+tokens, Tailwind preflight, host utilities — and none of it can reach the
+cockpit's hand-rolled dark chrome. Maple and Cadence define the same token
+names with different values, which is why each host gets its own document
+rather than a shared scoped layer. `/embed/maple?run=<id>` also opens directly
+in a tab, full size, if you want to poke at one app on its own.
+
+The frame is same-origin, so tool calls still POST straight to `/api/tools`
+(no cross-frame plumbing) and split-compare is just two frames in
+`&mode=readonly`.
+
 ## Packs
 
 Committed prompt sets under `packs/*.json` (versioned, shared with agents —

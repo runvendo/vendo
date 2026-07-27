@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { VendoError, type NormalizedCatalog, type ShapeType } from "@vendoai/core";
+import { VendoError, vendoThemeSchema, type NormalizedCatalog, type ShapeType } from "@vendoai/core";
 import type { HostToolInfo } from "@vendoai/apps";
 import type { HostFixture } from "../runner/types";
 
@@ -267,7 +267,7 @@ export const cadenceFixture: HostFixture = {
   catalog: loadCadenceCatalog(),
   tools: loadCadenceTools(),
   shapes: cadenceToolShapes,
-  theme: JSON.parse(readFileSync(resolve(vendoDir, "theme.json"), "utf8")) as unknown,
+  theme: vendoThemeSchema.parse(JSON.parse(readFileSync(resolve(vendoDir, "theme.json"), "utf8"))),
   async execute(tool, input) {
     const executor = executors[tool];
     if (executor === undefined) throw new VendoError("not-found", `cadence fixture has no tool "${tool}"`);

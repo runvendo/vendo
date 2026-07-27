@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { VendoError } from "@vendoai/core";
+import { VendoError, vendoThemeSchema } from "@vendoai/core";
 import { demoBankToolShapes, loadDemoBankCatalog, loadDemoBankTools } from "@vendoai/apps";
 import type { HostFixture } from "../runner/types";
 
@@ -190,7 +190,9 @@ export const mapleFixture: HostFixture = {
   catalog: loadDemoBankCatalog(),
   tools: loadDemoBankTools(),
   shapes: demoBankToolShapes,
-  theme: JSON.parse(readFileSync(resolve(repoRoot, "apps/demo-bank/.vendo/theme.json"), "utf8")) as unknown,
+  theme: vendoThemeSchema.parse(
+    JSON.parse(readFileSync(resolve(repoRoot, "apps/demo-bank/.vendo/theme.json"), "utf8")),
+  ),
   async execute(tool, input) {
     const executor = executors[tool];
     if (executor === undefined) throw new VendoError("not-found", `maple fixture has no tool "${tool}"`);

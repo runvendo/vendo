@@ -8,19 +8,16 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTamboAdapter, type TamboRaw, type TamboThreadLike } from "./tambo";
 import type { HostFixture } from "../runner/types";
+import { stubHostFixture } from "../fixtures/stub";
 
 const fixture = JSON.parse(
   readFileSync(join(__dirname, "__fixtures__", "tambo.recorded.json"), "utf8"),
 ) as { thread: TamboThreadLike };
 
-const host: HostFixture = {
-  name: "maple",
-  catalog: {},
+const host: HostFixture = stubHostFixture("maple", {
   tools: [{ name: "host_listAccounts", description: "List the user's accounts", risk: "low" }],
-  shapes: {},
-  theme: {},
   execute: vi.fn(async () => []),
-};
+});
 
 describe("tambo adapter", () => {
   beforeEach(() => {

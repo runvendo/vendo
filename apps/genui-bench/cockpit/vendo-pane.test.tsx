@@ -1,26 +1,16 @@
 // @vitest-environment jsdom
 /**
- * Interactive Vendo pane (Task 5): a canned AppDocument renders through the
- * PRODUCTION @vendoai/ui renderer (Kit registry included), its query fires a
- * POST to /api/tools and the returned canned data appears, and clicking a
- * Kit Button fires the bound action tool call. Split-compare renders both
- * documents read-only (actions blocked, no tool POST).
+ * Pane contract: the Vendo pane frames the run in its host's document
+ * (/embed/<host>?run=<id>) rather than rendering it in the cockpit's own
+ * document — that frame boundary is what gives the app the host's brand theme
+ * and Tailwind while keeping host CSS off the cockpit chrome. The runtime
+ * inside the frame is covered by app/embed/host-app.test.tsx.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT, type AppDocument, type ToolOutcome } from "@vendoai/core";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT, type AppDocument } from "@vendoai/core";
 import { VendoPane } from "./VendoPane";
-import type { HostFixture } from "../runner/types";
 import type { LaneResult } from "../runner/types";
-
-const host: HostFixture = {
-  name: "maple",
-  catalog: [],
-  tools: [],
-  shapes: {},
-  theme: { colors: { accent: "#111111" } },
-  execute: async () => ({}),
-};
 
 const document_: AppDocument = {
   format: VENDO_APP_FORMAT,
@@ -30,169 +20,63 @@ const document_: AppDocument = {
   tree: {
     formatVersion: VENDO_TREE_FORMAT,
     root: "root",
-    nodes: [
-      { id: "root", component: "Stack", children: ["owner", "pay"] },
-      { id: "owner", component: "Stat", props: { label: "Owner", value: { $path: "/profile/name" } } },
-      {
-        id: "pay",
-        component: "Button",
-        props: {
-          label: "Send $5",
-          onClick: { $action: "host_transferMoney", payload: { amount: 500, recipient_name: "Alex Rivera" } },
-        },
-      },
-    ],
-    queries: [{ name: "profile", tool: "host_getProfile" }],
+    nodes: [{ id: "root", component: "Stack", children: [] }],
   },
 };
 
-const okResult: LaneResult = {
-  status: "ok",
-  startedAt: 1,
-  durationMs: 2,
-  document: document_,
-  events: [],
-};
+const okResult: LaneResult = { status: "ok", startedAt: 1, durationMs: 2, document: document_, events: [] };
 
-interface RecordedCall {
-  url: string;
-  body: { host: string; tool: string; input?: Record<string, unknown> };
-}
+const frames = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll("iframe")).map((frame) => frame.getAttribute("src"));
 
-let calls: RecordedCall[] = [];
-
-const outcomeFor = (tool: string): ToolOutcome =>
-  tool === "host_getProfile"
-    ? { status: "ok", output: { name: "Avery Chen", email: "avery@maple.demo" } }
-    : { status: "ok", output: { id: "txn_transfer_500" } };
-
-beforeEach(() => {
-  calls = [];
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { body?: string }) => {
-    const body = JSON.parse(init?.body ?? "{}") as RecordedCall["body"];
-    calls.push({ url: String(url), body });
-    return { ok: true, json: async () => outcomeFor(body.tool) };
-  }));
-});
-
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
+afterEach(cleanup);
 
 describe("VendoPane", () => {
-  it("renders through the production renderer, resolves the query via /api/tools, and shows the data", async () => {
-    const { container } = render(<VendoPane lane="vendo" result={okResult} host={host} />);
-
-    // (a) the production registry resolved the component (prewired-first
-    // order, W3: the branded Stat implementation owns the name).
-    expect(container.querySelector('[data-kit="Stat"], [data-primitive="Stat"]')).not.toBeNull();
-
-    // (b) the query POSTed {host, tool, input} to /api/tools …
-    await waitFor(() => {
-      expect(calls.some((call) => call.url === "/api/tools" && call.body.tool === "host_getProfile")).toBe(true);
-    });
-    const query = calls.find((call) => call.body.tool === "host_getProfile") as RecordedCall;
-    expect(query.body.host).toBe("maple");
-
-    // … and the returned canned data rendered.
-    await waitFor(() => {
-      expect(screen.getByText("Avery Chen")).toBeTruthy();
-    });
-  });
-
-  it("fires the bound tool call when the action button is clicked", async () => {
-    render(<VendoPane lane="vendo" result={okResult} host={host} />);
-    await waitFor(() => expect(calls.length).toBeGreaterThan(0));
-
-    fireEvent.click(screen.getByRole("button", { name: "Send $5" }));
-
-    await waitFor(() => {
-      const action = calls.find((call) => call.body.tool === "host_transferMoney");
-      expect(action).toBeDefined();
-      expect(action?.body.input).toEqual({ amount: 500, recipient_name: "Alex Rivera" });
-      expect(action?.body.host).toBe("maple");
-    });
-  });
-
-  it("split-compare renders both documents read-only", async () => {
-    const compare: LaneResult = { ...okResult, document: { ...document_, id: "app_bench_other" } };
+  it("frames the run in its host's own document", () => {
     const { container } = render(
-      <VendoPane lane="vendo" result={okResult} host={host} compareWith={compare} />,
+      <VendoPane lane="vendo" result={okResult} runId="20260726-1200-abcd" host="maple" />,
     );
-    expect(container.querySelectorAll('[data-kit="Stat"], [data-primitive="Stat"]').length).toBe(2);
-
-    const before = calls.filter((call) => call.body.tool === "host_transferMoney").length;
-    for (const button of screen.getAllByRole("button", { name: "Send $5" })) {
-      fireEvent.click(button);
-    }
-    // Read-only: no action POST leaves the pane.
-    await waitFor(() => expect(calls.filter((c) => c.body.tool === "host_getProfile").length).toBeGreaterThan(0));
-    expect(calls.filter((call) => call.body.tool === "host_transferMoney").length).toBe(before);
+    expect(frames(container)).toEqual(["/embed/maple?run=20260726-1200-abcd"]);
   });
 
-  it("renders the host's own registry components instead of the Unknown-component notice", async () => {
-    const hostDoc: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_bench_host",
-      name: "Net worth",
-      ui: "tree",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "root",
-        nodes: [
-          { id: "root", component: "Stack", children: ["card"] },
-          {
-            id: "card",
-            component: "MapleNetWorthCard",
-            source: "host",
-            props: { valueCents: 5_490_715, series: [5_329_117, 5_490_715], changeLabel: "▲ 2.3% this month" },
-          },
-        ],
-      },
-    };
-    render(
-      <VendoPane lane="vendo" result={{ ...okResult, document: hostDoc }} host={host} />,
+  it("frames the cadence host's document for a cadence run", () => {
+    const { container } = render(
+      <VendoPane lane="vendo" result={okResult} runId="run_cadence" host="cadence" />,
     );
-    await waitFor(() => expect(screen.queryByText(/Unknown component/)).toBeNull());
-    // NetWorthView's own markup: the range switcher it renders for the series.
-    expect(screen.getByText("1W")).toBeTruthy();
+    expect(frames(container)).toEqual(["/embed/cadence?run=run_cadence"]);
   });
 
-  it("resolves the Cadence registry for the cadence host", async () => {
-    const cadenceDoc: AppDocument = {
-      format: VENDO_APP_FORMAT,
-      id: "app_bench_cadence",
-      name: "Doc status",
-      ui: "tree",
-      tree: {
-        formatVersion: VENDO_TREE_FORMAT,
-        root: "root",
-        nodes: [
-          { id: "root", component: "Stack", children: ["badge"] },
-          { id: "badge", component: "CadenceStatusBadge", source: "host", props: { text: "Needs review", variant: "review" } },
-        ],
-      },
-    };
-    render(
+  it("split-compare frames both runs read-only", () => {
+    const { container } = render(
       <VendoPane
         lane="vendo"
-        result={{ ...okResult, document: cadenceDoc }}
-        host={{ ...host, name: "cadence" }}
+        result={okResult}
+        runId="run_a"
+        host="maple"
+        compare={{ result: okResult, runId: "run_b" }}
       />,
     );
-    await waitFor(() => expect(screen.queryByText(/Unknown component/)).toBeNull());
-    expect(screen.getByText("Needs review")).toBeTruthy();
+    expect(frames(container)).toEqual([
+      "/embed/maple?run=run_a&mode=readonly",
+      "/embed/maple?run=run_b&mode=readonly",
+    ]);
   });
 
-  it("shows the failure vocabulary for a failed lane result", () => {
-    render(
+  it("shows the failure vocabulary for a failed lane result, with no frame", () => {
+    const { container } = render(
       <VendoPane
         lane="vendo"
         result={{ status: "failed", startedAt: 1, durationMs: 2, error: "model exploded" }}
-        host={host}
+        runId="run_failed"
+        host="maple"
       />,
     );
     expect(screen.getByText(/model exploded/)).toBeTruthy();
+    expect(frames(container)).toEqual([]);
+  });
+
+  it("shows the no-key state", () => {
+    render(<VendoPane lane="vendo" result={{ status: "no-key" }} runId="run_nokey" host="maple" />);
+    expect(screen.getByText(/No model key/)).toBeTruthy();
   });
 });

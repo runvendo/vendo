@@ -161,14 +161,7 @@ async function resolveLanes(lanes: LaneName[]): Promise<{
   adapters: LaneAdapter[];
 }> {
   if (process.env.GENUI_BENCH_FAKE_LANES === "1") {
-    const stub = (name: HostName): HostFixture => ({
-      name,
-      catalog: {},
-      tools: [],
-      shapes: {},
-      theme: {},
-      execute: async () => ({}),
-    });
+    const { stubHostFixture: stub } = await import("./fixtures/stub");
     const adapters = lanes.map(
       (name): LaneAdapter => ({
         name,

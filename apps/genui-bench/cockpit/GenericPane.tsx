@@ -7,8 +7,8 @@ import { formatDuration, repairCount } from "./lane-meta";
 /** Built-in pane: renders any LaneResult as status/timings plus collapsible
  *  raw/document JSON. Every lane maps here until its real pane (VendoPane,
  *  competitor SDK panes) is swapped in via the page-level pane mapping. */
-export function GenericPane({ result, compareWith }: PaneProps) {
-  if (!compareWith) return <ResultView result={result} />;
+export function GenericPane({ result, compare }: PaneProps) {
+  if (!compare) return <ResultView result={result} />;
   return (
     <>
       <div className="gp-half">
@@ -17,7 +17,7 @@ export function GenericPane({ result, compareWith }: PaneProps) {
       </div>
       <div className="gp-half">
         <div className="gp-half-label cmp">compare</div>
-        <ResultView result={compareWith} />
+        <ResultView result={compare.result} />
       </div>
     </>
   );

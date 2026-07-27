@@ -9,20 +9,12 @@ import { join } from "node:path";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import ThesysPane from "./ThesysPane";
-import type { HostFixture, LaneResult } from "../../runner/types";
+import type { LaneResult } from "../../runner/types";
 
 const fixture = JSON.parse(
   readFileSync(join(__dirname, "..", "..", "lanes", "__fixtures__", "thesys-c1.recorded.json"), "utf8"),
 ) as { finalCompletion: { choices: Array<{ message: { content: string } }> } };
 
-const host: HostFixture = {
-  name: "maple",
-  catalog: {},
-  tools: [],
-  shapes: {},
-  theme: {},
-  execute: async () => ({}),
-};
 
 const okResult: LaneResult = {
   status: "ok",
@@ -39,13 +31,13 @@ afterEach(cleanup);
 
 describe("ThesysPane", () => {
   it("renders the fixture C1 response through their SDK with the asymmetry footnote", () => {
-    const { container } = render(<ThesysPane lane="thesys-c1" result={okResult} host={host} />);
+    const { container } = render(<ThesysPane lane="thesys-c1" result={okResult} host="maple" runId="run_test" />);
     expect(container.querySelector('[data-pane="thesys-c1"]')).toBeTruthy();
     expect(screen.getByText(/their renderer\/theme · same prompt \+ tools/)).toBeTruthy();
   });
 
   it("renders the no-key state", () => {
-    render(<ThesysPane lane="thesys-c1" result={{ status: "no-key" }} host={host} />);
+    render(<ThesysPane lane="thesys-c1" result={{ status: "no-key" }} host="maple" runId="run_test" />);
     expect(screen.getByText(/no key/)).toBeTruthy();
   });
 
@@ -54,7 +46,8 @@ describe("ThesysPane", () => {
       <ThesysPane
         lane="thesys-c1"
         result={{ status: "failed", startedAt: 0, durationMs: 10, error: "api down" }}
-        host={host}
+        host="maple"
+        runId="run_test"
       />,
     );
     expect(screen.getByText(/failed: api down/)).toBeTruthy();

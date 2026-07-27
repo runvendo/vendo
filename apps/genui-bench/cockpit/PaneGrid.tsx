@@ -1,6 +1,6 @@
 "use client";
 
-import type { HostFixture, LaneName, LaneResult, RunRecord } from "../runner/types";
+import type { HostName, LaneName, LaneResult, RunRecord } from "../runner/types";
 import type { PaneComponent } from "./pane-props";
 import { LANE_FOOTNOTES, LANE_LABELS, formatDuration, repairCount } from "./lane-meta";
 
@@ -21,7 +21,7 @@ export function PaneGrid({
   /** Split-compare: a second run whose lane results render beside the first. */
   compare?: RunRecord | null;
   running: boolean;
-  host: HostFixture;
+  host: HostName;
 }) {
   return (
     <div
@@ -31,7 +31,7 @@ export function PaneGrid({
       {lanes.map((lane) => {
         const Pane = panes[lane];
         const result = record?.lanes[lane];
-        const compareWith = compare?.lanes[lane];
+        const compareResult = compare?.lanes[lane];
         return (
           <section key={lane} className="pane" aria-label={LANE_LABELS[lane]}>
             <div className="pane-h">
@@ -40,8 +40,14 @@ export function PaneGrid({
               <span className="time">{headerTime(result, running)}</span>
             </div>
             <div className="pane-body">
-              {result ? (
-                <Pane lane={lane} result={result} host={host} compareWith={compareWith} />
+              {record && result ? (
+                <Pane
+                  lane={lane}
+                  result={result}
+                  runId={record.id}
+                  host={host}
+                  {...(compare && compareResult ? { compare: { result: compareResult, runId: compare.id } } : {})}
+                />
               ) : running ? (
                 <>
                   <div className="skel" style={{ width: "85%" }} />
