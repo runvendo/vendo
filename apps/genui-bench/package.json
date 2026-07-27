@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "bench": "tsx cli.ts",
+    "measure": "tsx measure/cli.ts",
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
