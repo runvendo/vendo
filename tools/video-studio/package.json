@@ -2,7 +2,7 @@
   "name": "video-studio",
   "version": "0.0.0",
   "private": true,
-  "description": "The Vendo video harness. Remotion episodes whose scenes render the real @vendoai/* product components — see README.md to add an episode.",
+  "description": "The Vendo video harness. Remotion episodes whose scenes render the real @vendoai/* product components \u2014 see README.md to add an episode.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -16,13 +16,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@remotion/cli": "4.0.351",
+    "@remotion/cli": "4.0.499",
     "@vendoai/core": "workspace:*",
     "@vendoai/ui": "workspace:*",
     "ai": "6.0.28",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "remotion": "4.0.351",
+    "remotion": "4.0.499",
     "zod": "^3.25.76"
   },
   "devDependencies": {
