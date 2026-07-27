@@ -61,7 +61,11 @@ async function compose(config: Partial<CreateVendoConfig> = {}): Promise<Vendo> 
   return createVendo({
     model: {} as LanguageModel,
     principal: async () => principal,
-    store: await tempStore(),
+    // Only mint a store when the row did not bring its own: spreading a
+    // default here would build a whole PGlite database per compose and then
+    // throw it away, which is what made the two-store rows slow enough to
+    // trip the 30s default timeout under fleet load.
+    ...(config.store === undefined ? { store: await tempStore() } : {}),
     ...config,
   });
 }
@@ -232,7 +236,10 @@ describe("knowledge resolution matrix (ENG-368) — which engine composes, and d
     const vendo = await compose({ store: composed, knowledge: lexicalKnowledge({ store: elsewhere }) });
 
     expect(servingEngine(await search(vendo, "transfers settle business day"))).toBe("docs#other-database.md");
-  });
+    // Two real PGlite databases, both seeded through the ingestion pipeline —
+    // the only row that needs more than the 30s default, and only when the
+    // machine is loaded. A duration knob, not a softened assertion.
+  }, 90_000);
 
   it("nothing configured: no adapter, no tool — the agent never advertises a knowledge base the host lacks", async () => {
     const vendo = await compose();
