@@ -20,6 +20,12 @@ corpus/.repos/
 *.png
 bench/demo-capture/output/
 
+# ...except everything under docs/verification, which EXISTS to hold committed
+# evidence (screenshots, raw measurement logs). Without these negations every
+# lane has to remember `git add -f`, and evidence quietly goes missing.
+!docs/verification/**/*.png
+!docs/verification/**/*.log
+
 # Vendo demo runtime state (PGlite) — never committed.
 apps/*/.vendo/data/
 apps/*/.vendo/data-*/
@@ -51,6 +57,9 @@ docs/verification/vendo-v2-speed/samples.ndjson
 
 # w4-pipeline lane raw samples (aggregated into README table)
 docs/verification/w4-pipeline/samples.ndjson
+
+# brainstorm visual companion sessions
+.superpowers/
 
 # throwaway design exploration (never committed)
 design-canvas/

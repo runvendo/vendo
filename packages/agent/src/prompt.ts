@@ -30,6 +30,14 @@ const PRESENTATION_PROMPT = `Presentation
 - Do not narrate surface mechanics ("the chart is loading above", "see the table below").
 - Match the product's voice. No emoji unless the user or the host's directions use them.`;
 
+// Discovery-discipline 2026-07-25 (section id: discovery-budget) — a bounded
+// discovery posture so a large connector catalog can never become a per-turn
+// side-quest of searches, speculative unconnected calls, and approval spam.
+const DISCOVERY_BUDGET_PROMPT = `Discovery budget
+- Use vendo_tools_search at most 2 times per user intent; prefer the host's own tools whenever they can fulfill the ask.
+- Never call a tool for a service you know is unconnected. A connect-required result means stop calling that service: tell the user what it needs and point them to the connect card that appeared.
+- When a needed service is unconnected, say so plainly and surface the connect step — do not try other tools of the same service or hunt for substitutes across the catalog.`;
+
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
   guard: Guard,
@@ -41,10 +49,12 @@ export async function assembleSystemPrompt(
   // unchanged.
   system?: { product?: string | (() => string | undefined); catalog?: string; instructions?: string },
   capabilityMiss = false,
+  toolSearch = false,
 ): Promise<string> {
   const sections = [OPERATING_PROMPT];
   if (TREE_VENUES.has(ctx.venue)) sections.push(PRESENTATION_PROMPT);
   if (capabilityMiss) sections.push(CAPABILITY_MISS_PROMPT);
+  if (toolSearch) sections.push(DISCOVERY_BUDGET_PROMPT);
   const product = (typeof system?.product === "function" ? system.product() : system?.product)?.trim();
   if (product) sections.push(`Product\n${product}`);
 
