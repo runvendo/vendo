@@ -1,0 +1,23 @@
+# dependencies
+/node_modules
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# misc
+.DS_Store
+
+# env files (keys come from the root .env)
+.env*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# RunRecords stay local — packs/ is the committed, shared artifact
+/runs/

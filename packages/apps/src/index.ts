@@ -76,3 +76,7 @@ export {
   type ShipDiffGenerated,
   type ShipDiffPin,
 } from "./ship-diff.js";
+// The opt-in per-stage diagnostics event already surfaced through
+// GenerationDependencies.onPipeline — exported as a type so onPipeline
+// consumers (apps/genui-bench runner tap) can name what they accumulate.
+export type { PipelineEvent } from "./pipeline.js";
