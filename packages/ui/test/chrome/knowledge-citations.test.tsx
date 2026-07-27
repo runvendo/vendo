@@ -11,14 +11,19 @@ import { VendoThread } from "../../src/chrome/index.js";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { createWireServer } from "../wire-server.js";
 
-function citationsTurn(outcome: string, citations: unknown[], id = "msg_knowledge"): UIMessage {
+function citationsTurn(
+  outcome: string,
+  citations: unknown[],
+  id = "msg_knowledge",
+  extra: Record<string, unknown> = {},
+): UIMessage {
   return {
     id,
     role: "assistant",
     parts: [
       {
         type: "data-vendo-citations",
-        data: { toolCallId: "call_search", citations, outcome },
+        data: { toolCallId: "call_search", citations, outcome, ...extra },
       } as UIMessage["parts"][number],
       { type: "text", text: "Here is what the documentation says." },
     ],
@@ -116,6 +121,29 @@ describe("knowledge citations in the thread (Knowledge K1)", () => {
     expect(flag).toBeTruthy();
     expect(flag?.textContent).toContain("knowledge base is temporarily unreachable");
     expect(document.querySelector("[data-vendo-knowledge-searched]")).toBeNull();
+  });
+
+  it("K15: an answer the evidence check could not verify carries the amber unverified flag WITH its sources", async () => {
+    await renderThreadWith(citationsTurn("answered", CITATIONS, "msg_unverified", { unverified: true }));
+
+    const flag = document.querySelector("[data-vendo-knowledge-unverified]");
+    expect(flag).toBeTruthy();
+    expect(flag?.textContent).toContain("evidence check didn't run");
+    // The answer and its citations still render — fail OPEN, marked, never
+    // withheld.
+    expect(document.querySelector("[data-vendo-citations]")).toBeTruthy();
+    expect([...document.querySelectorAll(".fl-cite-btn")]).toHaveLength(2);
+  });
+
+  it("K15: a verified answer carries no flag — the amber means 'could not check'", async () => {
+    await renderThreadWith(citationsTurn("answered", CITATIONS));
+    expect(document.querySelector("[data-vendo-knowledge-unverified]")).toBeNull();
+  });
+
+  it("K15: an engine outage shows ONE flag, not two saying the same thing", async () => {
+    await renderThreadWith(citationsTurn("unavailable", [], "msg_outage", { unverified: true }));
+    expect(document.querySelector("[data-vendo-knowledge-unavailable]")).toBeTruthy();
+    expect(document.querySelector("[data-vendo-knowledge-unverified]")).toBeNull();
   });
 
   it("never renders the legacy read-tool source chips on a knowledge-citation turn", async () => {

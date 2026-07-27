@@ -36,8 +36,12 @@ import {
  */
 
 /** The model slots the runtime composes. `extract` never runs in-process —
- *  it exists so the CLI extraction ladder shares the same pin names. */
-export type VendoModelSlot = "agent" | "paint" | "judge" | "extract";
+ *  it exists so the CLI extraction ladder shares the same pin names.
+ *  `knowledgeVerifier` (K15) is the knowledge tool's evidence check: its own
+ *  slot beside `judge` rather than borrowing it, so a host can pin or swap the
+ *  cheap model that gates its answers without touching the judge that grades
+ *  them. */
+export type VendoModelSlot = "agent" | "paint" | "judge" | "extract" | "knowledgeVerifier";
 
 export interface DevModelOptions {
   /** Host app root; providers resolve from here. Default cwd. */
@@ -130,6 +134,12 @@ const CLOUD_FAMILY: Record<VendoModelSlot, string> = {
   paint: "vendo-paint",
   judge: "vendo-judge",
   extract: "vendo-extract",
+  // The gateway serves the family's fast tier under `vendo-judge`; the
+  // knowledge verifier wants exactly that tier, so it rides that id rather
+  // than an id the gateway would have to grace-remap on every knowledge turn.
+  // The SLOT is still its own — VENDO_MODEL_KNOWLEDGE_VERIFIER and
+  // models.knowledgeVerifier pin this call and nothing else.
+  knowledgeVerifier: "vendo-judge",
 };
 
 /** Env pins, one per slot (spec DX surface 5). Highest non-explicit
@@ -139,6 +149,7 @@ export const SLOT_PIN_ENV: Record<VendoModelSlot, string> = {
   paint: "VENDO_MODEL_PAINT",
   judge: "VENDO_MODEL_JUDGE",
   extract: "VENDO_MODEL_EXTRACT",
+  knowledgeVerifier: "VENDO_MODEL_KNOWLEDGE_VERIFIER",
 };
 
 export const NO_CREDENTIAL_MESSAGE =
@@ -161,6 +172,17 @@ function inferSlot(name: string | undefined): VendoModelSlot {
   return "agent";
 }
 
+/** The cheap/fast slots: no name given means the family's fast pick, not the
+ *  flagship. */
+const FAST_SLOTS = new Set<VendoModelSlot>(["paint", "judge", "knowledgeVerifier"]);
+
+/** The slots whose model `createVendo`'s `models` block can configure by name
+ *  or object. The agent and paint slots resolve through their own paths
+ *  (resolveModels), so they are not bound per-instance here. */
+const CONFIGURABLE_SLOTS = ["judge", "knowledgeVerifier"] as const;
+type ConfigurableSlot = (typeof CONFIGURABLE_SLOTS)[number];
+export type ConfigurableSlotModels = Partial<Record<ConfigurableSlot, string | LanguageModel>>;
+
 /** The controller behind each vendoModel()/devModel() instance, so composition
  *  can bind per-instance slot config onto exactly the model the host handed it
  *  (bindVendoModelSlots below). WeakMap: holding a model never leaks its
@@ -176,7 +198,7 @@ const controllersByModel = new WeakMap<object, DevModelController>();
  *  behavior. @internal — called by createVendo; not public API. */
 export function bindVendoModelSlots(
   model: unknown,
-  models: { judge?: string | LanguageModel } | undefined,
+  models: ConfigurableSlotModels | undefined,
 ): void {
   if (model === null || typeof model !== "object") return;
   controllersByModel.get(model)?.configureSlots(models);
@@ -241,7 +263,7 @@ export class DevModelController {
   private resolution: Promise<Resolution> | null = null;
   private announced = false;
   /** Per-instance slot config bound by createVendo (bindVendoModelSlots). */
-  private slotModels: { judge?: string | LanguageModel } = {};
+  private slotModels: ConfigurableSlotModels = {};
 
   constructor(options: VendoModelOptions & { name?: string } = {}) {
     this.root = options.root ?? process.cwd();
@@ -254,9 +276,19 @@ export class DevModelController {
   /** Bind createVendo's `models` slot config to THIS instance (see
    *  bindVendoModelSlots). Composition runs before the first model call, so
    *  the lazy resolution below always sees the bound config. */
-  configureSlots(models: { judge?: string | LanguageModel } | undefined): void {
-    if (models?.judge === undefined) delete this.slotModels.judge;
-    else this.slotModels.judge = models.judge;
+  configureSlots(models: ConfigurableSlotModels | undefined): void {
+    for (const slot of CONFIGURABLE_SLOTS) {
+      const configured = models?.[slot];
+      if (configured === undefined) delete this.slotModels[slot];
+      else this.slotModels[slot] = configured;
+    }
+  }
+
+  /** What `models.<slot>` says for THIS instance's slot, if anything. */
+  private get configured(): string | LanguageModel | undefined {
+    return CONFIGURABLE_SLOTS.includes(this.slot as ConfigurableSlot)
+      ? this.slotModels[this.slot as ConfigurableSlot]
+      : undefined;
   }
 
   /** Resolve the credential once per process; state it on the server log once.
@@ -288,13 +320,11 @@ export class DevModelController {
       const legacy = nonBlank(this.env[spec.modelEnv]);
       if (legacy !== undefined) return legacy;
     }
-    if (this.slot === "judge") {
-      const configured = this.slotModels.judge;
-      if (typeof configured === "string" && nonBlank(configured) !== undefined) return configured.trim();
-    }
+    const configured = this.configured;
+    if (typeof configured === "string" && nonBlank(configured) !== undefined) return configured.trim();
     if (this.name !== undefined) return this.name;
     if (spec === CLOUD_MODEL) return CLOUD_FAMILY[this.slot];
-    return this.slot === "paint" || this.slot === "judge" ? spec.fast : spec.model;
+    return FAST_SLOTS.has(this.slot) ? spec.fast : spec.model;
   }
 
   /** The shared delegate rung: load the provider module (an install failure
@@ -325,14 +355,13 @@ export class DevModelController {
   }
 
   private async resolveOnce(): Promise<Resolution> {
-    // Explicit model object configured for this slot (models.judge) — the
-    // "explicit object wins" tier: no credential resolution, no pins.
-    if (this.slot === "judge") {
-      const configured = this.slotModels.judge;
-      if (configured !== undefined && typeof configured !== "string") {
-        this.announce("explicit models.judge model object");
-        return { mode: "delegate", model: configured as unknown as LanguageModelV3Like };
-      }
+    // Explicit model object configured for this slot (models.judge,
+    // models.knowledgeVerifier) — the "explicit object wins" tier: no
+    // credential resolution, no pins.
+    const configured = this.configured;
+    if (configured !== undefined && typeof configured !== "string") {
+      this.announce(`explicit models.${this.slot} model object`);
+      return { mode: "delegate", model: configured as unknown as LanguageModelV3Like };
     }
 
     const options: ResolveDevCredentialOptions = { env: this.env };

@@ -15,11 +15,15 @@ import { z } from "zod";
  * Three properties are load-bearing, because the alternative to a wrong answer
  * must never be no answers at all:
  * - it is an ENHANCEMENT: no model, no verifier, today's behavior;
- * - it FAILS OPEN: a timeout, a provider error, or output that does not fit
- *   the schema yields no verdict, and the caller falls back to the shipped
- *   threshold decision;
- * - it is TIME-CAPPED: the verifier sits between the search and the tool's
- *   answer, so a hanging model must never become a hanging turn.
+ * - it FAILS OPEN BUT MARKED: a timeout, a provider error, or output that does
+ *   not fit the schema yields no verdict; the caller falls back to the shipped
+ *   threshold decision AND flags the result unverified, so a verifier that did
+ *   not run is never mistaken for one that passed;
+ * - it is TIME-CAPPED, per call AND per turn: the verifier sits between the
+ *   search and the tool's answer, so a hanging model must never become a
+ *   hanging turn. The caller passes what is left of the turn's budget
+ *   (agent-tools.ts KNOWLEDGE_VERIFY_TURN_BUDGET_MS) and this cap is the
+ *   smaller of the two.
  */
 
 /** One cited passage, as the tool would hand it to the model. */
@@ -39,11 +43,33 @@ export interface KnowledgeVerifierInput {
   answer?: string;
 }
 
+/** The schema-constrained verdict (spec §The verifier pass: "sufficient /
+    insufficient plus the gap it found"). */
+export interface KnowledgeVerdict {
+  /** Can a correct answer to the question be written from these passages? */
+  supported: boolean;
+  /** The one fact the verifier hung its verdict on — present (supported) or
+      missing (unsupported). K15: the gap is no longer discarded at the tool
+      seam; it rides the refusal so the agent can say WHAT is missing and the
+      gap log records something more useful than a score. */
+  gap: string;
+}
+
+export interface KnowledgeVerifyOptions {
+  /** Hard cap for THIS call, from the caller's remaining per-TURN budget. The
+      verifier takes the smaller of this and its own per-call cap: one turn
+      that verifies twice (chat → deep) must not cost twice the cap. */
+  timeoutMs?: number;
+}
+
 export interface KnowledgeVerifier {
-  /** `true` supported · `false` not supported · `undefined` no verdict —
-      the caller must treat undefined as "decide the way you would have
-      without me". Never throws. */
-  supported(input: KnowledgeVerifierInput): Promise<boolean | undefined>;
+  /** A verdict, or `undefined` for NO VERDICT — the caller must treat
+      undefined as "decide the way you would have without me, and mark the
+      result unverified". Never throws. */
+  verify(
+    input: KnowledgeVerifierInput,
+    options?: KnowledgeVerifyOptions,
+  ): Promise<KnowledgeVerdict | undefined>;
 }
 
 /** The wall the verifier may not cross, set from measurement rather than
@@ -65,7 +91,7 @@ export interface EntailmentVerifierOptions {
 
 const verdictSchema = z.object({
   supported: z.boolean(),
-  rationale: z.string(),
+  gap: z.string(),
 });
 
 /** The standard, written for the failure the calibration actually found:
@@ -78,7 +104,7 @@ const STANDARD = [
   "supported = true when the passages state the facts the question asks for. A partial answer counts, as long as the substance of the question is covered.",
   "supported = false when answering would require facts that are not present — most often passages that are about the same product, or answer a neighbouring question, without covering this one. \"How to install in framework A\" does not support \"how to install in framework B\"; a description of a feature does not support a question about its price.",
   "Judge only what the passages say. Do not use your own knowledge of the product to fill a gap.",
-  "Give a one-sentence rationale naming the fact that is present or missing.",
+  "State the gap in one sentence: the fact the passages supply (supported) or the fact they are missing (not supported).",
 ].join("\n");
 
 /** Passages are already trimmed by the tool; this bounds a pathological
@@ -99,9 +125,16 @@ export function entailmentVerifier(options: EntailmentVerifierOptions): Knowledg
   const warned = new Set<string>();
 
   return {
-    async supported(input) {
+    async verify(input, callOptions) {
       // No evidence supports nothing. Deterministic, and it spends nothing.
-      if (input.passages.length === 0) return false;
+      if (input.passages.length === 0) {
+        return { supported: false, gap: "The search returned no passages to answer from." };
+      }
+      // The caller's remaining turn budget never RAISES the per-call cap: it
+      // is a second ceiling, not a replacement for the first.
+      const cap = callOptions?.timeoutMs === undefined
+        ? timeoutMs
+        : Math.min(timeoutMs, callOptions.timeoutMs);
 
       const prompt = JSON.stringify({
         question: input.question,
@@ -122,7 +155,7 @@ export function entailmentVerifier(options: EntailmentVerifierOptions): Knowledg
         expire = setTimeout(() => {
           controller.abort();
           resolve(undefined);
-        }, timeoutMs);
+        }, cap);
       });
       try {
         const result = await Promise.race([
@@ -135,7 +168,9 @@ export function entailmentVerifier(options: EntailmentVerifierOptions): Knowledg
           }),
           deadline,
         ]);
-        return result?.object.supported;
+        return result === undefined
+          ? undefined
+          : { supported: result.object.supported, gap: result.object.gap };
       } catch (error) {
         const cause = error instanceof Error ? error.message : String(error);
         if (!warned.has(cause)) {

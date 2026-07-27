@@ -17,6 +17,13 @@ export interface ModelsConfig {
   agent?: string | LanguageModel;
   paint?: string | LanguageModel;
   judge?: string | LanguageModel;
+  /** K15 — the knowledge tool's evidence check (a cheap/fast model reading the
+      retrieved passages before the tool returns them). Its own slot beside
+      `judge`: pinning the model that GRADES answers must not silently repoint
+      the one that GATES them. Unset = the family fast pick on whatever rung
+      the host's credentials resolve to; `VENDO_KNOWLEDGE_VERIFY=off` turns the
+      check off entirely. */
+  knowledgeVerifier?: string | LanguageModel;
 }
 
 export interface ResolveModelsInput {
@@ -59,6 +66,7 @@ export function resolveModels(config: ResolveModelsInput, makeModel: MakeModel =
   validateSlot("agent", config.models?.agent);
   validateSlot("paint", config.models?.paint);
   validateSlot("judge", config.models?.judge);
+  validateSlot("knowledgeVerifier", config.models?.knowledgeVerifier);
 
   const agentConfigured = config.models?.agent ?? config.model;
   const agent: ResolvedModels["agent"] = agentConfigured === undefined

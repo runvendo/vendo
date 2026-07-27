@@ -12,6 +12,8 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 import {
   createKnowledgeTools,
+  KNOWLEDGE_VERIFY_TIMEOUT_MS,
+  KNOWLEDGE_VERIFY_TURN_BUDGET_MS,
   VENDO_KNOWLEDGE_SEARCH_TOOL,
   type KnowledgeResultEnvelope,
   type KnowledgeVerifier,
@@ -469,36 +471,62 @@ function scoredAdapter(score: number, deepScore = score): KnowledgeAdapter & { s
 }
 
 /** A verifier that always answers `verdict`, counting its calls. */
-function stubVerifier(verdict: boolean | undefined): KnowledgeVerifier & { calls: KnowledgeVerifierInput[] } {
+function stubVerifier(
+  verdict: boolean | undefined,
+  gap = "the passages do not cover it",
+): KnowledgeVerifier & { calls: KnowledgeVerifierInput[]; budgets: (number | undefined)[] } {
   const calls: KnowledgeVerifierInput[] = [];
+  const budgets: (number | undefined)[] = [];
   return {
     calls,
-    async supported(input) {
+    budgets,
+    async verify(input, options) {
       calls.push(input);
-      return verdict;
+      budgets.push(options?.timeoutMs);
+      return verdict === undefined ? undefined : { supported: verdict, gap };
     },
   };
 }
 
 // The committed cloud calibration (docs/eval/knowledge/bands/agentset.json).
 const BAND = { low: 0.6735, high: 0.7835 };
-const BAR = 0.7211;
 
-describe("tool policy: the verification band (K14 T3)", () => {
+// MAIN'S REAL DEFAULT. `weakScoreThreshold` defaults to 0 (agent-tools.ts) and
+// nothing on main configures it, so "what the host had before the verifier" is
+// this, on every engine including Cloud. K14's tests passed 0.7211 and called
+// it "today's threshold"; that framing is what hid a real behaviour change,
+// so these tests state the default and assert nothing moves it.
+const MAIN_DEFAULT_THRESHOLD = 0;
+
+describe("tool policy: the verification band (K14 T3, K15 pinned to main's default)", () => {
   it("answers above the band without spending a verification", async () => {
     const verifier = stubVerifier(false);
     const envelope = await envelopeOf(await search(
-      createKnowledgeTools(scoredAdapter(0.84), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      createKnowledgeTools(scoredAdapter(0.84), { verifyBand: BAND, verifier }),
       { query: "wire transfers" },
     ));
     expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBeUndefined();
     expect(verifier.calls).toHaveLength(0);
   });
 
-  it("refuses below the band without spending a verification", async () => {
+  it("below the band the host's OWN threshold decides, unchanged and unverified-free", async () => {
+    // Main's default answers anything with hits, so a 0.61 score is an answer
+    // here — and composing a verifier must not turn it into a refusal.
+    const verifier = stubVerifier(false);
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.61), { verifyBand: BAND, verifier }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBeUndefined();
+    expect(verifier.calls).toHaveLength(0);
+  });
+
+  it("a host that DID calibrate a threshold keeps it below the band", async () => {
     const verifier = stubVerifier(true);
     const envelope = await envelopeOf(await search(
-      createKnowledgeTools(scoredAdapter(0.61), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      createKnowledgeTools(scoredAdapter(0.61), { weakScoreThreshold: 0.7211, verifyBand: BAND, verifier }),
       { query: "wire transfers" },
     ));
     expect(envelope.outcome).toBe("insufficient-evidence");
@@ -506,33 +534,46 @@ describe("tool policy: the verification band (K14 T3)", () => {
   });
 
   it("inside the band, an unsupported verdict becomes the EXISTING insufficient-evidence outcome", async () => {
-    const verifier = stubVerifier(false);
-    const adapter = scoredAdapter(0.75);
+    const verifier = stubVerifier(false, "the docs cover React, not Vue");
     const envelope = await envelopeOf(await search(
-      createKnowledgeTools(adapter, { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      createKnowledgeTools(scoredAdapter(0.75), { verifyBand: BAND, verifier }),
       { query: "how do I mount vendo in vue" },
     ));
-    // The score clears the shipped bar, so today this question is ANSWERED.
+    // Under main's default this question is ANSWERED today: the verifier, not
+    // a number, is what changes it.
     expect(envelope.outcome).toBe("insufficient-evidence");
     expect(envelope.hits).toHaveLength(1);
     expect(verifier.calls[0]).toMatchObject({ question: "how do I mount vendo in vue" });
     expect(verifier.calls[0]!.passages[0]).toMatchObject({ docId: "doc-transfers", title: "Wire transfer limits" });
   });
 
-  it("inside the band, a supported verdict answers a score the shipped bar would have refused", async () => {
+  it("carries the verifier's GAP on the refusal, so the agent can say what is missing", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), {
+        verifyBand: BAND,
+        verifier: stubVerifier(false, "the docs cover React, not Vue"),
+      }),
+      { query: "how do I mount vendo in vue" },
+    ));
+    expect(envelope.outcome).toBe("insufficient-evidence");
+    expect(envelope.message).toBe("the docs cover React, not Vue");
+  });
+
+  it("inside the band, a supported verdict answers", async () => {
     const verifier = stubVerifier(true);
     const envelope = await envelopeOf(await search(
-      createKnowledgeTools(scoredAdapter(0.69), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      createKnowledgeTools(scoredAdapter(0.69), { verifyBand: BAND, verifier }),
       { query: "wire transfers" },
     ));
     expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBeUndefined();
     expect(verifier.calls).toHaveLength(1);
   });
 
   it("verifies at most once per turn when the deep retry returns the same passages", async () => {
     const verifier = stubVerifier(false);
     const envelope = await envelopeOf(await search(
-      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      createKnowledgeTools(scoredAdapter(0.75), { verifyBand: BAND, verifier }),
       { query: "wire transfers" },
     ));
     expect(envelope.outcome).toBe("insufficient-evidence");
@@ -542,39 +583,25 @@ describe("tool policy: the verification band (K14 T3)", () => {
   it("skips the status() emptiness check when the VERIFIER produced the refusal", async () => {
     const adapter = scoredAdapter(0.75);
     await search(
-      createKnowledgeTools(adapter, { weakScoreThreshold: BAR, verifyBand: BAND, verifier: stubVerifier(false) }),
+      createKnowledgeTools(adapter, { verifyBand: BAND, verifier: stubVerifier(false) }),
       { query: "wire transfers" },
     );
     expect(adapter.statusCalls).toBe(0);
   });
 
-  it("fails OPEN to the shipped threshold when the verifier gives no verdict", async () => {
-    // No verdict on a score ABOVE the bar → today's answer.
-    const above = await envelopeOf(await search(
-      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifyBand: BAND, verifier: stubVerifier(undefined) }),
-      { query: "wire transfers" },
-    ));
-    expect(above.outcome).toBe("answered");
-    // No verdict on a score BELOW the bar → today's refusal.
-    const below = await envelopeOf(await search(
-      createKnowledgeTools(scoredAdapter(0.69), { weakScoreThreshold: BAR, verifyBand: BAND, verifier: stubVerifier(undefined) }),
-      { query: "wire transfers" },
-    ));
-    expect(below.outcome).toBe("insufficient-evidence");
-  });
-
   it("changes nothing without a verifier: the band alone is inert", async () => {
     const envelope = await envelopeOf(await search(
-      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifyBand: BAND }),
+      createKnowledgeTools(scoredAdapter(0.75), { verifyBand: BAND }),
       { query: "wire transfers" },
     ));
     expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBeUndefined();
   });
 
   it("changes nothing without a band: a verifier alone is never consulted", async () => {
     const verifier = stubVerifier(false);
     const envelope = await envelopeOf(await search(
-      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifier }),
+      createKnowledgeTools(scoredAdapter(0.75), { verifier }),
       { query: "wire transfers" },
     ));
     expect(envelope.outcome).toBe("answered");
@@ -594,9 +621,202 @@ describe("tool policy: the verification band (K14 T3)", () => {
   it("never consults the verifier on a schema lookup — a different score space", async () => {
     const verifier = stubVerifier(false);
     await search(
-      createKnowledgeTools(scoredAdapter(0.75), { weakScoreThreshold: BAR, verifyBand: BAND, verifier }),
+      createKnowledgeTools(scoredAdapter(0.75), { verifyBand: BAND, verifier }),
       { query: "APY", lookup: true },
     );
     expect(verifier.calls).toHaveLength(0);
   });
 });
+
+describe("the verifier moves no threshold (K15 T2 — the fail-open regression)", () => {
+  // The regression this suite exists for: enabling verification ALSO swapped
+  // the weak-score threshold from main's 0 to the Cloud bar 0.7211, so scores
+  // the verifier never looked at started refusing. Two decisions, independent.
+  const BELOW_BAND = 0.61;
+  const IN_BAND_BELOW_BAR = 0.69;
+
+  const outcomeWith = async (score: number, options: Parameters<typeof createKnowledgeTools>[1]) =>
+    (await envelopeOf(await search(createKnowledgeTools(scoredAdapter(score), options), { query: "wire transfers" }))).outcome;
+
+  it("a below-band score answers exactly as it does with no verifier at all", async () => {
+    expect(await outcomeWith(BELOW_BAND, { weakScoreThreshold: MAIN_DEFAULT_THRESHOLD })).toBe("answered");
+    expect(await outcomeWith(BELOW_BAND, { verifyBand: BAND, verifier: stubVerifier(false) })).toBe("answered");
+  });
+
+  it("a verifier that times out cannot turn an answer into a refusal", async () => {
+    // 0.69 sits in the band and BELOW the Cloud bar: under K14's coupling a
+    // no-verdict here refused. It must answer, marked.
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(IN_BAND_BELOW_BAR), { verifyBand: BAND, verifier: stubVerifier(undefined) }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBe(true);
+  });
+
+  it("a host's own threshold still decides, verifier or not", async () => {
+    expect(await outcomeWith(0.61, { weakScoreThreshold: 0.7211 })).toBe("insufficient-evidence");
+    expect(await outcomeWith(0.61, { weakScoreThreshold: 0.7211, verifyBand: BAND, verifier: stubVerifier(true) }))
+      .toBe("insufficient-evidence");
+  });
+});
+
+describe("fail open BUT MARKED (K15 T2)", () => {
+  it("marks an answer the verifier could not check", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), { verifyBand: BAND, verifier: stubVerifier(undefined) }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBe(true);
+  });
+
+  it("marks a refusal the verifier could not check either", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), {
+        weakScoreThreshold: 0.7835,
+        verifyBand: BAND,
+        verifier: stubVerifier(undefined),
+      }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("insufficient-evidence");
+    expect(envelope.unverified).toBe(true);
+  });
+
+  it("does NOT mark a host that never composed a verifier — the flag means 'could not check'", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), {}),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBeUndefined();
+  });
+
+  it("does not mark an outcome the verifier decided", async () => {
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(scoredAdapter(0.75), { verifyBand: BAND, verifier: stubVerifier(false) }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("insufficient-evidence");
+    expect(envelope.unverified).toBeUndefined();
+  });
+
+  it("stays marked for the whole turn once a verification is lost", async () => {
+    // Chat is in-band and unverifiable; deep returns DIFFERENT passages the
+    // verifier accepts. The answer is still one the tool could not fully
+    // check, so the mark survives.
+    const verifier: KnowledgeVerifier = {
+      async verify(input) {
+        return input.passages[0]?.snippet.includes("deep")
+          ? { supported: true, gap: "the deep passages cover it" }
+          : undefined;
+      },
+    };
+    const adapter = twoIntentAdapter(
+      { score: 0.75, snippet: "chat passage" },
+      { score: 0.75, snippet: "deep passage" },
+    );
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(adapter, { verifyBand: BAND, verifier }),
+      { query: "wire transfers" },
+    ));
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBe(true);
+  });
+});
+
+describe("the per-TURN verification budget (K15 T3)", () => {
+  it("gives the FIRST verification the whole turn budget", async () => {
+    const verifier = stubVerifier(true);
+    await search(
+      createKnowledgeTools(scoredAdapter(0.75), { verifyBand: BAND, verifier, verifyTurnBudgetMs: 4321 }),
+      { query: "wire transfers" },
+    );
+    expect(verifier.budgets).toEqual([4321]);
+  });
+
+  it("gives the deep retry only what the chat verification left", async () => {
+    const adapter = twoIntentAdapter(
+      { score: 0.75, snippet: "chat passage" },
+      { score: 0.75, snippet: "deep passage" },
+    );
+    const budgets: (number | undefined)[] = [];
+    const verifier: KnowledgeVerifier = {
+      async verify(input, options) {
+        budgets.push(options?.timeoutMs);
+        // The first (chat) verification burns most of the turn's budget.
+        if (input.passages[0]?.snippet.includes("chat")) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          return { supported: false, gap: "not covered" };
+        }
+        return { supported: false, gap: "not covered either" };
+      },
+    };
+    await search(
+      createKnowledgeTools(adapter, { verifyBand: BAND, verifier, verifyTurnBudgetMs: 2000 }),
+      { query: "wire transfers" },
+    );
+    expect(budgets).toHaveLength(2);
+    expect(budgets[0]).toBe(2000);
+    expect(budgets[1]!).toBeLessThanOrEqual(2000 - 300);
+  });
+
+  it("spends nothing on a second verification when the budget is gone, and marks the turn", async () => {
+    const adapter = twoIntentAdapter(
+      { score: 0.75, snippet: "chat passage" },
+      { score: 0.75, snippet: "deep passage" },
+    );
+    let calls = 0;
+    const verifier: KnowledgeVerifier = {
+      async verify() {
+        calls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return { supported: false, gap: "not covered" };
+      },
+    };
+    // 400ms of budget, 300ms spent on the chat half: the 100ms left is below
+    // the floor where a model call could plausibly answer, so the deep half
+    // spends nothing at all.
+    const envelope = await envelopeOf(await search(
+      createKnowledgeTools(adapter, { verifyBand: BAND, verifier, verifyTurnBudgetMs: 400 }),
+      { query: "wire transfers" },
+    ));
+    expect(calls).toBe(1);
+    // The deep passages are DIFFERENT text, and nothing checked them: the
+    // pre-verifier outcome (main's threshold answers anything with hits)
+    // stands, marked — never a refusal manufactured by a missing verdict.
+    expect(envelope.outcome).toBe("answered");
+    expect(envelope.unverified).toBe(true);
+  });
+
+  it("defaults the turn budget to the per-call cap, so one turn cannot cost two", () => {
+    expect(KNOWLEDGE_VERIFY_TURN_BUDGET_MS).toBe(KNOWLEDGE_VERIFY_TIMEOUT_MS);
+  });
+});
+
+/** An engine whose chat and deep intents return DIFFERENT passages — the shape
+    that makes a turn verify twice. */
+function twoIntentAdapter(
+  chat: { score: number; snippet: string },
+  deep: { score: number; snippet: string },
+): KnowledgeAdapter {
+  const hit = (of: { score: number; snippet: string }, docId: string): KnowledgeHit => ({
+    ref: { docId, chunkId: "c1", title: "Wire transfer limits" },
+    snippet: of.snippet,
+    kind: "docs",
+    visibility: "public",
+    score: of.score,
+  });
+  return {
+    posture: { fetch: false, write: false },
+    async search(query: KnowledgeQuery) {
+      return query.intent === "deep"
+        ? { hits: [hit(deep, "doc-deep")] }
+        : { hits: [hit(chat, "doc-chat")] };
+    },
+    async status() {
+      return { ok: true } as Awaited<ReturnType<KnowledgeAdapter["status"]>>;
+    },
+  } as KnowledgeAdapter;
+}

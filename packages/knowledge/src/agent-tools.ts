@@ -11,7 +11,7 @@ import {
 } from "@vendoai/core";
 
 import { inVerifyBand, type KnowledgeVerifyBand } from "./band.js";
-import type { KnowledgeVerifier } from "./verifier.js";
+import { KNOWLEDGE_VERIFY_TIMEOUT_MS, type KnowledgeVerdict, type KnowledgeVerifier } from "./verifier.js";
 
 const DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema";
 
@@ -52,11 +52,22 @@ export interface KnowledgeResultEnvelope {
   /** Read-more only: the fetched document text, hard-trimmed by the caller. */
   text?: string;
   truncated?: boolean;
-  /** `unavailable` only — WHY the engine could not answer, in the model's
-      context so the agent can say what happened instead of shrugging. Carries
-      the failure STATEMENT only; the operator's remediation ("run `vendo
-      login`…") is log-side (see describeEngineFailure). */
+  /** WHY this outcome, in the model's context so the agent can say what
+      happened instead of shrugging. Two producers:
+      - `unavailable`: the engine failure STATEMENT (the operator's remediation
+        — "run `vendo login`…" — stays log-side, see describeEngineFailure);
+      - `insufficient-evidence` from the VERIFIER: the gap it named, so the
+        agent can say what the docs do not cover rather than a bare "I don't
+        know". */
   message?: string;
+  /** K15, additive envelope pin (`vendo/knowledge-result@1` stays compatible —
+      §15 forward-compat: consumers that do not know this field ignore it).
+      Set when the verifier was in play for these hits and produced NO verdict:
+      the pre-verifier outcome stands, marked, so the UI can carry the amber
+      "not verified against the documentation" treatment. A verifier that
+      passed, and a host with no verifier at all, both leave it unset — the
+      flag means "we could not check", never "we did not bother". */
+  unverified?: true;
 }
 
 const descriptor: ToolDescriptor = {
@@ -95,12 +106,34 @@ export interface KnowledgeToolsOptions {
   maxCallsPerMinute?: number;
   /** K14 — the score interval where `weakScoreThreshold` provably cannot
       decide (band.ts, per-engine like the bars). Inside it the verifier
-      adjudicates; outside it nothing changes. No band, no verification. */
+      adjudicates; outside it nothing changes. No band, no verification.
+
+      The band ROUTES the model call, it never decides the answer: inside it
+      the verifier is the arbiter, outside it the host's own threshold decides
+      exactly as it did before the verifier existed. Composing a verifier
+      therefore moves no threshold — see knowledgeToolOptions in
+      packages/vendo/src/server.ts. */
   verifyBand?: KnowledgeVerifyBand;
   /** K14 — the adjudicator for band scores. No verifier, no verification:
       the band alone changes nothing. */
   verifier?: KnowledgeVerifier;
+  /** K15 — the whole turn's verification budget, shared by every verification
+      one tool call makes. Default KNOWLEDGE_VERIFY_TURN_BUDGET_MS. */
+  verifyTurnBudgetMs?: number;
 }
+
+/** K15 — what the verifier may add to ONE tool call, all verifications
+    together. A chat search that escalates to deep verifies twice, so the
+    per-call cap alone allowed ~10s on one turn; the turn budget is the wall
+    the user actually feels. Sized at the per-call cap (measured p95 3.6s over
+    183 verifications, docs/eval/KNOWLEDGE.md), so the common single
+    verification is unaffected and the second one runs only in whatever time
+    the first left. */
+export const KNOWLEDGE_VERIFY_TURN_BUDGET_MS = KNOWLEDGE_VERIFY_TIMEOUT_MS;
+
+/** Below this there is no point starting a model call: it would abort before
+    a provider could answer, spending a request to produce no verdict. */
+const MIN_VERIFY_BUDGET_MS = 250;
 
 /** ENG-370 default; the env knob is the operator escape hatch. */
 const MAX_CALLS_PER_MINUTE = 60;
@@ -246,6 +279,23 @@ function topScore(hits: KnowledgeHit[]): number | undefined {
 const hitSetKey = (hits: KnowledgeHit[]): string =>
   hits.map((hit) => `${hit.ref.docId} ${hit.ref.chunkId ?? ""}`).join("");
 
+/** What one verification attempt produced (see adjudicate). */
+interface Adjudication {
+  verdict?: KnowledgeVerdict;
+  /** Asked, no verdict — fall open, and say so. */
+  unverified?: true;
+}
+
+/** Verification state for ONE tool call: the shared time budget, and the memo
+    that stops a deep retry paying to re-read passages the chat search already
+    had verified. */
+interface Turn {
+  readonly budgetMs: number;
+  spentMs: number;
+  memoKey?: string;
+  memo?: Adjudication;
+}
+
 const envelope = (
   fields: Omit<KnowledgeResultEnvelope, "kind">,
 ): ToolOutcome => ({
@@ -271,6 +321,7 @@ export function createKnowledgeTools(
   // the shipped path untouched.
   const band = options.verifier === undefined ? undefined : options.verifyBand;
   const verifier = options.verifier;
+  const turnBudgetMs = options.verifyTurnBudgetMs ?? KNOWLEDGE_VERIFY_TURN_BUDGET_MS;
 
   // An engine failure has two audiences and they need different halves of the
   // same error (conductor amendment, 2026-07-27).
@@ -307,35 +358,49 @@ export function createKnowledgeTools(
     await adapter.status();
   };
 
-  // K14 — the band decision for one search.
+  // K14/K15 — the band decision for one search.
   //
-  // Returns `true` (the passages support an answer), `false` (they do not), or
-  // `undefined` meaning THE BAND DID NOT DECIDE — no band configured, no
-  // scores to place, a score outside the band, or a verifier that gave no
-  // verdict. Undefined is the fail-open path in every one of those cases: the
-  // caller keeps the shipped threshold decision, so a broken or slow verifier
-  // costs latency at worst, never an answer the host would otherwise have got.
+  // Three shapes come back:
+  //   { verdict }          the verifier read the passages and decided;
+  //   { unverified: true } it was asked and gave nothing back (timeout, no
+  //                        model, unusable output, or no turn budget left);
+  //   {}                   it was never in play — no band, no verifier, no
+  //                        scores, or a score outside the band.
+  // The last two both fall open to the shipped threshold decision, so a broken
+  // or slow verifier costs latency at worst, never an answer the host would
+  // otherwise have got. Only the middle one is MARKED: the answer says "I
+  // could not check this", which is the one thing a silent fail-open cannot.
   const adjudicate = async (
     question: string,
     hits: KnowledgeHit[],
-    memo: { key?: string; verdict?: boolean },
-  ): Promise<boolean | undefined> => {
-    if (band === undefined || verifier === undefined || hits.length === 0) return undefined;
+    turn: Turn,
+  ): Promise<Adjudication> => {
+    if (band === undefined || verifier === undefined || hits.length === 0) return {};
     const top = topScore(hits);
-    if (top === undefined || !inVerifyBand(top, band)) return undefined;
+    if (top === undefined || !inVerifyBand(top, band)) return {};
     const key = hitSetKey(hits);
-    if (memo.key === key) return memo.verdict;
-    const verdict = await verifier.supported({
-      question,
-      passages: hits.slice(0, MAX_HITS).map((hit) => ({
-        docId: hit.ref.docId,
-        ...(hit.ref.title === undefined ? {} : { title: hit.ref.title }),
-        snippet: hit.snippet,
-      })),
-    });
-    memo.key = key;
-    memo.verdict = verdict;
-    return verdict;
+    if (turn.memoKey === key) return turn.memo ?? {};
+    // The turn budget, not just the per-call cap: the deep retry gets what the
+    // chat verification left, and nothing at all if it left nothing.
+    const remaining = turn.budgetMs - turn.spentMs;
+    if (remaining < MIN_VERIFY_BUDGET_MS) return { unverified: true };
+    const startedAt = Date.now();
+    const verdict = await verifier.verify(
+      {
+        question,
+        passages: hits.slice(0, MAX_HITS).map((hit) => ({
+          docId: hit.ref.docId,
+          ...(hit.ref.title === undefined ? {} : { title: hit.ref.title }),
+          snippet: hit.snippet,
+        })),
+      },
+      { timeoutMs: remaining },
+    );
+    turn.spentMs += Date.now() - startedAt;
+    const adjudication: Adjudication = verdict === undefined ? { unverified: true } : { verdict };
+    turn.memoKey = key;
+    turn.memo = adjudication;
+    return adjudication;
   };
 
   const readMore = async (ref: { docId: string; chunkId?: string }, ctx: RunContext): Promise<ToolOutcome> => {
@@ -407,34 +472,51 @@ export function createKnowledgeTools(
           return envelope({ outcome: "answered", hits: result.hits.slice(0, MAX_HITS).map(toCitation) });
         }
 
-        // K14 — one memo per turn, so the deep retry does not pay a second
+        // K14/K15 — one verification state per turn: the shared time budget,
+        // and the memo that keeps the deep retry from paying a second
         // verification for the same passages (engines whose deep mode only
         // reranks return the same set).
-        const memo: { key?: string; verdict?: boolean } = {};
+        const turn: Turn = { budgetMs: turnBudgetMs, spentMs: 0 };
+        // Sticky across both searches: a turn that could not verify once is
+        // unverified whatever the second look decides on its own evidence.
+        let unverified = false;
+        const marked = (
+          fields: Omit<KnowledgeResultEnvelope, "kind">,
+        ): Omit<KnowledgeResultEnvelope, "kind"> =>
+          unverified ? { ...fields, unverified: true } : fields;
 
         const chat = await adapter.search({ text: input.query, intent: "chat" }, knowledgeCtx);
-        const chatVerdict = await adjudicate(input.query, chat.hits, memo);
-        if (chatVerdict === true || (chatVerdict === undefined && !isWeak(chat.hits, threshold))) {
-          return envelope({ outcome: "answered", hits: chat.hits.slice(0, MAX_HITS).map(toCitation) });
+        const chatCall = await adjudicate(input.query, chat.hits, turn);
+        if (chatCall.unverified === true) unverified = true;
+        if (chatCall.verdict?.supported === true
+          || (chatCall.verdict === undefined && !isWeak(chat.hits, threshold))) {
+          return envelope(marked({ outcome: "answered", hits: chat.hits.slice(0, MAX_HITS).map(toCitation) }));
         }
         // Weak chat evidence — or in-band evidence the verifier rejected —
         // → exactly one deep retry (engines without a deep mode treat it as
         // chat, so the retry is at worst a repeat).
         const deep = await adapter.search({ text: input.query, intent: "deep" }, knowledgeCtx);
-        const deepVerdict = await adjudicate(input.query, deep.hits, memo);
-        if (deepVerdict === true || (deepVerdict === undefined && !isWeak(deep.hits, threshold))) {
-          return envelope({ outcome: "answered", hits: deep.hits.slice(0, MAX_HITS).map(toCitation) });
+        const deepCall = await adjudicate(input.query, deep.hits, turn);
+        if (deepCall.unverified === true) unverified = true;
+        if (deepCall.verdict?.supported === true
+          || (deepCall.verdict === undefined && !isWeak(deep.hits, threshold))) {
+          return envelope(marked({ outcome: "answered", hits: deep.hits.slice(0, MAX_HITS).map(toCitation) }));
         }
         // Structured refusal WITH the weak evidence: the model says it does
         // not know; the UI still gets whatever weak hits existed. The
         // status() check is the emptiness verification — skipped when the
         // VERIFIER produced the refusal, because an engine that just returned
         // scored passages has already proven it is alive.
-        if (deepVerdict !== false) await verifyEmptiness();
-        return envelope({
+        const verifierGap = deepCall.verdict?.supported === false ? deepCall.verdict.gap : undefined;
+        if (verifierGap === undefined) await verifyEmptiness();
+        return envelope(marked({
           outcome: "insufficient-evidence",
           hits: deep.hits.slice(0, MAX_HITS).map(toCitation),
-        });
+          // The gap, not just the refusal: "the docs cover installing in React,
+          // not Vue" is something the user can act on, and it is what the gap
+          // log wants recorded.
+          ...(verifierGap === undefined ? {} : { message: verifierGap }),
+        }));
       } catch (error) {
         // The loud engine-outage rule: a thrown adapter is NEVER a silent
         // empty result — the UI gets "unavailable", the model gets that plus

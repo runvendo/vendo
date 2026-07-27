@@ -1,12 +1,21 @@
 ---
 "@vendoai/knowledge": minor
 "@vendoai/vendo": minor
+"@vendoai/core": minor
+"@vendoai/agent": minor
+"@vendoai/ui": minor
 ---
 
 Knowledge verifier pass: where the evidence score provably cannot decide, a cheap model does.
 
-Calibration against the cloud engine found that answerable and unanswerable questions score in the same range, so at the best possible bar 47% of unanswerable questions still got a confident answer. `@vendoai/knowledge` now exports `deriveVerifyBand` (the overlap region of the two calibration populations) and `entailmentVerifier` (a capped, schema-constrained check that the returned passages can support an answer at all). Inside the band the verifier adjudicates and an unsupported verdict becomes the existing `insufficient-evidence` outcome; outside it nothing changes. Measured on the 94-question calibration corpus: false answers 47% → 3%, false refusals 12% → 7-10%.
+Calibration against the cloud engine found that answerable and unanswerable questions score in the same range, so at the best possible bar 47% of unanswerable questions still got a confident answer. `@vendoai/knowledge` now exports `deriveVerifyBand` (the overlap region of the two calibration populations) and `entailmentVerifier` (a capped, schema-constrained check that the returned passages can support an answer at all). Inside the band the verifier adjudicates and an unsupported verdict becomes the existing `insufficient-evidence` outcome, carrying the gap the verifier named so the agent can say WHAT the docs do not cover. Outside the band nothing changes.
 
-It is **opt-in for this release**: `createVendo` wires it only when `VENDO_KNOWLEDGE_VERIFY=on`, and only for the Cloud engine — scores are engine-relative, and no other engine has been calibrated. Unset means today's behavior, unchanged. A value that is neither on nor off throws at composition rather than silently disabling a trust feature. It can never make knowledge unavailable: no model, a timeout, or an unusable response yields no verdict and the tool answers as it would have without it.
+**On by default for the Cloud engine.** `VENDO_KNOWLEDGE_VERIFY=off` is the explicit opt-out; a value that is neither on nor off throws at composition rather than silently disabling a trust feature. Only the Cloud engine verifies: scores are engine-relative and no other engine has been calibrated, so a BYO or self-hosted engine is untouched.
+
+**Enabling the check changes no threshold.** The band decides who adjudicates, never what is decided — the host's `weakScoreThreshold` (default 0) is exactly what it was.
+
+**It fails open, and says so.** No model, a timeout, or an unusable response yields no verdict: the tool answers the way it would have without a verifier and marks the result with the additive `unverified` field on `vendo/knowledge-result@1`. The thread renders that as the amber "I couldn't check this answer against the documentation" line beside the sources, so a check that did not run is never mistaken for one that passed. Verification is capped per TURN as well as per call, so a chat→deep escalation cannot spend the cap twice.
+
+The verifier rides its own `knowledgeVerifier` model slot (`VENDO_MODEL_KNOWLEDGE_VERIFIER`, `models.knowledgeVerifier`) beside `judge` — pinning the model that grades answers no longer repoints the one that gates them.
 
 `@vendoai/knowledge` now declares `ai` as a peer dependency (with the zod floor every ai peer needs), matching `@vendoai/guard`.

@@ -15,7 +15,7 @@
  *  portability gate bundles it. */
 import type { LanguageModel } from "ai";
 
-import type { DevModelOptions, VendoModelOptions, VendoModelSlot } from "./model.js";
+import type { ConfigurableSlotModels, DevModelOptions, VendoModelOptions, VendoModelSlot } from "./model.js";
 
 export type { DevModelOptions, VendoModelOptions, VendoModelSlot };
 
@@ -69,5 +69,5 @@ export function devModel(_options: DevModelOptions = {}): LanguageModel {
  *  to bind — a deliberate no-op. */
 export function bindVendoModelSlots(
   _model: unknown,
-  _models: { judge?: string | LanguageModel } | undefined,
+  _models: ConfigurableSlotModels | undefined,
 ): void {}

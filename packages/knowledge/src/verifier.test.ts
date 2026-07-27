@@ -47,17 +47,23 @@ const passages = [
 ];
 
 describe("entailmentVerifier (K14 T2)", () => {
-  it("returns the model's supported verdict", async () => {
-    const supported = entailmentVerifier({ model: scriptedModel(JSON.stringify({ supported: true, rationale: "states it" })) });
-    await expect(supported.supported({ question: "How do I mount in React?", passages })).resolves.toBe(true);
+  it("returns the model's verdict WITH the gap it named", async () => {
+    const supported = entailmentVerifier({ model: scriptedModel(JSON.stringify({ supported: true, gap: "states the React mount" })) });
+    await expect(supported.verify({ question: "How do I mount in React?", passages })).resolves.toEqual({
+      supported: true,
+      gap: "states the React mount",
+    });
 
-    const refused = entailmentVerifier({ model: scriptedModel(JSON.stringify({ supported: false, rationale: "Vue is not covered" })) });
-    await expect(refused.supported({ question: "How do I mount in Vue?", passages })).resolves.toBe(false);
+    const refused = entailmentVerifier({ model: scriptedModel(JSON.stringify({ supported: false, gap: "Vue is not covered" })) });
+    await expect(refused.verify({ question: "How do I mount in Vue?", passages })).resolves.toEqual({
+      supported: false,
+      gap: "Vue is not covered",
+    });
   });
 
   it("puts the question, the passages and a drafted answer in the prompt", async () => {
-    const model = scriptedModel(JSON.stringify({ supported: true, rationale: "ok" }));
-    await entailmentVerifier({ model }).supported({
+    const model = scriptedModel(JSON.stringify({ supported: true, gap: "ok" }));
+    await entailmentVerifier({ model }).verify({
       question: "How do I mount in React?",
       passages,
       answer: "Use VendoProvider.",
@@ -70,8 +76,10 @@ describe("entailmentVerifier (K14 T2)", () => {
   });
 
   it("refuses without spending a model call when there are no passages", async () => {
-    const model = scriptedModel(JSON.stringify({ supported: true, rationale: "unreachable" }));
-    await expect(entailmentVerifier({ model }).supported({ question: "anything", passages: [] })).resolves.toBe(false);
+    const model = scriptedModel(JSON.stringify({ supported: true, gap: "unreachable" }));
+    await expect(entailmentVerifier({ model }).verify({ question: "anything", passages: [] })).resolves.toMatchObject({
+      supported: false,
+    });
     expect(model.calls).toBe(0);
   });
 
@@ -79,8 +87,8 @@ describe("entailmentVerifier (K14 T2)", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const verifier = entailmentVerifier({ model: scriptedModel("I think probably yes?") });
-      await expect(verifier.supported({ question: "q", passages })).resolves.toBeUndefined();
-      await expect(verifier.supported({ question: "q", passages })).resolves.toBeUndefined();
+      await expect(verifier.verify({ question: "q", passages })).resolves.toBeUndefined();
+      await expect(verifier.verify({ question: "q", passages })).resolves.toBeUndefined();
       expect(warn).toHaveBeenCalledTimes(1);
       expect(String(warn.mock.calls[0]?.[0])).toContain("falling back to the score threshold");
     } finally {
@@ -91,11 +99,27 @@ describe("entailmentVerifier (K14 T2)", () => {
   it("gives NO verdict when the model hangs past the cap, and returns promptly", async () => {
     const verifier = entailmentVerifier({ model: hangingModel(), timeoutMs: 30 });
     const started = Date.now();
-    await expect(verifier.supported({ question: "q", passages })).resolves.toBeUndefined();
+    await expect(verifier.verify({ question: "q", passages })).resolves.toBeUndefined();
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it("caps a verification at the measured five seconds by default", () => {
     expect(KNOWLEDGE_VERIFY_TIMEOUT_MS).toBe(5000);
+  });
+
+  it("takes the caller's remaining turn budget when it is TIGHTER than the cap", async () => {
+    // K15: the second verification of a chat→deep turn runs in what the first
+    // left, so a hanging model cannot spend the cap twice on one turn.
+    const verifier = entailmentVerifier({ model: hangingModel(), timeoutMs: 10_000 });
+    const started = Date.now();
+    await expect(verifier.verify({ question: "q", passages }, { timeoutMs: 40 })).resolves.toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("never lets the caller's budget RAISE the per-call cap", async () => {
+    const verifier = entailmentVerifier({ model: hangingModel(), timeoutMs: 40 });
+    const started = Date.now();
+    await expect(verifier.verify({ question: "q", passages }, { timeoutMs: 60_000 })).resolves.toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 });
