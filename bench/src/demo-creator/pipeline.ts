@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { runAssemble, type AssembleIo, type AssembleResult } from "./assemble.js";
@@ -185,30 +186,9 @@ function isIgnoredInfrastructure(touched: string): boolean {
   return touched.split("/").some((segment) => ignoredInfrastructureDirs.has(segment));
 }
 
-/**
- * The runtime fence behind the contract's "generation agents never write
- * host/". The agents' own harness now denies writes outside the demo folder
- * (agent.ts's settings sandbox), and this is the second line: it catches
- * anything the CLI's permission layer let through, and `railway up` uploads the
- * whole WORKING DIRECTORY, not the commit — so a stray edit to the Vendo kit or
- * the caps guard would reach every live demo without ever being reviewed.
- *
- * Two blind spots the porcelain default has, both proven exploitable:
- *  - IGNORED files are omitted entirely, so `host/src/vendo-kit/evil.local`
- *    passed. Hence `--ignored`, minus the infrastructure above.
- *  - a SYMLINK inside the demo folder is not outside the demo folder, so no
- *    path check can see it. Hence {@link assertNoSymlinks}.
- *
- * Called at the two points where an agent has just run and nothing legitimate
- * has yet written outside the demo folder (gen-manifest's manifest.ts and the
- * host's brand assets come later, in assemble).
- */
-export async function assertOnlyDemoTouched(
-  demosRepo: string,
-  slug: string,
-  io: { exec: ExecFn },
-): Promise<void> {
-  await assertNoSymlinks(demoPaths(demosRepo, slug).root, slug);
+/** Every dirty path outside `demos/<slug>/` that is not infrastructure — the
+ * candidate escapes, before any baseline is subtracted. */
+async function dirtyOutsideDemo(demosRepo: string, slug: string, io: { exec: ExecFn }): Promise<string[]> {
   const status = await io.exec(
     ["git", "-C", demosRepo, "status", "--porcelain", "--untracked-files=all", "--ignored"],
     { cwd: demosRepo },
@@ -217,14 +197,98 @@ export async function assertOnlyDemoTouched(
     throw new Error(`cannot fence the demos repo: "git status" failed (exit ${status.code}): ${status.stderr.trim() || status.stdout.trim()}`);
   }
   const allowed = `demos/${slug}/`;
-  const offenders = status.stdout
+  return [...new Set(status.stdout
     .split("\n")
     .filter((line) => line.trim() !== "")
     .flatMap(porcelainPaths)
-    .filter((touched) => !touched.startsWith(allowed) && !isIgnoredInfrastructure(touched));
+    .filter((touched) => !touched.startsWith(allowed) && !isIgnoredInfrastructure(touched)))];
+}
+
+/**
+ * What a path held at snapshot time. A HASH rather than mere presence, because
+ * the paths that are legitimately already dirty are `host/src/generated/
+ * manifest.ts` and friends — host SOURCE that compiles into the shared host. If
+ * "already dirty" meant "no longer watched", an agent appending one import to
+ * the manifest would be the one escape the fence could not see.
+ */
+async function contentId(demosRepo: string, relative: string): Promise<string> {
+  try {
+    const target = path.join(demosRepo, relative);
+    if ((await stat(target)).isDirectory()) return "dir";
+    return createHash("sha256").update(await readFile(target)).digest("hex");
+  } catch {
+    // Gone, unreadable, or a dangling link. Recorded as a value like any other,
+    // so a path that is absent at snapshot time and readable later is an escape.
+    return "absent";
+  }
+}
+
+/** Paths outside the demo folder that were ALREADY dirty when the agents
+ * started, and the content they held then. */
+export type HostBaseline = Map<string, string>;
+
+/**
+ * The state of the checkout immediately BEFORE the build agents run.
+ *
+ * Without this the fence measured all-time dirtiness, so it fired on the
+ * PREVIOUS run's gitignored artifacts and `demo:pipeline` worked exactly once
+ * per checkout — and the mini's `~/.vendo/vendo-demos` is a checkout that lives
+ * forever, so the Slack driver would have served the first demo request ever and
+ * failed every one after it.
+ */
+export async function snapshotHostBaseline(
+  demosRepo: string,
+  slug: string,
+  io: { exec: ExecFn },
+): Promise<HostBaseline> {
+  const dirty = await dirtyOutsideDemo(demosRepo, slug, io);
+  return new Map(await Promise.all(dirty.map(async (touched): Promise<[string, string]> =>
+    [touched, await contentId(demosRepo, touched)])));
+}
+
+/**
+ * The runtime fence behind the contract's "generation agents never write
+ * host/". The agents' own harness now denies writes outside the demo folder
+ * (agent.ts's settings sandbox), and this is the second line: it catches
+ * anything the CLI's permission layer let through, and `railway up` uploads the
+ * whole WORKING DIRECTORY, not the commit — so a stray edit to the Vendo kit or
+ * the caps guard would reach every live demo without ever being reviewed.
+ *
+ * Scoped to the AGENT WINDOW, not to all-time dirtiness: `baseline` is the same
+ * listing taken before the agents started, and a path is an offence only if it
+ * is new or changed against it. That is the fence's own claim read honestly — "an
+ * AGENT wrote this" — and it is what makes the pipeline runnable twice, since the
+ * pipeline's OWN later stages write host/src/generated/manifest.ts,
+ * host/public/brand/<slug>/ and host/next-env.d.ts, which then survive the run.
+ * An empty baseline (the default) means no excuses, so a caller that forgets to
+ * snapshot fails closed rather than getting a silently disarmed fence.
+ *
+ * Two blind spots the porcelain default has, both proven exploitable:
+ *  - IGNORED files are omitted entirely, so `host/src/vendo-kit/evil.local`
+ *    passed. Hence `--ignored`, minus the infrastructure above.
+ *  - a SYMLINK inside the demo folder is not outside the demo folder, so no
+ *    path check can see it. Hence {@link assertNoSymlinks}.
+ *
+ * Called at the two points where an agent has just run (pipeline: after build;
+ * fix: after the fix agent and its tool re-sync).
+ */
+export async function assertOnlyDemoTouched(
+  demosRepo: string,
+  slug: string,
+  io: { exec: ExecFn },
+  baseline: HostBaseline = new Map(),
+): Promise<void> {
+  await assertNoSymlinks(demoPaths(demosRepo, slug).root, slug);
+  const dirty = await dirtyOutsideDemo(demosRepo, slug, io);
+  const offenders: string[] = [];
+  for (const touched of dirty) {
+    const before = baseline.get(touched);
+    if (before !== undefined && before === await contentId(demosRepo, touched)) continue;
+    offenders.push(touched);
+  }
   if (offenders.length > 0) {
     throw new Error(
-      `generation agents wrote outside demos/${slug}/: ${[...new Set(offenders)].join(", ")} — the host is not theirs to edit, and \`railway up\` uploads the working directory, so these would reach every live demo uncommitted. Inspect and revert them by hand (git -C ${demosRepo} checkout -- <path>, or delete an untracked one), then re-run.`,
+      `generation agents wrote outside demos/${slug}/: ${offenders.join(", ")} — the host is not theirs to edit, and \`railway up\` uploads the working directory, so these would reach every live demo uncommitted. Inspect and revert them by hand (git -C ${demosRepo} checkout -- <path>, or delete an untracked one), then re-run.`,
     );
   }
 }
@@ -291,11 +355,52 @@ export interface DemoPipelineResult {
   liveUrl?: string;
 }
 
+/**
+ * The timings file, and the one moment it stops being written.
+ *
+ * RESEARCH/timings.json lives INSIDE the folder ship commits, so the stage
+ * runner's own post-stage write used to land AFTER `git add`: the committed
+ * evidence under-reported the run, and the run ended with demos/<slug> modified
+ * — dirt a long-lived checkout keeps forever and the next slug's run inherits.
+ * {@link finalize} is therefore called immediately before staging, and nothing
+ * writes the file again. The deploy rows (`ship`, `ship:railway`, `ship:live`)
+ * live on in the run's result and stdout: a file that is inside the commit
+ * cannot record how long committing it took.
+ */
+export function createTimingsFile(options: {
+  timings: StageTiming[];
+  file: string;
+  write: (line: string) => void;
+}): { flush: () => Promise<void>; finalize: () => Promise<void> } {
+  let sealed = false;
+  const flush = async (): Promise<void> => {
+    if (sealed) return;
+    try {
+      await mkdir(path.dirname(options.file), { recursive: true });
+      await writeFile(options.file, `${JSON.stringify(options.timings, null, 2)}\n`);
+    } catch (error) {
+      // Never fatal — timings are the evidence, not the product — but never
+      // silent either: a swallowed failure left the file absent, stale or
+      // truncated and the run shipped it as if it were the record.
+      options.write(`[pipeline] WARNING: could not write ${options.file} (${error instanceof Error ? error.message : String(error)}) — the stage timings for this run are incomplete`);
+    }
+  };
+  return {
+    flush,
+    finalize: async () => {
+      await flush();
+      sealed = true;
+    },
+  };
+}
+
 /** The stage runner: timings, markers, and a cap that TERMINATES rather than
  * merely stops awaiting. */
 export function createStageRunner(options: {
   timings: StageTiming[];
-  timingsPath: () => string | undefined;
+  /** Persists the timings appended so far — {@link createTimingsFile}'s flush,
+   * which goes quiet once ship has committed the file. */
+  writeTimings: () => Promise<void>;
   write: (line: string) => void;
   deadline: number;
   signal: AbortSignal;
@@ -334,18 +439,7 @@ export function createStageRunner(options: {
       const ms = Math.round(performance.now() - t0);
       options.timings.push({ stage: rowName, startedAt, ms, depth: rowDepth });
       options.write(`[pipeline] ${rowName} finished in ${ms}ms`);
-      const target = options.timingsPath();
-      if (target !== undefined) {
-        try {
-          await mkdir(path.dirname(target), { recursive: true });
-          await writeFile(target, `${JSON.stringify(options.timings, null, 2)}\n`);
-        } catch (error) {
-          // Never fatal — timings are the evidence, not the product — but never
-          // silent either: a swallowed failure left the file absent, stale or
-          // truncated and the run shipped it as if it were the record.
-          options.write(`[pipeline] WARNING: could not write ${target} (${error instanceof Error ? error.message : String(error)}) — the stage timings for this run are incomplete`);
-        }
-      }
+      await options.writeTimings();
     }
   };
 }
@@ -382,11 +476,12 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
     );
   };
 
+  const timingsFile = createTimingsFile({ timings, file: paths.timings, write });
   const runStage = createStageRunner({
     timings,
     // The demo folder does not exist until the evidence stage creates it; the
     // repo stage's row lands on the next write.
-    timingsPath: () => paths.timings,
+    writeTimings: timingsFile.flush,
     write,
     deadline,
     signal,
@@ -432,6 +527,11 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
       { demosRepo: args.demosRepo, write, env, evidence },
     ));
 
+    // The checkout as it stands BEFORE any agent runs. Taken as late as possible
+    // — evidence and the brief write only inside the demo folder — so the window
+    // it excuses is exactly the agents' own.
+    const hostBaseline = await snapshotHostBaseline(args.demosRepo, args.id, { exec });
+
     const built = await runStage("build", () => stages.build(
       {
         slug: args.id,
@@ -445,8 +545,10 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
     ));
 
     // Between build and assemble is the only window where a working-tree change
-    // outside the demo folder can ONLY have come from a build agent.
-    await assertOnlyDemoTouched(args.demosRepo, args.id, { exec });
+    // outside the demo folder can ONLY have come from a build agent — which is
+    // what the baseline makes precise, rather than trusting the checkout to have
+    // arrived clean.
+    await assertOnlyDemoTouched(args.demosRepo, args.id, { exec }, hostBaseline);
 
     // The smoke turn plays the demo's OWN first beat: if the beat a prospect
     // will click errors or never settles, the demo is broken regardless of how
@@ -483,7 +585,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
 
     const shipped = await runStage("ship", () => stages.ship(
       { slug: args.id, prospect: args.prospect },
-      { demosRepo: args.demosRepo, write, env, exec, signal, runStage },
+      { demosRepo: args.demosRepo, write, env, exec, signal, runStage, finalizeTimings: timingsFile.finalize },
     ));
     return { slug: args.id, demoDir: paths.root, timings, judge, scoresLine, costUsd: built.costUsd, ship: shipped, liveUrl: shipped.liveUrl };
   } finally {

@@ -114,6 +114,19 @@ describe("runShip", () => {
     expect(vi.mocked(fetchImpl).mock.calls[0]?.[0]).toBe("https://demos.vendo.run/acme");
   });
 
+  // The run's timing evidence lives inside the folder being committed, so it has
+  // to be on disk BEFORE `git add` — otherwise the commit under-reports the run
+  // and the later write leaves the folder dirty for the next slug.
+  it("finalises the run's timings before staging the folder", async () => {
+    const timeline: string[] = [];
+    const { exec } = stubExec((command) => {
+      if (command.includes("add")) timeline.push("git-add");
+      return defaultReply(command);
+    });
+    await runShip(args, shipIo({ exec, finalizeTimings: async () => { timeline.push("finalize-timings"); } }));
+    expect(timeline.slice(0, 2)).toEqual(["finalize-timings", "git-add"]);
+  });
+
   it("commits with a git identity from the environment", async () => {
     const { exec, calls } = stubExec();
     await runShip(args, shipIo({ exec, env: { GIT_AUTHOR_NAME: "Vendo Bot", GIT_AUTHOR_EMAIL: "bot@vendo.run" } }));

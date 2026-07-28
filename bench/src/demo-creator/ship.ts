@@ -68,6 +68,11 @@ export interface ShipIo {
   /** Budget for each live-URL poll (public URL, then the railway domain). */
   pollTimeoutMs?: number;
   runStage?: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
+  /** Writes the run's timing evidence for the last time. Called immediately
+   * before `git add`, because that evidence lives INSIDE the folder being
+   * committed: written afterwards it both under-reports the committed run and
+   * leaves demos/<slug> dirty for the next slug's run to inherit. */
+  finalizeTimings?: () => Promise<void>;
 }
 
 export interface ShipResult {
@@ -141,6 +146,8 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
   // folder is invisible to a path fence and git would commit it as mode 120000.
   await assertNoSymlinks(demoPaths(io.demosRepo, args.slug).root, args.slug);
   const commit = await runStage("ship:commit", async () => {
+    // Last write to RESEARCH/timings.json, before it is staged rather than after.
+    await io.finalizeTimings?.();
     // ONLY this demo's path: the checkout also holds the host, and a `git add
     // -A` here would push whatever else an operator or another lane left in the
     // working tree onto main.

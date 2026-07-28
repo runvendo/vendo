@@ -7,7 +7,7 @@ import { demoPaths, parseDemoFolderConfig, parseDemoSlug } from "./demo-folder.j
 import { defaultDemosRepo, ensureDemosRepo } from "./demos-repo.js";
 import { createScrubber, defaultExec, type ExecFn } from "./exec.js";
 import { runJudge, type JudgeIo, type JudgeResult } from "./judge.js";
-import { assertOnlyDemoTouched, createStageRunner, localHostPort, type StageTiming } from "./pipeline.js";
+import { assertOnlyDemoTouched, createStageRunner, createTimingsFile, localHostPort, snapshotHostBaseline, type StageTiming } from "./pipeline.js";
 import { runShip, type ShipIo, type ShipResult } from "./ship.js";
 
 /**
@@ -140,9 +140,10 @@ export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise
   const deadline = Date.now() + capMs;
   const capTimer = setTimeout(() => capController.abort(new Error(`the ${Math.round(capMs / 60000)}-minute cap fired`)), Math.max(0, capMs));
   capTimer.unref?.();
+  const timingsFile = createTimingsFile({ timings, file: paths.timings, write });
   const runStage = createStageRunner({
     timings,
-    timingsPath: () => paths.timings,
+    writeTimings: timingsFile.flush,
     write,
     deadline,
     signal,
@@ -167,6 +168,11 @@ export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise
     }
     const config = await parseDemoFolderConfig(JSON.parse(await readFile(paths.config, "utf8")), `demo config at "${paths.config}"`);
     const brief = existsSync(paths.brief) ? await readFile(paths.brief, "utf8") : "(BRIEF.md is missing — rely on the folder's existing code)";
+
+    // The checkout before the fix agent runs — a demo:fix lands in a checkout
+    // that has already shipped at least one demo, so its host artifacts are
+    // always present and are never this agent's doing.
+    const hostBaseline = await snapshotHostBaseline(args.demosRepo, args.id, { exec });
 
     const agent = await runStage("fix", async () => {
       const result = await runAgent(
@@ -203,7 +209,7 @@ export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise
 
     // Last point where a change outside the demo folder can ONLY have come from
     // the fix agent: assemble legitimately writes the host's manifest next.
-    await assertOnlyDemoTouched(args.demosRepo, args.id, { exec });
+    await assertOnlyDemoTouched(args.demosRepo, args.id, { exec }, hostBaseline);
 
     const smokePrompt = config.beats[0]?.prompt ?? `Show me an overview of the ${config.prospect} data in this workspace.`;
     const assembled = await runStage("assemble", () => stages.assemble(
@@ -228,7 +234,7 @@ export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise
     }
     const shipped = await runStage("ship", () => stages.ship(
       { slug: args.id, prospect: config.prospect },
-      { demosRepo: args.demosRepo, write, env, exec, signal, runStage },
+      { demosRepo: args.demosRepo, write, env, exec, signal, runStage, finalizeTimings: timingsFile.finalize },
     ));
     return { slug: args.id, demoDir: paths.root, agent, timings, judge, scoresLine, ship: shipped, liveUrl: shipped.liveUrl };
   } finally {

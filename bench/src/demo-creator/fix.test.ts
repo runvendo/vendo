@@ -194,11 +194,19 @@ describe("runDemoFix", () => {
   });
 
   // `railway up` uploads the whole working directory, so a fix agent that
-  // wandered into host/ would deploy it to every live demo uncommitted.
+  // wandered into host/ would deploy it to every live demo uncommitted. The dirt
+  // appears BETWEEN the two `git status` calls, which is what makes it the
+  // agent's doing rather than the checkout's inherited state: a demo:fix always
+  // runs in a checkout that has already shipped a demo.
   it("refuses to assemble when the fix agent touched anything outside the demo folder", async () => {
     const demosRepo = await demoFixture();
+    let statusCalls = 0;
     const { io, order } = fixIo(demosRepo, {
-      exec: async () => ({ code: 0, stdout: " M host/src/vendo-kit/index.tsx\n", stderr: "" }),
+      exec: async (command) => {
+        if (!command.includes("status")) return { code: 0, stdout: "", stderr: "" };
+        statusCalls += 1;
+        return { code: 0, stdout: statusCalls === 1 ? "" : " M host/src/vendo-kit/index.tsx\n", stderr: "" };
+      },
     });
     await expect(runDemoFix({ id: "acme", instruction: "x", demosRepo, skipShip: false }, io))
       .rejects.toThrow(/host\/src\/vendo-kit\/index\.tsx/);

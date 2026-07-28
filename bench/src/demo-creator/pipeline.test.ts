@@ -17,6 +17,7 @@ import {
   parseExpires,
   preflight,
   runDemoPipeline,
+  snapshotHostBaseline,
   type PipelineStages,
 } from "./pipeline.js";
 import type { ShipResult } from "./ship.js";
@@ -260,6 +261,130 @@ describe("assertOnlyDemoTouched", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The agent window: what the fence excuses because it predates the agents
+// ---------------------------------------------------------------------------
+
+/** A demos repo holding one host artifact with known content, the shape a
+ * checkout that has already run one pipeline is left in. */
+async function checkoutWithArtifact(content: string): Promise<{ repo: string; artifact: string }> {
+  const repo = await mkdtemp(path.join(tmpdir(), "lane2-window-"));
+  const artifact = "host/src/generated/manifest.ts";
+  await mkdir(path.join(repo, "host", "src", "generated"), { recursive: true });
+  await mkdir(path.join(repo, "demos", "acme"), { recursive: true });
+  await writeFile(path.join(repo, artifact), content);
+  return { repo, artifact };
+}
+
+describe("snapshotHostBaseline", () => {
+  const statusExec = (porcelain: string): ExecFn => async () => ({ code: 0, stdout: porcelain, stderr: "" });
+
+  it("records what is already dirty outside the demo folder", async () => {
+    const { repo, artifact } = await checkoutWithArtifact("export const demos = [];\n");
+    const baseline = await snapshotHostBaseline(repo, "acme", { exec: statusExec(`!! ${artifact}\n`) });
+    expect([...baseline.keys()]).toEqual([artifact]);
+  });
+
+  // The demo's own folder is dirty by design at snapshot time (evidence and the
+  // brief have already written into it) and the fence allows it outright, so
+  // hashing it would be pure cost — including multi-megabyte RESEARCH shots.
+  it("does not record the demo's own folder or the dependency directories", async () => {
+    const { repo } = await checkoutWithArtifact("x\n");
+    const baseline = await snapshotHostBaseline(repo, "acme", { exec: statusExec([
+      "?? demos/acme/BRIEF.md",
+      "?? demos/acme/RESEARCH/shot-1.png",
+      "!! host/node_modules/next/package.json",
+      "!! host/.next/cache/x",
+      "",
+    ].join("\n")) });
+    expect([...baseline.keys()]).toEqual([]);
+  });
+
+  it("fails loudly when git itself cannot answer", async () => {
+    const { repo } = await checkoutWithArtifact("x\n");
+    const exec: ExecFn = async () => ({ code: 128, stdout: "", stderr: "fatal: not a git repository" });
+    await expect(snapshotHostBaseline(repo, "acme", { exec })).rejects.toThrow(/not a git repository/);
+  });
+});
+
+describe("assertOnlyDemoTouched against a baseline", () => {
+  const statusExec = (porcelain: string): ExecFn => async () => ({ code: 0, stdout: porcelain, stderr: "" });
+
+  // THE showstopper: `demo:pipeline` ran once in this checkout, so the host's
+  // generated manifest is dirty before the second run's agents even start. The
+  // fence's claim is "an AGENT wrote this", and an artifact that predates the
+  // agents was not written by them.
+  it("excuses a host artifact that was already dirty before the agents ran", async () => {
+    const { repo, artifact } = await checkoutWithArtifact("export const demos = [];\n");
+    const exec = statusExec(`!! ${artifact}\n`);
+    const baseline = await snapshotHostBaseline(repo, "acme", { exec });
+    await expect(assertOnlyDemoTouched(repo, "acme", { exec }, baseline)).resolves.toBeUndefined();
+  });
+
+  // ...but the SAME path is still fenced if an agent changes it during the
+  // window. manifest.ts is host source that compiles into the shared
+  // multi-tenant host, so "already dirty" must not become "open season".
+  it("still catches an agent overwriting a host artifact that was already dirty", async () => {
+    const { repo, artifact } = await checkoutWithArtifact("export const demos = [];\n");
+    const exec = statusExec(`!! ${artifact}\n`);
+    const baseline = await snapshotHostBaseline(repo, "acme", { exec });
+    await writeFile(path.join(repo, artifact), "export const demos = []; // pwned\n");
+    await expect(assertOnlyDemoTouched(repo, "acme", { exec }, baseline))
+      .rejects.toThrow(/host\/src\/generated\/manifest\.ts/);
+  });
+
+  // The intent of the blanket `host/public/brand/stray.png` case, re-expressed
+  // against the new mechanism: a real run's baseline is NOT empty, and an
+  // allowlist of `host/public/brand/` would have deleted this protection.
+  it("flags a stray brand file even while excusing the artifacts beside it", async () => {
+    const { repo, artifact } = await checkoutWithArtifact("export const demos = [];\n");
+    const before = statusExec(`!! ${artifact}\n`);
+    const baseline = await snapshotHostBaseline(repo, "acme", { exec: before });
+    const after = statusExec(`!! ${artifact}\n?? host/public/brand/stray.png\n`);
+    const error = await assertOnlyDemoTouched(repo, "acme", { exec: after }, baseline)
+      .catch((thrown: unknown) => thrown as Error);
+    expect(error.message).toContain("host/public/brand/stray.png");
+    expect(error.message).not.toContain("manifest.ts");
+  });
+
+  // No baseline means no excuses: a caller that forgets to snapshot gets the
+  // strictest reading rather than a silently disarmed fence.
+  it("treats every dirty path as an escape when no baseline was taken", async () => {
+    const { repo, artifact } = await checkoutWithArtifact("export const demos = [];\n");
+    await expect(assertOnlyDemoTouched(repo, "acme", { exec: statusExec(`!! ${artifact}\n`) }))
+      .rejects.toThrow(/manifest\.ts/);
+  });
+
+  // Stubbed porcelain proves the diffing; only real git proves that a real
+  // checkout's real leftovers survive a real second run.
+  it("passes a second run over a checkout still holding the first run's artifacts", async () => {
+    const repo = await mkdtemp(path.join(tmpdir(), "lane2-second-run-"));
+    await mkdir(path.join(repo, "host", "src", "generated"), { recursive: true });
+    await mkdir(path.join(repo, "host", "public", "brand", "first-slug"), { recursive: true });
+    await mkdir(path.join(repo, "demos", "second-slug"), { recursive: true });
+    await writeFile(path.join(repo, ".gitignore"), "src/generated/\nnext-env.d.ts\npublic/brand/\n".replace(/^/gm, "host/"));
+    await writeFile(path.join(repo, "host", "src", "app.ts"), "export const host = 1;\n");
+    await defaultExec(["git", "init", "-q", "."], { cwd: repo });
+    await defaultExec(["git", "add", "-A"], { cwd: repo });
+    await defaultExec(["git", "-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "base"], { cwd: repo });
+
+    // Run #1's leftovers: exactly the six paths the live repro named.
+    await writeFile(path.join(repo, "host", "src", "generated", "manifest.ts"), "export const demos = [];\n");
+    await writeFile(path.join(repo, "host", "next-env.d.ts"), "/// <reference types=\"next\" />\n");
+    await writeFile(path.join(repo, "host", "public", "brand", "first-slug", "logo.svg"), "<svg/>\n");
+
+    // Run #2 starts here.
+    const baseline = await snapshotHostBaseline(repo, "second-slug", { exec: defaultExec });
+    await writeFile(path.join(repo, "demos", "second-slug", "index.tsx"), "export default () => null;\n");
+    await expect(assertOnlyDemoTouched(repo, "second-slug", { exec: defaultExec }, baseline)).resolves.toBeUndefined();
+
+    // And an escape during run #2's window is still caught.
+    await writeFile(path.join(repo, "host", "src", "vendo-kit-evil.ts"), "export const pwned = 1;\n");
+    await expect(assertOnlyDemoTouched(repo, "second-slug", { exec: defaultExec }, baseline))
+      .rejects.toThrow(/vendo-kit-evil\.ts/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The stage drive
 // ---------------------------------------------------------------------------
 
@@ -407,20 +532,40 @@ describe("runDemoPipeline", () => {
   // ship's `git add` is scoped to demos/<slug>, but `railway up` uploads the
   // whole working directory — a stray host edit would reach every live demo
   // without ever being committed.
+  // The dirt appears BETWEEN the two `git status` calls, which is what makes it
+  // the agents' doing: the fence now diffs against a baseline snapshotted before
+  // build, so a stub that reports the same dirt at both points is describing a
+  // checkout that arrived dirty, not an escape (the case below this one).
   it("refuses to assemble when the build agents touched anything outside the demo folder", async () => {
-    const dirty: ExecFn = async () => ({ code: 0, stdout: " M host/src/vendo-kit/index.tsx\n", stderr: "" });
-    const promise = run({}, {}, { exec: dirty });
-    await expect(promise).rejects.toThrow(/host\/src\/vendo-kit\/index\.tsx/);
+    let statusCalls = 0;
+    const dirtyAfterBuild: ExecFn = async (command) => {
+      if (!command.includes("status")) return { code: 0, stdout: "", stderr: "" };
+      statusCalls += 1;
+      return { code: 0, stdout: statusCalls === 1 ? "" : " M host/src/vendo-kit/index.tsx\n", stderr: "" };
+    };
+    await expect(run({}, {}, { exec: dirtyAfterBuild })).rejects.toThrow(/host\/src\/vendo-kit\/index\.tsx/);
+  });
+
+  // The showstopper, at the drive level: `demo:pipeline` used to work exactly
+  // ONCE in a long-lived checkout. The mini's ~/.vendo/vendo-demos is exactly
+  // that checkout, so the Slack driver would have served the first demo request
+  // ever and failed every one after it.
+  it("runs a second time in a checkout the first run left holding host artifacts", async () => {
+    const inherited = " M host/src/generated/manifest.ts\n!! host/next-env.d.ts\n?? demos/acme/\n";
+    const alreadyDirty: ExecFn = async () => ({ code: 0, stdout: inherited, stderr: "" });
+    const { result } = await run({}, {}, { exec: alreadyDirty });
+    expect(result.liveUrl).toBe("https://demos.vendo.run/acme");
   });
 
   // The old version of this test asserted `order` held exactly ["fence"] — the
   // array its own spy was the only writer of — and then compared two stage
   // indexes that say nothing about where the fence ran between them. The claim
-  // is a POSITION: after build has finished, before assemble starts.
-  it("checks the fence AFTER build and BEFORE assemble", async () => {
+  // is a POSITION, now two of them: the baseline is snapshotted before build
+  // starts, and the fence runs after build has finished and before assemble.
+  it("snapshots BEFORE build and checks the fence AFTER build, BEFORE assemble", async () => {
     const timeline: string[] = [];
     const spy: ExecFn = async (command) => {
-      if (command.includes("status")) timeline.push("fence");
+      if (command.includes("status")) timeline.push("git-status");
       return { code: 0, stdout: "", stderr: "" };
     };
     await run(
@@ -443,7 +588,7 @@ describe("runDemoPipeline", () => {
       {},
       { exec: spy },
     );
-    expect(timeline).toEqual(["build:start", "build:end", "fence", "assemble:start"]);
+    expect(timeline).toEqual(["git-status", "build:start", "build:end", "git-status", "assemble:start"]);
   });
 
   // SHIP REGARDLESS. Every other harness in this file hands the pipeline a
@@ -575,6 +720,35 @@ describe("runDemoPipeline", () => {
     const stages = rows.map((row) => row.stage);
     expect(stages.filter((stage) => stage === "judge")).toHaveLength(1);
     expect(stages).toContain("judge#2");
+  });
+
+  // The stage runner writes timings.json in its `finally`, so the ship stage's
+  // own row landed AFTER ship:commit had already run `git add`. Two bugs in one:
+  // the committed evidence under-reported the run, and the run ended with
+  // demos/<slug>/RESEARCH/timings.json modified — dirt that the NEXT slug's run
+  // inherits.
+  it("finalises the timings file before ship commits it and never writes it again", async () => {
+    const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-demos-timings-"));
+    const timingsFile = demoPaths(demosRepo, "acme").timings;
+    const rows = async (): Promise<string[]> =>
+      (JSON.parse(await readFile(timingsFile, "utf8")) as { stage: string }[]).map((row) => row.stage);
+
+    let atCommit: string[] = [];
+    const { result } = await run({
+      ship: async (_args, io) => {
+        await io.finalizeTimings?.();
+        atCommit = await rows();
+        return { commit: "abc123", liveUrl: "https://demos.vendo.run/acme", attempts: 1 } as unknown as ShipResult;
+      },
+    }, { demosRepo });
+
+    // Everything the run had measured by then is in the file the commit takes.
+    expect(atCommit).toEqual(expect.arrayContaining(["repo", "evidence", "brief", "build", "assemble", "judge"]));
+    // And nothing appended afterwards, so the committed folder stays clean.
+    expect(await rows()).toEqual(atCommit);
+    // The ship row is not lost — a file inside the commit cannot record how long
+    // committing it took, so the deploy rows live in the run's own result.
+    expect(result.timings.map((row) => row.stage)).toContain("ship");
   });
 
   // A swallowed stop leaks `next start` on 3150 and the NEXT run dies with a
