@@ -59,6 +59,11 @@ import {
 } from "./engine.js";
 import type { PipelineEvent } from "./pipeline.js";
 import { planAutomation } from "./automation-plan.js";
+import {
+  applyAutomationPlan,
+  armAutomationTrigger,
+  automationResultsInstruction,
+} from "./generation/lanes.js";
 import { createAppHistory } from "./history.js";
 import { createInClientApprovals, type InClientVerdict } from "./inclient.js";
 import { createAppInterchange } from "./interchange.js";
@@ -1652,17 +1657,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       ]);
     }
     const { plan } = planned;
-    const automated = structuredClone(previous);
-    automated.trigger = structuredClone(plan.trigger);
-    if (plan.resultsCollection !== undefined && automated.storage?.[plan.resultsCollection] === undefined) {
-      automated.storage = {
-        ...automated.storage,
-        [plan.resultsCollection]: {
-          about: `Latest results written by the "${plan.name ?? "automation"}" automation for the app board.`,
-          kind: "records",
-        },
-      };
-    }
+    const automated = applyAutomationPlan(previous, plan);
     // Bind the tree to the results rows BEFORE the single persist, so one
     // version entry carries the whole edit. A failed rebind never blocks the
     // automation (same rule as graduation's fn: bindings): the trigger still
@@ -1670,10 +1665,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     let bound = automated;
     const issues: string[] = [];
     if (plan.resultsCollection !== undefined && automated.tree?.formatVersion === VENDO_TREE_FORMAT) {
-      const rebindInstruction = `The app now has a ${mode} automation${plan.name === undefined ? "" : ` ("${plan.name}")`} that runs while the user is away and writes its latest displayable result into the app data collection "${plan.resultsCollection}" (record id "latest"). Rewire the tree to show those results:
-- Add (or repoint) a query over the results rows: <Query id="results" tool="vendo_apps_data_list" input={{appId:"${previous.id}", collection:"${plan.resultsCollection}"}}/> — the input is LITERAL JSON exactly as written. The tool's result shape is {records: [{id, data: <what the automation stored>}]}, so bind node props against /results/records/... paths (e.g. {results.records.0.data.summary}).
-- Keep the layout; change only what is needed to surface the automation's results (add a small section if none fits).
-- Emit no id attributes on nodes (ids are compiler-owned); a <Query> id is its name.`;
+      const rebindInstruction = automationResultsInstruction({
+        appId: previous.id,
+        mode,
+        ...(plan.name === undefined ? {} : { name: plan.name }),
+        resultsCollection: plan.resultsCollection,
+      });
       let treeIssues: string[] = [];
       let rebound: AppDocument | undefined;
       for (let attempt = 0; attempt < 2 && rebound === undefined; attempt += 1) {
@@ -1710,22 +1707,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     const persisted = await persistEdit(previous, bound, version, ctx.principal.subject, undefined, {
       armTrigger: config.armAutomation === undefined,
     });
-    let pendingGrants: ApprovalRequest[] | undefined;
-    if (config.armAutomation !== undefined) {
-      try {
-        const armed = await config.armAutomation(previous.id, ctx);
-        if (armed.missing.length > 0) pendingGrants = structuredClone(armed.missing);
-        // A seam that answers without arming is the same miss as a thrown one:
-        // the trigger must never sit silently disarmed.
-        if (!armed.enabled) {
-          issues.push("the automation was authored but the arming seam left it disabled — enable it explicitly via the automations engine (automations.enable / POST /automations/:appId/enable)");
-        }
-      } catch (error) {
-        // Never a silently dead automation: the trigger is on the document but
-        // disarmed — say so, with the arming surface to use.
-        issues.push(`the automation was authored but arming it failed (${error instanceof Error ? error.message : "unknown error"}) — enable it explicitly via the automations engine (automations.enable / POST /automations/:appId/enable)`);
-      }
-    }
+    const armed = await armAutomationTrigger(config.armAutomation, previous.id, ctx);
+    issues.push(...armed.issues);
+    const pendingGrants = armed.pendingGrants;
     await reportGuard(ctx.principal.subject, previous.id, ctx, {
       operation: "automation-created",
       mode,

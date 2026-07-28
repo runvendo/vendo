@@ -438,8 +438,9 @@ const repairPrompt = (issues: string[]): string =>
   issues.length === 0 ? "" : `\nREPAIR_THESE_ISSUES: ${JSON.stringify(issues)}`;
 
 /** Raw-text model call for the edit dialect (no streaming seam: edits are
- *  small and apply atomically). */
-const generateWireText = async (
+ *  small and apply atomically). Shared with the island lane (lanes.ts), whose
+ *  answers are the same shape: one small, atomic piece of markup. */
+export const generateWireText = async (
   deps: GenerationDependencies,
   system: string,
   prompt: string,
