@@ -65,7 +65,13 @@ export function parseExpires(value: string): string {
     throw new Error(`--expires must be a plain date, e.g. 2026-08-31 (received ${value})`);
   }
   const instant = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(instant.getTime())) throw new Error(`--expires is not a real date: ${value}`);
+  // ROUND-TRIP, not just "did Date accept it": `new Date("2026-02-30")` does not
+  // throw, it rolls forward to March 2 — so a day that does not exist became an
+  // expiry the operator never chose, silently, on a demo that then died on the
+  // wrong date. Comparing the parse back against the input is what catches it.
+  if (Number.isNaN(instant.getTime()) || instant.toISOString().slice(0, 10) !== value) {
+    throw new Error(`--expires is not a real date: ${value}`);
+  }
   return instant.toISOString();
 }
 

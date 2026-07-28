@@ -50,6 +50,11 @@ export interface AgentSandbox {
   /** writeRoot-relative paths that stay READ-ONLY even inside it: the brand
    * evidence the pipeline wrote (theme.json, BRIEF.md, brand/, RESEARCH/). */
   fenced?: string[];
+  /** writeRoot-relative paths this agent may write. Given, Write/Edit are scoped
+   * to exactly these instead of the whole demo folder, so the ownership split
+   * between the parallel build agents is enforced by the harness rather than by
+   * the prompt asking nicely. Omitted (demo:fix's single agent) = the folder. */
+  ownedRoots?: string[];
 }
 
 export interface RunAgentOptions {
@@ -132,15 +137,26 @@ export function buildSandboxSettings(sandbox: AgentSandbox): string {
  * `Write(//<dir>/**)` refuses a write outside <dir> and records it in
  * `permission_denials`.
  */
-function writableToolRules(writeRoot: string): string[] {
-  return [rule("Write", `${writeRoot}/**`), rule("Edit", `${writeRoot}/**`)];
+function writableToolRules(sandbox: AgentSandbox): string[] {
+  const roots = sandbox.ownedRoots ?? [];
+  // Both forms per root: a root is `server/` for one agent and `openapi.json` for
+  // another, and neither exists yet when these rules are written, so there is
+  // nothing to stat. The exact path covers the file, the subtree covers the
+  // directory.
+  const targets = roots.length === 0
+    ? [`${sandbox.writeRoot}/**`]
+    : roots.flatMap((root) => {
+      const target = path.join(sandbox.writeRoot, root);
+      return [target, `${target}/**`];
+    });
+  return ["Write", "Edit"].flatMap((tool) => targets.map((target) => rule(tool, target)));
 }
 
 export function buildClaudeArgs(
   job: Pick<AgentJob, "prompt" | "maxBudgetUsd" | "model">,
   options: { readOnly?: boolean; sandbox: AgentSandbox },
 ): string[] {
-  const tools = ["Read", "Glob", "Grep", ...(options.readOnly === true ? [] : writableToolRules(options.sandbox.writeRoot))];
+  const tools = ["Read", "Glob", "Grep", ...(options.readOnly === true ? [] : writableToolRules(options.sandbox))];
   return [
     "-p", job.prompt,
     "--output-format", "json",

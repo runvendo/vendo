@@ -16,14 +16,29 @@ function defaultReply(command: string[]): ExecResult {
   return ok;
 }
 
+/** The deployment ids the shared stub reports: one that predates the run, and the
+ * one `railway up` creates. */
+const priorDeployment = { id: "dep-old", status: "SUCCESS", createdAt: "2026-07-27T00:00:00.000Z" };
+const submittedDeployment = { id: "dep-new", status: "SUCCESS", createdAt: "2026-07-28T00:00:00.000Z" };
+
 function stubExec(reply: (command: string[]) => ExecResult = defaultReply): {
   exec: ExecFn;
   calls: { command: string[]; cwd: string }[];
 } {
   const calls: { command: string[]; cwd: string }[] = [];
+  let uploaded = false;
   const exec = vi.fn<ExecFn>(async (command, options) => {
     calls.push({ command, cwd: options.cwd });
-    return reply(command);
+    // The readiness gate reads the deployment list on every run. Answering it
+    // HERE keeps each test's own `reply` about the one thing that test pins,
+    // and models the real sequence: our deployment does not exist until `up`.
+    if (command.includes("deployment") && command.includes("list")) {
+      const rows = uploaded ? [submittedDeployment, priorDeployment] : [priorDeployment];
+      return { code: 0, stdout: JSON.stringify(rows), stderr: "" };
+    }
+    const result = reply(command);
+    if (command.includes("up") && result.code === 0) uploaded = true;
+    return result;
   });
   return { exec, calls };
 }
@@ -51,9 +66,109 @@ function shipIo(overrides: Partial<ShipIo> & Pick<ShipIo, "exec">): ShipIo {
     env: {},
     retryWaitMs: 0,
     pollTimeoutMs: 0,
+    deploymentPollMs: 0,
     ...overrides,
   };
 }
+
+// `railway up --detach` returns as soon as the upload is QUEUED — measured at
+// 6.06s on a real run whose build then took minutes. Meanwhile the PREVIOUS
+// deployment keeps serving, so a plain "any 200 with the slug in it" check passes
+// instantly against the OLD build. For a brand-new slug the old build 404s and
+// the marker saves us by accident; for `demo:fix`, or any re-run of a slug that
+// is already live, it does not — the pipeline prints LIVE, Yousef sends the
+// prospect a link to the old build, and the fix he asked for looks like a no-op.
+describe("runShip deployment readiness", () => {
+  /** Deployment listings: the pre-`up` state, then what the poll sees in order. */
+  function railwayExec(listings: string[]): { exec: ExecFn; calls: string[][]; listCount: () => number } {
+    const calls: string[][] = [];
+    let listIndex = 0;
+    const exec = vi.fn<ExecFn>(async (command, options) => {
+      calls.push(command);
+      void options;
+      if (command.includes("deployment") && command.includes("list")) {
+        const body = listings[Math.min(listIndex, listings.length - 1)] ?? "[]";
+        listIndex += 1;
+        return { code: 0, stdout: body, stderr: "" };
+      }
+      return defaultReply(command);
+    });
+    return { exec, calls, listCount: () => listIndex };
+  }
+
+  const deployment = (id: string, status: string, createdAt = "2026-07-28T09:35:15.858Z"): Record<string, unknown> =>
+    ({ id, status, createdAt });
+  const listing = (...entries: Record<string, unknown>[]): string => JSON.stringify(entries);
+
+  it("waits for the deployment it submitted rather than any 200", async () => {
+    const { exec, calls } = railwayExec([
+      // before `up`: only the old deployment exists
+      listing(deployment("old-1", "SUCCESS")),
+      // after `up`: ours exists but is still building
+      listing(deployment("new-1", "BUILDING"), deployment("old-1", "SUCCESS")),
+      listing(deployment("new-1", "DEPLOYING"), deployment("old-1", "SUCCESS")),
+      listing(deployment("new-1", "SUCCESS"), deployment("old-1", "SUCCESS")),
+    ]);
+    const result = await runShip(args, shipIo({ exec }));
+    expect(result.liveUrl).toBe("https://demos.vendo.run/acme");
+    expect(result.deploymentId).toBe("new-1");
+    // It asked Railway about the specific service's deployments, in JSON.
+    const listed = calls.filter((argv) => argv.includes("deployment") && argv.includes("list"));
+    expect(listed.length).toBeGreaterThanOrEqual(2);
+    expect(listed[0]).toContain("--json");
+    expect(listed[0]).toContain("host");
+  });
+
+  it("never polls the URL while the submitted deployment is still building", async () => {
+    const order: string[] = [];
+    const listings = [
+      listing(deployment("old-1", "SUCCESS")),
+      listing(deployment("new-1", "BUILDING"), deployment("old-1", "SUCCESS")),
+      listing(deployment("new-1", "SUCCESS"), deployment("old-1", "SUCCESS")),
+    ];
+    let listIndex = 0;
+    const exec = vi.fn<ExecFn>(async (command) => {
+      if (command.includes("deployment") && command.includes("list")) {
+        order.push(`list:${listIndex}`);
+        const body = listings[Math.min(listIndex, listings.length - 1)] ?? "[]";
+        listIndex += 1;
+        return { code: 0, stdout: body, stderr: "" };
+      }
+      if (command.includes("up")) order.push("up");
+      return defaultReply(command);
+    });
+    // The old deployment WOULD answer 200 with the slug marker — the whole trap.
+    const fetchImpl = vi.fn(async () => {
+      order.push("fetch");
+      return new Response(demoBody, { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await runShip(args, shipIo({ exec, fetchImpl }));
+
+    // Every deployment-status read happens before the first HTTP probe.
+    expect(order.indexOf("fetch")).toBeGreaterThan(order.lastIndexOf("list:1"));
+    expect(order.slice(0, 2)).toEqual(["list:0", "up"]);
+  });
+
+  it("fails loudly when the deployment it submitted fails to build", async () => {
+    const { exec } = railwayExec([
+      listing(deployment("old-1", "SUCCESS")),
+      listing(deployment("new-1", "BUILDING"), deployment("old-1", "SUCCESS")),
+      listing(deployment("new-1", "FAILED"), deployment("old-1", "SUCCESS")),
+    ]);
+    // The old build is still happily serving the slug — which must NOT rescue it.
+    await expect(runShip(args, shipIo({ exec }))).rejects.toThrow(/FAILED/);
+  });
+
+  it("refuses to claim LIVE when Railway's deployment list cannot be read", async () => {
+    const exec = vi.fn<ExecFn>(async (command) =>
+      command.includes("deployment") && command.includes("list")
+        ? { code: 1, stdout: "", stderr: "unknown subcommand 'deployment'" }
+        : defaultReply(command));
+    // Unverifiable must not read as deployed, even though the URL answers 200.
+    await expect(runShip(args, shipIo({ exec }))).rejects.toThrow(/deployment/i);
+  });
+});
 
 describe("isTransientRailwayFailure", () => {
   it("matches the observed TLS/network flakes", () => {
@@ -100,7 +215,9 @@ describe("runShip", () => {
     // variables would reconfigure every other demo on the shared service.
     expect(argvs.flat()).not.toContain("variables");
     expect(calls.every((call) => call.cwd === "/tmp/vendo-demos")).toBe(true);
-    expect(result).toEqual({ commit, liveUrl: "https://demos.vendo.run/acme", attempts: 1, railwayDomain });
+    // deploymentId is new: the run reports WHICH deployment it proved live, so a
+    // LIVE line can no longer be the previous build answering 200.
+    expect(result).toEqual({ commit, liveUrl: "https://demos.vendo.run/acme", attempts: 1, railwayDomain, deploymentId: "dep-new" });
   });
 
   it("polls the public URL and the railway domain in ONE deadline, preferring the public one", async () => {

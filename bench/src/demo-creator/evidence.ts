@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   ContextDevError,
@@ -11,7 +11,7 @@ import {
   type MarkdownResult,
   type StyleguideResult,
 } from "./context-dev.js";
-import { demoPaths, normalizeHex } from "./demo-folder.js";
+import { demoPaths, normalizeHex, type DemoPaths } from "./demo-folder.js";
 
 /**
  * Stage 1 of `demo:pipeline` — evidence.
@@ -187,12 +187,37 @@ function withoutRaw<T extends { raw?: unknown }>(value: T): T {
   return rest as T;
 }
 
+/**
+ * Everything the evidence and judge stages own, removed before this run writes.
+ *
+ * These stages only ever created directories, so a re-run of the same slug wrote
+ * over SOME files and inherited the rest. The dangerous survivor is
+ * `brand/logo.svg`: if this run's logo call soft-fails, the previous run's logo
+ * stays on disk, gets committed, and the fidelity judge scores brand fidelity
+ * against another prospect's mark. Re-running one slug in one checkout is exactly
+ * what the host fence's agent-window baseline enables, so this stopped being
+ * theoretical.
+ *
+ * `RESEARCH/timings.json` is the ONE survivor: the stage runner has already
+ * written THIS run's rows into it before evidence starts, and it is the run's own
+ * record rather than inherited evidence.
+ */
+async function clearPreviousEvidence(paths: DemoPaths): Promise<void> {
+  await rm(paths.brandDir, { recursive: true, force: true });
+  const timingsName = path.basename(paths.timings);
+  for (const entry of await readdir(paths.researchDir).catch(() => [])) {
+    if (entry === timingsName) continue;
+    await rm(path.join(paths.researchDir, entry), { recursive: true, force: true });
+  }
+}
+
 export async function runEvidence(args: EvidenceArgs, io: EvidenceIo): Promise<EvidenceResult> {
   if (args.screenshots.length === 0) {
     throw new Error("evidence: at least one reference screenshot is required (--screenshots /abs/a.png,/abs/b.png)");
   }
   const write = io.write ?? ((): void => {});
   const paths = demoPaths(io.demosRepo, args.slug);
+  await clearPreviousEvidence(paths);
   await mkdir(paths.contextDevDir, { recursive: true });
   await mkdir(paths.brandDir, { recursive: true });
 

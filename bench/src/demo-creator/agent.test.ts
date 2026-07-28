@@ -73,6 +73,35 @@ describe("buildClaudeArgs", () => {
     }
   });
 
+  // The residual half of finding 4: the HOST was already harness-denied, but
+  // which of the three parallel agents owns which file inside the demo folder was
+  // still prompt text only ("YOUR FILE LIST"). Two agents that both decide to
+  // touch screens/index.tsx race, and the loser's work vanishes silently — the
+  // exact failure assertDisjointOwnership exists to make impossible in the SPLIT,
+  // left possible at runtime.
+  it("scopes Write and Edit to the agent's own roots, not the whole demo folder", () => {
+    const owned = { ...sandbox, ownedRoots: ["server", "openapi.json"] };
+    const tools = valuesAfter(buildClaudeArgs({ prompt: "x", maxBudgetUsd: 3, model: "sonnet" }, { sandbox: owned }), "--allowedTools");
+    for (const tool of ["Write", "Edit"]) {
+      // A file root and a directory root both need the exact path AND the subtree
+      // form, since neither exists yet when the rules are written.
+      expect(tools).toContain(`${tool}(/${path.join(demoRoot, "server")})`);
+      expect(tools).toContain(`${tool}(/${path.join(demoRoot, "server")}/**)`);
+      expect(tools).toContain(`${tool}(/${path.join(demoRoot, "openapi.json")})`);
+      // …and crucially NOT the whole demo folder, which is another agent's turf.
+      expect(tools).not.toContain(`${tool}(/${demoRoot}/**)`);
+      // A root this agent does not own stays unwritable.
+      expect(tools.some((rule) => rule.startsWith(`${tool}(`) && rule.includes(path.join(demoRoot, "screens")))).toBe(false);
+    }
+  });
+
+  // Without a declared split there is nothing to narrow to, and the demo folder
+  // remains the boundary — demo:fix's single agent owns the whole folder.
+  it("falls back to the demo folder when the agent declares no roots", () => {
+    const tools = valuesAfter(buildClaudeArgs({ prompt: "x", maxBudgetUsd: 3, model: "sonnet" }, { sandbox }), "--allowedTools");
+    expect(tools).toContain(`Write(/${demoRoot}/**)`);
+  });
+
   it("loads only its own settings file, never the operator's machine settings", () => {
     const args = buildClaudeArgs({ prompt: "x", maxBudgetUsd: 3, model: "sonnet" }, { sandbox });
     expect(valuesAfter(args, "--setting-sources")).toEqual([""]);

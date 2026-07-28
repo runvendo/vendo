@@ -479,6 +479,57 @@ describe("runEvidence scraped site text", () => {
   });
 });
 
+// Re-running one slug in one checkout is exactly what the host fence's agent-window
+// baseline now enables, so the stale-file hazard stops being theoretical: the
+// evidence stage only ever mkdir'd, so a PREVIOUS run's logo survived a current
+// soft failure, got committed, and the fidelity judge scored brand fidelity
+// against an asset from another prospect or another week.
+describe("runEvidence on a slug that already has evidence", () => {
+  it("clears the previous run's evidence instead of writing over part of it", async () => {
+    const { demosRepo, screenshots } = await fixture(["home.png"]);
+    const paths = demoPaths(demosRepo, "acme");
+
+    // A first run leaves a full evidence set behind.
+    await runEvidence({ ...args, screenshots }, {
+      demosRepo,
+      client: fakeClient(),
+      fetchImpl: vi.fn().mockResolvedValue(svgResponse()) as unknown as typeof fetch,
+      write: () => {},
+    });
+    // …plus the artifacts only a LATER stage writes, which are equally stale on a
+    // rebuild, and the one file that must survive: this run's own timings.
+    await writeFile(path.join(paths.researchDir, "FIDELITY.md"), "stale scores from the last run\n");
+    await writeFile(paths.timings, '[{"stage":"repo","startedAt":"x","ms":1,"depth":0}]\n');
+    await expect(readFile(path.join(paths.brandDir, "logo.svg"), "utf8")).resolves.toContain("<svg");
+
+    // The second run is for a DIFFERENT prospect on the same slug, and its logo
+    // fetch soft-fails — the exact shape that used to ship the old logo.
+    const second = await fixture(["dashboard.png"]);
+    const result = await runEvidence(
+      { slug: "acme", prospect: "Other Co", url: "https://other.example", screenshots: second.screenshots },
+      {
+        demosRepo,
+        client: fakeClient({ retrieveBrand: async () => ({ ...brand, logos: [] }) }),
+        fetchImpl: vi.fn().mockResolvedValue(svgResponse()) as unknown as typeof fetch,
+        write: () => {},
+      },
+    );
+
+    // The soft failure is honest: no logo this run…
+    expect(result.logo).toBeUndefined();
+    expect(result.soft.map((entry) => entry.call)).toContain("logo");
+    // …and critically, the PREVIOUS run's logo is gone rather than inherited.
+    await expect(readFile(path.join(paths.brandDir, "logo.svg"), "utf8")).rejects.toThrow(/ENOENT/);
+    // The previous run's screenshot and stale report went with it.
+    await expect(readFile(path.join(paths.researchDir, "1-home.png"), "utf8")).rejects.toThrow(/ENOENT/);
+    await expect(readFile(path.join(paths.researchDir, "FIDELITY.md"), "utf8")).rejects.toThrow(/ENOENT/);
+    // This run's own screenshot is there.
+    await expect(readFile(path.join(paths.researchDir, "1-dashboard.png"), "utf8")).resolves.toContain("bytes for dashboard.png");
+    // …and the run's timing evidence, written before evidence ran, SURVIVED.
+    await expect(readFile(paths.timings, "utf8")).resolves.toContain('"repo"');
+  });
+});
+
 describe("readEvidence", () => {
   it("round-trips the digest stage 2 and demo:fix read", async () => {
     const { demosRepo, screenshots } = await fixture();

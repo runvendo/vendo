@@ -67,6 +67,11 @@ export interface ShipIo {
   retryWaitMs?: number;
   /** Budget for each live-URL poll (public URL, then the railway domain). */
   pollTimeoutMs?: number;
+  /** How long the submitted deployment may take to reach SUCCESS. Covers a cold
+   * Docker build of the shared host, so it is generous. */
+  deploymentTimeoutMs?: number;
+  /** Pause between deployment-status reads. */
+  deploymentPollMs?: number;
   runStage?: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
   /** Writes the run's timing evidence for the last time. Called immediately
    * before `git add`, because that evidence lives INSIDE the folder being
@@ -82,6 +87,9 @@ export interface ShipResult {
    * Railway domain did (the pre-cutover path). */
   railwayDomain?: string;
   attempts: number;
+  /** The deployment THIS run submitted, proven SUCCESS before the URL was ever
+   * polled — so `liveUrl` cannot be the previous build. */
+  deploymentId: string;
 }
 
 /** Commit identity: git's own env names, so an operator who already exports
@@ -119,6 +127,55 @@ export function parseRailwayDomain(output: string): string | undefined {
  * whatever else landed. */
 const rejectedPush = /rejected|non-fast-forward|fetch first|failed to push/i;
 
+/** One row of `railway deployment list --json`. */
+export interface RailwayDeployment {
+  id: string;
+  status: string;
+  createdAt?: string;
+}
+
+/** Terminal statuses. Anything else ("QUEUED", "BUILDING", "DEPLOYING",
+ * "INITIALIZING", "WAITING") means keep waiting. */
+const deploymentSucceeded = "SUCCESS";
+const deploymentFailed = new Set(["FAILED", "CRASHED", "REMOVED", "SKIPPED", "CANCELLED"]);
+
+/**
+ * Rows out of `railway deployment list --service <s> --json`, parsed liberally
+ * (the shape is undocumented and version-dependent, so this tolerates a bare
+ * array, an object wrapping one, or a JSON-per-line stream) — but NEVER silently:
+ * `undefined` means "could not read", which the caller turns into a refusal
+ * rather than a pass.
+ */
+export function parseRailwayDeployments(output: string): RailwayDeployment[] | undefined {
+  const rows = (value: unknown): RailwayDeployment[] | undefined => {
+    const list = Array.isArray(value)
+      ? value
+      : typeof value === "object" && value !== null && Array.isArray((value as { deployments?: unknown }).deployments)
+        ? (value as { deployments: unknown[] }).deployments
+        : undefined;
+    if (list === undefined) return undefined;
+    const parsed = list.flatMap((entry) => {
+      if (typeof entry !== "object" || entry === null) return [];
+      const { id, status, createdAt } = entry as { id?: unknown; status?: unknown; createdAt?: unknown };
+      if (typeof id !== "string" || typeof status !== "string") return [];
+      return [{ id, status, ...(typeof createdAt === "string" ? { createdAt } : {}) }];
+    });
+    // A list that parsed but yielded no usable row is not a readable answer.
+    return parsed.length === list.length ? parsed : undefined;
+  };
+  for (const candidate of [output, ...output.split("\n")]) {
+    const text = candidate.trim();
+    if (text === "") continue;
+    try {
+      const found = rows(JSON.parse(text));
+      if (found !== undefined) return found;
+    } catch {
+      // not JSON — try the next candidate
+    }
+  }
+  return undefined;
+}
+
 export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
   const exec = io.exec ?? defaultExec;
   const fetchImpl = io.fetchImpl ?? fetch;
@@ -127,6 +184,8 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
   const runStage = io.runStage ?? (async <T>(_name: string, fn: () => Promise<T>): Promise<T> => await fn());
   const retryWaitMs = io.retryWaitMs ?? 30_000;
   const pollTimeoutMs = io.pollTimeoutMs ?? 5 * 60_000;
+  const deploymentTimeoutMs = io.deploymentTimeoutMs ?? 15 * 60_000;
+  const deploymentPollMs = io.deploymentPollMs ?? 10_000;
   const publicBaseUrl = (args.publicBaseUrl ?? defaultPublicBaseUrl).replace(/\/+$/, "");
 
   const scrub = createScrubber(env);
@@ -181,6 +240,33 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
     return (await step(["git", "rev-parse", "HEAD"])).stdout.trim();
   });
 
+  /**
+   * The deployments Railway currently knows about for this service.
+   *
+   * A failure here is NOT tolerated: the whole point is that "we could not verify
+   * the deployment" must never read as "the deployment is live". Falling back to
+   * trusting a 200 is exactly the bug — the previous build answers 200 for a slug
+   * that is already live, so `demo:fix` reported success against the OLD build.
+   */
+  const listDeployments = async (): Promise<RailwayDeployment[]> => {
+    const command = ["railway", "deployment", "list", "--service", railwayService, "--json"];
+    const result = await exec(command, { cwd: io.demosRepo, ...(io.signal === undefined ? {} : { signal: io.signal }) });
+    const parsed = result.code === 0 ? parseRailwayDeployments(`${result.stdout}\n${result.stderr}`) : undefined;
+    if (parsed === undefined) {
+      throw new Error(
+        `cannot read this service's deployments ("${command.join(" ")}" exit ${result.code}), so the deploy cannot be verified — `
+        + `refusing to report a demo LIVE against a build that may still be the previous one. `
+        + `Check the railway CLI is current (\`railway deployment list --service ${railwayService} --json\`) and re-run.\n`
+        + scrub(firstLine(result.stderr) ?? firstLine(result.stdout) ?? "no output"),
+      );
+    }
+    return parsed;
+  };
+
+  // Snapshotted BEFORE `railway up`, so the deployment we are about to submit is
+  // identifiable as the one that is not in here.
+  const deploymentsBeforeUp = new Set((await listDeployments()).map((row) => row.id));
+
   const attempts = await runStage("ship:railway", async () => {
     await step(["railway", "link", "--project", railwayProject]);
     // No `railway variables`: the host's env (VENDO_API_KEY, KILLED_SLUGS,
@@ -201,6 +287,56 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
         throw new Error(`"railway up --service ${railwayService}" failed after ${railwayAttempts} attempts: ${firstLine(output) ?? "no output"}`);
       }
       await delay(retryWaitMs);
+    }
+  });
+
+  /**
+   * Blocks until the deployment THIS run submitted is genuinely live.
+   *
+   * `railway up --detach` returns once the upload is queued — 6.06s on a real run
+   * whose build then took minutes — and during those minutes the PREVIOUS
+   * deployment keeps serving. So the URL poll below is not evidence on its own: for
+   * a slug that is already live (every `demo:fix`, and any re-run) the old build
+   * answers 200 with the slug marker and the pipeline would print LIVE for a build
+   * that was still queued, or that had since failed.
+   *
+   * Identified as "the deployment that was not there before `up`". Under a
+   * concurrent deploy of this shared service by someone else that could name
+   * theirs, which the URL+marker check downstream still has to catch — a shared
+   * service has no way to make this airtight from the client side.
+   */
+  const deploymentId = await runStage("ship:deployment", async () => {
+    const deadline = Date.now() + deploymentTimeoutMs;
+    let named: string | undefined;
+    for (;;) {
+      if (io.signal?.aborted) throw io.signal.reason instanceof Error ? io.signal.reason : new Error("ship aborted");
+      const submitted = (await listDeployments()).filter((row) => !deploymentsBeforeUp.has(row.id));
+      // Newest first is Railway's order; the newest unseen one is ours.
+      const mine = submitted[0];
+      if (mine !== undefined) {
+        if (mine.id !== named) {
+          write(`[ship] deployment ${mine.id} submitted — waiting for it to go live`);
+          named = mine.id;
+        }
+        if (mine.status === deploymentSucceeded) {
+          write(`[ship] deployment ${mine.id} is ${mine.status}`);
+          return mine.id;
+        }
+        if (deploymentFailed.has(mine.status)) {
+          throw new Error(
+            `the deployment this run submitted (${mine.id}) ended ${mine.status} — the demo is committed and pushed, but the host is still serving the PREVIOUS build. `
+            + `Read the build log (railway logs --service ${railwayService} --deployment ${mine.id}) and re-run demo:fix for ${args.slug} once it is fixed.`,
+          );
+        }
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `the deployment this run submitted ${mine === undefined ? "never appeared" : `was still ${mine.status}`} after ${Math.round(deploymentTimeoutMs / 60_000)} min. `
+          + `The demo is committed and pushed and is not lost; the host may still be serving the previous build. Check \`railway deployment list --service ${railwayService}\`.`,
+        );
+      }
+      write(`[ship] deployment ${mine === undefined ? "not registered yet" : `${mine.id} is ${mine.status}`} — waiting`);
+      await delay(deploymentPollMs);
     }
   });
 
@@ -230,6 +366,7 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
         commit,
         liveUrl: live.url,
         attempts,
+        deploymentId,
         ...(railwayDomain === undefined ? {} : { railwayDomain }),
       };
     }

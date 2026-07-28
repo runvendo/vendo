@@ -64,6 +64,20 @@ describe("parseDemoPipelineArgs", () => {
     expect(defaultExpiresAt(now)).toBe("2026-08-17T12:00:00.000Z");
   });
 
+  // `new Date("2026-02-30")` does not throw — it rolls forward to March 2. So a
+  // day that does not exist became an expiry the operator never chose, on a demo
+  // that then expires on the wrong date, while the CLI claimed it rejects unreal
+  // dates. Only a bad MONTH was ever caught.
+  it("rejects a date that is not a real calendar day", () => {
+    for (const unreal of ["2026-02-30", "2026-04-31", "2026-02-29", "2026-06-31", "2026-13-01", "2026-00-10", "2026-01-00"]) {
+      expect(() => parseExpires(unreal)).toThrow(/not a real date/);
+    }
+    // …while real days, leap day included, still round-trip.
+    expect(parseExpires("2028-02-29")).toBe("2028-02-29T00:00:00.000Z");
+    expect(parseExpires("2026-12-31")).toBe("2026-12-31T00:00:00.000Z");
+    expect(parseExpires("2026-01-01")).toBe("2026-01-01T00:00:00.000Z");
+  });
+
   it("passes --skip-ship, --notes and --cta-url through, and defaults the CTA", () => {
     const args = parseDemoPipelineArgs([...baseArgv, "--skip-ship", "--notes", "n.md", "--cta-url", "https://x.test/book"], {});
     expect(args).toMatchObject({ skipShip: true, notes: "n.md", ctaUrl: "https://x.test/book" });

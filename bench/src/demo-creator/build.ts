@@ -522,7 +522,14 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
     const results: AgentRunResult[] = [];
     try {
       await Promise.all(jobs.map(async (job) => {
-        const result = await runAgent(job, { ...agentOptions, signal: fanOut.signal });
+        // ownedRoots ride the SANDBOX, not just the prompt: three agents editing
+        // one folder in parallel, and the harness is what stops two of them
+        // deciding to own the same file.
+        const result = await runAgent(job, {
+          ...agentOptions,
+          sandbox: { ...sandbox, ownedRoots: job.ownedRoots },
+          signal: fanOut.signal,
+        });
         results.push(result);
         if (result.code !== 0) fanOut.abort(new Error(`build agent "${result.name}" failed (exit ${result.code})`));
       }));
@@ -615,7 +622,10 @@ Keep every beat already present exactly as it is — the pills that are there su
 
 YOUR FILE LIST (writable): demo.config.json only.`,
       };
-      const repair = await runAgent(repairJob, agentOptions);
+      const repair = await runAgent(repairJob, {
+        ...agentOptions,
+        sandbox: { ...sandbox, ownedRoots: repairJob.ownedRoots },
+      });
       recordAgent(repair);
       if (repair.code !== 0) {
         throw new Error(`Beat repair agent failed (exit ${repair.code}${repair.timedOut ? ", timed out" : ""}):\n${scrub(repair.output.slice(0, 1000))}`);

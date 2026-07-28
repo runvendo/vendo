@@ -183,7 +183,13 @@ export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise
           timeoutMs: 15 * 60 * 1000,
           model: env.VENDO_DEMO_AGENT_MODEL ?? "sonnet",
         },
-        { cwd: paths.root, env, signal, sandbox: { writeRoot: paths.root, readRoot: args.demosRepo } },
+        {
+          cwd: paths.root,
+          env,
+          signal,
+          // The same FILE LIST the prompt states, enforced by the harness.
+          sandbox: { writeRoot: paths.root, readRoot: args.demosRepo, ownedRoots: [...fixOwnedRoots] },
+        },
       );
       write(`[fix] agent exit ${result.code}${result.timedOut ? " (TIMED OUT)" : ""} ($${result.costUsd?.toFixed(2) ?? "?"})`);
       if (result.permissionDenials.length > 0) {
