@@ -2,7 +2,7 @@
   "name": "video-studio",
   "version": "0.0.0",
   "private": true,
-  "description": "The Vendo video harness. Remotion episodes whose scenes render the real @vendoai/* product components \u2014 see README.md to add an episode.",
+  "description": "The Vendo video harness. Remotion episodes whose scenes render the real @vendoai/* product components — see README.md to add an episode.",
   "type": "module",
   "engines": {
     "node": ">=20"

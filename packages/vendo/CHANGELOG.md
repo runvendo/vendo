@@ -1,5 +1,113 @@
 # @vendoai/vendo
 
+## 0.5.0
+
+### Minor Changes
+
+- c7277f6: Knowledge verifier pass: where the evidence score provably cannot decide, a cheap model does.
+
+  Calibration against the cloud engine found that answerable and unanswerable questions score in the same range, so at the best possible bar 47% of unanswerable questions still got a confident answer. `@vendoai/knowledge` now exports `entailmentVerifier`: a capped, schema-constrained check that reads the passages a search returned and decides whether they can answer the question at all. An unsupported verdict becomes the existing `insufficient-evidence` outcome, carrying the gap the verifier named so the agent can say WHAT the docs do not cover.
+
+  **It is not score-gated.** It reads every search that returns hits. An earlier design ran it only inside a calibrated score band; the live run showed four unanswerable questions per pass scoring outside that band, never being checked, and being answered — so a check gated on the number it exists to replace inherits that number's blind spots.
+
+  **What it is measured to do.** Live against the cloud engine over the 94-question corpus: false answers 7/34 and 10/34 on its two passes, false refusals 3/60, reading 94/94 searches at 1.37-1.39 model calls per search and adding p50 ~2.5s of verification to a verified turn (summed over that turn's calls; one call's median is ~1.7-1.8s). It reduces confident wrong answers sharply — the same corpus loses 19/34 with the check gated to a score band — but it does not eliminate them, because it cannot refuse when a verification times out and it is sometimes simply wrong. The per-question records and the full table, including the removed gated configuration, are in `docs/eval/KNOWLEDGE.md`.
+
+  **OFF by default.** `VENDO_KNOWLEDGE_VERIFY=on` opts in for the Cloud engine; a value that is neither on nor off throws at composition rather than silently disabling a trust feature. It ships off because the measurement says it does not clear the zero-false-answer bar it exists for, while costing a model call per search and seconds on a call the user waits through — that trade is the host's to make, not a default. Only the Cloud engine composes it; BYO and self-hosted engines are untouched.
+
+  **Enabling the check changes no threshold.** The host's `weakScoreThreshold` (default 0) is exactly what it was, and it still decides every search the check could not read. When there is a verdict the verdict decides, in both directions.
+
+  **It fails open, and says so.** No model, a timeout, or an unusable response yields no verdict: the tool answers the way it would have without a verifier and marks the result with the additive `unverified` field on `vendo/knowledge-result@1`. The thread renders that as the amber "I couldn't check this answer against the documentation" line beside the sources, so a check that did not run is never mistaken for one that passed. Verification is capped per TURN as well as per call, so a chat→deep escalation cannot spend the cap twice.
+
+  An empty or placeholder gap ("", "n/a", "none") fails the verdict schema, so a verdict with its evidence torn off yields no verdict at all and the tool falls open marked, rather than refusing a user with a reason that says nothing.
+
+  The verifier rides its own `knowledgeVerifier` model slot (`VENDO_MODEL_KNOWLEDGE_VERIFIER`, `models.knowledgeVerifier`) beside `judge` — pinning the model that grades answers no longer repoints the one that gates them.
+
+  `@vendoai/knowledge` now declares `ai` as a peer dependency (with the zod floor every ai peer needs), matching `@vendoai/guard`.
+
+- f5fbb4b: Make the MCP door presentable: per-surface tool menus, human tool titles, and
+  risk-derived MCP annotations.
+
+  Hosts curate what each surface offers from `.vendo/overrides.json`'s new
+  `surfaces` block (`agent` and `mcp`, a closed key set so a misspelled surface
+  fails loudly at parse). `ActionsRegistry.surfaceMenu()` resolves it: the
+  authored list wins, an absent `agent` menu is unrestricted, and an absent `mcp`
+  menu falls back to every merged, enabled tool whose `audience` is `end-user` or
+  unset. Menus are curation, not security: the guard, `disabled`, and audience
+  exclusions are untouched, an off-menu call returns the same not-found an unknown
+  tool returns, and a menu entry naming a missing or disabled tool warns once and
+  is skipped rather than taking the host down. Vendo's own `vendo_*` runtime tools
+  are never curated away on either surface.
+
+  `ToolDescriptor` and `ToolOverride` gain an optional `title`: the short human
+  label for surfaces people read. `vendo sync`'s AI enrichment proposes one per
+  tool (presentation, so it is exempt from the restrictive-only clamp and carried
+  across structural syncs); `.vendo/overrides.json` corrects it. The door emits it
+  in both standard MCP places (top-level `title` and `annotations.title`), and
+  approval cards prefer it over the prettified tool id, behind an in-code
+  `ToolMeta.label`.
+
+  **Upgrade note.** Every tool the door lists now carries `annotations`
+  unconditionally, including for hosts with no `surfaces` block. That means a
+  `read` tool asserts `readOnlyHint: true` to clients, and some MCP clients use
+  that hint to skip their own confirmation prompt for read calls. Nothing changes
+  server-side: Vendo's guard, policy, approvals, and audit decide exactly what
+  they decided before, and annotations are hints the spec says clients may
+  ignore. If you have a `read`-labelled tool that is not actually side-effect
+  free, correct its `risk` in `.vendo/overrides.json` — that label was already
+  driving your policy.
+
+  Every tool the door lists now also carries `annotations` derived from its risk
+  label (`read` → `readOnlyHint`, `destructive` → `destructiveHint`), and the door
+  serves a themed, script-free, unauthenticated connect page at `{mount}/connect`
+  with the MCP URL and per-client setup steps for Claude, ChatGPT, and Cursor.
+  demo-bank ships a curated twelve-tool menu as the worked example.
+
+- f95feb7: Runtime/generation wave: `apps.pipeline` threading through createVendo, `agent.instructions` host-voice seam, per-instance judge model binding (bindVendoModelSlots — the process-level slot registry is gone; `Judge.model` is now part of the guard's Judge contract), island-scoped repair + concurrent tier-0 paint lane with a monotonic partial gate, region-parallel assembly compiling the production inline-reference dialect, smoke-render environment failures skipping instead of failing apps, no-emoji contract rules, and per-lane generation logging (onTiming/onPipeline wired to the operator console).
+- d1364b6: Chrome wave: split-view workspace with morphing stage, compact embeds, staged blur, stage pinning (host onPin seam), AutomationCard, ConnectCard lifecycle states, landing composer, docked new-reply banner, streaming skeletons, WorkingRibbon, connect-dock resilience, ApprovalSheet fixes, approvals-decided resume event, and eventOutcomeLabel stream-part semantics.
+- b94ac5a: The vendo model family lands in the runtime. `vendoModel(name?)` replaces `devModel()` (kept as a deprecated alias): a lazily-resolving AI-SDK model bound to the credential ladder that passes any name string VERBATIM to the resolved rung — the Cloud gateway with `VENDO_API_KEY` (where `vendo`, `vendo-paint`, `vendo-judge`, `vendo-extract` are real model ids), or your provider untouched on a BYO key. There is no client-side name mapping; unknown names surface the provider's own error. `createVendo` gains a `models` block (`{ agent?, paint?, judge? }`, string or LanguageModel per slot) superseding the deprecated top-level `model` and `paint.model` (`paint.disabled` stays the single-lane switch). Per-slot env pins `VENDO_MODEL`, `VENDO_MODEL_PAINT`, `VENDO_MODEL_JUDGE`, and `VENDO_MODEL_EXTRACT` override with no code change (precedence: explicit model object → env pin → models string → per-rung default); the old `VENDO_DEV_*_MODEL` / `VENDO_CLOUD_MODEL` / `VENDO_EXTRACTION_MODEL` vars keep working as deprecated fallbacks. When no model is configured, the paint lane rides the family fast pick per rung (`vendo-paint` on Cloud, e.g. `claude-haiku-4-5` on an Anthropic key) instead of needing a `paint` knob. `vendo doctor` now states the winning model credential rung and any active `VENDO_MODEL_*` pins.
+
+### Patch Changes
+
+- 221b851: Vendo Cloud meter refusals (pricing v3 §5: HTTP 402, stable code
+  `meter-exhausted`, structured body) now surface honestly everywhere the OSS
+  client can meet them — with no client-side entitlement checks; the refusal
+  body stays the only source of truth. Core gains `parseMeterExhausted` /
+  `formatMeterExhausted` / `meterExhaustedFromError`: one crafted sentence
+  naming the meter, the usage figures and reset date, and the two exits
+  (upgrade / BYO). The Cloud adapters (hosted store, sandbox, connections,
+  apps) render that sentence on their existing 402 → cloud-required mapping
+  with the structured fields preserved on `detail`; the agent recognizes the
+  gateway's 402 refusal on the safe stream-error rail so the thread banner
+  ends the turn with it; the CLI prints the same single line instead of a raw
+  error dump, and doctor's existing live-turn check surfaces safe
+  Vendo-prefixed error frames verbatim. Scheduler-refused automation runs
+  already read back as failed runs — the blocked reason and code now have
+  test-pinned rendering in run history.
+- Updated dependencies [0b58e3e]
+- Updated dependencies [0e3bc0a]
+- Updated dependencies [f965d77]
+- Updated dependencies [cbffc9e]
+- Updated dependencies [22601e3]
+- Updated dependencies [c7277f6]
+- Updated dependencies [da9d4a9]
+- Updated dependencies [f5fbb4b]
+- Updated dependencies [221b851]
+- Updated dependencies [f95feb7]
+- Updated dependencies [b1ba2ec]
+- Updated dependencies [f49b1de]
+- Updated dependencies [d1364b6]
+- Updated dependencies [280a142]
+  - @vendoai/apps@0.5.0
+  - @vendoai/core@0.5.0
+  - @vendoai/store@0.5.0
+  - @vendoai/knowledge@0.5.0
+  - @vendoai/agent@0.5.0
+  - @vendoai/ui@0.5.0
+  - @vendoai/actions@0.5.0
+  - @vendoai/mcp@0.5.0
+  - @vendoai/guard@0.5.0
+  - @vendoai/automations@0.5.0
+
 ## 0.4.8
 
 ### Patch Changes

@@ -1,5 +1,22 @@
 # @vendoai/guard
 
+## 0.5.0
+
+### Minor Changes
+
+- f95feb7: Runtime/generation wave: `apps.pipeline` threading through createVendo, `agent.instructions` host-voice seam, per-instance judge model binding (bindVendoModelSlots — the process-level slot registry is gone; `Judge.model` is now part of the guard's Judge contract), island-scoped repair + concurrent tier-0 paint lane with a monotonic partial gate, region-parallel assembly compiling the production inline-reference dialect, smoke-render environment failures skipping instead of failing apps, no-emoji contract rules, and per-lane generation logging (onTiming/onPipeline wired to the operator console).
+
+### Patch Changes
+
+- Updated dependencies [0b58e3e]
+- Updated dependencies [cbffc9e]
+- Updated dependencies [c7277f6]
+- Updated dependencies [da9d4a9]
+- Updated dependencies [f5fbb4b]
+- Updated dependencies [221b851]
+- Updated dependencies [d1364b6]
+  - @vendoai/core@0.5.0
+
 ## 0.4.8
 
 ### Patch Changes

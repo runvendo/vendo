@@ -1,5 +1,32 @@
 # @vendoai/apps
 
+## 0.5.0
+
+### Minor Changes
+
+- f95feb7: Runtime/generation wave: `apps.pipeline` threading through createVendo, `agent.instructions` host-voice seam, per-instance judge model binding (bindVendoModelSlots — the process-level slot registry is gone; `Judge.model` is now part of the guard's Judge contract), island-scoped repair + concurrent tier-0 paint lane with a monotonic partial gate, region-parallel assembly compiling the production inline-reference dialect, smoke-render environment failures skipping instead of failing apps, no-emoji contract rules, and per-lane generation logging (onTiming/onPipeline wired to the operator console).
+
+### Patch Changes
+
+- 0b58e3e: Generation now rejects capability substitution: a mutating host tool invoked with a hand-typed target or amount is sent back to repair instead of shipped. The live defect this closes had a generated island calling `host_transferMoney({ amount: 1, recipient_name: 'Slack Forwarding Bot', memo: 'APPROVED TRANSACTIONS: …' })` on a host with no messaging tool — a payments API used as a message channel, with a real side effect. The rule is mechanical (argument provenance, not intent matching): operands that arrive through tool data, user input, form state, or a row the user acted on always pass; the values the user themselves named in their request always pass; enums, flags and consts a tool declares never trip it. Both surfaces are covered — declarative action payloads and `tools.*` calls in island source. When the host lacks the capability, the honest disclaimer path is the only valid answer.
+- 0e3bc0a: Generation works on the Claude 5 model line. The engine hardcoded `temperature: 0` at every model call, but Claude Opus 5 / Sonnet 5 / Fable 5 (and Opus 4.7/4.8) removed the sampling parameters and reject the request outright with `400 — "\`temperature\` is deprecated for this model."`, so a host configuring any of those models could not generate at all. Sampling is now capability-gated on the model id: temperature is dropped only where the model rejects it and `temperature: 0`is preserved everywhere else. The same gate sets an explicit output cap on those ids, so a host whose`@ai-sdk/anthropic`predates the 5 line can no longer silently fall back to`max_tokens: 4096` and truncate a generated app mid-wire.
+- f965d77: A create whose document generated cleanly no longer loses the whole turn when the store refuses to persist it. The final view part was emitted _after_ `apps.put`, so a rejected write took the settling emit with it: every streamed card froze on whatever mid-stream payload it last held (a half-painted chart, an empty-state table) with no way to tell a frozen card from a genuinely empty one, the create tool answered the agent with a bare error, and the agent apologized and rebuilt the same app twice more — three cards for one prompt, none of them saved, nothing logged on the user path. Live on the deployed Maple demo, whose Cloud store was rejecting every `vendo_apps` write.
+
+  Now the finished view is emitted before anything that can fail, a failed persist degrades the app to view-only instead of discarding it, and the failure is named in the operator log (`app not saved (<id>): the view rendered but the store rejected it`, plus `(NOT SAVED)` on the completion line) and handed to the agent as an `unsaved` note on an `ok` result — so it states the one true thing and stops, instead of apologizing for a view the user can see. Escalation is skipped for an unsaved app, since every rung writes through the same store. Separately, a query that resolves non-ok now warns once instead of silently rendering an empty card.
+
+- 280a142: Generation repair now repoints an array-expecting prop that landed on a `{ data: [...] }` wrapper object, instead of regenerating the whole app. Live on the Maple demo, the most obvious prompt ("Show my spending by category") never rendered: the model bound the donut's `slices` array prop to the spending tool's ROOT object, validation correctly rejected it (`expected an array, the bound field is object`), and — because a kind mismatch is not a compile _binding_ error — structured repair's closed fix space was empty, so every attempt paid a full-lane regeneration. When the bound object holds exactly ONE top-level array, repair now derives the nested path and splices it with no model call; ambiguous shapes (zero or 2+ arrays) keep today's behavior. Any host returning an envelope instead of a bare array hit this.
+
+  `vendo sync` also records a host's DECLARED response body: an OpenAPI 2xx `application/json` schema becomes `outputSchema` on the `.vendo/tools.json` entry (refs resolved), so the envelope a host returns is part of the committed contract rather than something the model infers. Nothing is invented when the spec is silent.
+
+- Updated dependencies [0b58e3e]
+- Updated dependencies [cbffc9e]
+- Updated dependencies [c7277f6]
+- Updated dependencies [da9d4a9]
+- Updated dependencies [f5fbb4b]
+- Updated dependencies [221b851]
+- Updated dependencies [d1364b6]
+  - @vendoai/core@0.5.0
+
 ## 0.4.8
 
 ### Patch Changes

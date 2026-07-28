@@ -1,5 +1,23 @@
 # @vendoai/store
 
+## 0.5.0
+
+### Minor Changes
+
+- 22601e3: Add the dedicated knowledge record collections `vendo_knowledge_docs` / `vendo_knowledge_chunks` (MCP-door table layout: id/data/refs/created_at/updated_at, GIN index on refs, newest-first keyset index) and bump `SCHEMA_VERSION` 4→5 so existing databases actually create them (the DDL loop only runs while `version < SCHEMA_VERSION` — review fix F1). Both tables join the erase-by-subject/app cascade.
+- f49b1de: New `@vendoai/store/postgres` entry point: the same store (schema, records, blobs, secrets, helpers) with a `createStore` that requires a Postgres `url` and keeps `@electric-sql/pglite` out of the module graph entirely. The main entry is unchanged — PGlite stays the zero-config dev default — but serverless consumers on a real Postgres (Cloudflare Workers, Lambda, Vercel) should import from `@vendoai/store/postgres` so their bundles stop carrying megabytes of wasm Postgres they can never execute (a console Worker in the field silently crossed Cloudflare's bundle size ceiling this way). Purity is enforced by a new portability-gate leg (node-resolution esbuild metafile over `dist/postgres.js`) and a PGlite import tripwire test.
+
+### Patch Changes
+
+- Updated dependencies [0b58e3e]
+- Updated dependencies [cbffc9e]
+- Updated dependencies [c7277f6]
+- Updated dependencies [da9d4a9]
+- Updated dependencies [f5fbb4b]
+- Updated dependencies [221b851]
+- Updated dependencies [d1364b6]
+  - @vendoai/core@0.5.0
+
 ## 0.4.8
 
 ### Patch Changes
