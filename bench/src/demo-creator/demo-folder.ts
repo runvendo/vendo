@@ -159,10 +159,38 @@ export interface DemoPlacement {
   slot: string;
 }
 
-/** demo.config.json = demo-template's schema EXTENDED with `placement`. The
- * base schema is `.strict()`, so `placement` is split off before it parses. */
+/**
+ * The prospect's language, for the few strings that live in the HOST's chrome
+ * rather than in the demo's own screens. A Spanish product whose assistant panel
+ * answers in English fails the only bar these demos have, and the demo folder
+ * cannot reach those strings — so the language travels in the config and the
+ * host applies it. Absent means English.
+ *
+ * DISCLOSURE IS NOT TRANSLATABLE: there is deliberately no key for the
+ * watermark, the CTA or the limit/expired card. They tell a viewer this is a
+ * Vendo demo running on invented data, and {@link parseDemoStrings} rejects any
+ * attempt to translate them — including one by a future generation agent.
+ * Mirrors `host/src/lib/demo-strings.ts` in runvendo/vendo-demos.
+ */
+export interface DemoStrings {
+  /** BCP-47 tag, applied as `lang` on the demo's root element. */
+  locale?: string;
+  /** The floating launcher pill. Default `Ask <prospect>`. */
+  triggerLabel?: string;
+  /** Empty generated-view slot: headline, subline, primary button. */
+  slotTitle?: string;
+  slotSubtitle?: string;
+  slotCtaLabel?: string;
+  /** The conversation's landing headline. */
+  threadGreeting?: string;
+}
+
+/** demo.config.json = demo-template's schema EXTENDED with `placement` and
+ * `strings`. The base schema is `.strict()`, so both are split off before it
+ * parses. */
 export interface DemoFolderConfig extends DemoConfig {
   placement: DemoPlacement;
+  strings?: DemoStrings;
 }
 
 /**
@@ -189,6 +217,40 @@ export function parsePlacement(input: unknown): DemoPlacement {
     throw new Error("placement.slot: must be a non-empty description of where screens/index.tsx renders the surface");
   }
   return { trigger, slot };
+}
+
+/** The keys a demo may localise. Anything else in `strings` is a typo or an
+ *  attempt to translate the disclosure chrome; both must fail loudly. */
+const localisableKeys = ["locale", "triggerLabel", "slotTitle", "slotSubtitle", "slotCtaLabel", "threadGreeting"] as const;
+
+/** BCP-47 subset — enough to catch "Spanish" or "es_MX" without pretending to
+ *  validate the registry. */
+const localePattern = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+
+/** The one `strings` validator, for the same reason {@link parsePlacement} is
+ *  the one placement validator. `undefined` in, `undefined` out: a demo with no
+ *  strings block is an English demo, which is not an error. */
+export function parseDemoStrings(input: unknown): DemoStrings | undefined {
+  if (input === undefined) return undefined;
+  if (typeof input !== "object" || input === null) {
+    throw new Error("strings: must be a JSON object of chrome string overrides");
+  }
+  const entries = Object.entries(input as Record<string, unknown>);
+  for (const [key, value] of entries) {
+    if (!(localisableKeys as readonly string[]).includes(key)) {
+      throw new Error(
+        `strings.${key}: is not a localisable string (the watermark, CTA and limit card are disclosure and stay English) — expected one of ${localisableKeys.join(", ")}`,
+      );
+    }
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new Error(`strings.${key}: must be a non-empty string (omit the key to keep the English default)`);
+    }
+  }
+  const strings = Object.fromEntries(entries) as DemoStrings;
+  if (strings.locale !== undefined && !localePattern.test(strings.locale)) {
+    throw new Error(`strings.locale: must be a BCP-47 tag (e.g. "es", "es-419") — got ${JSON.stringify(strings.locale)}`);
+  }
+  return strings;
 }
 
 /**
@@ -241,12 +303,13 @@ export async function parseDemoFolderConfig(input: unknown, source = "demo confi
   // stripping (>= 23.6), while bench's engines floor is >= 20.
   const { parseDemoConfig } = await import("demo-template/demo-config");
   if (typeof input !== "object" || input === null) throw new Error(`invalid ${source}: must be a JSON object`);
-  const { placement, ...base } = input as Record<string, unknown>;
+  const { placement, strings, ...base } = input as Record<string, unknown>;
   const config = parseDemoConfig(base, source);
   const problems = beatSetProblems(config.beats);
   if (problems.length > 0) throw new Error(`invalid ${source}: ${problems.join("; ")}`);
   try {
-    return { ...config, placement: parsePlacement(placement) };
+    const localised = parseDemoStrings(strings);
+    return { ...config, placement: parsePlacement(placement), ...(localised === undefined ? {} : { strings: localised }) };
   } catch (error) {
     throw new Error(`invalid ${source}: ${error instanceof Error ? error.message : String(error)}`);
   }

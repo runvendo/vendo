@@ -220,6 +220,10 @@ Each beat is { key, prompt, chip } plus the expectation flags above and nothing 
 
 Also write \`placement\`: { "trigger": "${brief.placement.trigger}", "slot": ${JSON.stringify(brief.placement.slot)} }.
 
+LANGUAGE — if ${prospect}'s product is NOT in English (the chip material and entity names above are your evidence), also write \`strings\`, which is how the host's own chrome stops speaking English over their product. Translate these into the SAME language and register as your beats, and omit the whole block for an English product:
+{ "locale": "<BCP-47, e.g. es>", "triggerLabel": "<'Ask ${prospect}'>", "slotTitle": "<'This space builds itself'>", "slotSubtitle": "<'describe a view — it renders here, live on your data'>", "slotCtaLabel": "<'Design a view'>", "threadGreeting": "<'What can I help you build?'>" }
+These six keys are the ONLY ones allowed. The watermark, the "Get this in your product" CTA and the limit/expired card stay in English on purpose — they disclose that this is a Vendo demo on sample data, so never translate them and never add a key for them; the schema rejects it.
+
 The pipeline stamps id, prospect, ctaUrl, expiresAt and caps over whatever you write — those are operator facts, not yours to invent. Write them as placeholders and move on.
 
 tools.json does not exist yet: it is generated from the OpenAPI spec the server agent is writing right now, so you cannot check your pills against the real tool surface. The pipeline grounds them against it the moment you finish, and a pill it cannot ground is dropped. So stay inside the chip material and the entity actions above — those are the capabilities the server agent is being told to build.

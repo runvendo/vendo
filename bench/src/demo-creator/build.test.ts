@@ -351,6 +351,19 @@ describe("buildAgentJobs", () => {
     for (const key of requiredBeatKeys) expect(beats?.prompt).toContain(key);
     expect(beats?.prompt).toMatch(/tools\.json does not exist yet/);
   });
+
+  // A non-English prospect is the common case, not the exception, and a human
+  // remembering to add `strings` afterwards is how Zelty shipped with an English
+  // panel over a Spanish product.
+  it("tells the beats agent to localise the host's chrome for a non-English product", () => {
+    const beats = buildAgentJobs(jobOptions).find((job) => job.name === "beats");
+    expect(beats?.prompt).toMatch(/strings/);
+    for (const key of ["locale", "triggerLabel", "slotTitle", "slotSubtitle", "slotCtaLabel", "threadGreeting"]) {
+      expect(beats?.prompt).toContain(key);
+    }
+    // And that the disclosure chrome is not its to translate.
+    expect(beats?.prompt).toMatch(/watermark[\s\S]*English|English[\s\S]*watermark/);
+  });
 });
 
 describe("syncTools", () => {
