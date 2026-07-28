@@ -132,7 +132,7 @@ describe("PGlite single-writer discipline (ENG-351)", () => {
     expect(existsSync(lockPathFor(dir))).toBe(false);
   });
 
-  it("does not steal an old lock while its foreign PID is alive", async () => {
+  it("recovers a stale lock whose PID belongs to an unrelated live process", async () => {
   sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
     stdio: "ignore",
   });
@@ -148,13 +148,11 @@ describe("PGlite single-writer discipline (ENG-351)", () => {
   const db = createDb({ dataDir: dir });
   const query = db.query("select 1");
 
-  await expect(settledWithin(query, 800)).resolves.toBe("pending");
-  expect(pgliteCreate).not.toHaveBeenCalled();
-
-  sleeper.kill("SIGKILL");
-
+  await expect(settledWithin(query, 800)).resolves.toBe("settled");
   await expect(query).resolves.toEqual({ rows: [{ ok: 1 }] });
+
   expect(pgliteCreate).toHaveBeenCalledTimes(1);
+  expect(readFileSync(lockPath, "utf8")).toContain(String(process.pid));
 
   await db.close();
 });
