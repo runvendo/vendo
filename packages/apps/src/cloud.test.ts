@@ -87,8 +87,14 @@ describe("cloud interchange", () => {
     expect(cloud.publish).toHaveBeenCalledWith(doc.id, doc);
   });
 
-  it("strips the owner's egress approval before the copy leaves (Lane E grant hygiene)", async () => {
-    const approvedDoc: AppDocument = { ...doc, id: "app_egress", egressApproved: ["api.stripe.com"] };
+  it("strips the owner's egress approval and brain conversation before the copy leaves (copy hygiene)", async () => {
+    const approvedDoc = {
+      ...doc,
+      id: "app_egress",
+      egressApproved: ["api.stripe.com"],
+      // The brain's transcript is the owner's, not part of the app.
+      session: [{ role: "user", text: "an invoices workspace", at: "2026-07-28T00:00:00.000Z" }],
+    } as AppDocument;
     const store = memoryStore();
     await seedAppRow(store, approvedDoc, ctx.principal.subject);
     const shared: AppDocument[] = [];
@@ -117,6 +123,7 @@ describe("cloud interchange", () => {
     expect(shared).toHaveLength(2);
     for (const outbound of shared) {
       expect(outbound).not.toHaveProperty("egressApproved");
+      expect(outbound).not.toHaveProperty("session");
     }
   });
 

@@ -296,7 +296,7 @@ const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } 
  *  The user message is the per-request variable tail (the request / the app
  *  being edited / repair issues) and is deliberately left OUT of the cached
  *  prefix. WHAT the model sees is unchanged — only the prefix is marked. */
-const cacheableGenerationMessages = (system: string, prompt: string): ModelMessage[] => [
+export const cacheableGenerationMessages = (system: string, prompt: string): ModelMessage[] => [
   { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
   { role: "user", content: prompt },
 ];

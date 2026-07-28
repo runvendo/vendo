@@ -78,7 +78,7 @@ import {
 import { parseVendoManifest } from "./manifest.js";
 import { isDisclaimerOnlyTree } from "./pipeline.js";
 import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
-import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow, withoutSession } from "./persistence.js";
 import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
@@ -2211,8 +2211,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // Lane E grant hygiene — a share copy never carries the owner's egress
       // approval; whoever runs the copy approves its declaration themselves.
+      // …and the brain's conversation never travels either: it is the owner's
+      // transcript, not part of the app.
       const { egressApproved: _egressApproved, ...shared } = app;
-      return config.cloud.share(appId, shared);
+      return config.cloud.share(appId, withoutSession(shared));
     },
 
     async publish(appId, ctx) {
@@ -2222,7 +2224,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       }
       // Lane E grant hygiene — same rule as share: approval never travels.
       const { egressApproved: _published, ...published } = app;
-      return config.cloud.publish(appId, published);
+      return config.cloud.publish(appId, withoutSession(published));
     },
 
     agentTools() {
