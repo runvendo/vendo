@@ -188,20 +188,34 @@ were always name-anchored and are unaffected. Human-facing diffs are git-style
 text diffs of the wire. The rare full-rewrite (re-plan) remounts once, on a
 path where everything genuinely changed.
 
-## Validate and repair
+## Validate and review (Yousef, 2026-07-28: judgment is AI, not code)
 
-Six always-on checks, each one sentence:
+Validation is an **adapter layer in the OSS pipeline** (app + request in →
+findings out), with three kinds of checks plugged in:
 
-1. **Compile** — does it parse.
-2. **Plan check** — do the named tools, composites, and schedules exist
-   (runs at plan time, microseconds).
-3. **Schema** — does each fragment satisfy its composite's typed schema
-   (this one check replaces today's binding-kind, Kit-slot, reshape, and
-   catalog-prop validators).
-4. **Law 1** — data comes from a query, never typed in.
-5. **Law 2** — buttons do something real.
-6. **D5** — a mutating tool is never repurposed for a missing capability
-   (shipped, unchanged).
+1. **Built-in fact checks** — deterministic, instant, always on: does it
+   parse; do the named tools, composites, and schedules exist (at plan time,
+   microseconds); does each fragment satisfy its composite's typed schema
+   (this one schema check replaces today's binding-kind, Kit-slot, reshape,
+   and catalog-prop validators). Facts are lookups; models never answer
+   what a dictionary can.
+2. **The AI reviewer adapter** — ships from day one, BYO model key, one call
+   per finished app (~2–4s, on the assembled result). It owns every
+   judgment call: does the app answer the ask; is any displayed value
+   invented rather than bound (old law 1); do buttons do something real
+   (old law 2); is any tool use dishonest — e.g. a payment tool repurposed
+   as a message channel (old D5). Its verdicts arrive as the same teaching
+   messages the fix loop consumes.
+3. **Host-added checks** — a regulated host plugs its own rules into the
+   same interface, deterministic or AI, without forking. This is a product
+   feature, not just architecture.
+
+**The reviewer's exam (runs later, per Yousef).** Before the shipped
+deterministic D5 gate and the law-1 literal check are deleted, the reviewer
+must pass a replay of the Slack incident plus the 187 recorded apps: catch
+the true abuse, pass the legitimate apps. They come out the day it passes,
+not before. Timing is Yousef's call; the pipeline is built reviewer-first
+either way.
 
 The island gauntlet (imports, network, tool scan, smoke render) survives
 unchanged but relocates into the island specialist's rare lane. Deleted
@@ -210,14 +224,41 @@ comes from `cannot` + disclaimers), rooted-render (skeleton slots make
 orphans unwritable), interpolation and query-input rules (grammar-level
 rejections, not validators).
 
-**Repair is not a subsystem.** Issues become a machine-written instruction to
-the same edit mechanism: fix-it string edits (fast model, ×2), then back to
-the brain (re-plan) — the only full restart, reserved for "the app misread
+**Repair is not a subsystem.** Findings become a machine-written instruction
+to the same edit mechanism: fix-it string edits (fast model, ×2), then back
+to the brain (re-plan) — the only full restart, reserved for "the app misread
 the ask." The strict fix menu is **cut**; it earns its way back only if the
-bench shows string-edit repair loops on the cheat class (hand-typing data
-instead of fixing a binding). Every validator message is written as teaching:
+bench shows string-edit repair loops. Every finding is written as teaching:
 "this Table binds a field that doesn't exist in host_invoices — real fields
-are: …".
+are: …". Corrections attached to real mistakes are how rules actually land;
+upfront warnings are a tax paid on every call that measurably failed to
+prevent the Slack case.
+
+## Computed values (the derivation vocabulary)
+
+A displayed value is **a field, a typed operation over fields, or a
+composite feature — computed live by the machine on every render, never by
+the model at build time.** Model-computed constants freeze (wrong by Friday)
+and models are bad at arithmetic; so the model writes the recipe, the
+runtime cooks it fresh.
+
+- **Typed operations, a fixed menu, not composable:** sum, count, average,
+  min, max, difference, days_until(date), age_of(date); group_by(field,
+  bucket, aggregation) for chart bucketing. Each declares its return type;
+  the schema check validates type fit. The user's own numbers from the
+  request are legal inputs ("raise prices 10%").
+- **Composite features carry the display conveniences:** sort, limit/top-N,
+  totals rows, conditional highlighting (`highlight when days_overdue > 0`),
+  formatting, label templates.
+- **Deliberately out of v1:** joins across queries (host list tools embed
+  names; true gaps are a layer-2 sandbox function) and composable formula
+  expressions (that appetite is an island or a function earning its
+  existence).
+- Bench check: replay the 54 measured islands and count how many this tier
+  absorbs (expected: most of the 78% vocabulary-gap class).
+
+This closes the prerequisite flagged in the D1 triage (compare/delta and
+what-if composites blocked on a derivation facility).
 
 ## Prompts
 
@@ -228,10 +269,26 @@ delete. Per-actor budgets:
 
 | Prompt | Contains | Target |
 | --- | --- | --- |
-| brain | plan dialect, composite names + one-liners, host tools, the few unvalidatable judgment rules | ~1.5–2k tokens |
-| worker | its group, its queries' shapes + samples, its composites' props, binding syntax | ~0.5–0.8k |
+| brain | plan dialect, the core menu (standard composites + containers, one line each), host tools as one-liners, its handful of rules | ~1.5–2k tokens |
+| worker | its group, its queries' shapes + samples, full docs for only its assigned composites, binding syntax | ~0.5–0.8k |
 | island specialist | island rules (out of everyone else's world) | ~1k, rare |
 | edit turn | app text + instruction (session carries the rest) | tiny |
+
+**The catalog scales by search, not by listing** (the menu will grow: more
+standard composites, host components, user-added components). The core set
+stays inline as one-liners; the long tail lives in a catalog the brain
+queries while planning ("what do we have for timelines?" → the three
+relevant candidates). Workers are unaffected — they always get full docs
+for exactly what the plan assigned them.
+
+**Rules stay in the prompt — on a budget** (Yousef, 2026-07-28). Each prompt
+carries its handful of one-sentence principles (never invent data; say
+"can't" instead of faking; don't reach for custom code when the catalog
+works; every section has a distinct purpose). A new rule earns its line only
+when the bench shows a mistake recurring — never speculatively. That
+discipline is what stops the 8,300-token monster from growing back one
+nervous paragraph at a time; the reviewer backstops what the prompt no
+longer has to prevent.
 
 Categories that vanish rather than shrink: island rules in the main contract,
 id discipline, the `<Edit>` ops dialect, whole-app-in-an-island warnings,
@@ -273,6 +330,7 @@ Rejected: cross-user plan caching (correctness minefield to save 300 tokens).
 | `<Edit>` ops grammar + patch compiler | old/new string edits |
 | visible ids in model-facing text | compiler-internal ids via replacement spans |
 | `graduate()` + 3-attempt fn-rebind | intent-only `<Server>`, bind-after-build |
+| deterministic law-1 literal check + D5 gate | the AI reviewer — deleted only after it passes the incident exam (Slack replay + 187 apps) |
 | empty-document heuristic, rooted-render, 4 prop-type validators | schema check + unwritable-by-construction |
 | 7 flags / 128 pipelines | one pipeline; dials are numbers with bench-set values |
 | 8,300-token contract | per-actor prompts on the readability law |
@@ -340,7 +398,14 @@ three-level plan (container/group/leaf), group = fill unit, attributes
 arrange · plan spoken in wire-text · edits ride one per-app brain session;
 the brain plans or does, never hands off · repair = edits, apps edited like
 files (old/new strings), no ops grammar · no visible ids; git-style diffs ·
-validators cut to six; empty-document rule deleted · prompts on the
-readability law · automations/approvals/results collections unchanged ·
-sandbox layer 2: intent-only plan, bind-after-build · layer 3 unchanged,
-last-resort, same flags.
+empty-document rule deleted · prompts on the readability law ·
+automations/approvals/results collections unchanged · sandbox layer 2:
+intent-only plan, bind-after-build · layer 3 unchanged, last-resort, same
+flags · **2026-07-28 later session:** judgment validation is the AI
+reviewer, not deterministic code — law 1 and D5 detection move to it; the
+shipped gates stay only until the reviewer passes the incident exam (evals
+run later, Yousef's timing) · validation is an adapter layer (facts / AI
+reviewer / host-added checks) · computed values = typed operations menu +
+composite features, live-computed, never model-computed · catalog scales by
+search (core inline, long tail queried) · rules stay in prompts on a budget;
+new lines earned only by measured recurrence.
