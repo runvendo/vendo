@@ -152,6 +152,23 @@ describe("law 1 — data-classed props must be bindings", () => {
     expect(nodes(document).some((node) => node.component === "DataTable")).toBe(true);
   });
 
+  it("desugars interpolated Text strings into literal and bound Text nodes", async () => {
+    const wire = '<App name="Balance"><Query id="metric" tool="host_metric"/><Text text="Balance: {metric.totalCents}"/></App>';
+    let calls = 0;
+    const model = scriptedLanguageModel(() => {
+      calls += 1;
+      return wire;
+    });
+    const document = await modelEngine.create({ prompt: "Show balance" }, deps(model));
+    const row = nodes(document).find((node) => node.component === "Row");
+    const textNodes = nodes(document).filter((node) => node.component === "Text");
+
+    expect(calls).toBe(1);
+    expect(row).toBeDefined();
+    expect(textNodes.map((node) => node.props?.text)).toContain("Balance: ");
+    expect(textNodes.map((node) => node.props?.text)).toContainEqual({ $path: "/metric/totalCents" });
+  });
+
   it("splices a literal-data fault through the strict structured-repair fix space", async () => {
     const literal = '<App name="Rows"><Query id="metric" tool="host_metric"/><DataTable rows={[{"client":"Acme"}]}/></App>';
     const calls: ScriptedModelCall[] = [];
