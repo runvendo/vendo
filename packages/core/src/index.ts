@@ -48,6 +48,19 @@ export { WIRE_ISSUE_CODES, type WireIssue, type WireIssueCode } from "./genui/wi
 export { compileWirePatch, type PatchExtensionOp, type WirePatchBase, type WirePatchOptions, type WirePatchResult } from "./genui/wire/patch.js";
 export { printWire, type WirePrintInput, type WirePrintOptions } from "./genui/wire/print.js";
 export { checkBindingShapes, type BindingShapeError } from "./genui/wire/shape-check.js";
+// genui/plan — the plan dialect the brain writes before workers fill anything
+// in (generation pipeline rebuild, "Locked interfaces"): the flat AppPlan
+// shape plus its compiler, whose fact checks speak sentences, not codes.
+export { compilePlan, type PlanCompileResult, type PlanFacts } from "./genui/plan/compile.js";
+export {
+  planTabs,
+  type AppPlan,
+  type PlanGroup,
+  type PlanIsland,
+  type PlanLeaf,
+  type PlanQuery,
+  type PlanServer,
+} from "./genui/plan/types.js";
 
 // Deprecated aliases from the pre-de-versioning naming (0.4.x). Remove next minor.
 /** @deprecated Use compileWire. */
