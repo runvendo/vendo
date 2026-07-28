@@ -569,7 +569,11 @@ describe("sync AI enrichment integration (cse lane 1c)", () => {
     expect(messages.logs.join("\n")).toContain("host_a mutates a counter.");
   });
 
-  it("--no-watermark passes watermark: false to the engine and skips enrichment entirely", async () => {
+  // TEMP: deleted by judgment-layer lane C2 — this used to also assert
+  // `watermark: false` reached vendoSync. That option is gone (sync writes no
+  // watermark at all now); what --no-watermark still has to do — skip the AI
+  // pass and leave tools.json byte-identical — is asserted below.
+  it("--no-watermark skips enrichment entirely and leaves tools.json untouched", async () => {
     const { dir, toolsPath } = await hostWithTools();
     const before = await readFile(toolsPath, "utf8");
     const messages = captureOutput();
@@ -588,7 +592,7 @@ describe("sync AI enrichment integration (cse lane 1c)", () => {
       enrich: { harness },
     });
     expect(exit).toBe(0);
-    expect(syncSeam).toHaveBeenCalledWith(expect.objectContaining({ watermark: false }));
+    expect(syncSeam).toHaveBeenCalled();
     expect(messages.logs.join("\n")).not.toContain("enrichment");
     expect(await readFile(toolsPath, "utf8")).toBe(before);
   });

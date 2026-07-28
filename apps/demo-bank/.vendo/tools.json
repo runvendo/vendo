@@ -288,47 +288,6 @@
         "method": "GET",
         "path": "/api/insights/spending"
       },
-      "outputSchema": {
-        "type": "object",
-        "description": "The spending slices live under `data` — the array itself is `data`, never the response body.",
-        "properties": {
-          "data": {
-            "type": "array",
-            "description": "One slice per spending category, largest first.",
-            "items": {
-              "type": "object",
-              "properties": {
-                "category": {
-                  "type": "string",
-                  "enum": [
-                    "dining",
-                    "groceries",
-                    "coffee",
-                    "transport",
-                    "subscriptions",
-                    "shopping",
-                    "income",
-                    "transfer",
-                    "housing",
-                    "other"
-                  ]
-                },
-                "amount": {
-                  "type": "integer",
-                  "description": "Amount spent in integer cents."
-                }
-              },
-              "required": [
-                "category",
-                "amount"
-              ]
-            }
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
       "semantics": {
         "data.category": {
           "kind": "enum",

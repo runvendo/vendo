@@ -213,8 +213,11 @@ describe("labeled diff scenarios (fake deterministic model)", () => {
     expect(second.result.status === "enriched" && second.result.applied).toBe(EXPECTED_AFFECTED.length);
     const file = await toolsFile(root);
     expect(file.tools.map((tool) => tool.name)).toEqual(["host_alpha_list"]);
-    // alpha keeps its earlier enrichment untouched (cache stability)
-    expect(file.tools[0]).toMatchObject({ enriched: true, description: "Enriched: host_alpha_list." });
+    // TEMP: deleted by judgment-layer lane C2 — this used to assert alpha keeps
+    // its earlier enrichment across the structural re-sync (cache stability).
+    // That carry lived in vendoSync via `carryEnrichment` + the per-tool
+    // `enriched` marker, both deleted; judgments.json carries the AI layer now,
+    // and C2 rewrites this pass onto it.
     // the deletion is accounted for: the watermark moves past it
     expect(file.watermark).toBeDefined();
     expect(file.watermark).not.toBe(beforeWatermark);

@@ -121,7 +121,10 @@ async function sync(options: SyncOptions): Promise<number> {
       out: vendoDir,
       // The CLI needs the report to compute exit 2 vs 3; it applies strictness below.
       strict: false,
-      ...(options.noWatermark === true ? { watermark: false } : {}),
+      // TEMP: deleted by judgment-layer lane C2 — `--no-watermark` no longer has
+      // a `watermark` option to forward (vendoSync writes no watermark at all
+      // now); it still skips the AI pass below, which is what the demo apps'
+      // predev/prebuild hooks actually need.
     });
     if (!json) {
       for (const warning of report.warnings) output.error(`warning: ${warning}`);

@@ -1224,7 +1224,6 @@ describe("format v3 host files (cse lane 1)", () => {
     const root = await tempVendo(
       {
         format: VENDO_TOOLS_FORMAT,
-        watermark: "3d1f2ab90c7e5f6a8b4d0e1c2a3b4c5d6e7f8091",
         tools: [routeTool("host_probe", {
           audience: "end-user",
           semantics: { "data.amountCents": { kind: "money", unit: "cents" } },

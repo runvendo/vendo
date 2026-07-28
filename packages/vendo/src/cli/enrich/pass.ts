@@ -1,18 +1,20 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  gitTreeHash,
-  clampEnrichment,
-  applyEnrichmentFields,
-  mergeOverrides,
-} from "@vendoai/actions/sync";
+import { mergeOverrides } from "@vendoai/actions/sync";
 import {
   VENDO_TOOLS_FORMAT,
   overridesFileSchema,
   toolsFileSchema,
   type OverridesFile,
-  type ToolsFile,
 } from "@vendoai/actions";
+// TEMP: deleted by judgment-layer lane C2 — local copies of the enrichment
+// helpers and the two dropped tools.json fields (see temp-enrichment.ts).
+import {
+  gitTreeHash,
+  clampEnrichment,
+  applyEnrichmentFields,
+  type WatermarkedToolsFile,
+} from "./temp-enrichment.js";
 import { readOptional } from "../shared.js";
 import type { ExtractionDraft } from "../extract/harness.js";
 import type { ExtractionHarness } from "../extract/harness.js";
@@ -49,7 +51,7 @@ export async function readPreviousToolsState(vendoDir: string): Promise<Previous
   try {
     const parsed: unknown = JSON.parse(raw);
     if ((parsed as { format?: unknown }).format !== VENDO_TOOLS_FORMAT) return null;
-    const file = toolsFileSchema.parse(parsed);
+    const file = toolsFileSchema.parse(parsed) as WatermarkedToolsFile;
     // Belt-and-suspenders: never carry a non-object-id watermark past the
     // read boundary (defence in depth with computeEnrichmentDiff's OBJECT_ID
     // guard). A tampered value is dropped, degrading to full mode.
@@ -64,11 +66,13 @@ export async function readPreviousToolsState(vendoDir: string): Promise<Previous
   }
 }
 
-async function readToolsFile(vendoDir: string): Promise<ToolsFile | null> {
+async function readToolsFile(vendoDir: string): Promise<WatermarkedToolsFile | null> {
   const raw = await readOptional(join(vendoDir, "tools.json"));
   if (raw === null) return null;
   try {
-    return toolsFileSchema.parse(JSON.parse(raw));
+    // Both schemas are passthrough, so the two fields C2 will delete for real
+    // still round-trip through parse.
+    return toolsFileSchema.parse(JSON.parse(raw)) as WatermarkedToolsFile;
   } catch {
     return null;
   }
@@ -86,7 +90,7 @@ async function readOverridesContext(vendoDir: string): Promise<OverridesFile | n
   }
 }
 
-async function writeToolsFile(vendoDir: string, file: ToolsFile, watermark: string | undefined): Promise<void> {
+async function writeToolsFile(vendoDir: string, file: WatermarkedToolsFile, watermark: string | undefined): Promise<void> {
   const { watermark: _previous, ...rest } = file;
   const next = toolsFileSchema.parse({
     ...rest,

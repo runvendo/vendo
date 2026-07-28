@@ -1,11 +1,15 @@
 import { z } from "zod";
 import { fieldSemanticSchema } from "@vendoai/core";
+// TEMP: deleted by judgment-layer lane C2 — local copies of the enrichment
+// helpers and the two dropped tools.json fields (see temp-enrichment.ts).
 import {
   clampEnrichment,
   applyEnrichmentFields,
+  type EnrichedTool,
   type EnrichmentFields,
-} from "@vendoai/actions/sync";
-import type { ExtractedTool, OverridesFile, ToolsFile } from "@vendoai/actions";
+  type WatermarkedToolsFile,
+} from "./temp-enrichment.js";
+import type { OverridesFile } from "@vendoai/actions";
 import { resolveDevCredential, type DevCredential } from "../../dev-creds/resolve.js";
 import { claudeCliHarness } from "../extract/claude-cli-harness.js";
 import { claudeHarness } from "../extract/claude-harness.js";
@@ -124,7 +128,7 @@ export interface EnrichmentRunInput {
   harness: ExtractionHarness;
   appName: string;
   /** The current structural tools file (post-carry). Never mutated. */
-  file: ToolsFile;
+  file: WatermarkedToolsFile;
   /** Read-only context: human overrides always win; the model is told so. */
   overrides: OverridesFile | null;
   diff: EnrichmentDiff;
@@ -135,7 +139,7 @@ export interface EnrichmentRunInput {
 }
 
 export interface EnrichmentOutcome {
-  file: ToolsFile;
+  file: WatermarkedToolsFile;
   /** Tool names whose entries changed or were confirmed (now marked enriched). */
   applied: string[];
   /** Restrictive-only clamp refusals, per tool — the narrative counts these. */
@@ -253,7 +257,7 @@ export async function runEnrichment(input: EnrichmentRunInput): Promise<Enrichme
     const current = byName.get(name);
     if (current?.enriched === true) {
       const { enriched: _stripped, ...rest } = current;
-      byName.set(name, rest as ExtractedTool);
+      byName.set(name, rest as EnrichedTool);
     }
   }
 
