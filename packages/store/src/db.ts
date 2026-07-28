@@ -103,13 +103,11 @@ function readLockPid(lockPath: string): number | undefined {
     can never be us), or it stopped refreshing the lock's mtime long ago. */
 function lockIsStale(lockPath: string): boolean {
   const pid = readLockPid(lockPath);
-  if (pid !== undefined && pid > 0) {
-    return pid === process.pid || !isPidAlive(pid);
-  }
+  if (pid !== undefined && (pid === process.pid || !isPidAlive(pid))) return true;
   try {
     return Date.now() - fs.statSync(lockPath).mtimeMs > LOCK_STALE_MTIME_MS;
   } catch {
-    return false;
+    return false; // vanished — the acquire loop just retries
   }
 }
 
