@@ -6,9 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
 import {
-  applyDraft,
   claudeHarness,
-  runStagedExtraction,
   type ExtractionDraft,
   type ExtractionHarness,
   type StaticTool,
@@ -20,13 +18,28 @@ import { scoreAiExtraction, type AiScoredStaticTool } from "./score.js";
 
 /**
  * The AI extraction eval matrix (install-dx lane 3): repo × model → score.
- * Each cell runs the REAL extraction flow — the staged pipeline
- * (survey → draft-per-surface → cross-check → brief) over the repo's static
- * `.vendo/tools.json` through the ExtractionHarness (Claude Agent SDK, model
- * picked via VENDO_EXTRACTION_MODEL), then applyDraft's deterministic guards
- * into a clean per-model scratch root — and scores the result with the pure
- * rubric in score.ts. On-demand only: never part of `pnpm test`.
+ * On-demand only: never part of `pnpm test`.
+ *
+ * AWAITING THE JUDGMENT-LAYER REWRITE (lane D). The two model seams this file
+ * used to drive — the staged pipeline (`runStagedExtraction`) and its
+ * deterministic applier (`applyDraft`) — were deleted with the drafting channel
+ * they belonged to: judgment now flows through `runJudgmentPass` into
+ * `judgments.json`, with quoted evidence and an independent skeptic, rather than
+ * as a draft into `overrides.json`. That is a different thing to measure, not a
+ * renamed one, so translating this matrix mechanically would produce a rubric
+ * that scores nothing real. Both seams therefore fail loudly (see
+ * `JUDGMENT_REWRITE_PENDING`) and lane D replaces them.
+ *
+ * Everything AROUND them is untouched and still exercised: the static-context
+ * reader, the scoring rubric in score.ts, Agent SDK provisioning, the
+ * scoreboard, and the CLI wiring.
  */
+
+/** Why the two model seams below refuse to run. */
+const JUDGMENT_REWRITE_PENDING =
+  "the corpus AI eval matrix awaits its judgment-layer rewrite: `runStagedExtraction` and `applyDraft` "
+  + "were deleted with the drafting channel, and scoring the judgment channel (judgments.json + skeptic "
+  + "verdicts) is a new rubric rather than a renamed one";
 
 /** Model label used when the harness default is exercised (no override). */
 export const DEFAULT_MODEL_LABEL = "default";
@@ -141,17 +154,11 @@ export async function evaluateDraft(options: EvaluateDraftOptions): Promise<Retu
     });
   }
 
-  await applyDraft({ root: options.scratchRoot, draft: options.draft, tools: options.statics.forPipeline });
-  const overridesRaw = await readFile(path.join(options.scratchRoot, ".vendo", "overrides.json"), "utf8");
-  // applyDraft writes strict vendo/overrides@3 (format v3).
-  const overrides = overridesFileSchema.parse(JSON.parse(overridesRaw)).tools;
-
-  return scoreAiExtraction({
-    staticTools: options.statics.forScoring,
-    draft: options.draft,
-    overrides,
-    expected: options.expected,
-  });
+  // The guard-apply seam. `applyDraft` was the ONE writer that turned a draft
+  // into overrides.json entries, and scoring reads those entries back — so
+  // until lane D scores the judgment channel instead, there is nothing honest
+  // to compute here. Failing loudly beats returning a fabricated score.
+  throw new Error(JUDGMENT_REWRITE_PENDING);
 }
 
 export interface RunAiRepoMatrixOptions {
@@ -285,25 +292,16 @@ export async function runAiRepoMatrix(options: RunAiRepoMatrixOptions): Promise<
       ? { ...options.env }
       : { ...options.env, VENDO_EXTRACTION_MODEL: model };
 
-    let draft: ExtractionDraft | null = null;
+    const draft: ExtractionDraft | null = null;
     let failure: string | undefined;
-    let notes: string[] = [];
-    try {
-      options.onProgress?.(`${options.repoName} × ${model}: staged extraction over the codebase…`);
-      const staged = await runStagedExtraction({
-        root: options.appRoot,
-        env,
-        harness,
-        tools: statics.forPipeline,
-        appName: statics.appName,
-        onProgress: (line) => options.onProgress?.(`  ${line}`),
-      });
-      draft = staged.draft;
-      notes = staged.notes;
-    } catch (error) {
-      failure = `staged extraction failed: ${error instanceof Error ? error.message : String(error)}`;
-      await writeFile(path.join(artifactsDir, "error.txt"), `${failure}\n`);
-    }
+    const notes: string[] = [];
+    // The model seam. Every cell now floors on this until lane D drives the
+    // judgment channel from here; the per-cell floor path (below) is the
+    // existing, tested way this matrix reports a cell that produced no draft,
+    // so a pending rewrite degrades exactly like an unreachable model.
+    options.onProgress?.(`${options.repoName} × ${model}: skipped — ${JUDGMENT_REWRITE_PENDING}`);
+    failure = `staged extraction failed: ${JUDGMENT_REWRITE_PENDING}`;
+    await writeFile(path.join(artifactsDir, "error.txt"), `${failure}\n`);
 
     // Preserve the per-stage artifacts the pipeline wrote into the repo's
     // `.vendo/data/extract/` — the next model's run clears that directory.
