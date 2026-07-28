@@ -71,18 +71,103 @@ const judgeProposalSchema = z.object({
   semantics: z.record(fieldSemanticSchema).optional(),
 });
 
+/** Advisory bounds. These are CLAMPED, never enforced by rejection — see
+ *  `judgeResultSchema` for why that distinction is load-bearing. */
+const ADVISORY_LIMIT = 300;
+const NARRATIVE_LIMIT = 4000;
+
 /**
- * The envelope is deliberately loose about its items (`unknown`) so ONE bad
- * proposal cannot fail the parse of a whole batch. Each item is then validated
- * on its own and a failure is counted, not swallowed — which is the only way
- * "evidence is required" can be enforced honestly rather than by discarding
- * nineteen good proposals along with the twentieth.
+ * The envelope validates ONLY what routing needs, and validates it loosely:
+ * `tools` items are `unknown` so one bad proposal cannot fail a batch of twenty,
+ * and EVERY advisory field is `unknown` so no advisory can fail the batch at all.
+ *
+ * That second half is the invariant, and it was learned the hard way.
+ * `missedSurfaces` and `narrative` used to carry `.max()` bounds HERE, inside the
+ * schema `parseArtifact` validates — so a single advisory string 37 characters
+ * over the limit threw during parse and took every evidence-backed proposal in
+ * the batch down with it. Observed on openstatus (9 judgments discarded because
+ * two advisory strings were 37 and 11 chars long) and on demo-bank, which lost
+ * host_transferMoney and host_createOrder on 3 runs of 3.
+ *
+ * Advisories are leads for a human. A lead must never outrank a judgment, so
+ * proposals and advisories do not share one all-or-nothing parse: bounds are
+ * applied by clamping AFTER the parse (`normalizeAdvisories`), and every clamp is
+ * counted and reported rather than silently absorbed.
  */
 const judgeResultSchema = z.object({
   tools: z.array(z.unknown()).default([]),
-  missedSurfaces: z.array(z.string().max(300)).optional(),
-  narrative: z.string().max(4000).default(""),
+  missedSurfaces: z.unknown().optional(),
+  narrative: z.unknown().optional(),
 });
+
+/** Bounded PROSE on one proposal, each with the limit Lane A's
+ *  `judgmentFieldsSchema` accepts downstream. Clamped before validation for the
+ *  same reason as above: a sentence that ran long is a formatting slip, not a
+ *  reason to throw away the handler evidence attached to it. Capability fields
+ *  (the enums and booleans) are deliberately absent — an invented `risk` value is
+ *  a real error and must still be rejected. */
+const PROSE_LIMITS: ReadonlyArray<readonly [string, number]> = [
+  ["description", 500],
+  ["title", 60],
+  ["reason", ADVISORY_LIMIT],
+];
+
+/** Cut to `limit`, marking the cut so a reader can tell clamped text from text
+ *  the model chose to write short. */
+const truncate = (value: string, limit: number): string =>
+  value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
+
+interface Advisories {
+  surfaces: string[];
+  narrative: string;
+  /** Advisory strings truncated or dropped. Reported, never silent. */
+  clamped: number;
+}
+
+/** Pull the advisories out of a parsed batch, clamping instead of rejecting.
+ *  Nothing here can throw, which is the whole point. */
+function normalizeAdvisories(artifact: { missedSurfaces?: unknown; narrative?: unknown }): Advisories {
+  let clamped = 0;
+  const surfaces: string[] = [];
+  const raw = artifact.missedSurfaces;
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      // A non-string "lead" names no surface — drop it, but say that it existed.
+      if (typeof entry !== "string" || entry.trim() === "") {
+        clamped += 1;
+        continue;
+      }
+      if (entry.length > ADVISORY_LIMIT) clamped += 1;
+      surfaces.push(truncate(entry, ADVISORY_LIMIT));
+    }
+  } else if (raw !== undefined) {
+    clamped += 1;
+  }
+
+  let narrative = "";
+  if (typeof artifact.narrative === "string") {
+    if (artifact.narrative.length > NARRATIVE_LIMIT) clamped += 1;
+    narrative = truncate(artifact.narrative, NARRATIVE_LIMIT).trim();
+  } else if (artifact.narrative !== undefined) {
+    clamped += 1;
+  }
+  return { surfaces, narrative, clamped };
+}
+
+/** Clamp a raw proposal's bounded prose before it reaches the strict schema. */
+function clampProse(raw: unknown): { value: unknown; clamped: number } {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { value: raw, clamped: 0 };
+  const next: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  let clamped = 0;
+  for (const [field, limit] of PROSE_LIMITS) {
+    const value = next[field];
+    if (typeof value === "string" && value.length > limit) {
+      next[field] = truncate(value, limit);
+      clamped += 1;
+    }
+  }
+  return { value: next, clamped };
+}
 
 const skepticVerdictSchema = z.object({
   name: z.string().min(1),
@@ -136,6 +221,9 @@ export interface JudgmentPassCounts {
   unexaminedRejected: number;
   /** Proposals thrown out at parse for carrying no evidence. */
   evidenceless: number;
+  /** Advisory and prose strings truncated or dropped so they could not discard a
+   *  judgment. Never fatal — surfaced so a clamped lead is visible. */
+  advisoriesClamped: number;
 }
 
 export type JudgmentPassResult =
@@ -351,6 +439,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   const unknownTools: string[] = [];
   const missedSurfaces: string[] = [];
   const narratives: string[] = [];
+  let advisoriesClamped = 0;
   let judgeChunksParsed = 0;
 
   for (const [index, chunk] of chunks.entries()) {
@@ -375,11 +464,15 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       continue;
     }
     judgeChunksParsed += 1;
-    if (artifact.narrative.trim() !== "") narratives.push(artifact.narrative.trim());
-    missedSurfaces.push(...(artifact.missedSurfaces ?? []));
+    const advisories = normalizeAdvisories(artifact);
+    advisoriesClamped += advisories.clamped;
+    if (advisories.narrative !== "") narratives.push(advisories.narrative);
+    missedSurfaces.push(...advisories.surfaces);
 
     for (const raw of artifact.tools) {
-      const parsed = judgeProposalSchema.safeParse(raw);
+      const prose = clampProse(raw);
+      advisoriesClamped += prose.clamped;
+      const parsed = judgeProposalSchema.safeParse(prose.value);
       if (!parsed.success) {
         const name = typeof (raw as { name?: unknown } | null)?.name === "string"
           ? (raw as { name: string }).name
@@ -646,6 +739,12 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   if (unknownTools.length > 0) {
     output.log(`  proposals for unknown tools ignored (${unknownTools.length}): ${listed(unknownTools.map(sanitize))}`);
   }
+  if (advisoriesClamped > 0) {
+    output.error(
+      `warning: ${advisoriesClamped} advisory string${advisoriesClamped === 1 ? "" : "s"} clamped`
+      + " (over-long or unusable) — tool judgments were unaffected",
+    );
+  }
   for (const note of notes) output.error(`warning: ${sanitize(note)}`);
   for (const narrative of narratives) {
     for (const line of narrative.split("\n")) output.log(`  ${sanitize(line)}`);
@@ -665,6 +764,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     rejectedBySkeptic: rejectedBySkeptic.length,
     unexaminedRejected: unexaminedRejected.length,
     evidenceless: evidenceless.length,
+    advisoriesClamped,
   };
 }
 

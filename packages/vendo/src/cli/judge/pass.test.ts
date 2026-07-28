@@ -618,3 +618,176 @@ describe("runJudgmentPass — degradation and artifacts", () => {
     expect(written.indexOf('"host_a"')).toBeLessThan(written.indexOf('"host_b"'));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Batch resilience: an ADVISORY field must never be able to kill judgments.
+// Lane D's P6 — on openstatus, two `missedSurfaces` strings 37 and 11 chars
+// over the limit discarded 9 valid evidence-backed proposals, because the
+// advisory and the proposals shared one all-or-nothing envelope parse.
+// ---------------------------------------------------------------------------
+
+describe("runJudgmentPass — advisories can never discard proposals", () => {
+  /** Two tools, both with real evidence — the judgments that must survive. */
+  const twoGoodProposals = [
+    { name: "host_transferMoney", risk: "destructive" as const, evidence: "await ledger.transfer(from, to, amountCents)" },
+    { name: "host_createOrder", critical: true as const, evidence: "await db.insert(orders).values(row)" },
+  ];
+  const upholdBoth = {
+    verdicts: [
+      { name: "host_transferMoney", field: "risk", verdict: "uphold" },
+      { name: "host_createOrder", field: "critical", verdict: "uphold" },
+    ],
+  };
+
+  const twoToolHost = async (): Promise<Fixture> => host([
+    tool("host_transferMoney", { risk: "read" }),
+    tool("host_createOrder"),
+  ]);
+
+  it("an over-long missedSurfaces string does NOT discard the batch's proposals", async () => {
+    const fixture = await twoToolHost();
+    const bus = channel();
+    // 337 and 311 chars — the exact shape of the openstatus failure.
+    const over = `src/app/api/${"x".repeat(324)}`;
+    expect(over.length).toBeGreaterThan(300);
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: twoGoodProposals, missedSurfaces: [over, `src/trpc/${"y".repeat(302)}`], narrative: "read both" }),
+        reply(upholdBoth),
+      ]),
+    }));
+
+    expect(result.status).toBe("judged");
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_transferMoney!.fields.risk).toBe("destructive");
+    expect(file.tools.host_createOrder!.fields.critical).toBe(true);
+    // Counted honestly, not swallowed.
+    expect(result).toMatchObject({ advisoriesClamped: 2 });
+    const printed = [...bus.logs, ...bus.errors].join("\n");
+    expect(printed).toMatch(/advisor/i);
+    // The lead itself survives, truncated — a cut lead still names the surface.
+    expect(printed).toContain("src/app/api/");
+  });
+
+  it("an over-long narrative does NOT discard the batch's proposals", async () => {
+    const fixture = await twoToolHost();
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: twoGoodProposals, narrative: "n".repeat(4500) }),
+        reply(upholdBoth),
+      ]),
+    }));
+    expect(result.status).toBe("judged");
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_transferMoney!.fields.risk).toBe("destructive");
+    expect(result).toMatchObject({ advisoriesClamped: 1 });
+  });
+
+  it("structurally unusable advisories (wrong types) do NOT discard proposals", async () => {
+    const fixture = await twoToolHost();
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({
+          tools: twoGoodProposals,
+          missedSurfaces: { nope: "an object where an array belongs" },
+          narrative: { also: "not a string" },
+        }),
+        reply(upholdBoth),
+      ]),
+    }));
+    expect(result.status).toBe("judged");
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_transferMoney!.fields.risk).toBe("destructive");
+    expect(file.tools.host_createOrder!.fields.critical).toBe(true);
+    expect(result.status === "judged" && result.advisoriesClamped > 0).toBe(true);
+  });
+
+  it("non-string items inside missedSurfaces are dropped, the string ones survive", async () => {
+    const fixture = await twoToolHost();
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: twoGoodProposals, missedSurfaces: ["src/graphql/* — no tools", 42, null], narrative: "" }),
+        reply(upholdBoth),
+      ]),
+    }));
+    expect(result.status).toBe("judged");
+    expect([...bus.logs, ...bus.errors].join("\n")).toContain("src/graphql/*");
+    expect(result).toMatchObject({ advisoriesClamped: 2 });
+  });
+
+  it("an over-long `reason` clamps instead of discarding that tool's judgment", async () => {
+    const fixture = await twoToolHost();
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({
+          tools: [
+            { ...twoGoodProposals[0]!, reason: "r".repeat(600) },
+            twoGoodProposals[1]!,
+          ],
+          narrative: "",
+        }),
+        reply(upholdBoth),
+      ]),
+    }));
+    expect(result.status).toBe("judged");
+    // The proposal survived: an explanatory string cannot cost a capability grade.
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_transferMoney!.fields.risk).toBe("destructive");
+    expect(result).toMatchObject({ evidenceless: 0 });
+  });
+
+  it("over-long prose (description/title) clamps instead of discarding the proposal", async () => {
+    const fixture = await twoToolHost();
+    const bus = channel();
+    await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({
+          tools: [{
+            name: "host_createOrder",
+            description: "d".repeat(900),
+            title: "t".repeat(140),
+            evidence: "await db.insert(orders).values(row)",
+          }],
+          narrative: "",
+        }),
+        reply({ verdicts: [
+          { name: "host_createOrder", field: "description", verdict: "uphold" },
+          { name: "host_createOrder", field: "title", verdict: "uphold" },
+        ] }),
+      ]),
+    }));
+    const file = await readJudgments(fixture);
+    const fields = file.tools.host_createOrder!.fields;
+    // Clamped to the bounds Lane A's judgmentFieldsSchema enforces, not dropped.
+    expect(fields.description!.length).toBeLessThanOrEqual(500);
+    expect(fields.title!.length).toBeLessThanOrEqual(60);
+  });
+
+  it("a capability field with a BOGUS value is still rejected — clamping is prose-only", async () => {
+    const fixture = await twoToolHost();
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{ name: "host_createOrder", risk: "catastrophic", evidence: "await db.insert(orders)" }], narrative: "" }),
+      ]),
+    }));
+    // An invented enum is a real error: rejected, counted, nothing written.
+    expect(result).toMatchObject({ status: "judged", judged: 0 });
+    expect([...bus.logs, ...bus.errors].join("\n")).toMatch(/malformed/i);
+  });
+
+  it("evidence-less proposals are STILL rejected — tolerance never reaches evidence", async () => {
+    const fixture = await twoToolHost();
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{ name: "host_createOrder", risk: "destructive" }], missedSurfaces: ["z".repeat(400)], narrative: "" }),
+      ]),
+    }));
+    expect(result).toMatchObject({ status: "judged", evidenceless: 1, judged: 0 });
+  });
+});

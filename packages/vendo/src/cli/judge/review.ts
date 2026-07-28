@@ -70,7 +70,9 @@ export async function reviewLoosenings(
   options: ReviewOptions,
 ): Promise<"approved" | "declined"> {
   if (items.length === 0) return "approved";
-  options.note(`judgment: ${items.length} loosening${items.length === 1 ? "" : "s"} need a human decision`);
+  options.note(
+    `judgment: ${items.length} loosening${items.length === 1 ? " needs" : "s need"} a human decision`,
+  );
   for (const line of renderLooseningDiff(items)) options.note(line);
   const tools = new Set(items.map((item) => item.name)).size;
   const approved = await options.confirm(

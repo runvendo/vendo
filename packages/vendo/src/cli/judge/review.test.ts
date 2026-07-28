@@ -87,3 +87,18 @@ describe("sanitize", () => {
     expect(sanitize(`a\tb\u0000c${ESC}d${CSI}e\u007f`)).toBe("a\tbcde");
   });
 });
+
+describe("reviewLoosenings — subject/verb agreement in the notice", () => {
+  it("says `1 loosening needs` for one and `2 loosenings need` for many", async () => {
+    const one: string[] = [];
+    await reviewLoosenings([item()], { note: (line) => one.push(line), confirm: async () => false });
+    expect(one[0]).toContain("1 loosening needs a human decision");
+
+    const many: string[] = [];
+    await reviewLoosenings(
+      [item(), item({ field: "disabled", from: true, to: false })],
+      { note: (line) => many.push(line), confirm: async () => false },
+    );
+    expect(many[0]).toContain("2 loosenings need a human decision");
+  });
+});
