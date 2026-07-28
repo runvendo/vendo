@@ -1,5 +1,55 @@
 # @vendoai/core
 
+## 0.6.0
+
+### Minor Changes
+
+- 89153f8: Delete the pre-v3 `.vendo` format layer and the semantics dev-server pass.
+
+  `.vendo/` is now one format, not two. The `vendo/tools@1` / `vendo/overrides@1`
+  schemas, `vendo/capabilities@1`, `vendo/semantics@1`, `vendoFileVersion`, and
+  every dual-format reader and in-memory migration fold are gone; the surviving
+  `@3` names lost their `V3` suffix (`toolsFileSchema`, `overridesFileSchema`,
+  `ExtractedTool`, `OverridesFile`, `VENDO_TOOLS_FORMAT`, `VENDO_OVERRIDES_FORMAT`
+  — now exported from `@vendoai/actions`, and the persisted tag strings
+  `"vendo/tools@3"` / `"vendo/overrides@3"` are unchanged).
+
+  `vendo sync` also no longer calls a running dev server to infer field
+  semantics: the `POST /sync/semantics` route and its CLI pass are deleted, so a
+  sync never executes host endpoints as a side effect. The per-tool `semantics`
+  field itself is untouched — sync's AI enrichment proposes it and
+  `overrides.json → tools[name].semantics` still wins forever.
+
+  Removed public types: `CapabilitiesFile`, `SemanticsFile`, `OverridesFileV3`
+  (use `OverridesFile`). Removed config: `createActions({ capabilities })`,
+  `createVendo({ profile: { capabilities, semantics } })` — compounds and briefs
+  live in `overrides.json`.
+
+- 3ae3d13: Delete template tool descriptions and the domains manifest.
+
+  `vendo sync` no longer invents a description for a tool your API does not
+  describe. The deterministic `"Use this to …"` generator is gone: an
+  undescribed tool carries `""` in `.vendo/tools.json`, which is the honest
+  keyless state. Sync's AI enrichment pass proposes real descriptions when a
+  model credential is present, and `overrides.json → tools[name].description`
+  still wins forever.
+
+  The domains manifest is gone end to end. Generation already receives the full
+  tool list, so a derived summary of tool nouns told the model nothing new — and
+  a finite `hasNot` can never enumerate what a host lacks. Removed: the `domains`
+  field from both `.vendo/tools.json` and `.vendo/overrides.json`, the
+  `DATA DOMAINS` prompt section, and the `domains` provider slot on the apps
+  runtime.
+
+  Removed public API: `DomainManifest` and `domainManifestSchema` (from
+  `@vendoai/core`); the `domains` field on `ToolsFile` / `OverridesFile`;
+  `createApps({ domains })`. `mergedSemanticsAndDomains` is now
+  `mergedHostSemantics` and returns the per-tool semantics record directly
+  (the `MergedHostSemantics` wrapper type is gone).
+
+  `.vendo/overrides.json` is strict, so a leftover `domains` key now fails
+  loudly at parse — delete it and re-run `vendo sync`.
+
 ## 0.5.0
 
 ### Minor Changes
