@@ -445,7 +445,13 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
     light-dark(color-mix(in srgb, var(--vendo-accent) 10%, transparent), color-mix(in srgb, var(--vendo-accent) 16%, transparent)) 30%,
     light-dark(color-mix(in srgb, var(--vendo-accent) 22%, transparent), color-mix(in srgb, var(--vendo-accent) 32%, transparent)) 50%,
     light-dark(color-mix(in srgb, var(--vendo-accent) 10%, transparent), color-mix(in srgb, var(--vendo-accent) 16%, transparent)) 70%);
-  background-size: 200% 100%; animation: fl-glass-shimmer 1.8s linear infinite; }
+  background-size: 200% 100%; }
+/* The sweep is decoration over the tint, and a skeleton can sit on screen for
+   seconds while a plan fills in — reduced motion keeps the placeholder and
+   drops the movement. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-glass-shimmer { animation: fl-glass-shimmer 1.8s linear infinite; }
+}
 @keyframes fl-glass-shimmer { from { background-position: 120% 0; } to { background-position: -80% 0; } }
 /* The approved grid: a view forming — 3 stat tiles, a wide chart, two rows. */
 .fl-glass-grid { display: grid; gap: 8px; margin-top: 12px; grid-template-columns: repeat(3, 1fr); }

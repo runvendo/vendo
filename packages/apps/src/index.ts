@@ -102,6 +102,11 @@ export type {
   CheckingLayer,
   Finding,
 } from "./checking/types.js";
+// The plan→layout function, exported for the same reason as the bench loaders
+// above (the exports map closes deep imports): it is a pure, deterministic
+// function of the public AppPlan, so demo/harness surfaces can render a plan's
+// skeleton without booting the engine.
+export { skeletonFromPlan, type Skeleton } from "./generation/skeleton.js";
 export {
   modelEngine,
   type GeneratedAppDocument,

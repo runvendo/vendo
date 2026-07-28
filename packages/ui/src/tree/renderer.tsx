@@ -28,7 +28,7 @@ import type { InClientVenue, PinDrift } from "../wire-types.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { FluidReveal } from "./fluid-reveal.js";
-import { deriveFormShape, FormingSkeleton } from "./forming-skeleton.js";
+import { deriveFormShape, FormingSkeleton, PendingLeaf } from "./forming-skeleton.js";
 import { InClientMount } from "./host-mount.js";
 import { JailedComponent, type JailFurnishing } from "./jail/JailedComponent.js";
 import { ContainedNotice } from "./notice.js";
@@ -374,6 +374,20 @@ function NodeRenderer(props: NodeRendererProps) {
   }
   if (props.ancestry.has(node.id)) {
     return <ContainedNotice label="Cyclic tree node">{`Node "${node.id}" forms a cycle.`}</ContainedNotice>;
+  }
+  // The plan's skeleton (packages/apps generation/skeleton.ts) prewires one
+  // `pending` placeholder per plan leaf and a fill worker later replaces it
+  // with the real component. Until then the node holds the same shape-derived
+  // shimmer a streaming node holds — the app's real geometry arriving in
+  // pieces, never a spinner over the whole surface. This runs BEFORE component
+  // resolution on purpose: a placeholder for a name that resolves later (an
+  // island the plan declared) shimmers instead of reading as unknown.
+  if (node.props?.pending === true) {
+    return (
+      <div data-vendo-node-id={node.id} data-vendo-pending="" aria-busy="true">
+        <PendingLeaf name={node.component} />
+      </div>
+    );
   }
 
   const ancestry = new Set(props.ancestry);
