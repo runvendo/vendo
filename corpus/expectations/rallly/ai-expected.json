@@ -5,7 +5,7 @@
       "name": "authGetLoginMethod",
       "kind": "trpc",
       "procedure": "auth.getLoginMethod",
-      "risk": "write"
+      "risk": "read"
     },
     {
       "name": "authGetUserPermission",
@@ -71,7 +71,7 @@
       "name": "dashboardStats",
       "kind": "trpc",
       "procedure": "dashboard.stats",
-      "risk": "write"
+      "risk": "read"
     },
     {
       "name": "eventtypesCreate",
@@ -161,7 +161,7 @@
       "name": "pollsInfiniteChronological",
       "kind": "trpc",
       "procedure": "polls.infiniteChronological",
-      "risk": "write"
+      "risk": "read"
     },
     {
       "name": "pollsMake",
@@ -407,7 +407,7 @@
       "name": "getHouseKeeping",
       "method": "GET",
       "path": "/api/house-keeping/{method}",
-      "risk": "read"
+      "risk": "destructive"
     },
     {
       "name": "getIntegrations",
@@ -485,13 +485,13 @@
       "name": "getStripeBuyLicense",
       "method": "GET",
       "path": "/api/stripe/buy-license",
-      "risk": "read"
+      "risk": "write"
     },
     {
       "name": "getStripePortal",
       "method": "GET",
       "path": "/api/stripe/portal",
-      "risk": "read"
+      "risk": "write"
     },
     {
       "name": "postStripeWebhook",
@@ -503,7 +503,7 @@
       "name": "getUpdates",
       "method": "GET",
       "path": "/api/updates",
-      "risk": "read"
+      "risk": "write"
     }
   ]
 }

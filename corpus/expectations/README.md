@@ -207,6 +207,11 @@ judgment the AI pass is scored on:
   the curated `dangerous` flags upgrade to `destructive`; non-HTTP bindings
   keep their hand labels. Replace individual entries with hand-verified
   grades as curation improves — hand labels always beat the derivation.
+  **Curated risk rows are hand-verified against the pinned handler source and
+  are FROZEN.** They are recorded with a `file:line` citation in the repo's
+  `notes.md`; a later model disagreeing with a curated row is a bug report
+  about the model, not a reason to relabel. Change one only by citing a
+  handler line that contradicts the recorded citation.
 - `critical` marks tools that must carry a critical (irreversible) mark. It is
   a curator addition, never derived; the critical check only runs for repos
   that label at least one.

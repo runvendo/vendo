@@ -53,7 +53,7 @@
       "name": "getUsersStripe",
       "method": "GET",
       "path": "/api/users/stripe",
-      "risk": "read"
+      "risk": "write"
     },
     {
       "name": "postWebhooksStripe",
