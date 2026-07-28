@@ -402,7 +402,7 @@ const documentIssues = (app: GeneratedAppDocument): FactIssue[] => {
 /** The document's tree, or undefined when it is not one — the `document`
  *  check reports that, and every other check stays quiet rather than
  *  repeating it. */
-const treeOf = (app: GeneratedAppDocument): Tree | undefined => {
+export const treeOf = (app: GeneratedAppDocument): Tree | undefined => {
   if (app.tree === undefined || app.tree.formatVersion !== VENDO_TREE_FORMAT) return undefined;
   const validation = validateTree(app.tree);
   return validation.ok ? validation.tree : undefined;
