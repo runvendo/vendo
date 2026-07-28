@@ -152,6 +152,76 @@ describe("runStagedExtraction", () => {
     expect(await readArtifact(root, "draft.admin")).toMatchObject({ stage: "draft.admin", error: "rate limited" });
   });
 
+  // Nightly QA 2026-07-28: a real `vendo init` against fixtures/host-app lost 3
+  // of 4 surfaces AND the whole cross-check to this, on drafts whose judgment was
+  // entirely sound — the model simply explained itself at 540–1046 chars. The
+  // field is narration: never persisted to tools.json, never read by any code.
+  // Losing a surface's risk grades over it is the tail wagging the dog.
+  it("an over-long reasoning is clamped, never fatal — the surface keeps its judgment", async () => {
+    const root = await fixture();
+    const { harness } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") {
+        return { tools: draftFor(input.instructions).tools.map((tool) => ({
+          ...tool,
+          risk: "destructive" as const,
+          critical: true,
+          reasoning: "x".repeat(900),
+        })) };
+      }
+      if (stage === "cross-check") return { tools: [] };
+      return { brief: "b" };
+    });
+    const result = await runStagedExtraction({ root, env: {}, harness, tools: TOOLS, appName: "maple" });
+
+    expect(result.notes).toEqual([]);
+    expect(result.draft.tools).toHaveLength(3);
+    // The judgment that actually matters survived, and the narration was cut to
+    // the bound rather than taking the draft down with it.
+    expect(result.draft.tools.every((tool) => tool.risk === "destructive" && tool.critical === true)).toBe(true);
+    expect(result.draft.tools.every((tool) => tool.reasoning?.length === 500)).toBe(true);
+  });
+
+  it("an over-long reasoning does not sink the cross-check amendments either", async () => {
+    const root = await fixture();
+    const { harness } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") {
+        return { tools: [{
+          name: "host_admin_reset",
+          description: "amended: wipes every invoice",
+          risk: "destructive" as const,
+          critical: true,
+          reasoning: "y".repeat(1046),
+        }] };
+      }
+      return { brief: "b" };
+    });
+    const result = await runStagedExtraction({ root, env: {}, harness, tools: TOOLS, appName: "maple" });
+
+    expect(result.notes).toEqual([]);
+    expect(result.draft.tools.find((tool) => tool.name === "host_admin_reset")).toMatchObject({
+      description: "amended: wipes every invoice",
+      critical: true,
+    });
+  });
+
+  it("names the reasoning bound in the draft and cross-check instructions", async () => {
+    const root = await fixture();
+    const { harness, runs } = scriptedHarness((stage, input) => {
+      if (stage === "survey") return SURVEY;
+      if (stage === "draft") return draftFor(input.instructions);
+      if (stage === "cross-check") return { tools: [] };
+      return { brief: "b" };
+    });
+    await runStagedExtraction({ root, env: {}, harness, tools: TOOLS, appName: "maple" });
+    // A cap the model is never told about is a cap it cannot honor.
+    for (const stage of ["draft", "cross-check"]) {
+      expect(runs.find((run) => run.stage === stage)?.input.instructions).toContain("<= 500 chars");
+    }
+  });
+
   it("throws naming the stage when every surface pass fails", async () => {
     const root = await fixture();
     const { harness } = scriptedHarness((stage) => (stage === "survey" ? SURVEY : new Error("model unreachable")));

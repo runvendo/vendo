@@ -20,7 +20,11 @@ export const draftToolSchema = z.object({
   /** Who the handler's own auth admits; non-end-user grades exclude the tool
    *  by default (applyDraft). */
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
-  reasoning: z.string().max(500).optional(),
+  /** Why the model graded the tool this way — narration for the operator, never
+   *  persisted and never read by code. Bounded so a model cannot spend a page on
+   *  it, but CLAMPED rather than rejected: a long explanation is the one thing
+   *  here that must not cost a surface its whole draft. */
+  reasoning: z.string().optional().transform((value) => value?.slice(0, 500)),
 });
 export type DraftTool = z.infer<typeof draftToolSchema>;
 

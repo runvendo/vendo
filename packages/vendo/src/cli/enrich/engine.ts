@@ -41,7 +41,10 @@ export const enrichmentToolProposalSchema = z.object({
   disabled: z.boolean().optional(),
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
-  reasoning: z.string().max(500).optional(),
+  /** Narration for the operator — never persisted, never read by code. Clamped
+   *  rather than rejected for the same reason as the extraction draft's field:
+   *  an over-long explanation must not invalidate sound judgment. */
+  reasoning: z.string().optional().transform((value) => value?.slice(0, 500)),
 });
 export type EnrichmentToolProposal = z.infer<typeof enrichmentToolProposalSchema>;
 
