@@ -206,7 +206,7 @@ describe("vendo sync", () => {
     expect(messages.errors).toContain("warning: failed to push sync report: cloud offline");
   });
 
-  it("exits two and lists every unresolved remixable slot", async () => {
+  it("warns about every unresolved remixable slot as experimental and exits zero", async () => {
     const errors: string[] = [];
     const output = { log() {}, error(message: string) { errors.push(message); } };
     const unresolved = {
@@ -218,7 +218,10 @@ describe("vendo sync", () => {
         hint: "run the host in dev with Vendo mounted to runtime-capture it",
       }],
     };
-    expect(await runSync({ targetDir: ".", output, sync: async () => unresolved })).toBe(2);
+    // Remix is experimental: the failed capture warns loudly but never fails
+    // the host's build.
+    expect(await runSync({ targetDir: ".", output, sync: async () => unresolved })).toBe(0);
+    expect(errors.join("\n")).toContain("experimental");
     expect(errors.join("\n")).toContain("InlineCard [inline-component]");
     expect(errors.join("\n")).toContain("run the host in dev with Vendo mounted to runtime-capture it");
   });
@@ -303,7 +306,7 @@ describe("vendo sync", () => {
     });
   });
 
-  it("--json carries unresolved slots in the report, exits two, and keeps stdout to one object", async () => {
+  it("--json carries unresolved slots in the report, exits zero, and keeps stdout to one object", async () => {
     const messages = captureOutput();
     const unresolved = {
       ...report(),
@@ -315,13 +318,13 @@ describe("vendo sync", () => {
       }],
     };
 
-    expect(await runSync({ targetDir: ".", json: true, output: messages.output, sync: async () => unresolved })).toBe(2);
+    expect(await runSync({ targetDir: ".", json: true, output: messages.output, sync: async () => unresolved })).toBe(0);
 
     expect(messages.logs).toHaveLength(1);
     expect(messages.errors).toHaveLength(0);
     expect(JSON.parse(messages.logs[0]!)).toMatchObject({
-      ok: false,
-      exitCode: 2,
+      ok: true,
+      exitCode: 0,
       report: { unresolvedPins: [{ slot: "InlineCard", reason: "inline-component" }] },
       notes: [],
     });

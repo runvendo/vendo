@@ -133,19 +133,17 @@ async function sync(options: SyncOptions): Promise<number> {
         output.log(`drifted: ${report.pins.drifted.join(", ")} — existing forks stay on the old capture until each owner rebases (POST /apps/:id/rebase-pin or the vendo_apps_rebase_pin agent tool)`);
       }
     }
-    // Unresolved slots fail the run regardless of --strict (silent remix skips
-    // are eliminated), but impact analysis, the report push, and the breaking
-    // gate below still execute so the most severe exit code wins. In --json
-    // mode the human lines are dropped: the pins ride in report.unresolvedPins.
-    let unresolvedExit: 0 | 2 = 0;
-    if (report.unresolvedPins.length > 0) {
-      if (!json) {
-        output.error("unresolved remixable slots:");
-        for (const pin of report.unresolvedPins) {
-          output.error(`  ${pin.slot} [${pin.reason}]: ${pin.hint}`);
-        }
+    // Remix is experimental: unresolved slots warn loudly (slot + reason +
+    // fix hint) but never fail the run — breaking a host's build over a
+    // feature labeled experimental is the wrong contract. When remix
+    // graduates, this returns to a hard exit so the remixable promise is
+    // enforced at dev time. In --json mode the human lines are dropped: the
+    // pins ride in report.unresolvedPins.
+    if (report.unresolvedPins.length > 0 && !json) {
+      output.error("experimental: unresolved remixable slots (remix is experimental — these components cannot be forked until resolved):");
+      for (const pin of report.unresolvedPins) {
+        output.error(`  ${pin.slot} [${pin.reason}]: ${pin.hint}`);
       }
-      unresolvedExit = 2;
     }
 
     const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
@@ -231,9 +229,7 @@ async function sync(options: SyncOptions): Promise<number> {
       }
     }
 
-    // Unresolved slots set the floor; the strict breaking gate overrides with
-    // its own (equal-or-worse) code, so the most severe exit wins.
-    let exitCode: SyncJsonResult["exitCode"] = unresolvedExit;
+    let exitCode: SyncJsonResult["exitCode"] = 0;
     if (options.strict === true && report.breaking.length > 0) {
       if (!json) for (const breaking of report.breaking) output.error(`breaking: ${breaking.tool} ${breaking.change}`);
       const breakingTools = new Set(report.breaking.map((breaking) => breaking.tool));

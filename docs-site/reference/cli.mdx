@@ -216,8 +216,10 @@ When tools changed or broke, sync asks the running dev server which saved
 apps, automations, and grants they impact and prints one `impact:` line per
 tool (or `impact unknown` when no server is reachable). Drifted pins get an
 advisory `drifted:` line. Drift never auto-rebases; each fork's owner
-decides. Unresolved remixable slots are listed and fail the run with exit 2
-regardless of `--strict` (silent remix skips are eliminated).
+decides. Unresolved remixable slots are listed as `experimental:` warnings —
+remix is experimental, so they never fail the run, but silent remix skips are
+still eliminated: every unresolved slot is named with its reason and fix
+hint.
 
 Sync scans exported JSX components referenced by your `<VendoRoot>`
 `components` map and writes `.vendo/catalog.json` (see

@@ -12,6 +12,10 @@ component drifts and rebases as your host code changes; the exact
 registration shapes and capture rules live in the reference section at the
 end.
 
+<Note>Remix — forking a captured component — is **experimental**. Capture
+failures warn instead of failing `vendo sync`, and baseline formats may
+evolve between versions.</Note>
+
 ## Register your components
 
 The shared registry is the current form: one object, keyed by component
@@ -154,7 +158,9 @@ is no reproducible trail to replay.
 `vendo sync` never skips a remixable slot silently. When it cannot follow the
 registration to real source (an inline component, a dynamic import, a path it
 cannot resolve, or source outside the project root), it lists the slot with a
-machine-readable reason and exits non-zero.
+machine-readable reason as an `experimental:` warning — the run still
+succeeds, but that component cannot be forked until the slot is resolved or
+acknowledged.
 
 To capture such a slot at runtime instead, wrap the registration with the
 `remixable` helper and pass the module URL:
