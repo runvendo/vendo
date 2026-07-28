@@ -129,11 +129,20 @@ Two things about a cell are worth knowing:
   default — so without the auto-yes the matrix would only ever measure
   hardenings.
 - it is scored from the judgments file read back off disk, not from the pass's
-  return value, because that file is what the runtime actually merges.
+  return value, because that file is the channel's actual output — the artifact a
+  human reviews and `vendo doctor`/`vendo try` merge. (As of 2026-07-28 the
+  RUNTIME does not merge it: `loadHost` in `packages/actions/src/runtime/registry.ts`
+  reads `tools.json` and `overrides.json` only. So this scores the decision the
+  channel made, which is the thing under test.)
 
 Scored dimensions: risk accuracy against the labels (both directions —
 hardenings and downgrades), critical marks, wake decisions, evidence present on
 every applied judgment, and description-quality proxies.
+
+Two of those columns cannot score against today's labels: no `ai-expected.json`
+in the corpus populates `critical` or `wake`, and no `disabled` tool carries a
+joined label, so `Critical` and `Wake` render `—` everywhere. Fix the labels
+before reading those columns as a verdict.
 
 - Repos default to every one with an `ai-expected.json`; pass names to filter.
 - Models: repeat `--model <id>` (or comma-separate) to build the matrix; each
