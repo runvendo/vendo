@@ -339,6 +339,97 @@ describe("vendo doctor", () => {
     expect(messages.errors.join("\n")).toMatch(/zero live host tools/i);
   });
 
+  it("grades the live-surface check through a judgments.json disable — the layer runtime applies", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [{
+        name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+      }],
+    }));
+    await writeFile(join(root, ".vendo", "judgments.json"), JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: {
+        host_invoices_list: {
+          binding: "GET /api/invoices",
+          fields: { disabled: true },
+          evidence: "the handler requires an admin session",
+        },
+      },
+    }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toMatch(/zero live host tools/i);
+  });
+
+  it("a human overrides.json wake beats a judgments.json disable in the live-surface count", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [{
+        name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+      }],
+    }));
+    await writeFile(join(root, ".vendo", "judgments.json"), JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: {
+        host_invoices_list: {
+          binding: "GET /api/invoices",
+          fields: { disabled: true },
+          evidence: "the handler requires an admin session",
+        },
+      },
+    }));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
+      format: "vendo/overrides@3",
+      tools: { host_invoices_list: { disabled: false } },
+    }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toEqual([]);
+  });
+
+  it("ignores a judgments.json entry whose binding moved (an inert judgment never disables)", async () => {
+    const root = await healthy();
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [{
+        name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
+        binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
+      }],
+    }));
+    await writeFile(join(root, ".vendo", "judgments.json"), JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: {
+        host_invoices_list: {
+          binding: "GET /api/old-invoices",
+          fields: { disabled: true },
+          evidence: "stale — the handler moved",
+        },
+      },
+    }));
+    const messages = output();
+    expect(await doctor({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+      output: messages.sink,
+      telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
+    })).toBe(0);
+    expect(messages.errors).toEqual([]);
+  });
+
   it("checks wiring and performs one live status round-trip", async () => {
     const fetchImpl = successfulProbeFetch();
     expect(await doctor({

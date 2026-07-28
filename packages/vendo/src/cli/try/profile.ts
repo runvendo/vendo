@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  applyJudgment,
   catalogFileSchema,
+  judgmentsFileSchema,
   overridesFileSchema,
   toolsFileSchema,
   type ToolOverride,
@@ -146,20 +148,25 @@ function parseArtifact<Schema extends z.ZodTypeAny>(
   }
 }
 
-/** House override semantics (doctor's live-surface check, the server's tool
- *  wire): overrides.json entries are corrections over tools.json by name. */
+/** House three-layer semantics (doctor's live-surface check, the server's tool
+ *  wire): skeleton ⊕ judgments ⊕ overrides, by name. `applyJudgment` ignores an
+ *  entry whose binding moved and applies the fail-closed audience exclusion;
+ *  the human's overrides.json still corrects last. Queued `pending` loosenings
+ *  are NOT merged — they are inert until a human accepts them. */
 function mergedToolSummaries(
   tools: z.infer<typeof toolsFileSchema> | null,
+  judgments: z.infer<typeof judgmentsFileSchema> | null,
   overrides: z.infer<typeof overridesFileSchema> | null,
 ): TryToolSummary[] {
   const corrections: Record<string, ToolOverride> = overrides?.tools ?? {};
   return (tools?.tools ?? []).map((tool) => {
+    const judged = applyJudgment(tool, judgments?.tools[tool.name]);
     const correction = corrections[tool.name];
     return {
-      name: tool.name,
-      description: correction?.description ?? tool.description,
-      risk: correction?.risk ?? tool.risk,
-      disabled: (correction?.disabled ?? tool.disabled ?? false) === true,
+      name: judged.name,
+      description: correction?.description ?? judged.description,
+      risk: correction?.risk ?? judged.risk,
+      disabled: (correction?.disabled ?? judged.disabled ?? false) === true,
     };
   });
 }
@@ -173,10 +180,11 @@ export async function assembleTryProfile(
   root: string,
   options: AssembleTryProfileOptions = {},
 ): Promise<TryProfile> {
-  const [themeRaw, briefRaw, toolsRaw, overridesRaw, catalogRaw, usecasesRaw, fixturesRaw] = await Promise.all([
+  const [themeRaw, briefRaw, toolsRaw, judgmentsRaw, overridesRaw, catalogRaw, usecasesRaw, fixturesRaw] = await Promise.all([
     readArtifact(root, "theme.json"),
     readArtifact(root, "brief.md"),
     readArtifact(root, "tools.json"),
+    readArtifact(root, "judgments.json"),
     readArtifact(root, "overrides.json"),
     readArtifact(root, "catalog.json"),
     readArtifact(root, "data", "extract", "usecases.json"),
@@ -186,7 +194,11 @@ export async function assembleTryProfile(
   const theme = parseArtifact(themeRaw, vendoThemeSchema);
   const brief = briefRaw === null || briefRaw.trim() === "" ? null : briefRaw.trim();
   const toolsFile = parseArtifact(toolsRaw, toolsFileSchema);
-  const list = mergedToolSummaries(toolsFile, parseArtifact(overridesRaw, overridesFileSchema));
+  const list = mergedToolSummaries(
+    toolsFile,
+    parseArtifact(judgmentsRaw, judgmentsFileSchema),
+    parseArtifact(overridesRaw, overridesFileSchema),
+  );
   const catalog = (parseArtifact(catalogRaw, catalogFileSchema)?.entries ?? []).map((entry) => entry.name);
   const usecasesFile = parseArtifact(usecasesRaw, usecasesFileSchema);
   // Whole parsed entries: usecaseSchema is passthrough, so additive fields a
