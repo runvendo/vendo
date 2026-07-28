@@ -8,15 +8,18 @@ npx vendo init
 ```
 
 The `vendoai` package is a thin alias. The scoped package is the canonical
-install. `vendo init` asks nothing on the happy path. It writes two code
-files — an empty `vendo/registry.tsx` and the catch-all handler wired to
-it — plus two package.json script hooks, extracts your tools and brand
-theme into `.vendo/`, resolves a model key, and prints the one line that is
-yours to paste: the `<VendoRoot components={registry}>` wrap in your
-layout. When it detects your auth provider in package.json it asks once to
-confirm the preset (consent-style, Enter accepts; `--yes` and
-non-interactive runs accept it silently). It never edits code you wrote. Then start your dev server — the agent is live in your app —
-and run `npx vendo doctor` to verify everything with one real model turn.
+install. `vendo init` asks nothing on the happy path. It writes three code
+files — an empty `vendo/registry.tsx`, the catch-all handler wired to it,
+and `vendo/vendo-root.tsx` (the `"use client"` mount that owns the registry
+and theme imports) — plus two package.json script hooks, extracts your
+tools and brand theme into `.vendo/`, and resolves a model key. It also
+mounts `<VendoRoot>` and `<VendoOverlay />` in your layout for you, the one
+edit it makes to a file you wrote; it reports that file in the wired list
+so you can review the diff before committing. When it detects your auth
+provider in package.json it asks once to confirm the preset (consent-style,
+Enter accepts; `--yes` and non-interactive runs accept it silently). Then
+start your dev server — the agent is live in your app — and run
+`npx vendo doctor` to verify everything with one real model turn.
 
 ## Non-interactive runs (agents)
 
