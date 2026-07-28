@@ -13,12 +13,8 @@
     "bench": "node dist/run.js",
     "build": "tsc -p tsconfig.json",
     "demo:capture": "node dist/demo-capture/cli.js",
-    "demo:chips": "node dist/demo-creator/cli.js chips",
-    "demo:create": "node dist/demo-creator/cli.js create",
-    "demo:deploy": "node dist/demo-creator/cli.js deploy",
+    "demo:fix": "node dist/demo-creator/cli.js fix",
     "demo:pipeline": "node dist/demo-creator/cli.js pipeline",
-    "demo:reap": "node dist/demo-creator/cli.js reap",
-    "demo:research": "node dist/demo-creator/cli.js research",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

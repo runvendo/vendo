@@ -2,17 +2,16 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { ResearchReport } from "./research.js";
-import type { RewritePlan } from "./rewrite.js";
+import { demoPaths } from "./demo-folder.js";
 import {
-  buildFixPrompt,
   buildJudgePrompt,
   fidelityThreshold,
+  formatScoresLine,
   judgeDimensions,
   parseJudgeVerdict,
   renderFidelityReport,
-  runJudgeLoop,
-  selectEvidenceImages,
+  runJudge,
+  type CaptureScreensOptions,
   type JudgeVerdict,
 } from "./judge.js";
 
@@ -60,205 +59,122 @@ describe("buildJudgePrompt", () => {
   });
 });
 
-describe("buildFixPrompt", () => {
-  it("names the dimension, the score, and the judge's evidence", () => {
-    const prompt = buildFixPrompt({
-      prospect: "Linear",
-      dimension: "palette",
-      score: { dimension: "palette", score: 4, justification: "accent drifts toward teal" },
-      round: 1,
-    });
-    expect(prompt).toContain("palette");
-    expect(prompt).toContain("4/10");
-    expect(prompt).toContain("accent drifts toward teal");
-    expect(prompt).toContain("NEVER touch the fenced files");
+describe("formatScoresLine", () => {
+  it("prints logo as PASS/FAIL and every other dimension as its score", () => {
+    const verdict = parseJudgeVerdict(verdictJson({ logo: 9, palette: 8, type: 7, layout: 9, copyTone: 8 }));
+    expect(formatScoresLine(verdict)).toBe("logo=PASS palette=8 type=7 layout=9 copyTone=8");
+  });
+
+  it("PASSes logo exactly at the threshold and FAILs one below it", () => {
+    expect(formatScoresLine(parseJudgeVerdict(verdictJson({ logo: fidelityThreshold })))).toContain("logo=PASS");
+    expect(formatScoresLine(parseJudgeVerdict(verdictJson({ logo: fidelityThreshold - 1 })))).toContain("logo=FAIL");
   });
 });
 
-function reportFixture(withOperator: boolean): ResearchReport {
-  return {
-    capturedAt: "2026-07-26T00:00:00.000Z",
-    urls: ["https://linear.app"],
-    operatorScreenshots: withOperator
-      ? [{ file: "operator-1-board.png", provenance: "operator-provided", source: "/tmp/board.png" }]
-      : [],
-    pages: [{
-      url: "https://linear.app",
-      title: "Linear",
-      themeColor: null,
-      favicon: null,
-      botChallenge: false,
-      screenshots: { viewport: "page-1-viewport.png", fullPage: "page-1-full.png" },
-      samples: [],
-      colorRoles: [],
-      fontFaces: [],
-      webfontLinks: [],
-      assets: [],
-    }],
-    palette: { colors: [], fontFamilies: [] },
-    fonts: { families: [], faceSrcs: [], webfontLinks: [] },
-  };
-}
-
-describe("selectEvidenceImages", () => {
-  it("labels operator screenshots and the live capture, operator first, both classes present", async () => {
-    const researchDir = await mkdtemp(path.join(tmpdir(), "vendo-judge-evidence-"));
-    await writeFile(path.join(researchDir, "operator-1-board.png"), "png");
-    await writeFile(path.join(researchDir, "page-1-viewport.png"), "png");
-    const { images, missing } = selectEvidenceImages(reportFixture(true), researchDir);
-    expect(images).toHaveLength(2);
-    expect(images[0]?.label).toContain("operator");
-    expect(images[1]?.label).toContain("live-site");
-    expect(missing).toEqual([]);
-  });
-
-  it("reports each absent evidence class as missing (criterion 36 requires BOTH)", async () => {
-    const researchDir = await mkdtemp(path.join(tmpdir(), "vendo-judge-evidence-"));
-    expect(selectEvidenceImages(reportFixture(true), researchDir).missing)
-      .toEqual(["operator-screenshots", "live-site-capture"]);
-    await writeFile(path.join(researchDir, "operator-1-board.png"), "png");
-    expect(selectEvidenceImages(reportFixture(true), researchDir).missing).toEqual(["live-site-capture"]);
-    await writeFile(path.join(researchDir, "page-1-viewport.png"), "png");
-    expect(selectEvidenceImages(reportFixture(false), researchDir).missing).toEqual(["operator-screenshots"]);
-  });
-});
-
-const plan: RewritePlan = {
-  entity: { name: "Issue", stem: "issues", action: "closeIssue", fields: ["id"], sampleRecordNames: ["Fix onboarding"] },
-  screens: [
-    { slug: "board", route: "/", title: "Board", purpose: "reference clone" },
-    { slug: "backlog", route: "/backlog", title: "Backlog", purpose: "list" },
-  ],
-  nav: ["Inbox"],
-  copyTone: "terse",
-};
-
-describe("runJudgeLoop", () => {
-  async function makeFixture(): Promise<{ repoRoot: string; appDir: string }> {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), "vendo-judge-loop-"));
-    const appDir = path.join(repoRoot, "apps", "demo-linear");
-    const researchDir = path.join(appDir, "RESEARCH");
-    await mkdir(researchDir, { recursive: true });
-    await writeFile(path.join(researchDir, "research.json"), JSON.stringify(reportFixture(true)));
-    await writeFile(path.join(researchDir, "operator-1-board.png"), "png");
-    await writeFile(path.join(researchDir, "page-1-viewport.png"), "png");
-    return { repoRoot, appDir };
+describe("runJudge", () => {
+  async function demoFixture(options: { evidence: boolean }): Promise<string> {
+    const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-judge-"));
+    const paths = demoPaths(demosRepo, "acme");
+    await mkdir(paths.researchDir, { recursive: true });
+    if (options.evidence) {
+      await writeFile(path.join(paths.researchDir, "operator-1-dashboard.png"), "png");
+      await writeFile(path.join(paths.researchDir, "operator-2-invoices.png"), "png");
+    }
+    return demosRepo;
   }
 
-  const baseArgs = { prospect: "Linear", packageName: "demo-linear", plan, port: 3150 };
+  const args = { slug: "acme", prospect: "Acme", baseUrl: "http://127.0.0.1:3400" };
 
-  function stubIo(appDir: string, repoRoot: string, verdicts: string[]) {
+  function stubIo(demosRepo: string, replies: (string | Error)[]) {
     let call = 0;
-    const fixAgents: string[] = [];
-    const io = {
-      appDir,
-      repoRoot,
-      judgeModel: vi.fn(async () => verdicts[Math.min(call++, verdicts.length - 1)] as string),
-      captureScreens: vi.fn(async (options: { outDir: string; routes: string[] }) => {
+    return {
+      demosRepo,
+      judgeModel: vi.fn(async () => {
+        const reply = replies[Math.min(call++, replies.length - 1)];
+        if (reply instanceof Error) throw reply;
+        return reply as string;
+      }),
+      captureScreens: vi.fn(async (options: CaptureScreensOptions) => {
         await mkdir(options.outDir, { recursive: true });
-        return options.routes.map((route) => path.join(options.outDir, `built-${route === "/" ? "home" : route.slice(1)}.png`));
+        return options.routes.map((route) => path.join(options.outDir, `built-${route.replaceAll("/", "-")}.png`));
       }),
-      runAgent: vi.fn(async (job: { name: string }) => {
-        fixAgents.push(job.name);
-        return { name: job.name, code: 0, output: "fixed", costUsd: 1, timedOut: false };
-      }),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
       write: () => {},
       env: {},
     };
-    return { io, fixAgents };
   }
 
-  it("ships on a first-round pass without any fix agents", async () => {
-    const { repoRoot, appDir } = await makeFixture();
-    const { io, fixAgents } = stubIo(appDir, repoRoot, [verdictJson({})]);
-    const result = await runJudgeLoop(baseArgs, io);
-    expect(result.parked).toBe(false);
-    expect(result.rounds).toHaveLength(1);
-    expect(fixAgents).toEqual([]);
+  it("screenshots the running host's demo routes and records the scores", async () => {
+    const demosRepo = await demoFixture({ evidence: true });
+    const io = stubIo(demosRepo, [verdictJson({ palette: 8, type: 7 })]);
+    const result = await runJudge(args, io);
+    expect(io.captureScreens).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: "http://127.0.0.1:3400",
+      routes: ["/acme", "/acme/vendo"],
+    }));
+    expect(result.builtScreens).toHaveLength(2);
+    expect(result.scoresLine).toBe("logo=PASS palette=8 type=7 layout=9 copyTone=9");
+    expect(result.notes).toEqual([]);
     const report = await readFile(result.reportPath, "utf8");
-    expect(report).toContain("**SHIP**");
+    expect(result.reportPath).toBe(path.join(demoPaths(demosRepo, "acme").researchDir, "FIDELITY.md"));
+    expect(report).toContain("| palette | 8 | pass |");
+    expect(report).toContain("2 evidence image(s)");
   });
 
-  it("runs one targeted fix per failing dimension, rebuilds, and re-judges to a pass", async () => {
-    const { repoRoot, appDir } = await makeFixture();
-    const { io, fixAgents } = stubIo(appDir, repoRoot, [verdictJson({ palette: 4, logo: 5 }), verdictJson({})]);
-    const result = await runJudgeLoop(baseArgs, io);
-    expect(result.parked).toBe(false);
-    expect(result.rounds).toHaveLength(2);
-    expect(fixAgents).toEqual(["fix-logo-1", "fix-palette-1"].sort((a, b) =>
-      judgeDimensions.indexOf(a.split("-")[1] as never) - judgeDimensions.indexOf(b.split("-")[1] as never)));
-    expect(io.exec).toHaveBeenCalledWith(["pnpm", "exec", "turbo", "run", "build", "--filter=demo-linear"], { cwd: repoRoot });
-  });
-
-  it("parks after the round cap with a report naming every failing dimension — never ships", async () => {
-    const { repoRoot, appDir } = await makeFixture();
-    const { io } = stubIo(appDir, repoRoot, [verdictJson({ palette: 4 })]);
-    const result = await runJudgeLoop(baseArgs, io);
-    expect(result.parked).toBe(true);
-    expect(result.rounds).toHaveLength(3); // initial + 2 fix rounds, all failing
-    const report = await readFile(result.reportPath, "utf8");
-    expect(report).toContain("PARKED — DO NOT SHIP");
-    expect(report).toContain("palette");
-    expect(report).toContain("scored against 2 evidence image(s)".replace("scored", "Scored"));
+  it("passes both the evidence and the built screens to the model, evidence first", async () => {
+    const demosRepo = await demoFixture({ evidence: true });
+    const io = stubIo(demosRepo, [verdictJson({})]);
+    await runJudge(args, io);
+    const images = io.judgeModel.mock.calls[0]?.[1] as { label: string }[];
+    expect(images.map((image) => image.label)).toEqual([
+      expect.stringContaining("EVIDENCE"),
+      expect.stringContaining("EVIDENCE"),
+      "BUILT screen /acme",
+      "BUILT screen /acme/vendo",
+    ]);
   });
 
   it("rerolls once when the judge returns malformed JSON", async () => {
-    const { repoRoot, appDir } = await makeFixture();
-    const { io } = stubIo(appDir, repoRoot, ['{"logo"::"broken"', verdictJson({})]);
-    const result = await runJudgeLoop(baseArgs, io);
-    expect(result.parked).toBe(false);
+    const demosRepo = await demoFixture({ evidence: true });
+    const io = stubIo(demosRepo, ['{"logo"::"broken"', verdictJson({})]);
+    const result = await runJudge(args, io);
     expect(io.judgeModel).toHaveBeenCalledTimes(2);
+    expect(result.verdict?.pass).toBe(true);
   });
 
-  it("PARKS (never ships) when the operator-screenshot class is missing — criterion 36 needs both", async () => {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), "vendo-judge-noop-"));
-    const appDir = path.join(repoRoot, "apps", "demo-linear");
-    await mkdir(path.join(appDir, "RESEARCH"), { recursive: true });
-    await writeFile(path.join(appDir, "RESEARCH", "research.json"), JSON.stringify(reportFixture(false)));
-    await writeFile(path.join(appDir, "RESEARCH", "page-1-viewport.png"), "png");
-    const { io } = stubIo(appDir, repoRoot, [verdictJson({})]);
-    const result = await runJudgeLoop(baseArgs, io);
-    expect(result.parked).toBe(true);
+  it("ships regardless when the judge model fails outright, recording it as a note", async () => {
+    const demosRepo = await demoFixture({ evidence: true });
+    const io = stubIo(demosRepo, [new Error("Overloaded")]);
+    const result = await runJudge(args, io);
+    expect(result.verdict).toBeUndefined();
+    expect(result.scoresLine).toBe("judge=FAILED");
+    expect(result.notes.join(" ")).toContain("Overloaded");
+    expect(await readFile(result.reportPath, "utf8")).toContain("Overloaded");
+  });
+
+  it("records missing evidence as a NOTE and never parks", async () => {
+    const demosRepo = await demoFixture({ evidence: false });
+    const io = stubIo(demosRepo, [verdictJson({})]);
+    const result = await runJudge(args, io);
     expect(io.judgeModel).not.toHaveBeenCalled();
+    expect(result.verdict).toBeUndefined();
+    expect(result.notes.join(" ")).toContain("RESEARCH/");
     const report = await readFile(result.reportPath, "utf8");
-    expect(report).toContain("PARKED — DO NOT SHIP");
-    expect(report).toContain("operator-screenshots");
-  });
-
-  it("PARKS when the live-site-capture class is missing", async () => {
-    const repoRoot = await mkdtemp(path.join(tmpdir(), "vendo-judge-nolive-"));
-    const appDir = path.join(repoRoot, "apps", "demo-linear");
-    await mkdir(path.join(appDir, "RESEARCH"), { recursive: true });
-    await writeFile(path.join(appDir, "RESEARCH", "research.json"), JSON.stringify(reportFixture(true)));
-    await writeFile(path.join(appDir, "RESEARCH", "operator-1-board.png"), "png");
-    const { io } = stubIo(appDir, repoRoot, [verdictJson({})]);
-    const result = await runJudgeLoop(baseArgs, io);
-    expect(result.parked).toBe(true);
-    const report = await readFile(result.reportPath, "utf8");
-    expect(report).toContain("live-site-capture");
-  });
-
-  it("records verdicts for every round in the fidelity report", async () => {
-    const { repoRoot, appDir } = await makeFixture();
-    const { io } = stubIo(appDir, repoRoot, [verdictJson({ layout: 5 }), verdictJson({})]);
-    const result = await runJudgeLoop(baseArgs, io);
-    const report = await readFile(result.reportPath, "utf8");
-    expect(report).toContain("Round 1 — FAIL (layout)");
-    expect(report).toContain("Round 2 — PASS");
+    expect(report).toContain("NOTE");
+    expect(report).not.toContain("PARK");
   });
 });
 
 describe("renderFidelityReport", () => {
-  it("marks sub-threshold rows as FAIL", () => {
+  it("marks sub-threshold rows as FAIL and lists the notes", () => {
     const verdict: JudgeVerdict = parseJudgeVerdict(verdictJson({ type: 3 }));
     const report = renderFidelityReport({
       prospect: "Linear",
-      rounds: [{ round: 1, verdict, builtScreens: ["/x/built-home.png"] }],
-      parked: true,
+      verdict,
+      builtScreens: ["/x/built-acme.png"],
       evidence: [{ label: "EVIDENCE operator screenshot", path: "/x/op.png" }],
+      notes: ["logo evidence was missing"],
     });
     expect(report).toContain("| type | 3 | FAIL |");
-    expect(report).toContain("PARKED");
+    expect(report).toContain("NOTE: logo evidence was missing");
   });
 });

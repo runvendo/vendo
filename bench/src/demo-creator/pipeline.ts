@@ -1,59 +1,82 @@
-import { rm } from "node:fs/promises";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { runDeriveChips, type DeriveChipsIo, type DeriveChipsResult } from "./chips.js";
-import { displayAppPath, runDemoCreate, validateProspectUrl, type DemoCreateArgs, type DemoCreateResult } from "./create.js";
-import { defaultExec, runDemoDeploy, type DemoDeployArgs, type DemoDeployResult, type DeployIo, type ExecFn } from "./deploy.js";
-import { runFinalGate, type FinalGateArgs, type FinalGateIo, type FinalGateResult } from "./gate.js";
-import { demoPassword } from "./inject-auth.js";
-import { runJudgeLoop, type JudgeLoopArgs, type JudgeLoopIo, type JudgeLoopResult } from "./judge.js";
-import { runDemoResearch, type DemoResearchArgs, type DemoResearchResult } from "./research.js";
-import { runRewrite, type RewriteArgs, type RewriteIo, type RewriteResult } from "./rewrite.js";
-import { appInstallCommand, defaultDemoScratchDir } from "./scratch.js";
+import { runAssemble, type AssembleIo, type AssembleResult } from "./assemble.js";
+import { runBrief, type BriefIo, type BriefResult } from "./brief.js";
+import { runBuild, type BuildIo, type BuildResult } from "./build.js";
+import { demoPaths } from "./demo-folder.js";
+import { defaultDemosRepo, ensureDemosRepo } from "./demos-repo.js";
+import { runEvidence, type EvidenceIo, type EvidenceResult } from "./evidence.js";
+import { defaultExec, type ExecFn } from "./exec.js";
+import { runJudge, type JudgeIo, type JudgeResult } from "./judge.js";
+import { runShip, type ShipIo, type ShipResult } from "./ship.js";
 
 /**
- * `demo:pipeline` — the one-command drive of the whole demo-creator flow:
- * validate → create → install → research (→ rewrite → judge → deploy → final
- * gate, added stage by stage). Two properties the individual commands can't
- * give on their own:
+ * `demo:pipeline` — Slack screenshots to a live demo in one command.
  *
- *  - Fail-fast with a clean abort: the prospect URL is probed BEFORE anything
- *    touches disk, and an early-stage failure (create/install/research)
- *    removes the half-made app dir, so a dead run leaves no app dir, no
- *    deploy, and no registry row behind.
+ * Six stages, each writing into ONE demo folder inside the vendo-demos host
+ * repo: evidence → brief → build → assemble → judge → ship. Two properties no
+ * individual stage can give:
+ *
  *  - Per-stage observability: every stage appends {stage, startedAt, ms} to
- *    <app>/timings.json and logs a one-line marker — the empirical basis for
- *    the ≤45-minute budget.
+ *    RESEARCH/timings.json and logs a one-line marker — the empirical basis
+ *    for the 20-minute budget.
+ *  - One machine-readable outcome: `LIVE: <url>` on success (exit 0),
+ *    `FAILED: <one-line cause>` otherwise (non-zero). The Slack driver reads
+ *    exactly those two lines, plus `SCORES: ...`.
  */
+
+/** Local port for the assemble/judge boot — never 3000 (the capture harness
+ * holds a shared lock on it). Not a flag: the operator surface is deliberately
+ * three arguments wide. */
+export const localHostPort = 3150;
+
+/** How long a run may take before it gives up. The target is 20 minutes; this
+ * is the outer bound that stops a wedged `railway up` from running all night. */
+export const defaultCapMs = 40 * 60 * 1000;
+
+/** Days from now a generated demo expires when --expires is not given. */
+const defaultExpiryDays = 21;
 
 export interface DemoPipelineArgs {
   id: string;
   prospect: string;
-  url: string;
-  ctaUrl?: string;
-  targetDir: string;
-  screenshots?: string[];
-  /** Markdown file of authoritative operator instructions (see create.ts). */
+  /** Absolute paths to the operator's reference screenshots. At least one. */
+  screenshots: string[];
+  url?: string;
+  ctaUrl: string;
+  /** UTC instant, derived from --expires (a date) or defaulted 21 days out. */
+  expiresAt: string;
   notes?: string;
-  /** Stop after the local stages (no Railway, no registry row). */
-  skipDeploy: boolean;
-  /** Skip the local demo-beats GIF capture (fast iteration runs only). */
-  skipCapture: boolean;
-  /** Local port for the judge/capture boots — never 3000 (capture-harness lock). */
-  port: number;
+  demosRepo: string;
+  /** Stop after judge: nothing is committed, pushed or deployed. */
+  skipShip: boolean;
 }
 
-const valueOptions = new Set(["--id", "--prospect", "--url", "--cta-url", "--target-dir", "--screenshots", "--port", "--notes"]);
-const flagOptions = new Set(["--skip-deploy", "--skip-capture"]);
+const valueOptions = new Set(["--id", "--prospect", "--screenshots", "--url", "--cta-url", "--expires", "--notes", "--demos-repo"]);
+const flagOptions = new Set(["--skip-ship"]);
 
-export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
+/** `--expires 2026-08-31` → the UTC instant demo.config.json wants. */
+export function parseExpires(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`--expires must be a plain date, e.g. 2026-08-31 (received ${value})`);
+  }
+  const instant = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(instant.getTime())) throw new Error(`--expires is not a real date: ${value}`);
+  return instant.toISOString();
+}
+
+export function defaultExpiresAt(now = new Date()): string {
+  return new Date(now.getTime() + defaultExpiryDays * 24 * 60 * 60 * 1000).toISOString();
+}
+
+export function parseDemoPipelineArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): DemoPipelineArgs {
   const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
   const options = new Map<string, string>();
   const flags = new Set<string>();
   for (let index = 0; index < normalizedArgv.length; index += 1) {
     const option = normalizedArgv[index];
-    if (!option?.startsWith("--")) throw new Error(`Unexpected argument: ${option ?? ""}`);
+    if (option?.startsWith("--") !== true) throw new Error(`Unexpected argument: ${option ?? ""}`);
     if (flagOptions.has(option)) {
       flags.add(option);
       continue;
@@ -65,335 +88,255 @@ export function parseDemoPipelineArgs(argv: string[]): DemoPipelineArgs {
     index += 1;
   }
   const id = options.get("--id");
-  if (id === undefined) throw new Error("--id is required");
+  if (id === undefined) throw new Error("--id is required (the demo slug)");
   const prospect = options.get("--prospect");
   if (prospect === undefined) throw new Error("--prospect is required");
-  const url = options.get("--url");
-  if (url === undefined) throw new Error("--url is required (the prospect site the pipeline researches)");
-  const ctaUrl = options.get("--cta-url");
-  const rawPort = options.get("--port");
-  const port = rawPort === undefined ? 3150 : Number(rawPort);
-  if (!Number.isInteger(port) || port <= 0) throw new Error(`--port must be a positive integer (received ${rawPort})`);
-  if (port === 3000) throw new Error("--port 3000 is reserved for the capture harness's shared lock — pick another port");
   const rawScreenshots = options.get("--screenshots");
-  let screenshots: string[] | undefined;
-  if (rawScreenshots !== undefined) {
-    screenshots = rawScreenshots.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
-    if (screenshots.length === 0) throw new Error("--screenshots needs at least one image path (comma-separated)");
+  if (rawScreenshots === undefined) {
+    throw new Error("--screenshots is required (comma-separated absolute paths to the prospect's real product screenshots)");
   }
+  const screenshots = rawScreenshots.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
+  if (screenshots.length === 0) throw new Error("--screenshots needs at least one image path (comma-separated)");
+  const expires = options.get("--expires");
+  const url = options.get("--url");
+  const notes = options.get("--notes");
   return {
     id,
     prospect,
-    url,
-    targetDir: options.get("--target-dir") ?? defaultDemoScratchDir(),
-    skipDeploy: flags.has("--skip-deploy"),
-    skipCapture: flags.has("--skip-capture"),
-    port,
-    ...(ctaUrl === undefined ? {} : { ctaUrl }),
-    ...(screenshots === undefined ? {} : { screenshots }),
-    ...(options.get("--notes") === undefined ? {} : { notes: options.get("--notes") as string }),
+    screenshots,
+    ctaUrl: options.get("--cta-url") ?? "https://cal.com/yousefhelal",
+    expiresAt: expires === undefined ? defaultExpiresAt() : parseExpires(expires),
+    demosRepo: options.get("--demos-repo") ?? defaultDemosRepo(env),
+    skipShip: flags.has("--skip-ship"),
+    ...(url === undefined ? {} : { url }),
+    ...(notes === undefined ? {} : { notes }),
   };
 }
 
-/** A parked run: fidelity stayed below the bar after every fix round. The
- * evidence (FIDELITY.md, judge screenshots, the app dir) is kept; nothing is
- * deployed. Callers exit non-zero but should NOT treat this as a crash. */
-export class DemoParkedError extends Error {
-  readonly reportPath: string;
-  constructor(message: string, reportPath: string) {
-    super(message);
-    this.name = "DemoParkedError";
-    this.reportPath = reportPath;
+/**
+ * Fails a run in the first second rather than the fifteenth minute.
+ *
+ * Every credential here is needed by a LATER stage, and each one fails in a
+ * shape that looks like a demo problem instead of a setup problem: no
+ * ANTHROPIC_API_KEY and the brief's vision call 401s; no key on the host and
+ * the smoke turn dies as a "hard error", losing a demo that was fine.
+ */
+export function preflight(env: NodeJS.ProcessEnv): void {
+  const missing: string[] = [];
+  if ((env.ANTHROPIC_API_KEY ?? "") === "") missing.push("ANTHROPIC_API_KEY (the brief, the judge and the claude CLI build agents)");
+  if ((env.CONTEXT_DEV_API_KEY ?? "") === "") missing.push("CONTEXT_DEV_API_KEY (brand evidence — in Infisical)");
+  if ((env.ANTHROPIC_API_KEY ?? "") === "" && (env.VENDO_API_KEY ?? "") === "") {
+    missing.push("ANTHROPIC_API_KEY or VENDO_API_KEY (the host needs one to answer the smoke turn)");
+  }
+  if (missing.length > 0) {
+    throw new Error(`missing credential(s): ${missing.join("; ")} — source the Flowlet .env before running`);
   }
 }
 
-// The fail-fast URL probe lives in create.ts (criterion 33 binds it to
-// demo:create itself); the pipeline re-runs it as its own first stage.
-export { validateProspectUrl };
-
-// ---------------------------------------------------------------------------
-// Stage runner
-// ---------------------------------------------------------------------------
-
-/** One row of <app>/timings.json — the per-stage wall-clock evidence. */
+/** One row of RESEARCH/timings.json — the per-stage wall-clock evidence. */
 export interface StageTiming {
   stage: string;
   startedAt: string;
   ms: number;
 }
 
-/** Stage seams so unit tests drive the pipeline without a browser/Railway. */
+/** Stage seams so unit tests drive the pipeline without a model, a browser or
+ * Railway. Each entry is the stage module's own entry point. */
 export interface PipelineStages {
-  create: (args: DemoCreateArgs, options: { repoRoot: string; fetchImpl?: typeof fetch; signal?: AbortSignal }) => Promise<DemoCreateResult>;
-  research: (args: DemoResearchArgs, options: { repoRoot: string; signal?: AbortSignal }) => Promise<DemoResearchResult>;
-  rewrite: (args: RewriteArgs, io: RewriteIo) => Promise<RewriteResult>;
-  chips: (args: { appDir: string; prospect?: string }, io: DeriveChipsIo) => Promise<DeriveChipsResult>;
-  judge: (args: JudgeLoopArgs, io: JudgeLoopIo) => Promise<JudgeLoopResult>;
-  deploy: (args: DemoDeployArgs, io: DeployIo) => Promise<DemoDeployResult>;
-  gate: (args: FinalGateArgs, io: FinalGateIo) => Promise<FinalGateResult>;
+  ensureRepo: typeof ensureDemosRepo;
+  evidence: (args: Parameters<typeof runEvidence>[0], io: EvidenceIo) => Promise<EvidenceResult>;
+  brief: (args: Parameters<typeof runBrief>[0], io: BriefIo) => Promise<BriefResult>;
+  build: (args: Parameters<typeof runBuild>[0], io: BuildIo) => Promise<BuildResult>;
+  assemble: (args: Parameters<typeof runAssemble>[0], io: AssembleIo) => Promise<AssembleResult>;
+  judge: (args: Parameters<typeof runJudge>[0], io: JudgeIo) => Promise<JudgeResult>;
+  ship: (args: Parameters<typeof runShip>[0], io: ShipIo) => Promise<ShipResult>;
 }
 
 const defaultStages: PipelineStages = {
-  create: runDemoCreate,
-  research: runDemoResearch,
-  rewrite: runRewrite,
-  chips: runDeriveChips,
-  judge: runJudgeLoop,
-  deploy: runDemoDeploy,
-  gate: runFinalGate,
+  ensureRepo: ensureDemosRepo,
+  evidence: runEvidence,
+  brief: runBrief,
+  build: runBuild,
+  assemble: runAssemble,
+  judge: runJudge,
+  ship: runShip,
 };
 
 export interface PipelineIo {
-  repoRoot: string;
   stages?: PipelineStages;
-  fetchImpl?: typeof fetch;
   exec?: ExecFn;
   write?: (line: string) => void;
-  /** Pipeline-wide wall-clock hard cap (default 2h). Past the deadline no
-   * further stage starts: the run PARKS with named gaps and never deploys. */
+  env?: NodeJS.ProcessEnv;
+  /** Wall-clock hard cap; past it no further stage starts and in-flight
+   * children are killed through the threaded signal. */
   capMs?: number;
-  /** Pause between deploy retries (default 30s; tests shrink it). */
-  deployRetryWaitMs?: number;
 }
-
-/** The contract's hard cap: a run that hasn't shipped in 2 hours parks. */
-export const defaultCapMs = 2 * 60 * 60 * 1000;
 
 export interface DemoPipelineResult {
-  appDir: string;
-  appPath: string;
+  slug: string;
+  demoDir: string;
   timings: StageTiming[];
-  rewrite: RewriteResult;
-  judge: JudgeLoopResult;
-  /** Absent with --skip-capture. */
-  gifPath?: string;
-  /** Absent with --skip-deploy. */
-  deploy?: DemoDeployResult;
-  gate?: FinalGateResult;
-  demoUrl?: string;
+  judge: JudgeResult;
+  scoresLine: string;
+  /** Absent with --skip-ship. */
+  ship?: ShipResult;
+  liveUrl?: string;
 }
 
-export function timingsPath(appDir: string): string {
-  return path.join(appDir, "timings.json");
-}
-
-export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo): Promise<DemoPipelineResult> {
-  const stages = io.stages ?? defaultStages;
-  const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
-
-  // The cap is a run-level AbortController: when it fires, every in-flight
-  // child process (creator agents, railway up, capture, builds) is killed via
-  // the threaded signal — the losing stage is CANCELLED, not just abandoned,
-  // so nothing (least of all a deploy) can complete after the park.
-  const capController = new AbortController();
-  const capSignal = capController.signal;
-  const baseExec = io.exec ?? defaultExec;
-  const exec: ExecFn = (command, options) => baseExec(command, { signal: capSignal, ...options });
-
-  const timings: StageTiming[] = [];
-  let appDir: string | undefined;
-  // Failures in create/install/research abort clean (nothing worth keeping);
-  // once the creative rewrite starts, the evidence trail is the point — later
-  // failures leave the app dir in place for the park report.
-  let cleanupOnAbort = true;
-
-  const deadline = Date.now() + (io.capMs ?? defaultCapMs);
-  const capMinutes = Math.round((io.capMs ?? defaultCapMs) / 60000);
-  const capTimer = setTimeout(() => capController.abort(new Error(`the ${capMinutes}-minute wall-clock cap fired`)), Math.max(0, deadline - Date.now()));
-  capTimer.unref?.();
-  const plannedStages = ["validate", "create", "install", "research", "rewrite", "chips", "judge", "capture", "deploy", "final-gate"];
-  const stageCounts = new Map<string, number>();
-
-  const parkAtCap = (context: string): DemoParkedError => {
-    const done = new Set(timings.map((row) => row.stage.split(":")[0]?.split("#")[0]));
-    const remaining = plannedStages.filter((planned) => !done.has(planned));
-    const gaps = `completed: ${[...done].join(", ") || "(none)"}; not run: ${remaining.join(", ")}`;
-    const reportPath = appDir === undefined ? "(no app dir — nothing was created)" : timingsPath(appDir);
-    return new DemoParkedError(
-      `PARKED at the ${capMinutes}-minute wall-clock cap ${context} — ${gaps}. Nothing was deployed. Timings: ${reportPath}`,
-      reportPath,
-    );
-  };
-
-  const stage = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
-    // The hard cap bounds the RUN, not just stage starts: a stage is raced
-    // against the deadline and the run parks mid-stage when it fires
-    // (criterion 34's 2h cap — deploy can never be reached past it).
-    if (Date.now() > deadline) throw parkAtCap(`before stage "${name}"`);
-    // Distinct row per occurrence: a retried/repeated stage gets "#n" so the
-    // timing table stays one honest row per thing that actually ran.
-    const count = (stageCounts.get(name) ?? 0) + 1;
-    stageCounts.set(name, count);
-    const rowName = count === 1 ? name : `${name}#${count}`;
+/** The stage runner: timings, markers, and a cap that TERMINATES rather than
+ * merely stops awaiting. */
+export function createStageRunner(options: {
+  timings: StageTiming[];
+  timingsPath: () => string | undefined;
+  write: (line: string) => void;
+  deadline: number;
+  signal: AbortSignal;
+  capFired: (context: string) => Error;
+}) {
+  return async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+    if (Date.now() > options.deadline) throw options.capFired(`before stage "${name}"`);
     const startedAt = new Date().toISOString();
     const t0 = performance.now();
-    write(`[pipeline] ${rowName} started`);
-    let onCapAbort: (() => void) | undefined;
+    options.write(`[pipeline] ${name} started`);
+    let onAbort: (() => void) | undefined;
     try {
-      const capFiredMidStage = new Promise<never>((_resolve, reject) => {
-        onCapAbort = () => reject(parkAtCap(`during stage "${rowName}" (aborted mid-stage)`));
-        if (capSignal.aborted) onCapAbort();
-        else capSignal.addEventListener("abort", onCapAbort, { once: true });
+      const capRace = new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(options.capFired(`during stage "${name}"`));
+        if (options.signal.aborted) onAbort();
+        else options.signal.addEventListener("abort", onAbort, { once: true });
       });
       const stagePromise = fn();
-      // The aborted stage's own late rejection (killed subprocess etc.) is
-      // expected noise once the park has won the race.
+      // The aborted stage's own late rejection (killed subprocess) is expected
+      // noise once the cap has won the race.
       void stagePromise.catch(() => undefined);
-      return await Promise.race([stagePromise, capFiredMidStage]);
+      return await Promise.race([stagePromise, capRace]);
     } finally {
-      if (onCapAbort !== undefined) capSignal.removeEventListener("abort", onCapAbort);
+      if (onAbort !== undefined) options.signal.removeEventListener("abort", onAbort);
       const ms = Math.round(performance.now() - t0);
-      timings.push({ stage: rowName, startedAt, ms });
-      write(`[pipeline] ${rowName} finished in ${ms}ms`);
-      if (appDir !== undefined) {
-        await writeFile(timingsPath(appDir), `${JSON.stringify(timings, null, 2)}\n`).catch(() => undefined);
+      options.timings.push({ stage: name, startedAt, ms });
+      options.write(`[pipeline] ${name} finished in ${ms}ms`);
+      const target = options.timingsPath();
+      if (target !== undefined) {
+        await mkdir(path.dirname(target), { recursive: true }).catch(() => undefined);
+        await writeFile(target, `${JSON.stringify(options.timings, null, 2)}\n`).catch(() => undefined);
       }
     }
   };
+}
 
+const plannedStages = ["repo", "evidence", "brief", "build", "assemble", "judge", "ship"];
+
+export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {}): Promise<DemoPipelineResult> {
+  const stages = io.stages ?? defaultStages;
+  const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
+  const env = io.env ?? process.env;
+  const paths = demoPaths(args.demosRepo, args.id);
+
+  const capController = new AbortController();
+  const signal = capController.signal;
+  const baseExec = io.exec ?? defaultExec;
+  const exec: ExecFn = (command, options) => baseExec(command, { signal, ...options });
+
+  const timings: StageTiming[] = [];
+  const capMs = io.capMs ?? defaultCapMs;
+  const deadline = Date.now() + capMs;
+  const capTimer = setTimeout(
+    () => capController.abort(new Error(`the ${Math.round(capMs / 60000)}-minute wall-clock cap fired`)),
+    Math.max(0, capMs),
+  );
+  capTimer.unref?.();
+
+  const capFired = (context: string): Error => {
+    const done = new Set(timings.map((row) => row.stage));
+    const remaining = plannedStages.filter((planned) => !done.has(planned));
+    return new Error(
+      `the ${Math.round(capMs / 60000)}-minute wall-clock cap fired ${context} — completed: ${[...done].join(", ") || "(none)"}; not run: ${remaining.join(", ")}`,
+    );
+  };
+
+  const runStage = createStageRunner({
+    timings,
+    // The demo folder does not exist until the evidence stage creates it; the
+    // repo stage's row lands on the next write.
+    timingsPath: () => paths.timings,
+    write,
+    deadline,
+    signal,
+    capFired,
+  });
+
+  let host: AssembleResult["host"] | undefined;
   try {
-    // Fail-fast: nothing exists yet, so an unreachable prospect aborts with
-    // no app dir, no deploy, no registry row (criterion 33).
-    await stage("validate", () => validateProspectUrl(args.url, { fetchImpl: io.fetchImpl }));
+    await runStage("repo", () => stages.ensureRepo(args.demosRepo, { exec, write, signal }));
 
-    const created = await stage("create", () => stages.create({
-      id: args.id,
-      prospect: args.prospect,
-      ctaUrl: args.ctaUrl ?? "https://cal.com/yousefhelal",
-      targetDir: args.targetDir,
-      url: args.url,
-      ...(args.screenshots === undefined ? {} : { screenshots: args.screenshots }),
-      ...(args.notes === undefined ? {} : { notes: args.notes }),
-    }, { repoRoot: io.repoRoot, signal: capSignal, ...(io.fetchImpl === undefined ? {} : { fetchImpl: io.fetchImpl }) }));
-    appDir = created.appDir;
-
-    // A scratch clone installs its own deps (registry + its vendored
-    // @vendoai tarballs); an in-repo one relinks the workspace.
-    await stage("install", async () => {
-      const install = appInstallCommand({ repoRoot: io.repoRoot, appDir: appDir as string });
-      const result = await exec(install.command, { cwd: install.cwd });
-      if (result.code !== 0) {
-        throw new Error(`"pnpm install" in "${install.cwd}" failed (exit ${result.code}):\n${result.stderr || result.stdout}`);
-      }
-    });
-
-    await stage("research", () => stages.research(
-      { app: appDir as string, urls: [args.url] },
-      { repoRoot: io.repoRoot, signal: capSignal },
+    const evidence = await runStage("evidence", () => stages.evidence(
+      {
+        slug: args.id,
+        prospect: args.prospect,
+        screenshots: args.screenshots,
+        ...(args.url === undefined ? {} : { url: args.url }),
+      },
+      { demosRepo: args.demosRepo, write },
     ));
 
-    cleanupOnAbort = false;
-    const rewrite = await stages.rewrite(
-      { prospect: args.prospect, url: args.url, packageName: created.packageName },
+    const brief = await runStage("brief", () => stages.brief(
       {
-        repoRoot: io.repoRoot,
-        appDir,
-        write,
-        runStage: stage,
-        exec,
-        signal: capSignal,
+        slug: args.id,
+        prospect: args.prospect,
+        ...(args.url === undefined ? {} : { url: args.url }),
+        ...(args.notes === undefined ? {} : { notes: args.notes }),
       },
-    );
-
-    // Pills, derived from the demo's OWN tool surface. Runs AFTER the rewrite
-    // because .vendo/tools.json is only the prospect's surface once the
-    // rewrite's build has re-synced it from the rewritten openapi.json. A
-    // failed derivation must not sink a good demo: the beats the rewrite
-    // already wrote stay, and the run continues.
-    await stage("chips", () => stages.chips(
-      { appDir: appDir as string, prospect: args.prospect },
-      { write },
-    ).catch((error) => {
-      write(`[chips] derivation failed, keeping the rewrite's beats (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`);
-      return undefined;
-    }));
-
-    // The judge loop parks rather than throwing: a parked run is a verdict
-    // with evidence, not a crash — but it must never reach deploy.
-    const judge = await stages.judge(
-      { prospect: args.prospect, packageName: created.packageName, plan: rewrite.plan, port: args.port },
-      {
-        appDir,
-        repoRoot: io.repoRoot,
-        write,
-        runStage: stage,
-        exec,
-        signal: capSignal,
-      },
-    );
-    if (judge.parked) {
-      throw new DemoParkedError(
-        `PARKED below the fidelity bar — see ${judge.reportPath} for per-dimension scores. Nothing was deployed.`,
-        judge.reportPath,
-      );
-    }
-
-    // Repo-relative for an in-repo app, absolute for a scratch clone — the
-    // shape every downstream `--app`/`--host-config` consumer accepts.
-    const appPath = displayAppPath(io.repoRoot, appDir);
-
-    // Behavior verification + the GIF deliverable: the demo-beats capture
-    // (playbook §2.8) boots the app locally, runs every beat in one recording,
-    // and FAILS unless each declared expectation visibly delivered.
-    let gifPath: string | undefined;
-    if (!args.skipCapture) {
-      const runId = `${args.id}-verify`;
-      await stage("capture", async () => {
-        const capture = await exec([
-          "pnpm", "--filter", "@vendoai/bench", "demo:capture", "--",
-          "demo-beats", "--host-config", appPath, "--run-id", runId, "--port", String(args.port + 1),
-        ], { cwd: io.repoRoot });
-        if (capture.code !== 0) {
-          throw new Error(`demo-beats capture failed (exit ${capture.code}) — a declared beat did not deliver:\n${(capture.stderr || capture.stdout).slice(-3000)}`);
-        }
-        // The verification consumed the demo's own capped turns (VERIFY.md §5).
-        await rm(path.join(appDir as string, ".vendo", "data", "demo-caps.json"), { force: true }).catch(() => undefined);
-      });
-      gifPath = path.join(io.repoRoot, "bench", "demo-capture", "output", runId, `demo-beats-${args.id}.gif`);
-    }
-
-    if (args.skipDeploy) {
-      write("[pipeline] --skip-deploy: stopping after the local stages");
-      return { appDir, appPath, timings, rewrite, judge, ...(gifPath === undefined ? {} : { gifPath }) };
-    }
-
-    const routerUrl = "https://demos.vendo.run";
-    const deployArgs: DemoDeployArgs = { app: appPath, project: "vendo-demos", routerUrl, skipRegistry: false, dryRun: false };
-    const deploy = await stage("deploy", async () => {
-      // Known transient `railway up` TLS flake (BadRecordMac) — live runs
-      // measured ~80% failure per attempt on a bad network night, so retry
-      // with pauses; demo:deploy is idempotent and the 2h cap bounds the run.
-      for (let attempt = 1; ; attempt += 1) {
-        try {
-          return await stages.deploy(deployArgs, { repoRoot: io.repoRoot, write, exec });
-        } catch (error) {
-          write(`[pipeline] deploy attempt ${attempt} failed (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`);
-          if (attempt >= 6) throw error;
-          await new Promise((resolve) => setTimeout(resolve, io.deployRetryWaitMs ?? 30_000));
-        }
-      }
-    });
-
-    const demoUrl = `${routerUrl}/${args.id}`;
-    const gate = await stage("final-gate", () => stages.gate(
-      {
-        demoUrl,
-        appDir: appDir as string,
-        outDir: path.join(appDir as string, "RESEARCH", "gate"),
-        demoPassword: demoPassword(args.id, process.env),
-      },
-      { write, signal: capSignal },
+      { demosRepo: args.demosRepo, write, env, evidence },
     ));
 
-    return { appDir, appPath, timings, rewrite, judge, deploy, gate, demoUrl, ...(gifPath === undefined ? {} : { gifPath }) };
-  } catch (error) {
-    // Early-stage abort keeps the repo pristine. Parks (cap, judge) and later
-    // stages keep the app dir — the evidence IS the park report's substance.
-    if (appDir !== undefined && cleanupOnAbort && !(error instanceof DemoParkedError)) {
-      await rm(appDir, { recursive: true, force: true }).catch(() => undefined);
+    const built = await runStage("build", () => stages.build(
+      {
+        slug: args.id,
+        prospect: args.prospect,
+        ctaUrl: args.ctaUrl,
+        expiresAt: args.expiresAt,
+        brief: brief.brief,
+        theme: brief.theme,
+      },
+      { demosRepo: args.demosRepo, write, env, exec, signal },
+    ));
+
+    // The smoke turn plays the demo's OWN first beat: if the beat a prospect
+    // will click errors or never settles, the demo is broken regardless of how
+    // it looks. Content is not judged here (that is stage 5's job).
+    const smokePrompt = built.beats[0]?.prompt ?? `Show me an overview of the ${args.prospect} data in this workspace.`;
+    const assembled = await runStage("assemble", () => stages.assemble(
+      { slug: args.id, port: localHostPort, smokePrompt },
+      { demosRepo: args.demosRepo, write, env, exec, signal },
+    ));
+    host = assembled.host;
+
+    const judge = await runStage("judge", () => stages.judge(
+      { slug: args.id, prospect: args.prospect, baseUrl: assembled.host.baseUrl },
+      { demosRepo: args.demosRepo, write, env, signal },
+    ));
+    const scoresLine = judge.scoresLine;
+    write(`SCORES: ${scoresLine}`);
+
+    // Free the port before the ship stage: nothing after this needs the local
+    // host, and a leaked `next start` would hold 3150 for the next run.
+    await host.stop().catch(() => undefined);
+    host = undefined;
+
+    if (args.skipShip) {
+      write("[pipeline] --skip-ship: stopping after judge (nothing committed, pushed or deployed)");
+      return { slug: args.id, demoDir: paths.root, timings, judge, scoresLine };
     }
-    throw error;
+
+    const shipped = await runStage("ship", () => stages.ship(
+      { slug: args.id, prospect: args.prospect },
+      { demosRepo: args.demosRepo, write, env, exec, signal },
+    ));
+    return { slug: args.id, demoDir: paths.root, timings, judge, scoresLine, ship: shipped, liveUrl: shipped.liveUrl };
   } finally {
     clearTimeout(capTimer);
+    // One dev server, reaped by whoever started it — including on the failure
+    // path, where an orphaned host would hold the port for every later run.
+    if (host !== undefined) await host.stop().catch(() => undefined);
   }
 }

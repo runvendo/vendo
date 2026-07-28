@@ -114,7 +114,7 @@ async function approveIfPresent(page: Page): Promise<boolean> {
   return false;
 }
 
-async function sendPrompt(page: Page, prompt: string): Promise<{ assistantTurns: number }> {
+export async function sendPrompt(page: Page, prompt: string): Promise<{ assistantTurns: number }> {
   const assistantTurns = await page.locator('article[data-role="assistant"]').count();
   const composer = page.locator('form[aria-label="Message composer"]');
   const userTurns = await page.locator('article[data-role="user"]').count();

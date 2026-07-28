@@ -1,0 +1,255 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { createWriteStream } from "node:fs";
+import { mkdir, readFile } from "node:fs/promises";
+import { createConnection } from "node:net";
+import path from "node:path";
+import { chromium } from "@playwright/test";
+import { sendPrompt, waitForTurn } from "../demo-capture/capture.js";
+import { genManifestScript, hostDir } from "./demo-folder.js";
+import { defaultExec, firstLine, type ExecFn } from "./exec.js";
+
+/**
+ * Stage 4's plumbing: drive the vendo-demos HOST (a foreign checkout, not this
+ * workspace) through gen-manifest → build → boot → one smoke turn.
+ *
+ * Every command is data ({@link defaultHostCommands}) so the host repo's own
+ * README contract is honoured in ONE place — if lane 1's scripts are named
+ * differently, that object is the only edit.
+ */
+
+export interface RunningHost {
+  baseUrl: string;
+  stop(): Promise<void>;
+}
+
+/** The commands that drive the vendo-demos host. One place, so lane 1's README
+ *  contract can be honoured with a one-line change. */
+export interface HostCommands {
+  /** Run in <demosRepo>/host. */
+  genManifest: string[];
+  install: string[];
+  build: string[];
+  start: (port: number) => string[];
+}
+
+export const defaultHostCommands: HostCommands = {
+  // Derived from the frozen script path so demo-folder.ts stays the single
+  // source of truth for the host's layout.
+  genManifest: ["node", path.relative(hostDir, genManifestScript)],
+  install: ["pnpm", "install"],
+  build: ["pnpm", "build"],
+  start: (port: number) => ["pnpm", "start", "--port", String(port)],
+};
+
+const hostPath = (demosRepo: string): string => path.join(demosRepo, hostDir);
+
+/** host/src/generated/manifest.ts — build-time codegen, per the contract. */
+const manifestPath = (demosRepo: string): string =>
+  path.join(hostPath(demosRepo), "src", "generated", "manifest.ts");
+
+/**
+ * Runs the host's build-time discovery script and reports which demos it
+ * actually wired in.
+ *
+ * The slugs are read back out of the GENERATED manifest, not the script's
+ * stdout: the manifest's static imports are what the host compiles, and the
+ * contract freezes their shape (`demos/<slug>/...`), while the script's log
+ * format is lane 1's to change.
+ */
+export async function generateManifest(options: {
+  demosRepo: string;
+  exec?: ExecFn;
+  write?: (line: string) => void;
+  commands?: HostCommands;
+  signal?: AbortSignal;
+}): Promise<{ manifestPath: string; slugs: string[] }> {
+  const exec = options.exec ?? defaultExec;
+  const commands = options.commands ?? defaultHostCommands;
+  const result = await exec(commands.genManifest, {
+    cwd: hostPath(options.demosRepo),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
+  if (result.code !== 0) {
+    throw new Error(`gen-manifest failed (exit ${result.code}): ${firstLine(result.stderr || result.stdout) ?? "no output"}`);
+  }
+  const generated = manifestPath(options.demosRepo);
+  const source = await readFile(generated, "utf8").catch(() => undefined);
+  if (source === undefined) {
+    throw new Error(`gen-manifest exited 0 but wrote no ${path.relative(options.demosRepo, generated)} — the host cannot discover any demo`);
+  }
+  const slugs = [...new Set([...source.matchAll(/demos\/([A-Za-z0-9][A-Za-z0-9._-]*)\//g)].map((match) => match[1] as string))];
+  options.write?.(`[assemble] manifest lists ${slugs.length} demo(s): ${slugs.join(", ") || "none"}`);
+  return { manifestPath: generated, slugs };
+}
+
+/** `next build` for the whole host. A non-zero exit is the contract's "a
+ * failing demo NEVER gets pushed": it throws, and the tail of the output is
+ * the only thing that tells an operator which generated file broke. */
+export async function buildHost(options: {
+  demosRepo: string;
+  exec?: ExecFn;
+  write?: (line: string) => void;
+  commands?: HostCommands;
+  signal?: AbortSignal;
+  env?: NodeJS.ProcessEnv;
+}): Promise<void> {
+  const exec = options.exec ?? defaultExec;
+  const commands = options.commands ?? defaultHostCommands;
+  options.write?.(`[assemble] building the host (${commands.build.join(" ")})`);
+  const result = await exec(commands.build, {
+    cwd: hostPath(options.demosRepo),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.env === undefined ? {} : { env: options.env }),
+  });
+  if (result.code !== 0) {
+    // Both streams: Next prints type errors on stdout and warnings on stderr,
+    // so picking one stream hides the actual cause about half the time.
+    const output = `${result.stdout}${result.stderr}`;
+    throw new Error(`host build failed (exit ${result.code}):\n${output.slice(-3_000)}`);
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function tcpReady(url: string): Promise<boolean> {
+  const parsed = new URL(url);
+  const port = Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80));
+  return await new Promise<boolean>((resolve) => {
+    const socket = createConnection({ host: parsed.hostname, port });
+    const finish = (ready: boolean) => {
+      socket.destroy();
+      resolve(ready);
+    };
+    socket.setTimeout(2_000, () => finish(false));
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+  });
+}
+
+/** The `child.exitCode` check is the point: a host that dies on startup (port
+ * taken, missing build output) must fail LOUDLY here instead of hanging until
+ * the timeout with nothing to show for it. */
+async function waitUntilReady(url: string, child: ChildProcess, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`vendo-demos host exited before ${url} became ready (code ${child.exitCode})`);
+    if (await tcpReady(url)) return;
+    await delay(500);
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for ${url}`);
+}
+
+/** An open port is not a served page: Next accepts connections before the
+ * server is answering. Any status < 500 counts — the shared host's root has no
+ * slug and legitimately 404s. */
+async function waitUntilHttpReady(url: string, child: ChildProcess, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`vendo-demos host exited before ${url} served HTTP (code ${child.exitCode})`);
+    const remaining = Math.max(1, deadline - Date.now());
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(remaining) });
+      if (response.status < 500) return;
+    } catch (error) {
+      if (Date.now() >= deadline) throw error;
+    }
+    await delay(500);
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for HTTP from ${url}`);
+}
+
+/** SIGTERM the whole process group, SIGKILL what survives 5s: `pnpm start`
+ * spawns the actual server as a child, so signalling only the pnpm pid leaves
+ * the port held by an orphan. */
+async function stopProcess(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    child.kill("SIGTERM");
+  }
+  await Promise.race([
+    new Promise<void>((resolve) => child.once("exit", () => resolve())),
+    delay(5_000).then(() => {
+      if (child.exitCode === null && child.pid !== undefined) {
+        try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
+      }
+    }),
+  ]);
+}
+
+/** Boots the built host from its own directory (no workspace filter: the
+ * vendo-demos checkout is foreign to this repo) and waits until it serves
+ * HTTP. Stops itself if readiness fails, so a half-started host never leaks. */
+export async function bootHost(options: {
+  demosRepo: string;
+  port: number;
+  logFile: string;
+  timeoutMs: number;
+  commands?: HostCommands;
+  env?: NodeJS.ProcessEnv;
+}): Promise<RunningHost> {
+  const commands = options.commands ?? defaultHostCommands;
+  const [file, ...argv] = commands.start(options.port);
+  if (file === undefined) throw new Error("host start command is empty");
+  await mkdir(path.dirname(options.logFile), { recursive: true });
+  const log = createWriteStream(options.logFile, { flags: "a" });
+  const child = spawn(file, argv, {
+    cwd: hostPath(options.demosRepo),
+    env: options.env ?? process.env,
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout?.pipe(log);
+  child.stderr?.pipe(log);
+  const baseUrl = `http://127.0.0.1:${options.port}`;
+  try {
+    await waitUntilReady(baseUrl, child, options.timeoutMs);
+    await waitUntilHttpReady(baseUrl, child, options.timeoutMs);
+  } catch (error) {
+    await stopProcess(child);
+    log.end();
+    throw error;
+  }
+  let stopped = false;
+  return {
+    baseUrl,
+    async stop() {
+      if (stopped) return;
+      stopped = true;
+      await stopProcess(child);
+      log.end();
+    },
+  };
+}
+
+export type SmokeTurnFn = (options: { baseUrl: string; slug: string; prompt: string; timeoutMs: number }) => Promise<void>;
+
+/** Drives /<slug>/vendo in a real browser: type the prompt, wait for the turn to
+ *  settle. Throws on a surfaced error or a turn that never settles. */
+export const defaultSmokeTurn: SmokeTurnFn = async (options) => {
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    await page.goto(new URL(`/${options.slug}/vendo`, options.baseUrl).toString(), {
+      waitUntil: "domcontentloaded",
+      timeout: options.timeoutMs,
+    });
+    await page.getByRole("textbox", { name: "Message" }).waitFor({ state: "visible", timeout: options.timeoutMs });
+    const sent = await sendPrompt(page, options.prompt);
+    // requireView: false — the contract gates on HARD errors only (the turn
+    // errored, or never settled). What the agent generated is the judge's
+    // business, never stage 4's.
+    await waitForTurn({
+      page,
+      previousAssistantTurns: sent.assistantTurns,
+      timeoutMs: options.timeoutMs,
+      requireView: false,
+    });
+  } finally {
+    await browser.close().catch(() => undefined);
+  }
+};

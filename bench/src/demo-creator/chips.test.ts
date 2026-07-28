@@ -1,19 +1,16 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildChipsPrompt,
-  capabilityTokens,
   defaultChipModel,
   meaningfulTokens,
   isPlaceholderBeat,
   maxChips,
   mergeBeats,
   parseChipsReply,
-  parseDemoChipsArgs,
   readExtractedTools,
-  runDeriveChips,
 } from "./chips.js";
 
 const beat = (key: string, extra: Record<string, unknown> = {}) => ({
@@ -21,15 +18,6 @@ const beat = (key: string, extra: Record<string, unknown> = {}) => ({
   chip: `${key} chip`,
   prompt: `${key} prompt`,
   ...extra,
-});
-
-describe("parseDemoChipsArgs", () => {
-  it("parses --app and the optional prospect override", () => {
-    expect(parseDemoChipsArgs(["--app", "/tmp/demo-acme", "--prospect", "Acme"]))
-      .toEqual({ app: "/tmp/demo-acme", prospect: "Acme" });
-    expect(parseDemoChipsArgs(["--", "--app", "/tmp/demo-acme"])).toEqual({ app: "/tmp/demo-acme" });
-    expect(() => parseDemoChipsArgs([])).toThrow("--app is required");
-  });
 });
 
 describe("defaultChipModel credential posture", () => {
@@ -45,34 +33,43 @@ describe("defaultChipModel credential posture", () => {
 });
 
 describe("readExtractedTools", () => {
-  async function withToolsFile(contents: string | undefined): Promise<string> {
-    const appDir = await mkdtemp(path.join(tmpdir(), "vendo-chips-"));
-    if (contents !== undefined) {
-      await mkdir(path.join(appDir, ".vendo"), { recursive: true });
-      await writeFile(path.join(appDir, ".vendo", "tools.json"), contents);
-    }
-    return appDir;
+  /** Returns the tools.json PATH: `vendo sync` writes it to `.vendo/tools.json`
+   * while the demo folder keeps it at `demos/<slug>/tools.json`, so the reader
+   * must hold no layout opinion. */
+  async function withToolsFile(contents: string | undefined, name = "tools.json"): Promise<string> {
+    const dir = await mkdtemp(path.join(tmpdir(), "vendo-chips-"));
+    const toolsPath = path.join(dir, name);
+    if (contents !== undefined) await writeFile(toolsPath, contents);
+    return toolsPath;
   }
 
+  it("reads whatever tools.json path it is given", async () => {
+    const synced = await withToolsFile(
+      JSON.stringify({ tools: [{ name: "host_listInvoices" }] }),
+      "synced-tools.json",
+    );
+    await expect(readExtractedTools(synced)).resolves.toEqual([{ name: "host_listInvoices" }]);
+  });
+
   it("reads the host tools with their descriptions", async () => {
-    const appDir = await withToolsFile(JSON.stringify({
+    const toolsPath = await withToolsFile(JSON.stringify({
       format: "vendo/tools@3",
       tools: [
         { name: "host_listInvoices", description: "GET /api/invoices", risk: "read" },
         { name: "host_sendReminder", description: "Email a reminder", risk: "write" },
       ],
     }));
-    await expect(readExtractedTools(appDir)).resolves.toEqual([
+    await expect(readExtractedTools(toolsPath)).resolves.toEqual([
       { name: "host_listInvoices", description: "GET /api/invoices", risk: "read" },
       { name: "host_sendReminder", description: "Email a reminder", risk: "write" },
     ]);
   });
 
   it("drops auth plumbing — a login route is not a capability anyone demos", async () => {
-    const appDir = await withToolsFile(JSON.stringify({
+    const toolsPath = await withToolsFile(JSON.stringify({
       tools: [{ name: "host_auth_create" }, { name: "host_auth_get" }, { name: "vendo_knowledge_search" }],
     }));
-    await expect(readExtractedTools(appDir)).resolves.toEqual([]);
+    await expect(readExtractedTools(toolsPath)).resolves.toEqual([]);
   });
 
   // The "no chips, no crash" contract: an app with no extracted routes yet is
@@ -283,164 +280,5 @@ describe("mergeBeats", () => {
     const merged = mergeBeats(explicit, derived);
     expect(merged[0]).toEqual(explicit[0]);
     expect(merged.filter((entry) => entry.key === "derived-0")).toHaveLength(1);
-  });
-});
-
-describe("runDeriveChips", () => {
-  const config = {
-    id: "acme",
-    prospect: "Acme",
-    ctaUrl: "https://cal.com/yousefhelal",
-    beats: [
-      { key: "generate-ui", prompt: "Show me a dashboard", chip: "Dashboard", expectsView: true },
-      { key: "take-action", prompt: "Archive Bravo", chip: "Archive, with approval", expectsApproval: true },
-      { key: "save-app", prompt: "Save this as an app", chip: "Save as app" },
-    ],
-    caps: { maxTurns: 20, maxSpendUsd: 5 },
-    expiresAt: "2099-01-01T00:00:00Z",
-  };
-
-  async function writeApp(options: { tools?: unknown; beats?: unknown } = {}): Promise<string> {
-    const appDir = await mkdtemp(path.join(tmpdir(), "vendo-chips-app-"));
-    await mkdir(path.join(appDir, ".vendo"), { recursive: true });
-    await writeFile(
-      path.join(appDir, "demo.config.json"),
-      `${JSON.stringify({ ...config, ...(options.beats === undefined ? {} : { beats: options.beats }) }, null, 2)}\n`,
-    );
-    if (options.tools !== undefined) {
-      await writeFile(path.join(appDir, ".vendo", "tools.json"), JSON.stringify({ tools: options.tools }));
-    }
-    return appDir;
-  }
-
-  const goodReply = JSON.stringify({
-    chips: Array.from({ length: 5 }, (_, index) => ({
-      key: `pill-${index}`,
-      chip: `Pill ${index}`,
-      prompt: `Do thing ${index} with invoices`,
-      tools: ["host_listInvoices"],
-    })),
-  });
-
-  it("derives pills from the tool surface and writes them into demo.config.json", async () => {
-    const appDir = await writeApp({
-      tools: [{ name: "host_listInvoices", description: "List invoices" }, { name: "host_sendReminder", description: "Send a reminder" }],
-    });
-    const model = vi.fn().mockResolvedValue(goodReply);
-
-    const result = await runDeriveChips({ appDir }, { model, write: () => {} });
-
-    expect(model).toHaveBeenCalledTimes(1);
-    expect(model.mock.calls[0]![0]).toContain("host_listInvoices");
-    // Explicit arc beats survive; derived pills fill the rest.
-    expect(result.kept).toBe(3);
-    expect(result.derived).toBe(2);
-    const written = JSON.parse(await readFile(path.join(appDir, "demo.config.json"), "utf8")) as typeof config;
-    expect(written.beats).toHaveLength(maxChips);
-    expect(written.beats.slice(0, 3)).toEqual(config.beats);
-    // Shape unchanged — nothing downstream (chip strip, capture, caps) moves.
-    expect(Object.keys(written).sort()).toEqual(Object.keys(config).sort());
-  });
-
-  it("fills the whole strip from the surface when only placeholders exist", async () => {
-    const appDir = await writeApp({
-      tools: [{ name: "host_listInvoices", description: "List invoices" }],
-      beats: [{ key: "generate-ui", prompt: "TODO(creator): x", chip: "TODO(creator): y", expectsView: true }],
-    });
-
-    const result = await runDeriveChips({ appDir }, { model: async () => goodReply, write: () => {} });
-
-    expect(result.kept).toBe(0);
-    expect(result.derived).toBe(5);
-    expect(result.beats.every((entry) => entry.key.startsWith("pill-"))).toBe(true);
-    expect(result.chips).toHaveLength(5);
-  });
-
-  // The criterion: empty/missing tools.json => NO chips, no crash. With no
-  // surface there is nothing to ground a pill in, so the stage must derive
-  // ZERO — not quietly pass the existing beats off as its output.
-  it("derives NO chips with no tool surface, and does not crash or call the model", async () => {
-    const appDir = await writeApp();
-    const model = vi.fn();
-
-    const result = await runDeriveChips({ appDir }, { model, write: () => {} });
-
-    expect(result.chips).toEqual([]);
-    expect(result.derived).toBe(0);
-    expect(result.skipped).toBe("no-tools");
-    expect(model).not.toHaveBeenCalled();
-    // The config is left exactly as found — the template's strict schema
-    // requires at least one beat, and destroying a demo's authored arc because
-    // its routes are not synced yet would be a far worse failure.
-    const written = JSON.parse(await readFile(path.join(appDir, "demo.config.json"), "utf8")) as typeof config;
-    expect(written.beats).toEqual(config.beats);
-  });
-
-  it("derives NO chips when the surface holds only auth plumbing", async () => {
-    const appDir = await writeApp({ tools: [{ name: "host_auth_create" }, { name: "host_auth_get" }] });
-    const model = vi.fn();
-
-    const result = await runDeriveChips({ appDir }, { model, write: () => {} });
-
-    expect(result.chips).toEqual([]);
-    expect(result.skipped).toBe("no-tools");
-    expect(model).not.toHaveBeenCalled();
-  });
-
-  // Grounding survives the whole stage, not just the parser. Ship fewer, never
-  // pad: when everything is culled the stage yields no chips and leaves the
-  // demo's own beats alone, rather than padding the strip with pills that
-  // refuse when a prospect clicks them.
-  it("yields NO chips when the model invents capabilities the surface lacks", async () => {
-    const appDir = await writeApp({ tools: [{ name: "host_listInvoices", description: "List invoices" }] });
-    const messages: string[] = [];
-    const model = async () => JSON.stringify({
-      chips: Array.from({ length: 5 }, (_, index) => ({
-        key: `pill-${index}`, chip: `c${index}`, prompt: `p${index}`, tools: ["host_reconcileBankFeed"],
-      })),
-    });
-
-    const result = await runDeriveChips({ appDir }, { model, write: (line) => messages.push(line) });
-
-    expect(result.chips).toEqual([]);
-    expect(result.derived).toBe(0);
-    expect(messages.join(" ")).toMatch(/host_reconcileBankFeed/);
-    // Nothing written: the demo keeps the beats it had.
-    const written = JSON.parse(await readFile(path.join(appDir, "demo.config.json"), "utf8")) as typeof config;
-    expect(written.beats).toEqual(config.beats);
-  });
-
-  it("ships the survivors when only some pills ground, never padding to five", async () => {
-    const appDir = await writeApp({
-      tools: [{ name: "host_listInvoices", description: "List invoices for the account" }],
-    });
-    const model = async () => JSON.stringify({
-      chips: [
-        { key: "real", chip: "Open invoices", prompt: "Show me my open invoices", tools: ["host_listInvoices"] },
-        { key: "filler-a", chip: "c0", prompt: "p0", tools: ["host_listInvoices"] },
-        { key: "filler-b", chip: "c1", prompt: "p1", tools: ["host_listInvoices"] },
-      ],
-    });
-
-    const result = await runDeriveChips({ appDir }, { model, write: () => {} });
-
-    expect(result.chips.map((entry) => entry.key)).toEqual(["real"]);
-    expect(result.derived).toBe(1);
-    // 3 authored beats survive + the single grounded pill = 4, not a padded 5.
-    expect(result.beats).toHaveLength(4);
-  });
-
-  it("refuses to write a config the template's strict schema would reject", async () => {
-    const appDir = await writeApp({ tools: [{ name: "host_listInvoices" }] });
-    const model = async () => JSON.stringify({
-      chips: Array.from({ length: 4 }, (_, index) => ({
-        key: `pill-${index}`, chip: `c${index}`, prompt: `p${index}`, tools: ["host_listInvoices"],
-      })),
-    });
-    // A valid derivation writes; the guard is that we re-parse before writing,
-    // so a schema break surfaces here instead of at the app's next boot.
-    await expect(runDeriveChips({ appDir }, { model, write: () => {} })).resolves.toBeTruthy();
-    const written = await readFile(path.join(appDir, "demo.config.json"), "utf8");
-    expect(() => JSON.parse(written)).not.toThrow();
   });
 });

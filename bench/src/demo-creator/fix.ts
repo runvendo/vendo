@@ -1,0 +1,206 @@
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { defaultRunAgent, type AgentRunResult, type RunAgentFn } from "./agent.js";
+import { runAssemble, type AssembleIo, type AssembleResult } from "./assemble.js";
+import { syncTools } from "./build.js";
+import { demoPaths, parseDemoFolderConfig } from "./demo-folder.js";
+import { defaultDemosRepo, ensureDemosRepo } from "./demos-repo.js";
+import { defaultExec, type ExecFn } from "./exec.js";
+import { runJudge, type JudgeIo, type JudgeResult } from "./judge.js";
+import { createStageRunner, localHostPort, type StageTiming } from "./pipeline.js";
+import { runShip, type ShipIo, type ShipResult } from "./ship.js";
+
+/**
+ * `demo:fix` — the operator's second pass. A demo is already live and the
+ * feedback is prose ("the sidebar should be dark", "call them Runs not Jobs"),
+ * so this is deliberately ONE agent over the existing demo folder rather than a
+ * regeneration: the evidence, brief and theme are already right, and rebuilding
+ * from scratch would throw away the fidelity the first run earned.
+ *
+ * Everything after the agent is the pipeline's own tail — re-sync the tools,
+ * assemble (a broken fix is never pushed), judge for the record, ship.
+ */
+
+export interface DemoFixArgs {
+  id: string;
+  instruction: string;
+  demosRepo: string;
+  skipShip: boolean;
+}
+
+const valueOptions = new Set(["--id", "--instruction", "--demos-repo"]);
+const flagOptions = new Set(["--skip-ship"]);
+
+export function parseDemoFixArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): DemoFixArgs {
+  const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
+  const options = new Map<string, string>();
+  const flags = new Set<string>();
+  for (let index = 0; index < normalizedArgv.length; index += 1) {
+    const option = normalizedArgv[index];
+    if (option?.startsWith("--") !== true) throw new Error(`Unexpected argument: ${option ?? ""}`);
+    if (flagOptions.has(option)) {
+      flags.add(option);
+      continue;
+    }
+    if (!valueOptions.has(option)) throw new Error(`Unknown option: ${option}`);
+    const value = normalizedArgv[index + 1];
+    if (value === undefined || value.startsWith("--")) throw new Error(`${option} requires a value`);
+    options.set(option, value);
+    index += 1;
+  }
+  const id = options.get("--id");
+  if (id === undefined) throw new Error("--id is required (the demo slug to fix)");
+  const instruction = options.get("--instruction");
+  if (instruction === undefined || instruction.trim() === "") {
+    throw new Error('--instruction is required (free text, e.g. --instruction "the sidebar should be dark")');
+  }
+  return {
+    id,
+    instruction,
+    demosRepo: options.get("--demos-repo") ?? defaultDemosRepo(env),
+    skipShip: flags.has("--skip-ship"),
+  };
+}
+
+/** What the fix agent may rewrite. The brand evidence (theme.json, BRIEF.md,
+ * brand/, RESEARCH/) is settled truth from the first run and stays fenced:
+ * a prose fix must never quietly redecide the prospect's colours. */
+export const fixOwnedRoots = ["screens", "server", "openapi.json", "demo.config.json"] as const;
+
+export function buildFixPrompt(options: { prospect: string; slug: string; instruction: string; brief: string }): string {
+  return `You are fixing the live ${options.prospect} demo (slug "${options.slug}") in place. The operator has looked at it and asked for exactly this:
+
+OPERATOR INSTRUCTION — AUTHORITATIVE:
+${options.instruction}
+
+Make the SMALLEST change set that satisfies it. Do not "improve" anything else: every unrelated edit is a regression risk on a demo that already passed its fidelity judge.
+
+You are working inside the demo folder. YOUR FILE LIST (writable): ${fixOwnedRoots.join(", ")}.
+FENCED — never edit: theme.json, BRIEF.md, brand/**, RESEARCH/**, tools.json (regenerated from openapi.json), and anything outside this folder (the host owns caps, watermark, auth and the Vendo kit).
+
+Rules that still hold:
+- ALL data is INVENTED. Evidence informs STYLE, never DATA. No real people, customers or records; no Foo/Bar/Lorem placeholders.
+- screens/index.tsx default-exports the product page, takes NO props, reads seed data through server/ imports, and renders the Vendo surfaces imported from host/src/vendo-kit where demo.config.json's placement says.
+- server/routes.ts exports \`routes\`: a Record of "METHOD /path" to a handler taking (req, store) and returning a Response. Every route it serves must stay declared in openapi.json — the agent's tool surface is generated from that file, so an undeclared route is a capability the demo cannot use.
+- demo.config.json keeps all five beats (generate-ui, take-action, automation, connect-account, save-app), generate-ui keeps expectsView: true and take-action keeps expectsApproval: true.
+
+The brand brief this demo was built from, for context:
+${options.brief}`;
+}
+
+export interface DemoFixIo {
+  runAgent?: RunAgentFn;
+  exec?: ExecFn;
+  write?: (line: string) => void;
+  env?: NodeJS.ProcessEnv;
+  capMs?: number;
+  stages?: {
+    ensureRepo: typeof ensureDemosRepo;
+    syncTools: typeof syncTools;
+    assemble: (args: Parameters<typeof runAssemble>[0], io: AssembleIo) => Promise<AssembleResult>;
+    judge: (args: Parameters<typeof runJudge>[0], io: JudgeIo) => Promise<JudgeResult>;
+    ship: (args: Parameters<typeof runShip>[0], io: ShipIo) => Promise<ShipResult>;
+  };
+}
+
+export interface DemoFixResult {
+  slug: string;
+  agent: AgentRunResult;
+  timings: StageTiming[];
+  judge: JudgeResult;
+  scoresLine: string;
+  ship?: ShipResult;
+  liveUrl?: string;
+}
+
+export const fixCapMs = 25 * 60 * 1000;
+
+export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise<DemoFixResult> {
+  const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
+  const env = io.env ?? process.env;
+  const runAgent = io.runAgent ?? defaultRunAgent;
+  const stages = io.stages ?? { ensureRepo: ensureDemosRepo, syncTools, assemble: runAssemble, judge: runJudge, ship: runShip };
+  const paths = demoPaths(args.demosRepo, args.id);
+
+  const capController = new AbortController();
+  const signal = capController.signal;
+  const baseExec = io.exec ?? defaultExec;
+  const exec: ExecFn = (command, options) => baseExec(command, { signal, ...options });
+  const timings: StageTiming[] = [];
+  const capMs = io.capMs ?? fixCapMs;
+  const deadline = Date.now() + capMs;
+  const capTimer = setTimeout(() => capController.abort(new Error(`the ${Math.round(capMs / 60000)}-minute cap fired`)), Math.max(0, capMs));
+  capTimer.unref?.();
+  const runStage = createStageRunner({
+    timings,
+    timingsPath: () => paths.timings,
+    write,
+    deadline,
+    signal,
+    capFired: (context) => new Error(`the ${Math.round(capMs / 60000)}-minute cap fired ${context}`),
+  });
+
+  let host: AssembleResult["host"] | undefined;
+  try {
+    await runStage("repo", () => stages.ensureRepo(args.demosRepo, { exec, write, signal }));
+    if (!existsSync(paths.config)) {
+      throw new Error(`No demo at "${paths.root}" — demo:fix edits an existing demo; run demo:pipeline to create "${args.id}" first`);
+    }
+    const config = await parseDemoFolderConfig(JSON.parse(await readFile(paths.config, "utf8")), `demo config at "${paths.config}"`);
+    const brief = existsSync(paths.brief) ? await readFile(paths.brief, "utf8") : "(BRIEF.md is missing — rely on the folder's existing code)";
+
+    const agent = await runStage("fix", async () => {
+      const result = await runAgent(
+        {
+          name: `fix-${args.id}`,
+          prompt: buildFixPrompt({ prospect: config.prospect, slug: args.id, instruction: args.instruction, brief }),
+          maxBudgetUsd: 6,
+          timeoutMs: 15 * 60 * 1000,
+          model: env.VENDO_DEMO_AGENT_MODEL ?? "sonnet",
+        },
+        { cwd: paths.root, env, signal },
+      );
+      write(`[fix] agent exit ${result.code}${result.timedOut ? " (TIMED OUT)" : ""} ($${result.costUsd?.toFixed(2) ?? "?"})`);
+      if (result.code !== 0) throw new Error(`Fix agent failed (exit ${result.code}):\n${result.output.slice(0, 1000)}`);
+      return result;
+    });
+
+    // openapi.json may have moved, so the tool surface is regenerated and the
+    // config re-validated before anything is built.
+    await runStage("sync", async () => {
+      const tools = await stages.syncTools({ demosRepo: args.demosRepo, slug: args.id, exec, signal });
+      write(`[fix] ${tools} tools after re-sync`);
+      await parseDemoFolderConfig(JSON.parse(await readFile(paths.config, "utf8")), `demo config at "${paths.config}"`);
+    });
+
+    const smokePrompt = config.beats[0]?.prompt ?? `Show me an overview of the ${config.prospect} data in this workspace.`;
+    const assembled = await runStage("assemble", () => stages.assemble(
+      { slug: args.id, port: localHostPort, smokePrompt },
+      { demosRepo: args.demosRepo, write, env, exec, signal },
+    ));
+    host = assembled.host;
+
+    const judge = await runStage("judge", () => stages.judge(
+      { slug: args.id, prospect: config.prospect, baseUrl: assembled.host.baseUrl },
+      { demosRepo: args.demosRepo, write, env, signal },
+    ));
+    const scoresLine = judge.scoresLine;
+    write(`SCORES: ${scoresLine}`);
+
+    await host.stop().catch(() => undefined);
+    host = undefined;
+
+    if (args.skipShip) {
+      write("[fix] --skip-ship: stopping after judge (nothing committed, pushed or deployed)");
+      return { slug: args.id, agent, timings, judge, scoresLine };
+    }
+    const shipped = await runStage("ship", () => stages.ship(
+      { slug: args.id, prospect: config.prospect },
+      { demosRepo: args.demosRepo, write, env, exec, signal },
+    ));
+    return { slug: args.id, agent, timings, judge, scoresLine, ship: shipped, liveUrl: shipped.liveUrl };
+  } finally {
+    clearTimeout(capTimer);
+    if (host !== undefined) await host.stop().catch(() => undefined);
+  }
+}

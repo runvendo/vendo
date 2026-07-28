@@ -1,390 +1,216 @@
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { defaultExec } from "./deploy.js";
+import type { AssembleResult } from "./assemble.js";
+import type { BriefResult } from "./brief.js";
+import type { BuildResult } from "./build.js";
+import { demoPaths } from "./demo-folder.js";
+import type { EvidenceResult } from "./evidence.js";
+import type { JudgeResult } from "./judge.js";
 import {
-  DemoParkedError,
+  defaultExpiresAt,
+  localHostPort,
   parseDemoPipelineArgs,
+  parseExpires,
+  preflight,
   runDemoPipeline,
-  validateProspectUrl,
   type PipelineStages,
 } from "./pipeline.js";
-import { defaultDemoScratchDir } from "./scratch.js";
+import type { ShipResult } from "./ship.js";
+
+const baseArgv = [
+  "--id", "acme",
+  "--prospect", "Acme Widgets",
+  "--screenshots", "/abs/a.png,/abs/b.png",
+];
 
 describe("parseDemoPipelineArgs", () => {
-  it("parses the full pipeline invocation", () => {
-    expect(parseDemoPipelineArgs([
-      "--id", "linear",
-      "--prospect", "Linear",
-      "--url", "https://linear.app",
-      "--screenshots", "/tmp/a.png,/tmp/b.png",
-      "--skip-deploy",
-    ])).toEqual({
-      id: "linear",
-      prospect: "Linear",
-      url: "https://linear.app",
-      screenshots: ["/tmp/a.png", "/tmp/b.png"],
-      skipDeploy: true,
-      skipCapture: false,
-      targetDir: defaultDemoScratchDir(),
-      port: 3150,
-    });
+  it("requires the three operator arguments and nothing else", () => {
+    const args = parseDemoPipelineArgs(baseArgv, {});
+    expect(args.id).toBe("acme");
+    expect(args.prospect).toBe("Acme Widgets");
+    expect(args.screenshots).toEqual(["/abs/a.png", "/abs/b.png"]);
+    expect(args.skipShip).toBe(false);
+    expect(() => parseDemoPipelineArgs(["--prospect", "Acme", "--screenshots", "/a.png"], {})).toThrow("--id is required");
+    expect(() => parseDemoPipelineArgs(["--id", "acme", "--screenshots", "/a.png"], {})).toThrow("--prospect is required");
+    expect(() => parseDemoPipelineArgs(["--id", "acme", "--prospect", "Acme"], {})).toThrow("--screenshots is required");
   });
 
-  it("refuses port 3000 (capture-harness lock)", () => {
-    expect(() => parseDemoPipelineArgs(["--id", "x", "--prospect", "X", "--url", "https://x.example", "--port", "3000"]))
-      .toThrow("3000");
+  it("tolerates the pnpm `--` separator and rejects unknown options", () => {
+    expect(parseDemoPipelineArgs(["--", ...baseArgv], {}).id).toBe("acme");
+    expect(() => parseDemoPipelineArgs([...baseArgv, "--port", "3000"], {})).toThrow("Unknown option: --port");
+    expect(() => parseDemoPipelineArgs([...baseArgv, "--url"], {})).toThrow("--url requires a value");
   });
 
-  it("requires --id, --prospect and --url", () => {
-    expect(() => parseDemoPipelineArgs(["--prospect", "Linear", "--url", "https://linear.app"]))
-      .toThrow("--id is required");
-    expect(() => parseDemoPipelineArgs(["--id", "linear", "--url", "https://linear.app"]))
-      .toThrow("--prospect is required");
-    expect(() => parseDemoPipelineArgs(["--id", "linear", "--prospect", "Linear"]))
-      .toThrow("--url is required");
+  it("turns --expires into a UTC instant and otherwise defaults 21 days out", () => {
+    expect(parseDemoPipelineArgs([...baseArgv, "--expires", "2026-08-31"], {}).expiresAt)
+      .toBe("2026-08-31T00:00:00.000Z");
+    expect(() => parseExpires("31/08/2026")).toThrow("--expires must be a plain date");
+    const now = new Date("2026-07-27T12:00:00.000Z");
+    expect(defaultExpiresAt(now)).toBe("2026-08-17T12:00:00.000Z");
+  });
+
+  it("passes --skip-ship, --notes and --cta-url through, and defaults the CTA", () => {
+    const args = parseDemoPipelineArgs([...baseArgv, "--skip-ship", "--notes", "n.md", "--cta-url", "https://x.test/book"], {});
+    expect(args).toMatchObject({ skipShip: true, notes: "n.md", ctaUrl: "https://x.test/book" });
+    expect(parseDemoPipelineArgs(baseArgv, {}).ctaUrl).toBe("https://cal.com/yousefhelal");
   });
 });
 
-describe("validateProspectUrl", () => {
-  it("passes when HEAD answers", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
-    await expect(validateProspectUrl("https://linear.app", { fetchImpl })).resolves.toBeUndefined();
+describe("preflight", () => {
+  it("names every missing credential before a single stage runs", () => {
+    expect(() => preflight({})).toThrow(/ANTHROPIC_API_KEY[\s\S]*CONTEXT_DEV_API_KEY/);
+    expect(() => preflight({ CONTEXT_DEV_API_KEY: "ctx" })).toThrow("ANTHROPIC_API_KEY");
+    expect(() => preflight({ ANTHROPIC_API_KEY: "sk" })).toThrow("CONTEXT_DEV_API_KEY");
+    expect(() => preflight({ ANTHROPIC_API_KEY: "sk", CONTEXT_DEV_API_KEY: "ctx" })).not.toThrow();
   });
 
-  it("treats a HEAD 405 as reachable without needing the GET fallback", async () => {
-    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(null, { status: 405 }));
-    await expect(validateProspectUrl("https://linear.app", { fetchImpl })).resolves.toBeUndefined();
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-
-  it("falls back to GET when HEAD itself errors and passes on a page response", async () => {
-    const fetchImpl = vi.fn()
-      .mockRejectedValueOnce(new TypeError("socket hang up"))
-      .mockResolvedValueOnce(new Response("<html/>", { status: 200 }));
-    await expect(validateProspectUrl("https://linear.app", { fetchImpl })).resolves.toBeUndefined();
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it("treats a bot-challenge status as reachable (403 still proves a live site)", async () => {
-    const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(new Response(null, { status: 403 }))
-      .mockResolvedValueOnce(new Response("denied", { status: 403 }));
-    await expect(validateProspectUrl("https://linear.app", { fetchImpl })).resolves.toBeUndefined();
-  });
-
-  it("fails on network errors, naming the URL", async () => {
-    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
-    await expect(validateProspectUrl("https://unreachable.invalid", { fetchImpl }))
-      .rejects.toThrow(/https:\/\/unreachable\.invalid.*unreachable|unreachable.*https:\/\/unreachable\.invalid/);
-  });
-
-  it("fails on a server that only ever 5xxes, naming the URL", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 503 }));
-    await expect(validateProspectUrl("https://down.example", { fetchImpl }))
-      .rejects.toThrow(/https:\/\/down\.example/);
+  it("treats an empty string as missing (a sourced-but-blank .env is the common case)", () => {
+    expect(() => preflight({ ANTHROPIC_API_KEY: "", CONTEXT_DEV_API_KEY: "ctx" })).toThrow("ANTHROPIC_API_KEY");
   });
 });
 
-/** Stage stubs that actually create the app dir (like runDemoCreate would)
- * so the abort-cleanup path has something real to remove. */
-function stubStages(repoRoot: string, overrides: Partial<PipelineStages> = {}): PipelineStages {
-  const appDir = path.join(repoRoot, "apps", "demo-linear");
-  return {
-    create: vi.fn(async () => {
-      await mkdir(path.join(appDir, "RESEARCH"), { recursive: true });
-      return {
-        appDir,
-        packageName: "demo-linear",
-        configPath: path.join(appDir, "demo.config.json"),
-        researchReadme: path.join(appDir, "RESEARCH", "README.md"),
-        standalone: false,
-      };
-    }),
-    research: vi.fn(async () => ({
-      researchDir: path.join(appDir, "RESEARCH"),
-      reportPath: path.join(appDir, "RESEARCH", "research.json"),
-      report: {
-        capturedAt: "2026-07-26T00:00:00.000Z",
-        urls: ["https://linear.app"],
-        operatorScreenshots: [],
-        pages: [],
-        palette: { colors: [], fontFamilies: [] },
-        fonts: { families: [], faceSrcs: [], webfontLinks: [] },
-      },
-    })),
-    chips: vi.fn(async () => ({ chips: [], beats: [], derived: 2, kept: 3 })),
-    judge: vi.fn(async () => ({
-      rounds: [],
-      parked: false,
-      reportPath: path.join(appDir, "RESEARCH", "FIDELITY.md"),
-      costUsd: 0,
-    })),
-    deploy: vi.fn(async () => ({
-      serviceName: "demo-linear",
-      appPath: "apps/demo-linear",
-      dryRun: false,
-      domain: "demo-linear.up.railway.app",
-      registryPayload: { id: "linear", url: "https://demo-linear.up.railway.app", prospect: "Linear" },
-    })),
-    gate: vi.fn(async () => ({
-      steps: [{ step: "generation-complete", ok: true, detail: "view painted" }],
-      reportPath: path.join(appDir, "RESEARCH", "gate", "GATE.md"),
-    })),
-    rewrite: vi.fn(async (_args, io) => {
-      // Exercise the pipeline's stage runner passthrough like the real
-      // rewrite does for its substages.
-      await io.runStage?.("rewrite:agents", async () => undefined);
-      return {
-        plan: {
-          entity: { name: "Issue", stem: "issues", action: "closeIssue", fields: [], sampleRecordNames: ["x"] },
-          screens: [{ slug: "board", route: "/", title: "Board", purpose: "clone" }],
-          nav: ["Inbox"],
-          copyTone: "terse",
-        },
-        agents: [],
-        fencedViolations: [],
-        buildRounds: 1,
-        costUsd: 0,
-      };
-    }),
-    ...overrides,
-  };
+// ---------------------------------------------------------------------------
+// The stage drive
+// ---------------------------------------------------------------------------
+
+interface Harness {
+  stages: PipelineStages;
+  order: string[];
+  lines: string[];
+  stopped: number;
 }
 
-const pipelineArgs = {
-  id: "linear",
-  prospect: "Linear",
-  url: "https://linear.app",
-  targetDir: "apps",
-  skipDeploy: true,
-  skipCapture: true,
-  port: 3150,
-};
+function harness(overrides: Partial<PipelineStages> = {}, options: { stopThrows?: boolean } = {}): Harness {
+  const order: string[] = [];
+  const lines: string[] = [];
+  const state = { stopped: 0 };
+  const evidence = { screenshots: [], palette: [], soft: [], rawFiles: [] } as unknown as EvidenceResult;
+  const brief = { theme: {}, brief: { company: "Acme" }, themePath: "t", briefPath: "b" } as unknown as BriefResult;
+  const built = {
+    agents: [], toolCount: 4, costUsd: 1,
+    beats: [{ key: "generate-ui", chip: "Spend", prompt: "Build me a spend dashboard", expectsView: true }],
+  } as unknown as BuildResult;
+  const host = { baseUrl: "http://127.0.0.1:3150", stop: async () => { state.stopped += 1; } };
+  const assembled = { slugs: ["acme"], host, smoke: { prompt: "p", ms: 1 } } as unknown as AssembleResult;
+  const judge = {
+    builtScreens: [], reportPath: "F.md", notes: [],
+    scoresLine: "logo=PASS palette=8 type=7 layout=9 copyTone=8",
+    verdict: { pass: true, failing: [], scores: [] },
+  } as unknown as JudgeResult;
+  const ship = { commit: "abc123", liveUrl: "https://demos.vendo.run/acme", attempts: 1 } as unknown as ShipResult;
+
+  const stages: PipelineStages = {
+    ensureRepo: async (dir) => { order.push("repo"); return { dir, cloned: false, head: "head" }; },
+    evidence: async () => { order.push("evidence"); return evidence; },
+    brief: async () => { order.push("brief"); return brief; },
+    build: async () => { order.push("build"); return built; },
+    assemble: async (args) => {
+      order.push(`assemble:${args.port}:${args.smokePrompt}`);
+      return options.stopThrows === true
+        ? { ...assembled, host: { ...host, stop: async () => { state.stopped += 1; throw new Error("stop failed"); } } }
+        : assembled;
+    },
+    judge: async (args) => { order.push(`judge:${args.baseUrl}`); return judge; },
+    ship: async () => { order.push("ship"); return ship; },
+    ...overrides,
+  };
+  return { stages, order, lines, get stopped() { return state.stopped; } };
+}
+
+async function run(overrides: Partial<PipelineStages> = {}, argsOverride: Partial<Parameters<typeof runDemoPipeline>[0]> = {}) {
+  const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-demos-"));
+  const h = harness(overrides);
+  const lines: string[] = [];
+  const result = await runDemoPipeline(
+    {
+      id: "acme",
+      prospect: "Acme Widgets",
+      screenshots: ["/abs/a.png"],
+      ctaUrl: "https://cal.com/x",
+      expiresAt: "2026-08-31T00:00:00.000Z",
+      demosRepo,
+      skipShip: false,
+      ...argsOverride,
+    },
+    { stages: h.stages, write: (line) => lines.push(line) },
+  );
+  return { result, order: h.order, lines, demosRepo, harness: h };
+}
 
 describe("runDemoPipeline", () => {
-  async function makeRepoRoot(): Promise<string> {
-    return await mkdtemp(path.join(tmpdir(), "vendo-demo-pipeline-"));
-  }
-
-  it("fails fast on an unreachable URL: names it, exits before create, leaves nothing", async () => {
-    const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot);
-    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
-    await expect(runDemoPipeline(pipelineArgs, {
-      repoRoot,
-      stages,
-      fetchImpl,
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
-      write: () => {},
-    })).rejects.toThrow(/https:\/\/linear\.app/);
-    expect(stages.create).not.toHaveBeenCalled();
-    expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(false);
+  it("runs the six stages in the contract's order and prints SCORES", async () => {
+    const { result, order, lines } = await run();
+    expect(order).toEqual([
+      "repo", "evidence", "brief", "build",
+      `assemble:${localHostPort}:Build me a spend dashboard`,
+      "judge:http://127.0.0.1:3150",
+      "ship",
+    ]);
+    expect(result.liveUrl).toBe("https://demos.vendo.run/acme");
+    expect(lines).toContain("SCORES: logo=PASS palette=8 type=7 layout=9 copyTone=8");
   });
 
-  it("removes the app dir when an early stage aborts after create", async () => {
-    const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot, {
-      research: vi.fn(async () => { throw new Error("demo:research failed for every URL"); }),
+  it("smokes the demo's OWN first beat — the prompt a prospect will click", async () => {
+    const { order } = await run({
+      build: async () => ({
+        agents: [], toolCount: 2, costUsd: 0,
+        beats: [{ key: "generate-ui", chip: "c", prompt: "Show me overdue bills", expectsView: true }],
+      } as unknown as BuildResult),
     });
-    await expect(runDemoPipeline(pipelineArgs, {
-      repoRoot,
-      stages,
-      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
-      write: () => {},
-    })).rejects.toThrow("demo:research failed");
-    expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(false);
+    expect(order).toContain(`assemble:${localHostPort}:Show me overdue bills`);
   });
 
-  it("keeps the app dir when the rewrite fails — evidence for the park report", async () => {
-    const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot, {
-      rewrite: vi.fn(async () => { throw new Error("2 rewrite agent(s) failed"); }),
-    });
-    await expect(runDemoPipeline(pipelineArgs, {
-      repoRoot,
-      stages,
-      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
-      write: () => {},
-    })).rejects.toThrow("rewrite agent(s) failed");
-    expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(true);
+  it("writes one timings row per stage to RESEARCH/timings.json", async () => {
+    const { demosRepo } = await run();
+    const rows = JSON.parse(await readFile(demoPaths(demosRepo, "acme").timings, "utf8")) as { stage: string; ms: number }[];
+    expect(rows.map((row) => row.stage)).toEqual(["repo", "evidence", "brief", "build", "assemble", "judge", "ship"]);
+    for (const row of rows) expect(typeof row.ms).toBe("number");
   });
 
-  it("parks (typed error, app dir kept, no deploy path) when the judge stays below the bar", async () => {
-    const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot, {
-      judge: vi.fn(async () => ({
-        rounds: [],
-        parked: true,
-        reportPath: path.join(repoRoot, "apps", "demo-linear", "RESEARCH", "FIDELITY.md"),
-        costUsd: 2,
-      })),
-    });
-    await expect(runDemoPipeline(pipelineArgs, {
-      repoRoot,
-      stages,
-      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
-      write: () => {},
-    })).rejects.toThrow(DemoParkedError);
-    expect(existsSync(path.join(repoRoot, "apps", "demo-linear"))).toBe(true);
+  it("--skip-ship stops after judge and never ships", async () => {
+    const { result, order, lines } = await run({}, { skipShip: true });
+    expect(order).not.toContain("ship");
+    expect(result.liveUrl).toBeUndefined();
+    expect(lines.some((line) => line.includes("--skip-ship"))).toBe(true);
   });
 
-  it("runs capture → deploy → final gate on a full (non-skip) run, retrying a flaky deploy once", async () => {
-    const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot);
-    (stages.deploy as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(new Error("railway up: BadRecordMac"))
-      .mockResolvedValueOnce({
-        serviceName: "demo-linear",
-        appPath: "apps/demo-linear",
-        dryRun: false,
-        domain: "demo-linear.up.railway.app",
-        registryPayload: { id: "linear", url: "https://demo-linear.up.railway.app", prospect: "Linear" },
-      });
-    const exec = vi.fn(async () => ({ code: 0, stdout: "", stderr: "" }));
-    const result = await runDemoPipeline({ ...pipelineArgs, skipDeploy: false, skipCapture: false }, {
-      repoRoot,
-      stages,
-      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec,
-      write: () => {},
-      deployRetryWaitMs: 1,
-    });
-    expect(stages.deploy).toHaveBeenCalledTimes(2);
-    expect(stages.gate).toHaveBeenCalledWith(
-      expect.objectContaining({ demoUrl: "https://demos.vendo.run/linear" }),
-      expect.anything(),
+  it("stops the booted host before shipping — one dev server, reaped", async () => {
+    const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-demos-"));
+    const h = harness();
+    let stoppedBeforeShip: number | undefined;
+    const stages: PipelineStages = { ...h.stages, ship: async (...ship) => { stoppedBeforeShip = h.stopped; return h.stages.ship(...ship); } };
+    await runDemoPipeline(
+      { id: "acme", prospect: "Acme", screenshots: ["/a.png"], ctaUrl: "https://x.test", expiresAt: "2026-08-31T00:00:00.000Z", demosRepo, skipShip: false },
+      { stages, write: () => undefined },
     );
-    expect(result.demoUrl).toBe("https://demos.vendo.run/linear");
-    expect(result.gifPath).toContain("demo-beats-linear.gif");
-    // The capture stage ran the demo-beats CLI:
-    expect(exec.mock.calls.some((call) => (call[0] as string[]).includes("demo:capture"))).toBe(true);
-    const timings = JSON.parse(await readFile(path.join(result.appDir, "timings.json"), "utf8"));
-    expect(timings.map((row: { stage: string }) => row.stage))
-      .toEqual(["validate", "create", "install", "research", "rewrite:agents", "chips", "capture", "deploy", "final-gate"]);
+    expect(stoppedBeforeShip).toBe(1);
   });
 
-  it("skips deploy and gate under --skip-deploy", async () => {
-    const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot);
-    const result = await runDemoPipeline(pipelineArgs, {
-      repoRoot,
-      stages,
-      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
-      write: () => {},
-    });
-    expect(stages.deploy).not.toHaveBeenCalled();
-    expect(stages.gate).not.toHaveBeenCalled();
-    expect(result.demoUrl).toBeUndefined();
+  it("stops the host when a later stage throws, so no boot is orphaned", async () => {
+    const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-demos-"));
+    const h = harness({ judge: async () => { throw new Error("judge exploded"); } });
+    await expect(runDemoPipeline(
+      { id: "acme", prospect: "Acme", screenshots: ["/a.png"], ctaUrl: "https://x.test", expiresAt: "2026-08-31T00:00:00.000Z", demosRepo, skipShip: false },
+      { stages: h.stages, write: () => undefined },
+    )).rejects.toThrow("judge exploded");
+    expect(h.stopped).toBe(1);
   });
 
-  it("parks when the cap fires DURING an in-flight stage AND cancels it: the stage's subprocess verifiably exits, gaps are named, deploy never runs", async () => {
-    const repoRoot = await makeRepoRoot();
-    // Research spawns a REAL long-lived subprocess through the pipeline's
-    // threaded signal — exactly how child-spawning stages run. The cap must
-    // kill it, not merely stop awaiting it.
-    let researchChild: Promise<{ code: number }> | undefined;
-    const stages = stubStages(repoRoot, {
-      research: vi.fn((_args: unknown, options: { signal?: AbortSignal }) => {
-        researchChild = defaultExec(["sleep", "30"], { cwd: repoRoot, ...(options.signal === undefined ? {} : { signal: options.signal }) });
-        return researchChild.then(() => { throw new Error("killed"); }) as never;
-      }),
-    });
-    const started = Date.now();
-    const rejection = await runDemoPipeline({ ...pipelineArgs, skipDeploy: false, skipCapture: false }, {
-      repoRoot,
-      stages,
-      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })), // install etc.; research spawns via defaultExec directly
-      write: () => {},
-      capMs: 700, // fires while research's sleep(30) is in flight
-    }).catch((error: unknown) => error);
-    expect(rejection).toBeInstanceOf(DemoParkedError);
-    expect(String(rejection)).toMatch(/wall-clock cap during stage "research" \(aborted mid-stage\)/);
-    expect(String(rejection)).toMatch(/not run:.*deploy/);
-    // Side effects ceased: the subprocess exited (a live sleep would hold
-    // this await for 30s) — and no deploy artifact exists.
-    const child = await researchChild;
-    expect(Date.now() - started).toBeLessThan(6_000);
-    expect(child?.code).not.toBe(0);
-    expect(stages.deploy).not.toHaveBeenCalled();
-    // Park keeps the evidence: the app dir survives with its timings so far.
-    expect(existsSync(path.join(repoRoot, "apps", "demo-linear", "timings.json"))).toBe(true);
-  });
-
-  it("gives repeated stage occurrences distinct #n names — one honest row per run", async () => {
-    const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot, {
-      rewrite: vi.fn(async (_args, io) => {
-        await io.runStage?.("judge:round-1", async () => undefined);
-        await io.runStage?.("judge:round-1", async () => undefined);
-        return {
-          plan: { entity: { name: "Issue", stem: "issues", action: "closeIssue", fields: [], sampleRecordNames: ["x"] }, screens: [{ slug: "board", route: "/", title: "Board", purpose: "clone" }], nav: ["Inbox"], copyTone: "terse" },
-          agents: [],
-          fencedViolations: [],
-          buildRounds: 1,
-          costUsd: 0,
-        };
-      }),
-    });
-    const result = await runDemoPipeline(pipelineArgs, {
-      repoRoot,
-      stages,
-      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
-      write: () => {},
-    });
-    const timings = JSON.parse(await readFile(path.join(result.appDir, "timings.json"), "utf8")) as { stage: string }[];
-    const names = timings.map((row) => row.stage);
-    expect(names.filter((name) => name.startsWith("judge:round-1"))).toEqual(["judge:round-1", "judge:round-1#2"]);
-    expect(new Set(names).size).toBe(names.length);
-  });
-
-  it("writes per-stage timings and one-line progress markers", async () => {
-    const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot);
-    const lines: string[] = [];
-    const result = await runDemoPipeline(pipelineArgs, {
-      repoRoot,
-      stages,
-      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
-      write: (line) => lines.push(line),
-    });
-    const timings = JSON.parse(await readFile(path.join(result.appDir, "timings.json"), "utf8"));
-    expect(timings.map((row: { stage: string }) => row.stage))
-      .toEqual(["validate", "create", "install", "research", "rewrite:agents", "chips"]);
-    for (const row of timings) {
-      expect(row).toMatchObject({
-        stage: expect.any(String),
-        startedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-        ms: expect.any(Number),
-      });
-    }
-    for (const stage of ["validate", "create", "install", "research"]) {
-      expect(lines.some((line) => line.includes(stage) && /\bms\b|\dms/.test(line)), `marker for ${stage}`).toBe(true);
-    }
-  });
-
-  it("passes operator screenshots through to create", async () => {
-    const repoRoot = await makeRepoRoot();
-    const stages = stubStages(repoRoot);
-    await runDemoPipeline({ ...pipelineArgs, screenshots: ["/tmp/a.png"] }, {
-      repoRoot,
-      stages,
-      fetchImpl: vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
-      exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })),
-      write: () => {},
-    });
-    expect(stages.create).toHaveBeenCalledWith(
-      expect.objectContaining({ screenshots: ["/tmp/a.png"] }),
-      expect.anything(),
+  it("fails with the cap's named gaps rather than hanging forever", async () => {
+    vi.useFakeTimers();
+    const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-demos-"));
+    const h = harness({ evidence: async () => await new Promise(() => undefined) });
+    const promise = runDemoPipeline(
+      { id: "acme", prospect: "Acme", screenshots: ["/a.png"], ctaUrl: "https://x.test", expiresAt: "2026-08-31T00:00:00.000Z", demosRepo, skipShip: false },
+      { stages: h.stages, write: () => undefined, capMs: 1_000 },
     );
+    // Which side of the stage boundary the cap lands on is a race; what must
+    // hold is that the run FAILS and names what never ran.
+    const assertion = expect(promise).rejects.toThrow(/cap fired[\s\S]*not run: [^\n]*brief, build, assemble, judge, ship/);
+    await vi.advanceTimersByTimeAsync(1_500);
+    await assertion;
+    vi.useRealTimers();
   });
 });
