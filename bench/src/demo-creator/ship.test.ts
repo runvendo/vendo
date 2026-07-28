@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ExecFn, ExecResult } from "./exec.js";
-import { isTransientRailwayFailure, railwayAttempts, runShip, type ShipIo } from "./ship.js";
+import { isTransientRailwayFailure, parseRailwayDomain, railwayAttempts, runShip, type ShipIo } from "./ship.js";
 
 const commit = "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b";
 const railwayDomain = "host-production-1234.up.railway.app";
@@ -65,6 +65,23 @@ describe("isTransientRailwayFailure", () => {
   it("does not match a real build failure", () => {
     expect(isTransientRailwayFailure("Dockerfile:14\nERROR: process did not complete successfully: exit code 1")).toBe(false);
     expect(isTransientRailwayFailure("Error: service host not found in project")).toBe(false);
+  });
+});
+
+describe("parseRailwayDomain", () => {
+  // The REAL output of `railway domain --service host --json`, captured from the
+  // CLI on 2026-07-27: a `domains` ARRAY, not the `domain` string the primary
+  // parse looks for. The regex fallback is what carries this shape — which is
+  // exactly why it exists, and why it is pinned here now that the shape is known.
+  it("reads the shape the railway CLI actually returns", () => {
+    const real = '{\n  "domains": [\n    "https://host-production-b9a5.up.railway.app"\n  ]\n}';
+    expect(parseRailwayDomain(real)).toBe("host-production-b9a5.up.railway.app");
+  });
+
+  it("still reads a bare `domain` string, and gives up cleanly on neither", () => {
+    expect(parseRailwayDomain(JSON.stringify({ domain: "https://host-x.up.railway.app/" })))
+      .toBe("host-x.up.railway.app");
+    expect(parseRailwayDomain("No linked project found. Run railway link")).toBeUndefined();
   });
 });
 

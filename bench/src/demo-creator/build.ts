@@ -433,6 +433,32 @@ export interface BuildResult {
 }
 
 /**
+ * Writes JSON so a reader never sees half of it.
+ *
+ * demo.config.json is overwritten twice in this stage — once with the
+ * known-invalid merged state so the repair agent can SEE it, once with the final
+ * config — and a plain in-place write that fails mid-flight leaves truncated
+ * JSON. Every later reader (the repair agent, `demo:fix`, the host build) then
+ * fails to parse it for a reason that has nothing to do with the demo.
+ *
+ * The temp file is a sibling, not in os.tmpdir(): `rename` is only atomic within
+ * one filesystem. Serialise BEFORE opening anything, so a value that cannot be
+ * stringified never touches disk.
+ */
+export async function writeJsonAtomic(target: string, value: unknown): Promise<void> {
+  const body = `${JSON.stringify(value, null, 2)}\n`;
+  const temporary = `${target}.${process.pid}.tmp`;
+  try {
+    await writeFile(temporary, body);
+    await rename(temporary, target);
+  } finally {
+    // A leftover temp file inside the demo folder would be committed to the host
+    // repo by ship's `git add -- demos/<slug>`.
+    await rm(temporary, { force: true });
+  }
+}
+
+/**
  * The beats agent's config, read WITHOUT the strict parse: its beats may be
  * missing kinds or carrying an ungrounded pill, and that is exactly what the
  * grounding pass and the repair round are for. The strict parse is the LAST
@@ -569,7 +595,7 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
     if (problems.length > 0) {
       // The repair agent edits the file, so it has to SEE the merged state —
       // including the derived pills — rather than the config it wrote itself.
-      await writeFile(paths.config, `${JSON.stringify({ ...config, beats: merged }, null, 2)}\n`);
+      await writeJsonAtomic(paths.config, { ...config, beats: merged });
       write(`[build] beat variety: ${problems.join("; ")} — one repair agent`);
       const repairJob: AgentJob = {
         name: "beats-repair",
@@ -621,7 +647,7 @@ YOUR FILE LIST (writable): demo.config.json only.`,
       },
       `generated demo config at "${paths.config}"`,
     );
-    await writeFile(paths.config, `${JSON.stringify(next, null, 2)}\n`);
+    await writeJsonAtomic(paths.config, next);
     return next.beats;
   });
 

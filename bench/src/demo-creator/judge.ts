@@ -33,6 +33,9 @@ export interface DimensionScore {
 
 export interface JudgeVerdict {
   scores: DimensionScore[];
+  /** Keys the rubric never asked for, e.g. `overall`, `logo.confidence`. The
+   * scores are still used; this is how they stop being silently dropped. */
+  extras: string[];
 }
 
 const dimensionRubric: Record<JudgeDimension, string> = {
@@ -77,21 +80,95 @@ export function extractJsonObject(raw: string, label: string): Record<string, un
   }
 }
 
-/** Parses the judge model's JSON into a verdict; every pinned dimension must
- * be present with an integer 1-10 score and a non-empty justification. */
+/**
+ * The keys an object literal declares AT the given brace depth, in order,
+ * duplicates included — string- and escape-aware.
+ *
+ * `JSON.parse` cannot answer this: it collapses `{"logo":…,"logo":…}` to the LAST
+ * value silently, so a model that emitted two different logo scores had the
+ * recorded one decided by ordering. The only way to see the ambiguity is to read
+ * the text.
+ */
+export function declaredKeys(objectText: string): string[] {
+  const keys: string[] = [];
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let current = "";
+  let capturing = false;
+  for (let index = 0; index < objectText.length; index += 1) {
+    const character = objectText[index] as string;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') {
+        inString = false;
+        if (capturing) {
+          // A string at depth 1 is a key only if a colon follows it.
+          const rest = objectText.slice(index + 1).trimStart();
+          if (rest.startsWith(":")) keys.push(current);
+          capturing = false;
+        }
+      } else if (capturing) current += character;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      if (depth === 1) {
+        capturing = true;
+        current = "";
+      }
+      continue;
+    }
+    if (character === "{" || character === "[") depth += 1;
+    else if (character === "}" || character === "]") depth -= 1;
+  }
+  return keys;
+}
+
+/** Parses the judge model's JSON into a verdict; every pinned dimension must be
+ * present exactly once with an integer 1-10 score. Anything the rubric did not
+ * ask for is reported rather than dropped. */
 export function parseJudgeVerdict(raw: string): JudgeVerdict {
   const parsed = extractJsonObject(raw, "Judge");
+  const declared = declaredKeys(rawObjectText(raw));
+  const duplicates = [...new Set(declared.filter((key, index) => declared.indexOf(key) !== index))];
+  if (duplicates.length > 0) {
+    throw new Error(
+      `Judge output rejected: duplicate key(s) ${duplicates.map((key) => `"${key}"`).join(", ")} — two answers for one dimension, and JSON parsing would silently keep whichever came last`,
+    );
+  }
   const scores: DimensionScore[] = [];
+  const extras: string[] = [];
   for (const dimension of judgeDimensions) {
     const entry = parsed[dimension] as { score?: unknown; justification?: unknown } | undefined;
     const score = entry?.score;
     if (typeof score !== "number" || !Number.isInteger(score) || score < 1 || score > 10) {
       throw new Error(`Judge output rejected: "${dimension}" needs an integer score 1-10 (got ${JSON.stringify(score)})`);
     }
-    const justification = typeof entry?.justification === "string" && entry.justification !== "" ? entry.justification : "(no justification given)";
+    const given = entry?.justification;
+    // Whitespace-only is absent: a blank table cell reads as "the judge had
+    // nothing to say", which is not what happened.
+    const justification = typeof given === "string" && given.trim() !== "" ? given : "(no justification given)";
     scores.push({ dimension, score, justification });
+    for (const field of Object.keys(entry as Record<string, unknown>)) {
+      if (field !== "score" && field !== "justification") extras.push(`${dimension}.${field}`);
+    }
   }
-  return { scores };
+  for (const key of Object.keys(parsed)) {
+    if (!(judgeDimensions as readonly string[]).includes(key)) extras.push(key);
+  }
+  return { scores, extras };
+}
+
+/** The JSON object's own text, as {@link extractJsonObject} finds it — the input
+ * {@link declaredKeys} has to read (a re-serialised parse has already lost the
+ * duplicates it exists to detect). */
+function rawObjectText(raw: string): string {
+  const unfenced = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const start = unfenced.indexOf("{");
+  const end = unfenced.lastIndexOf("}");
+  return start === -1 || end <= start ? "{}" : unfenced.slice(start, end + 1);
 }
 
 /**
@@ -245,6 +322,17 @@ export async function captureBuiltScreens(options: CaptureScreensOptions): Promi
 // The report
 // ---------------------------------------------------------------------------
 
+/**
+ * One Markdown table cell of MODEL TEXT.
+ *
+ * A justification is whatever the judge wrote, and it goes straight into a table
+ * row: a `|` splits the row into extra columns and a newline ends the row early,
+ * so one chatty justification silently broke the whole score table.
+ */
+function cell(text: string): string {
+  return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+}
+
 /** RESEARCH/FIDELITY.md — the score table plus every note that kept a score
  * from being computed. Written on every run, scored or not. */
 export function renderFidelityReport(options: {
@@ -259,8 +347,14 @@ export function renderFidelityReport(options: {
     : `| Dimension | Score | ≥${fidelityThreshold}? | Justification |
 | --- | --- | --- | --- |
 ${options.verdict.scores
-  .map((score) => `| ${score.dimension} | ${score.score} | ${score.score >= fidelityThreshold ? "pass" : "FAIL"} | ${score.justification} |`)
+  .map((score) => `| ${score.dimension} | ${score.score} | ${score.score >= fidelityThreshold ? "pass" : "FAIL"} | ${cell(score.justification)} |`)
   .join("\n")}`;
+  // Keys the rubric never asked for are a note, not a silence: they mean the
+  // model answered a slightly different question than the one we asked.
+  const extras = options.verdict?.extras ?? [];
+  const notes = extras.length === 0
+    ? options.notes
+    : [...options.notes, `the judge also returned key(s) the rubric never asked for, which were not scored: ${extras.join(", ")}`];
   return `# Fidelity report — ${options.prospect}
 
 ${options.verdict === undefined ? "Scores: none (see notes)." : `Scores: ${formatScoresLine(options.verdict)}`}
@@ -268,7 +362,7 @@ Bar: ${fidelityThreshold}/10 per dimension (a report, not a gate — this stage 
 Scored against ${options.evidence.length} evidence image(s)${options.evidence.length === 0 ? "" : `: ${options.evidence.map((image) => image.label).join("; ")}`}.
 Built screens: ${options.builtScreens.length === 0 ? "(none captured)" : options.builtScreens.map((screen) => path.basename(screen)).join(", ")}
 
-${options.notes.map((note) => `NOTE: ${note}`).join("\n")}${options.notes.length === 0 ? "" : "\n"}
+${notes.map((note) => `NOTE: ${note}`).join("\n")}${notes.length === 0 ? "" : "\n"}
 ${table}
 `;
 }

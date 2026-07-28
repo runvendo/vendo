@@ -44,6 +44,41 @@ describe("parseJudgeVerdict", () => {
     expect(() => parseJudgeVerdict(JSON.stringify(missing))).toThrow('"copyTone"');
     expect(() => parseJudgeVerdict(verdictJson({ logo: 11 }))).toThrow('"logo"');
   });
+
+  // A justification of "   " passed the `!== ""` check and became a blank cell
+  // that reads as "the judge had nothing to say", which is not what happened.
+  it("treats a whitespace-only justification as absent", () => {
+    const blank = JSON.parse(verdictJson({})) as Record<string, { justification: string }>;
+    blank.logo = { ...blank.logo, justification: "  \n " } as { justification: string };
+    expect(parseJudgeVerdict(JSON.stringify(blank)).scores[0]?.justification).toBe("(no justification given)");
+  });
+
+  // Duplicate keys are AMBIGUOUS: JSON.parse silently keeps the last, so a model
+  // that emitted two different logo scores decided the recorded one by ordering.
+  // Refusing costs the reroll; guessing costs a score nobody can trace.
+  it("refuses duplicate dimension keys rather than taking the last one", () => {
+    const doubled = '{"logo":{"score":9,"justification":"their mark"},"logo":{"score":2,"justification":"generic"},'
+      + '"palette":{"score":9,"justification":"p"},"type":{"score":9,"justification":"t"},'
+      + '"layout":{"score":9,"justification":"l"},"copyTone":{"score":9,"justification":"c"}}';
+    expect(() => parseJudgeVerdict(doubled)).toThrow(/duplicate/i);
+  });
+
+  // Not silently dropped: an extra top-level key or an extra field inside a
+  // dimension means the model answered a different question than the one asked,
+  // and that belongs in the report rather than in nobody's hands.
+  it("reports extra keys the rubric never asked for instead of ignoring them", () => {
+    const extra = JSON.parse(verdictJson({})) as Record<string, unknown>;
+    extra.overall = { score: 7, justification: "pretty good" };
+    (extra.logo as Record<string, unknown>).confidence = "high";
+    const verdict = parseJudgeVerdict(JSON.stringify(extra));
+    expect(verdict.scores).toHaveLength(5);
+    expect(verdict.extras.join("; ")).toContain("overall");
+    expect(verdict.extras.join("; ")).toContain("logo.confidence");
+  });
+
+  it("has nothing to report when the model answered exactly the rubric", () => {
+    expect(parseJudgeVerdict(verdictJson({})).extras).toEqual([]);
+  });
 });
 
 describe("buildJudgePrompt", () => {
@@ -218,5 +253,39 @@ describe("renderFidelityReport", () => {
     });
     expect(report).toContain("| type | 3 | FAIL |");
     expect(report).toContain("NOTE: logo evidence was missing");
+  });
+
+  // The justification is MODEL TEXT going straight into a Markdown table cell. A
+  // pipe splits the row into extra columns and a newline ends the row early, so
+  // one chatty justification silently broke the whole score table.
+  it("keeps the table intact when a justification carries a pipe or a newline", () => {
+    const verdict: JudgeVerdict = parseJudgeVerdict(verdictJson({}));
+    const messy: JudgeVerdict = {
+      ...verdict,
+      scores: verdict.scores.map((score) => score.dimension === "logo"
+        ? { ...score, justification: "wordmark | header\nsecond line\r\nthird" }
+        : score),
+    };
+    const report = renderFidelityReport({
+      prospect: "Linear", verdict: messy, builtScreens: [], evidence: [], notes: [],
+    });
+    const rows = report.split("\n").filter((line) => line.startsWith("| ") && !line.startsWith("| ---"));
+    // Header + one row per dimension, and every row has the same column count —
+    // counting only UNESCAPED pipes, which is what Markdown treats as a column
+    // break (an escaped `\|` renders as a literal pipe inside the cell).
+    expect(rows).toHaveLength(judgeDimensions.length + 1);
+    for (const row of rows) expect(row.split(/(?<!\\)\|/)).toHaveLength(6);
+    expect(report).toContain("wordmark \\| header second line third");
+  });
+
+  it("surfaces the keys the rubric never asked for as a note", () => {
+    const extra = JSON.parse(verdictJson({})) as Record<string, unknown>;
+    extra.overall = { score: 7 };
+    const report = renderFidelityReport({
+      prospect: "Linear",
+      verdict: parseJudgeVerdict(JSON.stringify(extra)),
+      builtScreens: [], evidence: [], notes: [],
+    });
+    expect(report).toContain("overall");
   });
 });

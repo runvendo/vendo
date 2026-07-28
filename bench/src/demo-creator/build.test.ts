@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,6 +13,7 @@ import {
   repairBudgetUsd,
   runBuild,
   syncTools,
+  writeJsonAtomic,
   ungroundedBeats,
 } from "./build.js";
 import { maxChips } from "./chips.js";
@@ -563,6 +564,87 @@ describe("runBuild", () => {
     await expect(runBuild(args, io({ demosRepo, runAgent })))
       .rejects.toThrow(/automation, connect-account/);
     expect(names.filter((name) => name.startsWith("beats-repair"))).toHaveLength(1);
+  });
+
+  // demo.config.json is overwritten twice — once with the known-invalid merged
+  // state so the repair agent can SEE it, once with the final config — and both
+  // were plain in-place writes. An I/O failure mid-write leaves truncated JSON,
+  // which every later reader (the repair agent, demo:fix, the host build) then
+  // fails to parse for a reason that has nothing to do with the demo.
+  it("never leaves a partially written demo.config.json behind", async () => {
+    const demosRepo = await demoFolder({ config: agentConfig(["generate-ui", "take-action", "save-app"]) });
+    const paths = demoPaths(demosRepo, slug);
+    const seen: string[] = [];
+    const runAgent: RunAgentFn = async (job) => {
+      if (job.name.startsWith("beats-repair")) {
+        // Whatever the repair agent reads must be COMPLETE, parseable JSON.
+        const onDisk = await readFile(paths.config, "utf8");
+        seen.push(onDisk);
+        JSON.parse(onDisk);
+        await writeFile(paths.config, `${JSON.stringify(agentConfig(), null, 2)}\n`);
+      }
+      return agentOk(job.name);
+    };
+
+    await runBuild(args, io({ demosRepo, runAgent }));
+
+    expect(seen).toHaveLength(1);
+    // No temp file left in the demo folder — it would be committed to the host repo.
+    const leftovers = (await readdir(paths.root)).filter((name) => name.includes("demo.config.json") && name !== "demo.config.json");
+    expect(leftovers).toEqual([]);
+    JSON.parse(await readFile(paths.config, "utf8"));
+  });
+
+  it("swaps the file in atomically and cleans up after itself", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "vendo-atomic-"));
+    const target = path.join(dir, "demo.config.json");
+    await writeFile(target, '{"old":true}\n');
+
+    await writeJsonAtomic(target, { new: true });
+
+    expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ new: true });
+    // Nothing left over: a stray temp file inside the demo folder would be
+    // committed into the host repo by ship's `git add -- demos/<slug>`.
+    expect(await readdir(dir)).toEqual(["demo.config.json"]);
+  });
+
+  // The property that matters, raced for real: while a big config is being
+  // written, every read of the destination must return COMPLETE JSON — the old
+  // one or the new one. An in-place `writeFile` fails this, because it truncates
+  // the destination first.
+  it("never exposes a partial file to a concurrent reader", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "vendo-atomic-"));
+    const target = path.join(dir, "demo.config.json");
+    const old = { generation: 0, filler: "x".repeat(2_000_000) };
+    await writeFile(target, `${JSON.stringify(old, null, 2)}\n`);
+    const next = { generation: 1, filler: "y".repeat(2_000_000) };
+
+    const writing = writeJsonAtomic(target, next);
+    const generations = new Set<number>();
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      // Throws if the file is ever truncated or half-written.
+      generations.add((JSON.parse(await readFile(target, "utf8")) as { generation: number }).generation);
+    }
+    await writing;
+    generations.add((JSON.parse(await readFile(target, "utf8")) as { generation: number }).generation);
+
+    expect([...generations].every((generation) => generation === 0 || generation === 1)).toBe(true);
+  });
+
+  it("keeps the old file when the new content cannot be written", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "vendo-atomic-"));
+    const target = path.join(dir, "demo.config.json");
+    await writeFile(target, '{"old":true}\n');
+    // A value JSON.stringify refuses (a circular reference) stands in for any
+    // failure between "start writing" and "finish writing".
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    await expect(writeJsonAtomic(target, circular)).rejects.toThrow();
+
+    // The reader still sees the COMPLETE old file, not a truncated new one.
+    expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ old: true });
+    expect(await readdir(dir)).toEqual(["demo.config.json"]);
   });
 
   it("refuses to write a config the demo-folder schema would reject", async () => {
