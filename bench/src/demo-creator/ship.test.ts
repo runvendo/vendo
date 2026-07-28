@@ -107,6 +107,46 @@ describe("runShip", () => {
     expect(lines.join("\n")).toContain("nothing to commit");
   });
 
+  /** ensureDemosRepo fast-forwarded minutes ago, so another pipeline (or lane 1
+   * pushing the host) can land a commit in between. Dying here loses a demo that
+   * already built and passed the smoke turn. */
+  it("recovers from a concurrent push by rebasing onto main and pushing once more", async () => {
+    let pushes = 0;
+    const { exec, calls } = stubExec((command) => {
+      if (!command.includes("push")) return defaultReply(command);
+      pushes += 1;
+      return pushes === 1
+        ? { code: 1, stdout: "", stderr: "! [rejected] HEAD -> main (fetch first)\nhint: Updates were rejected" }
+        : ok;
+    });
+    const result = await runShip(args, shipIo({ exec }));
+    const argvs = calls.map((call) => call.command);
+    expect(argvs).toContainEqual(["git", "pull", "--rebase", "origin", "main"]);
+    expect(argvs.filter((argv) => argv.includes("push"))).toHaveLength(2);
+    expect(result.liveUrl).toBe("https://demos.vendo.run/acme");
+  });
+
+  it("throws naming the fix when the push is still rejected after the rebase", async () => {
+    const { exec, calls } = stubExec((command) =>
+      command.includes("push")
+        ? { code: 1, stdout: "", stderr: "! [rejected] HEAD -> main (non-fast-forward)" }
+        : defaultReply(command));
+    const error = await runShip(args, shipIo({ exec })).catch((thrown: unknown) => thrown as Error);
+    expect(error.message).toMatch(/rejected/);
+    expect(error.message).toContain("/tmp/vendo-demos");
+    expect(calls.map((call) => call.command).filter((argv) => argv.includes("push"))).toHaveLength(2);
+  });
+
+  it("does not rebase when the push fails for a reason a rebase cannot fix", async () => {
+    const { exec, calls } = stubExec((command) =>
+      command.includes("push")
+        ? { code: 128, stdout: "", stderr: "fatal: Authentication failed for 'https://github.com/runvendo/vendo-demos.git/'" }
+        : defaultReply(command));
+    await expect(runShip(args, shipIo({ exec }))).rejects.toThrow(/Authentication failed/);
+    expect(calls.map((call) => call.command).filter((argv) => argv.includes("push"))).toHaveLength(1);
+    expect(calls.flatMap((call) => call.command)).not.toContain("--rebase");
+  });
+
   it("retries a transient railway up exactly up to the attempt cap, then throws", async () => {
     const { exec, calls } = stubExec((command) =>
       command.includes("up")
@@ -156,5 +196,16 @@ describe("runShip", () => {
     await expect(promise).rejects.toThrow(/<redacted>/);
     await promise.catch((error: Error) => { expect(error.message).not.toContain(key); });
     expect(lines.join("\n")).not.toContain(key);
+  });
+
+  it("never leaks a credential git echoed back from a remote URL", async () => {
+    const token = "ghp_shippushtokenvalue";
+    const { exec } = stubExec((command) =>
+      command.includes("push")
+        ? { code: 128, stdout: "", stderr: `fatal: unable to access 'https://x-access-token:${token}@github.com/runvendo/vendo-demos.git/': 403` }
+        : defaultReply(command));
+    const error = await runShip(args, shipIo({ exec })).catch((thrown: unknown) => thrown as Error);
+    expect(error.message).not.toContain(token);
+    expect(error.message).toContain("://<redacted>@github.com");
   });
 });

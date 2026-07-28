@@ -53,7 +53,7 @@ async function main(): Promise<void> {
     preflight(process.env);
     const result = await runDemoFix(args);
     process.stdout.write(result.liveUrl === undefined
-      ? `Stopped before ship — the fixed demo is at ${result.slug}\n`
+      ? `Stopped before ship — the fixed demo is at ${result.demoDir}\n`
       : `LIVE: ${result.liveUrl}\n`);
     return;
   }

@@ -47,6 +47,8 @@ export interface EvidenceIo {
 export interface EvidenceScreenshot {
   /** RESEARCH-relative */
   file: string;
+  /** The operator's own file NAME. Basename only: this digest is committed to
+   * the host repo, and their local path is not ours to publish. */
   source: string;
 }
 
@@ -139,15 +141,16 @@ export async function runEvidence(args: EvidenceArgs, io: EvidenceIo): Promise<E
 
   const screenshots: EvidenceScreenshot[] = [];
   for (const [index, source] of args.screenshots.entries()) {
+    const name = path.basename(source);
     // Indexed so two files both named screenshot.png cannot overwrite each
     // other, and so the brief can cite them in the operator's order.
-    const file = `${index + 1}-${path.basename(source)}`;
+    const file = `${index + 1}-${name}`;
     try {
       await copyFile(source, path.join(paths.researchDir, file));
     } catch (error) {
       throw new Error(`evidence: cannot read the reference screenshot "${source}": ${failureReason(error)}`);
     }
-    screenshots.push({ file, source });
+    screenshots.push({ file, source: name });
   }
   write(`  screenshots: ${screenshots.length} copied into RESEARCH/`);
 
@@ -175,11 +178,12 @@ export async function runEvidence(args: EvidenceArgs, io: EvidenceIo): Promise<E
     }
   }
 
-  const domain = args.url === undefined ? undefined : domainFromUrl(args.url);
+  const url = args.url;
+  const domain = url === undefined ? undefined : domainFromUrl(url);
   const noDomainReason =
-    args.url === undefined
+    url === undefined
       ? "no --url given — this call is keyed on the prospect's site"
-      : `no --url given that resolves to a domain (${args.url})`;
+      : `--url does not resolve to a domain (${url}) — this call is keyed on the prospect's site`;
 
   const brand = await attempt("retrieve-brand", () =>
     domain === undefined ? client.retrieveBrand({ name: args.prospect }) : client.retrieveBrand({ domain }),
@@ -191,7 +195,7 @@ export async function runEvidence(args: EvidenceArgs, io: EvidenceIo): Promise<E
   let styleguide: StyleguideResult | undefined;
   let fonts: FontsResult | undefined;
   let markdown: MarkdownResult | undefined;
-  if (domain === undefined) {
+  if (url === undefined || domain === undefined) {
     for (const call of ["styleguide", "fonts", "scrape-markdown"]) {
       soft.push({ call, reason: noDomainReason });
       write(`  ${call}: skipped — ${noDomainReason}`);
@@ -209,7 +213,7 @@ export async function runEvidence(args: EvidenceArgs, io: EvidenceIo): Promise<E
     // Main content only: nav/footer boilerplate crowds out the product words
     // the brief needs for vocabulary and voice.
     markdown = await attempt("scrape-markdown", () =>
-      client.scrapeMarkdown({ url: args.url as string, useMainContentOnly: true }),
+      client.scrapeMarkdown({ url, useMainContentOnly: true }),
     );
     if (markdown !== undefined) write(`  scrape-markdown: ${markdown.contentLength} bytes of site text`);
   }

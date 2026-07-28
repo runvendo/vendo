@@ -67,3 +67,32 @@ export function firstLine(text: string): string | undefined {
   const line = text.split("\n").find((candidate) => candidate.trim().length > 0);
   return line?.trim();
 }
+
+export function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/** Credentials embedded in a URL, e.g. a push remote's
+ * `https://x-access-token:ghp_…@github.com/…`. Git quotes its own remote back
+ * on a failure, and that token is in .git/config — never in the environment —
+ * so no env-name rule can catch it. */
+const urlCredentials = /:\/\/[^\s/@]+:[^\s/@]*@/g;
+
+/**
+ * Redacts everything credential-shaped from text that came out of a child
+ * process. Children echo their environment on some failures and git echoes its
+ * remote, and every relayed line ends up in an operator's terminal or a Slack
+ * thread — so nothing reaches a `write` or an `Error` unscrubbed.
+ *
+ * Only values over 8 characters count: redacting `NODE_ENV=production` or a
+ * short flag value would make the failure it is attached to unreadable, which
+ * is the other way to lose a run.
+ */
+export function createScrubber(env: NodeJS.ProcessEnv): (text: string) => string {
+  const secrets = Object.entries(env)
+    .filter(([name, value]) => /KEY|TOKEN|SECRET|PASSWORD/.test(name) && typeof value === "string" && value.length > 8)
+    .map(([, value]) => value as string);
+  return (text: string): string =>
+    secrets.reduce((scrubbed, secret) => scrubbed.replaceAll(secret, "<redacted>"), text)
+      .replace(urlCredentials, "://<redacted>@");
+}

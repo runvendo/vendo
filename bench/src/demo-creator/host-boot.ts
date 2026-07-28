@@ -6,7 +6,7 @@ import path from "node:path";
 import { chromium } from "@playwright/test";
 import { sendPrompt, waitForTurn } from "../demo-capture/capture.js";
 import { genManifestScript, hostDir } from "./demo-folder.js";
-import { defaultExec, firstLine, type ExecFn } from "./exec.js";
+import { createScrubber, defaultExec, delay, firstLine, type ExecFn } from "./exec.js";
 
 /**
  * Stage 4's plumbing: drive the vendo-demos HOST (a foreign checkout, not this
@@ -62,15 +62,18 @@ export async function generateManifest(options: {
   write?: (line: string) => void;
   commands?: HostCommands;
   signal?: AbortSignal;
+  env?: NodeJS.ProcessEnv;
 }): Promise<{ manifestPath: string; slugs: string[] }> {
   const exec = options.exec ?? defaultExec;
   const commands = options.commands ?? defaultHostCommands;
+  const scrub = createScrubber(options.env ?? process.env);
   const result = await exec(commands.genManifest, {
     cwd: hostPath(options.demosRepo),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.env === undefined ? {} : { env: options.env }),
   });
   if (result.code !== 0) {
-    throw new Error(`gen-manifest failed (exit ${result.code}): ${firstLine(result.stderr || result.stdout) ?? "no output"}`);
+    throw new Error(`gen-manifest failed (exit ${result.code}): ${scrub(firstLine(result.stderr || result.stdout) ?? "no output")}`);
   }
   const generated = manifestPath(options.demosRepo);
   const source = await readFile(generated, "utf8").catch(() => undefined);
@@ -105,12 +108,11 @@ export async function buildHost(options: {
     // Both streams: Next prints type errors on stdout and warnings on stderr,
     // so picking one stream hides the actual cause about half the time.
     const output = `${result.stdout}${result.stderr}`;
-    throw new Error(`host build failed (exit ${result.code}):\n${output.slice(-3_000)}`);
+    // The build gets the pipeline's whole environment, and this tail is relayed
+    // to a terminal and a Slack thread.
+    const scrub = createScrubber(options.env ?? process.env);
+    throw new Error(`host build failed (exit ${result.code}):\n${scrub(output.slice(-3_000))}`);
   }
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function tcpReady(url: string): Promise<boolean> {
@@ -227,6 +229,18 @@ export async function bootHost(options: {
 
 export type SmokeTurnFn = (options: { baseUrl: string; slug: string; prompt: string; timeoutMs: number }) => Promise<void>;
 
+/** `requireView: false` is the contract's "gates on HARD error only": the smoke
+ * turn passes as long as the turn did not error and did settle. What the agent
+ * generated is the judge's business, never stage 4's. Split out so that rule is
+ * pinned by a test instead of by a browser run. */
+export function smokeTurnWaitOptions(options: { previousAssistantTurns: number; timeoutMs: number }): {
+  previousAssistantTurns: number;
+  timeoutMs: number;
+  requireView: false;
+} {
+  return { previousAssistantTurns: options.previousAssistantTurns, timeoutMs: options.timeoutMs, requireView: false };
+}
+
 /** Drives /<slug>/vendo in a real browser: type the prompt, wait for the turn to
  *  settle. Throws on a surfaced error or a turn that never settles. */
 export const defaultSmokeTurn: SmokeTurnFn = async (options) => {
@@ -240,14 +254,9 @@ export const defaultSmokeTurn: SmokeTurnFn = async (options) => {
     });
     await page.getByRole("textbox", { name: "Message" }).waitFor({ state: "visible", timeout: options.timeoutMs });
     const sent = await sendPrompt(page, options.prompt);
-    // requireView: false — the contract gates on HARD errors only (the turn
-    // errored, or never settled). What the agent generated is the judge's
-    // business, never stage 4's.
     await waitForTurn({
       page,
-      previousAssistantTurns: sent.assistantTurns,
-      timeoutMs: options.timeoutMs,
-      requireView: false,
+      ...smokeTurnWaitOptions({ previousAssistantTurns: sent.assistantTurns, timeoutMs: options.timeoutMs }),
     });
   } finally {
     await browser.close().catch(() => undefined);

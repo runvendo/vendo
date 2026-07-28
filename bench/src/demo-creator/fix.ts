@@ -7,7 +7,7 @@ import { demoPaths, parseDemoFolderConfig } from "./demo-folder.js";
 import { defaultDemosRepo, ensureDemosRepo } from "./demos-repo.js";
 import { defaultExec, type ExecFn } from "./exec.js";
 import { runJudge, type JudgeIo, type JudgeResult } from "./judge.js";
-import { createStageRunner, localHostPort, type StageTiming } from "./pipeline.js";
+import { assertOnlyDemoTouched, createStageRunner, localHostPort, type StageTiming } from "./pipeline.js";
 import { runShip, type ShipIo, type ShipResult } from "./ship.js";
 
 /**
@@ -105,6 +105,8 @@ export interface DemoFixIo {
 
 export interface DemoFixResult {
   slug: string;
+  /** The demo folder the fix landed in — what the operator is told to open. */
+  demoDir: string;
   agent: AgentRunResult;
   timings: StageTiming[];
   judge: JudgeResult;
@@ -140,6 +142,16 @@ export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise
     capFired: (context) => new Error(`the ${Math.round(capMs / 60000)}-minute cap fired ${context}`),
   });
 
+  // A failed stop leaks `next start` on the port and the NEXT run dies with a
+  // boot error that looks like nothing to do with this one.
+  const stopHost = async (running: AssembleResult["host"]): Promise<void> => {
+    try {
+      await running.stop();
+    } catch (error) {
+      write(`[fix] WARNING: the local host on port ${localHostPort} did not stop (${error instanceof Error ? error.message : String(error)}) — kill it before the next run: lsof -ti:${localHostPort} | xargs kill -9`);
+    }
+  };
+
   let host: AssembleResult["host"] | undefined;
   try {
     await runStage("repo", () => stages.ensureRepo(args.demosRepo, { exec, write, signal }));
@@ -173,34 +185,38 @@ export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise
       await parseDemoFolderConfig(JSON.parse(await readFile(paths.config, "utf8")), `demo config at "${paths.config}"`);
     });
 
+    // Last point where a change outside the demo folder can ONLY have come from
+    // the fix agent: assemble legitimately writes the host's manifest next.
+    await assertOnlyDemoTouched(args.demosRepo, args.id, { exec });
+
     const smokePrompt = config.beats[0]?.prompt ?? `Show me an overview of the ${config.prospect} data in this workspace.`;
     const assembled = await runStage("assemble", () => stages.assemble(
       { slug: args.id, port: localHostPort, smokePrompt },
-      { demosRepo: args.demosRepo, write, env, exec, signal },
+      { demosRepo: args.demosRepo, write, env, exec, signal, runStage },
     ));
     host = assembled.host;
 
     const judge = await runStage("judge", () => stages.judge(
       { slug: args.id, prospect: config.prospect, baseUrl: assembled.host.baseUrl },
-      { demosRepo: args.demosRepo, write, env, signal },
+      { demosRepo: args.demosRepo, write, signal, runStage },
     ));
     const scoresLine = judge.scoresLine;
     write(`SCORES: ${scoresLine}`);
 
-    await host.stop().catch(() => undefined);
+    await stopHost(host);
     host = undefined;
 
     if (args.skipShip) {
       write("[fix] --skip-ship: stopping after judge (nothing committed, pushed or deployed)");
-      return { slug: args.id, agent, timings, judge, scoresLine };
+      return { slug: args.id, demoDir: paths.root, agent, timings, judge, scoresLine };
     }
     const shipped = await runStage("ship", () => stages.ship(
       { slug: args.id, prospect: config.prospect },
-      { demosRepo: args.demosRepo, write, env, exec, signal },
+      { demosRepo: args.demosRepo, write, env, exec, signal, runStage },
     ));
-    return { slug: args.id, agent, timings, judge, scoresLine, ship: shipped, liveUrl: shipped.liveUrl };
+    return { slug: args.id, demoDir: paths.root, agent, timings, judge, scoresLine, ship: shipped, liveUrl: shipped.liveUrl };
   } finally {
     clearTimeout(capTimer);
-    if (host !== undefined) await host.stop().catch(() => undefined);
+    if (host !== undefined) await stopHost(host);
   }
 }

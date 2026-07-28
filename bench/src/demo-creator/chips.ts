@@ -12,10 +12,11 @@ import type { DemoBeat } from "demo-template/demo-config";
  * the prospect's own vocabulary.
  *
  * Deliberately one cheap model call and no judge loop — this is a sales tool,
- * and a wrong pill costs a confusing chip, not a broken demo. Explicit beats
- * always win: a hand-authored (or agent-authored) beat carries the
- * `expectsView`/`expectsApproval` contract that `demo-beats` verifies, so it
- * is kept verbatim and derived pills only fill the remainder.
+ * and a wrong pill costs a confusing chip, not a broken demo. Authored beats
+ * always win: the beats agent's own beat carries the
+ * `expectsView`/`expectsApproval` declarations the beat arc is validated on
+ * (demo-folder.ts's `beatVarietyProblems`), so it is kept verbatim and derived
+ * pills only fill the remainder.
  *
  * The caller is build.ts's grounding pass (stage 3 of `demo:pipeline`).
  */
@@ -26,14 +27,6 @@ export const maxChips = 5;
  * TARGET, not a floor: grounding drops whatever it must and the stage ships
  * fewer pills rather than padding the strip with ones that do not work. */
 export const targetDerivedChips = 5;
-
-/** The `TODO(creator): ` fence a scaffolded beat carries — a placeholder is NOT
- * an authored beat and loses to a derived one. */
-const placeholderFence = "TODO(creator): ";
-
-export function isPlaceholderBeat(beat: DemoBeat): boolean {
-  return beat.prompt.startsWith(placeholderFence) || beat.chip.startsWith(placeholderFence);
-}
 
 /** One entry of the demo's tools.json, narrowed to what a chip needs. */
 export interface ExtractedTool {
@@ -302,7 +295,8 @@ export function parseChipsReply(
 
     seen.add(slug);
     // No expectsView/expectsApproval: a derived pill is not a verification
-    // contract, so `demo-beats` only needs it to settle cleanly.
+    // contract, and the beat arc's required declarations ride the authored
+    // beats it merges behind.
     beats.push({ key: slug, chip: chip.trim(), prompt: prompt.trim() });
   }
   // Ship fewer, never pad: a short strip of pills that all work beats a full
@@ -314,14 +308,13 @@ export function parseChipsReply(
 }
 
 /**
- * Explicit wins. Non-placeholder beats keep their order and their expectation
+ * Existing beats win. Every one keeps its order and its expectation
  * declarations; derived pills fill up to {@link maxChips}, skipping any key an
- * explicit beat already owns.
+ * existing beat already owns.
  */
 export function mergeBeats(existing: readonly DemoBeat[], derived: readonly DemoBeat[]): DemoBeat[] {
-  const explicit = existing.filter((beat) => !isPlaceholderBeat(beat));
-  const taken = new Set(explicit.map((beat) => beat.key));
-  const merged = [...explicit];
+  const taken = new Set(existing.map((beat) => beat.key));
+  const merged = [...existing];
   for (const beat of derived) {
     if (merged.length >= maxChips) break;
     if (taken.has(beat.key)) continue;

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { runAssemble, type AssembleIo, type AssembleResult } from "./assemble.js";
@@ -47,6 +47,8 @@ export interface DemoPipelineArgs {
   ctaUrl: string;
   /** UTC instant, derived from --expires (a date) or defaulted 21 days out. */
   expiresAt: string;
+  /** PATH to the operator's notes file. Its CONTENTS become the brief's
+   * authoritative operator note — {@link readOperatorNotes} reads it. */
   notes?: string;
   demosRepo: string;
   /** Stop after judge: nothing is committed, pushed or deployed. */
@@ -125,11 +127,76 @@ export function preflight(env: NodeJS.ProcessEnv): void {
   const missing: string[] = [];
   if ((env.ANTHROPIC_API_KEY ?? "") === "") missing.push("ANTHROPIC_API_KEY (the brief, the judge and the claude CLI build agents)");
   if ((env.CONTEXT_DEV_API_KEY ?? "") === "") missing.push("CONTEXT_DEV_API_KEY (brand evidence — in Infisical)");
-  if ((env.ANTHROPIC_API_KEY ?? "") === "" && (env.VENDO_API_KEY ?? "") === "") {
-    missing.push("ANTHROPIC_API_KEY or VENDO_API_KEY (the host needs one to answer the smoke turn)");
-  }
+  // The demo host runs the Cloud posture (store and connections slots unset,
+  // Cloud composes them), so the boot that answers the smoke turn needs the
+  // host's OWN key — the harness key does not stand in for it.
+  if ((env.VENDO_API_KEY ?? "") === "") missing.push("VENDO_API_KEY (the locally booted host — its store, connections and agent route are Cloud-composed)");
   if (missing.length > 0) {
     throw new Error(`missing credential(s): ${missing.join("; ")} — source the Flowlet .env before running`);
+  }
+}
+
+/**
+ * `--notes` is a FILE PATH whose CONTENTS become the brief's authoritative
+ * operator note. Read here rather than in the parser so parsing stays sync, and
+ * hard-failed rather than defaulted: a typo'd path is operator input exactly
+ * like `--screenshots`, and passing the path through would make the string
+ * "notes.md" the note that wins every conflict in the brief.
+ */
+async function readOperatorNotes(file: string): Promise<string> {
+  try {
+    return await readFile(file, "utf8");
+  } catch (error) {
+    throw new Error(`--notes: cannot read the operator notes file "${file}": ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** One porcelain line → the repo-relative paths it touches. A rename reports
+ * BOTH halves (`R  old -> new`), and each half is its own touched path. */
+function porcelainPaths(line: string): string[] {
+  // Two status columns then a space; everything after is path(s).
+  const rest = line.slice(3);
+  const arrow = rest.indexOf(" -> ");
+  return (arrow === -1 ? [rest] : [rest.slice(0, arrow), rest.slice(arrow + 4)])
+    .map((entry) => entry.trim())
+    // git quotes any path holding a space or a non-ASCII byte. The prefix this
+    // fence tests is plain ASCII, so unwrapping the quotes is enough — read raw,
+    // a demo's own "screens/Invoice Table.tsx" would look like an escape.
+    .map((entry) => (entry.startsWith('"') && entry.endsWith('"') ? entry.slice(1, -1) : entry))
+    .filter((entry) => entry !== "");
+}
+
+/**
+ * The runtime fence behind the contract's "generation agents never write
+ * host/". The build and fix agents run with `--permission-mode
+ * bypassPermissions`, so the prompt's file list is a request, not a boundary —
+ * and `railway up` uploads the whole WORKING DIRECTORY, not the commit. A stray
+ * edit to the Vendo kit or the caps guard would therefore reach every live demo
+ * without ever being committed or reviewed.
+ *
+ * Called at the two points where an agent has just run and nothing legitimate
+ * has yet written outside the demo folder (gen-manifest's manifest.ts and the
+ * host's brand assets come later, in assemble).
+ */
+export async function assertOnlyDemoTouched(
+  demosRepo: string,
+  slug: string,
+  io: { exec: ExecFn },
+): Promise<void> {
+  const status = await io.exec(["git", "-C", demosRepo, "status", "--porcelain", "--untracked-files=all"], { cwd: demosRepo });
+  if (status.code !== 0) {
+    throw new Error(`cannot fence the demos repo: "git status" failed (exit ${status.code}): ${status.stderr.trim() || status.stdout.trim()}`);
+  }
+  const allowed = `demos/${slug}/`;
+  const offenders = status.stdout
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .flatMap(porcelainPaths)
+    .filter((touched) => !touched.startsWith(allowed));
+  if (offenders.length > 0) {
+    throw new Error(
+      `generation agents wrote outside demos/${slug}/: ${[...new Set(offenders)].join(", ")} — the host is not theirs to edit, and \`railway up\` uploads the working directory, so these would reach every live demo uncommitted. Inspect and revert them by hand (git -C ${demosRepo} checkout -- <path>, or delete an untracked one), then re-run.`,
+    );
   }
 }
 
@@ -193,15 +260,22 @@ export function createStageRunner(options: {
   signal: AbortSignal;
   capFired: (context: string) => Error;
 }) {
+  const counts = new Map<string, number>();
   return async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
     if (Date.now() > options.deadline) throw options.capFired(`before stage "${name}"`);
+    // Distinct row per occurrence: a repeated name (judge.ts wraps its own body
+    // in runStage("judge"), the same name the pipeline gives the stage) gets
+    // "#n" so the timing table stays one honest row per thing that ran.
+    const count = (counts.get(name) ?? 0) + 1;
+    counts.set(name, count);
+    const rowName = count === 1 ? name : `${name}#${count}`;
     const startedAt = new Date().toISOString();
     const t0 = performance.now();
-    options.write(`[pipeline] ${name} started`);
+    options.write(`[pipeline] ${rowName} started`);
     let onAbort: (() => void) | undefined;
     try {
       const capRace = new Promise<never>((_resolve, reject) => {
-        onAbort = () => reject(options.capFired(`during stage "${name}"`));
+        onAbort = () => reject(options.capFired(`during stage "${rowName}"`));
         if (options.signal.aborted) onAbort();
         else options.signal.addEventListener("abort", onAbort, { once: true });
       });
@@ -213,8 +287,8 @@ export function createStageRunner(options: {
     } finally {
       if (onAbort !== undefined) options.signal.removeEventListener("abort", onAbort);
       const ms = Math.round(performance.now() - t0);
-      options.timings.push({ stage: name, startedAt, ms });
-      options.write(`[pipeline] ${name} finished in ${ms}ms`);
+      options.timings.push({ stage: rowName, startedAt, ms });
+      options.write(`[pipeline] ${rowName} finished in ${ms}ms`);
       const target = options.timingsPath();
       if (target !== undefined) {
         await mkdir(path.dirname(target), { recursive: true }).catch(() => undefined);
@@ -247,10 +321,12 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
   capTimer.unref?.();
 
   const capFired = (context: string): Error => {
-    const done = new Set(timings.map((row) => row.stage));
-    const remaining = plannedStages.filter((planned) => !done.has(planned));
+    // Top-level rows only: the sub-stage rows the stages contribute would drown
+    // out the one thing this line exists to say.
+    const done = plannedStages.filter((planned) => timings.some((row) => row.stage === planned));
+    const remaining = plannedStages.filter((planned) => !done.includes(planned));
     return new Error(
-      `the ${Math.round(capMs / 60000)}-minute wall-clock cap fired ${context} — completed: ${[...done].join(", ") || "(none)"}; not run: ${remaining.join(", ")}`,
+      `the ${Math.round(capMs / 60000)}-minute wall-clock cap fired ${context} — completed: ${done.join(", ") || "(none)"}; not run: ${remaining.join(", ")}`,
     );
   };
 
@@ -265,8 +341,23 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
     capFired,
   });
 
+  // A failed stop leaks `next start` on the port and the NEXT run dies with a
+  // boot error that looks like nothing to do with this one — so it is a loud
+  // warning, never a swallow.
+  const stopHost = async (running: AssembleResult["host"]): Promise<void> => {
+    try {
+      await running.stop();
+    } catch (error) {
+      write(`[pipeline] WARNING: the local host on port ${localHostPort} did not stop (${error instanceof Error ? error.message : String(error)}) — kill it before the next run: lsof -ti:${localHostPort} | xargs kill -9`);
+    }
+  };
+
   let host: AssembleResult["host"] | undefined;
   try {
+    // Operator input, read before anything is spent: a typo'd --notes path must
+    // not surface fifteen minutes later, or worse, silently become the note.
+    const notes = args.notes === undefined ? undefined : await readOperatorNotes(args.notes);
+
     await runStage("repo", () => stages.ensureRepo(args.demosRepo, { exec, write, signal }));
 
     const evidence = await runStage("evidence", () => stages.evidence(
@@ -284,7 +375,7 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
         slug: args.id,
         prospect: args.prospect,
         ...(args.url === undefined ? {} : { url: args.url }),
-        ...(args.notes === undefined ? {} : { notes: args.notes }),
+        ...(notes === undefined ? {} : { notes }),
       },
       { demosRepo: args.demosRepo, write, env, evidence },
     ));
@@ -298,8 +389,12 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
         brief: brief.brief,
         theme: brief.theme,
       },
-      { demosRepo: args.demosRepo, write, env, exec, signal },
+      { demosRepo: args.demosRepo, write, env, exec, signal, runStage },
     ));
+
+    // Between build and assemble is the only window where a working-tree change
+    // outside the demo folder can ONLY have come from a build agent.
+    await assertOnlyDemoTouched(args.demosRepo, args.id, { exec });
 
     // The smoke turn plays the demo's OWN first beat: if the beat a prospect
     // will click errors or never settles, the demo is broken regardless of how
@@ -307,20 +402,20 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
     const smokePrompt = built.beats[0]?.prompt ?? `Show me an overview of the ${args.prospect} data in this workspace.`;
     const assembled = await runStage("assemble", () => stages.assemble(
       { slug: args.id, port: localHostPort, smokePrompt },
-      { demosRepo: args.demosRepo, write, env, exec, signal },
+      { demosRepo: args.demosRepo, write, env, exec, signal, runStage },
     ));
     host = assembled.host;
 
     const judge = await runStage("judge", () => stages.judge(
       { slug: args.id, prospect: args.prospect, baseUrl: assembled.host.baseUrl },
-      { demosRepo: args.demosRepo, write, env, signal },
+      { demosRepo: args.demosRepo, write, signal, runStage },
     ));
     const scoresLine = judge.scoresLine;
     write(`SCORES: ${scoresLine}`);
 
     // Free the port before the ship stage: nothing after this needs the local
     // host, and a leaked `next start` would hold 3150 for the next run.
-    await host.stop().catch(() => undefined);
+    await stopHost(host);
     host = undefined;
 
     if (args.skipShip) {
@@ -330,13 +425,13 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
 
     const shipped = await runStage("ship", () => stages.ship(
       { slug: args.id, prospect: args.prospect },
-      { demosRepo: args.demosRepo, write, env, exec, signal },
+      { demosRepo: args.demosRepo, write, env, exec, signal, runStage },
     ));
     return { slug: args.id, demoDir: paths.root, timings, judge, scoresLine, ship: shipped, liveUrl: shipped.liveUrl };
   } finally {
     clearTimeout(capTimer);
     // One dev server, reaped by whoever started it — including on the failure
     // path, where an orphaned host would hold the port for every later run.
-    if (host !== undefined) await host.stop().catch(() => undefined);
+    if (host !== undefined) await stopHost(host);
   }
 }

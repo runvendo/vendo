@@ -1,4 +1,4 @@
-import { defaultExec, firstLine, type ExecFn, type ExecResult } from "./exec.js";
+import { createScrubber, defaultExec, delay, firstLine, type ExecFn, type ExecResult } from "./exec.js";
 
 /**
  * Stage 6 — ship: the demo folder becomes a commit on vendo-demos main, and the
@@ -108,14 +108,10 @@ export function parseRailwayDomain(output: string): string | undefined {
   return match?.[1];
 }
 
-/** Every credential-shaped value in the environment. Child processes echo the
- * environment on some failures, so ANYTHING relayed from one — a written line,
- * an error message — goes through the scrubber first. */
-function envSecrets(env: NodeJS.ProcessEnv): string[] {
-  return Object.entries(env)
-    .filter(([name, value]) => /KEY|TOKEN|SECRET|PASSWORD/.test(name) && typeof value === "string" && value.length > 8)
-    .map(([, value]) => value as string);
-}
+/** A push git refused because main moved under us. `git pull --rebase` is the
+ * whole fix — this commit adds ONE new demo folder, so it cannot conflict with
+ * whatever else landed. */
+const rejectedPush = /rejected|non-fast-forward|fetch first|failed to push/i;
 
 export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
   const exec = io.exec ?? defaultExec;
@@ -127,9 +123,7 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
   const pollTimeoutMs = io.pollTimeoutMs ?? 5 * 60_000;
   const publicBaseUrl = (args.publicBaseUrl ?? defaultPublicBaseUrl).replace(/\/+$/, "");
 
-  const secrets = envSecrets(env);
-  const scrub = (text: string): string =>
-    secrets.reduce((scrubbed, secret) => scrubbed.replaceAll(secret, "<redacted>"), text);
+  const scrub = createScrubber(env);
   const step = async (command: string[], options: { display?: string; tolerate?: RegExp } = {}): Promise<ExecResult> => {
     const display = scrub(options.display ?? command.join(" "));
     write(`$ ${display}`);
@@ -156,7 +150,23 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
     // A `demo:fix` that changed no files still has to reach Railway (the host
     // may have moved under it), so an empty commit is a no-op, not a failure.
     if (commitResult.code !== 0) write(`  (nothing to commit for ${demoPath} — redeploying the current HEAD)`);
-    await step(["git", "push", "origin", "HEAD:main"]);
+    // ensureDemosRepo fast-forwarded at the START of the run; by now another
+    // pipeline (or a host change) can have landed on main. The build already
+    // passed and the demo is good, so a rejected push gets ONE recovery round
+    // instead of throwing the whole run away.
+    const push = ["git", "push", "origin", "HEAD:main"];
+    if ((await step(push, { tolerate: rejectedPush })).code !== 0) {
+      write("  push rejected — main moved; rebasing onto it and pushing once more");
+      await step(["git", "pull", "--rebase", "origin", "main"]);
+      const retry = await step(push, { tolerate: rejectedPush });
+      if (retry.code !== 0) {
+        throw new Error(
+          `"git push origin HEAD:main" was still rejected after rebasing onto origin/main (exit ${retry.code}):\n`
+          + `${scrub(retry.stderr || retry.stdout)}\n`
+          + `The demo is committed locally and is not lost — push it by hand (git -C "${io.demosRepo}" pull --rebase origin main && git -C "${io.demosRepo}" push origin HEAD:main), then re-run demo:fix for ${args.slug} to deploy it.`,
+        );
+      }
+    }
     return (await step(["git", "rev-parse", "HEAD"])).stdout.trim();
   });
 
@@ -179,7 +189,7 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
       if (attempt >= railwayAttempts) {
         throw new Error(`"railway up --service ${railwayService}" failed after ${railwayAttempts} attempts: ${firstLine(output) ?? "no output"}`);
       }
-      await new Promise((resolve) => setTimeout(resolve, retryWaitMs));
+      await delay(retryWaitMs);
     }
   });
 
@@ -197,7 +207,12 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
     const railwayUrl = railwayDomain === undefined ? undefined : `https://${railwayDomain}/${args.slug}`;
     const candidates = [publicUrl, ...(railwayUrl === undefined ? [] : [railwayUrl])];
 
-    const live = await waitForAny200(candidates, { fetchImpl, timeoutMs: pollTimeoutMs, write, signal: io.signal });
+    const live = await waitForAny200(candidates, {
+      fetchImpl,
+      timeoutMs: pollTimeoutMs,
+      write,
+      ...(io.signal === undefined ? {} : { signal: io.signal }),
+    });
     if (live.url !== undefined) {
       return {
         commit,
@@ -237,6 +252,6 @@ async function waitForAny200(urls: string[], options: {
     }
     if (Date.now() >= deadline) return { failures };
     options.write(`[ship] waiting for ${urls.map((url) => `${url} (${failures[url] ?? "?"})`).join(", ")}`);
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    await delay(pollIntervalMs);
   }
 }

@@ -73,4 +73,34 @@ describe("ensureDemosRepo", () => {
     await expect(ensureDemosRepo(dir, { exec, write: () => {} })).rejects.toThrow(/fast-forward/);
     await expect(ensureDemosRepo(dir, { exec, write: () => {} })).rejects.toThrow(dir);
   });
+
+  /** A push token lives in the remote URL in .git/config, NOT in the
+   * environment, so env-name scrubbing cannot see it — git quoting its own
+   * remote back in a failure is how a PAT reaches a log or a Slack thread. */
+  it("never leaks a PAT embedded in the remote URL into the thrown pull error", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "vendo-demos-repo-"));
+    await mkdir(path.join(dir, ".git"), { recursive: true });
+    const token = "ghp_realpushtokenvalue";
+    const { exec } = stubExec((command) =>
+      command.includes("pull")
+        ? { code: 1, stdout: "", stderr: `fatal: unable to access 'https://x-access-token:${token}@github.com/runvendo/vendo-demos.git/': 403\n` }
+        : defaultReply(command));
+    const error = await ensureDemosRepo(dir, { exec, write: () => {} }).catch((thrown: unknown) => thrown as Error);
+    expect(error.message).not.toContain(token);
+    expect(error.message).toContain("://<redacted>@github.com");
+  });
+
+  it("scrubs env secrets out of any git failure it relays", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "vendo-demos-repo-"));
+    await mkdir(path.join(dir, ".git"), { recursive: true });
+    const token = "ghp_environmenttokenvalue";
+    const { exec } = stubExec((command) =>
+      command.includes("rev-parse")
+        ? { code: 1, stdout: "", stderr: `fatal: bad object (GITHUB_TOKEN=${token})\n` }
+        : defaultReply(command));
+    const error = await ensureDemosRepo(dir, { exec, write: () => {}, env: { GITHUB_TOKEN: token } })
+      .catch((thrown: unknown) => thrown as Error);
+    expect(error.message).not.toContain(token);
+    expect(error.message).toContain("<redacted>");
+  });
 });

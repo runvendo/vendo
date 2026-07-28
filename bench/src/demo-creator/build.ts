@@ -12,11 +12,14 @@ import {
 import type { BrandBrief } from "./brief.js";
 import {
   buildChipsPrompt,
+  capabilityTokens,
   defaultChipModel,
+  meaningfulTokens,
   mergeBeats,
   parseChipsReply,
   readExtractedTools,
   type ChipModelFn,
+  type ExtractedTool,
 } from "./chips.js";
 import {
   beatVarietyProblems,
@@ -25,7 +28,7 @@ import {
   requiredBeatKeys,
   type DemoTheme,
 } from "./demo-folder.js";
-import { defaultExec, firstLine, type ExecFn } from "./exec.js";
+import { createScrubber, defaultExec, firstLine, type ExecFn } from "./exec.js";
 
 /**
  * Stage 3 of `demo:pipeline` — the demo folder's contents.
@@ -70,7 +73,8 @@ Non-negotiable rules:
 - NEVER edit theme.json, BRIEF.md, brand/ or RESEARCH/. They are already written from real brand evidence and are fenced.
 - ALL data is INVENTED. No real people, emails, or records from any source material: evidence informs STYLE, never DATA. And no Foo/Bar/Lorem/Alpha/Bravo placeholders — every name, amount and date must read like a real ${prospect} record.
 - Speak ${prospect}'s vocabulary (${brief.vocabulary.join(", ")}). Voice: ${brief.voice}
-- theme.json already holds the exact brand tokens; the host applies them. Use the theme's CSS custom properties, never hardcoded hexes.`;
+- theme.json already holds the exact brand tokens and the host turns them into Tailwind colours: use \`bg-bg\`, \`bg-surface\`, \`text-ink\`, \`text-muted\`, \`border-border\`, \`bg-accent\`, \`text-accent-ink\`, \`text-danger\`. Never a hardcoded hex — a hex is the one thing that cannot be re-themed.
+- NEVER import from \`@vendoai/*\`. The host's manifest step rejects it and the build fails: everything Vendo arrives through \`@host/vendo-kit\`, already themed and already pointed at this slug's wire.`;
 }
 
 function entityBlock(brief: BrandBrief): string {
@@ -109,16 +113,19 @@ ${rules}
 THE DOMAIN (from BRIEF.md — implement it exactly):
 ${entities}
 
-YOUR TASK:
-- server/entities.ts: the domain types above, plus the ONE mutating action per entity ("${brief.entities.map((entity) => entity.action).join('", "')}"). One mutation each, nothing speculative.
-- server/seed.ts: the deterministic seed. Import the seeded prng as \`import { mulberry32 } from "@host/prng"\` — never Math.random, the demo must look identical on every boot. Export \`interface SeedData\`, \`buildSeed(anchor?: Date): SeedData\`, and \`getStore(): SeedData\` (a module singleton seeded at first import — screens/ reads the demo's data through getStore()). 10-20 records per entity: right magnitudes, coherent dates (created before updated, nothing in the future), a realistic status spread.
+Read demos/_example/server/ in this same repo FIRST — it is the host's own worked example of every file you are about to write, and copying its shape is the fastest way to a demo that compiles.
+
+YOUR TASK (four files, exactly these shapes — the host imports them by name):
+- server/seed.ts: \`export interface SeedData\` and \`export function buildSeed(anchor: Date = new Date()): SeedData\`. Import the seeded prng as \`import { mulberry32 } from "@host/prng"\` — never Math.random, and derive every date from \`anchor\` rather than the clock, or the demo looks different on every boot. 10-20 records per entity: right magnitudes, coherent dates (created before updated, nothing after the anchor), a realistic status spread.
 - The sample records above must seed in a state the mutating action can STILL act on — not already archived, closed, voided or paid. A beat names one of them, and an already-actioned record makes the agent correctly decline: no consent card appears and the beat dies in front of the prospect. Pin their state explicitly instead of leaving it to the prng.
-- server/routes.ts: \`export const routes\` — a \`Record<"METHOD /path", (req: Request, store: SeedData) => Response>\` covering a list route per entity, a fetch-one route, and the mutation. Pick ONE response envelope and use it everywhere; whatever you pick, declare it in openapi.json. A response shape the spec does not describe is a shape the agent mis-reads, and the pill dead-ends.
-- openapi.json: declare EVERY route in routes.ts — matching operationId, a one-sentence summary in the product's own words, path/query parameters with descriptions, and x-vendo-formats for money fields stored in cents.
+- server/store.ts: exactly \`import { storeFor } from "@host/server/demo-store"\`, \`import { buildSeed } from "./seed"\`, \`export const getStore = () => storeFor(buildSeed)\`. Nothing else. This is load-bearing: a plain module singleton is instantiated ONCE PER ROUTE BUNDLE in a production Next build, so the page and the API would hold different copies and an approved mutation would visibly not happen on the page. \`storeFor\` is the host's one keyed store.
+- server/entities.ts: the domain types above, plus the read and write functions the page and the routes both call — a list function per entity and the ONE mutating action per entity ("${brief.entities.map((entity) => entity.action).join('", "')}"). They reach the data through \`getStore()\` from ./store. Throw a named error class for "no such record" so routes can answer 404. One mutation each, nothing speculative.
+- server/routes.ts: \`import type { DemoRoutes } from "@host/lib/demo-module"\` and \`export const routes: DemoRoutes\`. Keys are \`"METHOD /path"\` where path is what follows \`/api/<slug>\`, e.g. \`"GET /${brief.entities[0]?.stem ?? "records"}"\` and \`"POST /${brief.entities[0]?.stem ?? "records"}/:id/${brief.entities[0]?.action ?? "act"}"\`. A handler takes \`(request: Request)\` — NOT a store argument — and reads captured \`:name\` segments as SEARCH PARAMS (\`new URL(request.url).searchParams.get("id")\`), because that is how the host passes them. Answer \`Response.json({ data: ... })\` on success and \`Response.json({ error: { message, code } }, { status })\` on failure, exactly like demos/_example. That envelope must be what openapi.json describes: a shape the spec does not describe is a shape the agent mis-reads, and the pill dead-ends in front of the prospect.
+- openapi.json: declare EVERY route in routes.ts — matching operationId, a one-sentence summary in the product's own words, path/query parameters with descriptions, the \`{ data: ... }\` response schema, and x-vendo-formats for money fields stored in cents.
 
 openapi.json is the ONLY source of the demo agent's tools: a route missing from the spec does not exist to the agent. It needs at least one list route AND at least one mutating route, or the demo has nothing to show.
 
-YOUR FILE LIST (writable): server/entities.ts, server/seed.ts, server/routes.ts, openapi.json.`,
+YOUR FILE LIST (writable): server/seed.ts, server/store.ts, server/entities.ts, server/routes.ts, openapi.json.`,
     },
     {
       name: "screens",
@@ -133,11 +140,13 @@ ${rules}
 THE DOMAIN (another agent is writing server/ from the same brief, concurrently):
 ${entities}
 
+Read demos/_example/screens/index.tsx in this same repo FIRST: it is the host's own worked example, and what must survive your rewrite is its SHAPE — a server component with no props, reading data through ../server, rendering the kit's surfaces.
+
 YOUR TASK:
-- screens/index.tsx default-exports the product page. It receives NO props. It reads the demo's data by importing the sibling seed directly — \`import { getStore } from "../server/seed"\` — and NEVER by fetching: a screen that fetched and guessed the route's envelope shipped once as a perfect-looking report page that listed nothing at all.
+- screens/index.tsx default-exports the product page as a SERVER component (no "use client"). It receives NO props. It reads the demo's data by calling the domain functions another agent is writing in \`../server/entities\` (e.g. \`import { list${brief.entities[0]?.name ?? "Record"}s } from "../server/entities"\`) and NEVER by fetching: a screen that fetched and guessed the route's envelope shipped once as a perfect-looking report page that listed nothing at all.
 - The page is a STRUCTURAL 1:1 clone of ${brief.referenceScreenshot}: same regions, same nav labels (${brief.nav.join(" · ")}), same column set, same header composition, same density — populated from the seeded ${brief.entities.map((entity) => entity.name).join(" / ")} records. ${brief.productSurface}
 - You may add sibling components under screens/ and import them.
-- Render the Vendo surfaces where BRIEF.md's placement says: trigger in the ${brief.placement.trigger}, ${brief.placement.slot}. Import them ONLY from the pre-wired, per-demo-themed host kit \`@host/vendo-kit\` (host/src/vendo-kit): VendoRoot, VendoTrigger, VendoOverlay, VendoLayer, VendoPalette, VendoPage, VendoTabPage, VendoSlot, VendoThread. Never import from @vendoai/* directly and never re-implement a surface — the kit carries this demo's theme, and a hand-rolled panel is unthemed and off-brand.
+- Render the Vendo surfaces where BRIEF.md's placement says: trigger in the ${brief.placement.trigger}, ${brief.placement.slot}. Import them ONLY from \`@host/vendo-kit\`, which exports exactly: VendoTrigger, VendoSlot, VendoPage, VendoThread, VendoOverlay, VendoActivities, useDemo. \`<VendoTrigger prompt="...">Label</VendoTrigger>\` is the entry point and \`<VendoSlot id="..." />\` is where a generated view lands. VendoRoot and the overlay layer are mounted by the HOST around your page — do not mount them yourself, and never re-implement a surface: the kit arrives themed for this demo and pointed at this slug's wire.
 
 YOUR FILE LIST (writable): screens/** only.`,
     },
@@ -179,6 +188,96 @@ YOUR FILE LIST (writable): demo.config.json only.`,
 }
 
 // ---------------------------------------------------------------------------
+// Grounding the authored beats
+// ---------------------------------------------------------------------------
+
+/**
+ * Beats that exercise VENDO's own capabilities rather than one of the demo's
+ * host tools. Nothing in tools.json describes connecting a Gmail account or
+ * saving a generated view as an app, so demanding tool-surface overlap for
+ * these two would reject beats that are perfectly correct.
+ */
+export const platformBeatKeys = new Set<string>(["connect-account", "save-app"]);
+
+/**
+ * The authored beats that say nothing the demo's real tool surface can do.
+ *
+ * The beats agent writes its pills BEFORE tools.json exists — that is what lets
+ * the three build agents run in parallel — so this is the ONLY place where the
+ * pills a prospect actually clicks meet the capabilities the demo actually has.
+ * The test is deliberately the same one chips.ts applies to a derived pill: at
+ * least one meaningful word shared with some capability's name or description.
+ * A pill about invoices in a demo whose tools are all about shipments refuses
+ * the moment a prospect clicks it.
+ */
+export function ungroundedBeats(beats: readonly DemoBeat[], tools: readonly ExtractedTool[]): DemoBeat[] {
+  const surface = subjectTokens(tools);
+  return beats.filter((beat) => {
+    if (platformBeatKeys.has(beat.key)) return false;
+    for (const token of meaningfulTokens(`${beat.chip} ${beat.prompt}`)) {
+      if (surface.has(token)) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * The operation verbs every CRUD surface shares. They are dropped from the
+ * comparison because they ground nothing: "Show me every overdue invoice"
+ * shares "list" and "every" with a tool called `host_listShipments` whose
+ * description reads "List every shipment", and that overlap would pass a pill
+ * about invoices in a demo that only knows about shipments — the exact failure
+ * this check exists to catch.
+ */
+const operationVerbs = new Set([
+  "list", "get", "fetch", "read", "show", "search", "find", "query",
+  "create", "add", "update", "edit", "set", "change", "remove", "delete", "every", "record", "item", "data",
+]);
+
+/** What the demo's tools are ABOUT: the nouns in their names and prose, minus
+ * the CRUD verbs. A tool's name is its identity, so it is weighted in by
+ * being included at all — the description only adds subject nouns. */
+function subjectTokens(tools: readonly ExtractedTool[]): Set<string> {
+  const subjects = new Set<string>();
+  for (const tool of tools) {
+    for (const token of capabilityTokens(tool)) {
+      if (!operationVerbs.has(token)) subjects.add(token);
+    }
+  }
+  return subjects;
+}
+
+/**
+ * Rewrites each ungrounded beat's visible text with a derived pill, keeping its
+ * key and its expectation flags — the arc (`generate-ui` must still render a
+ * view, `take-action` must still ask for consent) belongs to the pipeline, only
+ * the wording belongs to the model. Returns the beats and what changed.
+ */
+export function regroundBeats(
+  beats: readonly DemoBeat[],
+  tools: readonly ExtractedTool[],
+  derived: readonly DemoBeat[],
+): { beats: DemoBeat[]; replaced: string[]; stillUngrounded: string[] } {
+  const ungrounded = new Set(ungroundedBeats(beats, tools).map((beat) => beat.key));
+  const spare = derived.filter((pill) => ungroundedBeats([pill], tools).length === 0);
+  const replaced: string[] = [];
+  const stillUngrounded: string[] = [];
+  let next = 0;
+  const result = beats.map((beat) => {
+    if (!ungrounded.has(beat.key)) return beat;
+    const pill = spare[next];
+    if (pill === undefined) {
+      stillUngrounded.push(beat.key);
+      return beat;
+    }
+    next += 1;
+    replaced.push(beat.key);
+    return { ...beat, chip: pill.chip, prompt: pill.prompt };
+  });
+  return { beats: result, replaced, stillUngrounded };
+}
+
+// ---------------------------------------------------------------------------
 // vendo sync
 // ---------------------------------------------------------------------------
 
@@ -189,14 +288,17 @@ export async function syncTools(options: {
   slug: string;
   exec: ExecFn;
   signal?: AbortSignal;
+  /** Only the scrubber reads it — the CLI's own failures are relayed verbatim. */
+  env?: NodeJS.ProcessEnv;
 }): Promise<number> {
   const paths = demoPaths(options.demosRepo, options.slug);
+  const scrub = createScrubber(options.env ?? process.env);
   const result = await options.exec(
     ["node", vendoCli, "sync", paths.root, "--no-watermark"],
     { cwd: paths.root, ...(options.signal === undefined ? {} : { signal: options.signal }) },
   );
   if (result.code !== 0) {
-    throw new Error(`vendo sync failed (exit ${result.code}) over demos/${options.slug}: ${firstLine(result.stderr) ?? firstLine(result.stdout) ?? "no output"}`);
+    throw new Error(`vendo sync failed (exit ${result.code}) over demos/${options.slug}: ${scrub(firstLine(result.stderr) ?? firstLine(result.stdout) ?? "no output")}`);
   }
 
   // `vendoSync` defaults its `out` to `<root>/.vendo` and also drops a
@@ -204,13 +306,19 @@ export async function syncTools(options: {
   // root, and a stray .vendo/ would be committed into the host repo — so move
   // the one file we keep and delete the rest.
   const vendoDir = path.join(paths.root, ".vendo");
-  const count = (await readExtractedTools(path.join(vendoDir, "tools.json"))).length;
-  if (count === 0) {
-    throw new Error(`vendo sync extracted no product tools from demos/${options.slug}/openapi.json — a demo whose agent can do nothing is not shippable`);
+  try {
+    const count = (await readExtractedTools(path.join(vendoDir, "tools.json"))).length;
+    if (count === 0) {
+      throw new Error(`vendo sync extracted no product tools from demos/${options.slug}/openapi.json — a demo whose agent can do nothing is not shippable (if the spec looks right, check that tools.json parsed: a malformed one reads as empty)`);
+    }
+    await rename(path.join(vendoDir, "tools.json"), paths.tools);
+    return count;
+  } finally {
+    // In a `finally` because the throw above is exactly when the leftovers
+    // matter most: a re-run or a later `demo:fix` does `git add -- demos/<slug>`
+    // and would commit the stray directory into the host repo.
+    await rm(vendoDir, { recursive: true, force: true });
   }
-  await rename(path.join(vendoDir, "tools.json"), paths.tools);
-  await rm(vendoDir, { recursive: true, force: true });
-  return count;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +379,9 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
   const chipModel = io.chipModel ?? defaultChipModel;
   const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
   const env = io.env ?? process.env;
+  // A generation agent that hit a credential error quotes it back in its final
+  // message, and that message goes straight into an operator-visible throw.
+  const scrub = createScrubber(env);
   const runStage = io.runStage ?? (async <T>(_name: string, fn: () => Promise<T>): Promise<T> => await fn());
   const paths = demoPaths(io.demosRepo, args.slug);
   const agentOptions = { cwd: paths.root, env, ...(io.signal === undefined ? {} : { signal: io.signal }) };
@@ -292,7 +403,7 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
     }
     const failed = results.filter((result) => result.code !== 0);
     if (failed.length > 0) {
-      throw new Error(`${failed.length} build agent(s) failed: ${failed.map((result) => `${result.name} (exit ${result.code}${result.timedOut ? ", timed out" : ""})`).join(", ")}\nFirst failure output:\n${failed[0]?.output.slice(0, 1000)}`);
+      throw new Error(`${failed.length} build agent(s) failed: ${failed.map((result) => `${result.name} (exit ${result.code}${result.timedOut ? ", timed out" : ""})`).join(", ")}\nFirst failure output:\n${scrub(failed[0]?.output.slice(0, 1000) ?? "")}`);
     }
   });
 
@@ -301,6 +412,7 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
       demosRepo: io.demosRepo,
       slug: args.slug,
       exec,
+      env,
       ...(io.signal === undefined ? {} : { signal: io.signal }),
     });
     write(`[build] vendo sync: ${count} product tool(s) at demos/${args.slug}/tools.json`);
@@ -317,10 +429,18 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
     );
     const authored = await readAgentConfig(paths.config);
     let config = authored.config;
-    let merged = mergeBeats(authored.beats, derived);
-    write(`[build] grounding: ${derived.length} pill(s) survived ${tools.length} tools, ${merged.length} beat(s) after merge`);
+    // The authored pills are checked against the surface FIRST — they are what a
+    // prospect clicks. A derived pill is not an extra pill; it is the
+    // replacement wording for an authored one that named a capability this demo
+    // does not have. Only then does mergeBeats fill a short arc.
+    const reground = regroundBeats(authored.beats, tools, derived);
+    let merged = mergeBeats(reground.beats, derived);
+    write(`[build] grounding: ${tools.length} tool(s); ${reground.replaced.length === 0 ? "every authored pill was grounded" : `regrounded ${reground.replaced.join(", ")}`}${reground.stillUngrounded.length === 0 ? "" : `; STILL ungrounded: ${reground.stillUngrounded.join(", ")}`}; ${merged.length} beat(s)`);
 
-    let problems = beatVarietyProblems(merged);
+    let problems = [
+      ...beatVarietyProblems(merged),
+      ...reground.stillUngrounded.map((key) => `beat "${key}" names no capability in tools.json`),
+    ];
     if (problems.length > 0) {
       // The repair agent edits the file, so it has to SEE the merged state —
       // including the derived pills — rather than the config it wrote itself.
@@ -347,7 +467,7 @@ YOUR FILE LIST (writable): demo.config.json only.`,
       const repair = await runAgent(repairJob, agentOptions);
       agents.push(repair);
       if (repair.code !== 0) {
-        throw new Error(`Beat repair agent failed (exit ${repair.code}${repair.timedOut ? ", timed out" : ""}):\n${repair.output.slice(0, 1000)}`);
+        throw new Error(`Beat repair agent failed (exit ${repair.code}${repair.timedOut ? ", timed out" : ""}):\n${scrub(repair.output.slice(0, 1000))}`);
       }
       const repaired = await readAgentConfig(paths.config);
       config = repaired.config;

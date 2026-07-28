@@ -62,7 +62,6 @@ describe.skipIf(!hasKey)("live judge (fixture images)", () => {
       const palette = verdict.scores.find((score) => score.dimension === "palette");
       expect(palette, "palette dimension present").toBeDefined();
       expect(palette?.score ?? 10, `palette must fail (got ${palette?.score}: ${palette?.justification})`).toBeLessThan(fidelityThreshold);
-      expect(verdict.failing).toContain("palette");
       // Structure is identical, so layout must NOT be the thing that fails hardest:
       const layout = verdict.scores.find((score) => score.dimension === "layout");
       expect((layout?.score ?? 0) > (palette?.score ?? 0), "layout should outscore the broken palette").toBe(true);

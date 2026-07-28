@@ -87,6 +87,16 @@ export function parseAgentOutput(stdout: string): { output: string; costUsd?: nu
   }
 }
 
+/** A budget-exceeded or otherwise errored run can still exit 0, so `is_error`
+ * in the JSON payload — not the process code — decides whether the agent
+ * failed. Trusting the exit code alone ships a demo whose generation agent
+ * silently did nothing. */
+export function effectiveExitCode(exitCode: number | null, isError: boolean): number {
+  const code = exitCode ?? 1;
+  if (code !== 0) return code;
+  return isError ? 1 : 0;
+}
+
 export const defaultRunAgent: RunAgentFn = (job, options) =>
   new Promise((resolve, reject) => {
     const child = spawn("claude", buildClaudeArgs(job, { readOnly: options.readOnly ?? false }), {
@@ -114,11 +124,9 @@ export const defaultRunAgent: RunAgentFn = (job, options) =>
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbort);
       const parsed = parseAgentOutput(stdout);
-      // A budget-exceeded/errored run can still exit 0 — is_error is truth.
-      const effectiveCode = (code ?? 1) !== 0 ? (code ?? 1) : parsed.isError ? 1 : 0;
       resolve({
         name: job.name,
-        code: effectiveCode,
+        code: effectiveExitCode(code, parsed.isError),
         output: parsed.output === "" ? stderr : parsed.output,
         ...(parsed.costUsd === undefined ? {} : { costUsd: parsed.costUsd }),
         timedOut,

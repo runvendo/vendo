@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "@playwright/test";
 import { demoPaths } from "./demo-folder.js";
+import { delay, firstLine } from "./exec.js";
 
 /**
  * Stage 5 — the visual judge, ONE pass.
@@ -32,8 +33,6 @@ export interface DimensionScore {
 
 export interface JudgeVerdict {
   scores: DimensionScore[];
-  failing: JudgeDimension[];
-  pass: boolean;
 }
 
 const dimensionRubric: Record<JudgeDimension, string> = {
@@ -57,22 +56,34 @@ ${judgeDimensions.map((dimension) => `  "${dimension}": { "score": <1-10 integer
 }`;
 }
 
-/** Parses the judge model's JSON into a verdict; every pinned dimension must
- * be present with an integer 1-10 score and a non-empty justification. */
-export function parseJudgeVerdict(raw: string): JudgeVerdict {
+/**
+ * Every stage that asks a model for JSON gets the same tolerance: models
+ * sometimes fence the object or top it with a sentence, and losing a whole
+ * vision call to that is silly. `label` names the asking stage in the error,
+ * which is the only thing that makes a live-run log readable.
+ *
+ * Lives here because this is where the model-reply lessons were learned; the
+ * brief stage (same model, same seam) imports it.
+ */
+export function extractJsonObject(raw: string, label: string): Record<string, unknown> {
   const unfenced = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   const start = unfenced.indexOf("{");
   const end = unfenced.lastIndexOf("}");
-  if (start === -1 || end <= start) throw new Error(`Judge did not return JSON:\n${raw.slice(0, 400)}`);
-  let parsed: Record<string, { score?: unknown; justification?: unknown }>;
+  if (start === -1 || end <= start) throw new Error(`${label} did not return JSON:\n${raw.slice(0, 400)}`);
   try {
-    parsed = JSON.parse(unfenced.slice(start, end + 1)) as typeof parsed;
+    return JSON.parse(unfenced.slice(start, end + 1)) as Record<string, unknown>;
   } catch (error) {
-    throw new Error(`Judge returned invalid JSON (${error instanceof Error ? error.message : String(error)}):\n${raw.slice(0, 400)}`);
+    throw new Error(`${label} returned invalid JSON (${error instanceof Error ? error.message : String(error)}):\n${raw.slice(0, 400)}`);
   }
+}
+
+/** Parses the judge model's JSON into a verdict; every pinned dimension must
+ * be present with an integer 1-10 score and a non-empty justification. */
+export function parseJudgeVerdict(raw: string): JudgeVerdict {
+  const parsed = extractJsonObject(raw, "Judge");
   const scores: DimensionScore[] = [];
   for (const dimension of judgeDimensions) {
-    const entry = parsed[dimension];
+    const entry = parsed[dimension] as { score?: unknown; justification?: unknown } | undefined;
     const score = entry?.score;
     if (typeof score !== "number" || !Number.isInteger(score) || score < 1 || score > 10) {
       throw new Error(`Judge output rejected: "${dimension}" needs an integer score 1-10 (got ${JSON.stringify(score)})`);
@@ -80,8 +91,7 @@ export function parseJudgeVerdict(raw: string): JudgeVerdict {
     const justification = typeof entry?.justification === "string" && entry.justification !== "" ? entry.justification : "(no justification given)";
     scores.push({ dimension, score, justification });
   }
-  const failing = scores.filter((entry) => entry.score < fidelityThreshold).map((entry) => entry.dimension);
-  return { scores, failing, pass: failing.length === 0 };
+  return { scores };
 }
 
 /**
@@ -149,7 +159,7 @@ export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
         lastError = error;
         const wait = backoffsMs[attempt];
         if (wait === undefined) break; // next model tier
-        await new Promise((resolve) => setTimeout(resolve, wait));
+        await delay(wait);
       }
     }
   }
@@ -267,7 +277,6 @@ export interface JudgeIo {
   judgeModel?: JudgeModelFn;
   captureScreens?: (options: CaptureScreensOptions) => Promise<string[]>;
   write?: (line: string) => void;
-  env?: NodeJS.ProcessEnv;
   /** The pipeline's wall-clock-cap signal. */
   signal?: AbortSignal;
   runStage?: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
@@ -332,14 +341,14 @@ export async function runJudge(args: JudgeArgs, io: JudgeIo): Promise<JudgeResul
         try {
           verdict = parseJudgeVerdict(await judgeModel(prompt, images));
         } catch (error) {
-          write(`[judge] verdict parse failed (${firstLineOf(error)}) — rerolling once`);
+          write(`[judge] verdict parse failed (${causeLine(error)}) — rerolling once`);
           verdict = parseJudgeVerdict(await judgeModel(prompt, images));
         }
         write(`[judge] ${formatScoresLine(verdict)}`);
       } catch (error) {
         // SHIP REGARDLESS: a dead judge costs us the scores, not the demo.
-        notes.push(`the judge did not score this demo: ${firstLineOf(error)}`);
-        write(`[judge] scoring failed — shipping unscored (${firstLineOf(error)})`);
+        notes.push(`the judge did not score this demo: ${causeLine(error)}`);
+        write(`[judge] scoring failed — shipping unscored (${causeLine(error)})`);
       }
     });
   }
@@ -358,6 +367,10 @@ export async function runJudge(args: JudgeArgs, io: JudgeIo): Promise<JudgeResul
   };
 }
 
-function firstLineOf(error: unknown): string {
-  return error instanceof Error ? (error.message.split("\n")[0] ?? error.message) : String(error);
+/** One-line cause for a note, a log line or a rethrow: unwrap the Error, then
+ * take the first line through exec.ts's shared splitter. Exported for the brief
+ * stage, which rethrows the same way. */
+export function causeLine(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return firstLine(message) ?? message;
 }

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   allowedPalette,
   buildBriefPrompt,
+  paletteProvenance,
   parseBriefReply,
   renderBriefMarkdown,
   runBrief,
@@ -100,9 +101,9 @@ const parseOptions = (over: Partial<EvidenceResult> = {}) => {
 // ---------------------------------------------------------------------------
 
 describe("allowedPalette", () => {
-  it("normalises the brand hexes, keeps them ahead of the neutral ramp, and dedupes", () => {
+  it("normalises the brand hexes, keeps them ahead of the ramp-only neutrals, and dedupes", () => {
     const palette = allowedPalette(evidence());
-    expect(palette.slice(0, 3)).toEqual(["#1E6BFF", "#0B1220", "#E4E7EC"]);
+    expect(palette.slice(0, 4)).toEqual(["#1E6BFF", "#FFFFFF", "#0B1220", "#E4E7EC"]);
     for (const neutral of neutralRamp) expect(palette).toContain(neutral);
     expect(new Set(palette).size).toBe(palette.length);
   });
@@ -111,6 +112,22 @@ describe("allowedPalette", () => {
     const palette = allowedPalette(evidence({ palette: [] }));
     expect(palette).toContain("#1E6BFF");
     expect(palette).toContain("#0B1220");
+  });
+
+  // These were two separate walks over the SAME six styleguide colour fields,
+  // in different orders: the provenance a token reported could name a source
+  // the numbered palette had ranked somewhere else entirely. One sequence, one
+  // dedupe, or they drift again.
+  it("derives the palette order and the provenance map from ONE sequence", () => {
+    const result = evidence();
+    expect([...paletteProvenance(result).keys()]).toEqual(allowedPalette(result));
+  });
+
+  it("labels each hex with the first source that produced it, specific styleguide roles first", () => {
+    const provenance = paletteProvenance(evidence());
+    expect(provenance.get("#1E6BFF")).toContain("styleguide accent");
+    expect(provenance.get("#E4E7EC")).toContain("card border");
+    expect(provenance.get("#B42318")).toContain("neutral ramp");
   });
 });
 
@@ -407,15 +424,19 @@ describe("runBrief", () => {
     expect(lines.join("\n")).toMatch(/rerolling once/);
   });
 
-  it("propagates the second failure instead of rerolling forever", async () => {
+  it("propagates the second failure saying a reroll already happened, instead of rerolling forever", async () => {
     const { demosRepo, slug } = await fixture();
     let calls = 0;
-    await expect(runBrief({ slug, prospect: "Northwind Freight" }, {
+    // Unprefixed, this error reads as a first-try failure and an operator
+    // debugs a flake that already got its second chance.
+    const run = runBrief({ slug, prospect: "Northwind Freight" }, {
       demosRepo,
       evidence: evidence(),
       write: () => undefined,
       model: async () => { calls += 1; return reply({ placement: { trigger: "floating", slot: "x" } }); },
-    })).rejects.toThrow(/placement\.trigger/);
+    });
+    await expect(run).rejects.toThrow(/reroll/i);
+    await expect(run).rejects.toThrow(/placement\.trigger/);
     expect(calls).toBe(2);
   });
 

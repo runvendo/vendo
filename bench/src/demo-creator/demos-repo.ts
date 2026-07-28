@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { defaultExec, firstLine, type ExecFn } from "./exec.js";
+import { createScrubber, defaultExec, firstLine, type ExecFn } from "./exec.js";
 
 /**
  * The vendo-demos checkout every stage reads and writes through.
@@ -27,6 +27,8 @@ export interface DemosRepoIo {
   exec?: ExecFn;
   write?: (line: string) => void;
   signal?: AbortSignal;
+  /** Only the scrubber reads it: git's failures are relayed verbatim. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -40,11 +42,15 @@ export async function ensureDemosRepo(dir: string, io: DemosRepoIo): Promise<{ d
   const exec = io.exec ?? defaultExec;
   const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
   const signal = io.signal;
+  // git quotes the remote URL back on a failure, and a push remote can carry a
+  // PAT — so every relayed line goes through the scrubber, not just the ones
+  // that could hold an env secret.
+  const scrub = createScrubber(io.env ?? process.env);
   const run = async (command: string[], cwd: string): Promise<string> => {
-    write(`$ ${command.join(" ")}`);
+    write(`$ ${scrub(command.join(" "))}`);
     const result = await exec(command, { cwd, ...(signal === undefined ? {} : { signal }) });
     if (result.code !== 0) {
-      throw new Error(`"${command.join(" ")}" failed in "${cwd}" (exit ${result.code}): ${firstLine(result.stderr) ?? firstLine(result.stdout) ?? "no output"}`);
+      throw new Error(`"${command.join(" ")}" failed in "${cwd}" (exit ${result.code}): ${scrub(firstLine(result.stderr) ?? firstLine(result.stdout) ?? "no output")}`);
     }
     return result.stdout;
   };
@@ -60,7 +66,7 @@ export async function ensureDemosRepo(dir: string, io: DemosRepoIo): Promise<{ d
     if (result.code !== 0) {
       throw new Error(
         `The vendo-demos checkout at "${dir}" could not fast-forward onto origin/main `
-        + `(${firstLine(result.stderr) ?? firstLine(result.stdout) ?? `exit ${result.code}`}). `
+        + `(${scrub(firstLine(result.stderr) ?? firstLine(result.stdout) ?? `exit ${result.code}`)}). `
         + `It holds local commits or edits the pipeline refuses to discard — resolve it by hand `
         + `(git -C "${dir}" status, then rebase or push) and re-run.`,
       );

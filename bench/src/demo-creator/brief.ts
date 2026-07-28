@@ -5,12 +5,13 @@ import {
   neutralRamp,
   normalizeHex,
   parseDemoTheme,
+  parsePlacement,
   themeColorTokens,
   type DemoPlacement,
   type DemoTheme,
 } from "./demo-folder.js";
 import { readEvidence, type EvidenceResult } from "./evidence.js";
-import { defaultJudgeModel, type JudgeImage, type JudgeModelFn } from "./judge.js";
+import { causeLine, defaultJudgeModel, extractJsonObject, type JudgeImage, type JudgeModelFn } from "./judge.js";
 
 /**
  * Stage 2 — the brand brief. ONE vision call over the operator screenshots and
@@ -85,56 +86,56 @@ export interface BriefIo {
 // The closed palette
 // ---------------------------------------------------------------------------
 
-/** Human-readable source for each allowed hex, in registration order — the
- * FIRST label a hex earns wins, so the specific styleguide roles beat the
- * generic brand palette, which beats the neutral ramp. */
-function paletteProvenance(evidence: EvidenceResult): Map<string, string> {
-  const provenance = new Map<string, string>();
-  const register = (value: string | undefined, label: string): void => {
-    const hex = value === undefined ? undefined : normalizeHex(value);
-    if (hex !== undefined && !provenance.has(hex)) provenance.set(hex, label);
-  };
-  const styleguide = evidence.styleguide;
-  register(styleguide?.colors.accent, "brand evidence (styleguide accent)");
-  register(styleguide?.colors.background, "brand evidence (styleguide background)");
-  register(styleguide?.colors.text, "brand evidence (styleguide text)");
-  register(styleguide?.components?.button?.primary?.backgroundColor, "brand evidence (styleguide primary button background)");
-  register(styleguide?.components?.button?.primary?.color, "brand evidence (styleguide primary button text)");
-  register(styleguide?.components?.card?.borderColor, "brand evidence (styleguide card border)");
-  for (const value of evidence.palette) register(value, "brand evidence (context.dev brand palette)");
-  for (const value of neutralRamp) register(value, "neutral ramp (no brand hex describes this role)");
-  return provenance;
-}
-
 /**
- * Every hex the brief is allowed to assign: the real brand hexes first, then
- * the neutral ramp. Ordering matters — the prompt numbers this list, and a model
- * reaches for the top of a list, which is exactly where the brand colours are.
+ * The ONE ordered sequence of (hex, provenance) pairs the closed palette is
+ * built from — deduped, first source wins.
  *
- * The styleguide's own colours are folded in alongside `evidence.palette`: they
- * are measured hexes off the prospect's live site, so excluding them would mean
- * the model literally cannot pick the real accent when stage 1's colour call
- * failed soft but the styleguide call did not.
+ * Ordering matters twice over. The prompt numbers this list and a model reaches
+ * for the top of a list, which is exactly where the real brand colours belong;
+ * and the label a token reports in BRIEF.md must name the source the palette
+ * actually drew that hex from. Walking these six styleguide fields twice, in
+ * two orders, was how the palette and the provenance could disagree — so both
+ * {@link allowedPalette} and {@link paletteProvenance} derive from here.
+ *
+ * The specific styleguide roles lead: they are measured off the prospect's live
+ * page (stage 1 folds the same three into `evidence.palette` in this order), so
+ * they are both the most trustworthy hexes and the most informative labels.
+ * They are also why the styleguide colours are here at all — without them the
+ * model literally cannot pick the real accent when stage 1's colour call failed
+ * soft but the styleguide call did not.
  */
-export function allowedPalette(evidence: EvidenceResult): string[] {
-  const brand: string[] = [];
+function paletteSources(evidence: EvidenceResult): { hex: string; provenance: string }[] {
+  const sources: { hex: string; provenance: string }[] = [];
   const seen = new Set<string>();
-  const push = (value: string | undefined): void => {
+  const add = (value: string | undefined, provenance: string): void => {
     const hex = value === undefined ? undefined : normalizeHex(value);
     if (hex !== undefined && !seen.has(hex)) {
       seen.add(hex);
-      brand.push(hex);
+      sources.push({ hex, provenance });
     }
   };
-  for (const value of evidence.palette) push(value);
   const styleguide = evidence.styleguide;
-  push(styleguide?.colors.accent);
-  push(styleguide?.colors.background);
-  push(styleguide?.colors.text);
-  push(styleguide?.components?.button?.primary?.backgroundColor);
-  push(styleguide?.components?.button?.primary?.color);
-  push(styleguide?.components?.card?.borderColor);
-  return [...brand, ...neutralRamp.filter((hex) => !seen.has(hex))];
+  add(styleguide?.colors.accent, "brand evidence (styleguide accent)");
+  add(styleguide?.colors.background, "brand evidence (styleguide background)");
+  add(styleguide?.colors.text, "brand evidence (styleguide text)");
+  add(styleguide?.components?.button?.primary?.backgroundColor, "brand evidence (styleguide primary button background)");
+  add(styleguide?.components?.button?.primary?.color, "brand evidence (styleguide primary button text)");
+  add(styleguide?.components?.card?.borderColor, "brand evidence (styleguide card border)");
+  for (const value of evidence.palette) add(value, "brand evidence (context.dev brand palette)");
+  for (const value of neutralRamp) add(value, "neutral ramp (no brand hex describes this role)");
+  return sources;
+}
+
+/** Every hex the brief is allowed to assign, in the order the prompt numbers
+ * them: real brand hexes first, then the neutral ramp. */
+export function allowedPalette(evidence: EvidenceResult): string[] {
+  return paletteSources(evidence).map((source) => source.hex);
+}
+
+/** Human-readable source for each allowed hex, keyed and ordered exactly like
+ * {@link allowedPalette} — BRIEF.md quotes these per token. */
+export function paletteProvenance(evidence: EvidenceResult): Map<string, string> {
+  return new Map(paletteSources(evidence).map((source) => [source.hex, source.provenance]));
 }
 
 // ---------------------------------------------------------------------------
@@ -250,20 +251,6 @@ is a left rail. "density"/"motion" are your read of the screenshots.`;
 // Parsing
 // ---------------------------------------------------------------------------
 
-/** Same tolerance the judge's parser has: models sometimes fence their JSON or
- * top it with a sentence, and losing a whole vision call to that is silly. */
-function extractJsonObject(raw: string, label: string): Record<string, unknown> {
-  const unfenced = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  const start = unfenced.indexOf("{");
-  const end = unfenced.lastIndexOf("}");
-  if (start === -1 || end <= start) throw new Error(`${label} did not return JSON:\n${raw.slice(0, 400)}`);
-  try {
-    return JSON.parse(unfenced.slice(start, end + 1)) as Record<string, unknown>;
-  } catch (error) {
-    throw new Error(`${label} returned invalid JSON (${error instanceof Error ? error.message : String(error)}):\n${raw.slice(0, 400)}`);
-  }
-}
-
 /** CSS generic keywords stay bare; anything that is not a plain ASCII word gets
  * quoted, so "Helvetica Neue" and "Söhne" survive as valid font-family stacks. */
 const genericFamilies = new Set([
@@ -369,15 +356,6 @@ function parseEntities(value: unknown): BriefEntity[] {
       sampleRecordNames: requireStrings(entity["sampleRecordNames"], `${label}.sampleRecordNames`),
     };
   });
-}
-
-function parsePlacement(value: unknown): DemoPlacement {
-  const placement = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
-  const trigger = placement["trigger"];
-  if (trigger !== "header" && trigger !== "sidebar") {
-    throw new Error(`Brief output rejected: placement.trigger must be "header" or "sidebar" (got ${JSON.stringify(trigger)})`);
-  }
-  return { trigger, slot: requireString(placement["slot"], "placement.slot") };
 }
 
 function parseEnum<T extends string>(value: unknown, allowed: readonly T[], field: string): T {
@@ -607,8 +585,16 @@ export async function runBrief(args: BriefArgs, io: BriefIo): Promise<BriefResul
   } catch (error) {
     // One reroll, the judge's lesson: a rejected sample is usually a one-off
     // glitch, and a fresh sample is far cheaper than losing the run.
-    write(`[brief] reply rejected (${error instanceof Error ? error.message.split("\n")[0] : String(error)}) — rerolling once`);
-    parsed = parseBriefReply(await model(prompt, images), parseOptions);
+    write(`[brief] reply rejected (${causeLine(error)}) — rerolling once`);
+    try {
+      parsed = parseBriefReply(await model(prompt, images), parseOptions);
+    } catch (second) {
+      // Say that the reroll already happened: unprefixed, this reads as a
+      // first-try failure and an operator debugs a flake that got its retry.
+      // The message is carried WHOLE, not first-lined — for a malformed reply
+      // its tail is the raw reply, which is the only debuggable part.
+      throw new Error(`brief: the reroll was rejected too — ${second instanceof Error ? second.message : String(second)}`);
+    }
   }
 
   // Validate through the demo-template schema BEFORE it hits disk: a theme the

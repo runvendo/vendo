@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { assertDisjointOwnership, type AgentRunResult, type RunAgentFn } from "./agent.js";
 import type { BrandBrief } from "./brief.js";
-import { buildAgentJobs, runBuild, syncTools } from "./build.js";
+import { buildAgentJobs, regroundBeats, runBuild, syncTools, ungroundedBeats } from "./build.js";
 import { demoPaths, parseDemoFolderConfig, requiredBeatKeys, type DemoTheme } from "./demo-folder.js";
 import type { ExecFn } from "./exec.js";
 
@@ -95,6 +95,80 @@ const groundedChips = chipReply([
   { key: "overdue", chip: "Overdue invoices", prompt: "Show me every overdue invoice", tools: ["host_listInvoices"] },
 ]);
 
+const shipmentTools = [
+  { name: "host_listShipments", description: "List every shipment" },
+  { name: "host_flagShipment", description: "Flag one shipment for review" },
+];
+
+const beat = (key: string, chip: string, prompt: string) => ({ key, chip, prompt });
+
+describe("syncTools secrets", () => {
+  it("never relays a credential the vendo CLI echoed back", async () => {
+    const demosRepo = await demoFolder();
+    const key = "sk-ant-averylongfakekeyvalue";
+    const exec: ExecFn = async () => ({ code: 1, stdout: "", stderr: `failed: ANTHROPIC_API_KEY=${key} rejected\n` });
+    const error = await syncTools({ demosRepo, slug, exec, env: { ANTHROPIC_API_KEY: key } })
+      .catch((thrown: unknown) => thrown as Error);
+    expect(error.message).not.toContain(key);
+    expect(error.message).toContain("<redacted>");
+  });
+});
+
+describe("ungroundedBeats", () => {
+  it("flags an authored pill that names a capability the demo does not have", () => {
+    // The pill a prospect actually clicks. The beats agent wrote it before
+    // tools.json existed, so this is the only check it ever gets.
+    const beats = [
+      beat("generate-ui", "Overdue invoices", "Show me every overdue invoice"),
+      beat("take-action", "Flag shipment", "Flag shipment KF-4580 for review"),
+    ];
+    expect(ungroundedBeats(beats, shipmentTools).map((entry) => entry.key)).toEqual(["generate-ui"]);
+  });
+
+  it("exempts the two beats that exercise Vendo itself, not a host tool", () => {
+    // Nothing in tools.json describes connecting Gmail or saving an app, so
+    // demanding tool overlap here would reject a correct beat.
+    const beats = [
+      beat("connect-account", "Connect Gmail", "Connect my Gmail so you can read receipts"),
+      beat("save-app", "Save as app", "Save this view as an app I can reopen"),
+    ];
+    expect(ungroundedBeats(beats, shipmentTools)).toEqual([]);
+  });
+});
+
+describe("regroundBeats", () => {
+  it("rewrites an ungrounded pill's wording but keeps its key and expectation flags", () => {
+    const authored = [
+      { ...beat("generate-ui", "Overdue invoices", "Show me every overdue invoice"), expectsView: true },
+      { ...beat("take-action", "Flag it", "Flag shipment KF-4580 for review"), expectsApproval: true },
+    ];
+    const derived = [beat("lanes", "Shipments by lane", "Show me every shipment grouped by lane")];
+    const result = regroundBeats(authored, shipmentTools, derived);
+    expect(result.replaced).toEqual(["generate-ui"]);
+    expect(result.stillUngrounded).toEqual([]);
+    expect(result.beats[0]).toEqual({
+      key: "generate-ui",
+      chip: "Shipments by lane",
+      prompt: "Show me every shipment grouped by lane",
+      expectsView: true,
+    });
+    expect(result.beats[1]).toEqual(authored[1]);
+  });
+
+  it("reports a pill it cannot reground rather than shipping it silently", () => {
+    const authored = [beat("generate-ui", "Overdue invoices", "Show me every overdue invoice")];
+    expect(regroundBeats(authored, shipmentTools, []).stillUngrounded).toEqual(["generate-ui"]);
+  });
+
+  it("never regrounds a pill with a derived pill that is itself ungrounded", () => {
+    const authored = [beat("generate-ui", "Overdue invoices", "Show me every overdue invoice")];
+    const derived = [beat("junk", "Payroll runs", "Show me payroll runs")];
+    const result = regroundBeats(authored, shipmentTools, derived);
+    expect(result.replaced).toEqual([]);
+    expect(result.stillUngrounded).toEqual(["generate-ui"]);
+  });
+});
+
 describe("buildAgentJobs", () => {
   it("is exactly three jobs — server+openapi, screens, demo.config.json — with disjoint writable roots", () => {
     const jobs = buildAgentJobs(jobOptions);
@@ -105,6 +179,45 @@ describe("buildAgentJobs", () => {
       ["demo.config.json"],
     ]);
     expect(() => assertDisjointOwnership(jobs)).not.toThrow();
+  });
+
+  // The host repo's README is the contract these prompts implement; a prompt
+  // that drifts from it produces a demo that does not compile in the host.
+  it("pins the host's real module contract in the server prompt", () => {
+    const server = buildAgentJobs(jobOptions).find((job) => job.name === "server") as { prompt: string };
+    // The store must be the host's keyed one: a module singleton is
+    // instantiated once per route bundle in a production build, so an approved
+    // mutation would not show on the page.
+    expect(server.prompt).toContain('import { storeFor } from "@host/server/demo-store"');
+    expect(server.prompt).toContain("export const getStore = () => storeFor(buildSeed)");
+    expect(server.prompt).toContain('buildSeed(anchor: Date = new Date())');
+    expect(server.prompt).toContain('import { mulberry32 } from "@host/prng"');
+    expect(server.prompt).toContain('import type { DemoRoutes } from "@host/lib/demo-module"');
+    // Captured :id segments arrive as search params, not a handler argument.
+    expect(server.prompt).toContain('searchParams.get("id")');
+    expect(server.prompt).toContain("server/store.ts");
+  });
+
+  it("pins the kit's real export list in the screens prompt and forbids @vendoai/*", () => {
+    const jobs = buildAgentJobs(jobOptions);
+    const screens = jobs.find((job) => job.name === "screens") as { prompt: string };
+    expect(screens.prompt).toContain("@host/vendo-kit");
+    for (const surface of ["VendoTrigger", "VendoSlot", "VendoPage", "VendoThread", "VendoOverlay", "VendoActivities"]) {
+      expect(screens.prompt).toContain(surface);
+    }
+    // The host mounts these around the page; a demo that mounts its own gets
+    // two roots and an unthemed surface.
+    expect(screens.prompt).toMatch(/VendoRoot[\s\S]*mounted by the HOST/);
+    expect(screens.prompt).toContain("SERVER component");
+    for (const job of jobs) expect(job.prompt).toContain("NEVER import from `@vendoai/*`");
+  });
+
+  it("tells every agent to paint with the host's themed Tailwind colours, never a hex", () => {
+    for (const job of buildAgentJobs(jobOptions)) {
+      expect(job.prompt).toContain("text-ink");
+      expect(job.prompt).toContain("bg-accent");
+      expect(job.prompt).toMatch(/[Nn]ever a hardcoded hex/);
+    }
   });
 
   // Parallel agents editing the same file race, and the loser's work vanishes

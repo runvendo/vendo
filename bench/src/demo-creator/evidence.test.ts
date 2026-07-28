@@ -88,10 +88,26 @@ describe("runEvidence screenshots", () => {
     // Two files with the same basename must not collide — the index makes the
     // reference order visible to the brief and to the side-by-side reply.
     expect(result.screenshots.map((entry) => entry.file)).toEqual(["1-screenshot.png", "2-screenshot.png"]);
-    expect(result.screenshots.map((entry) => entry.source)).toEqual(screenshots);
     const research = demoPaths(demosRepo, "acme").researchDir;
     await expect(readFile(path.join(research, "1-screenshot.png"), "utf8")).resolves.toBe("bytes for screenshot.png 0");
     await expect(readFile(path.join(research, "2-screenshot.png"), "utf8")).resolves.toBe("bytes for screenshot.png 1");
+  });
+
+  // evidence.json is committed to the vendo-demos repo, so the operator's
+  // /Users/<name>/Downloads/... path would be published with every demo.
+  it("records only the basename of the operator's file, never their local path", async () => {
+    const { demosRepo, screenshots } = await fixture(["home.png"]);
+
+    const result = await runEvidence({ ...args, screenshots }, {
+      demosRepo,
+      client: fakeClient(),
+      fetchImpl: vi.fn().mockResolvedValue(svgResponse()) as unknown as typeof fetch,
+      write: () => {},
+    });
+
+    expect(result.screenshots.map((entry) => entry.source)).toEqual(["home.png"]);
+    const digest = await readFile(path.join(demoPaths(demosRepo, "acme").researchDir, evidenceFileName), "utf8");
+    expect(digest).not.toContain(path.dirname(screenshots[0]!));
   });
 
   // The screenshots ARE the brief's reference material; there is no demo to
@@ -183,6 +199,27 @@ describe("runEvidence context.dev calls", () => {
     // Brand colours alone still give the brief a palette to copy from.
     expect(result.palette).toEqual(["#1A73E8", "#FFFFFF", "#0F9D58"]);
     expect(result.styleguide).toBeUndefined();
+  });
+
+  // A --url that was given but does not parse is a different problem from no
+  // --url at all, and "no --url given" would send the operator hunting for a
+  // flag they already typed.
+  it("does not claim '--url' was missing when one was given but does not resolve", async () => {
+    const { demosRepo, screenshots } = await fixture();
+
+    const result = await runEvidence({ slug: "acme", prospect: "Acme", url: "not a url", screenshots }, {
+      demosRepo,
+      client: fakeClient(),
+      fetchImpl: vi.fn().mockResolvedValue(svgResponse()) as unknown as typeof fetch,
+      write: () => {},
+    });
+
+    const reasons = result.soft.filter((entry) => entry.call !== "logo").map((entry) => entry.reason);
+    expect(reasons).not.toHaveLength(0);
+    for (const reason of reasons) {
+      expect(reason).not.toMatch(/no --url given/);
+      expect(reason).toContain("not a url");
+    }
   });
 
   const failures: [string, keyof ContextDevClient][] = [

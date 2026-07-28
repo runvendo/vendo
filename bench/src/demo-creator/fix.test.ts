@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -72,14 +72,25 @@ async function demoFixture(options: { config?: unknown } = {}): Promise<string> 
   return demosRepo;
 }
 
-function fixIo(demosRepo: string, overrides: Partial<DemoFixIo> = {}): { io: DemoFixIo; order: string[]; stopped: () => number } {
+function fixIo(
+  demosRepo: string,
+  overrides: Partial<DemoFixIo> = {},
+  options: { stopThrows?: boolean } = {},
+): { io: DemoFixIo; order: string[]; stopped: () => number; lines: string[] } {
   const order: string[] = [];
+  const lines: string[] = [];
   const state = { stopped: 0 };
-  const host = { baseUrl: "http://127.0.0.1:3150", stop: async () => { state.stopped += 1; } };
+  const host = {
+    baseUrl: "http://127.0.0.1:3150",
+    stop: async () => {
+      state.stopped += 1;
+      if (options.stopThrows === true) throw new Error("stop failed");
+    },
+  };
   const io: DemoFixIo = {
-    write: () => undefined,
+    write: (line) => lines.push(line),
     env: {},
-    exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+    exec: async () => ({ code: 0, stdout: "?? demos/acme/\n", stderr: "" }),
     runAgent: async (job) => { order.push(`agent:${job.name}`); return { name: job.name, code: 0, output: "done", timedOut: false } as AgentRunResult; },
     stages: {
       ensureRepo: async (dir) => { order.push("repo"); return { dir, cloned: false, head: "h" }; },
@@ -93,7 +104,7 @@ function fixIo(demosRepo: string, overrides: Partial<DemoFixIo> = {}): { io: Dem
     },
     ...overrides,
   };
-  return { io, order, stopped: () => state.stopped };
+  return { io, order, lines, stopped: () => state.stopped };
 }
 
 describe("runDemoFix", () => {
@@ -128,6 +139,55 @@ describe("runDemoFix", () => {
     const result = await runDemoFix({ id: "acme", instruction: "x", demosRepo, skipShip: true }, io);
     expect(order).not.toContain("ship");
     expect(result.liveUrl).toBeUndefined();
+  });
+
+  it("reports the demo folder path, so the operator has somewhere to look", async () => {
+    const demosRepo = await demoFixture();
+    const { io } = fixIo(demosRepo);
+    const result = await runDemoFix({ id: "acme", instruction: "x", demosRepo, skipShip: true }, io);
+    expect(result.demoDir).toBe(demoPaths(demosRepo, "acme").root);
+  });
+
+  // `railway up` uploads the whole working directory, so a fix agent that
+  // wandered into host/ would deploy it to every live demo uncommitted.
+  it("refuses to assemble when the fix agent touched anything outside the demo folder", async () => {
+    const demosRepo = await demoFixture();
+    const { io, order } = fixIo(demosRepo, {
+      exec: async () => ({ code: 0, stdout: " M host/src/vendo-kit/index.tsx\n", stderr: "" }),
+    });
+    await expect(runDemoFix({ id: "acme", instruction: "x", demosRepo, skipShip: false }, io))
+      .rejects.toThrow(/host\/src\/vendo-kit\/index\.tsx/);
+    expect(order).not.toContain("assemble");
+    // The fence goes after the re-sync, which legitimately rewrites tools.json.
+    expect(order).toContain("sync");
+  });
+
+  it("warns naming the port when the local host will not stop", async () => {
+    const demosRepo = await demoFixture();
+    const { io, lines } = fixIo(demosRepo, {}, { stopThrows: true });
+    await runDemoFix({ id: "acme", instruction: "x", demosRepo, skipShip: false }, io);
+    const warning = lines.find((line) => line.includes("3150") && /warn/i.test(line));
+    expect(warning).toBeDefined();
+    expect(warning).toContain("stop failed");
+  });
+
+  it("threads its stage runner into the stages, so sub-stage timings land in timings.json", async () => {
+    const demosRepo = await demoFixture();
+    const base = fixIo(demosRepo);
+    const stages = base.io.stages as NonNullable<DemoFixIo["stages"]>;
+    const io: DemoFixIo = {
+      ...base.io,
+      stages: {
+        ...stages,
+        assemble: async (assembleArgs, assembleIo) => {
+          await assembleIo.runStage?.("assemble:build", async () => undefined);
+          return await stages.assemble(assembleArgs, assembleIo);
+        },
+      },
+    };
+    await runDemoFix({ id: "acme", instruction: "x", demosRepo, skipShip: true }, io);
+    const rows = JSON.parse(await readFile(demoPaths(demosRepo, "acme").timings, "utf8")) as { stage: string }[];
+    expect(rows.map((row) => row.stage)).toContain("assemble:build");
   });
 
   it("stops the host when judge throws", async () => {

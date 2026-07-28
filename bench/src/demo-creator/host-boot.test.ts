@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExecFn, ExecResult } from "./exec.js";
-import { buildHost, defaultHostCommands, generateManifest } from "./host-boot.js";
+import { buildHost, defaultHostCommands, generateManifest, smokeTurnWaitOptions } from "./host-boot.js";
 
 /** The frozen codegen target: host/src/generated/manifest.ts. */
 const manifestPath = (demosRepo: string): string =>
@@ -69,6 +69,16 @@ describe("generateManifest", () => {
     await expect(generateManifest({ demosRepo, exec })).rejects.toThrow(/gen-manifest failed[\s\S]*ENOENT demos\//);
   });
 
+  it("scrubs env secrets out of the script's failure line", async () => {
+    const demosRepo = await fakeDemosRepo(["acme"]);
+    const token = "ghp_manifestscripttoken";
+    const { exec } = fakeExec([{ code: 1, stderr: `Error: GITHUB_TOKEN=${token} is not valid` }]);
+    const error = await generateManifest({ demosRepo, exec, env: { GITHUB_TOKEN: token } })
+      .catch((thrown: unknown) => thrown as Error);
+    expect(error.message).not.toContain(token);
+    expect(error.message).toContain("<redacted>");
+  });
+
   it("fails loudly when the script wrote no manifest at all", async () => {
     const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-host-boot-"));
     const { exec } = fakeExec([{ code: 0 }]);
@@ -101,5 +111,39 @@ describe("buildHost", () => {
     expect(error.message).toMatch(/host build failed/);
     expect(error.message).toMatch(/Property 'x' does not exist/);
     expect(error.message.length).toBeLessThan(3_200);
+  });
+
+  // The host build is handed the pipeline's whole environment, and Next echoes
+  // env-shaped text on some failures — so the tail that reaches an operator (or
+  // a Slack thread) goes through the scrubber first.
+  it("never leaks an env secret into the thrown build error", async () => {
+    const demosRepo = await fakeDemosRepo(["acme"]);
+    const key = "vk_live_supersecretvalue";
+    const { exec } = fakeExec([{ code: 1, stderr: `deploy target rejected VENDO_API_KEY=${key}` }]);
+    const error = await buildHost({ demosRepo, exec, env: { VENDO_API_KEY: key } })
+      .catch((thrown: unknown) => thrown as Error);
+    expect(error.message).not.toContain(key);
+    expect(error.message).toContain("<redacted>");
+  });
+
+  it("leaves short and non-credential values readable — over-redaction makes the error useless", async () => {
+    const demosRepo = await fakeDemosRepo(["acme"]);
+    const { exec } = fakeExec([{ code: 1, stdout: "build ran with NODE_ENV=production API_KEY=short" }]);
+    const error = await buildHost({ demosRepo, exec, env: { NODE_ENV: "production", API_KEY: "short" } })
+      .catch((thrown: unknown) => thrown as Error);
+    expect(error.message).toContain("NODE_ENV=production");
+    expect(error.message).toContain("API_KEY=short");
+  });
+});
+
+describe("smokeTurnWaitOptions", () => {
+  // The contract: stage 4 gates on HARD errors only (the turn errored, or never
+  // settled), never on what the agent generated — that is the judge's business.
+  it("waits without requiring a generated view", () => {
+    expect(smokeTurnWaitOptions({ previousAssistantTurns: 2, timeoutMs: 90_000 })).toEqual({
+      previousAssistantTurns: 2,
+      timeoutMs: 90_000,
+      requireView: false,
+    });
   });
 });

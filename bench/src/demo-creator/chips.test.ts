@@ -6,7 +6,6 @@ import {
   buildChipsPrompt,
   defaultChipModel,
   meaningfulTokens,
-  isPlaceholderBeat,
   maxChips,
   mergeBeats,
   parseChipsReply,
@@ -255,30 +254,22 @@ describe("parseChipsReply", () => {
 describe("mergeBeats", () => {
   const derived = Array.from({ length: 5 }, (_, index) => beat(`derived-${index}`));
 
-  it("keeps explicit beats verbatim, first, with their expectations", () => {
-    const explicit = [
+  it("keeps existing beats verbatim, first, with their expectations", () => {
+    const existing = [
       beat("generate-ui", { expectsView: true }),
       beat("take-action", { expectsApproval: true }),
       beat("save-app"),
     ];
-    const merged = mergeBeats(explicit, derived);
-    expect(merged.slice(0, 3)).toEqual(explicit);
+    const merged = mergeBeats(existing, derived);
+    expect(merged.slice(0, 3)).toEqual(existing);
     expect(merged).toHaveLength(maxChips);
     expect(merged.slice(3).every((entry) => entry.key.startsWith("derived-"))).toBe(true);
   });
 
-  it("replaces the template's TODO-fenced placeholders — they are not authored beats", () => {
-    const placeholders = [
-      { key: "generate-ui", chip: "TODO(creator): Dashboard", prompt: "TODO(creator): Show me a dashboard" },
-    ];
-    expect(isPlaceholderBeat(placeholders[0]!)).toBe(true);
-    expect(mergeBeats(placeholders, derived)).toEqual(derived);
-  });
-
-  it("never lets a derived beat shadow an explicit one that owns the key", () => {
-    const explicit = [beat("derived-0", { expectsView: true })];
-    const merged = mergeBeats(explicit, derived);
-    expect(merged[0]).toEqual(explicit[0]);
+  it("never lets a derived beat shadow an existing one that owns the key", () => {
+    const existing = [beat("derived-0", { expectsView: true })];
+    const merged = mergeBeats(existing, derived);
+    expect(merged[0]).toEqual(existing[0]);
     expect(merged.filter((entry) => entry.key === "derived-0")).toHaveLength(1);
   });
 });

@@ -24,21 +24,17 @@ function verdictJson(scores: Partial<Record<(typeof judgeDimensions)[number], nu
 }
 
 describe("parseJudgeVerdict", () => {
-  it("parses all five pinned dimensions and computes failing ones", () => {
+  it("parses all five pinned dimensions, in rubric order, with their justifications", () => {
     const verdict = parseJudgeVerdict(verdictJson({ palette: 4, type: 6 }));
-    expect(verdict.scores).toHaveLength(5);
-    expect(verdict.failing).toEqual(["palette", "type"]);
-    expect(verdict.pass).toBe(false);
-  });
-
-  it("passes only when every dimension reaches the threshold", () => {
-    const verdict = parseJudgeVerdict(verdictJson({ palette: fidelityThreshold }));
-    expect(verdict.pass).toBe(true);
-    expect(verdict.failing).toEqual([]);
+    expect(verdict.scores.map((score) => score.dimension)).toEqual([...judgeDimensions]);
+    expect(verdict.scores.map((score) => score.score)).toEqual([9, 4, 6, 9, 9]);
+    expect(verdict.scores[0]?.justification).toBe("logo looks right");
   });
 
   it("tolerates a markdown fence", () => {
-    expect(parseJudgeVerdict("```json\n" + verdictJson({}) + "\n```").pass).toBe(true);
+    const verdict = parseJudgeVerdict("```json\n" + verdictJson({ palette: 8 }) + "\n```");
+    expect(verdict.scores).toHaveLength(5);
+    expect(verdict.scores.find((score) => score.dimension === "palette")?.score).toBe(8);
   });
 
   it("rejects a missing dimension or out-of-range score", () => {
@@ -99,7 +95,6 @@ describe("runJudge", () => {
         return options.routes.map((route) => path.join(options.outDir, `built-${route.replaceAll("/", "-")}.png`));
       }),
       write: () => {},
-      env: {},
     };
   }
 
@@ -138,7 +133,7 @@ describe("runJudge", () => {
     const io = stubIo(demosRepo, ['{"logo"::"broken"', verdictJson({})]);
     const result = await runJudge(args, io);
     expect(io.judgeModel).toHaveBeenCalledTimes(2);
-    expect(result.verdict?.pass).toBe(true);
+    expect(result.verdict?.scores).toHaveLength(5);
   });
 
   it("ships regardless when the judge model fails outright, recording it as a note", async () => {

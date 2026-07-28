@@ -99,7 +99,10 @@ export interface DemoFolderConfig extends DemoConfig {
 export const requiredBeatKeys = ["generate-ui", "take-action", "automation", "connect-account", "save-app"] as const;
 export type RequiredBeatKey = (typeof requiredBeatKeys)[number];
 
-function parsePlacement(input: unknown): DemoPlacement {
+/** The one placement validator: the brief stage parses the model's reply with
+ * it, and {@link parseDemoFolderConfig} parses what landed on disk. Two copies
+ * with different error prose is two ways for the same bad value to read. */
+export function parsePlacement(input: unknown): DemoPlacement {
   if (typeof input !== "object" || input === null) {
     throw new Error("placement: is required ({ trigger, slot })");
   }
