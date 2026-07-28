@@ -6,7 +6,7 @@ import path from "node:path";
 import { chromium } from "@playwright/test";
 import { sendPrompt, waitForTurn } from "../demo-capture/capture.js";
 import { genManifestScript, hostDir } from "./demo-folder.js";
-import { createScrubber, defaultExec, delay, firstLine, type ExecFn } from "./exec.js";
+import { createScrubber, defaultExec, delay, firstLine, scrubbingTransform, type ExecFn } from "./exec.js";
 
 /**
  * Stage 4's plumbing: drive the vendo-demos HOST (a foreign checkout, not this
@@ -219,14 +219,19 @@ export async function bootHost(options: {
   if (file === undefined) throw new Error("host start command is empty");
   await mkdir(path.dirname(options.logFile), { recursive: true });
   const log = createWriteStream(options.logFile, { flags: "a" });
+  const bootEnv = localBootEnv(options.env ?? process.env, options.port);
   const child = spawn(file, argv, {
     cwd: hostPath(options.demosRepo),
-    env: localBootEnv(options.env ?? process.env, options.port),
+    env: bootEnv,
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  child.stdout?.pipe(log);
-  child.stderr?.pipe(log);
+  // The child carries the operator's WHOLE environment (it is the demo host, and
+  // it needs VENDO_API_KEY), and a Next crash echoes the environment — so nothing
+  // reaches this log file unscrubbed.
+  const scrubLog = createScrubber(bootEnv);
+  child.stdout?.pipe(scrubbingTransform(scrubLog)).pipe(log);
+  child.stderr?.pipe(scrubbingTransform(scrubLog)).pipe(log);
   const baseUrl = `http://127.0.0.1:${options.port}`;
   try {
     await waitUntilReady(baseUrl, child, options.timeoutMs);

@@ -385,6 +385,98 @@ describe("runEvidence logo download", () => {
     expect(result.logo).toBeUndefined();
     expect(result.soft.map((entry) => entry.call)).toEqual(["logo"]);
   });
+
+  // The failure that reaches the judge: a CDN answering 200 with an HTML "403
+  // Forbidden" page. `response.ok` is true, the bytes get written to
+  // brand/logo.png, the digest records SUCCESS, the demo commits a broken image,
+  // and the judge then scores logo fidelity against it.
+  it("fails soft when a 200 response is not actually an image", async () => {
+    const { demosRepo, screenshots } = await fixture();
+    const htmlWith200 = new Response(
+      "<!DOCTYPE html><html><head><title>403 Forbidden</title></head><body>Access denied</body></html>",
+      { status: 200, headers: { "content-type": "text/html" } },
+    );
+
+    const result = await runEvidence({ ...args, screenshots }, {
+      demosRepo,
+      client: fakeClient(),
+      fetchImpl: vi.fn().mockResolvedValue(htmlWith200) as unknown as typeof fetch,
+      write: () => {},
+    });
+
+    expect(result.logo).toBeUndefined();
+    expect(result.soft.map((entry) => entry.call)).toEqual(["logo"]);
+    expect(result.soft[0]?.reason).toMatch(/not an image/i);
+    // Nothing was written: a broken file on disk is worse than no file, because
+    // the brief and the judge both treat presence as success.
+    await expect(readFile(demoPaths(demosRepo, "acme").logoPng)).rejects.toThrow();
+    await expect(readFile(demoPaths(demosRepo, "acme").logoSvg)).rejects.toThrow();
+  });
+
+  it("accepts every image format the CDN actually serves", async () => {
+    const cases: [string, Uint8Array, "png" | "svg"][] = [
+      ["png", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), "png"],
+      ["jpeg", new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), "png"],
+      ["gif", new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]), "png"],
+      ["webp", new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x10, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]), "png"],
+      ["ico", new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x01, 0x00]), "png"],
+    ];
+    for (const [label, bytes, expected] of cases) {
+      const { demosRepo, screenshots } = await fixture();
+      const result = await runEvidence({ ...args, screenshots }, {
+        demosRepo,
+        client: fakeClient(),
+        fetchImpl: vi.fn().mockResolvedValue(new Response(bytes, { status: 200 })) as unknown as typeof fetch,
+        write: () => {},
+      });
+      expect(result.logo, label).toEqual({ file: `brand/logo.${expected}`, source: "https://media.brand.dev/acme/logo.svg" });
+    }
+  });
+});
+
+// The same HTML-with-200 class on the text half of the evidence: a Cloudflare
+// interstitial or an error page scraped as "markdown" becomes the site text the
+// brand brief derives vocabulary and voice from.
+describe("runEvidence scraped site text", () => {
+  const errorPages = [
+    ["a Cloudflare interstitial", "Just a moment...\n\nEnable JavaScript and cookies to continue"],
+    ["an HTML error page", "<!DOCTYPE html>\n<html><head><title>403 Forbidden</title></head><body>nginx</body></html>"],
+    ["an access-denied page", "# Access Denied\n\nYou do not have permission to access this resource."],
+    ["an empty scrape", "   \n\n"],
+  ] as const;
+
+  for (const [label, body] of errorPages) {
+    it(`records ${label} as a soft failure instead of feeding it to the brief`, async () => {
+      const { demosRepo, screenshots } = await fixture();
+      const client = fakeClient({
+        scrapeMarkdown: async () => ({ ...markdown, markdown: body, contentLength: body.length }),
+      });
+
+      const result = await runEvidence({ ...args, screenshots }, {
+        demosRepo,
+        client,
+        fetchImpl: vi.fn().mockResolvedValue(svgResponse()) as unknown as typeof fetch,
+        write: () => {},
+      });
+
+      expect(result.markdown).toBeUndefined();
+      expect(result.soft.map((entry) => entry.call)).toContain("scrape-markdown");
+      await expect(readFile(path.join(demoPaths(demosRepo, "acme").researchDir, "site.md"), "utf8")).rejects.toThrow();
+    });
+  }
+
+  it("still accepts real site text", async () => {
+    const { demosRepo, screenshots } = await fixture();
+    const result = await runEvidence({ ...args, screenshots }, {
+      demosRepo,
+      client: fakeClient(),
+      fetchImpl: vi.fn().mockResolvedValue(svgResponse()) as unknown as typeof fetch,
+      write: () => {},
+    });
+    expect(result.markdown).toEqual({ file: "site.md", title: "Acme — things, done" });
+    await expect(readFile(path.join(demoPaths(demosRepo, "acme").researchDir, "site.md"), "utf8"))
+      .resolves.toContain("Things, done.");
+  });
 });
 
 describe("readEvidence", () => {

@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import type { AgentRunResult } from "./agent.js";
 import type { AssembleResult } from "./assemble.js";
 import { demoPaths } from "./demo-folder.js";
-import { buildFixPrompt, fixOwnedRoots, parseDemoFixArgs, runDemoFix, type DemoFixIo } from "./fix.js";
+import { buildAgentJobs } from "./build.js";
+import { buildFixPrompt, fixBudgetUsd, fixOwnedRoots, parseDemoFixArgs, runDemoFix, type DemoFixIo } from "./fix.js";
 import type { JudgeResult } from "./judge.js";
 import type { ShipResult } from "./ship.js";
 
@@ -18,9 +19,15 @@ describe("parseDemoFixArgs", () => {
     expect(() => parseDemoFixArgs(["--id", "acme", "--instruction", "   "], {})).toThrow("--instruction is required");
   });
 
+  it("rejects a slug that would resolve outside the demos directory", () => {
+    for (const id of ["../host/src/vendo-kit", "..", "acme/sub"]) {
+      expect(() => parseDemoFixArgs(["--id", id, "--instruction", "x"], {})).toThrow(/not a valid demo slug/);
+    }
+  });
+
   it("tolerates the pnpm separator and takes --demos-repo / --skip-ship", () => {
-    expect(parseDemoFixArgs(["--", "--id", "a", "--instruction", "i", "--demos-repo", "/r", "--skip-ship"], {}))
-      .toEqual({ id: "a", instruction: "i", demosRepo: "/r", skipShip: true });
+    expect(parseDemoFixArgs(["--", "--id", "acme", "--instruction", "i", "--demos-repo", "/r", "--skip-ship"], {}))
+      .toEqual({ id: "acme", instruction: "i", demosRepo: "/r", skipShip: true });
   });
 });
 
@@ -44,6 +51,33 @@ describe("buildFixPrompt", () => {
   it("keeps the invented-data invariant and the five-beat arc", () => {
     expect(prompt).toMatch(/ALL data is INVENTED/);
     expect(prompt).toContain("generate-ui, take-action, automation, connect-account, save-app");
+  });
+
+  // The two prompts described the SAME host type differently: build said
+  // `(request: Request)` — NOT a store argument — and fix said "(req, store)".
+  // The host's real handler is `(request: Request, store: never)`, i.e. the
+  // second parameter is unusable, so a fix agent following the old wording would
+  // write a handler around a `never` and reach for a store that is not there.
+  it("describes the route handler exactly as the build prompt does", () => {
+    const server = buildAgentJobs({
+      slug: "acme",
+      prospect: "Acme",
+      brief: {
+        company: "Acme", oneLiner: "x", productSurface: "y", referenceScreenshot: "RESEARCH/a.png",
+        nav: ["Home"], vocabulary: ["order"], voice: "terse",
+        entities: [{ name: "Order", stem: "orders", action: "cancelOrder", fields: ["total: cents"], sampleRecordNames: ["ORD-1"] }],
+        chipMaterial: ["orders"], placement: { trigger: "header", slot: "top bar" }, themeNotes: [],
+      },
+      ctaUrl: "https://cal.com/x",
+      expiresAt: "2026-08-31T00:00:00Z",
+    }).find((job) => job.name === "server");
+
+    expect(prompt).toContain("`(request: Request)` — NOT a store argument");
+    expect(server?.prompt).toContain("`(request: Request)` — NOT a store argument");
+    expect(prompt).not.toMatch(/\(req, store\)/);
+    // And both send the agent to the same place for captured segments.
+    expect(prompt).toContain("searchParams");
+    expect(server?.prompt).toContain("searchParams");
   });
 });
 
@@ -91,7 +125,7 @@ function fixIo(
     write: (line) => lines.push(line),
     env: {},
     exec: async () => ({ code: 0, stdout: "?? demos/acme/\n", stderr: "" }),
-    runAgent: async (job) => { order.push(`agent:${job.name}`); return { name: job.name, code: 0, output: "done", timedOut: false } as AgentRunResult; },
+    runAgent: async (job) => { order.push(`agent:${job.name}`); return { name: job.name, code: 0, output: "done", timedOut: false, permissionDenials: [] } as AgentRunResult; },
     stages: {
       ensureRepo: async (dir) => { order.push("repo"); return { dir, cloned: false, head: "h" }; },
       syncTools: async () => { order.push("sync"); return 4; },
@@ -116,6 +150,17 @@ describe("runDemoFix", () => {
     expect(result.liveUrl).toBe("https://demos.vendo.run/acme");
   });
 
+  it("prints what the fix spent, next to the cap that bounded it", async () => {
+    const demosRepo = await demoFixture();
+    const { io, lines } = fixIo(demosRepo, {
+      runAgent: async (job) => ({ name: job.name, code: 0, output: "done", costUsd: 1.08, timedOut: false, permissionDenials: [] }),
+    });
+    await runDemoFix({ id: "acme", instruction: "dark sidebar", demosRepo, skipShip: false }, io);
+    const spend = lines.find((line) => line.startsWith("SPEND:"));
+    expect(spend).toContain("$1.08");
+    expect(spend).toContain(`$${fixBudgetUsd.toFixed(2)}`);
+  });
+
   it("refuses a slug that has no demo yet and says which command makes one", async () => {
     const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-demos-"));
     const { io } = fixIo(demosRepo);
@@ -126,7 +171,7 @@ describe("runDemoFix", () => {
   it("propagates a failed fix agent and never assembles", async () => {
     const demosRepo = await demoFixture();
     const { io, order } = fixIo(demosRepo, {
-      runAgent: async (job) => ({ name: job.name, code: 1, output: "budget exceeded", timedOut: false }) as AgentRunResult,
+      runAgent: async (job) => ({ name: job.name, code: 1, output: "budget exceeded", timedOut: false, permissionDenials: [] }) as AgentRunResult,
     });
     await expect(runDemoFix({ id: "acme", instruction: "x", demosRepo, skipShip: false }, io))
       .rejects.toThrow(/Fix agent failed \(exit 1\)/);

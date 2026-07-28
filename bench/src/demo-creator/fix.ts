@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import { defaultRunAgent, type AgentRunResult, type RunAgentFn } from "./agent.js";
 import { runAssemble, type AssembleIo, type AssembleResult } from "./assemble.js";
 import { syncTools } from "./build.js";
-import { demoPaths, parseDemoFolderConfig } from "./demo-folder.js";
+import { demoPaths, parseDemoFolderConfig, parseDemoSlug } from "./demo-folder.js";
 import { defaultDemosRepo, ensureDemosRepo } from "./demos-repo.js";
-import { defaultExec, type ExecFn } from "./exec.js";
+import { createScrubber, defaultExec, type ExecFn } from "./exec.js";
 import { runJudge, type JudgeIo, type JudgeResult } from "./judge.js";
 import { assertOnlyDemoTouched, createStageRunner, localHostPort, type StageTiming } from "./pipeline.js";
 import { runShip, type ShipIo, type ShipResult } from "./ship.js";
@@ -50,6 +50,7 @@ export function parseDemoFixArgs(argv: string[], env: NodeJS.ProcessEnv = proces
   }
   const id = options.get("--id");
   if (id === undefined) throw new Error("--id is required (the demo slug to fix)");
+  parseDemoSlug(id, "--id (demo:fix)");
   const instruction = options.get("--instruction");
   if (instruction === undefined || instruction.trim() === "") {
     throw new Error('--instruction is required (free text, e.g. --instruction "the sidebar should be dark")');
@@ -81,7 +82,7 @@ FENCED — never edit: theme.json, BRIEF.md, brand/**, RESEARCH/**, tools.json (
 Rules that still hold:
 - ALL data is INVENTED. Evidence informs STYLE, never DATA. No real people, customers or records; no Foo/Bar/Lorem placeholders.
 - screens/index.tsx default-exports the product page, takes NO props, reads seed data through server/ imports, and renders the Vendo surfaces imported from host/src/vendo-kit where demo.config.json's placement says.
-- server/routes.ts exports \`routes\`: a Record of "METHOD /path" to a handler taking (req, store) and returning a Response. Every route it serves must stay declared in openapi.json — the agent's tool surface is generated from that file, so an undeclared route is a capability the demo cannot use.
+- server/routes.ts exports \`routes\`: a Record of "METHOD /path" to a handler taking \`(request: Request)\` — NOT a store argument — and returning a Response; captured \`:name\` segments arrive as SEARCH PARAMS (\`new URL(request.url).searchParams.get("id")\`), and the data comes from \`getStore()\` in ./store. Every route it serves must stay declared in openapi.json — the agent's tool surface is generated from that file, so an undeclared route is a capability the demo cannot use.
 - demo.config.json keeps all five beats (generate-ui, take-action, automation, connect-account, save-app), generate-ui keeps expectsView: true and take-action keeps expectsApproval: true.
 
 The brand brief this demo was built from, for context:
@@ -117,9 +118,15 @@ export interface DemoFixResult {
 
 export const fixCapMs = 25 * 60 * 1000;
 
+/** The fix agent's spend cap. Sized like the build agents': one prose fix is a
+ * SMALLER job than a whole demo, and the only thing that stops a looping agent
+ * is this number. */
+export const fixBudgetUsd = 4;
+
 export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise<DemoFixResult> {
   const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
   const env = io.env ?? process.env;
+  const scrub = createScrubber(env);
   const runAgent = io.runAgent ?? defaultRunAgent;
   const stages = io.stages ?? { ensureRepo: ensureDemosRepo, syncTools, assemble: runAssemble, judge: runJudge, ship: runShip };
   const paths = demoPaths(args.demosRepo, args.id);
@@ -166,16 +173,25 @@ export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise
         {
           name: `fix-${args.id}`,
           prompt: buildFixPrompt({ prospect: config.prospect, slug: args.id, instruction: args.instruction, brief }),
-          maxBudgetUsd: 6,
+          maxBudgetUsd: fixBudgetUsd,
           timeoutMs: 15 * 60 * 1000,
           model: env.VENDO_DEMO_AGENT_MODEL ?? "sonnet",
         },
-        { cwd: paths.root, env, signal },
+        { cwd: paths.root, env, signal, sandbox: { writeRoot: paths.root, readRoot: args.demosRepo } },
       );
       write(`[fix] agent exit ${result.code}${result.timedOut ? " (TIMED OUT)" : ""} ($${result.costUsd?.toFixed(2) ?? "?"})`);
-      if (result.code !== 0) throw new Error(`Fix agent failed (exit ${result.code}):\n${result.output.slice(0, 1000)}`);
+      if (result.permissionDenials.length > 0) {
+        write(`[fix] the harness DENIED ${result.permissionDenials.length} write(s) outside the demo folder: ${result.permissionDenials.join(", ")}`);
+      }
+      // Scrubbed like build.ts's identical relay: a fix agent that hit a
+      // credential error quotes it back in its final message, and this message
+      // goes into an operator-visible throw and a Slack thread.
+      if (result.code !== 0) throw new Error(`Fix agent failed (exit ${result.code}):\n${scrub(result.output.slice(0, 1000))}`);
       return result;
     });
+
+    // What this fix actually cost, next to the cap that bounded it.
+    write(`SPEND: $${(agent.costUsd ?? 0).toFixed(2)} on 1 fix agent run (cap $${fixBudgetUsd.toFixed(2)})`);
 
     // openapi.json may have moved, so the tool surface is regenerated and the
     // config re-validated before anything is built.

@@ -307,18 +307,35 @@ export function parseChipsReply(
   return beats.slice(0, targetDerivedChips);
 }
 
+/** What a prospect actually reads on a pill, normalised for comparison. */
+function wording(beat: DemoBeat): string {
+  return `${beat.chip.trim().toLowerCase()}|${beat.prompt.trim().toLowerCase()}`;
+}
+
 /**
  * Existing beats win. Every one keeps its order and its expectation
- * declarations; derived pills fill up to {@link maxChips}, skipping any key an
- * existing beat already owns.
+ * declarations; derived pills fill up to {@link maxChips}.
+ *
+ * Three things this deduplicates, all of which shipped a visible duplicate chip:
+ *  - an AUTHORED duplicate key (the old `[...existing]` copied them verbatim;
+ *    `taken` only ever stopped a derived collision);
+ *  - a derived pill whose key an existing beat owns;
+ *  - a derived pill whose WORDING an existing beat already carries — which is
+ *    exactly what regrounding produces: it rewrites an ungrounded beat's text
+ *    with a derived pill and keeps the beat's key, so appending that pill again
+ *    under its own key put the same sentence on the strip twice.
+ *
+ * The cap applies to the whole result, not only to the appending loop.
  */
 export function mergeBeats(existing: readonly DemoBeat[], derived: readonly DemoBeat[]): DemoBeat[] {
-  const taken = new Set(existing.map((beat) => beat.key));
-  const merged = [...existing];
-  for (const beat of derived) {
+  const taken = new Set<string>();
+  const said = new Set<string>();
+  const merged: DemoBeat[] = [];
+  for (const beat of [...existing, ...derived]) {
     if (merged.length >= maxChips) break;
-    if (taken.has(beat.key)) continue;
+    if (taken.has(beat.key) || said.has(wording(beat))) continue;
     taken.add(beat.key);
+    said.add(wording(beat));
     merged.push(beat);
   }
   return merged;

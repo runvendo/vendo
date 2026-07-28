@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 /**
  * The headless `claude` CLI spawn used by every generation agent in the
@@ -26,6 +27,29 @@ export interface AgentRunResult {
   output: string;
   costUsd?: number;
   timedOut: boolean;
+  /** What the CLI's permission layer refused, e.g. `Write /repo/host/...`. An
+   * agent that tried to leave its folder is a fact the operator must see, not
+   * one buried in a transcript — and an empty list on a run that DID write
+   * outside the folder is how finding 1 was proved. */
+  permissionDenials: string[];
+}
+
+/**
+ * The filesystem box an agent runs in, enforced by the claude CLI's own
+ * permission layer rather than by prompt wording.
+ *
+ * `writeRoot` is the agent's cwd and the only place it may create or edit a
+ * file; `readRoot` is the checkout it may READ (the build prompts send every
+ * agent to `demos/_example` first, which is outside its own folder).
+ */
+export interface AgentSandbox {
+  /** Absolute path — the demo folder. */
+  writeRoot: string;
+  /** Absolute path — the vendo-demos checkout. */
+  readRoot: string;
+  /** writeRoot-relative paths that stay READ-ONLY even inside it: the brand
+   * evidence the pipeline wrote (theme.json, BRIEF.md, brand/, RESEARCH/). */
+  fenced?: string[];
 }
 
 export interface RunAgentOptions {
@@ -35,6 +59,8 @@ export interface RunAgentOptions {
   readOnly?: boolean;
   /** Aborting kills the agent subprocess (the pipeline's wall-clock cap). */
   signal?: AbortSignal;
+  /** REQUIRED: what this agent may read and write. */
+  sandbox: AgentSandbox;
 }
 
 export type RunAgentFn = (job: Pick<AgentJob, "name" | "prompt" | "maxBudgetUsd" | "timeoutMs" | "model">, options: RunAgentOptions) => Promise<AgentRunResult>;
@@ -56,16 +82,85 @@ export function assertDisjointOwnership(jobs: readonly AgentJob[]): void {
   }
 }
 
-export function buildClaudeArgs(job: Pick<AgentJob, "prompt" | "maxBudgetUsd" | "model">, options: { readOnly?: boolean } = {}): string[] {
-  const tools = options.readOnly === true ? ["Read", "Glob", "Grep"] : ["Read", "Glob", "Grep", "Write", "Edit"];
+/** A settings path rule for one tool. A leading `//` is the CLI's
+ * absolute-path form (a single `/` anchors at the settings source instead). */
+function rule(tool: string, absolutePath: string): string {
+  return `${tool}(/${absolutePath})`;
+}
+
+/** The brand evidence a generation agent must never rewrite. The contract has
+ * always said so; until now only the prompt did. */
+export const fencedDemoPaths = ["theme.json", "BRIEF.md", "brand", "RESEARCH"];
+
+/**
+ * The `--settings` payload that boxes an agent into its demo folder.
+ *
+ * Written as a JSON STRING argument rather than a file so there is no temp file
+ * to leak, land in the demos repo, or go stale between runs.
+ *
+ * Rule shapes: `deny` outranks `allow` outranks the mode, so the shared paths
+ * (the host, the brand evidence) are spelled out as denials instead of being
+ * left to "outside the working directory". Note what is deliberately NOT here: a
+ * blanket `Write(//<repo>/demos/**)` deny would also deny the one folder the
+ * agent exists to write.
+ */
+export function buildSandboxSettings(sandbox: AgentSandbox): string {
+  const deny: string[] = [];
+  for (const tool of ["Write", "Edit", "NotebookEdit"]) {
+    // The host is shared by every live demo: caps guard, watermark, auth wall,
+    // Vendo kit. Denied by absolute path, so it holds wherever cwd is.
+    deny.push(rule(tool, `${path.join(sandbox.readRoot, "host")}/**`));
+    for (const fenced of sandbox.fenced ?? fencedDemoPaths) {
+      const target = path.join(sandbox.writeRoot, fenced);
+      deny.push(rule(tool, target), rule(tool, `${target}/**`));
+    }
+  }
+  const allow: string[] = [];
+  for (const tool of ["Read", "Glob", "Grep"]) {
+    // Reading the checkout is the job (BRIEF.md, the reference screenshot,
+    // demos/_example); only writing is fenced.
+    allow.push(rule(tool, `${sandbox.readRoot}/**`));
+  }
+  return JSON.stringify({ permissions: { allow, deny } });
+}
+
+/**
+ * The writable-tool rules. The SCOPE rides `--allowedTools` itself, which is
+ * what actually denies: probed against claude 2.1.220, an unscoped `Write` in
+ * `--allowedTools` allows Write at ANY path (the escape landed under
+ * `acceptEdits` AND under `manual` with allow rules in `--settings`), while
+ * `Write(//<dir>/**)` refuses a write outside <dir> and records it in
+ * `permission_denials`.
+ */
+function writableToolRules(writeRoot: string): string[] {
+  return [rule("Write", `${writeRoot}/**`), rule("Edit", `${writeRoot}/**`)];
+}
+
+export function buildClaudeArgs(
+  job: Pick<AgentJob, "prompt" | "maxBudgetUsd" | "model">,
+  options: { readOnly?: boolean; sandbox: AgentSandbox },
+): string[] {
+  const tools = ["Read", "Glob", "Grep", ...(options.readOnly === true ? [] : writableToolRules(options.sandbox.writeRoot))];
   return [
     "-p", job.prompt,
     "--output-format", "json",
-    // The demo folder is a generated artifact; agents must write without
-    // prompting. Tool allowlist still excludes Bash/Web/Task everywhere.
-    "--permission-mode", "bypassPermissions",
+    // NOT bypassPermissions: under it the CLI evaluates no rule at all, and a
+    // live probe wrote outside the demo folder with `permission_denials: []` —
+    // the three escapes the checker tried were stopped by the model choosing to
+    // refuse, which is not a boundary. `manual` keeps the permission layer on;
+    // in headless there is nobody to prompt, so anything unallowed is denied.
+    "--permission-mode", "manual",
+    // Deny rules for the paths every demo shares (the host) and the brand
+    // evidence inside this folder. Proved to block, and they hold wherever cwd
+    // is; `--setting-sources ""` does not discard them.
+    "--settings", buildSandboxSettings(options.sandbox),
     "--allowedTools", ...tools,
     "--disallowedTools", "Bash", "WebFetch", "WebSearch", "Task", "TodoWrite", "NotebookEdit", "KillShell", "BashOutput",
+    // READ access to the checkout: every build prompt sends the agent to
+    // demos/_example first, and that is one directory above its own.
+    "--add-dir", options.sandbox.readRoot,
+    // Nothing from the operator's machine: no user CLAUDE.md, no project hooks,
+    // no plugin that could re-widen what this agent may touch.
     "--setting-sources", "",
     "--model", job.model,
     "--max-budget-usd", String(job.maxBudgetUsd),
@@ -74,16 +169,27 @@ export function buildClaudeArgs(job: Pick<AgentJob, "prompt" | "maxBudgetUsd" | 
 
 /** Extracts {result, total_cost_usd, is_error} from `claude --output-format
  * json` (shape live-verified against claude CLI 2.1.x). */
-export function parseAgentOutput(stdout: string): { output: string; costUsd?: number; isError: boolean } {
+export function parseAgentOutput(stdout: string): { output: string; costUsd?: number; isError: boolean; permissionDenials: string[] } {
   try {
-    const parsed = JSON.parse(stdout) as { result?: unknown; total_cost_usd?: unknown; is_error?: unknown };
+    const parsed = JSON.parse(stdout) as {
+      result?: unknown;
+      total_cost_usd?: unknown;
+      is_error?: unknown;
+      permission_denials?: unknown;
+    };
+    const denials = Array.isArray(parsed.permission_denials) ? parsed.permission_denials : [];
     return {
       output: typeof parsed.result === "string" ? parsed.result : stdout,
       isError: parsed.is_error === true,
+      permissionDenials: denials.map((denial) => {
+        const entry = denial as { tool_name?: unknown; tool_input?: { file_path?: unknown; path?: unknown } };
+        const target = entry.tool_input?.file_path ?? entry.tool_input?.path;
+        return `${String(entry.tool_name ?? "tool")}${typeof target === "string" ? ` ${target}` : ""}`;
+      }),
       ...(typeof parsed.total_cost_usd === "number" ? { costUsd: parsed.total_cost_usd } : {}),
     };
   } catch {
-    return { output: stdout, isError: false };
+    return { output: stdout, isError: false, permissionDenials: [] };
   }
 }
 
@@ -99,7 +205,7 @@ export function effectiveExitCode(exitCode: number | null, isError: boolean): nu
 
 export const defaultRunAgent: RunAgentFn = (job, options) =>
   new Promise((resolve, reject) => {
-    const child = spawn("claude", buildClaudeArgs(job, { readOnly: options.readOnly ?? false }), {
+    const child = spawn("claude", buildClaudeArgs(job, { readOnly: options.readOnly ?? false, sandbox: options.sandbox }), {
       cwd: options.cwd,
       env: options.env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -130,6 +236,7 @@ export const defaultRunAgent: RunAgentFn = (job, options) =>
         output: parsed.output === "" ? stderr : parsed.output,
         ...(parsed.costUsd === undefined ? {} : { costUsd: parsed.costUsd }),
         timedOut,
+        permissionDenials: parsed.permissionDenials,
       });
     });
   });

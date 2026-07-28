@@ -1,3 +1,4 @@
+import { assertNoSymlinks, demoPaths } from "./demo-folder.js";
 import { createScrubber, defaultExec, delay, firstLine, type ExecFn, type ExecResult } from "./exec.js";
 
 /**
@@ -136,6 +137,9 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
   };
 
   const demoPath = `demos/${args.slug}`;
+  // Last gate before the demo becomes a commit on main: a symlink inside the
+  // folder is invisible to a path fence and git would commit it as mode 120000.
+  await assertNoSymlinks(demoPaths(io.demosRepo, args.slug).root, args.slug);
   const commit = await runStage("ship:commit", async () => {
     // ONLY this demo's path: the checkout also holds the host, and a `git add
     // -A` here would push whatever else an operator or another lane left in the
@@ -211,6 +215,7 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
       fetchImpl,
       timeoutMs: pollTimeoutMs,
       write,
+      slug: args.slug,
       ...(io.signal === undefined ? {} : { signal: io.signal }),
     });
     if (live.url !== undefined) {
@@ -227,14 +232,30 @@ export async function runShip(args: ShipArgs, io: ShipIo): Promise<ShipResult> {
   });
 }
 
-/** Polls every candidate URL each round and returns the FIRST that serves a
- * clean 200 (candidate order is preference order). Anything but 200 means not
- * ready: Railway answers 404 "Application not found" for a whole build, and a
- * `< 500` check once let a gate run against a still-building service. */
+/**
+ * Polls every candidate URL each round and returns the FIRST that serves THIS
+ * DEMO with a clean 200 (candidate order is preference order).
+ *
+ * Three things a 200 alone does not prove, all of them observed shapes:
+ *  - `redirect: "follow"` followed the auth wall's 307 to `/login`, which
+ *    answers a clean 200 — a deployment with DEMO_AUTOLOGIN or VENDO_BASE_URL
+ *    misconfigured reported LIVE while every prospect saw a login form. So
+ *    redirects are MANUAL and a 3xx is "not ready", named with its location.
+ *  - the pre-cutover demos.vendo.run router and Railway's own placeholder both
+ *    answer 200 for URLs they know nothing about.
+ *  - a rewritten card (the kill switch) answers 200 at the demo's own path.
+ * Hence the marker: the product page carries its own slug (the per-slug wire and
+ * chrome are built from it), and neither a login form nor a placeholder does.
+ *
+ * Anything but 200 means not ready: Railway answers 404 "Application not found"
+ * for a whole build, and a `< 500` check once let a gate run against a
+ * still-building service.
+ */
 async function waitForAny200(urls: string[], options: {
   fetchImpl: typeof fetch;
   timeoutMs: number;
   write: (line: string) => void;
+  slug: string;
   signal?: AbortSignal;
 }): Promise<{ url?: string; failures: Record<string, string> }> {
   const deadline = Date.now() + options.timeoutMs;
@@ -243,9 +264,18 @@ async function waitForAny200(urls: string[], options: {
     if (options.signal?.aborted) throw options.signal.reason instanceof Error ? options.signal.reason : new Error("ship aborted");
     for (const url of urls) {
       try {
-        const response = await options.fetchImpl(url, { redirect: "follow", signal: AbortSignal.timeout(20_000) });
-        if (response.status === 200) return { url, failures };
-        failures[url] = `HTTP ${response.status}`;
+        const response = await options.fetchImpl(url, { redirect: "manual", signal: AbortSignal.timeout(20_000) });
+        if (response.status !== 200) {
+          const location = response.headers.get("location");
+          failures[url] = `HTTP ${response.status}${location === null ? "" : ` -> ${location}`}`;
+          continue;
+        }
+        const body = await response.text();
+        if (!body.includes(options.slug)) {
+          failures[url] = `HTTP 200 but the page carries no "${options.slug}" marker — an auth wall, a placeholder or another service answered`;
+          continue;
+        }
+        return { url, failures };
       } catch (error) {
         failures[url] = error instanceof Error ? error.message : String(error);
       }

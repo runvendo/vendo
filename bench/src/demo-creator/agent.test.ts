@@ -1,5 +1,13 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertDisjointOwnership, buildClaudeArgs, effectiveExitCode, parseAgentOutput, type AgentJob } from "./agent.js";
+import {
+  assertDisjointOwnership,
+  buildClaudeArgs,
+  buildSandboxSettings,
+  effectiveExitCode,
+  parseAgentOutput,
+  type AgentJob,
+} from "./agent.js";
 
 /** The values a flag carries, up to the next `--option`. */
 function valuesAfter(args: string[], flag: string): string[] {
@@ -12,53 +20,153 @@ function job(name: string, ownedRoots: string[]): AgentJob {
   return { name, prompt: `build ${name}`, ownedRoots, maxBudgetUsd: 5, timeoutMs: 60_000, model: "sonnet" };
 }
 
+const demoRoot = path.join("/repo", "demos", "acme");
+const sandbox = { writeRoot: demoRoot, readRoot: "/repo" };
+
 describe("buildClaudeArgs", () => {
   it("gives a read-only agent nothing that can write", () => {
-    const args = buildClaudeArgs({ prompt: "plan it", maxBudgetUsd: 3, model: "sonnet" }, { readOnly: true });
+    const args = buildClaudeArgs({ prompt: "plan it", maxBudgetUsd: 3, model: "sonnet" }, { readOnly: true, sandbox });
     expect(valuesAfter(args, "--allowedTools")).toEqual(["Read", "Glob", "Grep"]);
   });
 
-  it("adds Write and Edit for a generating agent", () => {
-    const args = buildClaudeArgs({ prompt: "build it", maxBudgetUsd: 3, model: "sonnet" });
-    expect(valuesAfter(args, "--allowedTools")).toEqual(["Read", "Glob", "Grep", "Write", "Edit"]);
+  // Scoped, never bare: probed against claude 2.1.220, a bare `Write` in
+  // --allowedTools allows Write at any path on the filesystem — the scope in the
+  // tool rule is what refuses an escape and records it in permission_denials.
+  it("gives a generating agent Write and Edit scoped to its demo folder only", () => {
+    const args = buildClaudeArgs({ prompt: "build it", maxBudgetUsd: 3, model: "sonnet" }, { sandbox });
+    expect(valuesAfter(args, "--allowedTools")).toEqual([
+      "Read", "Glob", "Grep", `Write(/${demoRoot}/**)`, `Edit(/${demoRoot}/**)`,
+    ]);
+    expect(valuesAfter(args, "--allowedTools")).not.toContain("Write");
+    expect(valuesAfter(args, "--allowedTools")).not.toContain("Edit");
   });
 
-  /** These agents run with `--permission-mode bypassPermissions`, so the tool
-   * lists are the ONLY fence: a shell or a network fetch would let a generation
-   * agent leave the demo folder entirely. */
+  // Every build prompt sends the agent to demos/_example first — one directory
+  // above its own — so the read scope is the checkout, not the folder.
+  it("adds the checkout as a readable directory", () => {
+    const args = buildClaudeArgs({ prompt: "build it", maxBudgetUsd: 3, model: "sonnet" }, { sandbox });
+    expect(valuesAfter(args, "--add-dir")).toEqual(["/repo"]);
+  });
+
   it("always disallows Bash, WebFetch, WebSearch and Task", () => {
     for (const readOnly of [true, false]) {
-      const args = buildClaudeArgs({ prompt: "x", maxBudgetUsd: 3, model: "sonnet" }, { readOnly });
-      expect(args).toContain("bypassPermissions");
+      const args = buildClaudeArgs({ prompt: "x", maxBudgetUsd: 3, model: "sonnet" }, { readOnly, sandbox });
       expect(valuesAfter(args, "--disallowedTools")).toEqual(expect.arrayContaining(["Bash", "WebFetch", "WebSearch", "Task"]));
       expect(valuesAfter(args, "--allowedTools")).not.toContain("Bash");
     }
   });
 
+  // The whole point of finding 1: with bypassPermissions the CLI evaluates NO
+  // permission rule at all, so the only thing standing between a generation
+  // agent and the shared multi-tenant host was the model choosing to refuse.
+  // A live probe wrote outside the demo folder with `permission_denials: []`.
+  it("never runs an agent with permissions bypassed", () => {
+    for (const readOnly of [true, false]) {
+      const args = buildClaudeArgs({ prompt: "x", maxBudgetUsd: 3, model: "sonnet" }, { readOnly, sandbox });
+      expect(args).not.toContain("bypassPermissions");
+      expect(args).not.toContain("--dangerously-skip-permissions");
+      expect(args).not.toContain("--allow-dangerously-skip-permissions");
+      // `manual` keeps the permission layer on. Headless has nobody to prompt,
+      // so anything the rules do not allow is denied — and the scoped Write rule
+      // means the demo folder still needs no prompt.
+      expect(valuesAfter(args, "--permission-mode")).toEqual(["manual"]);
+    }
+  });
+
+  it("loads only its own settings file, never the operator's machine settings", () => {
+    const args = buildClaudeArgs({ prompt: "x", maxBudgetUsd: 3, model: "sonnet" }, { sandbox });
+    expect(valuesAfter(args, "--setting-sources")).toEqual([""]);
+    const settings = JSON.parse(valuesAfter(args, "--settings")[0] ?? "{}") as Record<string, unknown>;
+    expect(settings).toHaveProperty("permissions");
+  });
+
   it("threads the prompt, the model and the budget cap", () => {
-    const args = buildClaudeArgs({ prompt: "clone the board", maxBudgetUsd: 2.5, model: "opus" });
+    const args = buildClaudeArgs({ prompt: "clone the board", maxBudgetUsd: 2.5, model: "opus" }, { sandbox });
     expect(valuesAfter(args, "-p")).toEqual(["clone the board"]);
     expect(valuesAfter(args, "--model")).toEqual(["opus"]);
     expect(valuesAfter(args, "--max-budget-usd")).toEqual(["2.5"]);
   });
 });
 
+describe("buildSandboxSettings", () => {
+  const settings = (): {
+    permissions: { allow: string[]; deny: string[]; defaultMode?: string; additionalDirectories?: string[] };
+  } => JSON.parse(buildSandboxSettings(sandbox)) as {
+    permissions: { allow: string[]; deny: string[]; defaultMode?: string; additionalDirectories?: string[] };
+  };
+
+  // Deny outranks allow and defaultMode, so the paths the whole host shares are
+  // spelled out rather than left to "outside the working directory" alone.
+  it("denies writing the host, whatever the working directory is", () => {
+    const { deny } = settings().permissions;
+    for (const tool of ["Write", "Edit"]) {
+      expect(deny).toContain(`${tool}(/${path.join("/repo", "host")}/**)`);
+    }
+  });
+
+  // A blanket deny over demos/** would also deny the ONE folder this agent
+  // exists to write (deny outranks allow), so sibling demos are held by the
+  // working-directory confinement and the host fence, not by a rule that would
+  // break the run.
+  it("never denies the demo folder it is generating", () => {
+    const { deny } = settings().permissions;
+    expect(deny.every((rule) => !rule.endsWith(`${demoRoot}/**)`))).toBe(true);
+  });
+
+  // The contract already calls these fenced ("NEVER edit theme.json, BRIEF.md,
+  // brand/ or RESEARCH/") — until now only in the prompt, which is a request.
+  it("denies the brand evidence the pipeline wrote from real evidence", () => {
+    const { deny } = settings().permissions;
+    for (const fenced of ["theme.json", "BRIEF.md", "brand", "RESEARCH"]) {
+      expect(deny.some((rule) => rule.includes(path.join(demoRoot, fenced)))).toBe(true);
+    }
+  });
+
+  // The build prompts tell every agent to read demos/_example first, which is
+  // OUTSIDE its working directory: a sandbox that blocked that would quietly
+  // cost the clone its worked example.
+  it("keeps the whole demos repo readable", () => {
+    const { permissions } = settings();
+    for (const tool of ["Read", "Glob", "Grep"]) {
+      expect(permissions.allow.some((rule) => rule.startsWith(`${tool}(`) && rule.includes("/repo"))).toBe(true);
+    }
+  });
+});
+
 describe("parseAgentOutput", () => {
   it("extracts result and cost from an --output-format json payload", () => {
     expect(parseAgentOutput(JSON.stringify({ result: "done", total_cost_usd: 1.23 })))
-      .toEqual({ output: "done", costUsd: 1.23, isError: false });
+      .toEqual({ output: "done", costUsd: 1.23, isError: false, permissionDenials: [] });
   });
 
   it("reads is_error out of the payload", () => {
     expect(parseAgentOutput(JSON.stringify({ result: "budget exceeded", is_error: true })))
-      .toEqual({ output: "budget exceeded", isError: true });
+      .toEqual({ output: "budget exceeded", isError: true, permissionDenials: [] });
   });
 
   it("falls through with raw stdout when the CLI printed no JSON", () => {
     expect(parseAgentOutput("Error: claude: command not found")).toEqual({
       output: "Error: claude: command not found",
       isError: false,
+      permissionDenials: [],
     });
+  });
+
+  // An agent that tried to leave its folder is an operator-visible fact: this is
+  // the field that proves the sandbox — and the empty list under
+  // bypassPermissions is what proved there wasn't one.
+  it("names every write the permission layer refused, with its path", () => {
+    const parsed = parseAgentOutput(JSON.stringify({
+      result: "blocked",
+      permission_denials: [
+        { tool_name: "Write", tool_use_id: "t1", tool_input: { file_path: "/repo/host/src/vendo-kit/index.ts" } },
+        { tool_name: "Edit", tool_use_id: "t2", tool_input: { file_path: "/repo/demos/acme/theme.json" } },
+      ],
+    }));
+    expect(parsed.permissionDenials).toEqual([
+      "Write /repo/host/src/vendo-kit/index.ts",
+      "Edit /repo/demos/acme/theme.json",
+    ]);
   });
 });
 

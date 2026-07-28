@@ -105,6 +105,32 @@ describe("runAssemble", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  // The frozen contract: "ONE smoke agent turn, result discarded, gates on hard
+  // error only (turn errored / no settle), NOT on content." Nothing pinned the
+  // content half — a gate that started refusing turns for generating no view, or
+  // prose, or a refusal card, would pass every existing test.
+  it("passes a turn that settled without generating anything", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const { host, stop } = fakeHost();
+    // A turn that answered in prose: no view, no approval, nothing to inspect.
+    const result = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn: async () => undefined }));
+    expect(result.host).toBe(host);
+    expect(stop).not.toHaveBeenCalled();
+    await result.host.stop();
+  });
+
+  it("cannot gate on content, because content never reaches it", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const { host } = fakeHost();
+    // Whatever the smoke turn "returns" is discarded by the SmokeTurnFn contract
+    // (Promise<void>), so no assemble code path can branch on it.
+    const smokeTurn = (async () => "a view was generated" as unknown as void) as SmokeTurnFn;
+    const result = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn }));
+    expect(result.smoke).toEqual({ prompt: args.smokePrompt, ms: expect.any(Number) });
+    expect(Object.keys(result)).toEqual(["slugs", "host", "smoke"]);
+    await result.host.stop();
+  });
+
   it("returns the still-running host and the smoke prompt it drove", async () => {
     const demosRepo = await fakeDemosRepo({ slugs: ["acme", "globex"], installed: true });
     const { host, stop } = fakeHost();

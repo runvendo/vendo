@@ -137,14 +137,28 @@ describe("buildHost", () => {
 });
 
 describe("smokeTurnWaitOptions", () => {
-  // The contract: stage 4 gates on HARD errors only (the turn errored, or never
-  // settled), never on what the agent generated — that is the judge's business.
-  it("waits without requiring a generated view", () => {
-    expect(smokeTurnWaitOptions({ previousAssistantTurns: 2, timeoutMs: 90_000 })).toEqual({
-      previousAssistantTurns: 2,
-      timeoutMs: 90_000,
-      requireView: false,
-    });
+  // The old test restated the function body — it passed for any pass-through,
+  // including one that had lost `requireView` entirely. What the contract
+  // actually claims is a PROPERTY: whatever the caller asks for, the smoke turn
+  // never requires a generated view, because content is stage 5's business.
+  it("never requires a generated view, whatever it is asked", () => {
+    for (const timeoutMs of [1_000, 90_000, 180_000]) {
+      for (const previousAssistantTurns of [0, 1, 7]) {
+        const options = smokeTurnWaitOptions({ previousAssistantTurns, timeoutMs });
+        expect(options.requireView).toBe(false);
+        // …and it must still carry the two values the wait needs to work at all.
+        expect(options.previousAssistantTurns).toBe(previousAssistantTurns);
+        expect(options.timeoutMs).toBe(timeoutMs);
+      }
+    }
+  });
+
+  // The option object is fed straight to the capture harness's waitForTurn, so
+  // the keys have to be exactly the ones it reads — a renamed key would silently
+  // become "requireView undefined", which is falsy and therefore looks fine.
+  it("names the keys waitForTurn actually reads", () => {
+    expect(Object.keys(smokeTurnWaitOptions({ previousAssistantTurns: 1, timeoutMs: 1 })).sort())
+      .toEqual(["previousAssistantTurns", "requireView", "timeoutMs"]);
   });
 });
 

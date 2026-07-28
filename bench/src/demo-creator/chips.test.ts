@@ -272,4 +272,35 @@ describe("mergeBeats", () => {
     expect(merged[0]).toEqual(existing[0]);
     expect(merged.filter((entry) => entry.key === "derived-0")).toHaveLength(1);
   });
+
+  // `[...existing]` copied authored beats verbatim, duplicates included: the
+  // `taken` set only ever stopped a DERIVED collision.
+  it("drops an authored duplicate key, keeping the first", () => {
+    const existing = [
+      beat("generate-ui", { expectsView: true }),
+      beat("automation", { chip: "First automation" }),
+      beat("automation", { chip: "Second automation" }),
+    ];
+    const merged = mergeBeats(existing, []);
+    expect(merged.filter((entry) => entry.key === "automation")).toHaveLength(1);
+    expect(merged.find((entry) => entry.key === "automation")?.chip).toBe("First automation");
+  });
+
+  // The duplicate a prospect actually SEES: regrounding rewrites an authored
+  // beat's wording with a derived pill but keeps its key, and merging then
+  // appended that same pill again under its own key — two chips, one sentence.
+  it("never appends a pill whose wording an existing beat already carries", () => {
+    const pill = beat("lanes", { chip: "Shipments by lane", prompt: "Show me every shipment grouped by lane" });
+    const existing = [
+      { ...beat("generate-ui", { expectsView: true }), chip: pill.chip, prompt: pill.prompt },
+      beat("take-action", { expectsApproval: true }),
+    ];
+    const merged = mergeBeats(existing, [pill]);
+    expect(merged.map((entry) => entry.prompt)).toEqual([pill.prompt, "take-action prompt"]);
+  });
+
+  it("never returns more beats than the strip can show, even from authored ones alone", () => {
+    const existing = Array.from({ length: 7 }, (_, index) => beat(`authored-${index}`));
+    expect(mergeBeats(existing, derived)).toHaveLength(maxChips);
+  });
 });

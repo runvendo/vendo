@@ -22,7 +22,7 @@ import {
   type ExtractedTool,
 } from "./chips.js";
 import {
-  beatVarietyProblems,
+  beatSetProblems,
   demoPaths,
   parseDemoFolderConfig,
   requiredBeatKeys,
@@ -49,6 +49,21 @@ const agentModel = "sonnet";
 
 /** Caps are frozen by the master contract, not an agent's choice. */
 const frozenCaps = { maxTurns: 20, maxSpendUsd: 5 } as const;
+
+/**
+ * Per-agent spend caps, sized from a MEASURED run (three agents, $3.85 total)
+ * with ~2x headroom each — not from optimism.
+ *
+ * They were 6/8/2 plus a 2 repair, i.e. an $18 worst case on a $3.85 job: a
+ * looping agent could quintuple the cost of a run before anything noticed,
+ * because `--max-budget-usd` is the ONLY thing that stops one. Screens keeps the
+ * largest share; it is the fidelity-critical clone and the one live runs spend
+ * most on.
+ */
+export const agentBudgetsUsd = { server: 4, screens: 5, beats: 1.5 } as const;
+export const repairBudgetUsd = 1;
+/** What a whole build stage can cost at worst. Pinned by a test. */
+export const buildBudgetCeilingUsd = agentBudgetsUsd.server + agentBudgetsUsd.screens + agentBudgetsUsd.beats + repairBudgetUsd;
 
 /**
  * The `vendo` CLI that ships in THIS checkout. Resolved from the module rather
@@ -129,7 +144,7 @@ export function buildAgentJobs(options: {
     {
       name: "server",
       ownedRoots: ["server", "openapi.json"],
-      maxBudgetUsd: 6,
+      maxBudgetUsd: agentBudgetsUsd.server,
       timeoutMs: 20 * 60 * 1000,
       model: agentModel,
       prompt: `You are the SERVER agent for a ${prospect} demo. You write the demo's domain: its data, its routes, and the OpenAPI spec those routes are extracted from.
@@ -158,7 +173,7 @@ YOUR FILE LIST (writable): server/seed.ts, server/store.ts, server/entities.ts, 
     {
       name: "screens",
       ownedRoots: ["screens"],
-      maxBudgetUsd: 8,
+      maxBudgetUsd: agentBudgetsUsd.screens,
       timeoutMs: 20 * 60 * 1000,
       model: agentModel,
       prompt: `You are the SCREENS agent for a ${prospect} demo. You write the product page — a 1:1 clone of the reference screenshot, and the fidelity-critical surface the judge scores.
@@ -182,7 +197,7 @@ YOUR FILE LIST (writable): screens/** only.`,
     {
       name: "beats",
       ownedRoots: ["demo.config.json"],
-      maxBudgetUsd: 2,
+      maxBudgetUsd: agentBudgetsUsd.beats,
       timeoutMs: 8 * 60 * 1000,
       model: agentModel,
       prompt: `You are the BEATS agent for a ${prospect} demo. You write demo.config.json — the pills a prospect clicks, in ${prospect}'s own words.
@@ -277,33 +292,68 @@ function subjectTokens(tools: readonly ExtractedTool[]): Set<string> {
 }
 
 /**
+ * Words that make a prompt RECURRING. The automation beat's whole point is that
+ * it sets something up rather than doing it once, and a derived pill knows
+ * nothing about beat kinds — so a pill without one of these cannot stand in for
+ * it. Deliberately generous: a false "this is recurring" only costs the wording
+ * we already had, while a false negative sends the beat to the repair agent,
+ * which is the honest path.
+ */
+const recurrencePatterns = [
+  // "every" alone means nothing here: "show me every shipment" is a one-off
+  // view. It has to be every <time>.
+  /\bevery (mon|tues|wednes|thurs|fri|satur|sun)day\b/,
+  /\bevery (day|week|month|morning|hour|quarter|time)\b/,
+  /\beach (day|week|month|morning|quarter)\b/,
+  /\b(daily|weekly|monthly|hourly|quarterly|recurring|automatically|automate[sd]?|schedule[sd]?|ongoing)\b/,
+  /\bwhenever\b/,
+  /\bfrom now on\b/,
+];
+
+function readsAsRecurring(beat: DemoBeat): boolean {
+  const text = `${beat.chip} ${beat.prompt}`.toLowerCase();
+  return recurrencePatterns.some((pattern) => pattern.test(text));
+}
+
+/**
  * Rewrites each ungrounded beat's visible text with a derived pill, keeping its
  * key and its expectation flags — the arc (`generate-ui` must still render a
  * view, `take-action` must still ask for consent) belongs to the pipeline, only
- * the wording belongs to the model. Returns the beats and what changed.
+ * the wording belongs to the model.
+ *
+ * A swap must not change the beat's KIND. Handing the `automation` beat a
+ * one-off pill kept the key, so the beat-set check still "passed", and shipped
+ * an automation chip that automates nothing — so a pill that does not read as
+ * recurring is refused and the beat goes to the repair agent instead.
+ *
+ * `consumed` is the pills that were spent here: merging must not append them
+ * again, or the same sentence reaches the strip twice under two keys.
  */
 export function regroundBeats(
   beats: readonly DemoBeat[],
   tools: readonly ExtractedTool[],
   derived: readonly DemoBeat[],
-): { beats: DemoBeat[]; replaced: string[]; stillUngrounded: string[] } {
+): { beats: DemoBeat[]; replaced: string[]; stillUngrounded: string[]; consumed: DemoBeat[] } {
   const ungrounded = new Set(ungroundedBeats(beats, tools).map((beat) => beat.key));
   const spare = derived.filter((pill) => ungroundedBeats([pill], tools).length === 0);
   const replaced: string[] = [];
   const stillUngrounded: string[] = [];
-  let next = 0;
+  const consumed: DemoBeat[] = [];
+  const taken = new Set<DemoBeat>();
   const result = beats.map((beat) => {
     if (!ungrounded.has(beat.key)) return beat;
-    const pill = spare[next];
+    const pill = spare.find((candidate) => !taken.has(candidate)
+      && (beat.key !== "automation" || readsAsRecurring(candidate)));
     if (pill === undefined) {
       stillUngrounded.push(beat.key);
       return beat;
     }
-    next += 1;
+    taken.add(pill);
+    consumed.push(pill);
     replaced.push(beat.key);
     return { ...beat, chip: pill.chip, prompt: pill.prompt };
   });
-  return { beats: result, replaced, stillUngrounded };
+  return { beats: result, replaced, stillUngrounded, consumed };
 }
 
 // ---------------------------------------------------------------------------
@@ -413,8 +463,19 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
   const scrub = createScrubber(env);
   const runStage = io.runStage ?? (async <T>(_name: string, fn: () => Promise<T>): Promise<T> => await fn());
   const paths = demoPaths(io.demosRepo, args.slug);
-  const agentOptions = { cwd: paths.root, env, ...(io.signal === undefined ? {} : { signal: io.signal }) };
+  // The harness box, not the prompt: writes land inside this demo folder or the
+  // claude CLI refuses them (agent.ts's buildSandboxSettings).
+  const sandbox = { writeRoot: paths.root, readRoot: io.demosRepo };
+  const agentOptions = { cwd: paths.root, env, sandbox, ...(io.signal === undefined ? {} : { signal: io.signal }) };
   const agents: AgentRunResult[] = [];
+
+  const recordAgent = (result: AgentRunResult): void => {
+    agents.push(result);
+    write(`[build] agent ${result.name}: exit ${result.code}${result.timedOut ? " (TIMED OUT)" : ""} ($${result.costUsd?.toFixed(2) ?? "?"})`);
+    if (result.permissionDenials.length > 0) {
+      write(`[build] agent ${result.name}: the harness DENIED ${result.permissionDenials.length} write(s) outside its box: ${result.permissionDenials.join(", ")}`);
+    }
+  };
 
   await runStage("build:agents", async () => {
     const jobs = buildAgentJobs({
@@ -425,10 +486,26 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
       expiresAt: args.expiresAt,
     });
     write(`[build] ${jobs.map((job) => job.name).join(", ")} in parallel over demos/${args.slug} (brand font ${args.theme.typography.fontFamily})`);
-    const results = await Promise.all(jobs.map((job) => runAgent(job, agentOptions)));
-    agents.push(...results);
-    for (const result of results) {
-      write(`[build] agent ${result.name}: exit ${result.code}${result.timedOut ? " (TIMED OUT)" : ""} ($${result.costUsd?.toFixed(2) ?? "?"})`);
+    // One agent failing ABORTS its siblings. `Promise.all` alone is fail-fast on
+    // the await only: the other two claude processes keep editing the same demo
+    // folder for up to twenty more minutes, after the run has already failed —
+    // and they can be mid-write when the operator starts looking at it.
+    const fanOut = new AbortController();
+    const onCapAbort = (): void => fanOut.abort(io.signal?.reason);
+    io.signal?.addEventListener("abort", onCapAbort, { once: true });
+    const results: AgentRunResult[] = [];
+    try {
+      await Promise.all(jobs.map(async (job) => {
+        const result = await runAgent(job, { ...agentOptions, signal: fanOut.signal });
+        results.push(result);
+        if (result.code !== 0) fanOut.abort(new Error(`build agent "${result.name}" failed (exit ${result.code})`));
+      }));
+    } finally {
+      io.signal?.removeEventListener("abort", onCapAbort);
+      // Whatever the outcome, no sibling is left running: a rejected spawn
+      // (agent.ts's spawn-error path) unwinds this without any result at all.
+      fanOut.abort(new Error("the build fan-out ended"));
+      for (const result of results) recordAgent(result);
     }
     const failed = results.filter((result) => result.code !== 0);
     if (failed.length > 0) {
@@ -458,18 +535,37 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
     );
     const authored = await readAgentConfig(paths.config);
     let config = authored.config;
-    // The authored pills are checked against the surface FIRST — they are what a
-    // prospect clicks. A derived pill is not an extra pill; it is the
-    // replacement wording for an authored one that named a capability this demo
-    // does not have. Only then does mergeBeats fill a short arc.
-    const reground = regroundBeats(authored.beats, tools, derived);
-    let merged = mergeBeats(reground.beats, derived);
-    write(`[build] grounding: ${tools.length} tool(s); ${reground.replaced.length === 0 ? "every authored pill was grounded" : `regrounded ${reground.replaced.join(", ")}`}${reground.stillUngrounded.length === 0 ? "" : `; STILL ungrounded: ${reground.stillUngrounded.join(", ")}`}; ${merged.length} beat(s)`);
 
-    let problems = [
-      ...beatVarietyProblems(merged),
-      ...reground.stillUngrounded.map((key) => `beat "${key}" names no capability in tools.json`),
-    ];
+    /**
+     * Ground a config's beats and report every problem with the resulting set.
+     *
+     * ONE function because it runs TWICE — before and after the repair round.
+     * The old post-repair pass recomputed beat variety only, and since a repair
+     * round is triggered by grounding failures too, that is precisely the run
+     * where an ungrounded pill shipped: the re-check could not see it.
+     */
+    const groundAndCheck = (beats: readonly DemoBeat[]): { beats: DemoBeat[]; problems: string[] } => {
+      // The authored pills are checked against the surface FIRST — they are what
+      // a prospect clicks. A derived pill is not an extra pill; it is the
+      // replacement wording for an authored one that named a capability this
+      // demo does not have. Only then does mergeBeats fill a short arc, with the
+      // pills regrounding already spent excluded.
+      const reground = regroundBeats(beats, tools, derived);
+      const spare = derived.filter((pill) => !reground.consumed.includes(pill));
+      const merged = mergeBeats(reground.beats, spare);
+      write(`[build] grounding: ${tools.length} tool(s); ${reground.replaced.length === 0 ? "every authored pill was grounded" : `regrounded ${reground.replaced.join(", ")}`}${reground.stillUngrounded.length === 0 ? "" : `; STILL ungrounded: ${reground.stillUngrounded.join(", ")}`}; ${merged.length} beat(s)`);
+      return {
+        beats: merged,
+        problems: [
+          ...beatSetProblems(merged),
+          ...reground.stillUngrounded.map((key) => `beat "${key}" names no capability in tools.json`),
+        ],
+      };
+    };
+
+    const first = groundAndCheck(authored.beats);
+    let merged = first.beats;
+    let problems = first.problems;
     if (problems.length > 0) {
       // The repair agent edits the file, so it has to SEE the merged state —
       // including the derived pills — rather than the config it wrote itself.
@@ -478,7 +574,7 @@ export async function runBuild(args: BuildArgs, io: BuildIo): Promise<BuildResul
       const repairJob: AgentJob = {
         name: "beats-repair",
         ownedRoots: ["demo.config.json"],
-        maxBudgetUsd: 2,
+        maxBudgetUsd: repairBudgetUsd,
         timeoutMs: 6 * 60 * 1000,
         model: agentModel,
         prompt: `You are the BEAT REPAIR agent for a ${args.prospect} demo. demo.config.json is missing part of the demo's arc; fix ONLY that, with the smallest change.
@@ -494,16 +590,17 @@ Keep every beat already present exactly as it is — the pills that are there su
 YOUR FILE LIST (writable): demo.config.json only.`,
       };
       const repair = await runAgent(repairJob, agentOptions);
-      agents.push(repair);
+      recordAgent(repair);
       if (repair.code !== 0) {
         throw new Error(`Beat repair agent failed (exit ${repair.code}${repair.timedOut ? ", timed out" : ""}):\n${scrub(repair.output.slice(0, 1000))}`);
       }
       const repaired = await readAgentConfig(paths.config);
       config = repaired.config;
-      merged = mergeBeats(repaired.beats, derived);
-      problems = beatVarietyProblems(merged);
+      const second = groundAndCheck(repaired.beats);
+      merged = second.beats;
+      problems = second.problems;
       if (problems.length > 0) {
-        throw new Error(`demos/${args.slug}/demo.config.json still lacks the demo's arc after one repair round: ${problems.join("; ")}`);
+        throw new Error(`demos/${args.slug}/demo.config.json still does not satisfy the beat contract after one repair round: ${problems.join("; ")}`);
       }
       write(`[build] beat variety repaired: ${merged.length} beat(s)`);
     }

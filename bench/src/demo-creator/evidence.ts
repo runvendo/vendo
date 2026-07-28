@@ -98,9 +98,66 @@ export function pickLogo(logos: readonly BrandLogo[]): BrandLogo | undefined {
 /** SVG scales into a header at any size, so it is worth detecting from the
  * bytes: brand.dev's CDN serves plenty of URLs whose extension lies. */
 function isSvg(contentType: string, bytes: Buffer): boolean {
-  if (contentType.toLowerCase().includes("svg")) return true;
-  const head = bytes.subarray(0, 256).toString("utf8").trimStart();
-  return head.startsWith("<svg") || head.startsWith("<?xml");
+  const head = bytes.subarray(0, 256).toString("utf8").trimStart().toLowerCase();
+  // The content-type alone is not enough: a CDN that answers an HTML error page
+  // can still label it image/svg+xml. The bytes have to look like SVG.
+  if (head.startsWith("<svg") || (head.startsWith("<?xml") && head.includes("<svg"))) return true;
+  return contentType.toLowerCase().includes("svg") && head.startsWith("<") && !head.startsWith("<!doctype html") && !head.startsWith("<html");
+}
+
+/** The magic bytes of every raster format brand.dev's CDN actually serves. */
+const imageMagic: { label: string; matches: (bytes: Buffer) => boolean }[] = [
+  { label: "png", matches: (bytes) => bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+  { label: "jpeg", matches: (bytes) => bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) },
+  { label: "gif", matches: (bytes) => bytes.subarray(0, 4).toString("ascii") === "GIF8" },
+  { label: "webp", matches: (bytes) => bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP" },
+  { label: "ico", matches: (bytes) => bytes.subarray(0, 4).equals(Buffer.from([0x00, 0x00, 0x01, 0x00])) },
+];
+
+/**
+ * Whether these bytes are an image AT ALL.
+ *
+ * The failure this exists for: a CDN answering **200** with an HTML "403
+ * Forbidden" page. `response.ok` is true, so the page was written to
+ * brand/logo.png, recorded in the digest as a SUCCESS, committed to the host
+ * repo, and the fidelity judge then scored logo fidelity against a broken image
+ * — a 2/10 that reads as "the clone is wrong" instead of "the download failed".
+ */
+export function looksLikeImage(contentType: string, bytes: Buffer): boolean {
+  if (bytes.length === 0) return false;
+  return isSvg(contentType, bytes) || imageMagic.some((format) => format.matches(bytes));
+}
+
+/**
+ * The same HTML-with-200 class on the TEXT half of the evidence: context.dev
+ * hands back whatever the page served, so a Cloudflare interstitial or an error
+ * page arrives as "markdown" and becomes the site text the brand brief derives
+ * the prospect's vocabulary and voice from.
+ *
+ * Returns why it is unusable, or undefined when it reads like real site text.
+ */
+export function scrapedTextProblem(markdown: string): string | undefined {
+  const text = markdown.trim();
+  // Deliberately a floor, not a quality bar: a real product page can be terse,
+  // and this only has to catch "nothing came back".
+  if (text.length < 16) return `the scrape returned ${text.length} characters of text — nothing the brief can read`;
+  const head = text.slice(0, 200).toLowerCase();
+  if (head.startsWith("<!doctype html") || head.startsWith("<html")) {
+    return "the scrape returned an HTML document rather than markdown — the site served a page context.dev could not read";
+  }
+  const interstitials = [
+    "just a moment",
+    "enable javascript and cookies",
+    "attention required! | cloudflare",
+    "checking your browser",
+    "403 forbidden",
+    "access denied",
+    "you do not have permission",
+    "are you a robot",
+    "request blocked",
+  ];
+  const matched = interstitials.find((needle) => head.includes(needle));
+  return matched === undefined ? undefined : `the scrape returned a block/error page ("${matched}"), not the prospect's site text`;
 }
 
 function failureReason(error: unknown): string {
@@ -215,7 +272,17 @@ export async function runEvidence(args: EvidenceArgs, io: EvidenceIo): Promise<E
     markdown = await attempt("scrape-markdown", () =>
       client.scrapeMarkdown({ url, useMainContentOnly: true }),
     );
-    if (markdown !== undefined) write(`  scrape-markdown: ${markdown.contentLength} bytes of site text`);
+    if (markdown !== undefined) {
+      // A 200 that is not site text is a SOFT failure, never brief material.
+      const problem = scrapedTextProblem(markdown.markdown);
+      if (problem === undefined) {
+        write(`  scrape-markdown: ${markdown.contentLength} bytes of site text`);
+      } else {
+        soft.push({ call: "scrape-markdown", reason: problem });
+        write(`  scrape-markdown: failed soft — ${problem}`);
+        markdown = undefined;
+      }
+    }
   }
 
   let markdownEntry: EvidenceResult["markdown"];
@@ -237,7 +304,15 @@ export async function runEvidence(args: EvidenceArgs, io: EvidenceIo): Promise<E
         const response = await (io.fetchImpl ?? fetch)(chosen.url, { signal: AbortSignal.timeout(30_000) });
         if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${chosen.url}`);
         const bytes = Buffer.from(await response.arrayBuffer());
-        const svg = isSvg(response.headers.get("content-type") ?? "", bytes);
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!looksLikeImage(contentType, bytes)) {
+          // NOTHING is written: presence of brand/logo.png is what the brief and
+          // the judge both read as "we have their logo".
+          throw new Error(
+            `${chosen.url} answered 200 but the ${bytes.length} bytes are not an image (content-type ${contentType || "absent"}, starts with ${JSON.stringify(bytes.subarray(0, 24).toString("utf8"))}) — a CDN error page, not a logo`,
+          );
+        }
+        const svg = isSvg(contentType, bytes);
         await writeFile(svg ? paths.logoSvg : paths.logoPng, bytes);
         logo = { file: svg ? "brand/logo.svg" : "brand/logo.png", source: chosen.url };
         write(`  logo: ${logo.file}`);

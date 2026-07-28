@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -7,7 +7,7 @@ import type { BriefResult } from "./brief.js";
 import type { BuildResult } from "./build.js";
 import { demoPaths } from "./demo-folder.js";
 import type { EvidenceResult } from "./evidence.js";
-import type { ExecFn } from "./exec.js";
+import { defaultExec, type ExecFn } from "./exec.js";
 import type { JudgeResult } from "./judge.js";
 import {
   assertOnlyDemoTouched,
@@ -37,6 +37,16 @@ describe("parseDemoPipelineArgs", () => {
     expect(() => parseDemoPipelineArgs(["--prospect", "Acme", "--screenshots", "/a.png"], {})).toThrow("--id is required");
     expect(() => parseDemoPipelineArgs(["--id", "acme", "--screenshots", "/a.png"], {})).toThrow("--prospect is required");
     expect(() => parseDemoPipelineArgs(["--id", "acme", "--prospect", "Acme"], {})).toThrow("--screenshots is required");
+  });
+
+  // The slug arrives from a Slack message (lane 3 passes it straight through) and
+  // every stage joins it onto a path, so it is rejected at the boundary — before
+  // evidence and the brief write into it and before the host fence ever runs.
+  it("rejects a slug that would resolve outside the demos directory", () => {
+    for (const id of ["../host/src/vendo-kit", "..", "../../../../tmp/pwned", "Acme", "acme/sub"]) {
+      expect(() => parseDemoPipelineArgs(["--id", id, "--prospect", "Acme", "--screenshots", "/a.png"], {}))
+        .toThrow(/not a valid demo slug/);
+    }
   });
 
   it("tolerates the pnpm `--` separator and rejects unknown options", () => {
@@ -165,6 +175,88 @@ describe("assertOnlyDemoTouched", () => {
     const exec: ExecFn = async () => ({ code: 128, stdout: "", stderr: "fatal: not a git repository" });
     await expect(assertOnlyDemoTouched("/repo", "acme", { exec })).rejects.toThrow(/not a git repository/);
   });
+
+  // `git status --porcelain --untracked-files=all` OMITS ignored files, so a
+  // host file matching any .gitignore rule (host/src/vendo-kit/evil.local)
+  // passed the fence completely — and `railway up` uploads the working
+  // directory, ignored files included.
+  it("asks git for ignored files too", async () => {
+    const calls: string[][] = [];
+    const exec: ExecFn = async (command) => {
+      calls.push(command);
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    await assertOnlyDemoTouched("/repo", "acme", { exec });
+    expect(calls[0]).toContain("--ignored");
+  });
+
+  it("catches a gitignored host file the porcelain default hides", async () => {
+    const exec = statusExec("!! host/src/vendo-kit/evil.local\n");
+    await expect(assertOnlyDemoTouched("/repo", "acme", { exec }))
+      .rejects.toThrow(/host\/src\/vendo-kit\/evil\.local/);
+  });
+
+  // …but the checkout legitimately holds hundreds of thousands of ignored
+  // dependency and build files (host/node_modules, host/.next after a previous
+  // assemble). Firing on those would make the fence throw on every second run,
+  // which is how a safety check gets deleted.
+  it("does not mistake dependency and build directories for an escape", async () => {
+    const exec = statusExec([
+      "!! host/node_modules/next/package.json",
+      "!! host/.next/cache/x",
+      "!! host/.turbo/log.txt",
+      "!! node_modules/.pnpm/lock.yaml",
+      "",
+    ].join("\n"));
+    await expect(assertOnlyDemoTouched("/repo", "acme", { exec })).resolves.toBeUndefined();
+  });
+
+  // Stubbed porcelain proves the parsing; only real git proves the FLAGS.
+  it("catches a gitignored host file in a real git checkout", async () => {
+    const repo = await mkdtemp(path.join(tmpdir(), "lane2-fence-"));
+    await mkdir(path.join(repo, "host", "src", "vendo-kit"), { recursive: true });
+    await mkdir(path.join(repo, "demos", "acme"), { recursive: true });
+    await writeFile(path.join(repo, ".gitignore"), "*.local\nnode_modules/\n");
+    await writeFile(path.join(repo, "host", "src", "vendo-kit", "index.ts"), "export const kit = 1;\n");
+    await writeFile(path.join(repo, "demos", "acme", "index.tsx"), "export default () => null;\n");
+    await defaultExec(["git", "init", "-q", "."], { cwd: repo });
+    await defaultExec(["git", "add", "-A"], { cwd: repo });
+    await defaultExec([
+      "git", "-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "base",
+    ], { cwd: repo });
+    await expect(assertOnlyDemoTouched(repo, "acme", { exec: defaultExec })).resolves.toBeUndefined();
+
+    await writeFile(path.join(repo, "host", "src", "vendo-kit", "evil.local"), "reaches every live demo\n");
+    await expect(assertOnlyDemoTouched(repo, "acme", { exec: defaultExec })).rejects.toThrow(/evil\.local/);
+  });
+
+  // A symlink inside the demo folder passes a path fence (it IS inside the
+  // folder) and git commits it as mode 120000 — the checker planted one
+  // pointing at /etc/passwd and it pushed.
+  it("rejects a symlink anywhere in the demo folder", async () => {
+    const repo = await mkdtemp(path.join(tmpdir(), "lane2-symlink-"));
+    const demo = path.join(repo, "demos", "acme");
+    await mkdir(path.join(demo, "screens"), { recursive: true });
+    await writeFile(path.join(demo, "screens", "index.tsx"), "export default () => null;\n");
+    const exec = statusExec("?? demos/acme/screens/index.tsx\n");
+    await expect(assertOnlyDemoTouched(repo, "acme", { exec })).resolves.toBeUndefined();
+
+    await symlink("/etc/passwd", path.join(demo, "screens", "kitlink"));
+    await expect(assertOnlyDemoTouched(repo, "acme", { exec }))
+      .rejects.toThrow(/screens\/kitlink[\s\S]*\/etc\/passwd|\/etc\/passwd/);
+  });
+
+  it("names every symlink, including one pointing inside the repo", async () => {
+    const repo = await mkdtemp(path.join(tmpdir(), "lane2-symlink2-"));
+    const demo = path.join(repo, "demos", "acme");
+    await mkdir(path.join(repo, "host", "src"), { recursive: true });
+    await mkdir(demo, { recursive: true });
+    await symlink(path.join(repo, "host", "src"), path.join(demo, "kit"));
+    const error = await assertOnlyDemoTouched(repo, "acme", { exec: statusExec("") })
+      .catch((thrown: unknown) => thrown as Error);
+    expect(error.message).toMatch(/symlink/i);
+    expect(error.message).toContain("kit");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -255,6 +347,22 @@ describe("runDemoPipeline", () => {
     expect(lines).toContain("SCORES: logo=PASS palette=8 type=7 layout=9 copyTone=8");
   });
 
+  // A run that quietly cost 5x is the failure this line exists to make visible:
+  // the agents' spend is measured exactly (the claude CLI reports it), so the
+  // operator sees it next to the ceiling the caps allow.
+  it("prints what the run actually spent on generation agents", async () => {
+    const { lines, result } = await run({
+      build: async () => ({
+        agents: [], toolCount: 2, costUsd: 4.27,
+        beats: [{ key: "generate-ui", chip: "c", prompt: "p", expectsView: true }],
+      } as unknown as BuildResult),
+    });
+    expect(result.costUsd).toBeCloseTo(4.27);
+    const spend = lines.find((line) => line.startsWith("SPEND:"));
+    expect(spend).toContain("$4.27");
+    expect(spend).toMatch(/cap|ceiling/i);
+  });
+
   it("smokes the demo's OWN first beat — the prompt a prospect will click", async () => {
     const { order } = await run({
       build: async () => ({
@@ -305,15 +413,137 @@ describe("runDemoPipeline", () => {
     await expect(promise).rejects.toThrow(/host\/src\/vendo-kit\/index\.tsx/);
   });
 
+  // The old version of this test asserted `order` held exactly ["fence"] — the
+  // array its own spy was the only writer of — and then compared two stage
+  // indexes that say nothing about where the fence ran between them. The claim
+  // is a POSITION: after build has finished, before assemble starts.
   it("checks the fence AFTER build and BEFORE assemble", async () => {
-    const order: string[] = [];
+    const timeline: string[] = [];
     const spy: ExecFn = async (command) => {
-      if (command.includes("status")) order.push("fence");
+      if (command.includes("status")) timeline.push("fence");
       return { code: 0, stdout: "", stderr: "" };
     };
-    const { order: stageOrder } = await run({}, {}, { exec: spy });
-    expect(order).toEqual(["fence"]);
-    expect(stageOrder.indexOf("build")).toBeLessThan(stageOrder.findIndex((entry) => entry.startsWith("assemble")));
+    await run(
+      {
+        build: async () => {
+          timeline.push("build:start");
+          await Promise.resolve();
+          timeline.push("build:end");
+          return { agents: [], toolCount: 4, costUsd: 1, beats: [{ key: "generate-ui", chip: "c", prompt: "p", expectsView: true }] } as unknown as BuildResult;
+        },
+        assemble: async () => {
+          timeline.push("assemble:start");
+          return {
+            slugs: ["acme"],
+            host: { baseUrl: "http://127.0.0.1:3150", stop: async () => undefined },
+            smoke: { prompt: "p", ms: 1 },
+          } as unknown as AssembleResult;
+        },
+      },
+      {},
+      { exec: spy },
+    );
+    expect(timeline).toEqual(["build:start", "build:end", "fence", "assemble:start"]);
+  });
+
+  // SHIP REGARDLESS. Every other harness in this file hands the pipeline a
+  // verdict that passes, so nothing pinned the one rule the judge stage exists
+  // to obey: a 3/10 demo still reaches demos.vendo.run, because a human decides
+  // what to do with a bad score.
+  it("ships a demo the judge scored badly", async () => {
+    const failing = {
+      builtScreens: [], reportPath: "F.md", notes: [],
+      scoresLine: "logo=FAIL palette=3 type=2 layout=4 copyTone=3",
+      verdict: { scores: [{ dimension: "logo", score: 2, justification: "not their mark" }] },
+    } as unknown as JudgeResult;
+    const { result, order, lines } = await run({ judge: async () => failing });
+    expect(order).toContain("ship");
+    expect(result.liveUrl).toBe("https://demos.vendo.run/acme");
+    expect(result.scoresLine).toBe("logo=FAIL palette=3 type=2 layout=4 copyTone=3");
+    expect(lines.join("\n")).toContain("SCORES: logo=FAIL");
+  });
+
+  it("ships a demo the judge could not score at all", async () => {
+    const unscored = {
+      builtScreens: [], reportPath: "F.md", notes: ["the judge did not score this demo: Overloaded"],
+      scoresLine: "judge=FAILED",
+    } as unknown as JudgeResult;
+    const { result, order } = await run({ judge: async () => unscored });
+    expect(order).toContain("ship");
+    expect(result.liveUrl).toBe("https://demos.vendo.run/acme");
+  });
+
+  // The other half of the same rule: assemble is the ONE gate that must block a
+  // ship, because a demo that does not build or does not survive a turn is
+  // broken in front of the prospect.
+  it("never ships when assemble throws", async () => {
+    const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-demos-"));
+    const h = harness({
+      assemble: async () => { throw new Error("host build failed (exit 1): Type error in screens/index.tsx"); },
+    });
+    const promise = runDemoPipeline(
+      {
+        id: "acme",
+        prospect: "Acme Widgets",
+        screenshots: ["/abs/a.png"],
+        ctaUrl: "https://cal.com/x",
+        expiresAt: "2026-08-31T00:00:00.000Z",
+        demosRepo,
+        skipShip: false,
+      },
+      { stages: h.stages, write: () => {}, exec: cleanStatus },
+    );
+    await expect(promise).rejects.toThrow(/host build failed/);
+    expect(h.order).not.toContain("ship");
+    expect(h.order.some((entry) => entry.startsWith("judge:"))).toBe(false);
+  });
+
+  // Nested rows made the table unsummable: judge.ts wraps its body in the same
+  // runStage name the pipeline used, and assemble contributes five sub-rows
+  // inside its own — so adding every `ms` counted the same seconds twice.
+  it("marks sub-stage rows with their depth so the table can be summed honestly", async () => {
+    const { demosRepo, result } = await run({
+      assemble: async (_args, io) => {
+        await io.runStage?.("assemble:build", async () => undefined);
+        return {
+          slugs: ["acme"],
+          host: { baseUrl: "http://127.0.0.1:3150", stop: async () => undefined },
+          smoke: { prompt: "p", ms: 1 },
+        } as unknown as AssembleResult;
+      },
+    });
+    const rows = JSON.parse(await readFile(demoPaths(demosRepo, "acme").timings, "utf8")) as { stage: string; depth: number }[];
+    expect(rows.find((row) => row.stage === "assemble:build")?.depth).toBe(1);
+    expect(rows.find((row) => row.stage === "assemble")?.depth).toBe(0);
+    expect(rows.filter((row) => row.depth === 0).map((row) => row.stage))
+      .toEqual(["repo", "evidence", "brief", "build", "assemble", "judge", "ship"]);
+    // …and the sum of the top-level rows cannot exceed the whole run.
+    const topLevel = result.timings.filter((row) => row.depth === 0).reduce((total, row) => total + row.ms, 0);
+    const everything = result.timings.reduce((total, row) => total + row.ms, 0);
+    expect(topLevel).toBeLessThanOrEqual(everything);
+  });
+
+  it("warns instead of swallowing when the timings file cannot be written", async () => {
+    const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-demos-"));
+    // timings.json as a DIRECTORY: every write rejects with EISDIR.
+    await mkdir(demoPaths(demosRepo, "acme").timings, { recursive: true });
+    const h = harness();
+    const lines: string[] = [];
+    const result = await runDemoPipeline(
+      {
+        id: "acme",
+        prospect: "Acme Widgets",
+        screenshots: ["/abs/a.png"],
+        ctaUrl: "https://cal.com/x",
+        expiresAt: "2026-08-31T00:00:00.000Z",
+        demosRepo,
+        skipShip: false,
+      },
+      { stages: h.stages, write: (line) => lines.push(line), exec: cleanStatus },
+    );
+    // The run still ships — timings are evidence, not the product.
+    expect(result.liveUrl).toBe("https://demos.vendo.run/acme");
+    expect(lines.join("\n")).toMatch(/WARNING: could not write .*timings\.json/);
   });
 
   it("threads its stage runner into the stages, so sub-stage timings land in timings.json", async () => {

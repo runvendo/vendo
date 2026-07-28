@@ -8,7 +8,10 @@ import { parseDemoPipelineArgs, preflight, runDemoPipeline } from "./pipeline.js
  * `SCORES: ...` and either `LIVE: <url>` (exit 0) or `FAILED: <cause>`.
  */
 
-function usage(): string {
+/** Exported so a test can hold it against {@link preflight}: `--help` and the
+ * credential check disagreeing is how lane 3 provisioned a mini that
+ * demo:pipeline then refused to start on. */
+export function usage(): string {
   return `Usage:
   pnpm --filter @vendoai/bench demo:pipeline -- --id SLUG --prospect NAME --screenshots /abs/a.png,/abs/b.png [--url https://prospect-site] [--cta-url URL] [--expires 2026-08-31] [--notes notes.md] [--demos-repo /abs/path] [--skip-ship]
   pnpm --filter @vendoai/bench demo:fix -- --id SLUG --instruction "<free text>" [--demos-repo /abs/path] [--skip-ship]
@@ -25,8 +28,11 @@ demo:fix applies free-text operator feedback to an existing demo with ONE agent,
 then re-assembles, re-judges and re-ships it.
 
 Needs: ANTHROPIC_API_KEY (the creator harness — brief, judge and the claude CLI
-agents all ride a provider key), CONTEXT_DEV_API_KEY (brand evidence), the
-\`claude\` CLI on PATH, and a logged-in \`railway\` CLI. None is ever logged.`;
+agents all ride a provider key), CONTEXT_DEV_API_KEY (brand evidence),
+VENDO_API_KEY (the host this pipeline BOOTS locally to smoke and screenshot the
+demo runs the Cloud posture: its store, connections and agent route are
+Cloud-composed, and the harness key does not stand in for it), the \`claude\` CLI
+on PATH, and a logged-in \`railway\` CLI. None is ever logged.`;
 }
 
 async function main(): Promise<void> {

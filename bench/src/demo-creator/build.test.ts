@@ -5,7 +5,17 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { assertDisjointOwnership, type AgentRunResult, type RunAgentFn } from "./agent.js";
 import type { BrandBrief } from "./brief.js";
-import { buildAgentJobs, domainApi, regroundBeats, runBuild, syncTools, ungroundedBeats } from "./build.js";
+import {
+  buildAgentJobs,
+  buildBudgetCeilingUsd,
+  domainApi,
+  regroundBeats,
+  repairBudgetUsd,
+  runBuild,
+  syncTools,
+  ungroundedBeats,
+} from "./build.js";
+import { maxChips } from "./chips.js";
 import { demoPaths, parseDemoFolderConfig, requiredBeatKeys, type DemoTheme } from "./demo-folder.js";
 import type { ExecFn } from "./exec.js";
 
@@ -73,7 +83,7 @@ async function demoFolder(options: { config?: Record<string, unknown> } = {}): P
   return demosRepo;
 }
 
-const agentOk = (name: string): AgentRunResult => ({ name, code: 0, output: "done", costUsd: 1.5, timedOut: false });
+const agentOk = (name: string): AgentRunResult => ({ name, code: 0, output: "done", costUsd: 1.5, timedOut: false, permissionDenials: [] });
 
 /** `vendo sync`'s real behaviour: writes `<demoDir>/.vendo/{tools,catalog}.json`. */
 function fakeSync(names: readonly string[]): ExecFn {
@@ -166,6 +176,35 @@ describe("regroundBeats", () => {
     const result = regroundBeats(authored, shipmentTools, derived);
     expect(result.replaced).toEqual([]);
     expect(result.stillUngrounded).toEqual(["generate-ui"]);
+  });
+
+  // The beat KIND is the contract; only the wording is the model's. Handing the
+  // automation beat a one-off action pill kept the key — so beat-variety still
+  // "passed" — and shipped a demo whose automation pill sets nothing up.
+  it("refuses to reword the automation beat with a pill that is not recurring", () => {
+    const authored = [beat("automation", "Weekly invoice digest", "Every Monday, send me the overdue invoices")];
+    const oneOff = [beat("lanes", "Shipments by lane", "Show me every shipment grouped by lane")];
+    const result = regroundBeats(authored, shipmentTools, oneOff);
+    expect(result.replaced).toEqual([]);
+    expect(result.stillUngrounded).toEqual(["automation"]);
+    expect(result.beats[0]).toEqual(authored[0]);
+  });
+
+  it("does reword the automation beat with a recurring pill", () => {
+    const authored = [beat("automation", "Weekly invoice digest", "Every Monday, send me the overdue invoices")];
+    const recurring = [beat("weekly-lanes", "Weekly lane report", "Every Monday, summarise every shipment by lane")];
+    const result = regroundBeats(authored, shipmentTools, recurring);
+    expect(result.replaced).toEqual(["automation"]);
+    expect(result.beats[0]?.prompt).toBe("Every Monday, summarise every shipment by lane");
+  });
+
+  // Merging appended the very pill regrounding had just consumed, so the same
+  // sentence reached the strip twice under two keys.
+  it("reports which derived pills it consumed, so merging cannot append them again", () => {
+    const authored = [beat("generate-ui", "Overdue invoices", "Show me every overdue invoice")];
+    const derived = [beat("lanes", "Shipments by lane", "Show me every shipment grouped by lane")];
+    const result = regroundBeats(authored, shipmentTools, derived);
+    expect(result.consumed.map((pill) => pill.key)).toEqual(["lanes"]);
   });
 });
 
@@ -288,6 +327,24 @@ describe("buildAgentJobs", () => {
     expect(server?.prompt).toContain("voidInvoice");
   });
 
+  // Worst case, not measured case: a live run measured $3.85, and the old caps
+  // (6 + 8 + 2, plus a 2 repair) let a bad run spend $18 before anything
+  // noticed. The ceiling is what bounds a runaway, so it is pinned here.
+  it("keeps the whole build's worst-case spend under the pinned ceiling", () => {
+    const jobs = buildAgentJobs(jobOptions);
+    const fanOut = jobs.reduce((total, job) => total + job.maxBudgetUsd, 0);
+    expect(fanOut + repairBudgetUsd).toBe(buildBudgetCeilingUsd);
+    expect(buildBudgetCeilingUsd).toBeLessThanOrEqual(12);
+    // …and every single agent still has real headroom over what a live run used.
+    for (const job of jobs) expect(job.maxBudgetUsd).toBeGreaterThanOrEqual(1.5);
+  });
+
+  it("bounds every agent's wall clock too", () => {
+    for (const job of buildAgentJobs(jobOptions)) {
+      expect(job.timeoutMs).toBeLessThanOrEqual(20 * 60 * 1000);
+    }
+  });
+
   it("tells the beats agent the required arc and that it cannot see the tool surface yet", () => {
     const beats = buildAgentJobs(jobOptions).find((job) => job.name === "beats");
     for (const key of requiredBeatKeys) expect(beats?.prompt).toContain(key);
@@ -399,11 +456,66 @@ describe("runBuild", () => {
     const demosRepo = await demoFolder();
     const runAgent: RunAgentFn = async (job) =>
       job.name === "screens"
-        ? { name: job.name, code: 1, output: "Write tool denied on screens/index.tsx", timedOut: false }
+        ? { name: job.name, code: 1, output: "Write tool denied on screens/index.tsx", timedOut: false, permissionDenials: [] }
         : agentOk(job.name);
 
     await expect(runBuild(args, io({ demosRepo, runAgent })))
       .rejects.toThrow(/screens \(exit 1\)[\s\S]*Write tool denied/);
+  });
+
+  // `Promise.all` is fail-fast on the AWAIT only: the surviving agents kept
+  // editing the same demo folder for up to twenty more minutes after the run had
+  // already failed — including while an operator was looking at it.
+  it("aborts the surviving agents the moment one fails", async () => {
+    const demosRepo = await demoFolder();
+    const aborted: string[] = [];
+    const runAgent: RunAgentFn = async (job, options) => {
+      if (job.name === "beats") {
+        // Fails first, while the other two are still "running".
+        return { name: job.name, code: 1, output: "budget exceeded", timedOut: false, permissionDenials: [] };
+      }
+      // A long agent that only ends when its signal is aborted.
+      await new Promise<void>((resolve) => {
+        if (options.signal?.aborted === true) {
+          aborted.push(job.name);
+          resolve();
+          return;
+        }
+        options.signal?.addEventListener("abort", () => { aborted.push(job.name); resolve(); }, { once: true });
+      });
+      return { name: job.name, code: 0, output: "cancelled", timedOut: false, permissionDenials: [] };
+    };
+
+    await expect(runBuild(args, io({ demosRepo, runAgent }))).rejects.toThrow(/beats \(exit 1\)/);
+    expect(aborted.sort()).toEqual(["screens", "server"]);
+  });
+
+  // The rejected-spawn path unwinds with NO result at all, so the abort cannot
+  // live only where a failing exit code is handled.
+  it("aborts the surviving agents when one cannot be spawned at all", async () => {
+    const demosRepo = await demoFolder();
+    const aborted: string[] = [];
+    const runAgent: RunAgentFn = async (job, options) => {
+      if (job.name === "beats") throw new Error('Could not spawn the claude CLI for agent "beats": ENOENT');
+      await new Promise<void>((resolve) => {
+        options.signal?.addEventListener("abort", () => { aborted.push(job.name); resolve(); }, { once: true });
+      });
+      return { name: job.name, code: 0, output: "cancelled", timedOut: false, permissionDenials: [] };
+    };
+
+    await expect(runBuild(args, io({ demosRepo, runAgent }))).rejects.toThrow(/Could not spawn/);
+    expect(aborted.sort()).toEqual(["screens", "server"]);
+  });
+
+  it("surfaces a write the harness denied, so an escape attempt is visible", async () => {
+    const demosRepo = await demoFolder();
+    const lines: string[] = [];
+    const runAgent: RunAgentFn = async (job) => ({
+      ...agentOk(job.name),
+      permissionDenials: job.name === "screens" ? ["Write /repo/host/src/vendo-kit/index.ts"] : [],
+    });
+    await runBuild(args, io({ demosRepo, runAgent, lines }));
+    expect(lines.join("\n")).toMatch(/DENIED 1 write\(s\)[\s\S]*host\/src\/vendo-kit/);
   });
 
   it("drops a derived pill that cites a capability the demo does not have", async () => {
@@ -456,5 +568,44 @@ describe("runBuild", () => {
   it("refuses to write a config the demo-folder schema would reject", async () => {
     const demosRepo = await demoFolder({ config: { ...agentConfig(), placement: { trigger: "footer", slot: "" } } });
     await expect(runBuild(args, io({ demosRepo }))).rejects.toThrow(/placement\.trigger/);
+  });
+
+  // Finding 4: the post-repair pass recomputed beat VARIETY only. Any pill an
+  // ungrounded beat still carried therefore shipped — a repair round is
+  // triggered by grounding failures too, so this was the common case, and the
+  // checker shipped an ungrounded `automation` pill through it.
+  it("re-checks grounding after the repair round, not just the beat arc", async () => {
+    // Authored beats are all about invoices; the demo's real tools are shipments.
+    const demosRepo = await demoFolder({ config: agentConfig() });
+    const paths = demoPaths(demosRepo, slug);
+    const runAgent: RunAgentFn = async (job) => {
+      if (job.name.startsWith("beats-repair")) {
+        // The repair agent "fixes" the arc while leaving the ungrounded wording.
+        await writeFile(paths.config, `${JSON.stringify(agentConfig(), null, 2)}\n`);
+      }
+      return agentOk(job.name);
+    };
+    const exec = fakeSync(["host_listShipments", "host_flagShipment"]);
+
+    // A derived pill that cites a real tool but says nothing about it is dropped,
+    // so there is no replacement wording available — exactly the run where the
+    // old post-repair pass had nothing to check grounding with.
+    const chipModel = async (): Promise<string> => chipReply([
+      { key: "payroll", chip: "Payroll runs", prompt: "Show me payroll runs", tools: ["host_listShipments"] },
+    ]);
+
+    await expect(runBuild(args, io({ demosRepo, runAgent, exec, chipModel })))
+      .rejects.toThrow(/names no capability in tools\.json/);
+  });
+
+  // The shipped set is the invariant: unique keys, the five kinds, generate-ui
+  // first, at most maxChips, every beat grounded.
+  it("writes a beat set that satisfies the whole invariant", async () => {
+    const demosRepo = await demoFolder();
+    const result = await runBuild(args, io({ demosRepo }));
+    expect(result.beats[0]?.key).toBe("generate-ui");
+    expect(new Set(result.beats.map((beat) => beat.key)).size).toBe(result.beats.length);
+    expect(result.beats.length).toBeLessThanOrEqual(maxChips);
+    expect(result.beats.map((beat) => beat.key)).toEqual([...requiredBeatKeys]);
   });
 });

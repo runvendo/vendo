@@ -124,11 +124,23 @@ export interface JudgeImage {
 /** Model seam: prompt + labeled images in, raw model text out. */
 export type JudgeModelFn = (prompt: string, images: JudgeImage[]) => Promise<string>;
 
+/**
+ * The judge's retry budget, tightened.
+ *
+ * It was 30s/60s/120s across TWO model tiers, and `runJudge` rerolls the whole
+ * call once on malformed JSON: 4 attempts × 2 models × 2 rolls = up to 16 vision
+ * calls and ~14 minutes inside a 20-minute end-to-end target — for scores that
+ * are a REPORT and never block the ship.
+ *
+ * ONE backoff per tier: the burst this exists for (opus-5 Overloaded for 6+
+ * minutes straight, observed live) is answered by the SONNET TIER, not by waiting
+ * longer on a model that is out. Worst case is now 8 vision calls and ~2 minutes,
+ * both pinned by a test.
+ */
+export const judgeBackoffsMs = [30_000];
+
 /** Vision call through the stock ai SDK + ANTHROPIC_API_KEY (lazy import —
- * only the judge pays for it). API overload passes in minutes, so on top of
- * the SDK's own quick retries, wait out transient errors with 30s/60s/120s
- * backoff before giving up (an "Overloaded" burst killed a live run at
- * judge:round-1). */
+ * only the judge pays for it). */
 export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
   const [{ createAnthropic }, { generateText }] = await Promise.all([import("@ai-sdk/anthropic"), import("ai")]);
   const anthropic = createAnthropic({});
@@ -140,7 +152,7 @@ export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
     content.push({ type: "text", text: `\n${image.label}:` });
     content.push({ type: "image", image: await readFile(image.path) });
   }
-  const backoffsMs = [30_000, 60_000, 120_000];
+  const backoffsMs = judgeBackoffsMs;
   // Tier fallback after the backoff exhausts: a sustained opus overload must
   // not kill a run that a sonnet judge can score (observed live: opus-5
   // Overloaded for 6+ minutes straight).
@@ -304,7 +316,16 @@ export async function runJudge(args: JudgeArgs, io: JudgeIo): Promise<JudgeResul
 
   const paths = demoPaths(io.demosRepo, args.slug);
   const notes: string[] = [];
-  const evidence = await readEvidenceImages(paths.researchDir);
+  // SHIP REGARDLESS means the FILESYSTEM too: this read and the report write
+  // below used to sit outside every catch, so a missing or unwritable RESEARCH/
+  // threw out of the judge, the pipeline awaited it before ship, and a finished
+  // demo never deployed over a directory permission.
+  let evidence: JudgeImage[] = [];
+  try {
+    evidence = await readEvidenceImages(paths.researchDir);
+  } catch (error) {
+    notes.push(`could not read the evidence screenshots in ${path.join("demos", args.slug, "RESEARCH")}/: ${causeLine(error)}`);
+  }
   // The old loop PARKED on a missing evidence class. Scores are now a report,
   // so a missing class is a note — but with nothing to compare against there
   // is nothing honest to score, so the model call is skipped rather than paid
@@ -354,10 +375,18 @@ export async function runJudge(args: JudgeArgs, io: JudgeIo): Promise<JudgeResul
   }
 
   const reportPath = path.join(paths.researchDir, "FIDELITY.md");
-  await writeFile(
-    reportPath,
-    renderFidelityReport({ prospect: args.prospect, ...(verdict === undefined ? {} : { verdict }), builtScreens, evidence, notes }),
-  );
+  try {
+    await writeFile(
+      reportPath,
+      renderFidelityReport({ prospect: args.prospect, ...(verdict === undefined ? {} : { verdict }), builtScreens, evidence, notes }),
+    );
+  } catch (error) {
+    // The scores are already in the return value and on stdout; losing the file
+    // costs the record, not the demo.
+    const note = `could not write ${path.join("demos", args.slug, "RESEARCH", "FIDELITY.md")}: ${causeLine(error)}`;
+    notes.push(note);
+    write(`[judge] ${note}`);
+  }
   return {
     ...(verdict === undefined ? {} : { verdict }),
     builtScreens,

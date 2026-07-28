@@ -7,6 +7,7 @@ import {
   buildJudgePrompt,
   fidelityThreshold,
   formatScoresLine,
+  judgeBackoffsMs,
   judgeDimensions,
   parseJudgeVerdict,
   renderFidelityReport,
@@ -64,6 +65,25 @@ describe("formatScoresLine", () => {
   it("PASSes logo exactly at the threshold and FAILs one below it", () => {
     expect(formatScoresLine(parseJudgeVerdict(verdictJson({ logo: fidelityThreshold })))).toContain("logo=PASS");
     expect(formatScoresLine(parseJudgeVerdict(verdictJson({ logo: fidelityThreshold - 1 })))).toContain("logo=FAIL");
+  });
+});
+
+// The scores are a REPORT that never blocks a ship, so the judge's retry budget
+// has to be small: the old 30s/60s/120s across two tiers, times the one reroll
+// runJudge does on malformed JSON, was up to 16 vision calls and ~14 minutes
+// inside a 20-minute end-to-end target.
+describe("judge retry budget", () => {
+  const tiers = 2;
+  const rerolls = 2;
+
+  it("cannot spend more than 8 vision calls on one judge stage", () => {
+    const attemptsPerTier = judgeBackoffsMs.length + 1;
+    expect(attemptsPerTier * tiers * rerolls).toBeLessThanOrEqual(8);
+  });
+
+  it("cannot spend more than 3 minutes waiting out an overload", () => {
+    const waitPerTier = judgeBackoffsMs.reduce((total, wait) => total + wait, 0);
+    expect(waitPerTier * tiers * rerolls).toBeLessThanOrEqual(4 * 60_000);
   });
 });
 
@@ -144,6 +164,33 @@ describe("runJudge", () => {
     expect(result.scoresLine).toBe("judge=FAILED");
     expect(result.notes.join(" ")).toContain("Overloaded");
     expect(await readFile(result.reportPath, "utf8")).toContain("Overloaded");
+  });
+
+  // SHIP REGARDLESS covered the model call only. `readEvidenceImages` and the
+  // report write sat OUTSIDE the try/catch, so a filesystem error — a RESEARCH
+  // directory that is not there, an unwritable one — threw out of runJudge, the
+  // pipeline awaited it before ship, and a finished demo never deployed.
+  it("ships regardless when the RESEARCH directory cannot be read", async () => {
+    const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-judge-"));
+    await mkdir(demoPaths(demosRepo, "acme").root, { recursive: true });
+    // No RESEARCH/ at all: readdir rejects with ENOENT.
+    const io = stubIo(demosRepo, [verdictJson({})]);
+    const result = await runJudge(args, io);
+    expect(result.verdict).toBeUndefined();
+    expect(result.scoresLine).toBe("judge=FAILED");
+    expect(result.notes.join(" ")).toMatch(/ENOENT|could not read/i);
+  });
+
+  it("ships regardless when the fidelity report cannot be written", async () => {
+    const demosRepo = await demoFixture({ evidence: true });
+    const paths = demoPaths(demosRepo, "acme");
+    // FIDELITY.md as a DIRECTORY: writeFile rejects with EISDIR.
+    await mkdir(path.join(paths.researchDir, "FIDELITY.md"), { recursive: true });
+    const io = stubIo(demosRepo, [verdictJson({ palette: 8, type: 7 })]);
+    const result = await runJudge(args, io);
+    // The scores still made it out — only the file did not.
+    expect(result.scoresLine).toBe("logo=PASS palette=8 type=7 layout=9 copyTone=9");
+    expect(result.notes.join(" ")).toMatch(/EISDIR|could not write/i);
   });
 
   it("records missing evidence as a NOTE and never parks", async () => {

@@ -3,8 +3,8 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { runAssemble, type AssembleIo, type AssembleResult } from "./assemble.js";
 import { runBrief, type BriefIo, type BriefResult } from "./brief.js";
-import { runBuild, type BuildIo, type BuildResult } from "./build.js";
-import { demoPaths } from "./demo-folder.js";
+import { buildBudgetCeilingUsd, runBuild, type BuildIo, type BuildResult } from "./build.js";
+import { assertNoSymlinks, demoPaths, parseDemoSlug } from "./demo-folder.js";
 import { defaultDemosRepo, ensureDemosRepo } from "./demos-repo.js";
 import { runEvidence, type EvidenceIo, type EvidenceResult } from "./evidence.js";
 import { defaultExec, type ExecFn } from "./exec.js";
@@ -91,6 +91,10 @@ export function parseDemoPipelineArgs(argv: string[], env: NodeJS.ProcessEnv = p
   }
   const id = options.get("--id");
   if (id === undefined) throw new Error("--id is required (the demo slug)");
+  // Validated HERE, at the operator boundary, before any stage builds a path
+  // from it: the slug arrives from a Slack message and every stage joins it onto
+  // one. demoPaths re-asserts it, so neither layer can be the only guard.
+  parseDemoSlug(id);
   const prospect = options.get("--prospect");
   if (prospect === undefined) throw new Error("--prospect is required");
   const rawScreenshots = options.get("--screenshots");
@@ -167,12 +171,33 @@ function porcelainPaths(line: string): string[] {
 }
 
 /**
+ * Ignored paths that are infrastructure, not an escape: a vendo-demos checkout
+ * that has ever run `pnpm install` or an assemble holds hundreds of thousands of
+ * ignored files under these, and a fence that fired on them would throw on every
+ * second run — which is how a safety check gets deleted rather than fixed.
+ * Nothing under host/src or any demo folder is exempt.
+ */
+const ignoredInfrastructureDirs = new Set([
+  "node_modules", ".next", ".turbo", ".git", ".cache", ".vercel", "dist", "build", "coverage",
+]);
+
+function isIgnoredInfrastructure(touched: string): boolean {
+  return touched.split("/").some((segment) => ignoredInfrastructureDirs.has(segment));
+}
+
+/**
  * The runtime fence behind the contract's "generation agents never write
- * host/". The build and fix agents run with `--permission-mode
- * bypassPermissions`, so the prompt's file list is a request, not a boundary —
- * and `railway up` uploads the whole WORKING DIRECTORY, not the commit. A stray
- * edit to the Vendo kit or the caps guard would therefore reach every live demo
- * without ever being committed or reviewed.
+ * host/". The agents' own harness now denies writes outside the demo folder
+ * (agent.ts's settings sandbox), and this is the second line: it catches
+ * anything the CLI's permission layer let through, and `railway up` uploads the
+ * whole WORKING DIRECTORY, not the commit — so a stray edit to the Vendo kit or
+ * the caps guard would reach every live demo without ever being reviewed.
+ *
+ * Two blind spots the porcelain default has, both proven exploitable:
+ *  - IGNORED files are omitted entirely, so `host/src/vendo-kit/evil.local`
+ *    passed. Hence `--ignored`, minus the infrastructure above.
+ *  - a SYMLINK inside the demo folder is not outside the demo folder, so no
+ *    path check can see it. Hence {@link assertNoSymlinks}.
  *
  * Called at the two points where an agent has just run and nothing legitimate
  * has yet written outside the demo folder (gen-manifest's manifest.ts and the
@@ -183,7 +208,11 @@ export async function assertOnlyDemoTouched(
   slug: string,
   io: { exec: ExecFn },
 ): Promise<void> {
-  const status = await io.exec(["git", "-C", demosRepo, "status", "--porcelain", "--untracked-files=all"], { cwd: demosRepo });
+  await assertNoSymlinks(demoPaths(demosRepo, slug).root, slug);
+  const status = await io.exec(
+    ["git", "-C", demosRepo, "status", "--porcelain", "--untracked-files=all", "--ignored"],
+    { cwd: demosRepo },
+  );
   if (status.code !== 0) {
     throw new Error(`cannot fence the demos repo: "git status" failed (exit ${status.code}): ${status.stderr.trim() || status.stdout.trim()}`);
   }
@@ -192,7 +221,7 @@ export async function assertOnlyDemoTouched(
     .split("\n")
     .filter((line) => line.trim() !== "")
     .flatMap(porcelainPaths)
-    .filter((touched) => !touched.startsWith(allowed));
+    .filter((touched) => !touched.startsWith(allowed) && !isIgnoredInfrastructure(touched));
   if (offenders.length > 0) {
     throw new Error(
       `generation agents wrote outside demos/${slug}/: ${[...new Set(offenders)].join(", ")} — the host is not theirs to edit, and \`railway up\` uploads the working directory, so these would reach every live demo uncommitted. Inspect and revert them by hand (git -C ${demosRepo} checkout -- <path>, or delete an untracked one), then re-run.`,
@@ -200,11 +229,21 @@ export async function assertOnlyDemoTouched(
   }
 }
 
-/** One row of RESEARCH/timings.json — the per-stage wall-clock evidence. */
+/**
+ * One row of RESEARCH/timings.json — the per-stage wall-clock evidence.
+ *
+ * `depth` is what makes the table summable. Stages NEST: judge.ts wraps its body
+ * in the same runStage the pipeline wrapped the judge stage in, and assemble
+ * contributes install/gen-manifest/build/boot/smoke rows inside its own. Adding
+ * every `ms` therefore counts the nested time twice; summing the rows with
+ * `depth: 0` is the run's real wall clock.
+ */
 export interface StageTiming {
   stage: string;
   startedAt: string;
   ms: number;
+  /** 0 = a top-level stage; 1+ = a sub-stage inside the row above it. */
+  depth: number;
 }
 
 /** Stage seams so unit tests drive the pipeline without a model, a browser or
@@ -243,6 +282,8 @@ export interface DemoPipelineResult {
   slug: string;
   demoDir: string;
   timings: StageTiming[];
+  /** Measured generation-agent spend for this run (the claude CLI reports it). */
+  costUsd: number;
   judge: JudgeResult;
   scoresLine: string;
   /** Absent with --skip-ship. */
@@ -261,6 +302,7 @@ export function createStageRunner(options: {
   capFired: (context: string) => Error;
 }) {
   const counts = new Map<string, number>();
+  let depth = 0;
   return async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
     if (Date.now() > options.deadline) throw options.capFired(`before stage "${name}"`);
     // Distinct row per occurrence: a repeated name (judge.ts wraps its own body
@@ -271,6 +313,8 @@ export function createStageRunner(options: {
     const rowName = count === 1 ? name : `${name}#${count}`;
     const startedAt = new Date().toISOString();
     const t0 = performance.now();
+    const rowDepth = depth;
+    depth += 1;
     options.write(`[pipeline] ${rowName} started`);
     let onAbort: (() => void) | undefined;
     try {
@@ -286,13 +330,21 @@ export function createStageRunner(options: {
       return await Promise.race([stagePromise, capRace]);
     } finally {
       if (onAbort !== undefined) options.signal.removeEventListener("abort", onAbort);
+      depth = rowDepth;
       const ms = Math.round(performance.now() - t0);
-      options.timings.push({ stage: rowName, startedAt, ms });
+      options.timings.push({ stage: rowName, startedAt, ms, depth: rowDepth });
       options.write(`[pipeline] ${rowName} finished in ${ms}ms`);
       const target = options.timingsPath();
       if (target !== undefined) {
-        await mkdir(path.dirname(target), { recursive: true }).catch(() => undefined);
-        await writeFile(target, `${JSON.stringify(options.timings, null, 2)}\n`).catch(() => undefined);
+        try {
+          await mkdir(path.dirname(target), { recursive: true });
+          await writeFile(target, `${JSON.stringify(options.timings, null, 2)}\n`);
+        } catch (error) {
+          // Never fatal — timings are the evidence, not the product — but never
+          // silent either: a swallowed failure left the file absent, stale or
+          // truncated and the run shipped it as if it were the record.
+          options.write(`[pipeline] WARNING: could not write ${target} (${error instanceof Error ? error.message : String(error)}) — the stage timings for this run are incomplete`);
+        }
       }
     }
   };
@@ -406,6 +458,12 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
     ));
     host = assembled.host;
 
+    // What the run actually cost, next to what it was allowed to: the agents are
+    // the only unbounded spend in a run, and `--max-budget-usd` is the only
+    // thing that stops one from looping. Printed before ship so it is visible
+    // even on a run that fails later.
+    write(`SPEND: $${built.costUsd.toFixed(2)} on ${built.agents.length} generation agent run(s) (cap $${buildBudgetCeilingUsd.toFixed(2)}); the brief, chip and judge model calls are not priced by the harness`);
+
     const judge = await runStage("judge", () => stages.judge(
       { slug: args.id, prospect: args.prospect, baseUrl: assembled.host.baseUrl },
       { demosRepo: args.demosRepo, write, signal, runStage },
@@ -420,14 +478,14 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
 
     if (args.skipShip) {
       write("[pipeline] --skip-ship: stopping after judge (nothing committed, pushed or deployed)");
-      return { slug: args.id, demoDir: paths.root, timings, judge, scoresLine };
+      return { slug: args.id, demoDir: paths.root, timings, judge, scoresLine, costUsd: built.costUsd };
     }
 
     const shipped = await runStage("ship", () => stages.ship(
       { slug: args.id, prospect: args.prospect },
       { demosRepo: args.demosRepo, write, env, exec, signal, runStage },
     ));
-    return { slug: args.id, demoDir: paths.root, timings, judge, scoresLine, ship: shipped, liveUrl: shipped.liveUrl };
+    return { slug: args.id, demoDir: paths.root, timings, judge, scoresLine, costUsd: built.costUsd, ship: shipped, liveUrl: shipped.liveUrl };
   } finally {
     clearTimeout(capTimer);
     // One dev server, reaped by whoever started it — including on the failure

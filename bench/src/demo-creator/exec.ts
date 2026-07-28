@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { Transform } from "node:stream";
 
 /**
  * Child-process plumbing shared by every pipeline stage that shells out
@@ -72,11 +73,17 @@ export function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-/** Credentials embedded in a URL, e.g. a push remote's
- * `https://x-access-token:ghp_…@github.com/…`. Git quotes its own remote back
- * on a failure, and that token is in .git/config — never in the environment —
- * so no env-name rule can catch it. */
-const urlCredentials = /:\/\/[^\s/@]+:[^\s/@]*@/g;
+/**
+ * Credentials embedded in a URL, e.g. a push remote's
+ * `https://x-access-token:ghp_…@github.com/…`. Git quotes its own remote back on
+ * a failure, and that token is in .git/config — never in the environment — so no
+ * env-name rule can catch it.
+ *
+ * The password half is OPTIONAL: `https://ghp_…@github.com/…` (token-only
+ * userinfo, what `gh auth setup-git` and most CI remotes produce) has no colon at
+ * all, and the old `user:pass@` rule let it through verbatim.
+ */
+const urlCredentials = /:\/\/[^\s/@:]+(?::[^\s/@]*)?@/g;
 
 /**
  * Redacts everything credential-shaped from text that came out of a child
@@ -95,4 +102,34 @@ export function createScrubber(env: NodeJS.ProcessEnv): (text: string) => string
   return (text: string): string =>
     secrets.reduce((scrubbed, secret) => scrubbed.replaceAll(secret, "<redacted>"), text)
       .replace(urlCredentials, "://<redacted>@");
+}
+
+/**
+ * The same scrubber, as a stream — for child output that goes to a FILE rather
+ * than through a `write`.
+ *
+ * The local host boot spawns Next with the operator's whole environment and pipes
+ * its stdout and stderr into a log file; a crash that echoes the environment wrote
+ * VENDO_API_KEY to disk in plaintext. Line-buffered so a secret split across two
+ * chunks is still redacted.
+ */
+export function scrubbingTransform(scrub: (text: string) => string): Transform {
+  let held = "";
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      held += chunk.toString();
+      const lastBreak = held.lastIndexOf("\n");
+      if (lastBreak !== -1) {
+        const ready = held.slice(0, lastBreak + 1);
+        held = held.slice(lastBreak + 1);
+        this.push(scrub(ready));
+      }
+      callback();
+    },
+    flush(callback) {
+      if (held !== "") this.push(scrub(held));
+      held = "";
+      callback();
+    },
+  });
 }

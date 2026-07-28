@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ExecFn, ExecResult } from "./exec.js";
 import { isTransientRailwayFailure, railwayAttempts, runShip, type ShipIo } from "./ship.js";
@@ -25,10 +28,17 @@ function stubExec(reply: (command: string[]) => ExecResult = defaultReply): {
   return { exec, calls };
 }
 
-/** Answers 200 for the listed URLs and 404 for everything else. */
+/** The marker the real host's product page carries: its own slug, in the
+ * per-slug wire and chrome. A login page and a Railway placeholder do not. */
+const demoBody = '<html><body data-demo="acme">Acme Corp</body></html>';
+
+/** Answers 200 with a real demo page for the listed URLs, 404 for everything
+ * else. */
 function stubFetch(ready: string[]): typeof fetch {
   return vi.fn(async (input: unknown) =>
-    new Response("", { status: ready.includes(String(input)) ? 200 : 404 })) as unknown as typeof fetch;
+    ready.includes(String(input))
+      ? new Response(demoBody, { status: 200 })
+      : new Response("", { status: 404 })) as unknown as typeof fetch;
 }
 
 const args = { slug: "acme", prospect: "Acme Corp" };
@@ -207,5 +217,42 @@ describe("runShip", () => {
     const error = await runShip(args, shipIo({ exec })).catch((thrown: unknown) => thrown as Error);
     expect(error.message).not.toContain(token);
     expect(error.message).toContain("://<redacted>@github.com");
+  });
+
+  // The host's auth middleware REDIRECTS an unauthenticated visitor to /login,
+  // which answers a clean 200. With `redirect: "follow"` the poll saw that 200
+  // and printed LIVE — so a deployment whose DEMO_AUTOLOGIN or VENDO_BASE_URL is
+  // wrong reported a working demo that shows every prospect a login wall.
+  it("does not call a redirect to the login wall live", async () => {
+    const { exec } = stubExec();
+    const fetchImpl = vi.fn(async (input: unknown, init?: RequestInit) => {
+      expect(init?.redirect).toBe("manual");
+      return new Response("", { status: 307, headers: { location: "/login?returnTo=%2Facme" } });
+    }) as unknown as typeof fetch;
+    const error = await runShip(args, shipIo({ exec, fetchImpl })).catch((thrown: unknown) => thrown as Error);
+    expect(error.message).toContain("307");
+  });
+
+  // A 200 that is not the demo: the pre-cutover router, a Railway placeholder,
+  // or a rewritten card. The demo's own slug is the marker.
+  it("does not call a 200 that is not this demo live", async () => {
+    const { exec } = stubExec();
+    const fetchImpl = vi.fn(async () =>
+      new Response("<html><body>Application not found</body></html>", { status: 200 })) as unknown as typeof fetch;
+    const error = await runShip(args, shipIo({ exec, fetchImpl })).catch((thrown: unknown) => thrown as Error);
+    expect(error.message).toMatch(/marker|not the demo|acme/i);
+  });
+
+  // Last gate before the push: a symlink inside the demo folder commits as mode
+  // 120000 and the host reads through it.
+  it("refuses to commit a demo folder holding a symlink", async () => {
+    const repo = await mkdtemp(path.join(tmpdir(), "lane2-ship-symlink-"));
+    const demo = path.join(repo, "demos", "acme");
+    await mkdir(demo, { recursive: true });
+    await symlink("/etc/passwd", path.join(demo, "logo.png"));
+    const { exec, calls } = stubExec();
+    await expect(runShip(args, shipIo({ exec, demosRepo: repo }))).rejects.toThrow(/symlink/i);
+    // Nothing was staged, committed or deployed.
+    expect(calls).toHaveLength(0);
   });
 });
