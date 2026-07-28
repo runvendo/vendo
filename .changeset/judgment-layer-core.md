@@ -3,8 +3,8 @@
 ---
 
 Add the judgment layer's core: `.vendo/judgments.json` and the direction rule.
-Remove the `watermark`, `enriched`, and `outputSchema` fields, and the
-restrictive-only clamp they served.
+Remove the `watermark` and `enriched` fields and the restrictive-only clamp they
+served.
 
 `.vendo/` gains a THIRD file, split from the other two by author the same way
 `overrides.json` is: `vendo/judgments@1` (`judgmentsFileSchema`,
@@ -34,6 +34,8 @@ The new `@vendoai/actions` root exports replace the old clamp:
 Removed: `clampEnrichment`, `applyEnrichmentFields`, `carryEnrichment`,
 `gitTreeHash`, `EnrichmentFields`, `ClampedEnrichment`, and `RISK_RANK` /
 `AUDIENCE_RANK` from `@vendoai/actions/sync` (the ranks moved to the root).
-Removed fields: `ToolsFile.watermark`, `ExtractedTool.enriched`,
-`ExtractedTool.outputSchema`, and the `watermark` option on `vendoSync`. The
-per-tool `semantics` carry across structural syncs is unchanged.
+Removed fields: `ToolsFile.watermark`, `ExtractedTool.enriched`, and the
+`watermark` option on `vendoSync`. The per-tool `semantics` carry across
+structural syncs is unchanged, and so is `ExtractedTool.outputSchema` — a
+declared response shape is not a judgment, and it is load-bearing for
+first-try prop binding (docs/verification/demo-live-readiness/donut-bind).

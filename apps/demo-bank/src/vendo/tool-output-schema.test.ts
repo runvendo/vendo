@@ -60,15 +60,7 @@ const recordedOutputSchema = async (tool: string): Promise<Json | undefined> => 
   return tools.find((entry) => entry.name === tool)?.outputSchema
 }
 
-// PARKED by judgment-layer lane A — do not delete, do not rewrite.
-// The lane's contract ordered `outputSchema` off the extracted-tool type and
-// out of the OpenAPI extractor, which removes the field this test asserts. That
-// field is the T2 leg of the donut-bind fix (see
-// docs/verification/demo-live-readiness/donut-bind/README.md), so dropping it is
-// a user-visible demo tradeoff and NOT a lane decision. Skipped — not deleted —
-// so the criterion survives verbatim and un-parking is one word.
-// The call, with evidence and a recommendation: PARKED.md → P1.
-describe.skip("host_getSpendingInsights output schema", () => {
+describe("host_getSpendingInsights output schema", () => {
   it("matches the shape /api/insights/spending really returns", async () => {
     const schema = await recordedOutputSchema("host_getSpendingInsights")
     expect(schema, "sync must record the tool's output schema from openapi.json").toBeDefined()
