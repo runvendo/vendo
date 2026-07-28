@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExecFn, ExecResult } from "./exec.js";
-import { buildHost, defaultHostCommands, generateManifest, smokeTurnWaitOptions } from "./host-boot.js";
+import { buildHost, defaultHostCommands, generateManifest, localBootEnv, smokeTurnWaitOptions } from "./host-boot.js";
 
 /** The frozen codegen target: host/src/generated/manifest.ts. */
 const manifestPath = (demosRepo: string): string =>
@@ -145,5 +145,22 @@ describe("smokeTurnWaitOptions", () => {
       timeoutMs: 90_000,
       requireView: false,
     });
+  });
+});
+
+describe("localBootEnv", () => {
+  // A live run burned its whole 180s smoke budget on /login because the local
+  // boot did not carry the deployment's own autologin knob.
+  it("turns on autologin bound to the loopback origin it just started", () => {
+    expect(localBootEnv({ PATH: "/usr/bin" }, 3150)).toEqual({
+      PATH: "/usr/bin",
+      DEMO_AUTOLOGIN: "1",
+      VENDO_BASE_URL: "http://127.0.0.1:3150",
+    });
+  });
+
+  it("never overrides what the operator set", () => {
+    const env = { DEMO_AUTOLOGIN: "0", VENDO_BASE_URL: "https://demos.vendo.run" };
+    expect(localBootEnv(env, 3150)).toEqual(env);
   });
 });

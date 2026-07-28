@@ -185,6 +185,27 @@ async function stopProcess(child: ChildProcess): Promise<void> {
 /** Boots the built host from its own directory (no workspace filter: the
  * vendo-demos checkout is foreign to this repo) and waits until it serves
  * HTTP. Stops itself if readiness fails, so a half-started host never leaks. */
+/**
+ * The env a LOCAL boot needs on top of the operator's.
+ *
+ * The host ships an auth wall (host middleware), so a smoke turn and the
+ * judge's screenshots would otherwise land on `/login` and wait for a composer
+ * that is not there — a live run burned its whole 180s smoke budget exactly
+ * that way. `DEMO_AUTOLOGIN` is the deployment's own knob for this, and it is
+ * authority-bound: the middleware only honours it for requests arriving on
+ * `VENDO_BASE_URL`'s origin, which here is the loopback port this function just
+ * started. So this is the deployed posture applied locally, not a loosened one.
+ *
+ * An operator who set either variable keeps their value.
+ */
+export function localBootEnv(env: NodeJS.ProcessEnv, port: number): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    DEMO_AUTOLOGIN: env.DEMO_AUTOLOGIN ?? "1",
+    VENDO_BASE_URL: env.VENDO_BASE_URL ?? `http://127.0.0.1:${port}`,
+  };
+}
+
 export async function bootHost(options: {
   demosRepo: string;
   port: number;
@@ -200,7 +221,7 @@ export async function bootHost(options: {
   const log = createWriteStream(options.logFile, { flags: "a" });
   const child = spawn(file, argv, {
     cwd: hostPath(options.demosRepo),
-    env: options.env ?? process.env,
+    env: localBootEnv(options.env ?? process.env, options.port),
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
