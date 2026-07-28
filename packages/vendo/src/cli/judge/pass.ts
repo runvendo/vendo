@@ -252,8 +252,25 @@ interface Proposal {
 
 const verdictKey = (name: string, field: string): string => `${name}\u0000${field}`;
 
-const listed = (names: string[], limit = 10): string =>
-  names.length <= limit ? names.join(", ") : `${names.slice(0, limit).join(", ")} +${names.length - limit} more`;
+/**
+ * Join labels for the narrative, SANITIZING every element.
+ *
+ * This is the one chokepoint every name/field list print flows through, so the
+ * rule — nothing the model authored reaches a terminal carrying control bytes —
+ * holds here by construction instead of by remembering it at each of a dozen
+ * call sites. Remembering is what failed: the evidence-less and malformed
+ * name paths printed raw model output while their sibling three lines away
+ * sanitized correctly (Codex adversarial finding 2). A tool "name" is
+ * model-authored text like any other, and a hostile repo can steer the model
+ * into emitting one full of ANSI/OSC escapes that rewrite the narrative the
+ * developer is reading to make a trust decision.
+ */
+const listed = (names: string[], limit = 10): string => {
+  const safe = names.map(sanitize);
+  return safe.length <= limit
+    ? safe.join(", ")
+    : `${safe.slice(0, limit).join(", ")} +${safe.length - limit} more`;
+};
 
 const chunked = <T>(items: T[], size: number): T[][] => {
   const chunks: T[][] = [];
@@ -368,8 +385,11 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     if (resolved.engine === null) {
       // Keyless is not an error: the structural catalog stands on its own and
       // the unjudged tools keep their fail-closed extraction grades.
+      // The reason embeds the `--engine` flag and a harness credential label —
+      // neither is model-authored, but sanitizing keeps ONE rule in this file
+      // instead of a per-line provenance argument.
       output.log(
-        `judgment: structural-only (${resolved.reason ?? "no engine"}) — ${candidates.length} tools unjudged`,
+        `judgment: structural-only (${sanitize(resolved.reason ?? "no engine")}) — ${candidates.length} tools unjudged`,
       );
       return { status: "structural-only", unjudged: candidates.length };
     }
@@ -474,8 +494,11 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       advisoriesClamped += prose.clamped;
       const parsed = judgeProposalSchema.safeParse(prose.value);
       if (!parsed.success) {
+        // Sanitized at INGEST, not just at the print site, so the value is safe
+        // everywhere it travels — this name never matched a real tool, so it is
+        // pure model text with no schema behind it.
         const name = typeof (raw as { name?: unknown } | null)?.name === "string"
-          ? (raw as { name: string }).name
+          ? sanitize((raw as { name: string }).name)
           : "(unnamed)";
         // Evidence is the one requirement worth counting separately: it is the
         // difference between a finding and an opinion.
@@ -485,7 +508,9 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       }
       const candidate = byName.get(parsed.data.name);
       if (candidate === undefined) {
-        unknownTools.push(parsed.data.name);
+        // Parsed, but names no tool in the catalog — so it is model text that
+        // never met a schema constraint either. Same ingest-time sanitize.
+        unknownTools.push(sanitize(parsed.data.name));
         continue;
       }
       const fields: JudgmentFields = {};
@@ -714,7 +739,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   // ------------------------------------------------------------------
   // Narrative.
   // ------------------------------------------------------------------
-  output.log(`judgment (${credential}): ${judgedNames.length} tools judged`);
+  output.log(`judgment (${sanitize(credential)}): ${judgedNames.length} tools judged`);
   if (hardenedFields.length > 0) output.log(`  hardened (${hardenedFields.length}): ${listed(hardenedFields)}`);
   if (approved > 0) output.log(`  loosenings approved (${approved})`);
   if (declined > 0) output.log(`  loosenings declined and dropped (${declined})`);
@@ -737,7 +762,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     output.log(`  wholly rejected, left unjudged (${discredited.length}): ${listed(discredited)}`);
   }
   if (unknownTools.length > 0) {
-    output.log(`  proposals for unknown tools ignored (${unknownTools.length}): ${listed(unknownTools.map(sanitize))}`);
+    output.log(`  proposals for unknown tools ignored (${unknownTools.length}): ${listed(unknownTools)}`);
   }
   if (advisoriesClamped > 0) {
     output.error(

@@ -791,3 +791,105 @@ describe("runJudgmentPass — advisories can never discard proposals", () => {
     expect(result).toMatchObject({ status: "judged", evidenceless: 1, judged: 0 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Terminal-spoofing: a NAME is model-authored text like any other. Codex's
+// adversarial pass (finding 2) caught the rejected/evidence-less name paths
+// printing raw model output straight to the operator's terminal.
+// ---------------------------------------------------------------------------
+
+describe("runJudgmentPass — model-authored names cannot spoof the terminal", () => {
+  const BEL = String.fromCharCode(7);
+  const CSI = String.fromCharCode(0x9b);
+  /** An xterm window-title escape: the classic "rewrite what the human reads". */
+  const OSC_TITLE = `${ESC}]0;pwned${BEL}`;
+
+  it("strips control characters from an EVIDENCE-LESS proposal's name", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        // No evidence at all -> the name lands in the evidence-less narrative.
+        reply({ tools: [{ name: `${OSC_TITLE}host_x`, risk: "destructive" }], narrative: "" }),
+      ]),
+    }));
+    expect(result).toMatchObject({ evidenceless: 1 });
+    const printed = [...bus.logs, ...bus.errors].join("\n");
+    expect(printed).toContain("no evidence");
+    // The visible characters survive so the operator still sees WHAT was
+    // rejected; the control bytes do not.
+    expect(printed).toContain("host_x");
+    expect(printed).not.toContain(ESC);
+    expect(printed).not.toContain(BEL);
+  });
+
+  it("strips control characters from a MALFORMED proposal's name", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        // Has evidence, but an invented enum -> the malformed narrative.
+        reply({ tools: [{ name: `${ESC}[31mhost_y`, evidence: "q", risk: "catastrophic" }], narrative: "" }),
+      ]),
+    }));
+    expect(result).toMatchObject({ status: "judged" });
+    const printed = [...bus.logs, ...bus.errors].join("\n");
+    expect(printed).toContain("malformed");
+    expect(printed).toContain("host_y");
+    expect(printed).not.toContain(ESC);
+  });
+
+  it("strips control characters from an UNKNOWN tool's name", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{ name: `${OSC_TITLE}host_not_in_catalog`, evidence: "q" }], narrative: "" }),
+      ]),
+    }));
+    const printed = [...bus.logs, ...bus.errors].join("\n");
+    expect(printed).toContain("unknown tools");
+    expect(printed).not.toContain(ESC);
+    expect(printed).not.toContain(BEL);
+  });
+
+  it("NOTHING the model authored reaches the terminal with control bytes — every channel at once", async () => {
+    const fixture = await host([tool("host_a", { risk: "destructive" })]);
+    const bus = channel();
+    await runJudgmentPass(options(fixture, bus, {
+      loosenings: "queue",
+      harness: scripted([
+        reply({
+          tools: [
+            // a real, applying proposal whose every prose field is hostile
+            {
+              name: "host_a",
+              description: `Reads${ESC}[2K rows`,
+              title: `List${CSI}x`,
+              risk: "read",
+              evidence: `db.select()${ESC}[31m`,
+              reason: `only reads${ESC}[0m`,
+            },
+            // an evidence-less one with a hostile name
+            { name: `${OSC_TITLE}host_evil`, risk: "destructive" },
+          ],
+          missedSurfaces: [`src/api/${ESC}[2Kspoof`],
+          narrative: `all done${OSC_TITLE}`,
+        }),
+        reply({ verdicts: [
+          { name: "host_a", field: "description", verdict: "uphold" },
+          { name: "host_a", field: "title", verdict: "uphold" },
+          { name: "host_a", field: "risk", verdict: "reject", reason: `nope${ESC}[5m` },
+        ] }),
+      ]),
+    }));
+    const printed = [...bus.logs, ...bus.errors].join("\n");
+    // Every line the operator sees, across BOTH channels, is escape-free.
+    expect(printed).not.toContain(ESC);
+    expect(printed).not.toContain(BEL);
+    expect(printed).not.toContain(CSI);
+    // ...and the narrative is still informative, not blanked out.
+    expect(printed).toContain("host_evil");
+    expect(printed).toContain("rejected by the skeptic");
+  });
+});

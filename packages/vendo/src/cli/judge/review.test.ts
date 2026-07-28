@@ -102,3 +102,22 @@ describe("reviewLoosenings — subject/verb agreement in the notice", () => {
     expect(many[0]).toContain("2 loosenings need a human decision");
   });
 });
+
+describe("renderLooseningDiff — every model-authored part is sanitized", () => {
+  it("SANITIZES the proposed value, not only the evidence and reason", () => {
+    // PendingLoosening.value is an arbitrary string on the wire, and it is
+    // rendered as the "-> new" side of the very diff a human approves.
+    const lines = renderLooseningDiff([item({ to: `read${ESC}[2K spoofed` })]);
+    const text = lines.join("\n");
+    expect(text).not.toContain(ESC);
+    expect(text).toContain("read[2K spoofed");
+  });
+
+  it("SANITIZES the tool-name heading", () => {
+    const lines = renderLooseningDiff([item({ name: `${ESC}]0;pwned${BEL}host_x` })]);
+    const text = lines.join("\n");
+    expect(text).not.toContain(ESC);
+    expect(text).not.toContain(BEL);
+    expect(text).toContain("host_x");
+  });
+});
