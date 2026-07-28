@@ -190,9 +190,6 @@ async function stopProcess(child: ChildProcess): Promise<void> {
   ]);
 }
 
-/** Boots the built host from its own directory (no workspace filter: the
- * vendo-demos checkout is foreign to this repo) and waits until it serves
- * HTTP. Stops itself if readiness fails, so a half-started host never leaks. */
 /** Where a local boot serves from, and therefore its only correct wire origin. */
 const loopbackOrigin = (port: number): string => `http://127.0.0.1:${port}`;
 
@@ -244,6 +241,9 @@ export function inheritedWireOrigin(env: NodeJS.ProcessEnv, port: number): strin
   return configured;
 }
 
+/** Boots the built host from its own directory (no workspace filter: the
+ * vendo-demos checkout is foreign to this repo) and waits until it serves
+ * HTTP. Stops itself if readiness fails, so a half-started host never leaks. */
 export async function bootHost(options: {
   demosRepo: string;
   port: number;
