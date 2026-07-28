@@ -19,25 +19,25 @@
 ### Plan structure (`packages/core`)
 
 ```ts
-// packages/core/src/genui/plan/types.ts
+// packages/core/src/genui/plan/types.ts — ONE shape, flat. No containers, no unions.
 export interface AppPlan {
   name: string;
-  queries: PlanQuery[];               // declared once, referenced by leaves
-  surface: PlanContainer | PlanGroup[]; // containers OR a flat list of groups
-  island?: { name: string; purpose: string; tools: string[] };
-  server?: { kind: "steps" | "agentic" | "box"; schedule?: string; why: string;
-             dependsOn: string[] };   // group ids that wait for the box
-  cannot: string[];                   // honest refusals, verbatim user-facing
+  queries: Array<{ id: string; tool: string; input: Record<string, unknown> }>;
+  groups: Array<{
+    tab?: string;            // tabs DERIVE from these labels, in order of first appearance
+    title?: string;
+    layout?: "stack" | "grid";
+    waitsForServer?: boolean; // this group fills after the box reports its interface
+    leaves: Array<{ component: string; query?: string; purpose: string;
+                    attrs?: Record<string, string> }>; // col/row/span
+  }>;
+  island?: { name: string; purpose: string };
+  server?: { kind: "steps" | "agentic" | "box"; schedule?: string; why: string };
+  cannot: string[];          // honest refusals, verbatim user-facing
 }
-export interface PlanQuery { id: string; tool: string; input: Record<string, unknown> }
-export interface PlanContainer { kind: "tabs" | "pages"; items: Array<{ title: string; groups: PlanGroup[] }> }
-export interface PlanGroup { id: string; title?: string; layout?: "stack" | "grid";
-                             leaves: PlanLeaf[] }                    // ≤5 leaves enforced by parser
-export interface PlanLeaf { component: string; query?: string;      // query id reference
-                            purpose: string; attrs?: Record<string, string> } // col/row/span
 ```
 
-The plan is emitted as wire-text (`<Plan>…</Plan>`, grammar mirroring the types 1:1) and parsed by `compilePlan(text): { plan?: AppPlan; issues: string[] }`. Fact checks run inside `compilePlan` given a `PlanFacts` argument (`{ tools: string[]; components: string[] }`): unknown tool/component/unparseable schedule → issue, never a throw.
+Wire grammar mirrors it flatly: `<Plan name>` containing `<Query>`, `<Group tab="Overview" title="Health">` with only `<Leaf>` children, `<Server>`, `<Island>`, `<Cannot>` lines. A group inside a group is unwritable — the grammar has no such production. Parsed by `compilePlan(text, facts): { plan?: AppPlan; issues: string[] }` with `facts = { tools: string[]; components: string[] }`: unknown tool/component/unparseable schedule/undeclared query reference → issue, never a throw.
 
 ### Text editing (`packages/core`)
 
@@ -100,7 +100,7 @@ Binding value form `{ $expr: "sum(invoices.amount_cents) / count(clients)" }`. G
 - Modify: `packages/core/src/index.ts` (export)
 
 - [ ] Read `packages/core/src/genui/wire/` first (parser conventions, issue formatting).
-- [ ] Failing tests: full spec example (`Tabs > Tab > Group > Leaf`, plan-level `<Query>`, `<Server>`, `<Island>`, `cannot`) parses to the locked types; a bare `<Group>` list (no container) parses; group with 6 leaves → issue; container inside a group → issue (unwritable depth); unknown tool → issue naming the tool and listing real ones; unknown component → issue; bad cron schedule → issue; leaf referencing an undeclared query → issue.
+- [ ] Failing tests: a full example (groups with tab labels deriving two tabs, plan-level `<Query>` referenced by name, `<Server kind="steps" schedule="fridays">`, `<Island>`, `<Cannot>`) parses to the locked flat type; groups without tab labels parse (single-surface app); group with 6 leaves → issue; a `<Group>` nested inside a `<Group>` → issue (grammar has no such production); unknown tool → issue naming the tool and listing real ones; unknown component → issue; bad cron schedule → issue; leaf referencing an undeclared query → issue.
 - [ ] Implement `compilePlan` (reuse the wire tokenizer; forgiving about whitespace/fences like `extractWire`).
 - [ ] Tests green; commit `feat(core): plan dialect compiler with fact checks`.
 
@@ -209,4 +209,4 @@ Binding value form `{ $expr: "sum(invoices.amount_cents) / count(clients)" }`. G
 
 - Spec coverage: idea→Tasks 4–7; creating→1,4,5,7; editing→2,4; checking→3,6; computed values→9; sandbox→8; kill list→10; what-stays→untouched by construction; measurement gates→deferred by Yousef except the one-prompt proof (Task 10).
 - Deferred explicitly (not gaps): full bench replay + reviewer incident exam (gates deletion is at cutover per Yousef's later ruling — the deterministic judgment checks die in Task 10 with the reviewer in place; the recorded-incident replay runs later on his call), catalog search, prompt polish.
-- Type consistency: `AppPlan`/`PlanGroup`/`Finding`/`BrainOutcome`/`TextEdit` defined once above; all tasks reference these exact names.
+- Type consistency: `AppPlan` (one flat shape)/`Finding`/`BrainOutcome`/`TextEdit` defined once above; all tasks reference these exact names. Tabs derive from group labels; skeleton (Task 5) renders tab chrome from those labels.
