@@ -146,6 +146,7 @@ export function composeInstructions(
     "  \"operator\" (admin/staff/support consoles), or \"internal\" (machine-to-machine: webhooks, cron, reconciliation,",
     "  service tokens). Read the auth checks, not the route name. When unsure, default to internal — non-end-user",
     "  tools are excluded from the embedded agent by default, and a wrong \"end-user\" grade exposes a privileged surface.",
+    "- reasoning: one short sentence on why you graded the tool this way. <= 500 chars (it is truncated there).",
     "- missedSurfaces: API surfaces you found that the list is missing (path + one line). Do not invent tools for them.",
   ].join("\n");
 }
@@ -171,6 +172,7 @@ function composeCrossCheckInstructions(
     '  { "tools": [{ "name", "description", "risk"?, "critical"?, "disabled"?, "reasoning"? }] }',
     "- Return ONLY the entries you want to AMEND. Entries you omit stand as drafted; you cannot remove a tool. Use only names from the combined draft.",
     "- Same rules as drafting: risk may be RAISED, never lowered; mark irreversible operations critical: true.",
+    "- reasoning: one short sentence per amendment. <= 500 chars (it is truncated there).",
   ].join("\n");
 }
 

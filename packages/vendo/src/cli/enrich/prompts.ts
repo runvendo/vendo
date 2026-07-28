@@ -37,6 +37,7 @@ export const ENRICHMENT_OUTPUT_RULES = [
   '  | { "kind": "date", "format": "iso"|"epoch" } | { "kind": "enum", "labels": {value: label} }',
   '  | { "kind": "id", "entity"? } | { "kind": "percent", "scale": "ratio"|"0-100" } |',
   '  { "kind": "plain" }. Only include fields you read evidence for in the handler code/types.',
+  "- reasoning: one short sentence on why you graded the tool this way. <= 500 chars (it is truncated there).",
   "- narrative: a short human-readable story of what changed and what you updated — new tools,",
   "  reclassified tools, anything suspicious. Plain prose, <= 30 lines.",
 ].join("\n");
