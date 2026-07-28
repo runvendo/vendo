@@ -1,13 +1,13 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExtractionHarness } from "@vendoai/vendo/extract";
+import { VENDO_JUDGMENTS_FORMAT } from "@vendoai/actions";
+import type { JudgmentPassOptions, JudgmentPassResult } from "@vendoai/vendo/extract";
 import {
   DEFAULT_MODEL_LABEL,
   buildAiScoreboard,
   ensureAgentSdk,
-  evaluateDraft,
   modelDirName,
   readRepoStaticContext,
   renderAiScoreboardMarkdown,
@@ -71,41 +71,90 @@ async function makeExpectationsRoot(withLabels: boolean): Promise<string> {
   return root;
 }
 
-const goodBrief = "Invoicer is a small invoicing product; users list their invoices and clean up old ones. The agent should help find invoices and delete stale drafts carefully.";
-
-const goodDraftTools = [
-  { name: "host_api_invoices_get", description: "List the user's invoices with totals and status." },
-  {
-    name: "host_api_invoices_id_delete",
-    description: "Permanently delete one invoice by id; cannot be undone.",
-    risk: "destructive" as const,
-    critical: true,
+/** The judgments a flawless pass would write for the fixture above. */
+const perfectJudgments = {
+  format: VENDO_JUDGMENTS_FORMAT,
+  tools: {
+    host_api_invoices_get: {
+      binding: "GET /api/invoices",
+      fields: { description: "List the current user's invoices with status and totals." },
+      evidence: "const rows = await db.invoice.findMany({ where: { userId } })",
+    },
+    host_api_invoices_id_delete: {
+      binding: "DELETE /api/invoices/{}",
+      fields: {
+        description: "Permanently delete one invoice by id; this cannot be undone.",
+        risk: "destructive",
+        critical: true,
+      },
+      evidence: "await db.invoice.delete({ where: { id } })",
+    },
   },
-];
+};
 
-const goodDraft = { brief: goodBrief, tools: goodDraftTools };
+const judgedCounts = {
+  judged: 2,
+  hardened: 3,
+  queued: 0,
+  approved: 0,
+  rejectedBySkeptic: 0,
+  unexaminedRejected: 0,
+  evidenceless: 0,
+  advisoriesClamped: 0,
+  inconsistentRisk: 0,
+} as const;
 
-function fenced(value: unknown): string {
-  return ["```json", JSON.stringify(value), "```"].join("\n");
+/** A fake judgment pass: records the options it was handed, writes a canned
+ * judgments file into the scratch `.vendo`, and never touches a model. */
+function fakePass(
+  body: (options: JudgmentPassOptions) => Promise<JudgmentPassResult>,
+): { runPass: (options: JudgmentPassOptions) => Promise<JudgmentPassResult>; calls: JudgmentPassOptions[] } {
+  const calls: JudgmentPassOptions[] = [];
+  return {
+    calls,
+    runPass: async (options) => {
+      calls.push(options);
+      return await body(options);
+    },
+  };
 }
 
-/** Answer each staged-pipeline pass with a canned artifact. */
-function stagedAnswers(instructions: string): string {
-  if (instructions.includes("extraction surveyor")) {
-    return fenced({ surfaces: [{ name: "invoices", tools: ["host_api_invoices_get", "host_api_invoices_id_delete"] }] });
-  }
-  if (instructions.includes("cross-checker")) return fenced({ tools: [] });
-  if (instructions.includes("drafting the product brief")) return fenced({ brief: goodBrief });
-  return fenced({ tools: goodDraftTools });
+function writingPass(file: unknown): (options: JudgmentPassOptions) => Promise<JudgmentPassResult> {
+  return async (options) => {
+    await mkdir(options.out, { recursive: true });
+    await writeFile(path.join(options.out, "judgments.json"), JSON.stringify(file, null, 2));
+    return { status: "judged", ...judgedCounts };
+  };
+}
+
+async function runOneCell(overrides: {
+  runPass: (options: JudgmentPassOptions) => Promise<JudgmentPassResult>;
+  models?: readonly string[];
+  labels?: boolean;
+}): Promise<AiRepoResult> {
+  const appRoot = await makeAppRoot();
+  const expectationsRoot = await makeExpectationsRoot(overrides.labels ?? true);
+  const aiLogsDir = path.join(await makeTempDir("vendo-corpus-ai-logs-"), "ai");
+  return await runAiRepoMatrix({
+    repoName: "invoicer",
+    appRoot,
+    expectationsRoot,
+    models: overrides.models ?? [DEFAULT_MODEL_LABEL],
+    aiLogsDir,
+    env: {},
+    harness: { id: "stub", availability: async () => "stub", run: async () => "{}" },
+    runPass: overrides.runPass,
+  });
 }
 
 describe("readRepoStaticContext", () => {
-  it("maps tools.json into pipeline and scoring shapes with binding identities", async () => {
+  it("maps tools.json into the scoring shape with binding identities", async () => {
     const appRoot = await makeAppRoot();
     const statics = await readRepoStaticContext(appRoot);
 
     expect(statics.appName).toBe("invoicer");
-    expect(statics.forPipeline[0]).toMatchObject({ name: "host_api_invoices_get", method: "GET", path: "/api/invoices" });
+    expect(statics.forScoring).toHaveLength(2);
+    expect(statics.forScoring[0]?.tool.name).toBe("host_api_invoices_get");
     expect(statics.forScoring[1]?.identity).toBe("DELETE\t/api/invoices/{id}");
   });
 
@@ -115,72 +164,195 @@ describe("readRepoStaticContext", () => {
   });
 });
 
-describe("evaluateDraft", () => {
-  it("refuses a real draft while the judgment-layer rewrite is pending, instead of fabricating a score", async () => {
-    const appRoot = await makeAppRoot();
-    const scratchRoot = await makeTempDir("vendo-corpus-ai-scratch-");
-    const statics = await readRepoStaticContext(appRoot);
+describe("runAiRepoMatrix", () => {
+  it("scores the judgments the pass wrote into the scratch root", async () => {
+    const result = await runOneCell({ runPass: writingPass(perfectJudgments) });
 
-    await expect(evaluateDraft({ draft: goodDraft, statics, expected: null, scratchRoot }))
-      .rejects.toThrow(/awaits its judgment-layer rewrite/);
+    expect(result.labeled).toBe(true);
+    const cell = result.models[0]!;
+    expect(cell.failure).toBeUndefined();
+    expect(cell.hardFailure).toBe(false);
+    expect(cell.score.value).toBe(1);
+    expect(cell.counts).toMatchObject({ judged: 2, hardened: 3 });
   });
 
-  it("floors the score when the pipeline produced no draft", async () => {
+  it("drives the pass in full/review mode with an always-yes confirm against a scratch .vendo", async () => {
     const appRoot = await makeAppRoot();
-    const scratchRoot = await makeTempDir("vendo-corpus-ai-scratch-");
-    const statics = await readRepoStaticContext(appRoot);
+    const expectationsRoot = await makeExpectationsRoot(true);
+    const aiLogsDir = path.join(await makeTempDir("vendo-corpus-ai-logs-"), "ai");
+    const pass = fakePass(writingPass(perfectJudgments));
 
-    const score = await evaluateDraft({
-      draft: null,
-      draftError: "staged extraction failed: every surface failed",
-      statics,
-      expected: null,
-      scratchRoot,
+    await runAiRepoMatrix({
+      repoName: "invoicer",
+      appRoot,
+      expectationsRoot,
+      models: [DEFAULT_MODEL_LABEL],
+      aiLogsDir,
+      env: {},
+      harness: { id: "stub", availability: async () => "stub", run: async () => "{}" },
+      runPass: pass.runPass,
     });
 
-    expect(score.hardFailure).toBe(true);
-    expect(score.score.value).toBe(0);
+    expect(pass.calls).toHaveLength(1);
+    const options = pass.calls[0]!;
+    expect(options.mode).toBe("full");
+    expect(options.loosenings).toBe("review");
+    // Headless auto-approval: without this the review path DECLINES by default and
+    // every downgrade the labels ask for would be dropped.
+    await expect(options.confirm?.("apply?", false)).resolves.toBe(true);
+    // The model reads the real repo; the judgments land in the per-cell scratch.
+    expect(options.root).toBe(appRoot);
+    expect(options.out).not.toBe(path.join(appRoot, ".vendo"));
+    expect(options.out.startsWith(aiLogsDir)).toBe(true);
+    // tools.json must be there or the pass would answer `skipped`.
+    await expect(readFile(path.join(options.out, "tools.json"), "utf8")).resolves.toContain("host_api_invoices_get");
   });
-});
 
-describe("runAiRepoMatrix", () => {
-  function stubHarness(behavior: (model: string | undefined, instructions: string) => string | Error): ExtractionHarness {
-    return {
-      id: "stub",
-      availability: async () => "stub credential",
-      run: async ({ env, instructions }) => {
-        const result = behavior(env["VENDO_EXTRACTION_MODEL"], instructions);
-        if (result instanceof Error) throw result;
-        return result;
-      },
-    };
-  }
-
-  it("floors every cell with the rewrite-pending reason, still one comparable row per model", async () => {
+  it("never writes into the repo's own .vendo", async () => {
     const appRoot = await makeAppRoot();
     const expectationsRoot = await makeExpectationsRoot(true);
     const aiLogsDir = path.join(await makeTempDir("vendo-corpus-ai-logs-"), "ai");
 
-    const result = await runAiRepoMatrix({
+    await runAiRepoMatrix({
       repoName: "invoicer",
       appRoot,
       expectationsRoot,
       models: [DEFAULT_MODEL_LABEL, "claude-haiku-4-5"],
       aiLogsDir,
       env: {},
-      // The harness is never reached: the model seam floors before it.
-      harness: stubHarness(() => new Error("must not be invoked")),
+      harness: { id: "stub", availability: async () => "stub", run: async () => "{}" },
+      runPass: writingPass(perfectJudgments),
     });
 
-    expect(result.labeled).toBe(true);
+    await expect(readFile(path.join(appRoot, ".vendo", "judgments.json"), "utf8")).rejects.toThrow(/ENOENT/);
+  });
+
+  it("floors a cell whose pass wrote no judgments, keeping the row comparable", async () => {
+    const scored = await runOneCell({ runPass: writingPass(perfectJudgments) });
+    const floored = await runOneCell({
+      runPass: async () => ({ status: "structural-only", unjudged: 2 }),
+    });
+
+    const cell = floored.models[0]!;
+    expect(cell.hardFailure).toBe(true);
+    expect(cell.score.value).toBe(0);
+    expect(cell.failure).toContain("structural-only");
+    // Same denominator as a scored run: the column means the same thing in both rows.
+    expect(cell.score.total).toBe(scored.models[0]!.score.total);
+  });
+
+  it("floors only the cell whose pass threw, not its sibling models", async () => {
+    const result = await runOneCell({
+      models: [DEFAULT_MODEL_LABEL, "claude-haiku-4-5"],
+      runPass: async (options) => {
+        if (options.env["VENDO_EXTRACTION_MODEL"] === "claude-haiku-4-5") throw new Error("model unreachable");
+        return await writingPass(perfectJudgments)(options);
+      },
+    });
+
     expect(result.models).toHaveLength(2);
-    for (const cell of result.models) {
-      expect(cell.hardFailure).toBe(true);
-      expect(cell.failure).toContain("awaits its judgment-layer rewrite");
-      expect(cell.score.value).toBe(0);
-    }
-    // The same totals appear in both rows: comparable columns per repo.
-    expect(result.models[1]?.score.total).toBe(result.models[0]?.score.total);
+    expect(result.models[0]?.hardFailure).toBe(false);
+    expect(result.models[1]?.hardFailure).toBe(true);
+    expect(result.models[1]?.failure).toContain("model unreachable");
+  });
+
+  it("pins the model per cell and leaves the default label unpinned", async () => {
+    const seen: Array<string | undefined> = [];
+    await runOneCell({
+      models: [DEFAULT_MODEL_LABEL, "claude-haiku-4-5"],
+      runPass: async (options) => {
+        seen.push(options.env["VENDO_EXTRACTION_MODEL"]);
+        return await writingPass(perfectJudgments)(options);
+      },
+    });
+
+    expect(seen).toEqual([undefined, "claude-haiku-4-5"]);
+  });
+
+  it("records the pass's own narrative and counts as cell artifacts", async () => {
+    const result = await runOneCell({
+      runPass: async (options) => {
+        options.output.log("judgment (stub): 2 tools judged");
+        options.output.error("warning: missed surface (not extracted yet): /api/webhooks");
+        return await writingPass(perfectJudgments)(options);
+      },
+    });
+
+    const cell = result.models[0]!;
+    const log = await readFile(path.join(cell.artifactsDir, "pass.log"), "utf8");
+    expect(log).toContain("2 tools judged");
+    expect(log).toContain("missed surface");
+  });
+
+  it("turns queued and rejected proposals into degradation notes", async () => {
+    const result = await runOneCell({
+      runPass: async (options) => {
+        await writingPass(perfectJudgments)(options);
+        return {
+          status: "judged",
+          ...judgedCounts,
+          queued: 2,
+          rejectedBySkeptic: 1,
+          evidenceless: 3,
+        };
+      },
+    });
+
+    const notes = result.models[0]!.notes.join(" | ");
+    expect(notes).toContain("2 loosenings");
+    expect(notes).toContain("1 rejected by the skeptic");
+    expect(notes).toContain("3 proposals carried no evidence");
+  });
+
+  it("surfaces the pass's own warnings as degradation notes", async () => {
+    // A judge batch that fails to parse takes every proposal in it down with it,
+    // which depresses coverage and risk accuracy for a reason that has nothing to
+    // do with model quality. The pass only reports it on its warning channel, so
+    // the scoreboard has to read it from there or the table misleads.
+    const result = await runOneCell({
+      runPass: async (options) => {
+        options.output.error("warning: judge batch 2/2 unusable (String must contain at most 300 character(s)) — its tools stay unjudged");
+        options.output.log("judgment (explicit engine): 2 tools judged");
+        return await writingPass(perfectJudgments)(options);
+      },
+    });
+
+    const notes = result.models[0]!.notes.join(" | ");
+    expect(notes).toContain("judge batch 2/2 unusable");
+    // Plain narrative lines are not degradation notes.
+    expect(notes).not.toContain("2 tools judged");
+  });
+
+  it("trims a warning's payload so one row cannot wreck the table", async () => {
+    // The real batch-parse warning embeds the whole zod issue array — ~300 chars
+    // of JSON with newlines. It belongs in the Notes cell as a FACT, not as a
+    // wall of punctuation.
+    const zodNoise = `([\n  {\n    "code": "too_big",\n    "maximum": 300,\n    "path": [\n      "missedSurfaces",\n      0\n    ]\n  }\n])`;
+    const result = await runOneCell({
+      runPass: async (options) => {
+        options.output.error(`warning: judge batch 2/2 unusable ${zodNoise} — its tools stay unjudged`);
+        return await writingPass(perfectJudgments)(options);
+      },
+    });
+
+    const note = result.models[0]!.notes.find((line) => line.includes("judge batch 2/2"))!;
+    expect(note).toContain("judge batch 2/2 unusable");
+    expect(note).not.toContain("\n");
+    expect(note.length).toBeLessThanOrEqual(160);
+  });
+
+  it("floors a cell when the judgments file is malformed rather than crashing the repo row", async () => {
+    const result = await runOneCell({
+      runPass: async (options) => {
+        await mkdir(options.out, { recursive: true });
+        await writeFile(path.join(options.out, "judgments.json"), "{ not json");
+        return { status: "judged", ...judgedCounts };
+      },
+    });
+
+    const cell = result.models[0]!;
+    expect(cell.hardFailure).toBe(true);
+    expect(cell.failure).toMatch(/judgments\.json/);
   });
 });
 
@@ -225,7 +397,7 @@ describe("ensureAgentSdk", () => {
 });
 
 describe("scoreboard", () => {
-  it("renders one repo × model row per run in the corpus report style", () => {
+  it("renders one repo × model row per run with the judgment columns", () => {
     const repos: AiRepoResult[] = [
       {
         repo: "invoicer",
@@ -233,11 +405,12 @@ describe("scoreboard", () => {
         models: [
           {
             model: "default",
-            notes: ["surface \"billing\" skipped (rate limited) — its 4 tools keep extractor defaults"],
+            notes: ["4 loosenings queued rather than approved"],
             score: { passed: 9, total: 10, value: 0.9 },
             dimensions: {
-              draft: { passed: 1, total: 1, value: 1 },
+              pass: { passed: 1, total: 1, value: 1 },
               risk: { passed: 1, total: 2, value: 0.5 },
+              evidence: { passed: 1, total: 1, value: 1 },
             },
             checks: [{ id: "ai.risk.accuracy", pass: false, detail: "1/2" }],
             hardFailure: false,
@@ -247,16 +420,22 @@ describe("scoreboard", () => {
       },
       { repo: "broken", labeled: false, failure: "bootstrap failed", models: [] },
     ];
-    const doc = buildAiScoreboard({ generatedAt: "2026-07-18T00:00:00.000Z", models: ["default"], repos });
+    const doc = buildAiScoreboard({ generatedAt: "2026-07-28T00:00:00.000Z", models: ["default"], repos });
 
     expect(doc.summary).toMatchObject({ repoCount: 2, runCount: 1, scoredRuns: 1, failedRuns: 1 });
 
     const markdown = renderAiScoreboardMarkdown(doc);
-    expect(markdown).toContain("# AI extraction scoreboard");
-    expect(markdown).toContain("| invoicer | default | 0.900 (9/10) |");
-    expect(markdown).toContain("ai.risk.accuracy");
-    expect(markdown).toContain("1 degradation note");
+    expect(markdown).toContain("# Judgment channel scoreboard");
+    expect(markdown).toContain("Risk accuracy");
+    expect(markdown).toContain("Evidence");
+    // Dimensions render as percentages; fractional point sums like `0.333333/1`
+    // are unreadable in a scanned table.
+    expect(markdown).toContain("| invoicer | default | 0.900 (9/10) | 50% | — | — | 100% |");
     expect(markdown).toContain("| broken | — | FAIL |");
+    // The lossy percentages are backed by each failing check's own counts.
+    expect(markdown).toContain("## Failing checks");
+    expect(markdown).toContain("### invoicer × default");
+    expect(markdown).toContain("`ai.risk.accuracy` — 1/2");
   });
 
   it("slugs model ids into safe artifact directory names", () => {

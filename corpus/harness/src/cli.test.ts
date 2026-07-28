@@ -1172,7 +1172,7 @@ describe("runCli ai", () => {
     expect(matrixOptions[0]?.models).toEqual(["claude-sonnet-5", "claude-haiku-4-5"]);
     expect(matrixOptions[0]?.aiLogsDir).toBe(path.join(context.logsDir("repo-ai"), "ai"));
     const output = stdout.join("\n");
-    expect(output).toContain("# AI extraction scoreboard");
+    expect(output).toContain("# Judgment channel scoreboard");
     expect(output).toContain("repo-ai | claude-sonnet-5");
     const scoreboardJson = await readFile(path.join(context.reposDir, ".logs", "ai-scoreboard.json"), "utf8");
     expect(JSON.parse(scoreboardJson)).toMatchObject({ version: 1, models: ["claude-sonnet-5", "claude-haiku-4-5"] });
