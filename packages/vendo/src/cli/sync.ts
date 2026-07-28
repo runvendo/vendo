@@ -3,9 +3,8 @@ import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
 import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
-import { askYesNo } from "./extract/extraction.js";
 import { readPreviousToolsState, runSyncEnrichment, type SyncEnrichmentOptions } from "./enrich/pass.js";
-import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
+import { askYesNo, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
   report: SyncReportWithWarnings;

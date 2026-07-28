@@ -1,0 +1,620 @@
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  VENDO_JUDGMENTS_FORMAT,
+  VENDO_TOOLS_FORMAT,
+  bindingIdentity,
+  type ExtractedTool,
+  type JudgmentsFile,
+  type ToolJudgment,
+} from "@vendoai/actions";
+import type { ExtractionHarness } from "../extract/harness.js";
+import { JUDGE_BATCH_LIMIT, runJudgmentPass, type JudgmentPassOptions } from "./pass.js";
+
+const ESC = "\u001b";
+
+const temporary: string[] = [];
+afterEach(async () => {
+  await Promise.all(temporary.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
+
+const tool = (name: string, overrides: Partial<ExtractedTool> = {}): ExtractedTool => ({
+  name,
+  description: `Use this to call ${name}.`,
+  inputSchema: { type: "object", properties: {} },
+  risk: "read",
+  binding: { kind: "route", method: "GET", path: `/api/${name}`, argsIn: "query" },
+  srcHash: `sha256:${name}`,
+  ...overrides,
+});
+
+interface Fixture { root: string; out: string; toolsPath: string; judgmentsPath: string }
+
+async function host(tools: ExtractedTool[], judgments?: Record<string, ToolJudgment>): Promise<Fixture> {
+  const root = await mkdtemp(join(tmpdir(), "vendo-judge-pass-"));
+  temporary.push(root);
+  const out = join(root, ".vendo");
+  await mkdir(out, { recursive: true });
+  const toolsPath = join(out, "tools.json");
+  await writeFile(toolsPath, `${JSON.stringify({ format: VENDO_TOOLS_FORMAT, tools }, null, 2)}\n`, "utf8");
+  const judgmentsPath = join(out, "judgments.json");
+  if (judgments !== undefined) {
+    await writeFile(
+      judgmentsPath,
+      `${JSON.stringify({ format: VENDO_JUDGMENTS_FORMAT, tools: judgments }, null, 2)}\n`,
+      "utf8",
+    );
+  }
+  return { root, out, toolsPath, judgmentsPath };
+}
+
+const readJudgments = async (fixture: Fixture): Promise<JudgmentsFile> =>
+  JSON.parse(await readFile(fixture.judgmentsPath, "utf8")) as JudgmentsFile;
+
+function channel(): { output: { log: (m: string) => void; error: (m: string) => void }; logs: string[]; errors: string[] } {
+  const logs: string[] = [];
+  const errors: string[] = [];
+  return { output: { log: (m) => logs.push(m), error: (m) => errors.push(m) }, logs, errors };
+}
+
+const reply = (value: unknown): string => `\`\`\`json\n${JSON.stringify(value)}\n\`\`\``;
+
+/** Fake harness: canned replies handed out in order, and every prompt recorded
+ *  so a test can prove which stage asked what. */
+function scripted(responses: string[]): ExtractionHarness & { prompts: string[] } {
+  const prompts: string[] = [];
+  return {
+    id: "scripted",
+    prompts,
+    availability: async () => "scripted engine",
+    async run(input) {
+      prompts.push(input.instructions);
+      const next = responses.shift();
+      if (next === undefined) throw new Error("scripted harness exhausted");
+      return next;
+    },
+  };
+}
+
+/** Any invocation at all — even the availability probe — fails the test. */
+const forbidden: ExtractionHarness = {
+  id: "forbidden",
+  availability: async () => { throw new Error("a keyless pass must never probe an engine"); },
+  run: async () => { throw new Error("a keyless pass must never invoke a model"); },
+};
+
+function options(
+  fixture: Fixture,
+  bus: ReturnType<typeof channel>,
+  partial: Partial<JudgmentPassOptions> = {},
+): JudgmentPassOptions {
+  return {
+    root: fixture.root,
+    out: fixture.out,
+    mode: "full",
+    loosenings: "queue",
+    env: {},
+    output: bus.output,
+    appName: "acme-app",
+    ...partial,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Candidate math
+// ---------------------------------------------------------------------------
+
+describe("runJudgmentPass — candidates", () => {
+  it("full mode judges EVERY tool, enabled or disabled", async () => {
+    const fixture = await host([tool("host_a"), tool("host_b", { disabled: true })]);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [
+        { name: "host_a", description: "Reads a.", evidence: "select().from(a)" },
+        { name: "host_b", description: "Reads b.", evidence: "select().from(b)" },
+      ], narrative: "read both" }),
+      reply({ verdicts: [
+        { name: "host_a", field: "description", verdict: "uphold" },
+        { name: "host_b", field: "description", verdict: "uphold" },
+      ] }),
+    ]);
+    const result = await runJudgmentPass(options(fixture, bus, { harness }));
+    expect(result.status).toBe("judged");
+    const file = await readJudgments(fixture);
+    expect(Object.keys(file.tools).sort()).toEqual(["host_a", "host_b"]);
+  });
+
+  it("incremental mode says `up to date` with NO model touchpoint when every judgment is fresh", async () => {
+    const one = tool("host_a");
+    const fixture = await host([one], {
+      host_a: {
+        binding: bindingIdentity(one.binding),
+        srcHash: one.srcHash,
+        fields: { description: "Reads a." },
+        evidence: "select().from(a)",
+      },
+    });
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      mode: "incremental",
+      harnesses: [forbidden],
+      resolveCredential: async () => { throw new Error("the up-to-date check must run BEFORE engine resolution"); },
+    }));
+    expect(result.status).toBe("up-to-date");
+    expect(bus.logs.join("\n")).toContain("judgment: up to date");
+  });
+
+  it("incremental mode re-judges on srcHash drift, binding mismatch, and never-judged", async () => {
+    const drifted = tool("host_drift", { srcHash: "sha256:NEW" });
+    const rebound = tool("host_rebound");
+    const fresh = tool("host_fresh");
+    const untouched = tool("host_untouched");
+    const fixture = await host([drifted, rebound, fresh, untouched], {
+      host_drift: {
+        binding: bindingIdentity(drifted.binding),
+        srcHash: "sha256:OLD",
+        fields: { description: "stale" },
+        evidence: "old quote",
+      },
+      host_rebound: {
+        binding: "GET /api/somewhere-else",
+        srcHash: rebound.srcHash,
+        fields: { description: "inert" },
+        evidence: "old quote",
+      },
+      host_untouched: {
+        binding: bindingIdentity(untouched.binding),
+        srcHash: untouched.srcHash,
+        fields: { description: "current" },
+        evidence: "good quote",
+      },
+    });
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [], narrative: "nothing" }),
+    ]);
+    await runJudgmentPass(options(fixture, bus, { mode: "incremental", harness }));
+    // The judge prompt is the proof of the candidate set.
+    const prompt = harness.prompts[0]!;
+    expect(prompt).toContain("host_drift");
+    expect(prompt).toContain("host_rebound");
+    expect(prompt).toContain("host_fresh");
+    expect(prompt).not.toContain("host_untouched");
+  });
+
+  it("chunks candidates at JUDGE_BATCH_LIMIT, sorted by binding identity", async () => {
+    expect(JUDGE_BATCH_LIMIT).toBe(20);
+    const tools = Array.from({ length: 21 }, (_, index) => tool(`host_${String(index).padStart(2, "0")}`));
+    const fixture = await host(tools);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [], narrative: "" }),
+      reply({ tools: [], narrative: "" }),
+    ]);
+    await runJudgmentPass(options(fixture, bus, { harness }));
+    expect(harness.prompts).toHaveLength(2);
+    // Sorted by bindingIdentity ("GET /api/host_00" … "GET /api/host_20").
+    expect(harness.prompts[0]).toContain("host_00");
+    expect(harness.prompts[0]).not.toContain("host_20");
+    expect(harness.prompts[1]).toContain("host_20");
+    // The coverage question rides the LAST chunk only.
+    expect(harness.prompts[0]).not.toContain("missedSurfaces");
+    expect(harness.prompts[1]).toContain("missedSurfaces");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Evidence + the skeptic
+// ---------------------------------------------------------------------------
+
+describe("runJudgmentPass — evidence and the skeptic", () => {
+  it("rejects an evidence-less proposal at parse and counts it honestly", async () => {
+    const fixture = await host([tool("host_a"), tool("host_b")]);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [
+        { name: "host_a", risk: "destructive" },
+        { name: "host_b", risk: "destructive", evidence: "await db.delete(b)" },
+      ], narrative: "" }),
+      reply({ verdicts: [{ name: "host_b", field: "risk", verdict: "uphold" }] }),
+    ]);
+    const result = await runJudgmentPass(options(fixture, bus, { harness }));
+    expect(result).toMatchObject({ status: "judged", evidenceless: 1 });
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_a).toBeUndefined();
+    expect(file.tools.host_b!.fields.risk).toBe("destructive");
+    expect(bus.logs.join("\n")).toMatch(/1 .*no evidence|no evidence.*1/i);
+  });
+
+  it("a skeptic reject drops a HARDENING, not just a loosening", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [{
+        name: "host_a",
+        risk: "destructive",
+        critical: true,
+        evidence: "await db.delete(a)",
+      }], narrative: "" }),
+      reply({ verdicts: [
+        { name: "host_a", field: "risk", verdict: "reject", reason: "the handler only selects" },
+        { name: "host_a", field: "critical", verdict: "uphold" },
+      ] }),
+    ]);
+    const result = await runJudgmentPass(options(fixture, bus, { harness }));
+    expect(result).toMatchObject({ status: "judged", rejectedBySkeptic: 1 });
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_a!.fields.risk).toBeUndefined();
+    expect(file.tools.host_a!.fields.critical).toBe(true);
+  });
+
+  it("a fully rejected proposal writes NO entry, so the tool stays a candidate", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [{ name: "host_a", risk: "destructive", evidence: "invented quote" }], narrative: "" }),
+      reply({ verdicts: [{ name: "host_a", field: "risk", verdict: "reject", reason: "quote is not in the file" }] }),
+    ]);
+    await runJudgmentPass(options(fixture, bus, { harness }));
+    // Nothing survived, so nothing is recorded at all — not even an empty file
+    // whose srcHash would stop the tool being re-judged next run.
+    await expect(readFile(fixture.judgmentsPath, "utf8")).rejects.toThrow();
+    expect(bus.logs.join("\n")).toMatch(/wholly rejected|left unjudged/i);
+  });
+
+  it("an unexamined field gets ONE re-ask, then fails closed with an honest count", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [{
+        name: "host_a",
+        risk: "destructive",
+        critical: true,
+        evidence: "await db.delete(a)",
+      }], narrative: "" }),
+      // First skeptic look: only `risk` gets a verdict.
+      reply({ verdicts: [{ name: "host_a", field: "risk", verdict: "uphold" }] }),
+      // The single re-ask still ignores `critical`.
+      reply({ verdicts: [] }),
+    ]);
+    const result = await runJudgmentPass(options(fixture, bus, { harness }));
+    expect(harness.prompts).toHaveLength(3);
+    expect(harness.prompts[2]).toMatch(/re-ask|FINAL/i);
+    expect(result).toMatchObject({ status: "judged", unexaminedRejected: 1 });
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_a!.fields.risk).toBe("destructive");
+    expect(file.tools.host_a!.fields.critical).toBeUndefined();
+    expect(bus.logs.join("\n")).toMatch(/unexamined/i);
+  });
+
+  it("a re-ask that answers is honored", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [{ name: "host_a", risk: "destructive", critical: true, evidence: "await db.delete(a)" }], narrative: "" }),
+      reply({ verdicts: [{ name: "host_a", field: "risk", verdict: "uphold" }] }),
+      reply({ verdicts: [{ name: "host_a", field: "critical", verdict: "uphold" }] }),
+    ]);
+    const result = await runJudgmentPass(options(fixture, bus, { harness }));
+    expect(result).toMatchObject({ unexaminedRejected: 0 });
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_a!.fields.critical).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Routing
+// ---------------------------------------------------------------------------
+
+describe("runJudgmentPass — routing", () => {
+  it("hardenings and prose land in `fields`; loosenings land in `pending`", async () => {
+    const fixture = await host([
+      tool("host_harden", { risk: "read" }),
+      tool("host_loosen", { risk: "destructive", critical: true, disabled: true, audience: "internal" }),
+    ]);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [
+        {
+          name: "host_harden",
+          description: "Deletes everything.",
+          title: "Delete everything",
+          risk: "destructive",
+          critical: true,
+          disabled: true,
+          audience: "internal",
+          evidence: "await db.delete(all)",
+        },
+        {
+          name: "host_loosen",
+          risk: "read",
+          critical: false,
+          disabled: false,
+          audience: "end-user",
+          evidence: "requireUser(session); return db.select()",
+        },
+      ], narrative: "" }),
+      reply({ verdicts: [
+        { name: "host_harden", field: "description", verdict: "uphold" },
+        { name: "host_harden", field: "title", verdict: "uphold" },
+        { name: "host_harden", field: "risk", verdict: "uphold" },
+        { name: "host_harden", field: "critical", verdict: "uphold" },
+        { name: "host_harden", field: "disabled", verdict: "uphold" },
+        { name: "host_harden", field: "audience", verdict: "uphold" },
+        { name: "host_loosen", field: "risk", verdict: "uphold" },
+        { name: "host_loosen", field: "critical", verdict: "uphold" },
+        { name: "host_loosen", field: "disabled", verdict: "uphold" },
+        { name: "host_loosen", field: "audience", verdict: "uphold" },
+      ] }),
+    ]);
+    await runJudgmentPass(options(fixture, bus, { harness }));
+    const file = await readJudgments(fixture);
+
+    const hardened = file.tools.host_harden!;
+    expect(hardened.fields).toMatchObject({
+      description: "Deletes everything.",
+      title: "Delete everything",
+      risk: "destructive",
+      critical: true,
+      disabled: true,
+      audience: "internal",
+    });
+    expect(hardened.pending ?? []).toEqual([]);
+    expect(hardened.binding).toBe("GET /api/host_harden");
+    expect(hardened.srcHash).toBe("sha256:host_harden");
+    expect(hardened.evidence).toBe("await db.delete(all)");
+
+    const loosened = file.tools.host_loosen!;
+    // NOTHING loosening reached `fields`.
+    expect(loosened.fields.risk).toBeUndefined();
+    expect(loosened.fields.critical).toBeUndefined();
+    expect(loosened.fields.disabled).toBeUndefined();
+    expect(loosened.fields.audience).toBeUndefined();
+    expect((loosened.pending ?? []).map((entry) => entry.field).sort())
+      .toEqual(["audience", "critical", "disabled", "risk"]);
+    for (const entry of loosened.pending ?? []) {
+      expect(entry.evidence).toBe("requireUser(session); return db.select()");
+    }
+  });
+
+  it("queue mode appends to `pending` and NEVER applies, printing the review pointer", async () => {
+    const fixture = await host([tool("host_a", { risk: "destructive" })]);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [{ name: "host_a", risk: "read", evidence: "return db.select()" }], narrative: "" }),
+      reply({ verdicts: [{ name: "host_a", field: "risk", verdict: "uphold" }] }),
+    ]);
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness,
+      loosenings: "queue",
+      confirm: async () => { throw new Error("queue mode must never prompt"); },
+    }));
+    expect(result).toMatchObject({ queued: 1, approved: 0 });
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_a!.fields.risk).toBeUndefined();
+    expect(file.tools.host_a!.pending).toHaveLength(1);
+    expect(bus.logs.join("\n")).toContain("vendo sync --review");
+  });
+
+  it("prunes judgments whose tool vanished or was rebound", async () => {
+    const kept = tool("host_kept");
+    const rebound = tool("host_rebound");
+    const fixture = await host([kept, rebound], {
+      host_kept: {
+        binding: bindingIdentity(kept.binding),
+        srcHash: kept.srcHash,
+        fields: { description: "Reads kept." },
+        evidence: "quote",
+      },
+      host_gone: {
+        binding: "GET /api/host_gone",
+        fields: { description: "Reads a tool that no longer exists." },
+        evidence: "quote",
+      },
+      host_rebound: {
+        binding: "POST /api/moved",
+        fields: { risk: "destructive" },
+        evidence: "quote",
+      },
+    });
+    const bus = channel();
+    const harness = scripted([reply({ tools: [], narrative: "" })]);
+    await runJudgmentPass(options(fixture, bus, { harness, mode: "incremental" }));
+    const file = await readJudgments(fixture);
+    expect(Object.keys(file.tools)).toEqual(["host_kept"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review
+// ---------------------------------------------------------------------------
+
+describe("runJudgmentPass — review mode", () => {
+  const looseningRun = (): string[] => [
+    reply({ tools: [{ name: "host_a", risk: "read", evidence: "return db.select()" }], narrative: "" }),
+    reply({ verdicts: [{ name: "host_a", field: "risk", verdict: "uphold" }] }),
+  ];
+
+  it("approve moves the loosening out of `pending` and into `fields`", async () => {
+    const fixture = await host([tool("host_a", { risk: "destructive" })]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted(looseningRun()),
+      loosenings: "review",
+      confirm: async () => true,
+    }));
+    expect(result).toMatchObject({ approved: 1, queued: 0 });
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_a!.fields.risk).toBe("read");
+    expect(file.tools.host_a!.pending ?? []).toEqual([]);
+  });
+
+  it("decline drops the loosening entirely — it is not silently queued", async () => {
+    const fixture = await host([tool("host_a", { risk: "destructive" })]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted(looseningRun()),
+      loosenings: "review",
+      confirm: async () => false,
+    }));
+    expect(result).toMatchObject({ approved: 0 });
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_a?.fields.risk).toBeUndefined();
+    expect(file.tools.host_a?.pending ?? []).toEqual([]);
+  });
+
+  it("aggregates ALREADY-pending loosenings into the same one diff", async () => {
+    const one = tool("host_a", { risk: "destructive", disabled: true });
+    const fixture = await host([one], {
+      host_a: {
+        binding: bindingIdentity(one.binding),
+        fields: {},
+        evidence: "earlier quote",
+        pending: [{ field: "disabled", value: false, evidence: "requireUser(session)" }],
+      },
+    });
+    const bus = channel();
+    const questions: string[] = [];
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted(looseningRun()),
+      loosenings: "review",
+      confirm: async (question) => { questions.push(question); return true; },
+    }));
+    // ONE question covering both the new risk lowering and the standing wake-up.
+    expect(questions).toHaveLength(1);
+    expect(result).toMatchObject({ approved: 2 });
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_a!.fields.risk).toBe("read");
+    expect(file.tools.host_a!.fields.disabled).toBe(false);
+    expect(file.tools.host_a!.pending ?? []).toEqual([]);
+  });
+
+  it("SANITIZES control characters out of the evidence shown in the review diff", async () => {
+    const fixture = await host([tool("host_a", { risk: "destructive" })]);
+    const bus = channel();
+    await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{
+          name: "host_a",
+          risk: "read",
+          evidence: `return db.select()${ESC}[2K spoofed`,
+          reason: `only reads${ESC}[31m`,
+        }], narrative: `narrative${ESC}[0m` }),
+        reply({ verdicts: [{ name: "host_a", field: "risk", verdict: "uphold" }] }),
+      ]),
+      loosenings: "review",
+      confirm: async () => false,
+    }));
+    const printed = [...bus.logs, ...bus.errors].join("\n");
+    expect(printed).toContain("risk: destructive → read");
+    expect(printed).not.toContain(ESC);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Degradation + artifacts
+// ---------------------------------------------------------------------------
+
+describe("runJudgmentPass — degradation and artifacts", () => {
+  it("keyless: ONE calm line, zero errors, judgments.json untouched, no model touchpoint", async () => {
+    const fixture = await host([tool("host_a"), tool("host_b")]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      resolveCredential: async () => ({ rung: "none" }),
+      harnesses: [forbidden],
+    }));
+    expect(result).toEqual({ status: "structural-only", unjudged: 2 });
+    expect(bus.logs.join("\n")).toContain("judgment: structural-only");
+    expect(bus.logs.join("\n")).toContain("2 tools unjudged");
+    expect(bus.errors).toEqual([]);
+    await expect(readFile(fixture.judgmentsPath, "utf8")).rejects.toThrow();
+  });
+
+  it("writes a stage artifact per judge and skeptic run", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const harness = scripted([
+      reply({ tools: [{ name: "host_a", risk: "destructive", evidence: "await db.delete(a)" }], narrative: "" }),
+      reply({ verdicts: [{ name: "host_a", field: "risk", verdict: "uphold" }] }),
+    ]);
+    await runJudgmentPass(options(fixture, bus, { harness }));
+    const artifacts = await readdir(join(fixture.out, "data", "judge"));
+    expect(artifacts.sort()).toEqual(["judge-1.json", "skeptic-1.json"]);
+    const judged = JSON.parse(await readFile(join(fixture.out, "data", "judge", "judge-1.json"), "utf8")) as {
+      tools: Array<{ name: string }>;
+    };
+    expect(judged.tools[0]!.name).toBe("host_a");
+  });
+
+  it("unparseable judge output degrades: a warning, no write, and the structural files stand", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted(["I could not read the repo, sorry."]),
+    }));
+    expect(result.status).toBe("skipped");
+    expect(bus.errors.join("\n")).toMatch(/warning/i);
+    await expect(readFile(fixture.judgmentsPath, "utf8")).rejects.toThrow();
+  });
+
+  it("surfaces missedSurfaces as WARNINGS only — never as tools", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const harness = scripted([
+      reply({
+        tools: [{ name: "host_a", description: "Reads a.", evidence: "select().from(a)" }],
+        missedSurfaces: ["src/graphql/* — no tools extracted"],
+        narrative: "",
+      }),
+      reply({ verdicts: [{ name: "host_a", field: "description", verdict: "uphold" }] }),
+    ]);
+    await runJudgmentPass(options(fixture, bus, { harness }));
+    const file = await readJudgments(fixture);
+    expect(Object.keys(file.tools)).toEqual(["host_a"]);
+    expect([...bus.logs, ...bus.errors].join("\n")).toContain("src/graphql/*");
+  });
+
+  it("a malformed judgments.json fails LOUDLY — a file that can carry disables is never ignored", async () => {
+    const fixture = await host([tool("host_a")]);
+    await writeFile(fixture.judgmentsPath, `{ "format": "vendo/judgments@1", "tools": { "host_a": {} } }`, "utf8");
+    const bus = channel();
+    await expect(runJudgmentPass(options(fixture, bus, { harness: scripted([]) }))).rejects.toThrow();
+  });
+
+  it("rewrites judgments.json with stable key order and no churn when nothing changed", async () => {
+    const one = tool("host_a");
+    const two = tool("host_b");
+    const fixture = await host([two, one], {
+      host_b: { binding: bindingIdentity(two.binding), srcHash: two.srcHash, fields: { description: "b" }, evidence: "q" },
+      host_a: { binding: bindingIdentity(one.binding), srcHash: one.srcHash, fields: { description: "a" }, evidence: "q" },
+    });
+    const before = await readFile(fixture.judgmentsPath, "utf8");
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      mode: "incremental",
+      harnesses: [forbidden],
+      resolveCredential: async () => ({ rung: "none" }),
+    }));
+    expect(result.status).toBe("up-to-date");
+    // Up-to-date returns before any write: byte-identical, mtime untouched.
+    expect(await readFile(fixture.judgmentsPath, "utf8")).toBe(before);
+
+    // A pass that DOES run writes sorted keys.
+    const fresh = await host([two, one]);
+    const harness = scripted([
+      reply({ tools: [
+        { name: "host_b", description: "Reads b.", evidence: "select().from(b)" },
+        { name: "host_a", description: "Reads a.", evidence: "select().from(a)" },
+      ], narrative: "" }),
+      reply({ verdicts: [
+        { name: "host_a", field: "description", verdict: "uphold" },
+        { name: "host_b", field: "description", verdict: "uphold" },
+      ] }),
+    ]);
+    await runJudgmentPass(options(fresh, channel(), { harness }));
+    const written = await readFile(fresh.judgmentsPath, "utf8");
+    expect(written.indexOf('"host_a"')).toBeLessThan(written.indexOf('"host_b"'));
+  });
+});

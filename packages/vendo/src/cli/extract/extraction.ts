@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { z } from "zod";
 import { claudeCliHarness } from "./claude-cli-harness.js";
@@ -22,7 +21,7 @@ import {
   overridesFileSchema,
   type OverridesFile,
 } from "@vendoai/actions";
-import { readOptional, writeText, type Output } from "../shared.js";
+import { askYesNo, readOptional, writeText, type Output } from "../shared.js";
 
 export { composeInstructions } from "./stages.js";
 
@@ -230,19 +229,6 @@ export function reportDraftEnrichment(input: {
     );
   }
   for (const missed of input.missedSurfaces) output.log(`  missed surface (not extracted yet): ${missed}`);
-}
-
-/** Consent-style one-line prompt — shared machinery: the AI-polish consent
-    here and init's detected-auth confirm both use it. */
-export async function askYesNo(question: string, defaultYes: boolean): Promise<boolean> {
-  const prompt = createInterface({ input: stdin, output: stdout });
-  try {
-    const answer = (await prompt.question(`${question} ${defaultYes ? "[Y/n]" : "[y/N]"} `)).trim().toLowerCase();
-    if (answer === "") return defaultYes;
-    return ["y", "yes"].includes(answer);
-  } finally {
-    prompt.close();
-  }
 }
 
 export interface AiExtractionOptions {

@@ -11,7 +11,7 @@ import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
 import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
 import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
-import { askYesNo, runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
+import { runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
 import { BRIEF_TEMPLATE, type StaticTool } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
@@ -37,6 +37,7 @@ import {
   type ThemeSummary,
 } from "./theme/extract-theme.js";
 import {
+  askYesNo,
   cloudProjectProps,
   consoleOutput,
   envLocalValueSync,
