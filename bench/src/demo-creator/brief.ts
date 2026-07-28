@@ -104,7 +104,7 @@ export interface BriefIo {
  * model literally cannot pick the real accent when stage 1's colour call failed
  * soft but the styleguide call did not.
  */
-function paletteSources(evidence: EvidenceResult): { hex: string; provenance: string }[] {
+function paletteSources(evidence: EvidenceResult, notes?: string): { hex: string; provenance: string }[] {
   const sources: { hex: string; provenance: string }[] = [];
   const seen = new Set<string>();
   const add = (value: string | undefined, provenance: string): void => {
@@ -114,6 +114,14 @@ function paletteSources(evidence: EvidenceResult): { hex: string; provenance: st
       sources.push({ hex, provenance });
     }
   };
+  // FIRST, because the prompt promises it: operator notes outrank everything
+  // below them, and the closed palette is below them. A prospect's in-product
+  // palette is routinely NOT their marketing site's (a dark portal behind a
+  // white .com), and context.dev can only measure the public page — so without
+  // this the brief is told to obey the notes and then rejected for doing it.
+  for (const value of notes?.match(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g) ?? []) {
+    add(value, "operator notes (pinned by the operator)");
+  }
   const styleguide = evidence.styleguide;
   add(styleguide?.colors.accent, "brand evidence (styleguide accent)");
   add(styleguide?.colors.background, "brand evidence (styleguide background)");
@@ -128,14 +136,14 @@ function paletteSources(evidence: EvidenceResult): { hex: string; provenance: st
 
 /** Every hex the brief is allowed to assign, in the order the prompt numbers
  * them: real brand hexes first, then the neutral ramp. */
-export function allowedPalette(evidence: EvidenceResult): string[] {
-  return paletteSources(evidence).map((source) => source.hex);
+export function allowedPalette(evidence: EvidenceResult, notes?: string): string[] {
+  return paletteSources(evidence, notes).map((source) => source.hex);
 }
 
 /** Human-readable source for each allowed hex, keyed and ordered exactly like
  * {@link allowedPalette} — BRIEF.md quotes these per token. */
-export function paletteProvenance(evidence: EvidenceResult): Map<string, string> {
-  return new Map(paletteSources(evidence).map((source) => [source.hex, source.provenance]));
+export function paletteProvenance(evidence: EvidenceResult, notes?: string): Map<string, string> {
+  return new Map(paletteSources(evidence, notes).map((source) => [source.hex, source.provenance]));
 }
 
 // ---------------------------------------------------------------------------
@@ -367,10 +375,10 @@ function parseEnum<T extends string>(value: unknown, allowed: readonly T[], fiel
 
 export function parseBriefReply(
   raw: string,
-  options: { prospect: string; palette: string[]; evidence: EvidenceResult },
+  options: { prospect: string; palette: string[]; evidence: EvidenceResult; notes?: string },
 ): { theme: DemoTheme; brief: BrandBrief } {
   const parsed = extractJsonObject(raw, "Brief");
-  const provenance = paletteProvenance(options.evidence);
+  const provenance = paletteProvenance(options.evidence, options.notes);
   const allowed = new Set(options.palette);
 
   const themeNotes: string[] = [];
@@ -553,7 +561,7 @@ export async function runBrief(args: BriefArgs, io: BriefIo): Promise<BriefResul
   // standalone/`demo:fix` path re-reads RESEARCH/evidence.json from disk.
   const evidence = io.evidence ?? await readEvidence(io.demosRepo, args.slug);
 
-  const palette = allowedPalette(evidence);
+  const palette = allowedPalette(evidence, args.notes);
   // The scraped site copy is stage 1 evidence too, and it is the only source
   // for vocabulary and voice — screenshots show structure, not register. A
   // missing/unreadable file is not worth failing a run over.
@@ -578,7 +586,7 @@ export async function runBrief(args: BriefArgs, io: BriefIo): Promise<BriefResul
     images.push({ label: `EVIDENCE — ${args.prospect}'s real logo (${evidence.logo.file})`, path: path.join(paths.root, evidence.logo.file) });
   }
 
-  const parseOptions = { prospect: args.prospect, palette, evidence };
+  const parseOptions = { prospect: args.prospect, palette, evidence, ...(args.notes === undefined ? {} : { notes: args.notes }) };
   let parsed: { theme: DemoTheme; brief: BrandBrief };
   try {
     parsed = parseBriefReply(await model(prompt, images), parseOptions);

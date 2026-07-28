@@ -108,6 +108,25 @@ describe("allowedPalette", () => {
     expect(new Set(palette).size).toBe(palette.length);
   });
 
+  // The prompt tells the model "OPERATOR NOTES — AUTHORITATIVE ... where one
+  // contradicts anything below, the operator's note WINS", and the closed
+  // palette is below that line. A prospect whose in-product palette differs
+  // from their marketing site (SWICH Merchant Portal: dark emerald portal,
+  // white/blue website) made the two instructions unsatisfiable — the brief
+  // obeyed the notes and the validator rejected every sample, twice, ending the
+  // run. Hexes the operator pinned in the notes ARE evidence, so they join the
+  // closed list; the anti-invention guarantee is unchanged.
+  it("admits hexes the operator pinned in the notes, ahead of the site evidence", () => {
+    const result = evidence();
+    const notes = "Dark portal. --color-bg: #0A0D0C; accent #10b981 (emerald).";
+    const palette = allowedPalette(result, notes);
+    expect(palette.slice(0, 2)).toEqual(["#0A0D0C", "#10B981"]);
+    expect(palette).toContain("#1E6BFF");
+    expect(new Set(palette).size).toBe(palette.length);
+    expect(paletteProvenance(result, notes).get("#0A0D0C")).toContain("operator notes");
+    expect([...paletteProvenance(result, notes).keys()]).toEqual(palette);
+  });
+
   it("carries the styleguide colours even when stage 1 did not fold them into palette", () => {
     const palette = allowedPalette(evidence({ palette: [] }));
     expect(palette).toContain("#1E6BFF");
