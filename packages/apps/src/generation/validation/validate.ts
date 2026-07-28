@@ -16,6 +16,7 @@ import {
 import {
   bindingKindIssues,
   catalogIssues,
+  exprIssues,
   factIssueLine,
   hostReshapeIssues,
   interpolationIssues,
@@ -174,6 +175,7 @@ export const validateCompiledCreate = async (
   issues.push(...bindingKindIssues(compiled.tree, deps).map(factIssueLine));
   issues.push(...kitSlotIssues(compiled.tree, deps).map(factIssueLine));
   issues.push(...hostReshapeIssues(compiled.tree, deps).map(factIssueLine));
+  issues.push(...exprIssues(compiled.tree, deps).map(factIssueLine));
   issues.push(...queryInputIssues(compiled.tree).map(factIssueLine));
   issues.push(...interpolationIssues(compiled.tree).map(factIssueLine));
   issues.push(...(await catalogIssues(compiled.tree, components, deps.catalog)).map(factIssueLine));

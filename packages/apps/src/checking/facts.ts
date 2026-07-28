@@ -18,8 +18,10 @@ import {
   WIRE_COMPONENT_NAMES,
   VENDO_TREE_FORMAT,
   checkBindingShapes,
+  checkExpr,
   kitSpec,
   shapeAtPointer,
+  isExprBinding,
   isPathBinding,
   isStateBinding,
   validateAppDocument,
@@ -62,7 +64,7 @@ const isActionBinding = (value: unknown): boolean =>
   isRecord(value) && typeof value.action === "string";
 
 export const isRuntimeBound = (value: unknown): boolean =>
-  isPathBinding(value) || isStateBinding(value) || isActionBinding(value);
+  isPathBinding(value) || isStateBinding(value) || isExprBinding(value) || isActionBinding(value);
 
 /** Conservative kind check between a bound field's shape and the host prop's
  *  declared JSON-schema type: only CLEAR mismatches flag (an array of objects
@@ -154,7 +156,7 @@ export const hostReshapeIssues = (tree: Tree, deps: GenerationDependencies): Fac
 export const queryInputIssues = (tree: Tree): FactIssue[] => {
   const issues: FactIssue[] = [];
   const findBinding = (value: unknown): boolean => {
-    if (isPathBinding(value) || isStateBinding(value)) return true;
+    if (isPathBinding(value) || isStateBinding(value) || isExprBinding(value)) return true;
     if (Array.isArray(value)) return value.some(findBinding);
     if (isRecord(value)) return Object.values(value).some(findBinding);
     return false;
@@ -209,6 +211,43 @@ export const kitSlotIssues = (tree: Tree, deps: GenerationDependencies): FactIss
         issues.push(atProp(node.id, prop, `on <${node.component}> binds ${value.$path}, a ${bound.kind} field, but this slot takes a different RAW type (${propSpec.doc}) — bind the raw field with that type (e.g. the integer-cents field, not a pre-formatted display string).`));
       }
     }
+  }
+  return issues;
+};
+
+/** A computed value (`{ $expr }`) is evaluated live in the renderer, so a bad
+ *  expression is a blank stat rather than a crash — exactly the silent-breakage
+ *  class facts exist to catch. Three kinds are decidable by looking things up:
+ *  the expression parses, its field paths reach fields the tool shapes really
+ *  expose, and every slot's type can compute (sum over a string cannot).
+ *  Whether the number MEANS anything is the reviewer's judgement, not a fact. */
+export const exprIssues = (tree: Tree, deps: GenerationDependencies): FactIssue[] => {
+  const queryTool = new Map((tree.queries ?? []).map((query) => [query.name, query.tool]));
+  const context = {
+    queryNames: [...queryTool.keys()],
+    shapeOf: (queryName: string) => {
+      const tool = queryTool.get(queryName);
+      return tool === undefined || deps.toolShapes === undefined ? undefined : deps.toolShapes[tool];
+    },
+  };
+  const issues: FactIssue[] = [];
+  const walk = (nodeId: string, prop: string, value: unknown): void => {
+    if (isExprBinding(value)) {
+      for (const message of checkExpr(value.$expr, context)) {
+        issues.push(atProp(nodeId, prop, `computes {${value.$expr}}: ${message}`));
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(nodeId, prop, item);
+      return;
+    }
+    if (isRecord(value)) {
+      for (const child of Object.values(value)) walk(nodeId, prop, child);
+    }
+  };
+  for (const node of tree.nodes) {
+    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
   }
   return issues;
 };
@@ -441,6 +480,7 @@ export const factChecks = (deps: GenerationDependencies): Check[] => [
     ...kitSlotIssues(tree, deps),
     ...hostReshapeIssues(tree, deps),
   ]),
+  treeCheck("expressions-compute", (tree) => exprIssues(tree, deps)),
   treeCheck("query-inputs-literal", (tree) => queryInputIssues(tree)),
   treeCheck("no-string-interpolation", (tree) => interpolationIssues(tree)),
 ];

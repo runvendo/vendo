@@ -362,3 +362,44 @@ describe("numeric path segments", () => {
     expect(result.value).toEqual({ $path: "/accounts/data/0/sparkline" });
   });
 });
+
+describe("computed values ($expr)", () => {
+  it("compiles an attribute carrying an operator or a known call to { $expr }", () => {
+    expectValue("sum(revenue.amount_cents) / count(payments)", {
+      $expr: "sum(revenue.amount_cents) / count(payments)",
+    });
+    expectValue("count(payments)", { $expr: "count(payments)" });
+    expectValue("revenue.total / 100", { $expr: "revenue.total / 100" });
+    expectValue("(revenue.total - 500) * 2", { $expr: "(revenue.total - 500) * 2" });
+    expectValue("days_until(revenue.due)", { $expr: "days_until(revenue.due)" });
+    expectValue('group_by(payments.paid_at, "month", sum(payments.amount))', {
+      $expr: 'group_by(payments.paid_at, "month", sum(payments.amount))',
+    });
+    expectValue("-revenue.total + 1", { $expr: "-revenue.total + 1" });
+    // A bare subtraction is infix even with whitespace around the operator.
+    expectValue("revenue.total - 500", { $expr: "revenue.total - 500" });
+    expectValue("sum(revenue.rows) - 1", { $expr: "sum(revenue.rows) - 1" });
+    expectValue("difference(revenue.total, payments.total)", {
+      $expr: "difference(revenue.total, payments.total)",
+    });
+  });
+
+  it("leaves every non-computed value on the binding/literal grammar", () => {
+    // The tell: no infix operator and no expression call.
+    expectValue("revenue.total", { $path: "/revenue/total" });
+    expectValue("state.note", { $state: "note" });
+    expectValue("revenue.rows | count()", { $path: "/revenue/rows", $reshape: [{ op: "count", args: [] }] });
+    expectValue("-2", -2);
+    expectValue("2.5E-2", 0.025);
+    expectValue('"a / b"', "a / b");
+    expectValue("[1, 2]", [1, 2]);
+    expectValue("{ limit: 5 }", { limit: 5 });
+    expectValue("{ note: 5 }", { note: 5 });
+  });
+
+  it("drops a computed value whose expression does not parse or names no query", () => {
+    expectDropped("sum(revenue.total) + * 2", "malformed-expression");
+    expectDropped("total(revenue.total) + 1", "malformed-expression");
+    expectDropped("sum(ghost.total) / count(payments)", "unknown-reference");
+  });
+});

@@ -137,7 +137,7 @@ describe("checking layer", () => {
     expect(layer.checks.map(({ name }) => name)).toContain("maple-house-style");
     // Appended, never replacing: every built-in fact check is still registered.
     expect(layer.checks.map(({ name }) => name)).toEqual(expect.arrayContaining([
-      "document", "tools-exist", "components-exist", "bindings-fit",
+      "document", "tools-exist", "components-exist", "bindings-fit", "expressions-compute",
       "query-inputs-literal", "no-string-interpolation", "maple-house-style",
     ]));
     expect(findings).toContainEqual({
@@ -207,6 +207,54 @@ describe("built-in fact checks", () => {
     expect(finding?.severity).toBe("block");
     expect(finding?.message).toContain("Allowed props: ");
     expect(finding?.message).toContain("rows");
+  });
+
+  it("names the real fields when a computed value reaches a field the tool shape has not got", async () => {
+    const layer = createCheckingLayer({ deps: deps() });
+    const findings = await layer.run(inputFor(
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data.amountCent)}/></Stack></App>',
+    ));
+
+    const finding = findings.find(({ where }) => where.includes('prop "value"'));
+    expect(finding?.severity).toBe("block");
+    expect(finding?.message).toContain("computes {sum(invoices.data.amountCent)}");
+    expect(finding?.message).toContain("the real fields are: id, client, amountCents");
+  });
+
+  it("names the numeric fields when a computed value sums a string field", async () => {
+    const layer = createCheckingLayer({ deps: deps() });
+    const findings = await layer.run(inputFor(
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data.client) / count(invoices.data)}/></Stack></App>',
+    ));
+
+    const finding = findings.find(({ where }) => where.includes('prop "value"'));
+    expect(finding?.severity).toBe("block");
+    expect(finding?.message).toContain("sum() needs numeric values");
+    expect(finding?.message).toContain("the numeric fields are: amountCents");
+  });
+
+  it("reports an unparseable computed value as a sentence naming the bad token", async () => {
+    // Hand-set: the wire compiler drops an attribute whose expression does not
+    // parse, so a stored/assembled tree is the only way one arrives.
+    const layer = createCheckingLayer({ deps: deps() });
+    const app = documentFrom(cleanApp);
+    const tree = structuredClone(app.tree) as NonNullable<GeneratedAppDocument["tree"]>;
+    const table = tree.nodes.find((node) => node.component === "Table");
+    (table as { props?: Record<string, unknown> }).props = { rows: { $expr: "sum(invoices.data.amountCents) + * 2" } };
+    const findings = await layer.run({ app: { ...app, tree }, request: "invoices" });
+
+    const finding = findings.find(({ where }) => where.includes('prop "rows"'));
+    expect(finding?.severity).toBe("block");
+    expect(finding?.message).toContain('"*"');
+  });
+
+  it("passes a computed value whose fields and types all check out", async () => {
+    const layer = createCheckingLayer({ deps: deps() });
+    const findings = await layer.run(inputFor(
+      '<App name="Invoices"><Query id="invoices" tool="host_listInvoices"/><Stack><Stat value={sum(invoices.data.amountCents) / count(invoices.data)}/></Stack></App>',
+    ));
+
+    expect(findings).toEqual([]);
   });
 
   it("blocks a document with no title and says what name is for", async () => {

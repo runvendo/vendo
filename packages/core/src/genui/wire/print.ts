@@ -17,6 +17,7 @@
 import { TOOL_NAME_PATTERN } from "../../tools.js";
 import { findInvalidReshapeSteps, type ReshapeStep } from "../../reshape.js";
 import { FN_REFERENCE_PATTERN } from "../../fn-references.js";
+import { isExprBinding, parseExpr } from "../expr.js";
 import { isPathBinding, isPlainObject, isStateBinding, type TreeNode } from "../tree-node.js";
 import type { TreeQuery } from "../tree.js";
 import type { WireCompileResult } from "./compile.js";
@@ -77,6 +78,12 @@ const printExpression = (value: unknown, queryNames: ReadonlySet<string>): strin
   }
   if (isPlainObject(value)) {
     const record = value as Record<string, unknown>;
+    // A computed value prints back as its own source, the form the compiler's
+    // brace-expression tell reads as `$expr` again. A source that no longer
+    // parses falls through to the object literal (totality over fidelity).
+    if (isExprBinding(record) && Object.keys(record).length === 1 && parseExpr(record.$expr).ok) {
+      return record.$expr;
+    }
     const reference = isPathBinding(record) || isStateBinding(record)
       ? referenceForBinding(record, queryNames)
       : null;

@@ -16,6 +16,7 @@
 import { safeErrorMessage } from "../../errors.js";
 import type { Json } from "../../ids.js";
 import { findInvalidReshapeSteps, type ReshapeStep } from "../../reshape.js";
+import { EXPR_CALLS, exprPathHeads, parseExpr, type ExprBinding } from "../expr.js";
 import { defineOwn, isPathBinding, isStateBinding, type PathBinding, type StateBinding } from "../tree-node.js";
 import { isWellFormedUtf16 } from "./state.js";
 
@@ -485,7 +486,90 @@ const parseValue = (state: ParserState): Json | Failed => {
   return malformed(state, `unexpected character "${char}" at index ${state.index}`);
 };
 
+const EXPR_CALL_NAMES: ReadonlySet<string> = new Set(EXPR_CALLS);
+
+/**
+ * The brace-expression tell (genui/expr.ts): one attribute value grammar
+ * decides between a BINDING and a COMPUTED value. `{...}` is computed when it
+ * carries an infix arithmetic operator or calls one of the expression
+ * functions — `{sum(invoices.amount_cents) / count(clients)}` — and is the
+ * JSON5-lite literal/`$path` grammar otherwise. Two things are decisive the
+ * other way: a `|` reshape pipe (`{accounts.rows | count()}` is a binding with
+ * a reshape chain) and a `[`/`{` literal, which no computation contains.
+ */
+const looksComputed = (source: string): boolean => {
+  let computed = false;
+  /** Whether the cursor follows a complete value — the infix/prefix tell for
+   *  `-` (a leading `-` is a negative literal, not an operator). */
+  let sawValue = false;
+  let index = 0;
+  while (index < source.length) {
+    const char = source[index] as string;
+    if (char === "|" || char === "[" || char === "{") return false;
+    if (char === '"' || char === "'") {
+      const end = source.indexOf(char, index + 1);
+      if (end === -1) return computed;
+      index = end + 1;
+      sawValue = true;
+      continue;
+    }
+    if (IDENTIFIER_START.test(char)) {
+      let end = index + 1;
+      while (end < source.length && (IDENTIFIER_CHAR.test(source[end] as string) || source[end] === ".")) end += 1;
+      if (EXPR_CALL_NAMES.has(source.slice(index, end)) && source[end] === "(") computed = true;
+      index = end;
+      sawValue = true;
+      continue;
+    }
+    if (DIGIT.test(char) || (char === "-" && !sawValue)) {
+      NUMBER_PATTERN.lastIndex = index;
+      if (NUMBER_PATTERN.exec(source) !== null) {
+        index = NUMBER_PATTERN.lastIndex;
+        sawValue = true;
+        continue;
+      }
+    }
+    if (char === "+" || char === "*" || char === "/" || (char === "-" && sawValue)) {
+      computed = true;
+      index += 1;
+      continue;
+    }
+    if (WHITESPACE.test(char)) {
+      index += 1;
+      continue;
+    }
+    // ")" closes a value; "(" and "," open a fresh one.
+    sawValue = char === ")";
+    index += 1;
+  }
+  return computed;
+};
+
+/** A computed attribute value compiles to `{ $expr }` with its source kept
+ *  verbatim; evaluation happens at bind resolution in the renderer, never
+ *  here. Unknown heads drop the attribute like any other unknown reference. */
+const parseComputed = (source: string, context: ExpressionContext): ExpressionResult => {
+  const expr = source.trim();
+  const parsed = parseExpr(expr);
+  if (!parsed.ok) {
+    return { dropped: true, issues: [{ code: "malformed-expression", message: parsed.issue }] };
+  }
+  const unknown = exprPathHeads(parsed.node).filter((head) => !context.queryNames.has(head));
+  if (unknown.length > 0) {
+    return {
+      dropped: true,
+      issues: unknown.map((head) => ({
+        code: "unknown-reference" as const,
+        message: `"${head}" does not name a declared <Query>`,
+      })),
+    };
+  }
+  const binding: ExprBinding = { $expr: expr };
+  return { value: binding as unknown as Json, dropped: false, issues: [] };
+};
+
 const parseExpressionUnsafe = (source: string, context: ExpressionContext): ExpressionResult => {
+  if (looksComputed(source)) return parseComputed(source, context);
   const state: ParserState = { source, index: 0, issues: [], queryNames: context.queryNames };
   const value = parseValue(state);
   if (value === FAILED) {

@@ -4,6 +4,8 @@ import {
   TREE_MAX_GENERATED_COMPONENTS,
   TREE_MAX_TOTAL_COMPONENT_CHARS,
   applyReshape,
+  evaluateExpr,
+  isExprBinding,
   isPathBinding,
   isStateBinding,
   VENDO_TREE_FORMAT,
@@ -222,6 +224,17 @@ function bindValue(
 ): unknown {
   if (isPathBinding(value)) return resolveReshaped(resolvePointer(data, value.$path), value.$reshape, onMismatch);
   if (isStateBinding(value)) return resolveReshaped(state[value.$state] as Json | undefined, value.$reshape, onMismatch);
+  // A computed value is evaluated HERE, on every bind resolution, against the
+  // data this render holds — so it re-computes the moment the query data
+  // changes. Nothing about it is ever cached across renders.
+  if (isExprBinding(value)) {
+    const computed = evaluateExpr(value.$expr, data);
+    if (!computed.ok) {
+      onMismatch?.(computed.issue);
+      return undefined;
+    }
+    return computed.value;
+  }
   if (isActionBinding(value)) {
     const payload = bindValue(value.payload, mode, data, state, action, onMismatch) as Json;
     if (mode === "jail") {
