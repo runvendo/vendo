@@ -321,6 +321,24 @@ describe("runAiRepoMatrix", () => {
     expect(notes).not.toContain("2 tools judged");
   });
 
+  it("trims a warning's payload so one row cannot wreck the table", async () => {
+    // The real batch-parse warning embeds the whole zod issue array — ~300 chars
+    // of JSON with newlines. It belongs in the Notes cell as a FACT, not as a
+    // wall of punctuation.
+    const zodNoise = `([\n  {\n    "code": "too_big",\n    "maximum": 300,\n    "path": [\n      "missedSurfaces",\n      0\n    ]\n  }\n])`;
+    const result = await runOneCell({
+      runPass: async (options) => {
+        options.output.error(`warning: judge batch 2/2 unusable ${zodNoise} — its tools stay unjudged`);
+        return await writingPass(perfectJudgments)(options);
+      },
+    });
+
+    const note = result.models[0]!.notes.find((line) => line.includes("judge batch 2/2"))!;
+    expect(note).toContain("judge batch 2/2 unusable");
+    expect(note).not.toContain("\n");
+    expect(note.length).toBeLessThanOrEqual(160);
+  });
+
   it("floors a cell when the judgments file is malformed rather than crashing the repo row", async () => {
     const result = await runOneCell({
       runPass: async (options) => {

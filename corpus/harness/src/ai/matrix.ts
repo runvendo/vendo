@@ -196,11 +196,21 @@ function degradationNotes(counts: JudgmentPassCounts): string[] {
  *
  * Coverage leads ("missed surface") are excluded — those are findings ABOUT the
  * repo, not degradations of the run.
+ *
+ * Each note is collapsed to one line and clipped: the real batch-parse warning
+ * embeds a whole zod issue array, and ~300 characters of JSON punctuation in a
+ * table cell hides the very fact it is there to report. The untruncated text is
+ * always in the cell's `pass.log`.
  */
+const NOTE_MAX = 160;
+
 function warningNotes(transcript: readonly string[]): string[] {
   return transcript
     .filter((line) => line.startsWith("stderr: warning:") && !line.includes("missed surface"))
-    .map((line) => line.replace(/^stderr: warning:\s*/, ""));
+    .map((line) => {
+      const flat = line.replace(/^stderr: warning:\s*/, "").replaceAll(/\s+/g, " ").trim();
+      return flat.length <= NOTE_MAX ? flat : `${flat.slice(0, NOTE_MAX - 1)}…`;
+    });
 }
 
 export interface RunAiRepoMatrixOptions {
