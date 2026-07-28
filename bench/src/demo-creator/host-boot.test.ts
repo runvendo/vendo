@@ -63,10 +63,48 @@ describe("generateManifest", () => {
     });
   });
 
-  it("fails with the script's own first line when it exits non-zero", async () => {
+  it("fails with the script's own output when it exits non-zero", async () => {
     const demosRepo = await fakeDemosRepo(["acme"]);
     const { exec } = fakeExec([{ code: 1, stderr: "ENOENT demos/\nstack frame" }]);
     await expect(generateManifest({ demosRepo, exec })).rejects.toThrow(/gen-manifest failed[\s\S]*ENOENT demos\//);
+  });
+
+  /**
+   * The real script prints a HEADER and then the problems, one per line:
+   *
+   *   [gen-manifest] the demo folder contract is not honored:
+   *     demos/ramp-bills: missing tools.json
+   *
+   * Reporting only the first line therefore reported a failure with no reason at
+   * all — every actual cause is on a later line. It cost a diagnosis round on a
+   * live run, and in Slack it is a mystery failure.
+   */
+  it("relays the real cause, which the script prints AFTER its header line", async () => {
+    const demosRepo = await fakeDemosRepo(["acme"]);
+    const { exec } = fakeExec([{
+      code: 1,
+      stderr: "[gen-manifest] the demo folder contract is not honored:\n  demos/ramp-bills: missing tools.json\n  demos/zelty/theme.json is not legible",
+    }]);
+    const error = await generateManifest({ demosRepo, exec }).catch((thrown: unknown) => thrown as Error);
+    expect(error.message).toContain("missing tools.json");
+    expect(error.message).toContain("theme.json is not legible");
+  });
+
+  // Next-style failures split across the streams: the cause is on stdout while
+  // stderr holds only a warning, so picking one stream hides it.
+  it("relays both streams, because the cause is not reliably on either one", async () => {
+    const demosRepo = await fakeDemosRepo(["acme"]);
+    const { exec } = fakeExec([{ code: 1, stdout: "  demos/acme: missing openapi.json", stderr: "(node:1) ExperimentalWarning: type stripping" }]);
+    const error = await generateManifest({ demosRepo, exec }).catch((thrown: unknown) => thrown as Error);
+    expect(error.message).toContain("missing openapi.json");
+  });
+
+  it("stays bounded — a failing script can print megabytes", async () => {
+    const demosRepo = await fakeDemosRepo(["acme"]);
+    const { exec } = fakeExec([{ code: 1, stderr: `${"noise\n".repeat(4_000)}  demos/acme: missing tools.json` }]);
+    const error = await generateManifest({ demosRepo, exec }).catch((thrown: unknown) => thrown as Error);
+    expect(error.message).toContain("missing tools.json");
+    expect(error.message.length).toBeLessThan(3_200);
   });
 
   it("scrubs env secrets out of the script's failure line", async () => {

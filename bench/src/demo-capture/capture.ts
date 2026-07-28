@@ -155,6 +155,28 @@ async function demoCapsRefusal(page: Page): Promise<{ limit: string } | null> {
   }).catch(() => null);
 }
 
+/**
+ * The turn surfaced a visible error. Its own class, because a caller has to be
+ * able to tell this from {@link VendoTurnTimeout} without parsing prose: the demo
+ * pipeline's smoke gate decides whether a generated demo is BROKEN or merely SLOW
+ * on exactly that difference, and message-matching is not a contract.
+ */
+export class VendoTurnError extends Error {
+  constructor(readonly surfaced: string) {
+    super(`Vendo capture surfaced an error: ${surfaced}`);
+    this.name = "VendoTurnError";
+  }
+}
+
+/** The turn never settled inside its budget. Says nothing about whether the
+ *  agent works — see the smoke gate's classifier for that judgement. */
+export class VendoTurnTimeout extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`Timed out after ${timeoutMs}ms waiting for the generated Vendo turn`);
+    this.name = "VendoTurnTimeout";
+  }
+}
+
 /** Exported for the unit test of the approval-settle sequence. */
 export async function waitForTurn(options: {
   page: Page;
@@ -191,7 +213,7 @@ export async function waitForTurn(options: {
       if (refusal !== null) {
         throw new Error(`demo caps exhausted (${refusal.limit}) — the capture burned the demo's own turns; a capture-side condition, not a demo failure`);
       }
-      throw new Error(`Vendo capture surfaced an error: ${(await alert.textContent())?.trim() ?? "unknown error"}`);
+      throw new VendoTurnError((await alert.textContent())?.trim() ?? "unknown error");
     }
     const textarea = options.page.locator('form[aria-label="Message composer"]')
       .getByRole("textbox", { name: "Message" });
@@ -232,7 +254,7 @@ export async function waitForTurn(options: {
     }
     await options.page.waitForTimeout(300);
   }
-  throw new Error(`Timed out after ${options.timeoutMs}ms waiting for the generated Vendo turn`);
+  throw new VendoTurnTimeout(options.timeoutMs);
 }
 
 async function captureHost(options: {

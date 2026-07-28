@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readFile, readlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { cp, lstat, mkdir, readFile, readlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { runAssemble, type AssembleIo, type AssembleResult } from "./assemble.js";
@@ -306,6 +308,66 @@ export async function assertOnlyDemoTouched(
 }
 
 /**
+ * Puts demos/<slug>/ back the way git has it after a FAILED run, keeping what the
+ * run produced outside the checkout for diagnosis.
+ *
+ * Why a failed run cannot just be left where it fell: the host's gen-manifest
+ * validates EVERY demo folder and writes nothing unless all of them pass. So one
+ * half-generated leftover — no tools.json, an illegible theme — does not fail its
+ * own run twice, it fails every LATER run in that checkout. The mini's
+ * `~/.vendo/vendo-demos` lives forever, so one bad run bricked the Slack driver
+ * until a human moved the folder aside by hand.
+ *
+ * git decides what "clean" means, which is what makes this safe for demo:fix: a
+ * fix run works on a demo that is already live and COMMITTED, and the checkout
+ * plus clean restores that demo rather than deleting it. Only a demo this run
+ * created is untracked, and only an untracked folder disappears.
+ *
+ * Never throws. It runs on the failure path with a real cause already travelling
+ * to the operator, and replacing that cause with a cleanup detail is the worst
+ * trade available.
+ */
+export async function quarantineFailedDemo(options: {
+  demosRepo: string;
+  slug: string;
+  exec: ExecFn;
+  write: (line: string) => void;
+  /** Overridable so a test can see where things went. */
+  quarantineRoot?: string;
+}): Promise<{ quarantined?: string }> {
+  // demoPaths re-asserts the slug, so no caller can aim `git clean` with it.
+  const root = demoPaths(options.demosRepo, options.slug).root;
+  if (!existsSync(root)) return {};
+  const pathspec = `demos/${options.slug}`;
+  let quarantined: string | undefined;
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    quarantined = path.join(
+      options.quarantineRoot ?? path.join(tmpdir(), "vendo-demo-failed"),
+      `${options.slug}-${stamp}`,
+    );
+    // Copied out BEFORE anything is removed: a failed run's folder is the only
+    // record of what the agents actually produced.
+    await cp(root, quarantined, { recursive: true, verbatimSymlinks: true });
+    // Tracked files first (a failed fix run's edits), then whatever is untracked.
+    // The checkout legitimately exits non-zero when nothing here is tracked —
+    // that is the new-demo case, and the clean below is what handles it.
+    await options.exec(["git", "-C", options.demosRepo, "checkout", "--", pathspec], { cwd: options.demosRepo });
+    const cleaned = await options.exec(["git", "-C", options.demosRepo, "clean", "-ffdxq", "--", pathspec], { cwd: options.demosRepo });
+    if (cleaned.code !== 0) {
+      throw new Error(`git clean exited ${cleaned.code}: ${cleaned.stderr.trim() || cleaned.stdout.trim()}`);
+    }
+    options.write(`[pipeline] the failed demo folder was moved out of the checkout to ${quarantined} — the next run starts from a clean ${pathspec}`);
+  } catch (error) {
+    options.write(
+      `[pipeline] WARNING: could not clean up demos/${options.slug}/ after the failure (${error instanceof Error ? error.message : String(error)})`
+      + ` — gen-manifest validates EVERY demo folder, so remove it by hand before the next run: rm -rf ${root}`,
+    );
+  }
+  return quarantined === undefined ? {} : { quarantined };
+}
+
+/**
  * One row of RESEARCH/timings.json — the per-stage wall-clock evidence.
  *
  * `depth` is what makes the table summable. Stages NEST: judge.ts wraps its body
@@ -600,6 +662,12 @@ export async function runDemoPipeline(args: DemoPipelineArgs, io: PipelineIo = {
       { demosRepo: args.demosRepo, write, env, exec, signal, runStage, finalizeTimings: timingsFile.finalize },
     ));
     return { slug: args.id, demoDir: paths.root, timings, judge, scoresLine, costUsd: built.costUsd, ship: shipped, liveUrl: shipped.liveUrl };
+  } catch (error) {
+    // A failed run does not get to leave its half-built folder behind: the host's
+    // gen-manifest validates EVERY demo, so this run's wreckage would fail the
+    // NEXT run in the same checkout, and the mini's checkout is permanent.
+    await quarantineFailedDemo({ demosRepo: args.demosRepo, slug: args.id, exec, write });
+    throw error;
   } finally {
     clearTimeout(capTimer);
     // One dev server, reaped by whoever started it — including on the failure

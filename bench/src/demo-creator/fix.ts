@@ -7,7 +7,7 @@ import { demoPaths, parseDemoFolderConfig, parseDemoSlug } from "./demo-folder.j
 import { defaultDemosRepo, ensureDemosRepo } from "./demos-repo.js";
 import { createScrubber, defaultExec, type ExecFn } from "./exec.js";
 import { runJudge, type JudgeIo, type JudgeResult } from "./judge.js";
-import { assertOnlyDemoTouched, createStageRunner, createTimingsFile, localHostPort, snapshotHostBaseline, type StageTiming } from "./pipeline.js";
+import { assertOnlyDemoTouched, createStageRunner, createTimingsFile, localHostPort, quarantineFailedDemo, snapshotHostBaseline, type StageTiming } from "./pipeline.js";
 import { runShip, type ShipIo, type ShipResult } from "./ship.js";
 
 /**
@@ -243,6 +243,13 @@ export async function runDemoFix(args: DemoFixArgs, io: DemoFixIo = {}): Promise
       { demosRepo: args.demosRepo, write, env, exec, signal, runStage, finalizeTimings: timingsFile.finalize },
     ));
     return { slug: args.id, demoDir: paths.root, agent, timings, judge, scoresLine, ship: shipped, liveUrl: shipped.liveUrl };
+  } catch (error) {
+    // Same reason as the pipeline's: gen-manifest validates EVERY demo folder, so
+    // a failed fix's leftovers break the next run in this checkout. Here the demo
+    // is already committed, and git is what makes "clean" mean RESTORE rather
+    // than delete — a live demo's source is never this cleanup's to remove.
+    await quarantineFailedDemo({ demosRepo: args.demosRepo, slug: args.id, exec, write });
+    throw error;
   } finally {
     clearTimeout(capTimer);
     if (host !== undefined) await stopHost(host);

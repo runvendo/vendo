@@ -4,9 +4,10 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import path from "node:path";
 import { chromium } from "@playwright/test";
-import { sendPrompt, waitForTurn } from "../demo-capture/capture.js";
+import { sendPrompt, VendoTurnError, VendoTurnTimeout, waitForTurn } from "../demo-capture/capture.js";
 import { genManifestScript, hostDir } from "./demo-folder.js";
-import { createScrubber, defaultExec, delay, firstLine, scrubbingTransform, type ExecFn } from "./exec.js";
+import { createScrubber, defaultExec, delay, scrubbingTransform, type ExecFn } from "./exec.js";
+import { classifySmoke, installSmokeObserverInPage, noProgress, type SmokeOutcome } from "./smoke.js";
 
 /**
  * Stage 4's plumbing: drive the vendo-demos HOST (a foreign checkout, not this
@@ -73,7 +74,14 @@ export async function generateManifest(options: {
     ...(options.env === undefined ? {} : { env: options.env }),
   });
   if (result.code !== 0) {
-    throw new Error(`gen-manifest failed (exit ${result.code}): ${scrub(firstLine(result.stderr || result.stdout) ?? "no output")}`);
+    // The TAIL of both streams, never the first line. The script prints a header
+    // ("the demo folder contract is not honored:") and then the problems one per
+    // line, so reporting the first line reported a failure with NO reason — and
+    // Next-style causes land on stdout while stderr carries only warnings, so
+    // picking one stream hides the cause about half the time. Bounded and
+    // scrubbed for the same reasons buildHost's tail is.
+    const output = `${result.stdout}${result.stderr}`.trim();
+    throw new Error(`gen-manifest failed (exit ${result.code}):\n${scrub(output.slice(-3_000)) || "no output"}`);
   }
   const generated = manifestPath(options.demosRepo);
   const source = await readFile(generated, "utf8").catch(() => undefined);
@@ -253,7 +261,7 @@ export async function bootHost(options: {
   };
 }
 
-export type SmokeTurnFn = (options: { baseUrl: string; slug: string; prompt: string; timeoutMs: number }) => Promise<void>;
+export type SmokeTurnFn = (options: { baseUrl: string; slug: string; prompt: string; timeoutMs: number }) => Promise<SmokeOutcome>;
 
 /** `requireView: false` is the contract's "gates on HARD error only": the smoke
  * turn passes as long as the turn did not error and did settle. What the agent
@@ -267,22 +275,73 @@ export function smokeTurnWaitOptions(options: { previousAssistantTurns: number; 
   return { previousAssistantTurns: options.previousAssistantTurns, timeoutMs: options.timeoutMs, requireView: false };
 }
 
-/** Drives /<slug>/vendo in a real browser: type the prompt, wait for the turn to
- *  settle. Throws on a surfaced error or a turn that never settles. */
+/**
+ * Drives /<slug>/vendo in a real browser and REPORTS what happened rather than
+ * throwing: whether the demo's agent is broken or merely slow is a judgement
+ * (see {@link classifySmoke}), and a thrown Error cannot carry the evidence that
+ * judgement needs.
+ *
+ * Three things are watched at once. The DOOR — the demo's own
+ * `/api/vendo/<slug>/…` route — is watched at the wire, because a 500 there is
+ * the dead-agent shape (no model provider, a tools file the runtime cannot parse)
+ * and it arrives within seconds. The in-page observer records the two signs of
+ * life. And the turn wait supplies the third answer: settled, errored, or out of
+ * clock.
+ */
 export const defaultSmokeTurn: SmokeTurnFn = async (options) => {
   const browser = await chromium.launch();
+  const progress = noProgress();
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
+    const doorPath = `/api/vendo/${options.slug}`;
+    page.on("response", (response) => {
+      if (!new URL(response.url()).pathname.startsWith(doorPath)) return;
+      progress.doorAnswered = true;
+      if (response.status() >= 400 && progress.doorError === undefined) {
+        progress.doorError = `${response.request().method()} ${new URL(response.url()).pathname} → ${response.status()}`;
+      }
+    });
+    page.on("requestfailed", (request) => {
+      if (!new URL(request.url()).pathname.startsWith(doorPath)) return;
+      if (progress.doorError === undefined) {
+        progress.doorError = `${request.method()} ${new URL(request.url()).pathname} → ${request.failure()?.errorText ?? "request failed"}`;
+      }
+    });
     await page.goto(new URL(`/${options.slug}/vendo`, options.baseUrl).toString(), {
       waitUntil: "domcontentloaded",
       timeout: options.timeoutMs,
     });
     await page.getByRole("textbox", { name: "Message" }).waitFor({ state: "visible", timeout: options.timeoutMs });
+    // Installed BEFORE the prompt is sent: the observer's baseline is "the turns
+    // already on this page", so a demo:fix re-smoke cannot mistake an old turn
+    // for this one's stream.
+    await page.evaluate(installSmokeObserverInPage);
     const sent = await sendPrompt(page, options.prompt);
-    await waitForTurn({
-      page,
-      ...smokeTurnWaitOptions({ previousAssistantTurns: sent.assistantTurns, timeoutMs: options.timeoutMs }),
+    let settled = false;
+    let surfacedError: string | undefined;
+    let timedOut = false;
+    try {
+      await waitForTurn({
+        page,
+        ...smokeTurnWaitOptions({ previousAssistantTurns: sent.assistantTurns, timeoutMs: options.timeoutMs }),
+      });
+      settled = true;
+    } catch (error) {
+      if (error instanceof VendoTurnError) surfacedError = error.surfaced;
+      else if (error instanceof VendoTurnTimeout) timedOut = true;
+      // Anything else is the harness failing, not a verdict about the demo.
+      else throw error;
+    }
+    const observed = await page.evaluate(() => window.__vendoSmoke?.snapshot())
+      ?? { turnStarted: false, toolCall: false };
+    progress.turnStarted = observed.turnStarted;
+    progress.toolCall = observed.toolCall;
+    return classifySmoke({
+      settled,
+      timedOut,
+      progress,
+      ...(surfacedError === undefined ? {} : { surfacedError }),
     });
   } finally {
     await browser.close().catch(() => undefined);

@@ -2,9 +2,23 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { runAssemble, type AssembleIo } from "./assemble.js";
+import { runAssemble, SmokeBrokenError, SmokeTimeoutError, type AssembleIo } from "./assemble.js";
 import type { ExecFn, ExecResult } from "./exec.js";
 import type { RunningHost, SmokeTurnFn } from "./host-boot.js";
+import { classifySmoke, noProgress, smokeBudgetMs, type SmokeProgress } from "./smoke.js";
+
+/** The shape of every healthy turn: the door answered, the model streamed. */
+const alive: SmokeProgress = { doorAnswered: true, turnStarted: true, toolCall: true };
+
+/** Smoke turns expressed the way the real one reports: an outcome, not a throw. */
+const settles: SmokeTurnFn = async () => classifySmoke({ settled: true, timedOut: false, progress: alive });
+const timesOutAlive: SmokeTurnFn = async () => classifySmoke({ settled: false, timedOut: true, progress: alive });
+const deadAgent: SmokeTurnFn = async () => classifySmoke({ settled: false, timedOut: true, progress: noProgress() });
+const doorErrors: SmokeTurnFn = async () => classifySmoke({
+  settled: false,
+  timedOut: false,
+  progress: { ...noProgress(), doorAnswered: true, doorError: "POST /api/vendo/acme → 500" },
+});
 
 const manifestPath = (demosRepo: string): string =>
   path.join(demosRepo, "host", "src", "generated", "manifest.ts");
@@ -45,7 +59,7 @@ function io(demosRepo: string, overrides: Partial<AssembleIo> = {}): AssembleIo 
     write: () => undefined,
     exec: fakeExec().exec,
     boot: async () => fakeHost().host,
-    smokeTurn: async () => undefined,
+    smokeTurn: settles,
     ...overrides,
   };
 }
@@ -94,12 +108,15 @@ describe("runAssemble", () => {
     expect(boot).not.toHaveBeenCalled();
   });
 
-  it("stops the host and rethrows when the smoke turn errors", async () => {
+  it("stops the host and fails when the smoke turn errors", async () => {
     const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
     const { host, stop } = fakeHost();
-    const smokeTurn: SmokeTurnFn = async () => {
-      throw new Error("Vendo capture surfaced an error: model overloaded");
-    };
+    const smokeTurn: SmokeTurnFn = async () => classifySmoke({
+      settled: false,
+      timedOut: false,
+      surfacedError: "model overloaded",
+      progress: alive,
+    });
     await expect(runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn })))
       .rejects.toThrow(/model overloaded/);
     expect(stop).toHaveBeenCalledTimes(1);
@@ -113,24 +130,176 @@ describe("runAssemble", () => {
     const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
     const { host, stop } = fakeHost();
     // A turn that answered in prose: no view, no approval, nothing to inspect.
-    const result = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn: async () => undefined }));
+    const result = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn: settles }));
     expect(result.host).toBe(host);
     expect(stop).not.toHaveBeenCalled();
     await result.host.stop();
   });
 
-  it("cannot gate on content, because content never reaches it", async () => {
+  it("cannot gate on content, because only liveness reaches it", async () => {
     const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
     const { host } = fakeHost();
-    // Whatever the smoke turn "returns" is discarded by the SmokeTurnFn contract
-    // (Promise<void>), so no assemble code path can branch on it.
-    const smokeTurn = (async () => "a view was generated" as unknown as void) as SmokeTurnFn;
-    const result = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn }));
-    expect(result.smoke).toEqual({ prompt: args.smokePrompt, ms: expect.any(Number) });
-    expect(Object.keys(result)).toEqual(["slugs", "host", "smoke"]);
+    const result = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn: settles }));
+    // Everything the gate is told about the turn — no view, no text, no tool
+    // result. A gate that cannot see content cannot start judging it.
+    expect(Object.keys(result.smoke.progress).sort()).toEqual(["doorAnswered", "toolCall", "turnStarted"]);
+    expect(result.smoke).toEqual({
+      prompt: args.smokePrompt,
+      ms: expect.any(Number),
+      verdict: "settled",
+      attempts: 1,
+      progress: alive,
+    });
+    await result.host.stop();
+  });
+});
+
+/**
+ * The defect this replaces: ONE 180s wall-clock deadline decided both questions.
+ * Measured turn latencies were 104s, 129s (errored), 135s, 165s and ≥183s, so the
+ * deadline sat inside the distribution and two of six runs died on demos that
+ * were fine. These are the two halves of the fix, held apart.
+ */
+describe("runAssemble — the smoke gate tells BROKEN from SLOW", () => {
+  it("passes a healthy turn that took longer than the old 180s gate allowed", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const { host, stop } = fakeHost();
+    let budget = 0;
+    // 250s: comfortably past the old deadline, comfortably inside the new budget.
+    const slowButHealthy: SmokeTurnFn = async (options) => {
+      budget = options.timeoutMs;
+      return classifySmoke({ settled: true, timedOut: false, progress: alive });
+    };
+    const result = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn: slowButHealthy }));
+    expect(budget).toBeGreaterThan(250_000);
+    expect(result.smoke.verdict).toBe("settled");
+    expect(stop).not.toHaveBeenCalled();
     await result.host.stop();
   });
 
+  it("hands the smoke turn the evidence-derived budget, not the old deadline", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    let budget = 0;
+    const smokeTurn: SmokeTurnFn = async (options) => {
+      budget = options.timeoutMs;
+      return classifySmoke({ settled: true, timedOut: false, progress: alive });
+    };
+    const result = await runAssemble(args, io(demosRepo, { smokeTurn }));
+    expect(budget).toBe(smokeBudgetMs);
+    expect(budget).not.toBe(180_000);
+    await result.host.stop();
+  });
+
+  it("fails a genuinely broken agent FAST, on the signal and not on the clock", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const { host, stop } = fakeHost();
+    const started = Date.now();
+    const thrown = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn: doorErrors }))
+      .catch((error: unknown) => error as Error);
+    expect(thrown).toBeInstanceOf(SmokeBrokenError);
+    expect(thrown.message).toMatch(/agent route answered/);
+    // The door's 500 arrives in the first seconds; nothing waited out a budget.
+    expect(Date.now() - started).toBeLessThan(smokeBudgetMs);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls an agent that never produced a turn broken, not slow", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const thrown = await runAssemble(args, io(demosRepo, { smokeTurn: deadAgent }))
+      .catch((error: unknown) => error as Error);
+    expect(thrown).toBeInstanceOf(SmokeBrokenError);
+    expect(thrown).not.toBeInstanceOf(SmokeTimeoutError);
+    expect(thrown.message).toMatch(/never produced a turn/);
+  });
+
+  // Not a silent pass — it still fails the run. But it fails as its own thing, so
+  // the Slack thread reads "the smoke turn timed out" instead of implying that a
+  // demo which compiled, booted and streamed is broken.
+  it("reports a living-but-unfinished turn as a TIMEOUT, distinct from broken", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const lines: string[] = [];
+    const thrown = await runAssemble(args, io(demosRepo, { smokeTurn: timesOutAlive, write: (line) => lines.push(line) }))
+      .catch((error: unknown) => error as Error);
+    expect(thrown).toBeInstanceOf(SmokeTimeoutError);
+    expect(thrown).not.toBeInstanceOf(SmokeBrokenError);
+    expect(thrown.message).toMatch(/timed out/i);
+    // Never the broken verdict's own wording — and it says outright what it is,
+    // so a human reading the thread cannot take it for a broken demo either.
+    expect(thrown.message).not.toMatch(/is BROKEN/);
+    expect(thrown.message).toMatch(/not a broken demo/);
+    // …and it says so on stdout too, where the Slack driver can read it.
+    expect(lines.some((line) => line.startsWith("SMOKE: TIMEOUT"))).toBe(true);
+  });
+
+  it("gives the two verdicts messages an operator cannot confuse", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const timeout = await runAssemble(args, io(demosRepo, { smokeTurn: timesOutAlive })).catch((error: unknown) => error as Error);
+    const broken = await runAssemble(args, io(demosRepo, { smokeTurn: deadAgent })).catch((error: unknown) => error as Error);
+    expect(timeout.message).not.toBe(broken.message);
+    expect(broken.message).toMatch(/broken/i);
+  });
+});
+
+describe("runAssemble — the one bounded retry", () => {
+  // Run E died exactly here: "Something went wrong and the response didn't
+  // finish" at 129s, on a demo that was fine. An external inference failure is
+  // not the demo's bug, and it is the one outcome a second attempt can clear.
+  it("retries ONCE when the turn failed on something outside the demo", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    let attempts = 0;
+    const flaky: SmokeTurnFn = async () => {
+      attempts += 1;
+      return attempts === 1
+        ? classifySmoke({ settled: false, timedOut: false, surfacedError: "the response didn’t finish", progress: alive })
+        : classifySmoke({ settled: true, timedOut: false, progress: alive });
+    };
+    const result = await runAssemble(args, io(demosRepo, { smokeTurn: flaky }));
+    expect(attempts).toBe(2);
+    expect(result.smoke.verdict).toBe("settled");
+    expect(result.smoke.attempts).toBe(2);
+    await result.host.stop();
+  });
+
+  it("retries at most once — a reproducible error is a real bug, not a canary", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    let attempts = 0;
+    const alwaysErrors: SmokeTurnFn = async () => {
+      attempts += 1;
+      return classifySmoke({ settled: false, timedOut: false, surfacedError: "tools file unreadable", progress: alive });
+    };
+    await expect(runAssemble(args, io(demosRepo, { smokeTurn: alwaysErrors }))).rejects.toThrow(SmokeBrokenError);
+    expect(attempts).toBe(2);
+  });
+
+  // A retry after a deadline costs another whole budget of wall clock inside a
+  // 40-minute cap and cannot change what the clock already proved.
+  it("never retries a deadline, whichever way it was classified", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    for (const smokeTurn of [timesOutAlive, deadAgent]) {
+      let attempts = 0;
+      const counted: SmokeTurnFn = async (options) => {
+        attempts += 1;
+        return await smokeTurn(options);
+      };
+      await expect(runAssemble(args, io(demosRepo, { smokeTurn: counted }))).rejects.toThrow();
+      expect(attempts).toBe(1);
+    }
+  });
+
+  it("never retries a turn that settled", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    let attempts = 0;
+    const counted: SmokeTurnFn = async () => {
+      attempts += 1;
+      return classifySmoke({ settled: true, timedOut: false, progress: alive });
+    };
+    const result = await runAssemble(args, io(demosRepo, { smokeTurn: counted }));
+    expect(attempts).toBe(1);
+    await result.host.stop();
+  });
+});
+
+describe("runAssemble — what it hands back", () => {
   it("returns the still-running host and the smoke prompt it drove", async () => {
     const demosRepo = await fakeDemosRepo({ slugs: ["acme", "globex"], installed: true });
     const { host, stop } = fakeHost();
@@ -139,6 +308,7 @@ describe("runAssemble", () => {
       boot: async () => host,
       smokeTurn: async (options) => {
         smoked.push({ baseUrl: options.baseUrl, slug: options.slug, prompt: options.prompt });
+        return classifySmoke({ settled: true, timedOut: false, progress: alive });
       },
     }));
     expect(result.slugs).toEqual(["acme", "globex"]);
