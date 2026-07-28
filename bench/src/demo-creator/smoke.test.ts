@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentRunDoorProblem,
   classifySmoke,
   noProgress,
   observedSmokeLatenciesMs,
@@ -25,6 +26,75 @@ describe("smokeBudgetMs", () => {
   it("stays small enough that one attempt cannot eat the pipeline's own cap", () => {
     // defaultCapMs is 40 minutes; a smoke attempt may not be a quarter of it.
     expect(smokeBudgetMs).toBeLessThanOrEqual(10 * 60 * 1000);
+  });
+});
+
+/**
+ * "A hard error from the door" has to mean the door that RUNS THE TURN, and
+ * nothing else. The Vendo client talks to many sub-paths under
+ * `/api/vendo/<slug>`, and several answer non-2xx in completely healthy
+ * operation — `GET /connections` is polled every three seconds and answers 402
+ * whenever Cloud connections are not composed, which the UI is explicitly built
+ * to survive. A gate that failed on "any 4xx under the route family" would call
+ * every healthy demo broken, which is worse than the coin flip it replaced.
+ */
+describe("agentRunDoorProblem", () => {
+  const door = (over: Partial<Parameters<typeof agentRunDoorProblem>[0]> = {}) => agentRunDoorProblem({
+    slug: "acme",
+    method: "POST",
+    pathname: "/api/vendo/acme/threads",
+    status: 200,
+    ...over,
+  });
+
+  it("passes the agent-run door when it answers", () => {
+    expect(door()).toBeUndefined();
+  });
+
+  // The dead-agent shape: no model provider, or a tools file the runtime cannot
+  // parse, both throw on the first actions use — which is this request.
+  it("reports the agent-run door answering a server error", () => {
+    expect(door({ status: 500 })).toMatch(/500/);
+  });
+
+  it("reports the agent-run door refusing the run", () => {
+    expect(door({ status: 402 })).toMatch(/402/);
+    expect(door({ status: 400 })).toMatch(/400/);
+  });
+
+  // The caps guard answering is the guard WORKING. It means this demo's own turn
+  // budget is spent or it has expired — a condition about the demo's lifecycle,
+  // never evidence that its agent cannot run.
+  it("does not call the caps guard's own refusals a broken agent", () => {
+    expect(door({ status: 429 })).toBeUndefined();
+    expect(door({ status: 410 })).toBeUndefined();
+  });
+
+  it("reports a request that never completed at all", () => {
+    expect(door({ status: undefined, failure: "net::ERR_CONNECTION_REFUSED" })).toMatch(/ERR_CONNECTION_REFUSED/);
+  });
+
+  // Every one of these is a normal, designed non-2xx on a healthy demo.
+  it.each([
+    ["GET", "/api/vendo/acme/connections", 402, "polled every 3s; 402 whenever Cloud connections are not composed"],
+    ["GET", "/api/vendo/acme/connections/catalog", 402, "same Cloud-entitlement condition"],
+    ["GET", "/api/vendo/acme/connections/acct_1", 404, "normal during the OAuth poll window"],
+    ["GET", "/api/vendo/acme/approvals/ap_1", 404, "the contracted 'expired' signal"],
+    ["POST", "/api/vendo/acme/approvals/decide", 409, "a normal multi-surface decide race"],
+    ["GET", "/api/vendo/acme/apps/app_1/open", 404, "contracted until the app is servable"],
+    ["POST", "/api/vendo/acme/dev/remixable-source", 401, "dev-only probe, ephemeral principal"],
+  ])("ignores %s %s → %i (%s)", (method, pathname, status) => {
+    expect(agentRunDoorProblem({ slug: "acme", method, pathname, status })).toBeUndefined();
+  });
+
+  it("ignores another demo's door entirely", () => {
+    expect(agentRunDoorProblem({ slug: "acme", method: "POST", pathname: "/api/vendo/globex/threads", status: 500 })).toBeUndefined();
+  });
+
+  // A per-thread sub-path is not the run door: heartbeat deliberately answers
+  // 200 for unknown ids, and a thread GET is guarded by a list call.
+  it("ignores sub-paths under threads", () => {
+    expect(agentRunDoorProblem({ slug: "acme", method: "POST", pathname: "/api/vendo/acme/threads/t1/heartbeat", status: 500 })).toBeUndefined();
   });
 });
 

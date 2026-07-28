@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 import { sendPrompt, VendoTurnError, VendoTurnTimeout, waitForTurn } from "../demo-capture/capture.js";
 import { genManifestScript, hostDir } from "./demo-folder.js";
 import { createScrubber, defaultExec, delay, scrubbingTransform, type ExecFn } from "./exec.js";
-import { classifySmoke, installSmokeObserverInPage, noProgress, type SmokeOutcome } from "./smoke.js";
+import { agentRunDoorProblem, classifySmoke, installSmokeObserverInPage, noProgress, type SmokeOutcome } from "./smoke.js";
 
 /**
  * Stage 4's plumbing: drive the vendo-demos HOST (a foreign checkout, not this
@@ -294,19 +294,24 @@ export const defaultSmokeTurn: SmokeTurnFn = async (options) => {
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
-    const doorPath = `/api/vendo/${options.slug}`;
+    // Only the request that RUNS the turn counts — see agentRunDoorProblem for
+    // why "any non-2xx under /api/vendo/<slug>" would fail healthy demos.
+    const agentRunDoor = `/api/vendo/${options.slug}/threads`;
     page.on("response", (response) => {
-      if (!new URL(response.url()).pathname.startsWith(doorPath)) return;
-      progress.doorAnswered = true;
-      if (response.status() >= 400 && progress.doorError === undefined) {
-        progress.doorError = `${response.request().method()} ${new URL(response.url()).pathname} → ${response.status()}`;
-      }
+      const pathname = new URL(response.url()).pathname;
+      const method = response.request().method();
+      if (method.toUpperCase() === "POST" && pathname === agentRunDoor) progress.doorAnswered = true;
+      const problem = agentRunDoorProblem({ slug: options.slug, method, pathname, status: response.status() });
+      if (problem !== undefined && progress.doorError === undefined) progress.doorError = problem;
     });
     page.on("requestfailed", (request) => {
-      if (!new URL(request.url()).pathname.startsWith(doorPath)) return;
-      if (progress.doorError === undefined) {
-        progress.doorError = `${request.method()} ${new URL(request.url()).pathname} → ${request.failure()?.errorText ?? "request failed"}`;
-      }
+      const problem = agentRunDoorProblem({
+        slug: options.slug,
+        method: request.method(),
+        pathname: new URL(request.url()).pathname,
+        ...(request.failure() === null ? {} : { failure: request.failure()?.errorText ?? "request failed" }),
+      });
+      if (problem !== undefined && progress.doorError === undefined) progress.doorError = problem;
     });
     await page.goto(new URL(`/${options.slug}/vendo`, options.baseUrl).toString(), {
       waitUntil: "domcontentloaded",

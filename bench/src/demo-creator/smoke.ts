@@ -11,6 +11,7 @@
  * wall-clock deadline, and these are the turn latencies measured on this machine
  * against the deployed Cloud posture (see {@link observedSmokeLatenciesMs}):
  *
+ *   run 2  zelty-orders          89_122ms  settled   (this gate, on the new budget)
  *   run C  ramp-invoices        104_612ms  settled
  *   run E  ramp-licenses        129_058ms  ERRORED ("the response didn't finish")
  *   run D  ramp-reimbursements  135_675ms  settled
@@ -30,7 +31,7 @@
 
 /** Every smoke-turn latency measured on a real run, in the order observed. The
  *  budget below is derived from these, and a test holds it against them. */
-export const observedSmokeLatenciesMs = [104_612, 129_058, 135_675, 165_121, 182_835] as const;
+export const observedSmokeLatenciesMs = [89_122, 104_612, 129_058, 135_675, 165_121, 182_835] as const;
 
 /**
  * How long ONE smoke attempt may run.
@@ -73,6 +74,47 @@ export interface SmokeProgress {
 /** A turn that showed no sign of life whatsoever. */
 export function noProgress(): SmokeProgress {
   return { doorAnswered: false, turnStarted: false, toolCall: false };
+}
+
+/**
+ * Whether a single browser request says the demo's AGENT DOOR is broken — and it
+ * is deliberately only ever ONE request: `POST /api/vendo/<slug>/threads`, the
+ * call that runs the turn.
+ *
+ * Scoped this tightly because the Vendo client talks to many sub-paths under the
+ * same prefix and several answer non-2xx in perfectly healthy operation:
+ * `GET /connections` is POLLED EVERY THREE SECONDS and answers 402 whenever Cloud
+ * connections are not composed (the UI is explicitly built to survive that),
+ * `GET /connections/:id` 404s throughout the OAuth poll window,
+ * `GET /approvals/:id` 404 IS the contracted "expired" signal, and
+ * `POST /approvals/decide` 409s on a normal multi-surface race. A gate that fired
+ * on "any 4xx under /api/vendo/<slug>" would call healthy demos broken — worse
+ * than the coin flip it replaces — and it would do so only on some machines,
+ * which is the least debuggable failure there is.
+ *
+ * The caps guard's own 429 (turns/spend spent) and 410 (expired or killed) are
+ * excluded for a different reason: those mean the guard WORKED. They are facts
+ * about this demo's lifecycle, never evidence that its agent cannot run.
+ */
+export function agentRunDoorProblem(request: {
+  slug: string;
+  method: string;
+  pathname: string;
+  /** Absent when the request never completed. */
+  status?: number;
+  /** Set when the request failed at the transport level. */
+  failure?: string;
+}): string | undefined {
+  const isAgentRun = request.method.toUpperCase() === "POST"
+    && request.pathname === `/api/vendo/${request.slug}/threads`;
+  if (!isAgentRun) return undefined;
+  if (request.status === undefined) {
+    return `POST ${request.pathname} → ${request.failure ?? "request failed"}`;
+  }
+  if (request.status < 400) return undefined;
+  // The caps guard doing its job, not a broken agent.
+  if (request.status === 429 || request.status === 410) return undefined;
+  return `POST ${request.pathname} → ${request.status}`;
 }
 
 /** The two in-page signs of life, read back after the turn. */
