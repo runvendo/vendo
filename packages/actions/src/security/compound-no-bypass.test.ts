@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PermissionGrant, RunContext, ToolCall, ToolOutcome, ToolRegistry } from "@vendoai/core";
-import { VENDO_CAPABILITIES_FORMAT, VENDO_OVERRIDES_FORMAT, VENDO_TOOLS_FORMAT } from "@vendoai/core";
-import type { CapabilitiesFile, CompoundTool, ExtractedTool } from "../formats.js";
+import {
+  VENDO_OVERRIDES_FORMAT,
+  VENDO_TOOLS_FORMAT,
+  type CompoundTool,
+  type ExtractedTool,
+  type OverridesFile,
+} from "../formats.js";
 import { createActions, type ActionsRunContext } from "../runtime/registry.js";
 import { createCompoundExecutor } from "../runtime/compound.js";
 
@@ -39,7 +44,12 @@ const compound = (name: string, steps: CompoundTool["binding"]["steps"], extras:
   ...extras,
 });
 
-const capabilities = (tools: CompoundTool[]): CapabilitiesFile => ({ format: VENDO_CAPABILITIES_FORMAT, tools });
+/** Compounds are authored in `.vendo/overrides.json` — the only file that carries them. */
+const authored = (compounds: CompoundTool[], tools: OverridesFile["tools"] = {}): OverridesFile => ({
+  format: VENDO_OVERRIDES_FORMAT,
+  tools,
+  compounds,
+});
 
 const call = (tool: string, args: unknown = {}): ToolCall => ({ id: "call_atk_1", tool, args });
 
@@ -56,7 +66,7 @@ describe("no work without the guard seam", () => {
       }],
       baseUrl: "http://host.test",
       fetch: fetchSpy as unknown as typeof fetch,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [
           { id: "a", tool: "host_read" },
           { id: "b", tool: "host_write" },
@@ -83,7 +93,7 @@ describe("no work without the guard seam", () => {
       tools: [routeTool("host_read"), routeTool("host_write", { risk: "write" })],
       baseUrl: "http://host.test",
       fetch: fetchSpy as unknown as typeof fetch,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [{ id: "a", tool: "host_read" }, { id: "b", tool: "host_write" }], { risk: "write" }),
       ]),
       invokeTool,
@@ -106,7 +116,7 @@ describe("a compound cannot reach what the host disabled or never registered", (
     const seam = vi.fn(async (): Promise<ToolOutcome> => ({ status: "ok", output: null }));
     const actions = createActions({
       tools: [routeTool("host_read")],
-      capabilities: capabilities([compound("host_flow", [{ id: "a", tool: "host_read" }])]),
+      overrides: authored([compound("host_flow", [{ id: "a", tool: "host_read" }])]),
       baseUrl: "http://host.test",
       fetch: fetchSpy as unknown as typeof fetch,
       invokeTool: seam,
@@ -116,7 +126,7 @@ describe("a compound cannot reach what the host disabled or never registered", (
 
     const disabledActions = createActions({
       tools: [routeTool("host_read", { disabled: true })],
-      capabilities: capabilities([compound("host_flow", [{ id: "a", tool: "host_read" }])]),
+      overrides: authored([compound("host_flow", [{ id: "a", tool: "host_read" }])]),
       baseUrl: "http://host.test",
       fetch: fetchSpy as unknown as typeof fetch,
       invokeTool: seam,
@@ -136,7 +146,7 @@ describe("a compound cannot reach what the host disabled or never registered", (
     const actions = createActions({
       tools: [routeTool("host_destroy", { risk: "destructive" })],
       // An agent-authored file claims "read" for a destructive walk.
-      capabilities: capabilities([compound("host_flow", [{ id: "a", tool: "host_destroy" }], { risk: "read" })]),
+      overrides: authored([compound("host_flow", [{ id: "a", tool: "host_destroy" }], { risk: "read" })]),
       invokeTool: seam,
     });
     expect((await actions.descriptors()).map((descriptor) => descriptor.name)).not.toContain("host_flow");
@@ -163,13 +173,10 @@ describe("a compound cannot reach what the host disabled or never registered", (
         format: VENDO_TOOLS_FORMAT,
         tools: [routeTool("host_write", { risk: "write" })],
       }));
-      await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
-        format: VENDO_OVERRIDES_FORMAT,
-        tools: { host_write: { disabled: true } },
-      }));
-      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify(capabilities([
-        compound("host_flow", [{ id: "a", tool: "host_write" }], { risk: "write" }),
-      ])));
+      await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(authored(
+        [compound("host_flow", [{ id: "a", tool: "host_write" }], { risk: "write" })],
+        { host_write: { disabled: true } },
+      )));
       const actions = createActions({ dir: root, invokeTool: seam });
       expect(await actions.execute(call("host_flow"), present)).toMatchObject({
         status: "error",
@@ -209,7 +216,7 @@ describe("authority never leaks downward", () => {
     };
     const actions = createActions({
       tools: [routeTool("host_read"), routeTool("host_write", { risk: "write" })],
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [{ id: "a", tool: "host_read" }, { id: "b", tool: "host_write" }], { risk: "write" }),
       ]),
       invokeTool,

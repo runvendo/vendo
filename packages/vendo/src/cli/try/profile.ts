@@ -3,9 +3,7 @@ import { join } from "node:path";
 import {
   catalogFileSchema,
   overridesFileSchema,
-  overridesFileV3Schema,
   toolsFileSchema,
-  toolsFileV3Schema,
   type ToolOverride,
 } from "@vendoai/actions";
 import { riskLabelSchema, vendoThemeSchema } from "@vendoai/core";
@@ -148,17 +146,11 @@ function parseArtifact<Schema extends z.ZodTypeAny>(
   }
 }
 
-/** Format-version tolerant readers (post-#568): a profile written by today's
- *  sync is v3, a legacy repo's carried-over pair may still be v1 — the try
- *  surface reads both, fail-soft like every other artifact. */
-const anyToolsFileSchema = z.union([toolsFileV3Schema, toolsFileSchema]);
-const anyOverridesFileSchema = z.union([overridesFileV3Schema, overridesFileSchema]);
-
 /** House override semantics (doctor's live-surface check, the server's tool
  *  wire): overrides.json entries are corrections over tools.json by name. */
 function mergedToolSummaries(
-  tools: z.infer<typeof anyToolsFileSchema> | null,
-  overrides: z.infer<typeof anyOverridesFileSchema> | null,
+  tools: z.infer<typeof toolsFileSchema> | null,
+  overrides: z.infer<typeof overridesFileSchema> | null,
 ): TryToolSummary[] {
   const corrections: Record<string, ToolOverride> = overrides?.tools ?? {};
   return (tools?.tools ?? []).map((tool) => {
@@ -193,8 +185,8 @@ export async function assembleTryProfile(
 
   const theme = parseArtifact(themeRaw, vendoThemeSchema);
   const brief = briefRaw === null || briefRaw.trim() === "" ? null : briefRaw.trim();
-  const toolsFile = parseArtifact(toolsRaw, anyToolsFileSchema);
-  const list = mergedToolSummaries(toolsFile, parseArtifact(overridesRaw, anyOverridesFileSchema));
+  const toolsFile = parseArtifact(toolsRaw, toolsFileSchema);
+  const list = mergedToolSummaries(toolsFile, parseArtifact(overridesRaw, overridesFileSchema));
   const catalog = (parseArtifact(catalogRaw, catalogFileSchema)?.entries ?? []).map((entry) => entry.name);
   const usecasesFile = parseArtifact(usecasesRaw, usecasesFileSchema);
   // Whole parsed entries: usecaseSchema is passthrough, so additive fields a

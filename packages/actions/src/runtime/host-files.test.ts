@@ -28,9 +28,9 @@ describe("host config files, node entry", () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-host-files-"));
     const { mkdir } = await import("node:fs/promises");
     await mkdir(join(root, ".vendo"));
-    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: [] }));
     const parsed = await readOptionalVendoJson(root, "tools.json", (value) => value as { tools: unknown[] });
-    expect(parsed).toEqual({ format: "vendo/tools@1", tools: [] });
+    expect(parsed).toEqual({ format: "vendo/tools@3", tools: [] });
   });
 
   it("returns undefined for a missing file", async () => {

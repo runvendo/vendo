@@ -14,31 +14,23 @@ import {
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
 import {
-  VENDO_OVERRIDES_FORMAT_V3,
-  VENDO_TOOLS_FORMAT_V3,
-  capabilitiesFileSchema,
+  VENDO_OVERRIDES_FORMAT,
   extractedToolSchema,
   overridesFileSchema,
-  overridesFileV3Schema,
   toolsFileSchema,
-  toolsFileV3Schema,
-  vendoFileVersion,
-  type CapabilitiesFile,
   type CapabilityBrief,
   type CompoundTool,
   type ExtractedTool,
-  type ExtractedToolV3,
   type GraphqlBinding,
   type HttpMethod,
   type OpenApiBinding,
-  type OverridesFileV3,
+  type OverridesFile,
   type RouteBinding,
   type ServerActionBinding,
   type ToolBinding,
   type ToolOverride,
   type TrpcBinding,
 } from "../formats.js";
-import { migrateLegacyVendoDir, type LegacyVendoFiles } from "../migrate.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
 import { searchToolDescriptors, tokenize, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
@@ -46,7 +38,7 @@ import { defaultFetch } from "@vendoai/core";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
-  /** Capability briefs carried by `.vendo/overrides.json` (04 §1; legacy capabilities.json migrates in). Validated and exposed; consumed by later milestones. */
+  /** Capability briefs carried by `.vendo/overrides.json` (04 §1). Validated and exposed; consumed by later milestones. */
   briefs(): Promise<CapabilityBrief[]>;
   /**
    * Runtime tool search (ENG-252): rank the merged, enabled tool surface against
@@ -143,9 +135,7 @@ interface RegistryConfig {
    */
   untrustedOriginPolicy?: "warn" | "fail";
   fetch?: typeof fetch;
-  /** Inject `.vendo/capabilities.json` directly (tests, non-file hosts); takes precedence over `dir` (04 §1/§6). */
-  capabilities?: CapabilitiesFile;
-  /** Inject the v3 overrides doc directly instead of reading
+  /** Inject the authored overrides doc directly instead of reading
    *  `.vendo/overrides.json` from `dir`. Two callers share this seam: the
    *  unified try surface (Task 15a) passes an in-memory doc for non-file
    *  hosts, and the hosted-config seam (cse lane 3) lets the umbrella pass
@@ -158,7 +148,7 @@ interface RegistryConfig {
    *  undefined falls back to the `dir` file read. `tools.json` always comes
    *  from `dir`. The resolved doc is validated at load with the authored-file
    *  posture: a malformed doc throws `validation` loudly. */
-  overrides?: OverridesFileV3 | (() => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>);
+  overrides?: OverridesFile | (() => OverridesFile | undefined | Promise<OverridesFile | undefined>);
   /**
    * 04 §6: the guard-bound execution seam every compound step routes through.
    * The umbrella assigns it AFTER `guard.bind(actions)` — read at execution
@@ -180,7 +170,7 @@ interface LoadedRegistry {
   /** Post-override audience per registered tool name — provenance the
    *  descriptor surface deliberately drops, kept here because the door's
    *  default menu is defined in terms of it. Absent name = ungraded. */
-  audience: Map<string, ExtractedToolV3["audience"]>;
+  audience: Map<string, ExtractedTool["audience"]>;
   /** Every name any source claimed — including disabled/quarantined entries
    * that never reach dispatch. Incremental expansion checks it so a
    * mid-run toolkit append can never shadow a reserved name. */
@@ -196,14 +186,6 @@ const STRIPPED_HEADERS = new Set([
   "upgrade",
 ]);
 
-/** Name-keyed union: primary entries win; secondary contributes only the
- *  names primary lacks (registry load of compounds/briefs across the pair
- *  plus a stranded capabilities.json). */
-function unionByName<T extends { name: string }>(primary: readonly T[], secondary: readonly T[]): T[] {
-  const names = new Set(primary.map((entry) => entry.name));
-  return [...primary, ...secondary.filter((entry) => !names.has(entry.name))];
-}
-
 function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
   return {
     name: tool.name,
@@ -215,10 +197,10 @@ function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
   };
 }
 
-function mergeOverride<T extends ToolDescriptor & Pick<ExtractedToolV3, "audience" | "semantics">>(
+function mergeOverride<T extends ToolDescriptor & Pick<ExtractedTool, "audience" | "semantics">>(
   descriptor: T,
   override?: ToolOverride,
-): T & { disabled?: boolean } & Pick<ExtractedToolV3, "audience" | "semantics"> {
+): T & { disabled?: boolean } & Pick<ExtractedTool, "audience" | "semantics"> {
   if (!override) return descriptor;
   return {
     ...descriptor,
@@ -730,11 +712,10 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
   return actAsMinted ? withActAs(outcome, "minted") : outcome;
 }
 
-/** The v3-normalized host view (cse lane 1): legacy v1 dirs migrate into this
- *  shape in-memory at load, so everything downstream speaks one format. */
+/** The loaded host view of `.vendo/`: the machine layer plus the authored one. */
 interface LoadedHost {
-  tools: ExtractedToolV3[];
-  overrides: OverridesFileV3;
+  tools: ExtractedTool[];
+  overrides: OverridesFile;
   compounds: CompoundTool[];
   briefs: CapabilityBrief[];
 }
@@ -746,19 +727,9 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   const descriptorPromises = new Map<Connector | ToolRegistry, Promise<ToolDescriptor[]>>();
   let loadedPromise: Promise<LoadedRegistry> | undefined;
 
-  function parseCapabilities(value: unknown, source: string): CapabilitiesFile {
+  function parseOverrides(value: unknown, source: string): OverridesFile {
     try {
-      return capabilitiesFileSchema.parse(value);
-    } catch (cause) {
-      throw new VendoError("validation", `Invalid Vendo actions file ${source}`, {
-        cause: cause instanceof Error ? cause.message : String(cause),
-      });
-    }
-  }
-
-  function parseOverrides(value: unknown, source: string): OverridesFileV3 {
-    try {
-      return overridesFileV3Schema.parse(value);
+      return overridesFileSchema.parse(value);
     } catch (cause) {
       throw new VendoError("validation", `Invalid Vendo actions file ${source}`, {
         cause: cause instanceof Error ? cause.message : String(cause),
@@ -788,11 +759,8 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
 
   function loadHost(): Promise<LoadedHost> {
     if (!hostPromise) hostPromise = (async () => {
-      const emptyOverrides: OverridesFileV3 = { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} };
+      const emptyOverrides: OverridesFile = { format: VENDO_OVERRIDES_FORMAT, tools: {} };
       const configuredTools = config.tools?.map((tool, index) => parseExtractedTool(tool, `config.tools[${index}]`));
-      const configuredCapabilities = config.capabilities === undefined
-        ? undefined
-        : parseCapabilities(config.capabilities, "config.capabilities");
       // cse lane 3 — an injected overrides doc (hosted config or the try
       // surface's in-memory profile) resolved ONCE through this memoized
       // loadHost. The provider form may be async so the umbrella can await a
@@ -802,7 +770,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // doc parses loudly (Task 15a posture: a malformed injected doc must
       // never be silently ignored).
       const resolvedOverrides = typeof config.overrides === "function"
-        ? await (config.overrides as () => OverridesFileV3 | undefined | Promise<OverridesFileV3 | undefined>)()
+        ? await (config.overrides as () => OverridesFile | undefined | Promise<OverridesFile | undefined>)()
         : config.overrides;
       const injectedOverrides = resolvedOverrides === undefined
         ? undefined
@@ -810,15 +778,13 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       if (!config.dir) {
         return {
           tools: configuredTools ?? [],
-          // An injected v3 overrides doc still applies without a .vendo dir
+          // An injected overrides doc still applies without a .vendo dir
           // (non-file / cloud-only hosts).
           overrides: injectedOverrides ?? emptyOverrides,
-          compounds: configuredCapabilities?.tools ?? injectedOverrides?.compounds ?? [],
-          briefs: configuredCapabilities?.briefs ?? injectedOverrides?.briefs ?? [],
+          compounds: injectedOverrides?.compounds ?? [],
+          briefs: injectedOverrides?.briefs ?? [],
         };
       }
-      // Format v3 (cse lane 1): each file parses per its own format tag — v1
-      // keeps its exact v1 errors, everything else must be v3 and fails loud.
       // An injected overrides doc (cse lane 3 hosted config, or the unified
       // try surface's in-memory profile.overrides) wins over the
       // overrides.json read — AND config.tools (profile.tools) skips the
@@ -830,73 +796,17 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const [toolsFile, overridesFileRead] = await Promise.all([
         configuredTools !== undefined
           ? Promise.resolve(undefined)
-          : readOptionalVendoJson(config.dir, "tools.json", (value) =>
-            vendoFileVersion(value) === 1 ? toolsFileSchema.parse(value) : toolsFileV3Schema.parse(value)),
+          : readOptionalVendoJson(config.dir, "tools.json", (value) => toolsFileSchema.parse(value)),
         injectedOverrides !== undefined
           ? Promise.resolve(undefined)
-          : readOptionalVendoJson(config.dir, "overrides.json", (value) =>
-            vendoFileVersion(value) === 1 ? overridesFileSchema.parse(value) : overridesFileV3Schema.parse(value)),
+          : readOptionalVendoJson(config.dir, "overrides.json", (value) => overridesFileSchema.parse(value)),
       ]);
-      const overridesFile = injectedOverrides ?? overridesFileRead;
-      const toolsV3 = toolsFile !== undefined && toolsFile.format === VENDO_TOOLS_FORMAT_V3 ? toolsFile : undefined;
-      const overridesV3 = overridesFile !== undefined && overridesFile.format === VENDO_OVERRIDES_FORMAT_V3 ? overridesFile : undefined;
-      const toolsV1 = toolsFile !== undefined && toolsFile.format !== VENDO_TOOLS_FORMAT_V3 ? toolsFile : undefined;
-      const overridesV1 = overridesFile !== undefined && overridesFile.format !== VENDO_OVERRIDES_FORMAT_V3 ? overridesFile : undefined;
-      // The retired capabilities.json is read whenever it EXISTS on disk —
-      // including beside a fully-v3 pair (an interrupted or hand-rolled
-      // migration leaves it stranded there). Its compounds/briefs always
-      // ingest through the legacy fold rather than silently dropping authored
-      // work; overrides.json-carried entries win by name (the sync path's
-      // conflicted-state posture), the file's unique entries are added.
-      // config.capabilities (profile.capabilities) wins outright over the
-      // whole file below, so — same as tools.json above — the disk leg is
-      // skipped entirely rather than read-then-discarded.
-      const fullyV3 = toolsV3 !== undefined && overridesV3 !== undefined;
-      const capabilitiesFile = configuredCapabilities !== undefined
-        ? undefined
-        : await readOptionalVendoJson(config.dir, "capabilities.json", (value) => capabilitiesFileSchema.parse(value));
-      const legacy: LegacyVendoFiles = {
-        ...(toolsV1 === undefined ? {} : { tools: toolsV1 }),
-        ...(overridesV1 === undefined ? {} : { overrides: overridesV1 }),
-        ...(capabilitiesFile === undefined ? {} : { capabilities: capabilitiesFile }),
-      };
-      const mixed = (toolsV3 === undefined) !== (overridesV3 === undefined)
-        && toolsFile !== undefined && overridesFile !== undefined;
-      if (mixed) {
-        console.warn(
-          "[vendo] .vendo is half-migrated: exactly one of tools.json/overrides.json is in the v3 format "
-          + `(tools.json is ${toolsFile.format}, overrides.json is ${overridesFile.format}). Legacy content — `
-          + "including any capabilities.json compounds/briefs — is still ingested in-memory this run, but this "
-          + "state usually means a sync or migration was interrupted. Run `vendo sync` to rewrite .vendo/ as the "
-          + "v3 pair.",
-        );
-      } else if (fullyV3 && capabilitiesFile !== undefined) {
-        console.warn(
-          "[vendo] .vendo is half-migrated: the retired capabilities.json is still on disk next to the v3 pair. "
-          + "Its compounds/briefs were ingested in-memory this run — overrides.json entries win by name, the "
-          + "file's unique entries were added. Run `vendo sync` to fold and retire it (a conflicted file is left "
-          + "for review).",
-        );
-      } else if (Object.keys(legacy).length > 0) {
-        console.warn(
-          "[vendo] .vendo uses the legacy v1 file layout (tools@1 / overrides@1 / capabilities.json) — migrated "
-          + "in-memory this run. Run `vendo sync` to rewrite .vendo/ in the v3 two-file format.",
-        );
-      }
-      const migrated = migrateLegacyVendoDir(legacy);
-      const tools = toolsV3 ?? migrated.tools;
-      const overrides = overridesV3 ?? migrated.overrides;
+      const overrides = injectedOverrides ?? overridesFileRead ?? emptyOverrides;
       return {
-        tools: configuredTools ?? tools.tools,
+        tools: configuredTools ?? toolsFile?.tools ?? [],
         overrides,
-        // The name-keyed union keeps a stranded capabilities.json's entries
-        // alive in every layout: overrides.json compounds/briefs win by name,
-        // the fold contributes only names overrides.json lacks. (On the pure
-        // legacy path the fold IS the overrides, so the union is identity.)
-        compounds: configuredCapabilities?.tools
-          ?? unionByName(overrides.compounds ?? [], migrated.overrides.compounds ?? []),
-        briefs: configuredCapabilities?.briefs
-          ?? unionByName(overrides.briefs ?? [], migrated.overrides.briefs ?? []),
+        compounds: overrides.compounds ?? [],
+        briefs: overrides.briefs ?? [],
       };
     })();
     return hostPromise.then(warnZeroLiveTools);
@@ -938,7 +848,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const registryLists = await Promise.all(added.map((registry) => cachedDescriptors(registry)));
       const reserved = new Map<string, Dispatch | undefined>();
       const descriptors: ToolDescriptor[] = [];
-      const audience = new Map<string, ExtractedToolV3["audience"]>();
+      const audience = new Map<string, ExtractedTool["audience"]>();
       // The primitive table compound steps validate against: post-override host +
       // connector tools ONLY — never compounds, never `add()`-registry tools.
       const primitives = new Map<string, PrimitiveStepTarget>();

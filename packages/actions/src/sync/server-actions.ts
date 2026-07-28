@@ -25,7 +25,7 @@ import {
 
 /**
  * Static Next.js server-action extraction (04 §1, additive within
- * vendo/tools@1). `"use server"` modules and functions are parsed with the
+ * vendo/tools@3). `"use server"` modules and functions are parsed with the
  * TypeScript compiler API — no host code runs. Input schemas come from
  * validators where statically interpretable (zod via `z.infer<typeof X>`
  * annotations, primitive/object-literal type annotations); everything else

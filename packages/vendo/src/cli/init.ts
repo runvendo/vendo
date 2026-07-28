@@ -1167,8 +1167,6 @@ export async function runInit(options: InitOptions): Promise<number> {
     wiringMs += Date.now() - scanStarted;
     pretty?.stopSpin();
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
-    // Re-init on a legacy .vendo dir: the sync engine's one-time v3 rewrite.
-    if (report.migrated !== undefined) output.log(report.migrated);
 
     let toolCount = 0;
     let routeCount = 0;

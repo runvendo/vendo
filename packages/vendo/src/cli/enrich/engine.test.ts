@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ExtractedToolV3, ToolsFileV3 } from "@vendoai/actions";
+import type { ExtractedTool, ToolsFile } from "@vendoai/actions";
 import type { ExtractionHarness } from "../extract/harness.js";
 import { resolveEnrichmentEngine, runEnrichment, type EnrichmentRunInput } from "./engine.js";
 
-const tool = (name: string, overrides: Partial<ExtractedToolV3> = {}): ExtractedToolV3 => ({
+const tool = (name: string, overrides: Partial<ExtractedTool> = {}): ExtractedTool => ({
   name,
   description: `Use this to call ${name}.`,
   inputSchema: { type: "object", properties: {} },
@@ -13,7 +13,7 @@ const tool = (name: string, overrides: Partial<ExtractedToolV3> = {}): Extracted
   ...overrides,
 });
 
-const file = (tools: ExtractedToolV3[]): ToolsFileV3 => ({ format: "vendo/tools@3", tools });
+const file = (tools: ExtractedTool[]): ToolsFile => ({ format: "vendo/tools@3", tools });
 
 function scriptedHarness(responses: string[] | ((instructions: string) => string)): { harness: ExtractionHarness; calls: string[] } {
   const calls: string[] = [];

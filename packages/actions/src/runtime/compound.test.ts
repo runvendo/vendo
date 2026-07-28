@@ -3,9 +3,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  VENDO_CAPABILITIES_FORMAT,
-  VENDO_OVERRIDES_FORMAT,
-  VENDO_TOOLS_FORMAT,
   type Json,
   type PermissionGrant,
   type RunContext,
@@ -14,7 +11,13 @@ import {
   type ToolOutcome,
   type ToolRegistry,
 } from "@vendoai/core";
-import type { CapabilitiesFile, CompoundTool, ExtractedTool } from "../formats.js";
+import {
+  VENDO_OVERRIDES_FORMAT,
+  VENDO_TOOLS_FORMAT,
+  type CompoundTool,
+  type ExtractedTool,
+  type OverridesFile,
+} from "../formats.js";
 import { createCompoundExecutor, validateCapabilities } from "./compound.js";
 import { createActions, type ActionsRunContext } from "./registry.js";
 
@@ -54,9 +57,11 @@ function compound(name: string, steps: Step[], extras: Partial<CompoundTool> = {
   };
 }
 
-const capabilities = (tools: CompoundTool[], extras: Partial<CapabilitiesFile> = {}): CapabilitiesFile => ({
-  format: VENDO_CAPABILITIES_FORMAT,
-  tools,
+/** Compounds are authored in `.vendo/overrides.json` — the only file that carries them. */
+const authored = (compounds: CompoundTool[], extras: Partial<OverridesFile> = {}): OverridesFile => ({
+  format: VENDO_OVERRIDES_FORMAT,
+  tools: {},
+  compounds,
   ...extras,
 });
 
@@ -87,11 +92,11 @@ function invokeStub(respond: (call: ToolCall) => ToolOutcome = () => ({ status: 
 
 const call = (tool: string, args: Json = {}, id = "call_compound_1"): ToolCall => ({ id, tool, args });
 
-describe("capabilities loading and merge", () => {
-  it("registers compounds from injected capabilities alongside host tools", async () => {
+describe("compound loading and merge", () => {
+  it("registers compounds from an injected overrides doc alongside host tools", async () => {
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [{ id: "a", tool: "host_read" }, { id: "b", tool: "host_write" }], { risk: "write" }),
       ]),
     });
@@ -105,12 +110,12 @@ describe("capabilities loading and merge", () => {
     });
   });
 
-  it("reads .vendo/capabilities.json from dir", async () => {
+  it("reads compounds and briefs from .vendo/overrides.json in dir", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-cap-"));
     roots.push(root);
     await mkdir(join(root, ".vendo"));
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: VENDO_TOOLS_FORMAT, tools: hostTools }));
-    await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify(capabilities(
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(authored(
       [compound("host_flow", [{ id: "a", tool: "host_read" }])],
       { briefs: [{ name: "bulk", text: "loop host_read", tools: ["host_read"] }] },
     )));
@@ -119,28 +124,28 @@ describe("capabilities loading and merge", () => {
     expect(await actions.briefs()).toEqual([{ name: "bulk", text: "loop host_read", tools: ["host_read"] }]);
   });
 
-  it("throws loudly on malformed capabilities JSON, naming the file", async () => {
+  it("throws loudly on malformed overrides JSON, naming the file", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-cap-bad-"));
     roots.push(root);
     await mkdir(join(root, ".vendo"));
-    await writeFile(join(root, ".vendo", "capabilities.json"), "{ not json");
+    await writeFile(join(root, ".vendo", "overrides.json"), "{ not json");
     const actions = createActions({ dir: root });
-    await expect(actions.descriptors()).rejects.toThrow(/Malformed JSON in .*capabilities\.json/);
+    await expect(actions.descriptors()).rejects.toThrow(/Malformed JSON in .*overrides\.json/);
   });
 
   it("throws loudly on a wrong format tag", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-cap-fmt-"));
     roots.push(root);
     await mkdir(join(root, ".vendo"));
-    await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({ format: "vendo/capabilities@2", tools: [] }));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({ format: "vendo/overrides@2", tools: {} }));
     const actions = createActions({ dir: root });
-    await expect(actions.descriptors()).rejects.toThrow(/capabilities\.json/);
+    await expect(actions.descriptors()).rejects.toThrow(/overrides\.json/);
   });
 
   it("a compound name colliding with a tools.json tool is a conflict", async () => {
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([compound("host_read", [{ id: "a", tool: "host_write" }], { risk: "write" })]),
+      overrides: authored([compound("host_read", [{ id: "a", tool: "host_write" }], { risk: "write" })]),
     });
     await expect(actions.descriptors()).rejects.toThrow(/Duplicate tool name host_read/);
   });
@@ -153,7 +158,7 @@ describe("capabilities loading and merge", () => {
         descriptors: async () => [{ name: "ext_send", description: "x", inputSchema: {}, risk: "write" }],
         execute: async () => ({ status: "ok", output: null }),
       }],
-      capabilities: capabilities([compound("ext_send", [{ id: "a", tool: "ext_send" }], { risk: "write" })]),
+      overrides: authored([compound("ext_send", [{ id: "a", tool: "ext_send" }], { risk: "write" })]),
     });
     await expect(actions.descriptors()).rejects.toThrow(/Duplicate tool name ext_send/);
   });
@@ -163,13 +168,10 @@ describe("capabilities loading and merge", () => {
     roots.push(root);
     await mkdir(join(root, ".vendo"));
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: VENDO_TOOLS_FORMAT, tools: hostTools }));
-    await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify(capabilities([
-      compound("host_flow", [{ id: "a", tool: "host_read" }]),
-    ])));
-    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
-      format: VENDO_OVERRIDES_FORMAT,
-      tools: { host_flow: { description: "reviewed copy", critical: true } },
-    }));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(authored(
+      [compound("host_flow", [{ id: "a", tool: "host_read" }])],
+      { tools: { host_flow: { description: "reviewed copy", critical: true } } },
+    )));
     const actions = createActions({ dir: root });
     const flow = (await actions.descriptors()).find((descriptor) => descriptor.name === "host_flow");
     expect(flow).toMatchObject({ description: "reviewed copy", critical: true });
@@ -188,7 +190,7 @@ describe("semantic validation quarantines, never bricks", () => {
     const { invokeTool } = invokeStub();
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([compound("host_flow", [{ id: "a", tool: "host_missing" }])]),
+      overrides: authored([compound("host_flow", [{ id: "a", tool: "host_missing" }])]),
       invokeTool,
     });
     await expectQuarantined(actions, "host_flow");
@@ -199,7 +201,7 @@ describe("semantic validation quarantines, never bricks", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [{ id: "a", tool: "host_other" }]),
         compound("host_other", [{ id: "a", tool: "host_other" }]),
       ]),
@@ -212,7 +214,7 @@ describe("semantic validation quarantines, never bricks", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([compound("host_flow", [{ id: "a", tool: "fn:submit" }])]),
+      overrides: authored([compound("host_flow", [{ id: "a", tool: "fn:submit" }])]),
     });
     await expectQuarantined(actions, "host_flow");
   });
@@ -221,7 +223,7 @@ describe("semantic validation quarantines, never bricks", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([compound("host_flow", [{ id: "a", tool: "vendo_apps_call" }])]),
+      overrides: authored([compound("host_flow", [{ id: "a", tool: "vendo_apps_call" }])]),
     });
     actions.add({
       descriptors: async () => [{ name: "vendo_apps_call", description: "x", inputSchema: {}, risk: "read" }],
@@ -236,13 +238,10 @@ describe("semantic validation quarantines, never bricks", () => {
     roots.push(root);
     await mkdir(join(root, ".vendo"));
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: VENDO_TOOLS_FORMAT, tools: hostTools }));
-    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
-      format: VENDO_OVERRIDES_FORMAT,
-      tools: { host_read: { disabled: true } },
-    }));
-    await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify(capabilities([
-      compound("host_flow", [{ id: "a", tool: "host_read" }]),
-    ])));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(authored(
+      [compound("host_flow", [{ id: "a", tool: "host_read" }])],
+      { tools: { host_read: { disabled: true } } },
+    )));
     const actions = createActions({ dir: root });
     await expectQuarantined(actions, "host_flow");
   });
@@ -251,7 +250,7 @@ describe("semantic validation quarantines, never bricks", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [{ id: "a", tool: "host_read" }, { id: "b", tool: "host_destroy" }], { risk: "write" }),
       ]),
     });
@@ -262,7 +261,7 @@ describe("semantic validation quarantines, never bricks", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [{ id: "a", tool: "host_read" }], { risk: "destructive" }),
       ]),
     });
@@ -276,13 +275,10 @@ describe("semantic validation quarantines, never bricks", () => {
     await mkdir(join(root, ".vendo"));
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: VENDO_TOOLS_FORMAT, tools: hostTools }));
     // The step tool is upgraded to destructive; the compound still declares write.
-    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
-      format: VENDO_OVERRIDES_FORMAT,
-      tools: { host_write: { risk: "destructive" } },
-    }));
-    await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify(capabilities([
-      compound("host_flow", [{ id: "a", tool: "host_write" }], { risk: "write" }),
-    ])));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(authored(
+      [compound("host_flow", [{ id: "a", tool: "host_write" }], { risk: "write" })],
+      { tools: { host_write: { risk: "destructive" } } },
+    )));
     const actions = createActions({ dir: root });
     await expectQuarantined(actions, "host_flow");
   });
@@ -290,7 +286,7 @@ describe("semantic validation quarantines, never bricks", () => {
   it("a disabled compound reserves its name for collision detection but never executes", async () => {
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [{ id: "a", tool: "host_read" }], { disabled: true }),
       ]),
     });
@@ -300,7 +296,7 @@ describe("semantic validation quarantines, never bricks", () => {
     // Name still reserved: a second tool with the same name collides.
     const colliding = createActions({
       tools: [...hostTools, routeTool("host_flow")],
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [{ id: "a", tool: "host_read" }], { disabled: true }),
       ]),
     });
@@ -336,7 +332,7 @@ describe("compound execution through the invokeTool seam", () => {
   it("walks steps IN ORDER through invokeTool with mapped args and returns the step outputs", async () => {
     const { records, invokeTool } = invokeStub((stepCall) =>
       stepCall.tool === "host_write" ? { status: "ok", output: { id: "inv_9" } } : { status: "ok", output: "sent" });
-    const actions = createActions({ tools: hostTools, capabilities: capabilities([flow]), invokeTool });
+    const actions = createActions({ tools: hostTools, overrides: authored([flow]), invokeTool });
     const outcome = await actions.execute(call("host_flow", { amount: 5, email: "a@x" }), ctx);
     expect(outcome).toEqual({ status: "ok", output: { steps: { create: { id: "inv_9" }, send: "sent" } } });
     expect(records.map((record) => record.call.tool)).toEqual(["host_write", "host_read"]);
@@ -350,7 +346,7 @@ describe("compound execution through the invokeTool seam", () => {
       tools: hostTools,
       baseUrl: "https://host.test",
       fetch: fetchStub as unknown as typeof fetch,
-      capabilities: capabilities([flow]),
+      overrides: authored([flow]),
     });
     const outcome = await actions.execute(call("host_flow", { amount: 5 }), ctx);
     expect(outcome).toMatchObject({ status: "error", error: { code: "not-implemented" } });
@@ -359,7 +355,7 @@ describe("compound execution through the invokeTool seam", () => {
 
   it("rejects non-object args", async () => {
     const { records, invokeTool } = invokeStub();
-    const actions = createActions({ tools: hostTools, capabilities: capabilities([flow]), invokeTool });
+    const actions = createActions({ tools: hostTools, overrides: authored([flow]), invokeTool });
     const outcome = await actions.execute(call("host_flow", [1, 2]), ctx);
     expect(outcome).toMatchObject({ status: "error", error: { code: "validation" } });
     expect(records).toHaveLength(0);
@@ -371,7 +367,7 @@ describe("compound execution through the invokeTool seam", () => {
       if (stepCall.tool === "host_write" && !approve) return { status: "pending-approval", approvalId: "apr_1" };
       return { status: "ok", output: stepCall.tool };
     });
-    const actions = createActions({ tools: hostTools, capabilities: capabilities([flow]), invokeTool });
+    const actions = createActions({ tools: hostTools, overrides: authored([flow]), invokeTool });
 
     const parked = await actions.execute(call("host_flow", { amount: 5, email: "a@x" }), ctx);
     expect(parked).toEqual({ status: "pending-approval", approvalId: "apr_1" });
@@ -390,7 +386,7 @@ describe("compound execution through the invokeTool seam", () => {
   it("resume state is isolated by subject, session, and args", async () => {
     const { records, invokeTool } = invokeStub((stepCall) =>
       stepCall.tool === "host_write" ? { status: "pending-approval", approvalId: "apr_1" } : { status: "ok", output: null });
-    const actions = createActions({ tools: hostTools, capabilities: capabilities([flow]), invokeTool });
+    const actions = createActions({ tools: hostTools, overrides: authored([flow]), invokeTool });
     const args = { amount: 5 };
     await actions.execute(call("host_flow", args), ctx);
     expect(records.map((record) => record.call.tool)).toEqual(["host_write"]);
@@ -421,7 +417,7 @@ describe("compound execution through the invokeTool seam", () => {
       stepCall.tool === "host_write" ? { status: "pending-approval", approvalId: "apr_1" } : { status: "ok", output: null });
     const actions = createActions({
       tools: hostTools,
-      capabilities: capabilities([flow, other]),
+      overrides: authored([flow, other]),
       invokeTool,
     });
 
@@ -451,7 +447,7 @@ describe("compound execution through the invokeTool seam", () => {
       if (mode === "error") return { status: "error", error: { code: "http-error", message: "500" } };
       return { status: "ok", output: null };
     });
-    const actions = createActions({ tools: hostTools, capabilities: capabilities([flow]), invokeTool });
+    const actions = createActions({ tools: hostTools, overrides: authored([flow]), invokeTool });
     await actions.execute(call("host_flow", { amount: 5 }), ctx);
     mode = "error";
     await actions.execute(call("host_flow", { amount: 5 }), ctx);
@@ -468,7 +464,7 @@ describe("compound execution through the invokeTool seam", () => {
     const { records, invokeTool } = invokeStub(() => park
       ? { status: "pending-approval", approvalId: "apr_1" }
       : { status: "ok", output: null });
-    const actions = createActions({ tools: hostTools, capabilities: capabilities([flow]), invokeTool });
+    const actions = createActions({ tools: hostTools, overrides: authored([flow]), invokeTool });
     await actions.execute(call("host_flow", { amount: 5 }), ctx);
     park = false;
     vi.setSystemTime(new Date("2026-07-15T13:01:00Z"));
@@ -480,7 +476,7 @@ describe("compound execution through the invokeTool seam", () => {
   it("bounds resume state at 1000 entries with oldest eviction", async () => {
     const { records, invokeTool } = invokeStub((stepCall) =>
       stepCall.tool === "host_write" ? { status: "pending-approval", approvalId: "apr_1" } : { status: "ok", output: null });
-    const actions = createActions({ tools: hostTools, capabilities: capabilities([flow]), invokeTool });
+    const actions = createActions({ tools: hostTools, overrides: authored([flow]), invokeTool });
     await actions.execute(call("host_flow", { amount: 5 }, "call_first"), ctx);
     const firstParked = records[0]!.call.id;
     for (let index = 0; index < 1000; index += 1) {
@@ -494,7 +490,7 @@ describe("compound execution through the invokeTool seam", () => {
 
   it("strips grant from the step ctx and passes everything else through", async () => {
     const { records, invokeTool } = invokeStub();
-    const actions = createActions({ tools: hostTools, capabilities: capabilities([flow]), invokeTool });
+    const actions = createActions({ tools: hostTools, overrides: authored([flow]), invokeTool });
     const grant = { id: "grt_1", subject: "user_1", tool: "host_flow" } as unknown as PermissionGrant;
     const richCtx: ActionsRunContext = {
       ...ctx,

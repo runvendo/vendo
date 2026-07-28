@@ -5,7 +5,7 @@ import {
   vendoThemeSchema,
   type VendoTheme,
 } from "@vendoai/core";
-import { toolsFileSchema, toolsFileV3Schema, vendoFileVersion, type ExtractedTool } from "@vendoai/actions";
+import { toolsFileSchema, type ExtractedTool } from "@vendoai/actions";
 import {
   THEME_RUBRIC_DIMENSIONS,
   expectedToolIdentity,
@@ -295,10 +295,7 @@ async function readActualTheme(repoDir: string): Promise<VendoTheme> {
 
 async function readActualTools(repoDir: string): Promise<ExtractedTool[]> {
   const value = await readJsonFile(path.join(repoDir, ".vendo/tools.json"));
-  // init writes vendo/tools@3; a legacy (pre-migration) repo still parses.
-  const parsed = vendoFileVersion(value) === 1
-    ? toolsFileSchema.safeParse(value)
-    : toolsFileV3Schema.safeParse(value);
+  const parsed = toolsFileSchema.safeParse(value);
   if (!parsed.success) throw new Error(`.vendo/tools.json schema error: ${parsed.error.issues[0]?.message ?? "invalid tools"}`);
   return parsed.data.tools;
 }

@@ -63,7 +63,7 @@ describe("sync public helpers", () => {
     }];
     const before = descriptorHash(tools[0]!);
     const merged = mergeOverrides(tools, {
-      format: "vendo/overrides@1",
+      format: "vendo/overrides@3",
       tools: {
         host_items_list: { risk: "destructive", disabled: true, description: "new" },
         host_typo_target: { critical: true },
@@ -94,7 +94,7 @@ describe("sync public helpers", () => {
 describe("validation and route classification", () => {
   it.each([
     ["invalid JSON", "{"],
-    ["unknown override field", JSON.stringify({ format: "vendo/overrides@1", tools: { host_x: { rik: "read" } } })],
+    ["unknown override field", JSON.stringify({ format: "vendo/overrides@3", tools: { host_x: { rik: "read" } } })],
   ])("rejects malformed overrides: %s", async (_label, content) => {
     const { root, out } = await temporaryHost();
     await writeFile(out, "overrides.json", content);
@@ -171,7 +171,7 @@ describe("validation and route classification", () => {
     const { root, out } = await temporaryHost();
     await writeSpec(root, { "/api/items": { get: operation("listItems") } });
     await writeFile(out, "overrides.json", JSON.stringify({
-      format: "vendo/overrides@1",
+      format: "vendo/overrides@3",
       tools: { host_missing: { disabled: true }, connector_missing: { risk: "read" } },
     }));
 
@@ -205,7 +205,7 @@ describe("validation and route classification", () => {
       `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
     );
     await writeFile(ignoredHost.out, "overrides.json", JSON.stringify({
-      format: "vendo/overrides@1",
+      format: "vendo/overrides@3",
       tools: {},
       remix: { ignoreSlots: ["InlineCard"] },
     }));

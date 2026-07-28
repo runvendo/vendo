@@ -152,7 +152,7 @@ const papermarkFixtureNote =
   + "Fetch data before answering and quote the exact fixture names.";
 
 const papermarkTools = {
-  format: "vendo/tools@1",
+  format: "vendo/tools@3",
   tools: [
     {
       name: "getTeams",
@@ -905,7 +905,7 @@ async function writeCuratedOverrides(options: {
 
   await writeFile(
     path.join(options.appRoot, ".vendo/overrides.json"),
-    `${JSON.stringify({ format: "vendo/overrides@1", tools: overrides }, null, 2)}\n`,
+    `${JSON.stringify({ format: "vendo/overrides@3", tools: overrides }, null, 2)}\n`,
   );
 }
 

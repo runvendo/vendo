@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  VENDO_OVERRIDES_FORMAT_V3,
-  VENDO_TOOLS_FORMAT_V3,
-  capabilitiesFileSchema,
+  VENDO_OVERRIDES_FORMAT,
+  VENDO_TOOLS_FORMAT,
   compoundBindingSchema,
   compoundToolSchema,
-  overridesFileV3Schema,
+  overridesFileSchema,
   toolBindingSchema,
   toolsFileSchema,
-  toolsFileV3Schema,
-  vendoFileVersion,
   type CompoundBinding,
   type ToolBinding,
 } from "./formats.js";
@@ -28,13 +25,6 @@ const compoundTool = (overrides: Record<string, unknown> = {}): Record<string, u
       { id: "send", tool: "host_invoices_send", if: "args.email != null", args: { id: "steps.create.id" } },
     ],
   },
-  ...overrides,
-});
-
-const capabilitiesFile = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  format: "vendo/capabilities@1",
-  tools: [compoundTool()],
-  briefs: [{ name: "bulk-paste", text: "call host_cells_update per row", tools: ["host_cells_update"] }],
   ...overrides,
 });
 
@@ -74,68 +64,22 @@ describe("compoundBindingSchema", () => {
   });
 });
 
-describe("capabilitiesFileSchema", () => {
-  it("parses a valid capabilities file", () => {
-    const parsed = capabilitiesFileSchema.parse(capabilitiesFile());
-    expect(parsed.tools).toHaveLength(1);
-    expect(parsed.briefs).toHaveLength(1);
-  });
-
-  it("rejects any other format string", () => {
-    expect(capabilitiesFileSchema.safeParse(capabilitiesFile({ format: "vendo/capabilities@2" })).success).toBe(false);
-    expect(capabilitiesFileSchema.safeParse(capabilitiesFile({ format: "vendo/tools@1" })).success).toBe(false);
-  });
-
-  it("briefs are optional and validated", () => {
-    expect(capabilitiesFileSchema.safeParse(capabilitiesFile({ briefs: undefined })).success).toBe(true);
-    expect(capabilitiesFileSchema.safeParse(capabilitiesFile({ briefs: [{ name: "", text: "x" }] })).success).toBe(false);
-    expect(capabilitiesFileSchema.safeParse(capabilitiesFile({ briefs: [{ name: "x", text: "" }] })).success).toBe(false);
-  });
-
-  it("accepts unknown extra keys on file and entries (passthrough)", () => {
-    const parsed = capabilitiesFileSchema.parse(capabilitiesFile({
-      generatedBy: "vendo refine",
-      tools: [compoundTool({ provenance: { model: "x" } })],
-    }));
-    expect((parsed as Record<string, unknown>).generatedBy).toBe("vendo refine");
-    expect((parsed.tools[0] as Record<string, unknown>).provenance).toEqual({ model: "x" });
-  });
-
+describe("compoundToolSchema", () => {
   it("entries carry disabled and note", () => {
     const parsed = compoundToolSchema.parse(compoundTool({ disabled: true, note: "authored by vendo refine" }));
     expect(parsed.disabled).toBe(true);
     expect(parsed.note).toBe("authored by vendo refine");
   });
-});
 
-describe("toolsFileSchema stays deterministic", () => {
-  it("rejects a tools.json entry with a compound binding, pointing at capabilities.json", () => {
-    const result = toolsFileSchema.safeParse({
-      format: "vendo/tools@1",
-      tools: [compoundTool()],
-    });
-    expect(result.success).toBe(false);
-    expect(JSON.stringify(!result.success && result.error.issues)).toContain("capabilities.json");
-  });
-
-  it("still accepts route and openapi bindings", () => {
-    const result = toolsFileSchema.safeParse({
-      format: "vendo/tools@1",
-      tools: [{
-        name: "host_things_list",
-        description: "List things",
-        inputSchema: { type: "object" },
-        risk: "read",
-        binding: { kind: "route", method: "GET", path: "/api/things", argsIn: "query" },
-      }],
-    });
-    expect(result.success).toBe(true);
+  it("keeps unknown keys on an agent-authored entry (passthrough)", () => {
+    const parsed = compoundToolSchema.parse(compoundTool({ provenance: { model: "x" } }));
+    expect((parsed as Record<string, unknown>).provenance).toEqual({ model: "x" });
   });
 });
 
-// --- format v3 (cse lane 1): two files split by author ---
+// --- the .vendo pair: two files split by author ---
 
-const extractedToolV3 = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+const extractedTool = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   name: "host_invoices_list",
   description: "List invoices",
   inputSchema: { type: "object" },
@@ -144,24 +88,24 @@ const extractedToolV3 = (overrides: Record<string, unknown> = {}): Record<string
   ...overrides,
 });
 
-const toolsFileV3 = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  format: VENDO_TOOLS_FORMAT_V3,
-  tools: [extractedToolV3()],
+const toolsFile = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  format: VENDO_TOOLS_FORMAT,
+  tools: [extractedTool()],
   ...overrides,
 });
 
-const overridesFileV3 = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  format: VENDO_OVERRIDES_FORMAT_V3,
+const overridesFile = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  format: VENDO_OVERRIDES_FORMAT,
   tools: { host_invoices_list: { risk: "read" } },
   ...overrides,
 });
 
-describe("toolsFileV3Schema", () => {
+describe("toolsFileSchema", () => {
   it("parses a v3 tools file with the new machine-layer fields", () => {
-    const parsed = toolsFileV3Schema.parse(toolsFileV3({
+    const parsed = toolsFileSchema.parse(toolsFile({
       watermark: "3d1f2ab90c7e5f6a8b4d0e1c2a3b4c5d6e7f8091",
       domains: { has: ["invoices", "clients"], hasNot: ["payroll"] },
-      tools: [extractedToolV3({
+      tools: [extractedTool({
         audience: "end-user",
         semantics: { "data.amountCents": { kind: "money", unit: "cents" } },
         srcHash: "sha256:abc123",
@@ -175,37 +119,38 @@ describe("toolsFileV3Schema", () => {
   });
 
   it("every new field is optional (a minimal generated file parses)", () => {
-    expect(toolsFileV3Schema.safeParse(toolsFileV3()).success).toBe(true);
+    expect(toolsFileSchema.safeParse(toolsFile()).success).toBe(true);
   });
 
-  it("rejects the v1 format tag and bad audiences/semantics", () => {
-    expect(toolsFileV3Schema.safeParse(toolsFileV3({ format: "vendo/tools@1" })).success).toBe(false);
-    expect(toolsFileV3Schema.safeParse(toolsFileV3({ tools: [extractedToolV3({ audience: "everyone" })] })).success).toBe(false);
-    expect(toolsFileV3Schema.safeParse(toolsFileV3({ tools: [extractedToolV3({ semantics: { x: { kind: "money" } } })] })).success).toBe(false);
+  it("rejects any other format tag and bad audiences/semantics", () => {
+    expect(toolsFileSchema.safeParse(toolsFile({ format: "vendo/tools@1" })).success).toBe(false);
+    expect(toolsFileSchema.safeParse(toolsFile({ format: "vendo/tools@2" })).success).toBe(false);
+    expect(toolsFileSchema.safeParse(toolsFile({ tools: [extractedTool({ audience: "everyone" })] })).success).toBe(false);
+    expect(toolsFileSchema.safeParse(toolsFile({ tools: [extractedTool({ semantics: { x: { kind: "money" } } })] })).success).toBe(false);
   });
 
   it("keeps unknown keys (generated artifact, additive evolution)", () => {
-    const parsed = toolsFileV3Schema.parse(toolsFileV3({ generatedBy: "vendo sync" }));
+    const parsed = toolsFileSchema.parse(toolsFile({ generatedBy: "vendo sync" }));
     expect((parsed as Record<string, unknown>).generatedBy).toBe("vendo sync");
   });
 
   it("keeps unknown keys inside the generated domains manifest too (the authored copy stays strict)", () => {
-    const parsed = toolsFileV3Schema.parse(toolsFileV3({
+    const parsed = toolsFileSchema.parse(toolsFile({
       domains: { has: ["invoices"], hasNot: [], derivedFrom: "tool-names" },
     }));
     expect((parsed.domains as Record<string, unknown>).derivedFrom).toBe("tool-names");
   });
 
   it("stays deterministic: rejects compound bindings, pointing at overrides.json", () => {
-    const result = toolsFileV3Schema.safeParse(toolsFileV3({ tools: [compoundTool()] }));
+    const result = toolsFileSchema.safeParse(toolsFile({ tools: [compoundTool()] }));
     expect(result.success).toBe(false);
     expect(JSON.stringify(!result.success && result.error.issues)).toContain("overrides.json");
   });
 });
 
-describe("overridesFileV3Schema", () => {
+describe("overridesFileSchema", () => {
   it("parses the authored layer: per-tool overrides plus domains, compounds, briefs, remix", () => {
-    const parsed = overridesFileV3Schema.parse(overridesFileV3({
+    const parsed = overridesFileSchema.parse(overridesFile({
       tools: {
         host_invoices_list: {
           risk: "write",
@@ -229,14 +174,14 @@ describe("overridesFileV3Schema", () => {
   });
 
   it("stays strict: a typo at the file or per-tool level fails loudly", () => {
-    expect(overridesFileV3Schema.safeParse(overridesFileV3({ compunds: [] })).success).toBe(false);
-    expect(overridesFileV3Schema.safeParse(overridesFileV3({ tools: { host_x: { descriptin: "typo" } } })).success).toBe(false);
-    expect(overridesFileV3Schema.safeParse(overridesFileV3({ domains: { has: [], hasNot: [], hasMaybe: [] } })).success).toBe(false);
-    expect(overridesFileV3Schema.safeParse(overridesFileV3({ format: "vendo/overrides@1" })).success).toBe(false);
+    expect(overridesFileSchema.safeParse(overridesFile({ compunds: [] })).success).toBe(false);
+    expect(overridesFileSchema.safeParse(overridesFile({ tools: { host_x: { descriptin: "typo" } } })).success).toBe(false);
+    expect(overridesFileSchema.safeParse(overridesFile({ domains: { has: [], hasNot: [], hasMaybe: [] } })).success).toBe(false);
+    expect(overridesFileSchema.safeParse(overridesFile({ format: "vendo/overrides@1" })).success).toBe(false);
   });
 
   it("compounds and briefs keep their passthrough behavior (agent-authored entries)", () => {
-    const parsed = overridesFileV3Schema.parse(overridesFileV3({
+    const parsed = overridesFileSchema.parse(overridesFile({
       compounds: [compoundTool({ provenance: { model: "x" } })],
       briefs: [{ name: "bulk", text: "do the thing", future: true }],
     }));
@@ -245,19 +190,3 @@ describe("overridesFileV3Schema", () => {
   });
 });
 
-describe("vendoFileVersion", () => {
-  it("classifies v1 and v3 tools/overrides files by format tag", () => {
-    expect(vendoFileVersion({ format: "vendo/tools@1", tools: [] })).toBe(1);
-    expect(vendoFileVersion({ format: "vendo/overrides@1", tools: {} })).toBe(1);
-    expect(vendoFileVersion(toolsFileV3())).toBe(3);
-    expect(vendoFileVersion(overridesFileV3())).toBe(3);
-  });
-
-  it("returns undefined for unknown tags and non-objects", () => {
-    expect(vendoFileVersion({ format: "vendo/tools@2" })).toBeUndefined();
-    expect(vendoFileVersion({ format: "vendo/catalog@1" })).toBeUndefined();
-    expect(vendoFileVersion({})).toBeUndefined();
-    expect(vendoFileVersion(null)).toBeUndefined();
-    expect(vendoFileVersion("vendo/tools@3")).toBeUndefined();
-  });
-});

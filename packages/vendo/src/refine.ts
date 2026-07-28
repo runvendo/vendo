@@ -1,27 +1,19 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import {
-  VENDO_OVERRIDES_FORMAT_V3,
+  VENDO_OVERRIDES_FORMAT,
   validateCapabilities,
-  capabilitiesFileSchema,
   overridesFileSchema,
-  overridesFileV3Schema,
   toolsFileSchema,
-  toolsFileV3Schema,
-  vendoFileVersion,
-  type CapabilitiesFile,
   type CapabilityBrief,
   type CompoundTool,
   type ExtractedTool,
   type OverridesFile,
-  type OverridesFileV3,
   type PrimitiveStepTarget,
   type ToolOverride,
 } from "@vendoai/actions";
 import {
   TOOL_NAME_PATTERN,
-  VENDO_CAPABILITIES_FORMAT,
-  VENDO_OVERRIDES_FORMAT,
   capabilityMissEventSchema,
   type CapabilityMissEvent,
   type RiskLabel,
@@ -40,16 +32,10 @@ import { defaultFetch } from "@vendoai/core";
  * is its only caller. The engine PROPOSES agent-layer artifacts as reviewable
  * diffs (never silently applied, never touching deterministic `tools.json`).
  *
- * Format-version aware (post-#568): a legacy v1 profile proposes
- *
- *   - compound capabilities + capability briefs → `.vendo/capabilities.json`
- *   - risk corrections, enable/disable curation, description improvements
- *     → `.vendo/overrides.json`
- *   - product-brief updates → `.vendo/brief.md`
- *
- * while a v3 profile (tools@3) folds compounds/briefs AND the override
- * corrections into the ONE authored file, `.vendo/overrides.json`
- * (vendo/overrides@3), exactly where `vendo sync`'s migration puts them.
+ * Everything it proposes lands in the ONE authored file — compounds, briefs,
+ * risk corrections, enable/disable curation and description improvements all
+ * become an `.vendo/overrides.json` diff — plus product-brief updates to
+ * `.vendo/brief.md`.
  *
  * Loop: propose (one BYO-model `generateObject` call over the static
  * extraction output, bounded source context, the miss feed, and the dev
@@ -101,7 +87,7 @@ export interface RefineProbe {
 }
 
 export interface RefineChange {
-  /** Path relative to root (e.g. `.vendo/capabilities.json`). */
+  /** Path relative to root (e.g. `.vendo/overrides.json`). */
   path: string;
   before: string | null;
   after: string;
@@ -192,14 +178,11 @@ export type RefineProposals = z.infer<typeof proposalsSchema>;
 // ---------------------------------------------------------------------------
 
 interface RefineInputs {
-  /** The profile's on-disk layout: 1 = legacy (capabilities.json separate),
-   *  3 = the v3 pair (compounds/briefs folded into overrides.json). Decides
-   *  which files the proposed diffs target. */
-  version: 1 | 3;
   tools: ExtractedTool[];
-  overrides: OverridesFile | OverridesFileV3 | null;
-  /** The read view of existing compounds/briefs, whichever file carries them. */
-  capabilities: CapabilitiesFile | null;
+  overrides: OverridesFile | null;
+  /** The existing compounds/briefs overrides.json carries. */
+  compounds: CompoundTool[];
+  briefs: CapabilityBrief[];
   brief: string | null;
   misses: CapabilityMissEvent[];
 }
@@ -219,35 +202,10 @@ async function loadInputs(root: string, options: RefineOptions): Promise<RefineI
   if (toolsRaw === null) {
     throw new Error("refine needs .vendo/tools.json — run `vendo init` (or `vendo sync`) first");
   }
-  // Format-version aware (post-#568): v1 parses with the legacy schemas, v3
-  // with the v3 pair; an unknown tag parses as v3 and fails loudly.
-  const parsedTools = JSON.parse(toolsRaw) as unknown;
-  const version: 1 | 3 = vendoFileVersion(parsedTools) === 1 ? 1 : 3;
-  const tools = version === 1
-    ? toolsFileSchema.parse(parsedTools).tools
-    : toolsFileV3Schema.parse(parsedTools).tools;
+  const tools = toolsFileSchema.parse(JSON.parse(toolsRaw)).tools;
 
   const overridesRaw = await readOptionalFile(join(vendoDir, "overrides.json"));
-  const parsedOverrides = overridesRaw === null ? null : JSON.parse(overridesRaw) as unknown;
-  const overrides = parsedOverrides === null
-    ? null
-    : vendoFileVersion(parsedOverrides) === 1
-      ? overridesFileSchema.parse(parsedOverrides)
-      : overridesFileV3Schema.parse(parsedOverrides);
-
-  // The existing compounds/briefs read view: capabilities.json on a legacy
-  // profile, overrides.json's own compounds/briefs on a v3 one.
-  let capabilities: CapabilitiesFile | null = null;
-  if (version === 1) {
-    const capabilitiesRaw = await readOptionalFile(join(vendoDir, "capabilities.json"));
-    capabilities = capabilitiesRaw === null ? null : capabilitiesFileSchema.parse(JSON.parse(capabilitiesRaw));
-  } else if (overrides !== null && overrides.format === VENDO_OVERRIDES_FORMAT_V3) {
-    capabilities = {
-      format: VENDO_CAPABILITIES_FORMAT,
-      tools: overrides.compounds ?? [],
-      ...(overrides.briefs === undefined ? {} : { briefs: overrides.briefs }),
-    };
-  }
+  const overrides = overridesRaw === null ? null : overridesFileSchema.parse(JSON.parse(overridesRaw));
 
   const brief = await readOptionalFile(join(vendoDir, "brief.md"));
 
@@ -268,7 +226,14 @@ async function loadInputs(root: string, options: RefineOptions): Promise<RefineI
   }
   const maxMisses = options.maxMisses ?? DEFAULT_MAX_MISSES;
   // slice(-0) is slice(0) — the WHOLE feed — so a zero cap needs its own leg.
-  return { version, tools, overrides, capabilities, brief, misses: maxMisses <= 0 ? [] : misses.slice(-maxMisses) };
+  return {
+    tools,
+    overrides,
+    compounds: overrides?.compounds ?? [],
+    briefs: overrides?.briefs ?? [],
+    brief,
+    misses: maxMisses <= 0 ? [] : misses.slice(-maxMisses),
+  };
 }
 
 /** Post-override-merge primitive targets — the same view the registry loads,
@@ -392,8 +357,8 @@ async function propose(
       disabled: inputs.overrides?.tools[tool.name]?.disabled ?? tool.disabled ?? false,
       inputSchema: tool.inputSchema,
     })),
-    existingCompounds: (inputs.capabilities?.tools ?? []).map((tool) => tool.name),
-    existingBriefs: (inputs.capabilities?.briefs ?? []).map((brief) => brief.name),
+    existingCompounds: inputs.compounds.map((tool) => tool.name),
+    existingBriefs: inputs.briefs.map((brief) => brief.name),
     capabilityMisses: inputs.misses.map((miss) => ({ intent: miss.intent, trigger: miss.trigger.kind })),
     interview,
     sourceTree: source.tree,
@@ -419,7 +384,7 @@ interface NormalizedProposals {
 function normalize(proposals: RefineProposals, inputs: RefineInputs): NormalizedProposals {
   const dropped: RefineDrop[] = [];
   const primitives = mergedPrimitives(inputs);
-  const existingCompoundNames = new Set((inputs.capabilities?.tools ?? []).map((tool) => tool.name));
+  const existingCompoundNames = new Set(inputs.compounds.map((tool) => tool.name));
 
   const compounds: CompoundTool[] = [];
   const acceptedNames = new Set<string>();
@@ -463,7 +428,7 @@ function normalize(proposals: RefineProposals, inputs: RefineInputs): Normalized
   }
 
   // Final gate: the SAME semantic validation the registry runs at load (04 §6).
-  const candidateFile = { tools: [...(inputs.capabilities?.tools ?? []), ...compounds] };
+  const candidateFile = { tools: [...inputs.compounds, ...compounds] };
   const issues = validateCapabilities(candidateFile, primitives);
   const invalid = new Map<string, string>();
   for (const issue of issues) {
@@ -475,7 +440,7 @@ function normalize(proposals: RefineProposals, inputs: RefineInputs): Normalized
     return message === undefined;
   });
 
-  const existingBriefNames = new Set((inputs.capabilities?.briefs ?? []).map((brief) => brief.name));
+  const existingBriefNames = new Set(inputs.briefs.map((brief) => brief.name));
   // Only tools that survive to the OUTPUT are legal brief references: primitives
   // plus compounds that passed the final validateCapabilities gate — never a
   // compound this run dropped (Devin/Greptile: no dangling brief references).
@@ -710,87 +675,32 @@ export async function runRefine(options: RefineOptions): Promise<RefineResult> {
   const changes: RefineChange[] = [];
   const vendoDir = join(root, ".vendo");
 
-  if (inputs.version === 3) {
-    // v3: the ONE authored file carries compounds, briefs, AND the override
-    // corrections — everything folds into a single overrides.json diff (the
-    // same home `vendo sync`'s migration gives them). A half-migrated v1
-    // overrides.json beside a v3 tools.json upgrades to the v3 shape in the
-    // proposed file, mirroring the sync migration.
-    if (verified.length > 0 || normalized.briefs.length > 0 || normalized.overridePatches.size > 0) {
-      const beforeFile: OverridesFileV3 =
-        inputs.overrides !== null && inputs.overrides.format === VENDO_OVERRIDES_FORMAT_V3
-          ? inputs.overrides
-          : {
-              format: VENDO_OVERRIDES_FORMAT_V3,
-              tools: inputs.overrides?.tools ?? {},
-              ...(inputs.overrides?.remix === undefined ? {} : { remix: inputs.overrides.remix }),
-            };
-      const tools: Record<string, ToolOverride> = { ...beforeFile.tools };
-      for (const [tool, fields] of normalized.overridePatches) {
-        tools[tool] = { ...tools[tool], ...fields };
-      }
-      const compounds = [...(beforeFile.compounds ?? []), ...verified];
-      const briefs = [...(beforeFile.briefs ?? []), ...normalized.briefs];
-      const afterFile: OverridesFileV3 = {
-        ...beforeFile,
-        tools,
-        ...(compounds.length === 0 ? {} : { compounds }),
-        ...(briefs.length === 0 ? {} : { briefs }),
-      };
-      const before = await readOptionalFile(join(vendoDir, "overrides.json"));
-      const after = stringify(afterFile);
-      if (before !== after) {
-        changes.push({
-          path: ".vendo/overrides.json",
-          before,
-          after,
-          diff: renderDiff(".vendo/overrides.json", before, after),
-          warnings: normalized.overrideWarnings,
-        });
-      }
+  // The ONE authored file carries compounds, briefs, AND the override
+  // corrections — everything folds into a single overrides.json diff.
+  if (verified.length > 0 || normalized.briefs.length > 0 || normalized.overridePatches.size > 0) {
+    const beforeFile: OverridesFile = inputs.overrides ?? { format: VENDO_OVERRIDES_FORMAT, tools: {} };
+    const tools: Record<string, ToolOverride> = { ...beforeFile.tools };
+    for (const [tool, fields] of normalized.overridePatches) {
+      tools[tool] = { ...tools[tool], ...fields };
     }
-  } else {
-    if (verified.length > 0 || normalized.briefs.length > 0) {
-      const beforeFile = inputs.capabilities;
-      const afterFile: CapabilitiesFile = {
-        format: VENDO_CAPABILITIES_FORMAT,
-        ...beforeFile,
-        tools: [...(beforeFile?.tools ?? []), ...verified],
-        ...((beforeFile?.briefs ?? []).length + normalized.briefs.length > 0
-          ? { briefs: [...(beforeFile?.briefs ?? []), ...normalized.briefs] }
-          : {}),
-      };
-      const before = await readOptionalFile(join(vendoDir, "capabilities.json"));
-      const after = stringify(afterFile);
-      if (before !== after) {
-        changes.push({
-          path: ".vendo/capabilities.json",
-          before,
-          after,
-          diff: renderDiff(".vendo/capabilities.json", before, after),
-          warnings: [],
-        });
-      }
-    }
-
-    if (normalized.overridePatches.size > 0) {
-      const beforeFile: OverridesFile = (inputs.overrides as OverridesFile | null)
-        ?? { format: VENDO_OVERRIDES_FORMAT, tools: {} };
-      const tools: Record<string, ToolOverride> = { ...beforeFile.tools };
-      for (const [tool, fields] of normalized.overridePatches) {
-        tools[tool] = { ...tools[tool], ...fields };
-      }
-      const before = await readOptionalFile(join(vendoDir, "overrides.json"));
-      const after = stringify({ ...beforeFile, tools });
-      if (before !== after) {
-        changes.push({
-          path: ".vendo/overrides.json",
-          before,
-          after,
-          diff: renderDiff(".vendo/overrides.json", before, after),
-          warnings: normalized.overrideWarnings,
-        });
-      }
+    const compounds = [...(beforeFile.compounds ?? []), ...verified];
+    const briefs = [...(beforeFile.briefs ?? []), ...normalized.briefs];
+    const afterFile: OverridesFile = {
+      ...beforeFile,
+      tools,
+      ...(compounds.length === 0 ? {} : { compounds }),
+      ...(briefs.length === 0 ? {} : { briefs }),
+    };
+    const before = await readOptionalFile(join(vendoDir, "overrides.json"));
+    const after = stringify(afterFile);
+    if (before !== after) {
+      changes.push({
+        path: ".vendo/overrides.json",
+        before,
+        after,
+        diff: renderDiff(".vendo/overrides.json", before, after),
+        warnings: normalized.overrideWarnings,
+      });
     }
   }
 

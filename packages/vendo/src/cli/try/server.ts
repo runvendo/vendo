@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { dirname, join, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { toolsFileSchema, toolsFileV3Schema, vendoFileVersion, type ExtractedTool } from "@vendoai/actions";
+import { toolsFileSchema, type ExtractedTool } from "@vendoai/actions";
 import { createStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { DevModelController } from "../../dev-creds/model.js";
@@ -165,7 +165,7 @@ export async function composeTryVendo(options: {
     (raw) => {
       // v3 from today's extraction, v1 from a legacy carried-over profile.
       const parsed = JSON.parse(raw) as unknown;
-      return (vendoFileVersion(parsed) === 1 ? toolsFileSchema : toolsFileV3Schema).parse(parsed).tools;
+      return toolsFileSchema.parse(parsed).tools;
     },
     [],
   );
@@ -312,9 +312,8 @@ async function readJsonBody(request: IncomingMessage, limitBytes = 1_048_576): P
  *  targets — RefineChange carries a diff and warnings but no prose of its
  *  own, and the target file IS the taxonomy (refine.ts's doc block). */
 function refineChangeSummary(path: string): string {
-  if (path.endsWith("capabilities.json")) return "New agent capabilities (compound tools and playbooks)";
-  // v3 (post-#568): overrides.json is the ONE authored file — corrections
-  // plus any new compound capabilities and playbooks fold into it.
+  // overrides.json is the ONE authored file — corrections plus any new
+  // compound capabilities and playbooks all land in it.
   if (path.endsWith("overrides.json")) return "Tool corrections and new capabilities (risk labels, enable/disable, descriptions, compounds)";
   if (path.endsWith("brief.md")) return "Product brief update";
   return `Update ${path}`;
@@ -348,20 +347,18 @@ export async function startTryServer(options: StartTryServerOptions): Promise<Tr
   // directory itself, permissions), not just a keyed artifact.
   //
   // The key is one stat sweep per request over the exact compose-time read
-  // set: `.vendo/` tools.json + overrides.json + capabilities.json (the
-  // actions registry), theme.json + brief.md + catalog.json + semantics.json
-  // (createVendo's own dotVendo reads), and data/extract/fixtures.json (the
-  // synthetic fetch). design-rules.md needs no recompose (createVendo re-reads
-  // it per generation), and `.vendo/remixable/` pin baselines are left out
-  // deliberately (deepening never writes them; sync does, before the server).
+  // set: `.vendo/` tools.json + overrides.json (the actions registry),
+  // theme.json + brief.md + catalog.json (createVendo's own dotVendo reads),
+  // and data/extract/fixtures.json (the synthetic fetch). design-rules.md
+  // needs no recompose (createVendo re-reads it per generation), and
+  // `.vendo/remixable/` pin baselines are left out deliberately (deepening
+  // never writes them; sync does, before the server).
   const COMPOSE_READ_SET: readonly string[][] = [
     ["tools.json"],
     ["overrides.json"],
-    ["capabilities.json"],
     ["theme.json"],
     ["brief.md"],
     ["catalog.json"],
-    ["semantics.json"],
     ["data", "extract", "fixtures.json"],
   ];
   let mount: { key: string; ready: Promise<MountState>; failed: boolean } | undefined;

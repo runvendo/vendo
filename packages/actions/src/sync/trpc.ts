@@ -27,7 +27,7 @@ import {
 } from "./static-ts.js";
 
 /**
- * Static tRPC extraction (04 §1, additive within vendo/tools@1).
+ * Static tRPC extraction (04 §1, additive within vendo/tools@3).
  *
  * Routers are parsed with the TypeScript compiler API — no code from the host
  * is executed. The compiler itself is resolved from the HOST's node_modules

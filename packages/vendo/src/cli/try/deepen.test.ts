@@ -33,7 +33,7 @@ const TOOLS: StaticTool[] = [
   { name: "host_invoices_create", description: "POST /api/invoices", risk: "write", method: "POST", path: "/api/invoices" },
 ];
 
-/** The same tools as the deterministic pass writes them: full vendo/tools@1
+/** The same tools as the deterministic pass writes them: full vendo/tools@3
  *  entries (descriptor + binding), so assembleTryProfile counts them too. */
 const EXTRACTED_TOOLS = TOOLS.map((tool) => ({
   name: tool.name,
@@ -55,7 +55,7 @@ async function hostRepo(): Promise<string> {
  *  landed, no brief, no overrides, no seeds artifacts yet. */
 async function seededProfileRoot(): Promise<string> {
   const root = await tempDir("vendo-deepen-profile-");
-  await write(root, join(".vendo", "tools.json"), `${JSON.stringify({ format: "vendo/tools@1", tools: EXTRACTED_TOOLS })}\n`);
+  await write(root, join(".vendo", "tools.json"), `${JSON.stringify({ format: "vendo/tools@3", tools: EXTRACTED_TOOLS })}\n`);
   return root;
 }
 

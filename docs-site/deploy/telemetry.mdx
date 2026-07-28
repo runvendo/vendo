@@ -54,7 +54,7 @@ Capability misses record moments when the agent could not complete a user
 request with the tools you exposed. Each event follows the
 `vendo/capability-miss@1` contract and fires in exactly three cases:
 
-- no tool in the extracted `vendo/tools@1` surface matched the intent
+- no tool in the extracted tool surface matched the intent
 - the same tool failed at least twice in order and the agent stopped retrying
 - the agent explicitly gave up
 

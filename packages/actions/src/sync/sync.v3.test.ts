@@ -5,12 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  VENDO_OVERRIDES_FORMAT_V3,
-  VENDO_TOOLS_FORMAT_V3,
-  overridesFileV3Schema,
-  toolsFileV3Schema,
-} from "../formats.js";
+import { VENDO_TOOLS_FORMAT, toolsFileSchema } from "../formats.js";
 import { deriveDomains, domainFromToolName } from "./domains.js";
 import { vendoSync } from "./index.js";
 
@@ -50,60 +45,6 @@ async function readJson(file: string): Promise<any> {
 
 const sha256 = (bytes: string): string => `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
 
-const exists = async (file: string): Promise<boolean> => fs.access(file).then(() => true, () => false);
-
-// --- realistic legacy fixture files (the v1 four) ---------------------------
-
-const LEGACY_TOOLS = {
-  format: "vendo/tools@1",
-  tools: [{
-    name: "host_listInvoices",
-    description: "Use this to read or list invoices (GET /api/invoices).",
-    inputSchema: { type: "object", properties: {} },
-    risk: "read",
-    binding: { kind: "openapi", operationId: "listInvoices", method: "GET", path: "/api/invoices" },
-  }],
-};
-
-const LEGACY_OVERRIDES = {
-  format: "vendo/overrides@1",
-  tools: {
-    host_createInvoice: { risk: "destructive", critical: true, audience: "end-user" },
-    host_listInvoices: { semantics: { "data.total": { kind: "money", unit: "dollars", currency: "EUR" } } },
-  },
-  remix: { ignoreSlots: ["invoice-card"] },
-};
-
-const LEGACY_CAPABILITIES = {
-  format: "vendo/capabilities@1",
-  tools: [{
-    name: "host_invoice_send_flow",
-    description: "Create an invoice and email it",
-    inputSchema: { type: "object" },
-    risk: "write",
-    binding: {
-      kind: "compound",
-      steps: [{ id: "create", tool: "host_createInvoice", args: { amount: "args.amount" } }],
-    },
-    note: "authored 2026-07-01",
-  }],
-  briefs: [{ name: "bulk-invoicing", text: "call host_createInvoice per row", tools: ["host_createInvoice"] }],
-};
-
-const LEGACY_SEMANTICS = {
-  format: "vendo/semantics@1",
-  note: "generated",
-  tools: {
-    host_listInvoices: {
-      "data.amountCents": { kind: "money", unit: "cents" },
-      // a manual host correction — must survive the fold byte-exactly
-      "data.dueAt": { kind: "date", format: "epoch" },
-    },
-    host_removedTool: { "data.id": { kind: "id", entity: "invoice" } },
-  },
-  domains: { has: ["invoices", "clients"], hasNot: ["payroll"] },
-};
-
 describe("domain derivation (moved from the CLI semantics module)", () => {
   it("derives noun domains from tool names, dropping verbs and plumbing", () => {
     expect(domainFromToolName("host_listAccountTransactions")).toBe("account transactions");
@@ -120,8 +61,8 @@ describe("vendo sync writes vendo/tools@3", () => {
     await vendoSync({ root, out });
 
     const file = await readJson(path.join(out, "tools.json"));
-    expect(toolsFileV3Schema.safeParse(file).success).toBe(true);
-    expect(file.format).toBe(VENDO_TOOLS_FORMAT_V3);
+    expect(toolsFileSchema.safeParse(file).success).toBe(true);
+    expect(file.format).toBe(VENDO_TOOLS_FORMAT);
     // domains derived from tool names on first sync
     expect(file.domains).toEqual({ has: ["invoice", "invoices"], hasNot: [] });
     // outside a git repo the watermark is omitted, never guessed
@@ -320,26 +261,7 @@ describe("vendo sync writes vendo/tools@3", () => {
     expect(crlfTool.srcHash).toBe(lfTool.srcHash);
   });
 
-  it("rejects a malformed capabilities.json loudly — its authored compounds/briefs must never silently drop", async () => {
-    const { root, out } = await temporaryHost();
-    await writeHostFile(root, "openapi.json", SPEC);
-    await writeHostFile(out, "capabilities.json", "{ not json");
-    await expect(vendoSync({ root, out })).rejects.toMatchObject({
-      name: "VendoError",
-      code: "validation",
-      message: expect.stringContaining("malformed capabilities file"),
-    });
-
-    const schemaInvalid = await temporaryHost();
-    await writeHostFile(schemaInvalid.root, "openapi.json", SPEC);
-    await writeHostFile(schemaInvalid.out, "capabilities.json", JSON.stringify({ format: "vendo/capabilities@1", tools: [{ nope: true }] }));
-    await expect(vendoSync({ root: schemaInvalid.root, out: schemaInvalid.out })).rejects.toMatchObject({
-      name: "VendoError",
-      code: "validation",
-    });
-  });
-
-  it("rejects a malformed v3 overrides.json as loudly as a v1 one", async () => {
+  it("rejects a malformed overrides.json loudly", async () => {
     const { root, out } = await temporaryHost();
     await writeHostFile(out, "overrides.json", JSON.stringify({
       format: "vendo/overrides@3",
@@ -349,59 +271,19 @@ describe("vendo sync writes vendo/tools@3", () => {
   });
 });
 
-describe("vendo sync migrates a legacy .vendo dir on disk", () => {
-  async function legacyHost(): Promise<{ root: string; out: string }> {
-    const { root, out } = await temporaryHost();
-    await writeHostFile(root, "openapi.json", SPEC);
-    await writeHostFile(root, ".vendo/tools.json", `${JSON.stringify(LEGACY_TOOLS, null, 2)}\n`);
-    await writeHostFile(root, ".vendo/overrides.json", `${JSON.stringify(LEGACY_OVERRIDES, null, 2)}\n`);
-    await writeHostFile(root, ".vendo/capabilities.json", `${JSON.stringify(LEGACY_CAPABILITIES, null, 2)}\n`);
-    await writeHostFile(root, ".vendo/semantics.json", `${JSON.stringify(LEGACY_SEMANTICS, null, 2)}\n`);
-    return { root, out };
-  }
-
-  it("folds the legacy four into the v3 pair, preserves every authored value, and deletes the retired files", async () => {
-    const { root, out } = await legacyHost();
-    const report = await vendoSync({ root, out });
-
-    // one clear migration summary paragraph
-    expect(report.migrated).toBeDefined();
-    expect(report.migrated).toContain("vendo/tools@3");
-    expect(report.migrated).toContain("capabilities.json");
-    expect(report.migrated).toContain("semantics.json");
-
-    // retired files are gone — their content now lives in the pair
-    expect(await exists(path.join(out, "capabilities.json"))).toBe(false);
-    expect(await exists(path.join(out, "semantics.json"))).toBe(false);
-
-    // the machine layer: v3, with semantics.json's entries folded per tool
-    const tools = await readJson(path.join(out, "tools.json"));
-    expect(toolsFileV3Schema.safeParse(tools).success).toBe(true);
-    const listInvoices = tools.tools.find((tool: any) => tool.name === "host_listInvoices");
-    expect(listInvoices.semantics).toEqual(LEGACY_SEMANTICS.tools.host_listInvoices);
-    // the curated legacy domain manifest survives (host-owned after first sync)
-    expect(tools.domains).toEqual(LEGACY_SEMANTICS.domains);
-
-    // the authored layer: byte-exact preservation of every authored value
-    const overrides = await readJson(path.join(out, "overrides.json"));
-    expect(overridesFileV3Schema.safeParse(overrides).success).toBe(true);
-    expect(overrides.format).toBe(VENDO_OVERRIDES_FORMAT_V3);
-    expect(JSON.stringify(overrides.tools)).toBe(JSON.stringify(LEGACY_OVERRIDES.tools));
-    expect(JSON.stringify(overrides.compounds)).toBe(JSON.stringify(LEGACY_CAPABILITIES.tools));
-    expect(JSON.stringify(overrides.briefs)).toBe(JSON.stringify(LEGACY_CAPABILITIES.briefs));
-    expect(overrides.remix).toEqual(LEGACY_OVERRIDES.remix);
-
-    // a second sync is not a migration
-    const second = await vendoSync({ root, out });
-    expect(second.migrated).toBeUndefined();
-  });
-
-  it("diffs across the migration boundary: a tool removed since the legacy file still reports", async () => {
+describe("vendo sync diffs against the tools.json already on disk", () => {
+  it("a tool removed since the previous file still reports as removed and breaking", async () => {
     const { root, out } = await temporaryHost();
     await writeHostFile(root, "openapi.json", SPEC);
     await writeHostFile(root, ".vendo/tools.json", `${JSON.stringify({
-      format: "vendo/tools@1",
-      tools: [...LEGACY_TOOLS.tools, {
+      format: VENDO_TOOLS_FORMAT,
+      tools: [{
+        name: "host_listInvoices",
+        description: "Use this to read or list invoices (GET /api/invoices).",
+        inputSchema: { type: "object", properties: {} },
+        risk: "read",
+        binding: { kind: "openapi", operationId: "listInvoices", method: "GET", path: "/api/invoices" },
+      }, {
         name: "host_deleteInvoice",
         description: "Delete an invoice",
         inputSchema: { type: "object" },
@@ -413,117 +295,5 @@ describe("vendo sync migrates a legacy .vendo dir on disk", () => {
     const report = await vendoSync({ root, out });
     expect(report.tools.removed).toContain("host_deleteInvoice");
     expect(report.breaking).toContainEqual({ tool: "host_deleteInvoice", change: "removed" });
-  });
-
-  it("half-migrated dir (tools@3 + capabilities.json): compounds/briefs fold into overrides.json and the retired file is deleted", async () => {
-    const { root, out } = await temporaryHost();
-    await writeHostFile(root, "openapi.json", SPEC);
-    await vendoSync({ root, out }); // writes the v3 pair-less machine file
-    await writeHostFile(root, ".vendo/capabilities.json", `${JSON.stringify(LEGACY_CAPABILITIES, null, 2)}\n`);
-    await writeHostFile(root, ".vendo/overrides.json", `${JSON.stringify({
-      format: "vendo/overrides@3",
-      tools: { host_listInvoices: { description: "hand-written" } },
-    }, null, 2)}\n`);
-
-    const report = await vendoSync({ root, out });
-    expect(report.migrated).toBeDefined();
-    expect(await exists(path.join(out, "capabilities.json"))).toBe(false);
-    const overrides = await readJson(path.join(out, "overrides.json"));
-    expect(overrides.tools.host_listInvoices).toEqual({ description: "hand-written" });
-    expect(JSON.stringify(overrides.compounds)).toBe(JSON.stringify(LEGACY_CAPABILITIES.tools));
-    expect(JSON.stringify(overrides.briefs)).toBe(JSON.stringify(LEGACY_CAPABILITIES.briefs));
-  });
-
-  it("conflicting compounds (overrides@3 AND capabilities.json): warns and leaves capabilities.json on disk", async () => {
-    const { root, out } = await temporaryHost();
-    await writeHostFile(root, "openapi.json", SPEC);
-    await writeHostFile(root, ".vendo/capabilities.json", `${JSON.stringify(LEGACY_CAPABILITIES, null, 2)}\n`);
-    const authoredCompound = {
-      name: "host_other_flow",
-      description: "Different authored compound",
-      inputSchema: { type: "object" },
-      risk: "read",
-      binding: { kind: "compound", steps: [{ id: "a", tool: "host_listInvoices" }] },
-    };
-    await writeHostFile(root, ".vendo/overrides.json", `${JSON.stringify({
-      format: "vendo/overrides@3",
-      tools: {},
-      compounds: [authoredCompound],
-    }, null, 2)}\n`);
-
-    const report = await vendoSync({ root, out });
-    // entries unique to capabilities.json were NOT folded — so the file must
-    // survive for review instead of being deleted (no silent data loss).
-    expect(report.warnings.some((warning) => warning.includes("both carry compounds/briefs"))).toBe(true);
-    expect(await exists(path.join(out, "capabilities.json"))).toBe(true);
-    // the summary claims only what actually folded (briefs, not compounds)
-    expect(report.migrated).toContain("the briefs that lived in capabilities.json");
-    expect(report.migrated).not.toContain("compounds and briefs that lived");
-    const overrides = await readJson(path.join(out, "overrides.json"));
-    expect(overrides.compounds.map((tool: any) => tool.name)).toEqual(["host_other_flow"]);
-    // the briefs slot had no conflict, so it folded in
-    expect(JSON.stringify(overrides.briefs)).toBe(JSON.stringify(LEGACY_CAPABILITIES.briefs));
-  });
-
-  it("a MALFORMED semantics.json next to legacy v1 tools survives with a warning; the rest still migrates", async () => {
-    const { root, out } = await temporaryHost();
-    await writeHostFile(root, "openapi.json", SPEC);
-    await writeHostFile(root, ".vendo/tools.json", `${JSON.stringify(LEGACY_TOOLS, null, 2)}\n`);
-    await writeHostFile(root, ".vendo/semantics.json", "{ not json");
-
-    const report = await vendoSync({ root, out });
-    // the tools@1 layout still migrates and announces itself...
-    expect(report.migrated).toContain("tools.json (vendo/tools@1)");
-    // ...but the unreadable file is never deleted (its content could not be
-    // preserved) and the summary does not claim it was retired
-    expect(await exists(path.join(out, "semantics.json"))).toBe(true);
-    expect(report.migrated).not.toContain("retired");
-    expect(report.warnings.some((warning) => warning.includes("malformed retired file"))).toBe(true);
-  });
-
-  it("a MALFORMED semantics.json next to an already-v3 tools.json survives and announces no migration", async () => {
-    const { root, out } = await temporaryHost();
-    await writeHostFile(root, "openapi.json", SPEC);
-    await vendoSync({ root, out }); // fresh v3 pairless machine file
-    await writeHostFile(root, ".vendo/semantics.json", "{ not json");
-
-    const report = await vendoSync({ root, out });
-    expect(report.migrated).toBeUndefined();
-    expect(await exists(path.join(out, "semantics.json"))).toBe(true);
-    expect(report.warnings.some((warning) => warning.includes("malformed retired file"))).toBe(true);
-  });
-
-  it("half-migrated dir (semantics.json + tools@3): the stale file is deleted without clobbering v3 semantics", async () => {
-    const { root, out } = await temporaryHost();
-    await writeHostFile(root, "openapi.json", SPEC);
-    await vendoSync({ root, out });
-    const file = await readJson(path.join(out, "tools.json"));
-    file.tools.find((tool: any) => tool.name === "host_listInvoices").semantics = {
-      "data.amountCents": { kind: "money", unit: "dollars" },
-    };
-    await fs.writeFile(path.join(out, "tools.json"), `${JSON.stringify(file, null, 2)}\n`, "utf8");
-    await writeHostFile(root, ".vendo/semantics.json", `${JSON.stringify(LEGACY_SEMANTICS, null, 2)}\n`);
-
-    const report = await vendoSync({ root, out });
-    expect(report.migrated).toBeDefined();
-    expect(await exists(path.join(out, "semantics.json"))).toBe(false);
-    const next = await readJson(path.join(out, "tools.json"));
-    // the already-migrated v3 semantics win over the stale legacy file
-    expect(next.tools.find((tool: any) => tool.name === "host_listInvoices").semantics)
-      .toEqual({ "data.amountCents": { kind: "money", unit: "dollars" } });
-  });
-
-  it("extraction failure mid-migration leaves the legacy pair on disk — no delete before the folded tools.json is durable", async () => {
-    const { root, out } = await legacyHost();
-    // Malformed openapi.json: detect() still sees the file, extract() throws on
-    // JSON.parse, so runExtractors rejects after the migration block ran.
-    await writeHostFile(root, "openapi.json", "{ not json");
-
-    await expect(vendoSync({ root, out })).rejects.toThrow();
-
-    // The retired legacy files must survive: their folded content only lives in
-    // tools.json once writeIfChanged has run, which the throw prevented.
-    expect(await exists(path.join(out, "semantics.json"))).toBe(true);
-    expect(await exists(path.join(out, "capabilities.json"))).toBe(true);
   });
 });

@@ -3,6 +3,17 @@
 Branch `yousefh409/vendo-w3-semantics`. Authority: TASK.md here + the v3 spec
 (§Context, §The two laws, §format Data) + W1 VERDICTS (Exp1: ADOPT inline).
 
+> **Historical record. Two pieces described below no longer exist.** The
+> `.vendo/semantics.json` file (`vendo/semantics@1`) was retired when format v3
+> folded per-tool field semantics into `.vendo/tools.json`, and the dev-server
+> inference pass behind it — `vendo sync`'s `POST /sync/semantics` call, which
+> sampled every zero-input read tool against a running host — was deleted
+> outright (unreachable in normal usage, undocumented, and it executed host
+> endpoints as a side effect of a sync). Field semantics themselves are alive
+> and unchanged: they live per tool in `tools.json`, are proposed by sync's AI
+> enrichment pass, and are overridden forever by
+> `overrides.json → tools[name].semantics`. Everything else here still holds.
+
 ## What shipped
 
 **Part 1 — semantics at `vendo sync`**

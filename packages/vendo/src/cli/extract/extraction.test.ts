@@ -184,23 +184,6 @@ describe("applyDraft (deterministic verification)", () => {
     expect(overrides.remix).toEqual({ ignoreSlots: ["invoice-card"] });
   });
 
-  it("folds a legacy v1 overrides.json in-memory and writes it back as v3", async () => {
-    const root = await fixture({
-      format: "vendo/overrides@1",
-      tools: { host_invoices_create: { critical: true } },
-      remix: { ignoreSlots: [] },
-    });
-    await applyDraft({
-      root,
-      tools: TOOLS,
-      draft: { brief: "Maple.", tools: [{ name: "host_invoices_list", description: "List invoices." }] },
-    });
-    const overrides = JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8"));
-    expect(overrides.format).toBe("vendo/overrides@3");
-    expect(overrides.tools["host_invoices_create"]).toEqual({ critical: true });
-    expect(overrides.tools["host_invoices_list"]).toEqual({ description: "List invoices." });
-  });
-
   it("a malformed authored overrides.json fails loud (strict v3), never silently drops", async () => {
     const root = await fixture({
       format: "vendo/overrides@3",
@@ -280,7 +263,7 @@ describe("applyDraft (deterministic verification)", () => {
 
   it("a refused wake never touches a human-set risk, and a human disable decision is never reversed (#553)", async () => {
     const root = await fixture({
-      format: "vendo/overrides@1",
+      format: "vendo/overrides@3",
       tools: {
         host_admin_unclassified: { risk: "destructive" },
       },
@@ -300,7 +283,7 @@ describe("applyDraft (deterministic verification)", () => {
     expect((await readOverrides(root)).tools["host_admin_unclassified"]).not.toHaveProperty("disabled");
 
     const humanDisabled = await fixture({
-      format: "vendo/overrides@1",
+      format: "vendo/overrides@3",
       tools: { host_admin_unclassified: { disabled: true } },
     });
     const kept = await applyDraft({
@@ -319,7 +302,7 @@ describe("applyDraft (deterministic verification)", () => {
 
   it("never overwrites human decisions: existing override fields and a hand-written brief win", async () => {
     const root = await fixture(
-      { format: "vendo/overrides@1", tools: { host_invoices_create: { description: "Human wrote this.", critical: false } } },
+      { format: "vendo/overrides@3", tools: { host_invoices_create: { description: "Human wrote this.", critical: false } } },
       "The humans already described this product.",
     );
     const summary = await applyDraft({

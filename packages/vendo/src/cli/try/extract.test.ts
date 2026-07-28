@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { toolsFileV3Schema } from "@vendoai/actions";
+import { toolsFileSchema } from "@vendoai/actions";
 import { vendoThemeSchema } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { runDeterministicPass } from "./extract.js";
@@ -103,7 +103,7 @@ describe("runDeterministicPass artifacts", () => {
     expect(theme.colors.background).toBe("#fffdf8");
     expect(theme.radius.medium).toBe("10px");
 
-    const tools = toolsFileV3Schema.parse(JSON.parse(await readFile(join(profileRoot, ".vendo", "tools.json"), "utf8")));
+    const tools = toolsFileSchema.parse(JSON.parse(await readFile(join(profileRoot, ".vendo", "tools.json"), "utf8")));
     expect(tools.tools.map((tool) => tool.name)).toContain("host_invoices_list");
 
     expect(result.theme.status).toBe("written");
@@ -144,7 +144,7 @@ describe("runDeterministicPass try-venue read downgrade", () => {
 
     const result = await runDeterministicPass({ repoRoot, profileRoot });
 
-    const tools = toolsFileV3Schema.parse(JSON.parse(await readFile(join(profileRoot, ".vendo", "tools.json"), "utf8")));
+    const tools = toolsFileSchema.parse(JSON.parse(await readFile(join(profileRoot, ".vendo", "tools.json"), "utf8")));
     const listTool = tools.tools.find((tool) => tool.name === "host_invoices_list");
     expect(listTool?.binding.kind).toBe("route");
     // tools.json stays the extractor's own fail-closed call — untouched.
@@ -168,7 +168,7 @@ describe("runDeterministicPass try-venue read downgrade", () => {
 
     await runDeterministicPass({ repoRoot, profileRoot });
 
-    const tools = toolsFileV3Schema.parse(JSON.parse(await readFile(join(profileRoot, ".vendo", "tools.json"), "utf8")));
+    const tools = toolsFileSchema.parse(JSON.parse(await readFile(join(profileRoot, ".vendo", "tools.json"), "utf8")));
     const destructiveTool = tools.tools.find((tool) => tool.risk === "destructive");
     expect(destructiveTool).toBeDefined();
 

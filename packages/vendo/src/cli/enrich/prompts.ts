@@ -1,4 +1,4 @@
-import type { ExtractedToolV3, OverridesFileV3 } from "@vendoai/actions";
+import type { ExtractedTool, OverridesFile } from "@vendoai/actions";
 import type { EnrichmentDiff } from "./diff.js";
 
 /**
@@ -44,7 +44,7 @@ export const ENRICHMENT_OUTPUT_RULES = [
 /** The per-tool catalog projection the model reasons over — judgment fields
  *  only, never the machine skeleton (schemas stay on disk where the model can
  *  read them if it needs to). */
-export function catalogFacts(tools: ExtractedToolV3[]): string {
+export function catalogFacts(tools: ExtractedTool[]): string {
   return JSON.stringify(tools.map((tool) => ({
     name: tool.name,
     binding: `${tool.binding.kind}${"method" in tool.binding && "path" in tool.binding ? ` ${String(tool.binding.method)} ${String(tool.binding.path)}` : ""}`,
@@ -61,8 +61,8 @@ export function catalogFacts(tools: ExtractedToolV3[]): string {
 export interface EnrichmentPromptInput {
   appName: string;
   diff: EnrichmentDiff;
-  tools: ExtractedToolV3[];
-  overrides: OverridesFileV3 | null;
+  tools: ExtractedTool[];
+  overrides: OverridesFile | null;
   candidates: { added: string[]; changed: string[]; unenriched: string[] };
 }
 
@@ -113,7 +113,7 @@ export function composeEnrichmentInstructions(input: EnrichmentPromptInput): str
 
 export function composeTripwireInstructions(input: {
   appName: string;
-  tool: ExtractedToolV3;
+  tool: ExtractedTool;
 }): string {
   return [
     "You are Vendo's sync enrichment agent on a targeted re-read: this ONE tool's handler",

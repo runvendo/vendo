@@ -2,14 +2,14 @@ import {
   createActions,
   createConnectGate,
   mergedSemanticsAndDomains,
-  overridesFileV3Schema,
+  overridesFileSchema,
+  VENDO_TOOLS_FORMAT,
   type ActionsRegistry,
   type ActionsRunContext,
-  type CapabilitiesFile,
   type CatalogFile,
   type Connector,
   type ExtractedTool,
-  type OverridesFileV3,
+  type OverridesFile,
   type ServerActionHandler,
 } from "@vendoai/actions";
 import { createAgent, VENDO_TOOL_PACK_PREFIX, type VendoAgent } from "@vendoai/agent";
@@ -30,7 +30,6 @@ import {
   type AutomationsEngine,
 } from "@vendoai/automations";
 import {
-  VENDO_TOOLS_FORMAT,
   VendoError,
   descriptorHash,
   vendoThemeSchema,
@@ -45,7 +44,6 @@ import {
   type RunContext,
   type RunId,
   type SecretsProvider,
-  type SemanticsFile,
   type StoreAdapter,
   type ToolDescriptor,
   type ToolOutcome,
@@ -232,8 +230,8 @@ export interface Vendo {
 // beside createVendo/CreateVendoConfig: the hosted try venue (a Worker in the
 // console repo) composes typed `profile` pieces against the umbrella alone,
 // without adding a direct @vendoai/actions or @vendoai/core dependency.
-export type { CapabilitiesFile, CatalogFile, ExtractedTool, OverridesFileV3 } from "@vendoai/actions";
-export type { SemanticsFile, VendoTheme } from "@vendoai/core";
+export type { CatalogFile, ExtractedTool, OverridesFile } from "@vendoai/actions";
+export type { VendoTheme } from "@vendoai/core";
 export type { PolicyFile } from "@vendoai/guard";
 
 export interface CreateVendoConfig {
@@ -313,8 +311,8 @@ export interface CreateVendoConfig {
       whose process cwd differs. `false` disables the environment default. */
   development?: boolean | { root?: string; out?: string };
   /** Unified try surface — the project root the `.vendo/` profile is read
-      under: the actions files (tools/overrides/capabilities via the actions
-      block's `dir`), theme.json, brief.md, catalog.json, semantics.json, the
+      under: the actions files (tools.json/overrides.json via the actions
+      block's `dir`), theme.json, brief.md, catalog.json, the
       per-generation design-rules.md read, the remixable pin baselines, and the
       development-capture defaults all resolve against it. Unset keeps today's
       behavior (the process cwd), so `npx vendo try` can mount a real
@@ -335,13 +333,13 @@ export interface CreateVendoConfig {
       default. A caller may pass only `tools` + `theme` and still read
       `brief.md` from disk. Each piece's type is exactly what the
       corresponding file read parses today (the zod-inferred file shapes —
-      never a new shape): `tools`/`overrides`/`capabilities` ride the actions
+      never a new shape): `tools`/`overrides` ride the actions
       registry's existing in-memory inputs and are validated THERE (its
       config-parse posture: a malformed piece throws `validation` loudly —
       note the registry loads lazily, so that throw surfaces on the FIRST
       ACTIONS USE (`actions.descriptors()`/`execute()`, or the first turn
       that loads tools), not at `createVendo` itself — wrap that call);
-      `theme`/`brief`/`catalog`/`semantics` are trusted typed config, the same
+      `theme`/`brief`/`catalog` are trusted typed config, the same
       posture as the existing `catalog` key (zod parsing exists for untyped
       file bytes, not typed config). `policy` is the parsed `policy.json`
       document (the guard's `PolicyFile` shape — what the file read parses
@@ -357,12 +355,10 @@ export interface CreateVendoConfig {
       Unset `profile` (or any unset piece) keeps today's behavior unchanged. */
   profile?: {
     tools?: ExtractedTool[];
-    overrides?: OverridesFileV3;
-    capabilities?: CapabilitiesFile;
+    overrides?: OverridesFile;
     theme?: VendoTheme;
     brief?: string;
     catalog?: CatalogFile;
-    semantics?: SemanticsFile;
     policy?: PolicyFile;
     designRules?: string;
   };
@@ -1445,7 +1441,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // now safe at compose because `missSurface` below is deferred — nothing calls
   // actions.descriptors()/loadHost at module init, so no console fetch happens
   // in Workers global scope (portability-gate).
-  const overridesEnablementProvider = async (): Promise<OverridesFileV3 | undefined> => {
+  const overridesEnablementProvider = async (): Promise<OverridesFile | undefined> => {
     // File-owned: let the registry read the local .vendo/overrides.json (which
     // also handles v1/legacy migration). No cloud fetch decides enablement.
     if (readSurfaceFile("overrides.json") !== undefined) return undefined;
@@ -1468,7 +1464,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     const body = result.config?.["overrides.json"];
     if (body === undefined) return undefined;
     try {
-      return overridesFileV3Schema.parse(JSON.parse(body));
+      return overridesFileSchema.parse(JSON.parse(body));
     } catch (error) {
       console.error(
         "[vendo] hosted overrides.json is malformed; ignoring it for tool enablement this boot: "
@@ -1483,8 +1479,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // The in-memory try-surface doc (profile.overrides) OR the cloud
     // enablement provider (#557) ride the same registry seam — both resolve
     // through loadHost to the same disabled/audience enablement path.
-    overrides?: OverridesFileV3 | (() => Promise<OverridesFileV3 | undefined>);
-    capabilities?: CapabilitiesFile;
+    overrides?: OverridesFile | (() => Promise<OverridesFile | undefined>);
     connectors?: Connector[];
     actAs?: ActAs;
     serverActions?: Record<string, ServerActionHandler>;
@@ -1510,7 +1505,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       : configCloud === undefined
         ? {}
         : { overrides: overridesEnablementProvider }),
-    ...(config.profile?.capabilities === undefined ? {} : { capabilities: config.profile.capabilities }),
     ...(resolvedConnectors.length === 0 ? {} : { connectors: resolvedConnectors }),
     ...(actAsSeam === undefined ? {} : { actAs: actAsSeam }),
     ...(config.serverActions === undefined ? {} : { serverActions: config.serverActions }),
@@ -1531,7 +1525,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       // stripped the file reads before Task 15a; the in-memory profile pieces
       // are stripped the same way so a profile override/compound can never
       // leak into a doctor probe.
-      const probes = createActions({ ...actionsConfig, dir: undefined, overrides: undefined, capabilities: undefined, tools: [doctorPresentTool] });
+      const probes = createActions({ ...actionsConfig, dir: undefined, overrides: undefined, tools: [doctorPresentTool] });
       return probes.execute({ id: "call_vendo_doctor_present", tool: doctorPresentTool.name, args: {} }, ctx);
     },
     actAs(): Promise<ToolOutcome> {
@@ -1555,7 +1549,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
         grant,
       };
       // Same probe isolation as doctor.present above.
-      const probes = createActions({ ...actionsConfig, dir: undefined, overrides: undefined, capabilities: undefined, tools: [doctorActAsTool] });
+      const probes = createActions({ ...actionsConfig, dir: undefined, overrides: undefined, tools: [doctorActAsTool] });
       return probes.execute({ id: "call_vendo_doctor_act_as", tool: doctorActAsTool.name, args: {} }, ctx);
     },
   };
@@ -1609,11 +1603,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ? configDesignRules
     : () => selectConfigSurface("design-rules.md", { readFile: readSurfaceFile, cloud: configCloud }).value;
   const pinBaselines = dotVendoPinBaselines(config.profileDir);
-  // W3, format v3 (cse lane 1) + cse lane 3 — field semantics + domain manifest
-  // from the merged .vendo pair (generated tools.json overlaid by overrides.json;
-  // a legacy dir's semantics.json ingested in-memory until `vendo sync`). The
-  // OVERRIDES surface resolves file → cloud; tools.json/semantics.json stay
-  // local generation inputs (not cloud surfaces). Resolved LIVE per generation
+  // W3 + cse lane 3 — field semantics + domain manifest from the merged .vendo
+  // pair (generated tools.json overlaid by overrides.json). The OVERRIDES
+  // surface resolves file → cloud; tools.json stays a
+  // local generation input (not a cloud surface). Resolved LIVE per generation
   // (NOT memoized) — the apps block's own "re-read per generation" contract:
   // memoizing would lock a local-only merge on a cold cloud snapshot (whenever a
   // local tools.json makes the first merge defined) and drop cloud-owned
@@ -1636,7 +1629,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
           : parsedFile("tools.json"),
         overrides: config.profile?.overrides
           ?? (overridesRaw === undefined ? undefined : JSON.parse(overridesRaw) as unknown),
-        semantics: config.profile?.semantics ?? parsedFile("semantics.json"),
       });
     } catch (error) {
       console.error(`[vendo] Failed to load .vendo tool semantics: ${error instanceof Error ? error.message : String(error)}. Run "vendo sync" to regenerate .vendo/tools.json.`);

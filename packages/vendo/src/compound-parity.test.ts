@@ -1,8 +1,7 @@
-import { createActions, type CapabilitiesFile, type ExtractedTool } from "@vendoai/actions";
+import { createActions, VENDO_OVERRIDES_FORMAT, type ExtractedTool, type OverridesFile } from "@vendoai/actions";
 import { createAutomations } from "@vendoai/automations";
 import {
   VENDO_APP_FORMAT,
-  VENDO_CAPABILITIES_FORMAT,
   type AppDocument,
   type ApprovalId,
   type AuditEvent,
@@ -155,9 +154,10 @@ interface Trace {
 async function runCompound(fixture: Fixture): Promise<{ trace: Trace; outcomes: ToolOutcome[] }> {
   const trace: Trace = { invokes: [] };
   let resumed = false;
-  const capabilities: CapabilitiesFile = {
-    format: VENDO_CAPABILITIES_FORMAT,
-    tools: [{
+  const overrides: OverridesFile = {
+    format: VENDO_OVERRIDES_FORMAT,
+    tools: {},
+    compounds: [{
       name: "compound_fixture",
       description: "fixture",
       inputSchema: { type: "object" },
@@ -167,7 +167,7 @@ async function runCompound(fixture: Fixture): Promise<{ trace: Trace; outcomes: 
   };
   const actions = createActions({
     tools: fixtureTools,
-    capabilities,
+    overrides,
     invokeTool: async (call) => {
       const index = trace.invokes.length;
       trace.invokes.push({ tool: call.tool, args: call.args, id: call.id });

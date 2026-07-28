@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ExtractedToolV3 } from "@vendoai/actions";
+import type { ExtractedTool } from "@vendoai/actions";
 import type { ExtractionHarness } from "../extract/harness.js";
 import { computeEnrichmentDiff } from "./diff.js";
 import { applyDraftEnrichment, readPreviousToolsState, runSyncEnrichment, type SyncEnrichmentOptions } from "./pass.js";
@@ -12,7 +12,7 @@ afterEach(async () => {
   await Promise.all(temporary.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-const tool = (name: string, overrides: Partial<ExtractedToolV3> = {}): ExtractedToolV3 => ({
+const tool = (name: string, overrides: Partial<ExtractedTool> = {}): ExtractedTool => ({
   name,
   description: `Use this to call ${name}.`,
   inputSchema: { type: "object", properties: {} },
@@ -22,7 +22,7 @@ const tool = (name: string, overrides: Partial<ExtractedToolV3> = {}): Extracted
   ...overrides,
 });
 
-async function host(tools: ExtractedToolV3[], extra: Record<string, unknown> = {}): Promise<{ root: string; vendoDir: string; toolsPath: string }> {
+async function host(tools: ExtractedTool[], extra: Record<string, unknown> = {}): Promise<{ root: string; vendoDir: string; toolsPath: string }> {
   const root = await mkdtemp(join(tmpdir(), "vendo-enrich-pass-"));
   temporary.push(root);
   const vendoDir = join(root, ".vendo");

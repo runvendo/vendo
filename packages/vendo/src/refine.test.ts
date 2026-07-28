@@ -1,8 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VENDO_TOOLS_FORMAT, VENDO_CAPABILITIES_FORMAT, VENDO_OVERRIDES_FORMAT } from "@vendoai/core";
-import { VENDO_OVERRIDES_FORMAT_V3, VENDO_TOOLS_FORMAT_V3 } from "@vendoai/actions";
+import { VENDO_OVERRIDES_FORMAT, VENDO_TOOLS_FORMAT } from "@vendoai/actions";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -107,24 +106,24 @@ const completeAllOpen = {
 };
 
 describe("runRefine — proposals become reviewable diffs", () => {
-  it("proposes a compound into capabilities.json with risk computed as the max of step risks", async () => {
+  it("proposes a compound into overrides.json with risk computed as the max of step risks", async () => {
     const root = await makeRoot();
     const result = await runRefine({ root, model: proposalModel({ compounds: [completeAllOpen] }) });
 
     expect(result.changes).toHaveLength(1);
     const change = result.changes[0]!;
-    expect(change.path).toBe(".vendo/capabilities.json");
+    expect(change.path).toBe(".vendo/overrides.json");
     expect(change.before).toBeNull();
-    const file = JSON.parse(change.after) as { format: string; tools: Array<Record<string, unknown>> };
-    expect(file.format).toBe(VENDO_CAPABILITIES_FORMAT);
-    expect(file.tools).toHaveLength(1);
-    const compound = file.tools[0]!;
+    const file = JSON.parse(change.after) as { format: string; compounds: Array<Record<string, unknown>> };
+    expect(file.format).toBe(VENDO_OVERRIDES_FORMAT);
+    expect(file.compounds).toHaveLength(1);
+    const compound = file.compounds[0]!;
     expect(compound.name).toBe("host_complete_open_tasks");
     // read + write steps → write, computed by the engine (04 §6), never model-declared.
     expect(compound.risk).toBe("write");
     expect(compound.note).toBe("authored by vendo refine");
     expect((compound.binding as { kind: string }).kind).toBe("compound");
-    expect(change.diff).toContain("+++ b/.vendo/capabilities.json");
+    expect(change.diff).toContain("+++ b/.vendo/overrides.json");
   });
 
   it("never offers tools.json as a change target", async () => {
@@ -140,7 +139,6 @@ describe("runRefine — proposals become reviewable diffs", () => {
     expect(result.changes.map((change) => change.path)).not.toContain(".vendo/tools.json");
     expect(result.changes.map((change) => change.path).sort()).toEqual([
       ".vendo/brief.md",
-      ".vendo/capabilities.json",
       ".vendo/overrides.json",
     ]);
   });
@@ -195,15 +193,16 @@ describe("runRefine — proposals become reviewable diffs", () => {
         ],
       }),
     });
-    const file = JSON.parse(result.changes[0]!.after) as { tools: Array<{ name: string }> };
-    expect(file.tools.map((tool) => tool.name)).toEqual(["host_complete_open_tasks"]);
+    const file = JSON.parse(result.changes[0]!.after) as { compounds: Array<{ name: string }> };
+    expect(file.compounds.map((tool) => tool.name)).toEqual(["host_complete_open_tasks"]);
     expect(result.dropped.some((drop) => drop.target === "host_nested")).toBe(true);
   });
 
-  it("appends to an existing capabilities.json without disturbing prior entries", async () => {
+  it("appends to an existing overrides.json without disturbing prior entries", async () => {
     const existing = {
-      format: VENDO_CAPABILITIES_FORMAT,
-      tools: [{
+      format: VENDO_OVERRIDES_FORMAT,
+      tools: {},
+      compounds: [{
         name: "host_existing_flow",
         description: "existing",
         inputSchema: { type: "object" },
@@ -212,7 +211,7 @@ describe("runRefine — proposals become reviewable diffs", () => {
       }],
       briefs: [{ name: "old-brief", text: "keep me" }],
     };
-    const root = await makeRoot({ ".vendo/capabilities.json": JSON.stringify(existing) });
+    const root = await makeRoot({ ".vendo/overrides.json": JSON.stringify(existing) });
     const result = await runRefine({
       root,
       model: proposalModel({
@@ -221,10 +220,10 @@ describe("runRefine — proposals become reviewable diffs", () => {
       }),
     });
     const file = JSON.parse(result.changes[0]!.after) as {
-      tools: Array<{ name: string }>;
+      compounds: Array<{ name: string }>;
       briefs: Array<{ name: string }>;
     };
-    expect(file.tools.map((tool) => tool.name)).toEqual(["host_existing_flow", "host_complete_open_tasks"]);
+    expect(file.compounds.map((tool) => tool.name)).toEqual(["host_existing_flow", "host_complete_open_tasks"]);
     expect(file.briefs.map((brief) => brief.name)).toEqual(["old-brief", "bulk-complete"]);
     expect(result.dropped.some((drop) => drop.target === "host_existing_flow" && drop.reason.includes("existing compound"))).toBe(true);
   });
@@ -482,17 +481,13 @@ describe("runRefine — the cloud-seam transcript", () => {
   });
 });
 
-// Format v3 (post-#568): on a v3 profile the engine folds compounds, briefs,
-// and override corrections into the ONE authored file, overrides.json@3 —
-// capabilities.json is never proposed.
-describe("runRefine — v3 profiles fold everything into overrides.json", () => {
-  const TOOLS_FILE_V3 = { ...TOOLS_FILE, format: VENDO_TOOLS_FORMAT_V3 };
-
-  it("proposes a single overrides.json@3 diff carrying compounds, briefs, and corrections", async () => {
+// The engine folds compounds, briefs, and override corrections into the ONE
+// authored file, overrides.json.
+describe("runRefine — everything folds into overrides.json", () => {
+  it("proposes a single overrides.json diff carrying compounds, briefs, and corrections", async () => {
     const root = await makeRoot({
-      ".vendo/tools.json": JSON.stringify(TOOLS_FILE_V3),
       ".vendo/overrides.json": JSON.stringify({
-        format: VENDO_OVERRIDES_FORMAT_V3,
+        format: VENDO_OVERRIDES_FORMAT,
         tools: { host_deleteTask: { critical: true } },
       }),
     });
@@ -512,7 +507,7 @@ describe("runRefine — v3 profiles fold everything into overrides.json", () => 
       compounds: Array<Record<string, unknown>>;
       briefs: Array<Record<string, unknown>>;
     };
-    expect(file.format).toBe(VENDO_OVERRIDES_FORMAT_V3);
+    expect(file.format).toBe(VENDO_OVERRIDES_FORMAT);
     // The existing authored entry survives; the correction merges beside it.
     expect(file.tools["host_deleteTask"]).toEqual({ critical: true });
     expect(file.tools["host_listTasks"]).toEqual({ risk: "write" });
@@ -522,11 +517,10 @@ describe("runRefine — v3 profiles fold everything into overrides.json", () => 
     expect(file.briefs).toEqual([{ name: "sweeps", text: "Use host_complete_open_tasks for bulk sweeps." }]);
   });
 
-  it("reads existing v3 compounds from overrides.json for collision checks", async () => {
+  it("reads existing compounds from overrides.json for collision checks", async () => {
     const root = await makeRoot({
-      ".vendo/tools.json": JSON.stringify(TOOLS_FILE_V3),
       ".vendo/overrides.json": JSON.stringify({
-        format: VENDO_OVERRIDES_FORMAT_V3,
+        format: VENDO_OVERRIDES_FORMAT,
         tools: {},
         compounds: [{
           name: "host_complete_open_tasks",

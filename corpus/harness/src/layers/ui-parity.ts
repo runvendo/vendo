@@ -7,7 +7,7 @@ import type { ScorecardCheck, ScorecardLayerInput, ScorecardScore } from "../sco
  * UI-parity audit layer (spec §6, ENG-257). An agent enumerates what the host
  * FRONTEND lets a user do, and that enumeration is diffed against the extracted
  * plus refined tool surface (`.vendo/tools.json` primitives + the compounds and
- * briefs in `.vendo/capabilities.json`) to produce a per-repo coverage metric.
+ * briefs in `.vendo/overrides.json`) to produce a per-repo coverage metric.
  *
  * The layer is LLM-costed and NIGHTLY-ONLY, exactly like the Layer 3 scored
  * pass@k run — it never rides the PR path (ci.yml). The live enumeration is a
@@ -208,13 +208,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Load the extracted + refined surface loosely (never throws on a shape the
  * strict schemas would reject — a real repo's generated files are the input,
  * not a fixture). Extracted primitives come from `.vendo/tools.json`; refined
- * compounds and briefs come from `.vendo/capabilities.json`; `.vendo/overrides.json`
+ * compounds and briefs come from `.vendo/overrides.json`, whose
  * disables are honored so a disabled tool is not counted as available coverage.
  */
 export async function loadSurface(repoDir: string): Promise<SurfaceEntry[]> {
   const vendoDir = path.join(repoDir, ".vendo");
   const toolsDoc = await readOptionalJson(path.join(vendoDir, "tools.json"));
-  const capsDoc = await readOptionalJson(path.join(vendoDir, "capabilities.json"));
   const overridesDoc = await readOptionalJson(path.join(vendoDir, "overrides.json"));
 
   const overrideDisabled = new Set<string>();
@@ -243,8 +242,6 @@ export async function loadSurface(repoDir: string): Promise<SurfaceEntry[]> {
   for (const tool of toolsArray) {
     if (isRecord(tool)) push(tool.name, "tool", tool.risk, tool.disabled);
   }
-  // Format v3: compounds/briefs live in overrides.json; the retired
-  // capabilities.json is still read for legacy (pre-migration) repos.
   if (isRecord(overridesDoc)) {
     if (Array.isArray(overridesDoc.compounds)) {
       for (const tool of overridesDoc.compounds) {
@@ -253,18 +250,6 @@ export async function loadSurface(repoDir: string): Promise<SurfaceEntry[]> {
     }
     if (Array.isArray(overridesDoc.briefs)) {
       for (const brief of overridesDoc.briefs) {
-        if (isRecord(brief)) push(brief.name, "brief", undefined, false);
-      }
-    }
-  }
-  if (isRecord(capsDoc)) {
-    if (Array.isArray(capsDoc.tools)) {
-      for (const tool of capsDoc.tools) {
-        if (isRecord(tool)) push(tool.name, "compound", tool.risk, tool.disabled);
-      }
-    }
-    if (Array.isArray(capsDoc.briefs)) {
-      for (const brief of capsDoc.briefs) {
         if (isRecord(brief)) push(brief.name, "brief", undefined, false);
       }
     }

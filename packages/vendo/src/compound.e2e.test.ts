@@ -1,10 +1,15 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createActions, type CapabilitiesFile, type CompoundTool, type ExtractedTool } from "@vendoai/actions";
 import {
-  VENDO_CAPABILITIES_FORMAT,
+  createActions,
+  VENDO_OVERRIDES_FORMAT,
   VENDO_TOOLS_FORMAT,
+  type CompoundTool,
+  type ExtractedTool,
+  type OverridesFile,
+} from "@vendoai/actions";
+import {
   descriptorHash,
   type ActAs,
   type AuditEvent,
@@ -67,7 +72,7 @@ function compound(name: string, steps: Step[], extras: Partial<CompoundTool> = {
   };
 }
 
-const capabilities = (tools: CompoundTool[]): CapabilitiesFile => ({ format: VENDO_CAPABILITIES_FORMAT, tools });
+const authored = (compounds: CompoundTool[]): OverridesFile => ({ format: VENDO_OVERRIDES_FORMAT, tools: {}, compounds });
 
 function countingFetch(): ReturnType<typeof vi.fn> {
   return vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
@@ -79,7 +84,7 @@ function countingFetch(): ReturnType<typeof vi.fn> {
 /** The umbrella wiring replicated exactly (server.ts): createActions, guard.bind, then invokeTool → the binding. */
 async function compose(options: {
   tools: ExtractedTool[];
-  capabilities: CapabilitiesFile;
+  overrides: OverridesFile;
   policy?: PolicyConfig;
   breakers?: { maxCallsPerMinute?: number; maxWritesPerRun?: number };
   actAs?: ActAs;
@@ -101,14 +106,14 @@ async function compose(options: {
   const fetchSpy = countingFetch();
   const actionsConfig: {
     tools: ExtractedTool[];
-    capabilities: CapabilitiesFile;
+    overrides: OverridesFile;
     baseUrl: string;
     fetch: typeof fetch;
     actAs?: ActAs;
     invokeTool?: ToolRegistry["execute"];
   } = {
     tools: options.tools,
-    capabilities: options.capabilities,
+    overrides: options.overrides,
     baseUrl: "https://host.test",
     fetch: fetchSpy as unknown as typeof fetch,
     ...(options.actAs === undefined ? {} : { actAs: options.actAs }),
@@ -127,7 +132,7 @@ async function auditEvents(guard: { audit: { query(filter: { principal?: Princip
 
 describe("per-step approvals through the real guard", () => {
   const tools = [routeTool("host_list"), writeTool("host_send")];
-  const flow = capabilities([
+  const flow = authored([
     compound("host_flow", [
       { id: "list", tool: "host_list" },
       { id: "send", tool: "host_send", args: { total: "steps.list.ok" } },
@@ -137,7 +142,7 @@ describe("per-step approvals through the real guard", () => {
   it("a write step parks the compound with the STEP's approval; approving resumes without re-running the read step", async () => {
     const { guard, bound, fetchSpy } = await compose({
       tools,
-      capabilities: flow,
+      overrides: flow,
       policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] },
     });
 
@@ -177,7 +182,7 @@ describe("per-step approvals through the real guard", () => {
   it("a standing grant on the step tool lets the whole compound run, audited per step as grant-decided", async () => {
     const { guard, bound, fetchSpy } = await compose({
       tools,
-      capabilities: flow,
+      overrides: flow,
       policy: { rules: [{ match: { tool: "host_send" }, action: "ask" }] },
     });
 
@@ -207,7 +212,7 @@ describe("per-step approvals through the real guard", () => {
   it("approving or granting the COMPOUND name only does NOT exempt its steps", async () => {
     const { guard, bound, fetchSpy } = await compose({
       tools,
-      capabilities: flow,
+      overrides: flow,
       policy: {
         rules: [
           { match: { tool: "host_flow" }, action: "ask" },
@@ -241,7 +246,7 @@ describe("breakers and critical steps see individual step calls", () => {
     const tools = [writeTool("host_send"), writeTool("host_send2")];
     const { guard, bound, fetchSpy } = await compose({
       tools,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [
           { id: "one", tool: "host_send" },
           { id: "two", tool: "host_send2" },
@@ -266,7 +271,7 @@ describe("breakers and critical steps see individual step calls", () => {
     const tools = [writeTool("host_critical", { critical: true })];
     const { guard, bound } = await compose({
       tools,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [{ id: "crit", tool: "host_critical" }], { risk: "write" }),
       ]),
     });
@@ -293,7 +298,7 @@ describe("no unguarded path", () => {
     const stepNames = new Set(["host_a", "host_b", "host_c"]);
     const { guard, bound, fetchSpy } = await compose({
       tools,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [
           { id: "a", tool: "host_a" },
           { id: "b", tool: "host_b" },
@@ -316,7 +321,7 @@ describe("no unguarded path", () => {
     const tools = [routeTool("host_list"), writeTool("host_send")];
     const { guard, bound, fetchSpy } = await compose({
       tools,
-      capabilities: capabilities([
+      overrides: authored([
         compound("host_flow", [
           { id: "list", tool: "host_list" },
           { id: "send", tool: "host_send" },
@@ -353,7 +358,7 @@ describe("no unguarded path", () => {
     const compoundFlow = compound("host_flow", [{ id: "list", tool: "host_list" }]);
     const { guard, bound, fetchSpy, store } = await compose({
       tools: [listTool],
-      capabilities: capabilities([compoundFlow]),
+      overrides: authored([compoundFlow]),
       actAs,
     });
 
@@ -409,7 +414,7 @@ describe("no unguarded path", () => {
 });
 
 describe("the real createVendo composition wires the seam", () => {
-  it("a compound defined in .vendo/capabilities.json executes through guard with per-step approvals", async () => {
+  it("a compound defined in .vendo/overrides.json executes through guard with per-step approvals", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-umbrella-compound-"));
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-umbrella-store-"));
     const previousCwd = process.cwd();
@@ -423,7 +428,7 @@ describe("the real createVendo composition wires the seam", () => {
       format: VENDO_TOOLS_FORMAT,
       tools: [routeTool("host_list"), writeTool("host_send")],
     }));
-    await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify(capabilities([
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(authored([
       compound("host_flow", [
         { id: "list", tool: "host_list" },
         { id: "send", tool: "host_send" },

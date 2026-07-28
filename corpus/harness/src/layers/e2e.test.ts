@@ -260,7 +260,7 @@ describe("runE2eLayer", () => {
     const repoDir = path.join(root, "repo");
     await mkdir(path.join(expectationsRoot, "fixture"), { recursive: true });
     await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
-    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: [] }));
     await writeFile(
       path.join(expectationsRoot, "fixture", "conversations.json"),
       JSON.stringify({
@@ -337,7 +337,7 @@ describe("runE2eLayer", () => {
     const repoDir = path.join(root, "repo");
     await mkdir(path.join(expectationsRoot, "umami"), { recursive: true });
     await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
-    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: [] }));
     await writeFile(
       path.join(expectationsRoot, "umami", "conversations.json"),
       JSON.stringify({
@@ -426,7 +426,7 @@ describe("runE2eLayer", () => {
     const repoDir = path.join(root, "repo");
     await mkdir(path.join(expectationsRoot, "papermark"), { recursive: true });
     await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
-    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: [] }));
     await writeFile(
       path.join(expectationsRoot, "papermark", "conversations.json"),
       JSON.stringify({
@@ -502,7 +502,7 @@ describe("runE2eLayer", () => {
     const repoDir = path.join(root, "repo");
     await mkdir(path.join(expectationsRoot, "teable"), { recursive: true });
     await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
-    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: [] }));
     await writeFile(
       path.join(expectationsRoot, "teable", "conversations.json"),
       JSON.stringify({

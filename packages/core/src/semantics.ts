@@ -1,14 +1,13 @@
 import { z } from "zod";
-import type { Json } from "./ids.js";
 import { describeShape, type ShapeType } from "./shape.js";
 
 /**
  * W3 (v3 spec §Context) — field semantics: what a tool-response field MEANS
  * (cents money, ISO date, enum vocabulary, id, percent scale), beyond its
- * structural shape. Derived ONCE at `vendo sync` into the reviewable
- * `.vendo/semantics.json` (host annotation > one-time inference > plain) and
- * consumed by generation context (annotated shape cards), the compile-time
- * law checks, and the Kit's format defaults.
+ * structural shape. Carried per tool inside `.vendo/tools.json` (the machine
+ * layer, overlaid by the host's `overrides.json` annotations) and consumed by
+ * generation context (annotated shape cards), the compile-time law checks, and
+ * the Kit's format defaults.
  */
 export type FieldSemantic =
   | { kind: "money"; unit: "cents" | "dollars"; currency?: string }
@@ -47,23 +46,6 @@ export const domainManifestSchema: z.ZodType<DomainManifest> = z.object({
   has: z.array(z.string()),
   hasNot: z.array(z.string()),
 });
-
-export const VENDO_SEMANTICS_FORMAT = "vendo/semantics@1" as const;
-
-/** `.vendo/semantics.json` — generated at sync, REVIEWABLE and host-editable:
- *  sync preserves existing entries (inference runs once per field) and hosts
- *  may correct any entry or extend `domains`. */
-export interface SemanticsFile {
-  format: typeof VENDO_SEMANTICS_FORMAT;
-  tools: Record<string, ToolSemantics>;
-  domains: DomainManifest;
-}
-
-export const semanticsFileSchema = z.object({
-  format: z.literal(VENDO_SEMANTICS_FORMAT),
-  tools: z.record(toolSemanticsSchema),
-  domains: domainManifestSchema,
-}).passthrough() satisfies z.ZodType<SemanticsFile>;
 
 // ---------------------------------------------------------------------------
 // Inference (name patterns + sampled values; conservative — anything unsure
@@ -136,44 +118,6 @@ export function inferFieldSemantic(name: string, values: readonly unknown[]): Fi
       : { kind: "money", unit: "cents" };
   }
   return { kind: "plain" };
-}
-
-/** Collect sampled values per collapsed dot path across samples. */
-const collectFieldValues = (samples: readonly Json[]): Map<string, unknown[]> => {
-  const byPath = new Map<string, unknown[]>();
-  const visit = (value: unknown, path: string, depth: number): void => {
-    if (depth > 12) return;
-    if (Array.isArray(value)) {
-      for (const item of value.slice(0, 20)) visit(item, path, depth + 1);
-      return;
-    }
-    if (value !== null && typeof value === "object") {
-      for (const [key, child] of Object.entries(value)) {
-        const childPath = path === "" ? key : `${path}.${key}`;
-        if (child === null || typeof child !== "object") {
-          const bucket = byPath.get(childPath) ?? [];
-          bucket.push(child);
-          byPath.set(childPath, bucket);
-        } else {
-          visit(child, childPath, depth + 1);
-        }
-      }
-    }
-  };
-  for (const sample of samples) visit(sample, "", 0);
-  return byPath;
-};
-
-/** Infer a whole tool response's field semantics from recorded samples.
- *  Plain fields are omitted (the file stays small and reviewable). */
-export function inferToolSemantics(samples: readonly Json[]): ToolSemantics {
-  const semantics: ToolSemantics = {};
-  for (const [path, values] of collectFieldValues(samples)) {
-    const name = path.split(".").pop() ?? path;
-    const semantic = inferFieldSemantic(name, values);
-    if (semantic.kind !== "plain") semantics[path] = semantic;
-  }
-  return semantics;
 }
 
 /** Resolve a binding's RFC 6901 pointer against collapsed-path semantics:

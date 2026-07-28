@@ -17,9 +17,7 @@ import * as conformance from "./conformance/index.js";
 import * as core from "./index.js";
 import {
   VENDO_APP_FORMAT,
-  VENDO_TOOLS_FORMAT,
-  VENDO_OVERRIDES_FORMAT,
-  VENDO_CAPABILITIES_FORMAT,
+  VENDO_TREE_FORMAT,
   VENDO_POLICY_FORMAT,
   TOOL_NAME_PATTERN,
   VendoError,
@@ -76,12 +74,20 @@ const oracleHash = (canonical: string): string =>
 
 describe("§1 — format constants are pinned to their exact wire strings", () => {
   // Renaming any of these breaks stored records; the string values ARE the contract.
-  it("carries the five frozen format tags verbatim", () => {
+  it("carries the three frozen format tags verbatim", () => {
     expect(VENDO_APP_FORMAT).toBe("vendo/app@1");
-    expect(VENDO_TOOLS_FORMAT).toBe("vendo/tools@1");
-    expect(VENDO_OVERRIDES_FORMAT).toBe("vendo/overrides@1");
-    expect(VENDO_CAPABILITIES_FORMAT).toBe("vendo/capabilities@1");
+    expect(VENDO_TREE_FORMAT).toBe("vendo-genui/v2");
     expect(VENDO_POLICY_FORMAT).toBe("vendo/policy@1");
+  });
+
+  // The tools/overrides tags moved to @vendoai/actions at @3 and the capabilities
+  // tag was retired with the pre-v3 `.vendo` layer. Core cannot import from
+  // actions (layering), so their absence here is the assertion.
+  it("no longer carries the retired pre-v3 tags", () => {
+    const registry = core as unknown as Record<string, unknown>;
+    for (const name of ["VENDO_TOOLS_FORMAT", "VENDO_OVERRIDES_FORMAT", "VENDO_CAPABILITIES_FORMAT", "VENDO_SEMANTICS_FORMAT"]) {
+      expect(name in registry, `retired export ${name} is back on the core surface`).toBe(false);
+    }
   });
 });
 

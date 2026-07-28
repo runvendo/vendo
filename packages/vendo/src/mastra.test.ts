@@ -4,9 +4,8 @@ import { join } from "node:path";
 import { Agent } from "@mastra/core/agent";
 import { RequestContext } from "@mastra/core/request-context";
 import { Tool, noopObserve } from "@mastra/core/tools";
-import type { ExtractedTool } from "@vendoai/actions";
+import { VENDO_TOOLS_FORMAT, type ExtractedTool } from "@vendoai/actions";
 import {
-  VENDO_TOOLS_FORMAT,
   VendoError,
   parseVendoToolEnvelope,
   vendoApprovalRefSchema,

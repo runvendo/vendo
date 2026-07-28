@@ -267,7 +267,7 @@ describe("vendo doctor", () => {
   it("fails when the extracted tool surface has zero live tools (the agent cannot act on the host)", async () => {
     const root = await healthy();
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
-      format: "vendo/tools@1",
+      format: "vendo/tools@3",
       tools: [{
         name: "host_internal_hook", description: "d", inputSchema: { type: "object" }, risk: "write", disabled: true,
         binding: { kind: "route", method: "POST", path: "/api/hook", argsIn: "body" },
@@ -285,7 +285,7 @@ describe("vendo doctor", () => {
 
   it("warns (does not fail) when extraction produced zero tools — connector-only hosts are legitimate", async () => {
     const root = await healthy();
-    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: [] }));
     const messages = output();
     expect(await doctor({
       targetDir: root,
@@ -299,7 +299,7 @@ describe("vendo doctor", () => {
   it("a live tool surface passes the zero-live-tools check", async () => {
     const root = await healthy();
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
-      format: "vendo/tools@1",
+      format: "vendo/tools@3",
       tools: [{
         name: "host_invoices_list", description: "d", inputSchema: { type: "object" }, risk: "read",
         binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
@@ -315,7 +315,7 @@ describe("vendo doctor", () => {
     expect(messages.errors).toEqual([]);
   });
 
-  it("grades the live-surface check on a v3 tools.json + v3 overrides.json too", async () => {
+  it("grades the live-surface check through an overrides.json disable too", async () => {
     const root = await healthy();
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
       format: "vendo/tools@3",

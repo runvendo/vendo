@@ -7,14 +7,11 @@ import {
   mergeOverrides,
 } from "@vendoai/actions/sync";
 import {
-  VENDO_TOOLS_FORMAT_V3,
-  overridesFileV3Schema,
+  VENDO_TOOLS_FORMAT,
   overridesFileSchema,
-  toolsFileV3Schema,
-  vendoFileVersion,
-  migrateLegacyVendoDir,
-  type OverridesFileV3,
-  type ToolsFileV3,
+  toolsFileSchema,
+  type OverridesFile,
+  type ToolsFile,
 } from "@vendoai/actions";
 import { readOptional } from "../shared.js";
 import type { ExtractionDraft } from "../extract/harness.js";
@@ -51,8 +48,8 @@ export async function readPreviousToolsState(vendoDir: string): Promise<Previous
   if (raw === null) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if ((parsed as { format?: unknown }).format !== VENDO_TOOLS_FORMAT_V3) return null;
-    const file = toolsFileV3Schema.parse(parsed);
+    if ((parsed as { format?: unknown }).format !== VENDO_TOOLS_FORMAT) return null;
+    const file = toolsFileSchema.parse(parsed);
     // Belt-and-suspenders: never carry a non-object-id watermark past the
     // read boundary (defence in depth with computeEnrichmentDiff's OBJECT_ID
     // guard). A tampered value is dropped, degrading to full mode.
@@ -67,11 +64,11 @@ export async function readPreviousToolsState(vendoDir: string): Promise<Previous
   }
 }
 
-async function readToolsFile(vendoDir: string): Promise<ToolsFileV3 | null> {
+async function readToolsFile(vendoDir: string): Promise<ToolsFile | null> {
   const raw = await readOptional(join(vendoDir, "tools.json"));
   if (raw === null) return null;
   try {
-    return toolsFileV3Schema.parse(JSON.parse(raw));
+    return toolsFileSchema.parse(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -79,22 +76,19 @@ async function readToolsFile(vendoDir: string): Promise<ToolsFileV3 | null> {
 
 /** Read-only context for the model: human overrides always win. Never throws
  *  — a malformed overrides file already failed the structural sync loudly. */
-async function readOverridesContext(vendoDir: string): Promise<OverridesFileV3 | null> {
+async function readOverridesContext(vendoDir: string): Promise<OverridesFile | null> {
   const raw = await readOptional(join(vendoDir, "overrides.json"));
   if (raw === null) return null;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    return vendoFileVersion(parsed) === 1
-      ? migrateLegacyVendoDir({ overrides: overridesFileSchema.parse(parsed) }).overrides
-      : overridesFileV3Schema.parse(parsed);
+    return overridesFileSchema.parse(JSON.parse(raw));
   } catch {
     return null;
   }
 }
 
-async function writeToolsFile(vendoDir: string, file: ToolsFileV3, watermark: string | undefined): Promise<void> {
+async function writeToolsFile(vendoDir: string, file: ToolsFile, watermark: string | undefined): Promise<void> {
   const { watermark: _previous, ...rest } = file;
-  const next = toolsFileV3Schema.parse({
+  const next = toolsFileSchema.parse({
     ...rest,
     ...(watermark === undefined ? {} : { watermark }),
   });

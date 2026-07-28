@@ -93,7 +93,7 @@ async function writeInitOutput(
     path.join(repoDir, ".vendo/tools.json"),
     JSON.stringify(
       {
-        format: "vendo/tools@1",
+        format: "vendo/tools@3",
         tools: [
           {
             name: "host_listInvoices",
@@ -226,7 +226,7 @@ describe("runScoredLayer", () => {
     await writeFile(
       path.join(repoDir, ".vendo/tools.json"),
       JSON.stringify({
-        format: "vendo/tools@1",
+        format: "vendo/tools@3",
         tools: [
           {
             name: "host_polls_list",
@@ -262,7 +262,7 @@ describe("runScoredLayer", () => {
     await writeFile(
       path.join(repoDir, ".vendo/tools.json"),
       JSON.stringify({
-        format: "vendo/tools@1",
+        format: "vendo/tools@3",
         tools: [
           {
             name: "host_polls_create",
@@ -305,7 +305,7 @@ describe("runScoredLayer", () => {
     await writeFile(
       path.join(repoDir, ".vendo/tools.json"),
       JSON.stringify({
-        format: "vendo/tools@1",
+        format: "vendo/tools@3",
         tools: [
           graphqlTool("host_api_keys", "apiKeys", "query", "read"),
           graphqlTool("host_create_api_key", "createApiKey", "mutation", "write"),
@@ -329,7 +329,7 @@ describe("runScoredLayer", () => {
     await writeFile(
       path.join(repoDir, ".vendo/tools.json"),
       JSON.stringify({
-        format: "vendo/tools@1",
+        format: "vendo/tools@3",
         tools: [graphqlTool("host_create_api_key", "createApiKey", "mutation", "read")],
       }, null, 2) + "\n",
     );
@@ -357,7 +357,7 @@ describe("runScoredLayer", () => {
     await writeFile(
       path.join(repoDir, ".vendo/tools.json"),
       JSON.stringify({
-        format: "vendo/tools@1",
+        format: "vendo/tools@3",
         tools: [
           {
             name: "host_create_invoice",
@@ -393,7 +393,7 @@ describe("runScoredLayer", () => {
     await writeFile(
       path.join(repoDir, ".vendo/tools.json"),
       JSON.stringify({
-        format: "vendo/tools@1",
+        format: "vendo/tools@3",
         tools: [
           {
             name: "host_create_invoice",
