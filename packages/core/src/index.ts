@@ -47,6 +47,14 @@ export { WIRE_ISSUE_CODES, type WireIssue, type WireIssueCode } from "./genui/wi
 // wire (the model's edit context), apply the model's <Edit> patch.
 export { compileWirePatch, type PatchExtensionOp, type WirePatchBase, type WirePatchOptions, type WirePatchResult } from "./genui/wire/patch.js";
 export { printWire, type WirePrintInput, type WirePrintOptions } from "./genui/wire/print.js";
+// The brain's edit surface: exact old/new text edits over the id-free print,
+// and the recompile that carries node ids across them.
+export {
+  applyTextEdits,
+  recompileWithIdentity,
+  type TextEdit,
+  type TextEditResult,
+} from "./genui/wire/text-edit.js";
 export { checkBindingShapes, type BindingShapeError } from "./genui/wire/shape-check.js";
 
 // Deprecated aliases from the pre-de-versioning naming (0.4.x). Remove next minor.
