@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { runAssemble, type AssembleIo, type AssembleResult } from "./assemble.js";
@@ -214,7 +214,13 @@ async function dirtyOutsideDemo(demosRepo: string, slug: string, io: { exec: Exe
 async function contentId(demosRepo: string, relative: string): Promise<string> {
   try {
     const target = path.join(demosRepo, relative);
-    if ((await stat(target)).isDirectory()) return "dir";
+    // lstat, never stat: following a link reads outside the repo, and
+    // `host/x -> /dev/zero` is an unbounded read — a hang where the fence owes a
+    // refusal. A link's TARGET is its identity, so re-pointing one is a change.
+    const info = await lstat(target);
+    if (info.isSymbolicLink()) return `symlink:${await readlink(target)}`;
+    if (info.isDirectory()) return "dir";
+    if (!info.isFile()) return `special:${info.mode}`;
     return createHash("sha256").update(await readFile(target)).digest("hex");
   } catch {
     // Gone, unreadable, or a dangling link. Recorded as a value like any other,

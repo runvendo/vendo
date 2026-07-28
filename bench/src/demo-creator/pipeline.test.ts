@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -344,6 +344,23 @@ describe("assertOnlyDemoTouched against a baseline", () => {
       .catch((thrown: unknown) => thrown as Error);
     expect(error.message).toContain("host/public/brand/stray.png");
     expect(error.message).not.toContain("manifest.ts");
+  });
+
+  // The baseline is the ONLY set of paths the fence reads content from, and
+  // following a link would read outside the repo entirely — `host/x -> /dev/zero`
+  // is an unbounded read, i.e. a hang where a refusal belongs. The link's TARGET
+  // is its identity, so re-pointing it is a change.
+  it("compares a symlink by its target instead of following it", async () => {
+    const { repo, artifact } = await checkoutWithArtifact("export const demos = [];\n");
+    const link = "host/src/generated/link.ts";
+    await symlink(path.join(repo, artifact), path.join(repo, link));
+    const exec = statusExec(`!! ${link}\n`);
+    const baseline = await snapshotHostBaseline(repo, "acme", { exec });
+    await expect(assertOnlyDemoTouched(repo, "acme", { exec }, baseline)).resolves.toBeUndefined();
+
+    await rm(path.join(repo, link));
+    await symlink("/dev/zero", path.join(repo, link));
+    await expect(assertOnlyDemoTouched(repo, "acme", { exec }, baseline)).rejects.toThrow(/link\.ts/);
   });
 
   // No baseline means no excuses: a caller that forgets to snapshot gets the
