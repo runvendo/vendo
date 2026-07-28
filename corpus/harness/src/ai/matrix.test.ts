@@ -302,6 +302,25 @@ describe("runAiRepoMatrix", () => {
     expect(notes).toContain("3 proposals carried no evidence");
   });
 
+  it("surfaces the pass's own warnings as degradation notes", async () => {
+    // A judge batch that fails to parse takes every proposal in it down with it,
+    // which depresses coverage and risk accuracy for a reason that has nothing to
+    // do with model quality. The pass only reports it on its warning channel, so
+    // the scoreboard has to read it from there or the table misleads.
+    const result = await runOneCell({
+      runPass: async (options) => {
+        options.output.error("warning: judge batch 2/2 unusable (String must contain at most 300 character(s)) — its tools stay unjudged");
+        options.output.log("judgment (explicit engine): 2 tools judged");
+        return await writingPass(perfectJudgments)(options);
+      },
+    });
+
+    const notes = result.models[0]!.notes.join(" | ");
+    expect(notes).toContain("judge batch 2/2 unusable");
+    // Plain narrative lines are not degradation notes.
+    expect(notes).not.toContain("2 tools judged");
+  });
+
   it("floors a cell when the judgments file is malformed rather than crashing the repo row", async () => {
     const result = await runOneCell({
       runPass: async (options) => {

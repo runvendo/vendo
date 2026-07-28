@@ -186,6 +186,23 @@ function degradationNotes(counts: JudgmentPassCounts): string[] {
   return notes;
 }
 
+/**
+ * The pass's warnings, lifted off its output channel.
+ *
+ * `JudgmentPassResult` does not carry them, and they are the single biggest
+ * confounder for this scoreboard: an unusable judge batch takes EVERY proposal in
+ * it down, so coverage and risk accuracy drop for a reason that is not model
+ * quality. Without this the table would show the depressed number and no cause.
+ *
+ * Coverage leads ("missed surface") are excluded — those are findings ABOUT the
+ * repo, not degradations of the run.
+ */
+function warningNotes(transcript: readonly string[]): string[] {
+  return transcript
+    .filter((line) => line.startsWith("stderr: warning:") && !line.includes("missed surface"))
+    .map((line) => line.replace(/^stderr: warning:\s*/, ""));
+}
+
 export interface RunAiRepoMatrixOptions {
   repoName: string;
   appRoot: string;
@@ -357,6 +374,7 @@ export async function runAiRepoMatrix(options: RunAiRepoMatrixOptions): Promise<
         counts = result;
         notes = degradationNotes(result);
       }
+      notes = [...notes, ...warningNotes(transcript)];
     } catch (error) {
       failure = `judgment pass failed: ${error instanceof Error ? error.message : String(error)}`;
     }
