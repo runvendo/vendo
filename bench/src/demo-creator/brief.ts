@@ -240,7 +240,7 @@ Output ONLY a JSON object (no prose, no markdown fence), exactly this shape:
   "chipMaterial": ["<3-6 things a real ${prospect} user would ask for, imperative, in their vocabulary>"],
   "placement": {
     "trigger": "header" | "sidebar",
-    "slot": "<where in the cloned screen the Vendo trigger renders, e.g. 'beside the search field in the top bar'>"
+    "slot": "<where in the cloned screen the full-width generated-view PANEL renders, e.g. 'its own full-width row directly above the shipments table'>"
   },
   "colors": {
 ${themeColorTokens.map((token) => `    "${token}": { "hex": "<EXACT hex from the list>", "reason": "<one line>" }`).join(",\n")}
@@ -252,7 +252,12 @@ ${themeColorTokens.map((token) => `    "${token}": { "hex": "<EXACT hex from the
 ALL record names and data are INVENTED — the evidence informs STYLE, never DATA.
 Never reproduce a real customer, invoice or person from the screenshots.
 "trigger" is "header" if their chrome is a top bar, "sidebar" if the primary nav
-is a left rail. "density"/"motion" are your read of the screenshots.`;
+is a left rail. "slot" is a DIFFERENT surface from the trigger: the trigger is a
+button, the slot is the panel a generated view renders into, so it needs a
+content column — a row inside <main>, or a full-width band above a table or a
+stat strip. Never place it in a control row (a top bar, a filter/date cluster, a
+toolbar): those give it no width, and it is the panel, not the button, that goes
+there. "density"/"motion" are your read of the screenshots.`;
 }
 
 // ---------------------------------------------------------------------------
