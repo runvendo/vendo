@@ -14,10 +14,15 @@ given only the handler excerpt. Do not relabel from model output.
   users, and line 35 `const stripeSession = await stripe.checkout.sessions.create({`
   for free users. There is no read-only branch.
 
-## Rows deliberately LEFT at their current grade
-
-- `GET /api/auth/{nextauth}` stays as labeled. `pages/api/auth/[...nextauth].ts:6`
-  is `export default NextAuth(authOptions)` — a catch-all union in which
-  `/callback/:provider` mints a session while other sub-paths are read-only.
-  Which grade a catch-all union should carry is a labeling-policy decision, not
-  something this repo's source settles.
+- `GET /api/auth/{nextauth}` → `write` (`POST` was already `write`), the
+  catch-all graded at its worst reachable operation per the rule the README now
+  states. `pages/api/auth/[...nextauth].ts:6` is
+  `export default NextAuth(authOptions)` — one opaque default export for every
+  sub-path and every method. (The App Router copy at
+  `app/api/auth/[...nextauth]/_route.ts` is inert: the underscore prefix means
+  Next never routes it.) Two things behind the URL change stored state:
+  `lib/auth.ts:17`: `  adapter: PrismaAdapter(db as any),` persists the user,
+  account and verification-token rows, and `lib/auth.ts:48`:
+  `const result = await postmarkClient.sendEmailWithTemplate({` sends the
+  magic-link email — an outbound effect the caller cannot take back. Neither is
+  bulk or irreversible, so `write` is the worst grade, not `destructive`.

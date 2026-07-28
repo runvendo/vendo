@@ -5,7 +5,7 @@
       "name": "getAuthNextauth",
       "method": "GET",
       "path": "/api/auth/{nextauth}",
-      "risk": "read"
+      "risk": "write"
     },
     {
       "name": "postAuthNextauth",

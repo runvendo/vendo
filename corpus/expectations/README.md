@@ -212,6 +212,27 @@ judgment the AI pass is scored on:
   `notes.md`; a later model disagreeing with a curated row is a bug report
   about the model, not a reason to relabel. Change one only by citing a
   handler line that contradicts the recorded citation.
+
+  Three rules the mutation test does not derive on its own decide the rows it
+  used to leave undecidable. They are the same rules the judge prompt states
+  (`packages/vendo/src/cli/judge/prompts.ts`), so labels and model are graded
+  against one policy rather than two:
+  - **A catch-all route is graded at its WORST reachable operation**, and carries
+    that grade on every method it exports. When one URL fronts many operations
+    (`[...nextauth]`, `[trpc]`, an upload or OAuth SDK handler), which method
+    reaches which operation is decided inside the dependency; splitting the grade
+    by verb invents a benign method that may not exist. Where the host's source
+    cannot settle what the catch-all exposes, read the pinned dependency and cite
+    it (see rallly's better-auth row and skateshop's uploadthing row), and if even
+    that cannot settle it, grade at the worst plausible operation and say so.
+  - **`destructive` needs BULK or IRREVERSIBLE loss** — a delete spanning many
+    records, or the loss of something that cannot be re-created. A hard delete of
+    ONE easily re-created row or object (remove a member, cancel an invite,
+    remove an image) is `write`. If every delete were `destructive` the top grade
+    would stop carrying information.
+  - **An unrecallable outbound effect is a `write` with no row written** — mail or
+    SMS sent, a webhook delivered, a payment captured, an external checkout or
+    billing-portal session created. Receiving a webhook is not one of these.
 - `critical` marks tools that must carry a critical (irreversible) mark. It is
   a curator addition, never derived; the critical check only runs for repos
   that label at least one.

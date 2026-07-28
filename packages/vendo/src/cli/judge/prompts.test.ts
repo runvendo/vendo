@@ -148,3 +148,53 @@ describe("JUDGE_OUTPUT_RULES — the risk test is mutation of stored state", () 
     expect(JUDGE_OUTPUT_RULES).toMatch(/queued for a human/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Three labeling-policy rules the mutation test alone does not settle. Each one
+// was a row the corpus curation lane had to PARK because the prompt had no
+// answer for it (PR #684): the catch-all unions, the write-vs-destructive
+// threshold on a single-row delete, and a handler that only sends mail.
+// ---------------------------------------------------------------------------
+
+describe("JUDGE_OUTPUT_RULES — a catch-all route is graded at its worst operation", () => {
+  it("says to grade the whole URL at the most dangerous operation reachable behind it", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/catch-all/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/worst operation|most dangerous operation/i);
+  });
+
+  it("names the shapes so the model recognizes one", () => {
+    expect(JUDGE_OUTPUT_RULES).toContain("[...nextauth]");
+    expect(JUDGE_OUTPUT_RULES).toContain("[trpc]");
+  });
+
+  it("says a benign method split may not be guessed when reachability lives in the dependency", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/inside the dependency|in the dependency/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/worst plausible/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/say so in the reason/i);
+  });
+});
+
+describe("JUDGE_OUTPUT_RULES — `destructive` is reserved for bulk or irreversible loss", () => {
+  it("states the threshold as bulk OR irreversible", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/bulk or irreversible/i);
+  });
+
+  it("grades a hard delete of one easily re-created row as write, not destructive", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/re-created|recreated/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/single|one/i);
+    // The reason has to be in the prompt too: a top grade everyone earns is not a grade.
+    expect(JUDGE_OUTPUT_RULES).toMatch(/click through|means nothing|mean nothing/i);
+  });
+});
+
+describe("JUDGE_OUTPUT_RULES — an outbound side effect is a write with no row written", () => {
+  it("names the unrecallable outbound effects that count as mutations", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/email/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/webhook/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/payment/i);
+  });
+
+  it("says stored state is not only the handler's own database", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/not only your own database|not only the database|not only your database/i);
+  });
+});

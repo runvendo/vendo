@@ -389,13 +389,13 @@
       "name": "getBetterAuth",
       "method": "GET",
       "path": "/api/better-auth/{all}",
-      "risk": "read"
+      "risk": "destructive"
     },
     {
       "name": "postBetterAuth",
       "method": "POST",
       "path": "/api/better-auth/{all}",
-      "risk": "write"
+      "risk": "destructive"
     },
     {
       "name": "getEvent",
@@ -413,7 +413,7 @@
       "name": "getIntegrations",
       "method": "GET",
       "path": "/api/integrations/{connection}",
-      "risk": "read"
+      "risk": "write"
     },
     {
       "name": "postIntegrations",

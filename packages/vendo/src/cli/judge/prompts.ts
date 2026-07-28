@@ -23,6 +23,15 @@ import type { ExtractedTool } from "@vendoai/actions";
  *
  * Nothing here is trusted. The rules tell the model what may land; the
  * deterministic direction rule in `@vendoai/actions` decides what actually does.
+ *
+ * The risk section also carries three LABELING-POLICY rules the mutation test
+ * cannot derive on its own. Each one is here because a corpus row had to be
+ * parked without it (PR #684): a catch-all URL is graded at its worst operation
+ * because per-method reachability lives inside the dependency; `destructive`
+ * needs bulk or irreversible loss, so a single re-creatable row delete is a
+ * `write`; and an unrecallable outbound effect (mail sent, payment captured) is
+ * a `write` with no row written. They are conventions, not derivations — a model
+ * cannot guess them, so they have to be stated.
  */
 
 export const JUDGE_OUTPUT_RULES = [
@@ -52,6 +61,21 @@ export const JUDGE_OUTPUT_RULES = [
   "  reshaping of data already fetched; and protocol metadata (handshakes, capability or schema",
   "  listings, presigned-URL issuance that stores nothing). \"Not an application read\" is not a",
   "  reason to call something a write — the only question is whether stored state changes.",
+  "  Stored state is not only your own database. An OUTBOUND side effect the caller cannot take",
+  "  back is a write even when no row is written: an email or SMS sent, a webhook or push",
+  "  delivered, a payment captured, an external checkout or billing-portal session created.",
+  "  DESTRUCTIVE is reserved for BULK OR IRREVERSIBLE loss: a delete that spans many records",
+  "  (deleteMany, truncate, purge, reset), or the loss of something that cannot be re-created",
+  "  (an account and its history, an uploaded original, an audit trail). A hard delete of ONE",
+  "  easily re-created row or object — remove a member, cancel an invite, remove an image — is",
+  "  `write`. If every delete were destructive the top grade would mean nothing and people would",
+  "  click through the one warning that matters.",
+  "  A CATCH-ALL route is graded at its WORST operation. When one URL fronts many operations",
+  "  (`[...nextauth]`, `[trpc]`, an upload or OAuth SDK handler), which method reaches which",
+  "  operation is usually decided inside the dependency, not in this repo's source. Do not guess",
+  "  a benign method split: grade the tool at the most dangerous operation reachable behind that",
+  "  URL, and when you cannot determine from source which operations it exposes, grade at the",
+  "  worst PLAUSIBLE one and say so in the reason.",
   "  You may move risk in BOTH directions: RAISE it when the handler mutates more than its label",
   "  admits, and LOWER it when it mutates nothing. A raise applies immediately; a lowering is",
   "  queued for a human. Do NOT hedge upward to be safe: an over-tight grade silently breaks a",

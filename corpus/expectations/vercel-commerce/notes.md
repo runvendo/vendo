@@ -2,6 +2,27 @@
 
 Pinned SHA 3761e52e.
 
+## Curated `ai-expected.json` risk rows (hand-verified, FROZEN)
+
+- `POST /api/revalidate` → `read` (was the mechanical `POST` → `write`). This is
+  a Shopify webhook RECEIVER whose only effect is invalidating the Next.js cache,
+  which the labeling rule explicitly does not count as a mutation. The route is a
+  one-line delegation (`app/api/revalidate/route.ts:5`: `  return revalidate(req);`)
+  and the function it delegates to does exactly two things —
+  `lib/shopify/index.ts:535`: `    revalidateTag(TAGS.collections, "seconds");`
+  and `:539`: `    revalidateTag(TAGS.products, "seconds");`. `revalidateTag` is
+  `next/cache` (`lib/shopify/index.ts:11`). There is no `fetch`, no Shopify
+  Admin/Storefront mutation, no datastore client and no cookie or session write
+  anywhere in the function (`:506-543`); its other statements read a header,
+  read a query parameter, compare a secret, and build the JSON response.
+
+  Receiving a webhook is not the same as firing one: the rule counts an outbound
+  effect the caller cannot take back, and this handler makes no outbound call.
+
+  Read from the pinned source and independently confirmed by a second reviewer
+  given only the handler excerpt, the then-current label and the rule. Do not
+  relabel from model output.
+
 ## fontFamily provenance
 
 `app/globals.css:1` is Tailwind v4 (`@import "tailwindcss"`) with no
