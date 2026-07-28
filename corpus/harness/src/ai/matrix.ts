@@ -435,9 +435,16 @@ const DIMENSION_COLUMNS = [
   { key: "descriptions", header: "Descriptions" },
 ] as const;
 
+/** A dimension cell. Percentages, not raw point sums: a fractional check score
+ *  renders as `0.333333/1`, which is unreadable in a table a human scans. The
+ *  real x-of-y counts live in each check's detail, reproduced under the table. */
 function cell(score: ScorecardScore | undefined): string {
   if (!score || score.total === 0) return "—";
-  return `${score.passed}/${score.total}`;
+  return `${Math.round(score.value * 100)}%`;
+}
+
+function overallCell(score: ScorecardScore): string {
+  return `${score.value.toFixed(3)} (${Number(score.passed.toFixed(2))}/${score.total})`;
 }
 
 /** Raw error messages and notes go into table cells — keep them from
@@ -475,11 +482,30 @@ export function renderAiScoreboardMarkdown(doc: AiScoreboardDocument): string {
         "",
         repo.repo,
         run.model,
-        `${run.score.value.toFixed(3)} (${cell(run.score)})`,
+        overallCell(run.score),
         ...DIMENSION_COLUMNS.map((column) => cell(run.dimensions[column.key])),
         escapeCell(notes.join("; ")) || "all checks passed",
         "",
       ].join(" | ").trim());
+    }
+  }
+
+  // The percentages above are scannable but lossy — "33%" does not say 1-of-3.
+  // Every failing check's own detail carries the counts, so it is reproduced
+  // verbatim here rather than left in a per-cell checks.json nobody opens.
+  const failing = doc.repos.flatMap((repo) =>
+    repo.models.flatMap((run) =>
+      run.checks.filter((check) => !check.pass).map((check) => ({ repo: repo.repo, run, check }))));
+  if (failing.length > 0) {
+    lines.push("", "## Failing checks", "");
+    let heading = "";
+    for (const { repo, run, check } of failing) {
+      const current = `${repo} × ${run.model}`;
+      if (current !== heading) {
+        heading = current;
+        lines.push(`### ${current}`, "");
+      }
+      lines.push(`- \`${check.id}\` — ${escapeCell(check.detail)}`);
     }
   }
 

@@ -389,9 +389,14 @@ describe("scoreboard", () => {
     expect(markdown).toContain("# Judgment channel scoreboard");
     expect(markdown).toContain("Risk accuracy");
     expect(markdown).toContain("Evidence");
-    expect(markdown).toContain("| invoicer | default | 0.900 (9/10) |");
-    expect(markdown).toContain("ai.risk.accuracy");
+    // Dimensions render as percentages; fractional point sums like `0.333333/1`
+    // are unreadable in a scanned table.
+    expect(markdown).toContain("| invoicer | default | 0.900 (9/10) | 50% | — | — | 100% |");
     expect(markdown).toContain("| broken | — | FAIL |");
+    // The lossy percentages are backed by each failing check's own counts.
+    expect(markdown).toContain("## Failing checks");
+    expect(markdown).toContain("### invoicer × default");
+    expect(markdown).toContain("`ai.risk.accuracy` — 1/2");
   });
 
   it("slugs model ids into safe artifact directory names", () => {
