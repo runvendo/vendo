@@ -75,16 +75,14 @@ async function inventory(root: string, at = root): Promise<Record<string, string
   return entries;
 }
 
-type DeepStage = "survey" | "draft" | "cross-check" | "brief" | "seeds";
+type DeepStage = "judge" | "skeptic" | "brief" | "seeds";
 
-/** Identify which pass an instruction string belongs to (stages.test.ts's
- *  markers plus the seeds pass's). */
+/** Identify which pass an instruction string belongs to. */
 function stageOf(instructions: string): DeepStage {
-  if (instructions.includes("extraction surveyor")) return "survey";
-  if (instructions.includes("cross-checker")) return "cross-check";
-  if (instructions.includes("drafting the product brief")) return "brief";
+  if (instructions.includes("judgment SKEPTIC")) return "skeptic";
+  if (instructions.includes("judgment agent")) return "judge";
   if (instructions.includes("try-surface seeder")) return "seeds";
-  return "draft";
+  return "brief";
 }
 
 /** A scripted harness: responds per pass, records every run. */
@@ -109,12 +107,19 @@ function scriptedHarness(
   };
 }
 
-const SURVEY = {
-  surfaces: [{ name: "Invoices", note: "app/api/invoices", tools: TOOLS.map((tool) => tool.name) }],
+/** Prose-only proposals: no direction, so they apply themselves and no
+ *  loosening can queue — which is what a non-interactive `vendo try` needs. */
+const JUDGE = {
+  tools: TOOLS.map((tool) => ({
+    name: tool.name,
+    description: `judged: ${tool.name}`,
+    evidence: `export async function ${tool.method}() {`,
+  })),
+  narrative: "both handlers read invoices",
 };
 
-const DRAFT = {
-  tools: TOOLS.map((tool) => ({ name: tool.name, description: `drafted: ${tool.name}` })),
+const SKEPTIC = {
+  verdicts: TOOLS.map((tool) => ({ name: tool.name, field: "description", verdict: "uphold" })),
 };
 
 const BRIEF = { brief: "Maple is a consumer bank for freelancers." };
@@ -132,9 +137,8 @@ const SEEDS = {
 
 /** The default script: every pass answers. */
 function happyScript(stage: DeepStage): object | Error {
-  if (stage === "survey") return SURVEY;
-  if (stage === "draft") return DRAFT;
-  if (stage === "cross-check") return { tools: [] };
+  if (stage === "judge") return JUDGE;
+  if (stage === "skeptic") return SKEPTIC;
   if (stage === "brief") return BRIEF;
   return SEEDS;
 }
@@ -164,44 +168,48 @@ describe("runDeepening", () => {
     // Zero-commit: the host repo is byte-for-byte untouched.
     expect(await inventory(repoRoot)).toEqual(before);
 
-    // The write-root split, both sides: extraction stages EXPLORE the host
-    // repo; the seeds pass runs in the profile root (its own contract).
+    // The write-root split, both sides: the judgment and brief passes EXPLORE
+    // the host repo; the seeds pass runs in the profile root (its own contract).
     expect(runs.length).toBeGreaterThan(0);
     for (const run of runs) {
       expect(run.input.root).toBe(run.stage === "seeds" ? profileRoot : repoRoot);
     }
 
-    // Every artifact landed under profileRoot: the apply outputs and the
-    // per-stage artifacts, seeds included.
-    const overrides = JSON.parse(await readFile(join(profileRoot, ".vendo", "overrides.json"), "utf8"));
-    expect(overrides.tools["host_invoices_list"]).toMatchObject({ description: "drafted: host_invoices_list" });
+    // Judgment landed in the judgments channel — never in overrides.json, which
+    // stays the human's file, and never in the deterministic tools.json.
+    const judgments = JSON.parse(await readFile(join(profileRoot, ".vendo", "judgments.json"), "utf8"));
+    expect(judgments.tools["host_invoices_list"]).toMatchObject({
+      binding: "GET /api/invoices",
+      fields: { description: "judged: host_invoices_list" },
+    });
+    expect(await exists(join(profileRoot, ".vendo", "overrides.json"))).toBe(false);
+
     expect(await readFile(join(profileRoot, ".vendo", "brief.md"), "utf8")).toContain("consumer bank");
-    const artifacts = await readdir(join(profileRoot, ".vendo", "data", "extract"));
-    expect(artifacts.sort()).toEqual([
-      "brief.json", "cross-check.json", "draft.invoices.json", "draft.json",
-      "fixtures.json", "survey.json", "usecases.json",
-    ]);
+    expect((await readdir(join(profileRoot, ".vendo", "data", "extract"))).sort())
+      .toEqual(["brief.json", "fixtures.json", "usecases.json"]);
+    // The judgment pass keeps its own stage artifacts.
+    expect((await readdir(join(profileRoot, ".vendo", "data", "judge"))).length).toBeGreaterThan(0);
 
     // Events arrive in order with started/terminal pairs for every stage.
     expect(seen).toEqual([
-      "survey started", "survey done",
-      "drafts started", "drafts done",
-      "cross-check started", "cross-check done",
+      "judgment started", "judgment done",
       "brief started", "brief done",
       "seeds started", "seeds done",
     ]);
 
     // The bus's end-state is exactly what /profile.json would report: the
     // live stage overrides ride on top of the disk-derived defaults.
-    expect(events.stages()).toEqual({
-      survey: "done", drafts: "done", "cross-check": "done", brief: "done", seeds: "done",
-    });
+    expect(events.stages()).toEqual({ judgment: "done", brief: "done", seeds: "done" });
     const profile = await assembleTryProfile(profileRoot, { stages: events.stages() });
     expect(profile.depth.level).toBe("deep");
     expect(profile.depth.stages).toMatchObject({
-      tools: "done", survey: "done", drafts: "done", "cross-check": "done", brief: "done", seeds: "done",
+      tools: "done", judgment: "done", brief: "done", seeds: "done",
     });
     expect(profile.usecases).toEqual(SEEDS.usecases);
+    // The judged description reaches the rendered profile through the display
+    // merge (skeleton ⊕ judgments ⊕ overrides).
+    expect(profile.tools.list.find((tool) => tool.name === "host_invoices_list")?.description)
+      .toBe("judged: host_invoices_list");
   });
 
   it("no harness available: skipped events + skipped summary, nothing written, no throw", async () => {
@@ -217,9 +225,7 @@ describe("runDeepening", () => {
 
     expect(summary).toEqual({ extraction: "skipped", seeds: "skipped" });
     expect(runs).toEqual([]);
-    expect(seen).toEqual([
-      "survey skipped", "drafts skipped", "cross-check skipped", "brief skipped", "seeds skipped",
-    ]);
+    expect(seen).toEqual(["judgment skipped", "brief skipped", "seeds skipped"]);
     expect(await inventory(repoRoot)).toEqual(beforeRepo);
     expect(await inventory(profileRoot)).toEqual(beforeProfile);
   });
@@ -252,56 +258,92 @@ describe("runDeepening", () => {
     expect(await exists(join(profileRoot, ".vendo"))).toBe(false);
   });
 
-  it("a survey failure degrades (runStagedExtraction's contract) — extraction still ran, seeds still written, events truthful", async () => {
+  it("loosenings QUEUE rather than prompting: a non-interactive try never auto-applies one", async () => {
+    const repoRoot = await hostRepo();
+    const profileRoot = await tempDir("vendo-deepen-profile-");
+    // A scanner-disabled tool the judge wants to wake — the clearest loosening.
+    await write(profileRoot, join(".vendo", "tools.json"), `${JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [{ ...EXTRACTED_TOOLS[0], disabled: true }],
+    })}\n`);
+    const events = createTryEventBus();
+    const { harness } = scriptedHarness((stage) => {
+      if (stage === "judge") {
+        return {
+          tools: [{
+            name: "host_invoices_list",
+            disabled: false,
+            evidence: "export async function GET() {",
+          }],
+          narrative: "",
+        };
+      }
+      if (stage === "skeptic") {
+        return { verdicts: [{ name: "host_invoices_list", field: "disabled", verdict: "uphold" }] };
+      }
+      return happyScript(stage);
+    });
+
+    const summary = await runDeepening({ repoRoot, profileRoot, events, env: {}, harnesses: [harness] });
+
+    expect(summary.extraction).toBe("ran");
+    const judgments = JSON.parse(await readFile(join(profileRoot, ".vendo", "judgments.json"), "utf8"));
+    // Queued as pending, NOT applied: the tool is still disabled at runtime.
+    expect(judgments.tools["host_invoices_list"].fields.disabled).toBeUndefined();
+    expect(judgments.tools["host_invoices_list"].pending)
+      .toEqual([expect.objectContaining({ field: "disabled", value: false })]);
+    const profile = await assembleTryProfile(profileRoot);
+    expect(profile.tools.list[0]?.disabled).toBe(true);
+  });
+
+  it("an unusable judge reply degrades to a SKIPPED judgment stage; brief and seeds still run", async () => {
     const repoRoot = await hostRepo();
     const profileRoot = await seededProfileRoot();
     const events = createTryEventBus();
     const seen = recordStages(events);
     const { harness } = scriptedHarness((stage) =>
-      stage === "survey" ? new Error("bad json") : happyScript(stage));
+      stage === "judge" ? new Error("model unreachable") : happyScript(stage));
 
     const summary = await runDeepening({ repoRoot, profileRoot, events, env: {}, harnesses: [harness] });
 
+    // The pass is fail-soft, so deepening as a whole still ran — but the stream
+    // must not claim the judgment stage finished when nothing was judged.
     expect(summary).toEqual({ extraction: "ran", seeds: "written", engine: "scripted" });
     expect(seen).toEqual([
-      "survey started", "survey failed",
-      "drafts started", "drafts done",
-      "cross-check started", "cross-check done",
+      "judgment started", "judgment skipped",
       "brief started", "brief done",
       "seeds started", "seeds done",
     ]);
-    expect(events.stages()).toMatchObject({ survey: "failed", brief: "done", seeds: "done" });
+    expect(await exists(join(profileRoot, ".vendo", "judgments.json"))).toBe(false);
     expect(await exists(join(profileRoot, ".vendo", "brief.md"))).toBe(true);
     expect(await exists(join(profileRoot, ".vendo", "data", "extract", "usecases.json"))).toBe(true);
   });
 
-  it("every draft surface failing fails extraction; seeds still run on the tools with a null brief", async () => {
+  it("a brief failure carries a failed event; seeds still run with a null brief", async () => {
     const repoRoot = await hostRepo();
     const profileRoot = await seededProfileRoot();
     const before = await inventory(repoRoot);
     const events = createTryEventBus();
     const seen = recordStages(events);
     const { harness, runs } = scriptedHarness((stage) =>
-      stage === "seeds" ? SEEDS : new Error("model unreachable"));
+      stage === "brief" ? new Error("model unreachable") : happyScript(stage));
 
     const summary = await runDeepening({ repoRoot, profileRoot, events, env: {}, harnesses: [harness] });
 
-    expect(summary).toEqual({ extraction: "failed", seeds: "written", engine: "scripted" });
+    expect(summary).toEqual({ extraction: "ran", seeds: "written", engine: "scripted" });
     expect(seen).toEqual([
-      "survey started", "survey failed",
-      "drafts started", "drafts failed",
-      "cross-check skipped", "brief skipped",
+      "judgment started", "judgment done",
+      "brief started", "brief failed",
       "seeds started", "seeds done",
     ]);
     // No brief landed, so the seeds pass composes the null-brief instructions.
-    const seedsRun = runs.find((run) => run.stage === "seeds");
-    expect(seedsRun?.input.instructions).toContain("unknown product");
+    expect(runs.find((run) => run.stage === "seeds")?.input.instructions).toContain("unknown product");
     expect(await exists(join(profileRoot, ".vendo", "brief.md"))).toBe(false);
     // Zero-commit holds on the failure path too.
     expect(await inventory(repoRoot)).toEqual(before);
   });
 
-  it("a seeds failure leaves extraction artifacts intact, carries a failed event, writes no seed artifact", async () => {
+  it("a seeds failure leaves the earlier artifacts intact, carries a failed event, writes no seed artifact", async () => {
     const repoRoot = await hostRepo();
     const profileRoot = await seededProfileRoot();
     const events = createTryEventBus();
@@ -314,8 +356,9 @@ describe("runDeepening", () => {
     expect(summary).toEqual({ extraction: "ran", seeds: "failed", engine: "scripted" });
     expect(seen.slice(-2)).toEqual(["seeds started", "seeds failed"]);
     expect(events.stages()["seeds"]).toBe("failed");
-    // Extraction's artifacts stand; seeds wrote nothing (its own guarantee).
-    expect(await exists(join(profileRoot, ".vendo", "overrides.json"))).toBe(true);
+    // The judgment and brief artifacts stand; seeds wrote nothing (its own
+    // guarantee).
+    expect(await exists(join(profileRoot, ".vendo", "judgments.json"))).toBe(true);
     expect(await exists(join(profileRoot, ".vendo", "brief.md"))).toBe(true);
     expect(await exists(join(profileRoot, ".vendo", "data", "extract", "usecases.json"))).toBe(false);
     expect(await exists(join(profileRoot, ".vendo", "data", "extract", "fixtures.json"))).toBe(false);

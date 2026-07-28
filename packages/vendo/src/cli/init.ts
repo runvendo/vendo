@@ -10,9 +10,8 @@ import type { VendoTheme } from "@vendoai/core";
 import { scrubErrorDetail, type Telemetry } from "@vendoai/telemetry";
 import { detectDepVersions, installedAiVersion } from "./dep-versions.js";
 import { AUTH_MD_URL, runCloudStep, upsertEnvLocal, type CloudStepOptions } from "./cloud-init.js";
-import { APPLY_COMMAND, composeDelegatedInstructions, EXTRACTION_DRAFT_JSON_SCHEMA } from "./extract/delegate.js";
-import { runAiExtraction, type AiExtractionOptions } from "./extract/extraction.js";
-import { BRIEF_TEMPLATE, type StaticTool } from "./extract/stages.js";
+import { runInitJudgment, type InitJudgmentOptions } from "./init-judgment.js";
+import { BRIEF_TEMPLATE } from "./extract/stages.js";
 import { ENV_KEY_VARS, resolveDevCredential, describeDevCredential, type DevCredential } from "../dev-creds/resolve.js";
 import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { resolveScaffoldAuth, type AuthMatch, type AuthPresetName, type ConfirmAuth, type SelectAuth } from "./init-auth.js";
@@ -130,11 +129,6 @@ export interface InitPlan {
       real tool names instead of re-deriving them. */
   extraction?: { tools: ExtractedTool[]; warnings: string[] };
   riskRecommendations?: RiskRecommendation[];
-  /** --agent only: the delegated AI-polish contract. An external coding agent
-      reads the codebase against `instructions`, writes a draft matching
-      `draftSchema`, and lands it with `apply` — the SAME deterministic guards
-      as init's built-in pass decide what applies. */
-  aiPolish?: { instructions: string; draftSchema: Record<string, unknown>; apply: string };
 }
 
 export interface InitOptions {
@@ -181,8 +175,8 @@ export interface InitOptions {
   installZod?: InstallRunner;
   /** Test seam (ENG-339): cloud-in-init step overrides. */
   cloud?: Partial<Omit<CloudStepOptions, "root" | "output" | "yes" | "credential">>;
-  /** Test seam: AI extraction step overrides (harnesses, consent). */
-  extract?: Partial<Omit<AiExtractionOptions, "root" | "output" | "yes" | "env">>;
+  /** Test seam: judgment step overrides (harnesses, consent). */
+  extract?: Partial<Omit<InitJudgmentOptions, "root" | "output" | "yes" | "env">>;
   /** Test seam: the detect+confirm auth question, asked only in interactive
       runs when exactly one auth family is detected and init is creating the
       composition. Mirrors the AI-polish consent's confirm shape. */
@@ -192,7 +186,7 @@ export interface InitOptions {
       hint) and resolves the chosen value. */
   selectAuth?: (question: string, options: SelectOption[]) => Promise<string>;
   /** Test seam: interactivity override for the auth confirm (default: TTY),
-      mirroring runAiExtraction's `interactive`. */
+      mirroring the judgment step's `interactive`. */
   interactive?: boolean;
   /** Test seam: the star ask — the ONE consent question that ends a fully
       successful interactive run. Mirrors the auth confirm's shape. */
@@ -411,22 +405,6 @@ async function extractForPlan(root: string): Promise<{ tools: ExtractedTool[]; w
   } finally {
     await rm(out, { recursive: true, force: true });
   }
-}
-
-/** Project extraction results onto the small static-facts shape the
-    delegation instructions carry (route bindings surface method+path). */
-function planStaticTools(tools: ExtractedTool[]): StaticTool[] {
-  return tools.map((tool) => {
-    const binding = tool.binding as { method?: unknown; path?: unknown };
-    return {
-      name: tool.name,
-      description: tool.description,
-      risk: tool.risk,
-      ...(tool.disabled === true ? { disabled: true } : {}),
-      ...(typeof binding.method === "string" ? { method: binding.method } : {}),
-      ...(typeof binding.path === "string" ? { path: binding.path } : {}),
-    };
-  });
 }
 
 /** 04-actions §1 risk ladder projected as advice: destructive asks first,
@@ -985,24 +963,10 @@ export async function runInit(options: InitOptions): Promise<number> {
     // names and risk advice; the throwaway out dir keeps --agent read-only.
     const { plan } = await buildPlan(options);
     const extraction = await extractForPlan(root);
-    let appName = "app";
-    try {
-      appName = (JSON.parse((await readOptional(join(root, "package.json"))) ?? "{}") as { name?: string }).name ?? "app";
-    } catch {
-      // package.json is optional context
-    }
     output.log(JSON.stringify({
       ...plan,
       extraction,
       riskRecommendations: riskRecommendations(extraction.tools),
-      // The delegation contract: the agent reading this plan can do the AI
-      // polish itself and land it through `vendo extract --apply` — the same
-      // deterministic guards as init's built-in pass.
-      aiPolish: {
-        instructions: composeDelegatedInstructions(planStaticTools(extraction.tools), appName),
-        draftSchema: EXTRACTION_DRAFT_JSON_SCHEMA,
-        apply: APPLY_COMMAND,
-      },
     } satisfies InitPlan, null, 2));
     return 0;
   }
@@ -1196,14 +1160,15 @@ export async function runInit(options: InitOptions): Promise<number> {
     if (authAdvice !== null) output.log(authAdvice);
     output.log(`Learned: ${toolCount} tools · theme captured → .vendo/ (tools.json, theme.json, brief.md)`);
 
-    // AI extraction (install-dx, staged): a coding agent surveys the repo,
-    // drafts each surface in a focused pass, cross-checks the combined draft,
-    // and drafts the brief — all into the override channel; deterministic
-    // guards decide what applies. Consent-gated; skipped silently when
-    // non-interactive or credential-less. A successful pass re-syncs so
-    // tools.json reflects the polish immediately.
+    // The judgment pass, then the brief and theme stages: a coding agent grades
+    // the extracted catalog with a verbatim source quote behind every proposal,
+    // an independent skeptic checks each one, and loosenings wait for a human
+    // (reviewed inline in an interactive run). Consent-gated; skipped silently
+    // when non-interactive or credential-less. Judgments land in
+    // `.vendo/judgments.json`, so `overrides.json` keeps meaning only "what a
+    // person decided" and a re-sync can never clobber either.
     const engineStarted = Date.now();
-    const polish = await runAiExtraction({
+    const polish = await runInitJudgment({
       root,
       output,
       env: effectiveEnv,
@@ -1282,11 +1247,10 @@ export async function runInit(options: InitOptions): Promise<number> {
       printThemeSummary(summary, output);
     }
 
-    // Enrichment state, one line (cse lane 1c): when the polish ran, its
-    // full-repo enrichment already reported (reportDraftEnrichment wrote
-    // tools.json directly — no resync needed); otherwise say so honestly.
+    // Judgment state, one line: a pass that ran already narrated itself (it
+    // owns the judged/queued/rejected counts); otherwise say so honestly.
     if (!polish.ran) {
-      output.log("enrichment: structural-only — extractor defaults stand (add a model key and run `vendo sync` to enrich tool docs)");
+      output.log("judgment: structural-only — extraction grades stand (add a model key and run `vendo sync` to judge the catalog)");
     }
 
     // Project-shape enrichment (posthog-analytics §3): bools, closed enums,

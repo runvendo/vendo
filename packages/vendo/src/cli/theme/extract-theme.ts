@@ -15,12 +15,11 @@ import { walk } from "./walk.js";
  *    Tailwind-v4 `--color-*` spellings). No name scoring, no inference. This
  *    file does ONLY this: `extractTheme` is fully deterministic — no model
  *    call, no network, no credential.
- * 2. Whatever the allowlist leaves unfilled rides init's consent-gated AI
- *    pass (`runAiExtraction` → `runStagedExtraction`'s theme stage, in
- *    `../extract/stages.ts`) — the SAME harness seam as the tool-description
- *    polish, over Read/Glob/Grep instead of a fixed evidence-file set.
- *    `applyThemeDraft` below merges that stage's parsed artifact back onto
- *    this file's exact-only summary.
+ * 2. Whatever the allowlist leaves unfilled rides init's consent-gated model
+ *    step (`runThemeStage`, in `../extract/stages.ts`) — the SAME harness seam
+ *    as the judgment pass, over Read/Glob/Grep instead of a fixed
+ *    evidence-file set. `applyThemeDraft` below merges that stage's parsed
+ *    artifact back onto this file's exact-only summary.
  * 3. Anything neither path fills falls back to neutral defaults and is
  *    reported as defaulted — a miss is visible, never a silent wrong brand.
  *
@@ -305,7 +304,7 @@ function readExact(vars: CssVarDecl[]): ExactReads {
 }
 
 // ---------------------------------------------------------------------------
-// Staged-pass artifact schema — parsed by `runStagedExtraction`'s theme stage
+// Theme-stage artifact schema — parsed by `runThemeStage`
 // (../extract/stages.ts), merged back here by `applyThemeDraft`.
 // ---------------------------------------------------------------------------
 

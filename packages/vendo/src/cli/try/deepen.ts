@@ -1,18 +1,19 @@
 import { join } from "node:path";
 import { z } from "zod";
-import { applyDraft, reportApplied, selectExtractionEngines } from "../extract/extraction.js";
 import type { ExtractionHarness } from "../extract/harness.js";
 import { runSeedsPass } from "../extract/seeds.js";
-import { runStagedExtraction, staticToolSchema, type StagedStageStatus, type StaticTool } from "../extract/stages.js";
+import { applyBrief, runBriefStage, staticToolSchema, type StagedStageStatus, type StaticTool } from "../extract/stages.js";
+import { selectJudgmentEngines } from "../judge/engine.js";
+import { runJudgmentPass } from "../judge/pass.js";
 import { readOptional, type Output } from "../shared.js";
 import type { TryEventBus } from "./server.js";
 
 /**
  * Background deepening behind `npx vendo try` (unified try surface, Task 6):
  * after the deterministic pass painted and the server is up, this orchestrator
- * runs the staged AI extraction (survey → drafts → cross-check → brief) and
- * then the seeds pass (use-case chips + synthetic fixtures) over the SAME
- * engine ladder init uses.
+ * runs the judgment pass (evidence-backed grades on the extracted catalog), the
+ * brief stage, and then the seeds pass (use-case chips + synthetic fixtures)
+ * over the SAME engine ladder init uses.
  *
  * The LATENCY LAW: deepening never blocks the server. It runs fire-and-forget
  * (`void runDeepening(...)`) beside an already-listening server, streams
@@ -21,23 +22,25 @@ import type { TryEventBus } from "./server.js";
  * anything down. The server picks artifacts up on its own (per-request
  * profile assembly + mount recomposition); nothing here talks to it directly.
  *
- * The ZERO-COMMIT LAW: deepening writes ONLY under `profileRoot`. The staged
- * extraction explores the HOST repo (`root: repoRoot`) but lands every
- * artifact under the profile root (`artifactRoot: profileRoot` — the split
- * stages.ts carries for exactly this caller); applyDraft and the seeds pass
- * are rooted at the profile root outright. The host repo stays read-only,
- * byte for byte.
+ * The ZERO-COMMIT LAW: deepening writes ONLY under `profileRoot`. The judgment
+ * pass and the brief stage EXPLORE the host repo (`root: repoRoot`) but land
+ * every artifact under the profile root — the judgment pass through its `out`
+ * directory, the brief stage through `artifactRoot` — and `applyBrief` plus the
+ * seeds pass are rooted at the profile root outright. The host repo stays
+ * read-only, byte for byte.
  *
- * Consent lives with the caller: `vendo try` is non-interactive by design, so
- * the CLI (Task 7) decides whether AI runs at all and only then calls this —
- * no TTY prompt exists on this path. No engine available (or a pinned
- * `--engine` that isn't) is a SKIP, never an error.
+ * Loosenings QUEUE here rather than prompting: `vendo try` is non-interactive by
+ * design, so a loosening that needs a human waits as `pending` in the profile's
+ * judgments.json instead of being auto-applied. Consent lives with the caller —
+ * the CLI (Task 7) decides whether AI runs at all and only then calls this.
+ * No engine available (or a pinned `--engine` that isn't) is a SKIP, never an
+ * error.
  */
 
-/** Every stage the deepening stream reports, in emission order. The first
- *  four mirror runStagedExtraction's onStage stages (no theme stage here: the
- *  deterministic pass already wrote theme.json); seeds is this module's own. */
-const DEEPENING_STAGES = ["survey", "drafts", "cross-check", "brief", "seeds"] as const;
+/** Every stage the deepening stream reports, in emission order. The first two
+ *  are the model passes over the catalog; seeds is this module's own. (No theme
+ *  stage here: the deterministic pass already wrote theme.json.) */
+const DEEPENING_STAGES = ["judgment", "brief", "seeds"] as const;
 
 export interface RunDeepeningOptions {
   /** The host repo the extraction harness explores. NEVER written to. */
@@ -50,9 +53,9 @@ export interface RunDeepeningOptions {
   env: Record<string, string | undefined>;
   output?: Output;
   /** Pin the engine family (`--engine`). An unavailable pin skips deepening —
-   *  never a fallback to another provider (extraction.ts's pin posture). */
+   *  never a fallback to another provider (the judgment ladder's pin posture). */
   engine?: string;
-  /** Test seam: the engine ladder (extraction.ts's default when omitted). */
+  /** Test seam: the engine ladder (judge/engine.ts's default when omitted). */
   harnesses?: ExtractionHarness[];
 }
 
@@ -63,7 +66,7 @@ export interface DeepeningSummary {
   engine?: string;
 }
 
-/** tools.json as the staged pipeline consumes it (runAiExtraction's read). */
+/** tools.json as the seeds pass consumes it. */
 const staticToolsFileSchema = z.object({ tools: z.array(staticToolSchema) });
 
 /** Missing or unparseable tools.json degrades to null — deepening skips. */
@@ -77,10 +80,10 @@ async function readStaticTools(profileRoot: string): Promise<StaticTool[] | null
   }
 }
 
-/** The host product's name, for the extraction prompts (runAiExtraction's
- *  read, against the HOST repo — package.json is optional context). Exported
- *  so the try command (cli/try.ts) derives the surface's brand.name the SAME
- *  way instead of keeping a second copy of this read. */
+/** The host product's name, for the model prompts (read against the HOST repo —
+ *  package.json is optional context). Exported so the try command (cli/try.ts)
+ *  derives the surface's brand.name the SAME way instead of keeping a second
+ *  copy of this read. */
 export async function readAppName(repoRoot: string): Promise<string> {
   try {
     const parsed = JSON.parse((await readOptional(join(repoRoot, "package.json"))) ?? "{}") as { name?: string };
@@ -101,8 +104,8 @@ export async function runDeepening(options: RunDeepeningOptions): Promise<Deepen
   };
 
   try {
-    // The deterministic pass's tools.json is what both the staged extraction
-    // and the seeds pass judge — without it there is nothing to deepen.
+    // The deterministic pass's tools.json is what both the judgment pass and
+    // the seeds pass judge — without it there is nothing to deepen.
     const tools = await readStaticTools(profileRoot);
     if (tools === null) {
       output?.log("deepening: no extracted tools in the profile — skipped.");
@@ -111,7 +114,7 @@ export async function runDeepening(options: RunDeepeningOptions): Promise<Deepen
 
     // The SAME engine ladder init rides, availability-checked against the
     // host repo; an unavailable pin skips loudly, never a fallback.
-    const available = await selectExtractionEngines({
+    const available = await selectJudgmentEngines({
       root: repoRoot,
       env,
       ...(options.harnesses === undefined ? {} : { harnesses: options.harnesses }),
@@ -126,53 +129,65 @@ export async function runDeepening(options: RunDeepeningOptions): Promise<Deepen
       return skipAll("no-engine");
     }
 
-    // Staged extraction, PROGRESS-HOOK CHOICE: stages.ts's own onStage seam
-    // (added for this caller — a few behavior-preserving lifecycle calls at
-    // the points onProgress already narrates) relays each stage straight onto
-    // the bus. Chosen over polling the artifacts dir, which could only see
-    // terminal states, late, and never distinguish started from pending.
-    const terminal = new Map<string, StagedStageStatus>();
-    const onStage = (stage: string, status: StagedStageStatus): void => {
-      terminal.set(stage, status);
-      emit(stage, status);
-    };
+    const appName = await readAppName(repoRoot);
+    const onProgress = (line: string): void => output?.log(`  ${line}`);
+    // The pass narrates through the caller's output; a headless run discards it
+    // rather than the pass having to care whether anyone is listening.
+    const passOutput: Output = output ?? { log: () => {}, error: () => {} };
     let extraction: DeepeningSummary["extraction"] = "ran";
+
+    emit("judgment", "started");
     try {
-      const staged = await runStagedExtraction({
+      const judged = await runJudgmentPass({
+        root: repoRoot,
+        out: join(profileRoot, ".vendo"),
+        mode: "full",
+        loosenings: "queue",
+        env,
+        output: passOutput,
+        harness: chosen.harness,
+        appName,
+        onProgress,
+      });
+      // The pass is fail-soft: an unusable model reply comes back as "skipped"
+      // (already narrated as a warning) rather than a throw. Report THAT, not a
+      // blanket "done" — a stream that claims a stage finished when nothing was
+      // judged is the kind of lie this surface exists to avoid.
+      emit("judgment", judged.status === "judged" || judged.status === "up-to-date" ? "done" : "skipped");
+    } catch (error) {
+      extraction = "failed";
+      emit("judgment", "failed");
+      output?.error(`deepening judgment did not complete (${error instanceof Error ? error.message : "unknown error"}) — the deterministic profile stands.`);
+    }
+
+    // The brief reads whatever the judgment pass settled, so it runs after it —
+    // and runs even when judgment failed, because a brief drafted from the
+    // deterministic catalog still deepens the surface.
+    emit("brief", "started");
+    try {
+      const brief = await runBriefStage({
         root: repoRoot,
         artifactRoot: profileRoot,
         env,
         harness: chosen.harness,
-        tools,
-        appName: await readAppName(repoRoot),
-        onStage,
-        ...(output === undefined ? {} : { onProgress: (line) => output.log(`  ${line}`) }),
+        appName,
+        judged: tools.map((tool) => ({
+          name: tool.name,
+          ...(tool.description === undefined ? {} : { description: tool.description }),
+        })),
+        onProgress,
       });
-      const applied = await applyDraft({ root: profileRoot, draft: staged.draft, tools });
-      if (output !== undefined) {
-        reportApplied({
-          output,
-          applied,
-          briefDrafted: applied.briefWritten && staged.briefFromStage,
-          artifactsNote: " (stage artifacts: .vendo/data/extract/)",
-          notes: staged.notes,
-        });
-      }
+      for (const note of brief.notes) output?.error(`  ${note}`);
+      if (brief.fromStage) await applyBrief(profileRoot, brief.brief, false);
+      emit("brief", brief.fromStage ? "done" : "failed");
     } catch (error) {
-      extraction = "failed";
-      // Truthful terminal events for whatever the throw cut short: a stage
-      // caught mid-flight failed; one that never started was skipped.
-      for (const stage of DEEPENING_STAGES.slice(0, -1)) {
-        const status = terminal.get(stage);
-        if (status === undefined) emit(stage, "skipped");
-        else if (status === "started") emit(stage, "failed");
-      }
-      output?.error(`deepening extraction did not complete (${error instanceof Error ? error.message : "unknown error"}) — the deterministic profile stands.`);
+      emit("brief", "failed");
+      output?.error(`deepening brief did not complete (${error instanceof Error ? error.message : "unknown error"}) — the current brief stands.`);
     }
 
     // Seeds, on the SAME harness, judging whatever actually landed: the brief
-    // is re-read from disk so a failed/partial extraction feeds the honest
-    // null-brief instructions instead of an in-memory draft that never landed.
+    // is re-read from disk so a failed/partial run feeds the honest null-brief
+    // instructions instead of an in-memory draft that never landed.
     emit("seeds", "started");
     const briefRaw = await readOptional(join(profileRoot, ".vendo", "brief.md")).catch(() => null);
     const brief = briefRaw === null || briefRaw.trim() === "" ? null : briefRaw.trim();

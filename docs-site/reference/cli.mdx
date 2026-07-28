@@ -260,14 +260,14 @@ Options:
   against a running dev server (`POST /sync/impact`).
 - `--report`: push the report to Vendo Cloud (requires `VENDO_API_KEY` or
   `--key`; `--api-url` overrides `VENDO_CLOUD_URL`).
-- `--review`: show the enrichment narrative and confirm before writing
+- `--review`: show the queued and new loosenings and confirm before writing
   (interactive; cannot combine with `--json`).
-- `--full`: force full re-enrichment instead of the watermark diff.
-- `--engine <name>`: pin the enrichment engine family (`claude`, `codex`,
+- `--full`: judge the whole catalog instead of only what moved.
+- `--engine <name>`: pin the judgment engine family (`claude`, `codex`,
   `npx`); an unavailable pin skips loudly, never falls back.
-- `--no-watermark`: workspace-internal sync — suppress the `tools.json`
-  watermark field and skip the AI pass (used by the demo apps'
-  `predev`/`prebuild` hooks so committed files never churn).
+- `--no-ai`: workspace-internal sync — skip the judgment pass (used by the demo
+  apps' `predev`/`prebuild` hooks so committed files never churn).
+  `--no-watermark` remains accepted as a silent alias.
 
 ```console
 $ vendo sync --strict --url http://127.0.0.1:3000/api/vendo

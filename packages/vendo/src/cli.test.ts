@@ -165,30 +165,20 @@ describe("vendo CLI commands", () => {
     log.mockRestore();
   });
 
-  it("wires extract: --apply is required, unknown flags fail loudly, errors route home", async () => {
+  it("no longer wires extract: the command and its usage lines are gone", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     expect(await main(["--help"])).toBe(0);
-    expect(log.mock.calls.flat().join("\n")).toContain("extract [dir]");
-    expect(log.mock.calls.flat().join("\n")).toContain("--apply <draft.json>");
+    const help = log.mock.calls.flat().join("\n");
+    expect(help).not.toContain("extract [dir]");
+    expect(help).not.toContain("--apply <draft.json>");
 
-    // No --apply → loud error, nothing runs (ENG-335 posture).
+    // The judgment layer deleted the delegated-draft path (there is no draft to
+    // apply any more). The command must fail as UNKNOWN rather than parse and
+    // quietly do nothing.
     expect(await main(["extract"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--apply <draft.json> is required");
-
-    // `--apply=` (empty value) fails loudly instead of resolving to the cwd.
-    expect(await main(["extract", "--apply="])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("--apply requires a value");
-
-    expect(await main(["extract", "--apply", "draft.json", "--dry-run"])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("unknown option: --dry-run");
-
-    // A parsed --apply reaches the command: an un-inited dir fails honestly.
-    const root = await mkdtemp(join(tmpdir(), "vendo-cli-extract-"));
-    cleanup.push(root);
-    expect(await main(["extract", root, "--apply", join(root, "draft.json")])).toBe(1);
-    expect(error.mock.calls.flat().join("\n")).toContain("run `vendo init` first");
+    expect(error.mock.calls.flat().join("\n")).toContain("Unknown command: extract");
 
     log.mockRestore();
     error.mockRestore();

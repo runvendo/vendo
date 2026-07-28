@@ -3,7 +3,7 @@ import { vendoSync, type SyncReportWithWarnings } from "@vendoai/actions/sync";
 import type { ToolImpact } from "../sync-impact.js";
 import { pushSyncReport } from "./cloud/services.js";
 import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
-import { readPreviousToolsState, runSyncEnrichment, type SyncEnrichmentOptions } from "./enrich/pass.js";
+import { runJudgmentPass, type JudgmentPassOptions } from "./judge/pass.js";
 import { askYesNo, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
@@ -26,19 +26,19 @@ export interface SyncOptions {
   json?: boolean;
   /** Injectable telemetry deps (matches init/doctor). */
   telemetry?: TelemetryOptions;
-  /** --review: show the AI enrichment narrative and confirm before writing. */
+  /** --review: render the pending + new loosenings and ask before writing. */
   review?: boolean;
-  /** --full: force full re-enrichment (ignore the watermark diff). */
+  /** --full: judge the whole catalog instead of only what moved. */
   full?: boolean;
-  /** --no-watermark: workspace-internal sync — suppress the tools.json
-   *  watermark field and skip the AI enrichment pass entirely (the demo
-   *  apps' predev/prebuild hooks; committed files must not churn). */
-  noWatermark?: boolean;
-  /** --engine: pin the enrichment engine family (claude | codex | npx). */
+  /** --no-ai: workspace-internal sync — skip the judgment pass entirely (the
+   *  demo apps' predev/prebuild hooks; committed files must not churn).
+   *  `--no-watermark` remains a silent alias. */
+  noAi?: boolean;
+  /** --engine: pin the judgment engine family (claude | codex | npx). */
   engine?: string;
-  /** Enrichment seams (tests / init's chosen harness). */
-  enrich?: Pick<SyncEnrichmentOptions,
-    "harness" | "harnesses" | "resolveCredential" | "computeDiff" | "treeHash" | "confirm" | "onProgress">;
+  /** Judgment-pass seams (tests / init's chosen harness). */
+  judge?: Pick<JudgmentPassOptions,
+    "harness" | "harnesses" | "resolveCredential" | "confirm" | "onProgress">;
 }
 
 /** `sync --json` — the one machine-readable object printed on stdout. */
@@ -112,18 +112,11 @@ async function sync(options: SyncOptions): Promise<number> {
   try {
     const root = resolve(options.targetDir);
     const vendoDir = join(root, ".vendo");
-    // Pre-sync snapshot for the AI pass: which srcHashes move and where the
-    // watermark stood — read BEFORE the structural sync rewrites the file.
-    const previousTools = options.noWatermark === true ? null : await readPreviousToolsState(vendoDir);
     const report: SyncReportWithWarnings = await (options.sync ?? vendoSync)({
       root,
       out: vendoDir,
       // The CLI needs the report to compute exit 2 vs 3; it applies strictness below.
       strict: false,
-      // TEMP: deleted by judgment-layer lane C2 — `--no-watermark` no longer has
-      // a `watermark` option to forward (vendoSync writes no watermark at all
-      // now); it still skips the AI pass below, which is what the demo apps'
-      // predev/prebuild hooks actually need.
     });
     if (!json) {
       for (const warning of report.warnings) output.error(`warning: ${warning}`);
@@ -150,40 +143,40 @@ async function sync(options: SyncOptions): Promise<number> {
 
     const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
 
-    // The AI enrichment pass (cse lane 1c): diff since the watermark + the
-    // current catalog → restrictive-only updates to affected entries and a
-    // change narrative. Keyless resolves to structural-only with one line;
-    // --no-watermark (workspace-internal syncs) skips the pass entirely.
-    // Fail-soft like everything else in sync — the exit code never changes.
-    if (options.noWatermark !== true) {
-      // The enrichment credential resolves from this env, so the project's
+    // The judgment pass: grade the freshly synced catalog, with a verbatim
+    // quote behind every proposal and an independent skeptic checking each one.
+    // Hardenings and prose apply themselves; loosenings wait for a human —
+    // `--review` asks now, otherwise they queue as `pending`. Keyless resolves
+    // to one structural-only line; `--no-ai` (workspace-internal syncs) skips
+    // the pass entirely. Fail-soft like everything else in sync — the exit code
+    // never changes.
+    if (options.noAi !== true) {
+      // The judgment credential resolves from this env, so the project's
       // dotenv must be visible: `vendo login` and BYO keys land in `.env.local`
       // / `.env`, and a fresh shell that never `source`d them would otherwise
       // sync structural-only with no signal why (#567). Reuse doctor's parser
       // (never hand-roll) — real process env still wins over both files.
       // Precedence end to end: explicit > process.env > .env.local > .env.
-      const enrichEnv = mergeEnvOverDotEnv(await readDotEnvFallback(root), process.env);
+      const judgeEnv = mergeEnvOverDotEnv(await readDotEnvFallback(root), process.env);
       try {
-        await runSyncEnrichment({
+        await runJudgmentPass({
           root,
-          vendoDir,
-          env: enrichEnv,
-          note,
-          warn: noteError,
-          previous: previousTools,
-          ...(options.review === true ? { review: true } : {}),
-          ...(options.full === true ? { full: true } : {}),
+          out: vendoDir,
+          mode: options.full === true ? "full" : "incremental",
+          loosenings: options.review === true ? "review" : "queue",
+          env: judgeEnv,
+          // --json keeps exactly one object on stdout, so the pass's narrative
+          // rides the same `notes` channel every other human line does.
+          output: { log: note, error: noteError },
           ...(options.engine === undefined ? {} : { engine: options.engine }),
-          confirm: options.enrich?.confirm ?? askYesNo,
-          ...(options.enrich?.harness === undefined ? {} : { harness: options.enrich.harness }),
-          ...(options.enrich?.harnesses === undefined ? {} : { harnesses: options.enrich.harnesses }),
-          ...(options.enrich?.resolveCredential === undefined ? {} : { resolveCredential: options.enrich.resolveCredential }),
-          ...(options.enrich?.computeDiff === undefined ? {} : { computeDiff: options.enrich.computeDiff }),
-          ...(options.enrich?.treeHash === undefined ? {} : { treeHash: options.enrich.treeHash }),
-          ...(options.enrich?.onProgress === undefined ? {} : { onProgress: options.enrich.onProgress }),
+          confirm: options.judge?.confirm ?? askYesNo,
+          ...(options.judge?.harness === undefined ? {} : { harness: options.judge.harness }),
+          ...(options.judge?.harnesses === undefined ? {} : { harnesses: options.judge.harnesses }),
+          ...(options.judge?.resolveCredential === undefined ? {} : { resolveCredential: options.judge.resolveCredential }),
+          ...(options.judge?.onProgress === undefined ? {} : { onProgress: options.judge.onProgress }),
         });
       } catch (error) {
-        note(`enrichment failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
+        note(`judgment failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
       }
     }
 
