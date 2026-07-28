@@ -101,6 +101,7 @@ const judgedCounts = {
   unexaminedRejected: 0,
   evidenceless: 0,
   advisoriesClamped: 0,
+  inconsistentRisk: 0,
 } as const;
 
 /** A fake judgment pass: records the options it was handed, writes a canned
