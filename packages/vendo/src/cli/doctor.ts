@@ -18,7 +18,7 @@ import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolv
 import { SLOT_PIN_ENV } from "../dev-creds/model.js";
 import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
-import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
+import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
@@ -306,6 +306,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   // internal endpoints ended with tools: [] and a silently useless agent).
   const toolsRaw = await readOptional(join(root, ".vendo", "tools.json"));
   const overridesRaw = await readOptional(join(root, ".vendo", "overrides.json"));
+  const judgmentsRaw = await readOptional(join(root, ".vendo", "judgments.json"));
   if (toolsRaw !== null) {
     try {
       const toolsParsed: unknown = JSON.parse(toolsRaw);
@@ -319,7 +320,25 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
           // Malformed overrides are their own (pre-existing) failure surface.
         }
       }
-      const live = toolsFile.tools.filter((tool) => (overridesTools[tool.name]?.disabled ?? tool.disabled ?? false) !== true);
+      let judgments: Record<string, ToolJudgment> = {};
+      if (judgmentsRaw !== null) {
+        try {
+          const judgmentsParsed: unknown = JSON.parse(judgmentsRaw);
+          judgments = judgmentsFileSchema.parse(judgmentsParsed).tools;
+        } catch {
+          // Malformed judgments are the judgment pass's own loud failure; the
+          // grade below reads the skeleton rather than guessing at the file.
+        }
+      }
+      // The SAME three-layer stack the runtime resolves: skeleton ⊕ judgments ⊕
+      // overrides. `applyJudgment` ignores an entry whose binding moved and
+      // applies the fail-closed audience exclusion, so a disable this check
+      // reports is one the agent will actually see. A human override still wins
+      // last — including a deliberate wake of something a judgment disabled.
+      const live = toolsFile.tools.filter((tool) => {
+        const effective = applyJudgment(tool, judgments[tool.name]);
+        return (overridesTools[tool.name]?.disabled ?? effective.disabled ?? false) !== true;
+      });
       if (toolsFile.tools.length === 0) {
         warn("tools/live-surface", "E-TOOLS-002", "the extracted tool surface is empty — the agent cannot act on this product's API; re-run `vendo init` extraction (or ignore if this deployment is connector-only)");
       } else if (live.length === 0) {
