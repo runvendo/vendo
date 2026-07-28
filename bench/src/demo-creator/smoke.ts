@@ -85,11 +85,99 @@ export interface SmokeProgress {
    * it is read as one of two independent signs of life, never as a requirement.
    */
   toolCall: boolean;
+  /**
+   * The demo's OWN API answered its OWN agent: at least one openapi tool call
+   * came back with an ok outcome.
+   *
+   * The one fact "the turn settled" cannot carry, and the reason a demo shipped
+   * that looked perfect and could answer nothing. Read off the turn's own wire
+   * stream — see {@link readHostToolTraffic}.
+   */
+  hostToolAnswered: boolean;
+  /** Why not, when the answer is no: the FIRST host tool call that did not come
+   *  back ok, as one clause. Absent when no host tool was called at all. */
+  hostToolProblem?: string;
 }
 
 /** A turn that showed no sign of life whatsoever. */
 export function noProgress(): SmokeProgress {
-  return { doorAnswered: false, turnStarted: false, toolCall: false };
+  return { doorAnswered: false, turnStarted: false, toolCall: false, hostToolAnswered: false };
+}
+
+/** What the turn's wire stream said about the demo's OWN tool calls. */
+export interface HostToolTraffic {
+  /** At least one of the demo's own API tools came back with an ok outcome. */
+  answered: boolean;
+  /** The first host tool call that did not, as one operator-readable clause. */
+  problem?: string;
+}
+
+/**
+ * Reads the turn's own response stream and answers ONE question: did the demo's
+ * API answer the demo's agent?
+ *
+ * This has to be read off the wire, because neither of the other two places
+ * knows. The TRANSCRIPT renders nothing for a settled tool call and the ribbon
+ * only exists while one is in flight. And a FAILED call is not a stream error
+ * either: the runtime returns the failure as the tool's OUTPUT so the model can
+ * see it and say so (a non-2xx from the demo's API becomes
+ * `{status:"error", error:{code:"http-error", message:"GET /path → 404: …"}}` —
+ * packages/actions/src/runtime/registry.ts). That is exactly why a demo whose
+ * every tool 404'd still produced a turn that settled: the agent read the errors
+ * and honestly refused.
+ *
+ * LIVENESS ONLY. The output's SHAPE is inspected — ok, error, or held at the
+ * approval gate — and never its content. Nothing here can grow into a judgement
+ * about what a tool returned or what the view rendered; that is stage 5's.
+ */
+export function readHostToolTraffic(streamText: string, hostToolNames: readonly string[]): HostToolTraffic {
+  const isHostTool = new Set(hostToolNames);
+  if (isHostTool.size === 0) return { answered: false };
+  const nameOf = new Map<string, string>();
+  let problem: string | undefined;
+  for (const line of streamText.split("\n")) {
+    const payload = line.startsWith("data:") ? line.slice("data:".length).trim() : undefined;
+    if (payload === undefined || payload === "" || payload === "[DONE]") continue;
+    let event: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(payload);
+      if (parsed === null || typeof parsed !== "object") continue;
+      event = parsed as Record<string, unknown>;
+    } catch {
+      // A clipped final chunk is normal on a killed turn, not a finding.
+      continue;
+    }
+    const callId = typeof event.toolCallId === "string" ? event.toolCallId : undefined;
+    if (callId === undefined) continue;
+    if (typeof event.toolName === "string") nameOf.set(callId, event.toolName);
+    const name = nameOf.get(callId);
+    if (name === undefined || !isHostTool.has(name)) continue;
+
+    if (event.type === "tool-output-error") {
+      problem ??= `${name} → ${typeof event.errorText === "string" ? event.errorText : "the tool call threw"}`;
+      continue;
+    }
+    if (event.type !== "tool-output-available") continue;
+    const output = event.output;
+    const status = (output as { status?: unknown } | null)?.status;
+    if (status === "ok") return { answered: true };
+    if (status === "error") {
+      const message = (output as { error?: { message?: unknown } }).error?.message;
+      problem ??= `${name} → ${typeof message === "string" ? message : "the call failed"}`;
+      continue;
+    }
+    if (typeof status === "string") {
+      // `pending-approval`, `connect-required`: the call never reached the API.
+      problem ??= `${name} → ${status}`;
+      continue;
+    }
+    // An envelope this harness does not recognise. The ONLY way to get an error
+    // envelope is the failure path, so anything else came back from a 2xx —
+    // reporting it as a failure would invent a broken demo out of a protocol
+    // change, which is the opposite of what this gate is for.
+    return { answered: true };
+  }
+  return problem === undefined ? { answered: false } : { answered: false, problem };
 }
 
 /**
@@ -203,13 +291,18 @@ export function installSmokeObserverInPage(): void {
 }
 
 /**
- * - `settled` — the turn finished. The gate passes; content is stage 5's.
+ * - `settled` — the turn finished AND the demo's own API answered it. The gate
+ *               passes; content is stage 5's.
  * - `broken`  — the demo's agent does not work. The gate fails.
  * - `timeout` — the agent was alive and did not finish in the budget. The gate
  *               still fails (a turn this slow is not demoable), but it is
  *               reported as its own thing so nobody reads it as a broken demo.
+ * - `tools-unreachable` — the turn finished and the demo's API never answered a
+ *               single one of its own agent's tool calls. Its own verdict because
+ *               it is neither of the other two: the agent works, the page works,
+ *               the clock was fine — the demo simply cannot answer anything.
  */
-export type SmokeVerdict = "settled" | "broken" | "timeout";
+export type SmokeVerdict = "settled" | "broken" | "timeout" | "tools-unreachable";
 
 export interface SmokeOutcome {
   verdict: SmokeVerdict;
@@ -274,7 +367,25 @@ export function classifySmoke(observed: {
       retryable: true,
     };
   }
-  if (observed.settled) return { verdict: "settled", progress, retryable: false };
+  if (observed.settled) {
+    if (progress.hostToolAnswered) return { verdict: "settled", progress, retryable: false };
+    // THE BLIND SPOT. A settled turn used to pass here unconditionally, and a
+    // demo whose every tool 404'd settled cleanly: the agent retried, diagnosed
+    // the 404s and honestly refused. Good behaviour by the agent read as a
+    // healthy demo. This is still not a content judgement — the question is only
+    // whether the demo's API answered, never what it answered with.
+    return {
+      verdict: "tools-unreachable",
+      reason: progress.hostToolProblem === undefined
+        ? "the turn settled, but the agent never called one of the demo's own tools, so nothing proves this demo's API can answer it"
+        : `the turn settled, but the demo's own API never answered its own agent — ${progress.hostToolProblem}. Every tool the prospect's question needs is failing, so the demo would look perfect and answer nothing`,
+      progress,
+      // A tool call the API refused is this demo's own wiring, and it reproduces
+      // — a second turn costs another whole turn and re-proves it. The model
+      // simply not calling a tool is the one case a retry can genuinely clear.
+      retryable: progress.hostToolProblem === undefined,
+    };
+  }
   const alive = progress.turnStarted || progress.toolCall;
   if (!alive) {
     return {

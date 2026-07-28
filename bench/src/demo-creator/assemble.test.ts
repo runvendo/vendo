@@ -2,13 +2,13 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { runAssemble, SmokeBrokenError, SmokeTimeoutError, type AssembleIo } from "./assemble.js";
+import { runAssemble, SmokeBrokenError, SmokeTimeoutError, SmokeToolsUnreachableError, type AssembleIo } from "./assemble.js";
 import type { ExecFn, ExecResult } from "./exec.js";
-import type { RunningHost, SmokeTurnFn } from "./host-boot.js";
+import { localBootEnv, type RunningHost, type SmokeTurnFn } from "./host-boot.js";
 import { classifySmoke, noProgress, smokeBudgetMs, type SmokeProgress } from "./smoke.js";
 
 /** The shape of every healthy turn: the door answered, the model streamed. */
-const alive: SmokeProgress = { doorAnswered: true, turnStarted: true, toolCall: true };
+const alive: SmokeProgress = { doorAnswered: true, turnStarted: true, toolCall: true, hostToolAnswered: true };
 
 /** Smoke turns expressed the way the real one reports: an outcome, not a throw. */
 const settles: SmokeTurnFn = async () => classifySmoke({ settled: true, timedOut: false, progress: alive });
@@ -24,14 +24,27 @@ const manifestPath = (demosRepo: string): string =>
   path.join(demosRepo, "host", "src", "generated", "manifest.ts");
 
 /** A vendo-demos checkout whose manifest imports `slugs`; `installed` seeds
- * host/node_modules so the install step can be observed being skipped. */
-async function fakeDemosRepo(options: { slugs: string[]; installed?: boolean }): Promise<string> {
+ * host/node_modules so the install step can be observed being skipped. Each slug
+ * gets a tools.json, because stage 4 reads it to learn which tool names belong to
+ * the demo's OWN API — the ones the smoke turn must see answer. */
+async function fakeDemosRepo(options: {
+  slugs: string[];
+  installed?: boolean;
+  tools?: unknown;
+}): Promise<string> {
   const demosRepo = await mkdtemp(path.join(tmpdir(), "vendo-assemble-"));
   await mkdir(path.dirname(manifestPath(demosRepo)), { recursive: true });
   await writeFile(
     manifestPath(demosRepo),
     options.slugs.map((slug) => `import s from "../../../demos/${slug}/screens/index.js";`).join("\n"),
   );
+  for (const slug of new Set([...options.slugs, args.slug])) {
+    const demo = path.join(demosRepo, "demos", slug);
+    await mkdir(demo, { recursive: true });
+    await writeFile(path.join(demo, "tools.json"), JSON.stringify(options.tools ?? {
+      tools: [{ name: "host_listInvoices", binding: { kind: "openapi", method: "GET", path: "/api/invoices" } }],
+    }));
+  }
   if (options.installed === true) await mkdir(path.join(demosRepo, "host", "node_modules"), { recursive: true });
   return demosRepo;
 }
@@ -142,7 +155,10 @@ describe("runAssemble", () => {
     const result = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn: settles }));
     // Everything the gate is told about the turn — no view, no text, no tool
     // result. A gate that cannot see content cannot start judging it.
-    expect(Object.keys(result.smoke.progress).sort()).toEqual(["doorAnswered", "toolCall", "turnStarted"]);
+    // `hostToolAnswered` is a fact about the wire (did the API answer), never
+    // about what came back over it.
+    expect(Object.keys(result.smoke.progress).sort())
+      .toEqual(["doorAnswered", "hostToolAnswered", "toolCall", "turnStarted"]);
     expect(result.smoke).toEqual({
       prompt: args.smokePrompt,
       ms: expect.any(Number),
@@ -237,6 +253,152 @@ describe("runAssemble — the smoke gate tells BROKEN from SLOW", () => {
     const broken = await runAssemble(args, io(demosRepo, { smokeTurn: deadAgent })).catch((error: unknown) => error as Error);
     expect(timeout.message).not.toBe(broken.message);
     expect(broken.message).toMatch(/broken/i);
+  });
+});
+
+/**
+ * THE BLIND SPOT. A demo shipped that served 200, had a pixel-accurate palette
+ * and zero console errors — and every agent tool 404'd, so it could not answer a
+ * single question. The gate passed because the agent behaved WELL: it retried,
+ * diagnosed the 404s and honestly refused rather than fabricating an answer. The
+ * turn SETTLED, and settled was all the gate checked.
+ */
+describe("runAssemble — a demo whose own API never answered its agent", () => {
+  const unreachable: SmokeTurnFn = async () => classifySmoke({
+    settled: true,
+    timedOut: false,
+    progress: {
+      doorAnswered: true,
+      turnStarted: true,
+      toolCall: true,
+      hostToolAnswered: false,
+      hostToolProblem: `host_listInvoices → GET /api/acme/invoices → 404: {"error":{"message":"Not found"}}`,
+    },
+  });
+
+  it("fails a settled turn whose tools never answered, as its own verdict", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const { host, stop } = fakeHost();
+    const lines: string[] = [];
+    const thrown = await runAssemble(args, io(demosRepo, {
+      boot: async () => host,
+      smokeTurn: unreachable,
+      write: (line) => lines.push(line),
+    })).catch((error: unknown) => error as Error);
+    expect(thrown).toBeInstanceOf(SmokeToolsUnreachableError);
+    expect(thrown).not.toBeInstanceOf(SmokeBrokenError);
+    expect(thrown).not.toBeInstanceOf(SmokeTimeoutError);
+    expect(lines.some((line) => line.startsWith("SMOKE: TOOLS-UNREACHABLE"))).toBe(true);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * CAUSE-AGNOSTIC, deliberately. The 404s that motivated this gate were first
+   * diagnosed as a path-shape bug and were nothing of the kind — the real fault
+   * was a wire origin pointing at another host, and the runtime's own error clause
+   * reports a method, a path and a status but NEVER the origin. A message that
+   * named a suspected culprit sent a diagnosis down the wrong road for hours, so
+   * this one reports the request, the response and the origin the demo was served
+   * on, and names no cause at all.
+   */
+  it("reports the failing request, its response, and the origin — and blames nothing", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const { host } = fakeHost();
+    const thrown = await runAssemble(args, io(demosRepo, { boot: async () => host, smokeTurn: unreachable }))
+      .catch((error: unknown) => error as Error);
+    // The request and the response the runtime actually saw.
+    expect(thrown.message).toContain("host_listInvoices");
+    expect(thrown.message).toContain("GET /api/acme/invoices");
+    expect(thrown.message).toContain("404");
+    // The origin, which the runtime's clause never carries — without it a reader
+    // cannot tell a wrong path from a wrong host.
+    expect(thrown.message).toContain(host.baseUrl);
+    // No guesses. Not the openapi file, not the routes file, not a convention.
+    expect(thrown.message).not.toMatch(/openapi|routes\.ts|check your/i);
+  });
+
+  it("hands the smoke turn the names of the demo's OWN tools, read from its tools.json", async () => {
+    const demosRepo = await fakeDemosRepo({
+      slugs: ["acme"],
+      installed: true,
+      tools: {
+        tools: [
+          { name: "host_listWidgets", binding: { kind: "openapi", method: "GET", path: "/api/widgets" } },
+          { name: "slack_SLACK_SEND_MESSAGE", binding: { kind: "connector" } },
+        ],
+      },
+    });
+    let given: readonly string[] | undefined;
+    const result = await runAssemble(args, io(demosRepo, {
+      smokeTurn: async (options) => {
+        given = options.hostToolNames;
+        return classifySmoke({ settled: true, timedOut: false, progress: alive });
+      },
+    }));
+    // Only the tools that execute against the demo's own API; a connector tool
+    // talks to Composio and could never prove this demo's API answers.
+    expect(given).toEqual(["host_listWidgets"]);
+    await result.host.stop();
+  });
+
+  // The known data-binding gaps must still ship. This gate asks whether the API
+  // answered, never what it answered with.
+  it("still passes a demo whose API answered but whose turn generated nothing", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const result = await runAssemble(args, io(demosRepo, {
+      smokeTurn: async () => classifySmoke({
+        settled: true,
+        timedOut: false,
+        progress: { doorAnswered: true, turnStarted: true, toolCall: false, hostToolAnswered: true },
+      }),
+    }));
+    expect(result.smoke.verdict).toBe("settled");
+    await result.host.stop();
+  });
+});
+
+/**
+ * The wire origin — `VENDO_BASE_URL` — is the base every openapi tool binding is
+ * resolved against. Set to a hostname that resolved to the old router, it 404'd
+ * every tool call on every demo on the fleet while every page kept rendering, and
+ * no page-level check saw it. The cutover runbook tells operators to export that
+ * exact variable.
+ */
+describe("runAssemble — the wire origin belongs to the host being booted", () => {
+  it("boots the local host on its own origin even when the environment names another", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const booted: NodeJS.ProcessEnv[] = [];
+    const boot: NonNullable<AssembleIo["boot"]> = async (options) => {
+      booted.push(localBootEnv(options.env ?? {}, options.port));
+      return fakeHost().host;
+    };
+    const result = await runAssemble(args, io(demosRepo, {
+      boot,
+      env: { VENDO_BASE_URL: "https://demos.vendo.run" },
+    }));
+    expect(booted[0]?.VENDO_BASE_URL).toBe("http://127.0.0.1:4311");
+    await result.host.stop();
+  });
+
+  it("says out loud that it had to override the environment's wire origin", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const lines: string[] = [];
+    const result = await runAssemble(args, io(demosRepo, {
+      env: { VENDO_BASE_URL: "https://demos.vendo.run" },
+      write: (line) => lines.push(line),
+    }));
+    const complaint = lines.find((line) => line.includes("WIRE ORIGIN"));
+    expect(complaint).toContain("https://demos.vendo.run");
+    expect(complaint).toContain("http://127.0.0.1:4311");
+    await result.host.stop();
+  });
+
+  it("stays quiet when the environment names no foreign wire origin", async () => {
+    const demosRepo = await fakeDemosRepo({ slugs: ["acme"], installed: true });
+    const lines: string[] = [];
+    const result = await runAssemble(args, io(demosRepo, { env: {}, write: (line) => lines.push(line) }));
+    expect(lines.some((line) => line.includes("WIRE ORIGIN"))).toBe(false);
+    await result.host.stop();
   });
 });
 

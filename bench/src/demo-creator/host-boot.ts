@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 import { sendPrompt, VendoTurnError, VendoTurnTimeout, waitForTurn } from "../demo-capture/capture.js";
 import { genManifestScript, hostDir } from "./demo-folder.js";
 import { createScrubber, defaultExec, delay, scrubbingTransform, type ExecFn } from "./exec.js";
-import { agentRunDoorProblem, classifySmoke, installSmokeObserverInPage, noProgress, smokeReadyMs, type SmokeOutcome } from "./smoke.js";
+import { agentRunDoorProblem, classifySmoke, installSmokeObserverInPage, noProgress, readHostToolTraffic, smokeReadyMs, type SmokeOutcome } from "./smoke.js";
 
 /**
  * Stage 4's plumbing: drive the vendo-demos HOST (a foreign checkout, not this
@@ -193,6 +193,9 @@ async function stopProcess(child: ChildProcess): Promise<void> {
 /** Boots the built host from its own directory (no workspace filter: the
  * vendo-demos checkout is foreign to this repo) and waits until it serves
  * HTTP. Stops itself if readiness fails, so a half-started host never leaks. */
+/** Where a local boot serves from, and therefore its only correct wire origin. */
+const loopbackOrigin = (port: number): string => `http://127.0.0.1:${port}`;
+
 /**
  * The env a LOCAL boot needs on top of the operator's.
  *
@@ -204,14 +207,41 @@ async function stopProcess(child: ChildProcess): Promise<void> {
  * `VENDO_BASE_URL`'s origin, which here is the loopback port this function just
  * started. So this is the deployed posture applied locally, not a loosened one.
  *
- * An operator who set either variable keeps their value.
+ * `DEMO_AUTOLOGIN` is the operator's to set. `VENDO_BASE_URL` is NOT, and that
+ * asymmetry is the whole point of this function now: it is the WIRE ORIGIN, the
+ * base every one of the demo's openapi tool bindings is resolved against
+ * (`@vendoai/vendo` reads it from the environment and hands it to
+ * `@vendoai/actions`). On 2026-07-28 it was briefly set to a hostname that still
+ * resolved to the old router, and every tool call on every demo left the host and
+ * 404'd elsewhere — while every page still rendered perfectly, so nothing
+ * page-level noticed. The cutover runbook tells operators to export exactly that
+ * variable, so inheriting it here would have pointed the smoke turn's tool calls
+ * at a completely different host and called whatever came back evidence.
+ *
+ * A server on 127.0.0.1 has exactly one correct wire origin: itself. So this is
+ * made true by construction rather than checked, and {@link inheritedWireOrigin}
+ * is what lets the caller say out loud that it had to be.
  */
 export function localBootEnv(env: NodeJS.ProcessEnv, port: number): NodeJS.ProcessEnv {
   return {
     ...env,
     DEMO_AUTOLOGIN: env.DEMO_AUTOLOGIN ?? "1",
-    VENDO_BASE_URL: env.VENDO_BASE_URL ?? `http://127.0.0.1:${port}`,
+    VENDO_BASE_URL: loopbackOrigin(port),
   };
+}
+
+/**
+ * The wire origin the environment was carrying, when it is not the host about to
+ * be booted — the one thing worth SAYING before a local boot silently corrects
+ * it, because it is the shape of a fault that killed every tool call on the whole
+ * fleet without touching a single page.
+ */
+export function inheritedWireOrigin(env: NodeJS.ProcessEnv, port: number): string | undefined {
+  const configured = env.VENDO_BASE_URL;
+  if (configured === undefined || configured === "") return undefined;
+  // A trailing slash is the same origin; the host normalises it too.
+  if (configured.replace(/\/$/, "") === loopbackOrigin(port)) return undefined;
+  return configured;
 }
 
 export async function bootHost(options: {
@@ -261,7 +291,25 @@ export async function bootHost(options: {
   };
 }
 
-export type SmokeTurnFn = (options: { baseUrl: string; slug: string; prompt: string; timeoutMs: number }) => Promise<SmokeOutcome>;
+export type SmokeTurnFn = (options: {
+  baseUrl: string;
+  slug: string;
+  prompt: string;
+  timeoutMs: number;
+  /** The names of the tools that execute against the DEMO'S OWN API — the only
+   *  ones whose success proves this demo can answer anything. */
+  hostToolNames: readonly string[];
+}) => Promise<SmokeOutcome>;
+
+/**
+ * How long to wait for the turn's response body after the turn itself is over.
+ *
+ * The body is an SSE stream that stays open for the whole turn, so by the time
+ * this is awaited it is almost always complete — EXCEPT on a deadline, where the
+ * turn is still streaming and this would otherwise wait forever. On that path the
+ * verdict is already decided, so a short bound costs nothing.
+ */
+const turnStreamDrainMs = 5_000;
 
 /** `requireView: false` is the contract's "gates on HARD error only": the smoke
  * turn passes as long as the turn did not error and did settle. What the agent
@@ -281,12 +329,17 @@ export function smokeTurnWaitOptions(options: { previousAssistantTurns: number; 
  * (see {@link classifySmoke}), and a thrown Error cannot carry the evidence that
  * judgement needs.
  *
- * Three things are watched at once. The DOOR — the demo's own
+ * Four things are watched at once. The DOOR — the demo's own
  * `/api/vendo/<slug>/…` route — is watched at the wire, because a 500 there is
  * the dead-agent shape (no model provider, a tools file the runtime cannot parse)
  * and it arrives within seconds. The in-page observer records the two signs of
- * life. And the turn wait supplies the third answer: settled, errored, or out of
- * clock.
+ * life. The turn wait supplies settled, errored, or out of clock. And the turn's
+ * own RESPONSE BODY is read back, because it is the only place that says whether
+ * the demo's API answered its agent: the transcript renders nothing for a settled
+ * tool call, and a FAILED call is not a stream error either — the runtime hands
+ * the failure to the model as the tool's output. Reading the body rather than
+ * intercepting the request keeps the stream streaming, so nothing about the turn's
+ * timing or its in-page liveness signals changes.
  */
 export const defaultSmokeTurn: SmokeTurnFn = async (options) => {
   const browser = await chromium.launch();
@@ -297,10 +350,15 @@ export const defaultSmokeTurn: SmokeTurnFn = async (options) => {
     // Only the request that RUNS the turn counts — see agentRunDoorProblem for
     // why "any non-2xx under /api/vendo/<slug>" would fail healthy demos.
     const agentRunDoor = `/api/vendo/${options.slug}/threads`;
+    /** The turn's own response bodies, read back after it ends. */
+    const turnStreams: Promise<string>[] = [];
     page.on("response", (response) => {
       const pathname = new URL(response.url()).pathname;
       const method = response.request().method();
-      if (method.toUpperCase() === "POST" && pathname === agentRunDoor) progress.doorAnswered = true;
+      if (method.toUpperCase() === "POST" && pathname === agentRunDoor) {
+        progress.doorAnswered = true;
+        turnStreams.push(response.text().catch(() => ""));
+      }
       const problem = agentRunDoorProblem({ slug: options.slug, method, pathname, status: response.status() });
       if (problem !== undefined && progress.doorError === undefined) progress.doorError = problem;
     });
@@ -356,6 +414,15 @@ export const defaultSmokeTurn: SmokeTurnFn = async (options) => {
       ?? { turnStarted: false, toolCall: false };
     progress.turnStarted = observed.turnStarted;
     progress.toolCall = observed.toolCall;
+    // Bounded: on a deadline the stream is still open, and the verdict is already
+    // decided, so waiting the rest of the turn out would buy nothing.
+    const streamed = await Promise.race([
+      Promise.all(turnStreams).then((bodies) => bodies.join("\n")),
+      delay(turnStreamDrainMs).then(() => ""),
+    ]);
+    const traffic = readHostToolTraffic(streamed, options.hostToolNames);
+    progress.hostToolAnswered = traffic.answered;
+    if (traffic.problem !== undefined) progress.hostToolProblem = traffic.problem;
     return classifySmoke({
       settled,
       timedOut,

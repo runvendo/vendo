@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExecFn, ExecResult } from "./exec.js";
-import { buildHost, defaultHostCommands, generateManifest, localBootEnv, smokeTurnWaitOptions } from "./host-boot.js";
+import { buildHost, defaultHostCommands, generateManifest, inheritedWireOrigin, localBootEnv, smokeTurnWaitOptions } from "./host-boot.js";
 
 /** The frozen codegen target: host/src/generated/manifest.ts. */
 const manifestPath = (demosRepo: string): string =>
@@ -211,8 +211,52 @@ describe("localBootEnv", () => {
     });
   });
 
-  it("never overrides what the operator set", () => {
-    const env = { DEMO_AUTOLOGIN: "0", VENDO_BASE_URL: "https://demos.vendo.run" };
-    expect(localBootEnv(env, 3150)).toEqual(env);
+  it("keeps the operator's autologin choice", () => {
+    expect(localBootEnv({ DEMO_AUTOLOGIN: "0" }, 3150).DEMO_AUTOLOGIN).toBe("0");
+  });
+
+  /**
+   * The wire origin is NOT the operator's to choose for a loopback boot, and this
+   * is the one variable where "an operator who set it keeps their value" was
+   * actively dangerous.
+   *
+   * `VENDO_BASE_URL` is where the demo's own tool calls are sent: the runtime
+   * reads it and hands it to `@vendoai/actions`, which resolves every openapi
+   * binding against it. On 2026-07-28 it was briefly set to a hostname that still
+   * resolved to the old router, and EVERY tool call on EVERY demo left the host
+   * and 404'd elsewhere while every page still rendered perfectly. The cutover
+   * runbook tells operators to export exactly that variable, so a pipeline run on
+   * such a shell would have smoked a demo against somebody else's host and called
+   * the result evidence.
+   *
+   * A boot on 127.0.0.1 has exactly one correct wire origin — itself.
+   */
+  it("forces the wire origin to the host it just booted, whatever the environment says", () => {
+    expect(localBootEnv({ VENDO_BASE_URL: "https://demos.vendo.run" }, 3150).VENDO_BASE_URL)
+      .toBe("http://127.0.0.1:3150");
+  });
+});
+
+describe("inheritedWireOrigin", () => {
+  it("names a wire origin that is not the host being booted", () => {
+    expect(inheritedWireOrigin({ VENDO_BASE_URL: "https://demos.vendo.run" }, 3150)).toBe("https://demos.vendo.run");
+  });
+
+  it("says nothing when the environment names no wire origin", () => {
+    expect(inheritedWireOrigin({}, 3150)).toBeUndefined();
+    expect(inheritedWireOrigin({ VENDO_BASE_URL: "" }, 3150)).toBeUndefined();
+  });
+
+  // Already correct is not a finding, in either spelling — the host normalises a
+  // bare authority and tolerates a trailing slash.
+  it("says nothing when it already names this very boot", () => {
+    expect(inheritedWireOrigin({ VENDO_BASE_URL: "http://127.0.0.1:3150" }, 3150)).toBeUndefined();
+    expect(inheritedWireOrigin({ VENDO_BASE_URL: "http://127.0.0.1:3150/" }, 3150)).toBeUndefined();
+  });
+
+  // A different port is a different server, and on this machine it is very likely
+  // another lane's host.
+  it("names a loopback origin on the wrong port", () => {
+    expect(inheritedWireOrigin({ VENDO_BASE_URL: "http://127.0.0.1:3000" }, 3150)).toBe("http://127.0.0.1:3000");
   });
 });
