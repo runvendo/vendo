@@ -58,11 +58,9 @@ const HOST_FACING_TYPES = [
   "ExtractedTool",
   "SyncReport",
   // actions — the file shapes the in-memory createVendo({ profile }) pieces
-  // name (Task 15a); SemanticsFile/VendoTheme ride the core `export type *`.
-  "CapabilitiesFile",
+  // name (Task 15a); VendoTheme rides the core `export type *`.
   "CatalogFile",
   "OverridesFile",
-  "SemanticsFile",
   // guard
   "Judge",
   "PolicyConfig",
@@ -137,11 +135,9 @@ describe("09-vendo §1 — umbrella root type surface", () => {
     const failure = typecheckImports(
       [
         "CreateVendoConfig",
-        "CapabilitiesFile",
         "CatalogFile",
         "ExtractedTool",
-        "OverridesFileV3",
-        "SemanticsFile",
+        "OverridesFile",
         "VendoTheme",
       ],
       "./src/server.js",

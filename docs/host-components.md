@@ -87,7 +87,7 @@ init.
 
 ```json
 {
-  "format": "vendo/overrides@1",
+  "format": "vendo/overrides@3",
   "tools": {},
   "remix": { "ignoreSlots": ["ThirdPartyWidget"] }
 }

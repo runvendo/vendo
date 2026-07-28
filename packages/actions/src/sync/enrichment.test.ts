@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ExtractedToolV3 } from "../formats.js";
+import type { ExtractedTool } from "../formats.js";
 import { applyEnrichmentFields, carryEnrichment, clampEnrichment } from "./enrichment.js";
 
-const baseline = (overrides: Partial<ExtractedToolV3> = {}): ExtractedToolV3 => ({
+const baseline = (overrides: Partial<ExtractedTool> = {}): ExtractedTool => ({
   name: "host_listInvoices",
   description: "Use this to read or list invoices (GET /api/invoices).",
   inputSchema: { type: "object", properties: {} },

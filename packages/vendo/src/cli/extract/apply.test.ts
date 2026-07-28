@@ -23,9 +23,9 @@ async function fixture(brief?: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "vendo-extract-apply-"));
   cleanup.push(root);
   await mkdir(join(root, ".vendo"), { recursive: true });
-  await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: TOOLS }));
+  await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: TOOLS }));
   await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify(
-    { format: "vendo/overrides@1", tools: {}, remix: { ignoreSlots: [] } },
+    { format: "vendo/overrides@3", tools: {}, remix: { ignoreSlots: [] } },
   ));
   await writeFile(join(root, ".vendo", "brief.md"),
     `${brief ?? "Describe this product, its users, and the jobs the agent should help them complete."}\n`);
@@ -142,7 +142,7 @@ describe("vendo extract --apply (the delegation surface)", () => {
 
   it("exits non-zero honestly when a hand-edited overrides.json cannot be parsed (Devin)", async () => {
     const root = await fixture();
-    await writeFile(join(root, ".vendo", "overrides.json"), '{"format": "vendo/overrides@1", "tools": {');
+    await writeFile(join(root, ".vendo", "overrides.json"), '{"format": "vendo/overrides@3", "tools": {');
     const draft = await draftFile(root, {
       brief: "b",
       tools: [{ name: "host_invoices_list", description: "List invoices." }],

@@ -3,7 +3,7 @@ import path from "node:path";
 import { mountCorpusOverlay } from "./overlay-mount.js";
 
 const skateshopTools = {
-  format: "vendo/tools@1",
+  format: "vendo/tools@3",
   tools: [
     {
       name: "list_skateshop_catalog_products",

@@ -122,21 +122,18 @@ describe("loadSurface", () => {
     const repoDir = await tempRepo();
     await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
     await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({
-      format: "vendo/tools@1",
+      format: "vendo/tools@3",
       tools: [
         { name: "host_records_list", risk: "read", binding: { kind: "route", method: "GET", path: "/x" } },
         { name: "host_records_update", risk: "write", binding: { kind: "route", method: "PATCH", path: "/y" } },
         { name: "host_dangerous", risk: "destructive", disabled: true, binding: { kind: "route", method: "DELETE", path: "/z" } },
       ],
     }));
-    await writeFile(path.join(repoDir, ".vendo/capabilities.json"), JSON.stringify({
-      format: "vendo/capabilities@1",
-      tools: [{ name: "bulk_paste_range", risk: "write", binding: { kind: "compound", steps: [] } }],
-      briefs: [{ name: "reconfigure-view", text: "…", tools: ["host_records_list"] }],
-    }));
     await writeFile(path.join(repoDir, ".vendo/overrides.json"), JSON.stringify({
-      format: "vendo/overrides@1",
+      format: "vendo/overrides@3",
       tools: { host_records_list: { disabled: true } },
+      compounds: [{ name: "bulk_paste_range", risk: "write", binding: { kind: "compound", steps: [] } }],
+      briefs: [{ name: "reconfigure-view", text: "…", tools: ["host_records_list"] }],
     }));
 
     const surface = await loadSurface(repoDir);
@@ -159,7 +156,7 @@ describe("runUiParityLayer", () => {
     const repoDir = await tempRepo();
     await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
     await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({
-      format: "vendo/tools@1",
+      format: "vendo/tools@3",
       tools: [
         { name: "host_records_update", risk: "write", binding: { kind: "route", method: "PATCH", path: "/y" } },
         { name: "host_disabled", risk: "write", disabled: true, binding: { kind: "route", method: "POST", path: "/d" } },

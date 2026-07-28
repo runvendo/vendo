@@ -29,7 +29,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 }
 
 const toolsFile = {
-  format: "vendo/tools@1",
+  format: "vendo/tools@3",
   tools: [
     {
       name: "host_api_invoices_get",

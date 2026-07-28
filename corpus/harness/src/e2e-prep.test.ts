@@ -36,7 +36,7 @@ async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: str
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
   await mkdir(path.join(appRoot, "src/app/api/vendo/[...vendo]"), { recursive: true });
-  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@3", tools: [] }));
   await writeFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), initRouteSource);
   await writeFile(
     path.join(appRoot, "src/app/layout.tsx"),
@@ -116,7 +116,7 @@ const umamiExtractionTools = [
 
 function umamiExtractionToolsJson(): string {
   return `${JSON.stringify({
-    format: "vendo/tools@1",
+    format: "vendo/tools@3",
     tools: umamiExtractionTools.map((tool) => ({
       name: tool.name,
       description: "",
@@ -164,7 +164,7 @@ const papermarkExtractionTools = [
 
 function papermarkExtractionToolsJson(): string {
   return `${JSON.stringify({
-    format: "vendo/tools@1",
+    format: "vendo/tools@3",
     tools: papermarkExtractionTools.map((tool) => ({
       name: tool.name,
       description: "",
@@ -315,7 +315,7 @@ describe("prepareE2eRepo", () => {
     const env = await readFile(path.join(appRoot, ".env"), "utf8");
     const log = await readFile(logs[0]!, "utf8");
 
-    expect(overrides.format).toBe("vendo/overrides@1");
+    expect(overrides.format).toBe("vendo/overrides@3");
     // Curated endpoints are keyed to their EXTRACTION name and enabled read.
     expect(overrides.tools["host_me_websites_list"]).toMatchObject({ risk: "read" });
     expect(overrides.tools["host_me_websites_list"]!.disabled).toBeUndefined();
@@ -441,7 +441,7 @@ describe("prepareE2eRepo", () => {
     };
     const log = await readFile(logs[0]!, "utf8");
 
-    expect(overrides.format).toBe("vendo/overrides@1");
+    expect(overrides.format).toBe("vendo/overrides@3");
     // Curated endpoints keep their extraction names and gain descriptions +
     // corrected risk; every other extracted tool is disabled.
     expect(overrides.tools["host_teams_list"]).toMatchObject({ risk: "read" });
@@ -499,7 +499,7 @@ describe("prepareE2eRepo", () => {
 
   it("fails Papermark prep loudly when extraction stops covering a curated endpoint", async () => {
     const { appRoot, logsDir } = await createPapermarkFixture({
-      toolsJson: `${JSON.stringify({ format: "vendo/tools@1", tools: [] }, null, 2)}\n`,
+      toolsJson: `${JSON.stringify({ format: "vendo/tools@3", tools: [] }, null, 2)}\n`,
     });
 
     await expect(prepareE2eRepo({ name: "papermark" }, appRoot, logsDir))

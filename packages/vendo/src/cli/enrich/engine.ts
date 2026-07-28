@@ -5,7 +5,7 @@ import {
   applyEnrichmentFields,
   type EnrichmentFields,
 } from "@vendoai/actions/sync";
-import type { ExtractedToolV3, OverridesFileV3, ToolsFileV3 } from "@vendoai/actions";
+import type { ExtractedTool, OverridesFile, ToolsFile } from "@vendoai/actions";
 import { resolveDevCredential, type DevCredential } from "../../dev-creds/resolve.js";
 import { claudeCliHarness } from "../extract/claude-cli-harness.js";
 import { claudeHarness } from "../extract/claude-harness.js";
@@ -124,9 +124,9 @@ export interface EnrichmentRunInput {
   harness: ExtractionHarness;
   appName: string;
   /** The current structural tools file (post-carry). Never mutated. */
-  file: ToolsFileV3;
+  file: ToolsFile;
   /** Read-only context: human overrides always win; the model is told so. */
-  overrides: OverridesFileV3 | null;
+  overrides: OverridesFile | null;
   diff: EnrichmentDiff;
   /** Deterministically computed affected hints: new tools, srcHash-changed
    *  tools (the tripwire tracks these), never-enriched backlog. */
@@ -135,7 +135,7 @@ export interface EnrichmentRunInput {
 }
 
 export interface EnrichmentOutcome {
-  file: ToolsFileV3;
+  file: ToolsFile;
   /** Tool names whose entries changed or were confirmed (now marked enriched). */
   applied: string[];
   /** Restrictive-only clamp refusals, per tool — the narrative counts these. */
@@ -253,7 +253,7 @@ export async function runEnrichment(input: EnrichmentRunInput): Promise<Enrichme
     const current = byName.get(name);
     if (current?.enriched === true) {
       const { enriched: _stripped, ...rest } = current;
-      byName.set(name, rest as ExtractedToolV3);
+      byName.set(name, rest as ExtractedTool);
     }
   }
 

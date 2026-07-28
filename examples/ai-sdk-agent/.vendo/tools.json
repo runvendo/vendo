@@ -1,5 +1,5 @@
 {
-  "format": "vendo/tools@1",
+  "format": "vendo/tools@3",
   "tools": [
     {
       "name": "host_get_weather",

@@ -37,7 +37,7 @@ import {
 } from "./static-ts.js";
 
 /**
- * Static GraphQL extraction (04 §1, additive within vendo/tools@1).
+ * Static GraphQL extraction (04 §1, additive within vendo/tools@3).
  *
  * The schema is read statically from SDL files (parsed with the HOST's own
  * graphql package) and from code-first sources (@nestjs/graphql and

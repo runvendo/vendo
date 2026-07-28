@@ -8,11 +8,8 @@ import {
 } from "@vendoai/core";
 import {
   toolsFileSchema,
-  toolsFileV3Schema,
-  vendoFileVersion,
   type ExtractedTool,
   type ToolsFile,
-  type ToolsFileV3,
 } from "@vendoai/actions";
 import type { ZodError } from "zod";
 
@@ -551,13 +548,10 @@ function zodSummary(error: ZodError): string {
     .join("; ");
 }
 
-async function parseToolsManifest(repoDir: string): Promise<{ ok: true; manifest: ToolsFile | ToolsFileV3 } | { ok: false; error: string }> {
+async function parseToolsManifest(repoDir: string): Promise<{ ok: true; manifest: ToolsFile } | { ok: false; error: string }> {
   const tools = await readJsonFile(repoDir, ".vendo/tools.json");
   if (!tools.ok) return { ok: false, error: tools.error };
-  // init writes vendo/tools@3; a legacy (pre-migration) repo still parses.
-  const parsed = vendoFileVersion(tools.value) === 1
-    ? toolsFileSchema.safeParse(tools.value)
-    : toolsFileV3Schema.safeParse(tools.value);
+  const parsed = toolsFileSchema.safeParse(tools.value);
   if (!parsed.success) {
     return { ok: false, error: `.vendo/tools.json schema error: ${zodSummary(parsed.error)}` };
   }

@@ -17,8 +17,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return { ...actual, readFile: readFileMock };
 });
 import {
-  VENDO_OVERRIDES_FORMAT,
-  VENDO_TOOLS_FORMAT,
   descriptorHash,
   toolOutcomeSchema,
   type ActAs,
@@ -31,10 +29,9 @@ import {
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
 import {
-  VENDO_OVERRIDES_FORMAT_V3,
-  VENDO_TOOLS_FORMAT_V3,
+  VENDO_OVERRIDES_FORMAT,
+  VENDO_TOOLS_FORMAT,
   type ExtractedTool,
-  type ExtractedToolV3,
 } from "../formats.js";
 import { createActions, type ActionsRunContext } from "./registry.js";
 
@@ -53,7 +50,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-function routeTool(name: string, extras: Partial<ExtractedToolV3> = {}): ExtractedTool {
+function routeTool(name: string, extras: Partial<ExtractedTool> = {}): ExtractedTool {
   return {
     name,
     description: name,
@@ -122,8 +119,8 @@ describe("createActions registry", () => {
   });
 
   describe("hosted-config overrides injection (cse lane 3)", () => {
-    const toolsV3 = { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_a"), routeTool("host_b")] };
-    const disable = (name: string) => ({ format: VENDO_OVERRIDES_FORMAT_V3, tools: { [name]: { disabled: true } } });
+    const toolsV3 = { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_a"), routeTool("host_b")] };
+    const disable = (name: string) => ({ format: VENDO_OVERRIDES_FORMAT, tools: { [name]: { disabled: true } } });
     const liveNames = async (actions: ReturnType<typeof createActions>): Promise<string[]> =>
       (await actions.descriptors()).map((d) => d.name).sort();
 
@@ -1012,7 +1009,7 @@ describe("in-memory overrides (unified try surface Task 15a, rebased on the v3 i
     const actions = createActions({
       tools: [routeTool("host_probe"), routeTool("host_hidden")],
       overrides: {
-        format: VENDO_OVERRIDES_FORMAT_V3,
+        format: VENDO_OVERRIDES_FORMAT,
         tools: {
           host_probe: { risk: "destructive", critical: true, description: "Overridden host" },
           host_hidden: { disabled: true },
@@ -1031,12 +1028,12 @@ describe("in-memory overrides (unified try surface Task 15a, rebased on the v3 i
 
   it("config.overrides wins over the dir's overrides.json (in-memory precedence, whole-file)", async () => {
     const root = await tempVendo(
-      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
-      { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_probe: { disabled: true } } },
+      { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_probe")] },
+      { format: VENDO_OVERRIDES_FORMAT, tools: { host_probe: { disabled: true } } },
     );
     const actions = createActions({
       dir: root,
-      overrides: { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_probe: { description: "kept live" } } },
+      overrides: { format: VENDO_OVERRIDES_FORMAT, tools: { host_probe: { description: "kept live" } } },
     });
 
     // The disk file's disable never applies: the in-memory file replaces it whole.
@@ -1045,7 +1042,7 @@ describe("in-memory overrides (unified try surface Task 15a, rebased on the v3 i
     expect(descriptors[0]!.description).toBe("kept live");
   });
 
-  it("rejects a malformed config.overrides loudly (same posture as config.capabilities)", async () => {
+  it("rejects a malformed config.overrides loudly (same posture as every authored file)", async () => {
     const actions = createActions({
       tools: [routeTool("host_probe")],
       overrides: { format: "not-overrides", tools: {} } as never,
@@ -1057,7 +1054,7 @@ describe("in-memory overrides (unified try surface Task 15a, rebased on the v3 i
     const actions = createActions({
       tools: [routeTool("host_probe")],
       overrides: {
-        format: VENDO_OVERRIDES_FORMAT_V3,
+        format: VENDO_OVERRIDES_FORMAT,
         tools: {},
         compounds: [{
           name: "host_probe_flow",
@@ -1103,7 +1100,7 @@ describe("in-memory profile pieces skip the disk leg entirely (workerd portabili
   });
 
   it("config.tools skips the tools.json read — the dir's own (different) tools.json is never even opened", async () => {
-    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_from_disk")] });
+    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_from_disk")] });
     const actions = createActions({ dir: root, tools: [routeTool("host_in_memory")] });
 
     const names = (await actions.descriptors()).map((d) => d.name);
@@ -1111,26 +1108,29 @@ describe("in-memory profile pieces skip the disk leg entirely (workerd portabili
     expect(readFileMock.mock.calls.some(([path]) => String(path).endsWith("tools.json"))).toBe(false);
   });
 
-  it("config.capabilities skips the capabilities.json read — the dir's own file is never even opened", async () => {
-    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] });
-    await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
-      format: "vendo/capabilities@1",
-      tools: [{
-        name: "disk_compound",
-        description: "disk_compound flow",
-        inputSchema: { type: "object" },
-        risk: "read",
-        binding: { kind: "compound", steps: [{ id: "a", tool: "host_probe" }] },
-      }],
-    }));
+  it("config.overrides skips the overrides.json read — the dir's own file is never even opened", async () => {
+    const root = await tempVendo(
+      { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_probe")] },
+      {
+        format: VENDO_OVERRIDES_FORMAT,
+        tools: {},
+        compounds: [{
+          name: "disk_compound",
+          description: "disk_compound flow",
+          inputSchema: { type: "object" },
+          risk: "read",
+          binding: { kind: "compound", steps: [{ id: "a", tool: "host_probe" }] },
+        }],
+      },
+    );
     const actions = createActions({
       dir: root,
-      capabilities: { format: "vendo/capabilities@1", tools: [] },
+      overrides: { format: VENDO_OVERRIDES_FORMAT, tools: {} },
     });
 
     const names = (await actions.descriptors()).map((d) => d.name);
     expect(names).not.toContain("disk_compound");
-    expect(readFileMock.mock.calls.some(([path]) => String(path).endsWith("capabilities.json"))).toBe(false);
+    expect(readFileMock.mock.calls.some(([path]) => String(path).endsWith("overrides.json"))).toBe(false);
   });
 
   it("a residual overrides.json read that fails with a CODE-LESS error (workerd unenv class) degrades to absent instead of killing the composition", async () => {
@@ -1138,8 +1138,8 @@ describe("in-memory profile pieces skip the disk leg entirely (workerd portabili
     // config.overrides is NOT — this is the residual read that still has to
     // run, and it must survive a code-less failure the way ENOENT already
     // does (host-files.ts's narrowed catch — the other half of the fix).
-    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT_V3, tools: [] });
-    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({ format: VENDO_OVERRIDES_FORMAT_V3, tools: {} }));
+    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT, tools: [] });
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({ format: VENDO_OVERRIDES_FORMAT, tools: {} }));
     const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
     readFileMock.mockImplementation(async (path: unknown, ...rest: unknown[]) => {
       if (String(path).endsWith("overrides.json")) {
@@ -1161,8 +1161,8 @@ describe("in-memory profile pieces skip the disk leg entirely (workerd portabili
     // permissive than present (a disabled tool / audience exclusion
     // vanishes), so this must NOT silently degrade to "no overrides" — that
     // would fail OPEN. Only ENOENT and a code-less failure (workerd) degrade.
-    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT_V3, tools: [] });
-    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({ format: VENDO_OVERRIDES_FORMAT_V3, tools: {} }));
+    const root = await tempVendo({ format: VENDO_TOOLS_FORMAT, tools: [] });
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({ format: VENDO_OVERRIDES_FORMAT, tools: {} }));
     const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
     readFileMock.mockImplementation(async (path: unknown, ...rest: unknown[]) => {
       if (String(path).endsWith("overrides.json")) {
@@ -1189,7 +1189,7 @@ describe("format v3 host files (cse lane 1)", () => {
   it("loads the v3 pair: overrides beat tools, compounds and briefs come from overrides.json", async () => {
     const root = await tempVendo(
       {
-        format: VENDO_TOOLS_FORMAT_V3,
+        format: VENDO_TOOLS_FORMAT,
         watermark: "3d1f2ab90c7e5f6a8b4d0e1c2a3b4c5d6e7f8091",
         domains: { has: ["things"], hasNot: [] },
         tools: [routeTool("host_probe", {
@@ -1199,7 +1199,7 @@ describe("format v3 host files (cse lane 1)", () => {
         })],
       },
       {
-        format: VENDO_OVERRIDES_FORMAT_V3,
+        format: VENDO_OVERRIDES_FORMAT,
         tools: { host_probe: { description: "Overridden host", risk: "write" } },
         compounds: [compound("host_probe_flow", "host_probe", { risk: "write" })],
         briefs: [{ name: "probe", text: "call host_probe first", tools: ["host_probe"] }],
@@ -1215,8 +1215,8 @@ describe("format v3 host files (cse lane 1)", () => {
 
   it("keeps the overrides file strict: a typo fails loudly at load", async () => {
     const root = await tempVendo(
-      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
-      { format: VENDO_OVERRIDES_FORMAT_V3, tools: {}, compunds: [] },
+      { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_probe")] },
+      { format: VENDO_OVERRIDES_FORMAT, tools: {}, compunds: [] },
     );
     await expect(createActions({ dir: root }).descriptors()).rejects.toMatchObject({
       name: "VendoError",
@@ -1230,9 +1230,9 @@ describe("format v3 host files (cse lane 1)", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
     try {
       const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
+        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_probe")] },
         {
-          format: VENDO_OVERRIDES_FORMAT_V3,
+          format: VENDO_OVERRIDES_FORMAT,
           tools: {
             host_probe: { description: "Overridden host" },
             host_ghost: { disabled: true },
@@ -1258,149 +1258,10 @@ describe("format v3 host files (cse lane 1)", () => {
     }
   });
 
-  it("migrates a legacy v1 dir in-memory and warns once advising `vendo sync`", async () => {
-    const warned: string[] = [];
-    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
-    try {
-      const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_probe")] },
-        { format: VENDO_OVERRIDES_FORMAT, tools: { host_probe: { description: "Overridden host" } } },
-      );
-      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
-        format: "vendo/capabilities@1",
-        tools: [compound("host_probe_flow", "host_probe")],
-        briefs: [{ name: "probe", text: "call host_probe first" }],
-      }));
-      const actions = createActions({ dir: root });
-      await expect(actions.descriptors()).resolves.toEqual([
-        { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "read" },
-        { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "read" },
-      ]);
-      await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first" }]);
-      await actions.descriptors();
-      expect(warned.filter((line) => line.includes("vendo sync"))).toHaveLength(1);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  // 1a review follow-up: a half-migrated dir (exactly one of the pair is v3)
-  // must warn loudly AND still ingest capabilities.json compounds/briefs
-  // through the legacy fold — never silently drop authored work.
-  it("half-migrated dir (tools@3 + overrides@1): warns and still ingests capabilities.json", async () => {
-    const warned: string[] = [];
-    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
-    try {
-      const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
-        { format: VENDO_OVERRIDES_FORMAT, tools: { host_probe: { description: "Overridden host" } } },
-      );
-      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
-        format: "vendo/capabilities@1",
-        tools: [compound("host_probe_flow", "host_probe")],
-        briefs: [{ name: "probe", text: "call host_probe first" }],
-      }));
-      const actions = createActions({ dir: root });
-      await expect(actions.descriptors()).resolves.toEqual([
-        { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "read" },
-        { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "read" },
-      ]);
-      await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first" }]);
-      expect(warned.some((line) => line.includes("half-migrated"))).toBe(true);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("half-migrated dir (tools@1 + overrides@3): warns and still ingests capabilities.json", async () => {
-    const warned: string[] = [];
-    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
-    try {
-      const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_probe")] },
-        { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_probe: { description: "Overridden host" } } },
-      );
-      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
-        format: "vendo/capabilities@1",
-        tools: [compound("host_probe_flow", "host_probe")],
-        briefs: [{ name: "probe", text: "call host_probe first" }],
-      }));
-      const actions = createActions({ dir: root });
-      await expect(actions.descriptors()).resolves.toEqual([
-        { name: "host_probe", description: "Overridden host", inputSchema: { type: "object" }, risk: "read" },
-        { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "read" },
-      ]);
-      await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first" }]);
-      expect(warned.some((line) => line.includes("half-migrated"))).toBe(true);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  // Quality review item 1: a stray capabilities.json beside a FULLY-v3 pair
-  // must not be silently dropped — ingest through the fold with a loud warn.
-  it("a leftover capabilities.json beside a fully-v3 pair is ingested with a half-migrated warning", async () => {
-    const warned: string[] = [];
-    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
-    try {
-      const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
-        { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} },
-      );
-      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
-        format: "vendo/capabilities@1",
-        tools: [compound("host_probe_flow", "host_probe")],
-        briefs: [{ name: "probe", text: "call host_probe first" }],
-      }));
-      const actions = createActions({ dir: root });
-      await expect(actions.descriptors()).resolves.toEqual([
-        { name: "host_probe", description: "host_probe", inputSchema: { type: "object" }, risk: "read" },
-        { name: "host_probe_flow", description: "host_probe_flow flow", inputSchema: { type: "object" }, risk: "read" },
-      ]);
-      await expect(actions.briefs()).resolves.toEqual([{ name: "probe", text: "call host_probe first" }]);
-      expect(warned.some((line) => line.includes("half-migrated") && line.includes("capabilities.json"))).toBe(true);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("conflicted leftover: overrides@3-carried compounds win by name, the file's uniques are ingested", async () => {
-    const warned: string[] = [];
-    const spy = vi.spyOn(console, "warn").mockImplementation((message: unknown) => { warned.push(String(message)); });
-    try {
-      const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
-        {
-          format: VENDO_OVERRIDES_FORMAT_V3,
-          tools: {},
-          compounds: [compound("host_probe_flow", "host_probe", { description: "authored v3 flow" })],
-        },
-      );
-      await writeFile(join(root, ".vendo", "capabilities.json"), JSON.stringify({
-        format: "vendo/capabilities@1",
-        tools: [
-          compound("host_probe_flow", "host_probe", { description: "stale duplicate" }),
-          compound("host_unique_flow", "host_probe"),
-        ],
-      }));
-      const actions = createActions({ dir: root });
-      const descriptors = await actions.descriptors();
-      // the overrides.json copy of the shared name wins…
-      expect(descriptors).toContainEqual(
-        { name: "host_probe_flow", description: "authored v3 flow", inputSchema: { type: "object" }, risk: "read" },
-      );
-      // …and the file's unique entry is not dropped
-      expect(descriptors.map((descriptor) => descriptor.name)).toContain("host_unique_flow");
-      expect(warned.some((line) => line.includes("half-migrated"))).toBe(true);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
   it("carries a human `title` from tools.json onto the merged descriptor", async () => {
     const root = await tempVendo(
-      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_transfer", { title: "Send money" } as Partial<ExtractedToolV3>)] },
-      { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} },
+      { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_transfer", { title: "Send money" } as Partial<ExtractedTool>)] },
+      { format: VENDO_OVERRIDES_FORMAT, tools: {} },
     );
     await expect(createActions({ dir: root }).descriptors()).resolves.toEqual([
       { name: "host_transfer", description: "host_transfer", inputSchema: { type: "object" }, risk: "read", title: "Send money" },
@@ -1409,8 +1270,8 @@ describe("format v3 host files (cse lane 1)", () => {
 
   it("lets an overrides.json `title` correct the extracted one", async () => {
     const root = await tempVendo(
-      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_transfer", { title: "Post transfer" } as Partial<ExtractedToolV3>)] },
-      { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_transfer: { title: "Send money" } } },
+      { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_transfer", { title: "Post transfer" } as Partial<ExtractedTool>)] },
+      { format: VENDO_OVERRIDES_FORMAT, tools: { host_transfer: { title: "Send money" } } },
     );
     await expect(createActions({ dir: root }).descriptors()).resolves.toEqual([
       { name: "host_transfer", description: "host_transfer", inputSchema: { type: "object" }, risk: "read", title: "Send money" },
@@ -1420,16 +1281,16 @@ describe("format v3 host files (cse lane 1)", () => {
   describe("surfaceMenu (per-surface tool menus)", () => {
     const menuTools = () => [
       routeTool("host_listAccounts"),
-      routeTool("host_getProfile", { audience: "end-user" } as Partial<ExtractedToolV3>),
-      routeTool("host_adminPurge", { audience: "operator" } as Partial<ExtractedToolV3>),
-      routeTool("host_webhookSink", { audience: "internal" } as Partial<ExtractedToolV3>),
-      routeTool("host_legacy", { disabled: true } as Partial<ExtractedToolV3>),
+      routeTool("host_getProfile", { audience: "end-user" } as Partial<ExtractedTool>),
+      routeTool("host_adminPurge", { audience: "operator" } as Partial<ExtractedTool>),
+      routeTool("host_webhookSink", { audience: "internal" } as Partial<ExtractedTool>),
+      routeTool("host_legacy", { disabled: true } as Partial<ExtractedTool>),
     ];
 
     it("without a surfaces block the agent is unrestricted and the door defaults to end-user/unset tools", async () => {
       const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: menuTools() },
-        { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} },
+        { format: VENDO_TOOLS_FORMAT, tools: menuTools() },
+        { format: VENDO_OVERRIDES_FORMAT, tools: {} },
       );
       const actions = createActions({ dir: root });
       await expect(actions.surfaceMenu("agent")).resolves.toBeUndefined();
@@ -1438,9 +1299,9 @@ describe("format v3 host files (cse lane 1)", () => {
 
     it("honors an explicit list for each surface independently", async () => {
       const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: menuTools() },
+        { format: VENDO_TOOLS_FORMAT, tools: menuTools() },
         {
-          format: VENDO_OVERRIDES_FORMAT_V3,
+          format: VENDO_OVERRIDES_FORMAT,
           tools: {},
           surfaces: {
             agent: { tools: ["host_listAccounts", "host_adminPurge"] },
@@ -1455,9 +1316,9 @@ describe("format v3 host files (cse lane 1)", () => {
 
     it("keeps an unmatched menu entry in the list and warns once — a menu is a filter, not a reference", async () => {
       const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: menuTools() },
+        { format: VENDO_TOOLS_FORMAT, tools: menuTools() },
         {
-          format: VENDO_OVERRIDES_FORMAT_V3,
+          format: VENDO_OVERRIDES_FORMAT,
           tools: {},
           surfaces: { mcp: { tools: ["host_getProfile", "gmail_send", "host_legacy"] } },
         },
@@ -1482,8 +1343,8 @@ describe("format v3 host files (cse lane 1)", () => {
 
     it("warns loudly when an authored menu matches nothing at all", async () => {
       const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: menuTools() },
-        { format: VENDO_OVERRIDES_FORMAT_V3, tools: {}, surfaces: { mcp: { tools: ["nope_one", "nope_two"] } } },
+        { format: VENDO_TOOLS_FORMAT, tools: menuTools() },
+        { format: VENDO_OVERRIDES_FORMAT, tools: {}, surfaces: { mcp: { tools: ["nope_one", "nope_two"] } } },
       );
       const warned: string[] = [];
       const spy = vi.spyOn(console, "warn").mockImplementation((line: string) => { warned.push(line); });
@@ -1497,41 +1358,30 @@ describe("format v3 host files (cse lane 1)", () => {
 
     it("keeps a disabled tool out of the default door menu too", async () => {
       const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_live"), routeTool("host_legacy")] },
-        { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_legacy: { disabled: true } } },
+        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_live"), routeTool("host_legacy")] },
+        { format: VENDO_OVERRIDES_FORMAT, tools: { host_legacy: { disabled: true } } },
       );
       await expect(createActions({ dir: root }).surfaceMenu("mcp")).resolves.toEqual(["host_live"]);
     });
 
     it("reads audience through overrides, not just the extracted grade", async () => {
       const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_a", { audience: "operator" } as Partial<ExtractedToolV3>), routeTool("host_b")] },
-        { format: VENDO_OVERRIDES_FORMAT_V3, tools: { host_a: { audience: "end-user" }, host_b: { audience: "internal" } } },
+        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_a", { audience: "operator" } as Partial<ExtractedTool>), routeTool("host_b")] },
+        { format: VENDO_OVERRIDES_FORMAT, tools: { host_a: { audience: "end-user" }, host_b: { audience: "internal" } } },
       );
       await expect(createActions({ dir: root }).surfaceMenu("mcp")).resolves.toEqual(["host_a"]);
     });
 
     it("fails loudly on a surface name that is not a real surface (closed enum, authored file)", async () => {
       const root = await tempVendo(
-        { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_a")] },
-        { format: VENDO_OVERRIDES_FORMAT_V3, tools: {}, surfaces: { cli: { tools: ["host_a"] } } },
+        { format: VENDO_TOOLS_FORMAT, tools: [routeTool("host_a")] },
+        { format: VENDO_OVERRIDES_FORMAT, tools: {}, surfaces: { cli: { tools: ["host_a"] } } },
       );
       await expect(createActions({ dir: root }).surfaceMenu("mcp")).rejects.toMatchObject({
         name: "VendoError",
         code: "validation",
         message: expect.stringContaining("overrides.json"),
       });
-    });
-  });
-
-  it("a malformed leftover capabilities.json beside a v3 pair fails loud, like every authored file", async () => {
-    const root = await tempVendo(
-      { format: VENDO_TOOLS_FORMAT_V3, tools: [routeTool("host_probe")] },
-      { format: VENDO_OVERRIDES_FORMAT_V3, tools: {} },
-    );
-    await writeFile(join(root, ".vendo", "capabilities.json"), "{ not json");
-    await expect(createActions({ dir: root }).descriptors()).rejects.toMatchObject({
-      name: "VendoError",
     });
   });
 });

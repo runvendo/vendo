@@ -18,7 +18,7 @@ import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolv
 import { SLOT_PIN_ENV } from "../dev-creds/model.js";
 import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
-import { overridesFileSchema, overridesFileV3Schema, toolsFileSchema, toolsFileV3Schema, vendoFileVersion } from "@vendoai/actions";
+import { overridesFileSchema, toolsFileSchema } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
@@ -309,16 +309,12 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   if (toolsRaw !== null) {
     try {
       const toolsParsed: unknown = JSON.parse(toolsRaw);
-      const toolsFile = vendoFileVersion(toolsParsed) === 1
-        ? toolsFileSchema.parse(toolsParsed)
-        : toolsFileV3Schema.parse(toolsParsed);
+      const toolsFile = toolsFileSchema.parse(toolsParsed);
       let overridesTools: Record<string, { disabled?: boolean }> = {};
       if (overridesRaw !== null) {
         try {
           const overridesParsed: unknown = JSON.parse(overridesRaw);
-          overridesTools = (vendoFileVersion(overridesParsed) === 1
-            ? overridesFileSchema.parse(overridesParsed)
-            : overridesFileV3Schema.parse(overridesParsed)).tools;
+          overridesTools = overridesFileSchema.parse(overridesParsed).tools;
         } catch {
           // Malformed overrides are their own (pre-existing) failure surface.
         }
@@ -332,7 +328,7 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         pass("tools/live-surface", `${live.length} live host tool${live.length === 1 ? "" : "s"}`);
       }
     } catch {
-      // Not a vendo/tools@1 or @3 shape (e.g. a placeholder {}) — the config
+      // Not a vendo/tools@3 shape (e.g. a placeholder {}) — the config
       // checks above already govern presence; nothing to grade here.
     }
   }

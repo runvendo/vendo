@@ -25,10 +25,10 @@ async function emptyRoot(): Promise<string> {
   return root;
 }
 
-/** A minimal valid vendo/tools@1 file with one read and one write tool. */
+/** A minimal valid vendo/tools@3 file with one read and one write tool. */
 function toolsFixture(): object {
   return {
-    format: "vendo/tools@1",
+    format: "vendo/tools@3",
     tools: [
       {
         name: "host_invoices_list",
@@ -167,7 +167,7 @@ describe("assembleTryProfile override merge semantics", () => {
     await mkdir(join(root, ".vendo"), { recursive: true });
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify(toolsFixture()));
     await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
-      format: "vendo/overrides@1",
+      format: "vendo/overrides@3",
       tools: {
         host_invoices_list: { disabled: true },
         host_invoices_delete: { risk: "destructive", description: "Permanently deletes an invoice." },
@@ -192,7 +192,7 @@ describe("assembleTryProfile override merge semantics", () => {
     const root = await emptyRoot();
     await mkdir(join(root, ".vendo"), { recursive: true });
     await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify(toolsFixture()));
-    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({ format: "vendo/overrides@1", tools: { host_invoices_list: { risk: "chaotic" } } }));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({ format: "vendo/overrides@3", tools: { host_invoices_list: { risk: "chaotic" } } }));
 
     const profile = await assembleTryProfile(root);
 

@@ -28,7 +28,7 @@ const theme = {
 };
 
 const safeTools = {
-  format: "vendo/tools@1",
+  format: "vendo/tools@3",
   tools: [
     {
       name: "host_listInvoices",
@@ -138,7 +138,7 @@ async function makeTempRepo(): Promise<string> {
     ].join("\n"),
   );
   await mkdir(path.join(repoDir, ".vendo/data"), { recursive: true });
-  await writeFile(path.join(repoDir, ".vendo/overrides.json"), '{"format":"vendo/overrides@1","tools":{}}\n');
+  await writeFile(path.join(repoDir, ".vendo/overrides.json"), '{"format":"vendo/overrides@3","tools":{}}\n');
   await writeFile(path.join(repoDir, ".vendo/policy.json"), '{"format":"vendo/policy@1"}\n');
   await writeFile(path.join(repoDir, ".vendo/brief.md"), "# Fixture app\n");
   await writeFile(path.join(repoDir, ".vendo/data/.gitignore"), "*\n!.gitignore\n");

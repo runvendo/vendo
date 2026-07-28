@@ -5,7 +5,6 @@ import { pushSyncReport } from "./cloud/services.js";
 import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
 import { askYesNo } from "./extract/extraction.js";
 import { readPreviousToolsState, runSyncEnrichment, type SyncEnrichmentOptions } from "./enrich/pass.js";
-import { syncSemantics } from "./semantics.js";
 import { consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
@@ -126,8 +125,6 @@ async function sync(options: SyncOptions): Promise<number> {
     });
     if (!json) {
       for (const warning of report.warnings) output.error(`warning: ${warning}`);
-      // Format v3: the engine's one-time legacy rewrite announces itself.
-      if (report.migrated !== undefined) output.log(report.migrated);
       output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
       output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
       output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
@@ -152,20 +149,6 @@ async function sync(options: SyncOptions): Promise<number> {
     }
 
     const wireUrl = (options.url ?? process.env.VENDO_URL ?? "http://localhost:3000/api/vendo").replace(/\/+$/, "");
-    // W3 (format v3) — field semantics land inside .vendo/tools.json per tool
-    // (one-time inference via the dev server; existing entries and host
-    // annotations in overrides.json always win). Fail-soft like everything
-    // else in sync.
-    try {
-      await syncSemantics({
-        vendoDir: join(root, ".vendo"),
-        url: wireUrl,
-        ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-        note,
-      });
-    } catch (error) {
-      note(`semantics sync failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
-    }
 
     // The AI enrichment pass (cse lane 1c): diff since the watermark + the
     // current catalog → restrictive-only updates to affected entries and a

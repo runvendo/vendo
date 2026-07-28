@@ -29,9 +29,7 @@ is long-running or event-driven, use an automation instead.
 
 Compounds are the `compounds` array of `.vendo/overrides.json` — the authored
 file `vendo sync` never regenerates. A compound entry inside `tools.json` is
-rejected at load with a pointer here. (Older installs kept compounds in
-`.vendo/capabilities.json`; the next `vendo sync` folds that file into
-`overrides.json` and deletes it.)
+rejected at load with a pointer here.
 
 ```json
 {

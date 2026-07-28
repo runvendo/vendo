@@ -1,5 +1,5 @@
 import type { FieldSemantic } from "@vendoai/core";
-import type { ExtractedToolV3 } from "../formats.js";
+import type { ExtractedTool } from "../formats.js";
 
 /**
  * The restrictive-only clamp (cse lane 1c) — the deterministic gate every AI
@@ -23,10 +23,10 @@ export interface EnrichmentFields {
    *  it through freely — the only thing it can do wrong is read badly, and a
    *  human `overrides.json` title is the last word either way. */
   title?: string;
-  risk?: ExtractedToolV3["risk"];
+  risk?: ExtractedTool["risk"];
   critical?: boolean;
   disabled?: boolean;
-  audience?: ExtractedToolV3["audience"];
+  audience?: ExtractedTool["audience"];
   semantics?: Record<string, FieldSemantic>;
 }
 
@@ -46,7 +46,7 @@ export interface ClampedEnrichment {
 
 /** Clamp one proposal against the current on-disk entry. Equal values drop
  *  silently (a no-op is not a violation); loosenings drop loudly. */
-export function clampEnrichment(current: ExtractedToolV3, proposal: EnrichmentFields): ClampedEnrichment {
+export function clampEnrichment(current: ExtractedTool, proposal: EnrichmentFields): ClampedEnrichment {
   const fields: EnrichmentFields = {};
   const clamped: string[] = [];
 
@@ -100,9 +100,9 @@ export function clampEnrichment(current: ExtractedToolV3, proposal: EnrichmentFi
 /** Merge accepted fields into the entry and stamp the `enriched` marker
  *  (provenance: this entry's judgment fields were AI-reviewed). Proposed
  *  semantics merge per key over existing inference — they never wipe it. */
-export function applyEnrichmentFields(tool: ExtractedToolV3, fields: EnrichmentFields): ExtractedToolV3 {
+export function applyEnrichmentFields(tool: ExtractedTool, fields: EnrichmentFields): ExtractedTool {
   const { semantics, ...rest } = fields;
-  const merged: ExtractedToolV3 = { ...tool, ...rest, enriched: true };
+  const merged: ExtractedTool = { ...tool, ...rest, enriched: true };
   if (semantics !== undefined) {
     merged.semantics = { ...tool.semantics, ...semantics };
   }
@@ -117,7 +117,7 @@ export function applyEnrichmentFields(tool: ExtractedToolV3, fields: EnrichmentF
  * restrictive since the enrichment (a fail-closed regrade, a new disable)
  * always wins over the stale carried grade.
  */
-export function carryEnrichment(fresh: ExtractedToolV3, previous: ExtractedToolV3): ExtractedToolV3 {
+export function carryEnrichment(fresh: ExtractedTool, previous: ExtractedTool): ExtractedTool {
   const { fields } = clampEnrichment(fresh, {
     description: previous.description,
     ...(previous.title === undefined ? {} : { title: previous.title }),

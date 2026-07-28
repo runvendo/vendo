@@ -2,9 +2,9 @@ import { mkdtemp, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  toolsFileV3Schema,
-  VENDO_OVERRIDES_FORMAT_V3,
-  type ExtractedToolV3,
+  toolsFileSchema,
+  VENDO_OVERRIDES_FORMAT,
+  type ExtractedTool,
   type ToolOverride,
 } from "@vendoai/actions";
 import { vendoSync } from "@vendoai/actions/sync";
@@ -122,7 +122,7 @@ const DEMO_POLICY = {
  * `binding.kind === "route"` GETs the extractor left at `write`; a
  * `destructive` GET (a delete-shaped name) is a real signal and stays as is.
  */
-async function writeTryReadDowngrades(vendoDir: string, tools: readonly ExtractedToolV3[]): Promise<void> {
+async function writeTryReadDowngrades(vendoDir: string, tools: readonly ExtractedTool[]): Promise<void> {
   const corrections: Record<string, ToolOverride> = {};
   for (const tool of tools) {
     if (tool.binding.kind === "route" && tool.binding.method === "GET" && tool.risk === "write") {
@@ -132,7 +132,7 @@ async function writeTryReadDowngrades(vendoDir: string, tools: readonly Extracte
   if (Object.keys(corrections).length === 0) return;
   await writeText(
     join(vendoDir, "overrides.json"),
-    `${JSON.stringify({ format: VENDO_OVERRIDES_FORMAT_V3, tools: corrections }, null, 2)}\n`,
+    `${JSON.stringify({ format: VENDO_OVERRIDES_FORMAT, tools: corrections }, null, 2)}\n`,
   );
 }
 
@@ -250,7 +250,7 @@ export async function runDeterministicPass(
   try {
     const report = await vendoSync({ root: repoRoot, out: vendoDir });
     // vendoSync writes the v3 format (post-#568); parse what it just wrote.
-    const written = toolsFileV3Schema.parse(JSON.parse(await readFile(join(vendoDir, "tools.json"), "utf8")));
+    const written = toolsFileSchema.parse(JSON.parse(await readFile(join(vendoDir, "tools.json"), "utf8")));
     tools = { status: "written", count: written.tools.length, warnings: report.warnings };
     // Try-venue-only downgrade (genqa defect 1): every call here executes
     // against fixtures THIS pass just extracted, never a real host, so write
