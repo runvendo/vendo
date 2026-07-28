@@ -182,21 +182,24 @@ describe("regroundBeats", () => {
   // The beat KIND is the contract; only the wording is the model's. Handing the
   // automation beat a one-off action pill kept the key — so beat-variety still
   // "passed" — and shipped a demo whose automation pill sets nothing up.
-  it("refuses to reword the automation beat with a pill that is not recurring", () => {
-    const authored = [beat("automation", "Weekly invoice digest", "Every Monday, send me the overdue invoices")];
-    const oneOff = [beat("lanes", "Shipments by lane", "Show me every shipment grouped by lane")];
-    const result = regroundBeats(authored, shipmentTools, oneOff);
+  // Recurrence is now a DEFECT, not a beat kind: nothing registers a recurring
+  // job, so a recurring pill would hand the prospect back the same broken promise
+  // regrounding exists to remove.
+  it("refuses to reword any beat with a recurring pill", () => {
+    const authored = [beat("generate-ui", "Overdue invoices", "Show me every overdue invoice")];
+    const recurring = [beat("weekly-lanes", "Weekly lane report", "Every Monday, summarise every shipment by lane")];
+    const result = regroundBeats(authored, shipmentTools, recurring);
     expect(result.replaced).toEqual([]);
-    expect(result.stillUngrounded).toEqual(["automation"]);
+    expect(result.stillUngrounded).toEqual(["generate-ui"]);
     expect(result.beats[0]).toEqual(authored[0]);
   });
 
-  it("does reword the automation beat with a recurring pill", () => {
-    const authored = [beat("automation", "Weekly invoice digest", "Every Monday, send me the overdue invoices")];
-    const recurring = [beat("weekly-lanes", "Weekly lane report", "Every Monday, summarise every shipment by lane")];
-    const result = regroundBeats(authored, shipmentTools, recurring);
-    expect(result.replaced).toEqual(["automation"]);
-    expect(result.beats[0]?.prompt).toBe("Every Monday, summarise every shipment by lane");
+  it("rewords with a one-off pill", () => {
+    const authored = [beat("generate-ui", "Overdue invoices", "Show me every overdue invoice")];
+    const oneOff = [beat("lanes", "Shipments by lane", "Show me every shipment grouped by lane")];
+    const result = regroundBeats(authored, shipmentTools, oneOff);
+    expect(result.replaced).toEqual(["generate-ui"]);
+    expect(result.beats[0]?.prompt).toBe("Show me every shipment grouped by lane");
   });
 
   // Merging appended the very pill regrounding had just consumed, so the same
@@ -455,7 +458,7 @@ describe("runBuild", () => {
     expect(peak).toBe(3);
     expect(result.toolCount).toBe(2);
     expect(result.costUsd).toBeCloseTo(4.5);
-    expect(result.beats.map((beat) => beat.key)).toEqual([...requiredBeatKeys]);
+    expect(result.beats.map((beat) => beat.key)).toEqual([...requiredBeatKeys, "overdue"]);
 
     const written = JSON.parse(await readFile(demoPaths(demosRepo, slug).config, "utf8")) as unknown;
     await expect(parseDemoFolderConfig(written)).resolves.toBeTruthy();
@@ -563,7 +566,7 @@ describe("runBuild", () => {
     const result = await runBuild(args, io({ demosRepo, runAgent }));
 
     expect(names.filter((name) => name.startsWith("beats-repair"))).toHaveLength(1);
-    expect(result.beats.map((beat) => beat.key)).toEqual([...requiredBeatKeys]);
+    expect(result.beats.map((beat) => beat.key)).toEqual([...requiredBeatKeys, "overdue"]);
   });
 
   it("gives up after one repair round, naming the beat kinds still missing", async () => {
@@ -575,7 +578,7 @@ describe("runBuild", () => {
     };
 
     await expect(runBuild(args, io({ demosRepo, runAgent })))
-      .rejects.toThrow(/automation, connect-account/);
+      .rejects.toThrow(/missing beat\(s\): connect-account/);
     expect(names.filter((name) => name.startsWith("beats-repair"))).toHaveLength(1);
   });
 
@@ -701,6 +704,6 @@ describe("runBuild", () => {
     expect(result.beats[0]?.key).toBe("generate-ui");
     expect(new Set(result.beats.map((beat) => beat.key)).size).toBe(result.beats.length);
     expect(result.beats.length).toBeLessThanOrEqual(maxChips);
-    expect(result.beats.map((beat) => beat.key)).toEqual([...requiredBeatKeys]);
+    expect(result.beats.map((beat) => beat.key)).toEqual([...requiredBeatKeys, "overdue"]);
   });
 });
