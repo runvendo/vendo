@@ -21,14 +21,18 @@ import { aiExpectedToolIdentity, type AiExpectedTool, type RepoAiExpectations } 
  * hand — a judgment whose binding moved is INERT, and `pending` loosenings are
  * never merged.
  *
- * That is the state the CHANNEL decided, and it is what `vendo doctor` and
- * `vendo try` display. It is NOT, as of this commit, what the embedded agent
- * enforces: `createActions`' host loader
- * (`packages/actions/src/runtime/registry.ts` `loadHost`) reads `tools.json` and
- * `overrides.json` only, and `applyJudgment` has no runtime call site — so a
- * judgment's hardenings do not reach the running catalog. Reported by Lane D
- * rather than papered over here; this rubric deliberately scores the decision the
- * channel made, because that is the thing under test.
+ * That is the state the CHANNEL decided — the same state `vendo doctor` and
+ * `vendo try` display, and the same one the runtime resolves once the layer's
+ * applier is in the tree (`effectiveHostTool` in
+ * `packages/actions/src/runtime/registry.ts`, which composes
+ * `mergeOverride(applyJudgment(extracted, judgment), override)`).
+ *
+ * NOTE for whoever sequences the judgment stack: that applier arrives in its own
+ * lane, and this branch does not contain it, so on THIS tree a judgment reaches
+ * doctor and try but not the running catalog. Nothing here depends on the
+ * difference — the rubric scores the channel's decision, which is the thing under
+ * test — but the corpus cannot be read as evidence that the runtime enforces
+ * what it grades until the applier lands with it.
  *
  * Dimensions:
  * - pass — did the judgment pass produce a judgments file at all (hard failure);
