@@ -102,7 +102,11 @@ const extractApp = (text: string): string | undefined => {
   return start === -1 || close < start ? undefined : text.slice(start, close + "</App>".length);
 };
 
-const readEdits = (text: string): { edits?: TextEdit[]; issues: string[] } => {
+/** The `<Edit><Old>…</Old><New>…</New></Edit>` blocks in an answer, or the
+ *  sentences saying why none could be read. Shared with the fill workers'
+ *  fix-it turn (generation/fill.ts): there is one edit dialect, so there is one
+ *  reader for it. */
+export const readEdits = (text: string): { edits?: TextEdit[]; issues: string[] } => {
   const edits: TextEdit[] = [];
   const issues: string[] = [];
   for (const [, body] of text.replace(FENCE_LINE, "").matchAll(EDIT_BLOCK)) {

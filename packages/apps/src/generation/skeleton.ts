@@ -133,3 +133,62 @@ export const skeletonFromPlan = (plan: AppPlan): Skeleton => {
     slots,
   };
 };
+
+/** Every id reachable from `roots`, the roots included. */
+const subtree = (byId: ReadonlyMap<string, TreeNode>, roots: readonly string[]): Set<string> => {
+  const found = new Set<string>(roots);
+  const queue = [...roots];
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    for (const child of byId.get(queue[cursor] as string)?.children ?? []) {
+      if (found.has(child)) continue;
+      found.add(child);
+      queue.push(child);
+    }
+  }
+  return found;
+};
+
+/**
+ * One fill worker's fragment, spliced into one group's slot: the slot container
+ * survives (the plan decided its layout), its pending placeholders are gone,
+ * and the fragment's own nodes become its children. Pure — the tree handed in
+ * is never touched.
+ *
+ * Fragment ids are namespaced by the slot they land in. Every worker compiles
+ * its fragment alone and mints from zero, so two of them would otherwise both
+ * claim `stat-1`; the prefix also means re-filling ONE group renames nothing
+ * outside it.
+ */
+export const spliceFragment = (tree: Tree, slotNodeId: string, fragment: Tree): Tree => {
+  const byId = new Map(tree.nodes.map((node) => [node.id, node]));
+  const slot = byId.get(slotNodeId);
+  if (slot === undefined) return tree;
+  const stale = subtree(byId, slot.children ?? []);
+  const namespaced = (id: string): string => `${slotNodeId}-${id}`;
+  const landing = fragment.nodes.filter((node) => node.id !== fragment.root);
+  const nodes = tree.nodes.flatMap((node) => {
+    if (stale.has(node.id)) return [];
+    if (node.id !== slotNodeId) return [node];
+    const children = fragment.nodes
+      .find((candidate) => candidate.id === fragment.root)?.children ?? [];
+    return [
+      { ...node, children: children.map(namespaced) },
+      ...landing.map((child) => ({
+        ...child,
+        id: namespaced(child.id),
+        ...(child.children === undefined ? {} : { children: child.children.map(namespaced) }),
+      })),
+    ];
+  });
+  // Workers bind to the queries the plan declared, but a fragment may mint one
+  // of its own from an inline tool reference — it rides along so its bindings
+  // resolve. A name already declared keeps its original definition: two groups
+  // minting the same name mean the same read, and the plan's own declaration
+  // always outranks a worker's.
+  const declared = new Set((tree.queries ?? []).map((query) => query.name));
+  const queries = [
+    ...(tree.queries ?? []),
+    ...(fragment.queries ?? []).filter((query) => !declared.has(query.name)),
+  ];
+  return { ...tree, nodes, ...(queries.length === 0 ? {} : { queries }) };
+};
