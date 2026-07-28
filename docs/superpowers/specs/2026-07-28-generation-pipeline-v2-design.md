@@ -73,15 +73,10 @@ the brain while planning.
 
 ## Computed values
 
-The model never does math or freezes a number. It writes the recipe —
-`sum(invoices.amount_cents) / count(clients)` — and the runtime computes it
-fresh on every render. Recipes are simple expressions over fields: the
-built-in functions (sum, count, average, min, max, difference, days_until,
-group_by), arithmetic, and the user's own numbers. The machine checks only
-that a recipe runs (parses, fields exist, types fit); whether it makes sense
-is the reviewer's judgment, like everything else. Display conveniences
-(sort, top-N, totals, highlight, formatting) live on the composites.
-Anything a recipe can't say is an island or a server function.
+The model never does math itself — it writes an expression like
+`sum(invoices.amount_cents)` and the runtime computes it fresh on every
+render, so numbers never freeze stale. The reviewer judges whether the
+expression makes sense.
 
 ## The sandbox
 
