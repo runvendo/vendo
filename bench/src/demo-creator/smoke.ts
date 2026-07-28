@@ -49,6 +49,22 @@ export const observedSmokeLatenciesMs = [89_122, 104_612, 129_058, 135_675, 165_
 export const smokeBudgetMs = 420_000;
 
 /**
+ * How long the demo's page gets to become usable — loaded, hydrated, composer
+ * present — BEFORE the turn budget starts.
+ *
+ * Its own budget because this phase waits on a Next production build and React
+ * hydration, not on a model, and a demo whose page never renders is broken right
+ * now. Found the hard way: a probe with an invalid provider key never rendered a
+ * composer, so the wait for one consumed the whole 420s turn budget and then
+ * threw a raw Playwright error instead of a verdict — a genuinely broken demo
+ * taking seven minutes to fail, which is the opposite of the point. Widening the
+ * turn budget had made that case worse.
+ *
+ * 60s is roughly 20x what a healthy freshly-booted host takes to paint.
+ */
+export const smokeReadyMs = 60_000;
+
+/**
  * What the smoke turn observed about the demo's agent while the turn ran.
  * LIVENESS ONLY — never what was generated. The frozen contract puts content in
  * stage 5, so no field here may describe a view, a tool result or any prose.
@@ -222,6 +238,11 @@ export function classifySmoke(observed: {
   timedOut: boolean;
   /** The visible error the turn surfaced, if it surfaced one. */
   surfacedError?: string;
+  /**
+   * The demo's page never got as far as accepting a prompt (no composer, or a
+   * Send that never armed). Set instead of running the turn at all.
+   */
+  pageUnusable?: string;
   progress: SmokeProgress;
 }): SmokeOutcome {
   const { progress } = observed;
@@ -231,6 +252,16 @@ export function classifySmoke(observed: {
     return {
       verdict: "broken",
       reason: `the demo's agent route answered ${progress.doorError} — the generated demo's own door is failing, not the model`,
+      progress,
+      retryable: true,
+    };
+  }
+  // Before the turn: a demo whose page will not accept a prompt is broken, and
+  // saying WHICH part failed is the difference between a diagnosis and a mystery.
+  if (observed.pageUnusable !== undefined) {
+    return {
+      verdict: "broken",
+      reason: `the demo's Vendo page never got as far as accepting a prompt — ${observed.pageUnusable}. The page itself is failing (a server component throwing, or the Vendo surface never mounting), so no turn was ever attempted`,
       progress,
       retryable: true,
     };

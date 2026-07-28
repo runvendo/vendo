@@ -7,7 +7,7 @@ import { chromium } from "@playwright/test";
 import { sendPrompt, VendoTurnError, VendoTurnTimeout, waitForTurn } from "../demo-capture/capture.js";
 import { genManifestScript, hostDir } from "./demo-folder.js";
 import { createScrubber, defaultExec, delay, scrubbingTransform, type ExecFn } from "./exec.js";
-import { agentRunDoorProblem, classifySmoke, installSmokeObserverInPage, noProgress, type SmokeOutcome } from "./smoke.js";
+import { agentRunDoorProblem, classifySmoke, installSmokeObserverInPage, noProgress, smokeReadyMs, type SmokeOutcome } from "./smoke.js";
 
 /**
  * Stage 4's plumbing: drive the vendo-demos HOST (a foreign checkout, not this
@@ -313,16 +313,30 @@ export const defaultSmokeTurn: SmokeTurnFn = async (options) => {
       });
       if (problem !== undefined && progress.doorError === undefined) progress.doorError = problem;
     });
-    await page.goto(new URL(`/${options.slug}/vendo`, options.baseUrl).toString(), {
-      waitUntil: "domcontentloaded",
-      timeout: options.timeoutMs,
-    });
-    await page.getByRole("textbox", { name: "Message" }).waitFor({ state: "visible", timeout: options.timeoutMs });
-    // Installed BEFORE the prompt is sent: the observer's baseline is "the turns
-    // already on this page", so a demo:fix re-smoke cannot mistake an old turn
-    // for this one's stream.
-    await page.evaluate(installSmokeObserverInPage);
-    const sent = await sendPrompt(page, options.prompt);
+    // GETTING TO A PROMPT is its own phase, on its own short budget. A demo whose
+    // page never renders a composer is broken NOW, and charging that wait against
+    // the turn budget is how a dead demo took the full 420s to fail and then threw
+    // a raw Playwright error instead of a verdict.
+    let sent: { assistantTurns: number };
+    try {
+      await page.goto(new URL(`/${options.slug}/vendo`, options.baseUrl).toString(), {
+        waitUntil: "domcontentloaded",
+        timeout: smokeReadyMs,
+      });
+      await page.getByRole("textbox", { name: "Message" }).waitFor({ state: "visible", timeout: smokeReadyMs });
+      // Installed BEFORE the prompt is sent: the observer's baseline is "the turns
+      // already on this page", so a demo:fix re-smoke cannot mistake an old turn
+      // for this one's stream.
+      await page.evaluate(installSmokeObserverInPage);
+      sent = await sendPrompt(page, options.prompt);
+    } catch (error) {
+      return classifySmoke({
+        settled: false,
+        timedOut: false,
+        pageUnusable: error instanceof Error ? (error.message.split("\n")[0] ?? error.message) : String(error),
+        progress,
+      });
+    }
     let settled = false;
     let surfacedError: string | undefined;
     let timedOut = false;

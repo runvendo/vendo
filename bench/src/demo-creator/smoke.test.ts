@@ -5,11 +5,23 @@ import {
   noProgress,
   observedSmokeLatenciesMs,
   smokeBudgetMs,
+  smokeReadyMs,
   type SmokeProgress,
 } from "./smoke.js";
 
 /** A turn that got as far as streaming — the shape of every healthy run. */
 const alive: SmokeProgress = { doorAnswered: true, turnStarted: true, toolCall: true };
+
+describe("smokeReadyMs", () => {
+  // Getting to a composer is page load plus hydration, not a model round trip.
+  // It has its own budget because a demo whose page never renders is broken NOW,
+  // and charging that against the turn budget is how a dead demo took 420s to
+  // fail — the real-host probe caught exactly that.
+  it("is far shorter than the turn budget, because it is not waiting on a model", () => {
+    expect(smokeReadyMs).toBeLessThan(smokeBudgetMs / 4);
+    expect(smokeReadyMs).toBeGreaterThanOrEqual(30_000);
+  });
+});
 
 describe("smokeBudgetMs", () => {
   // The gate this replaces sat at 180_000ms, INSIDE the measured distribution:
@@ -121,6 +133,34 @@ describe("classifySmoke — a genuinely BROKEN demo fails, and fails fast", () =
     });
     expect(outcome.verdict).toBe("broken");
     expect(outcome.reason).toContain("didn’t finish");
+  });
+
+  /**
+   * Found by running the real thing with an invalid provider key: the demo's
+   * Vendo page never rendered a composer at all, so the wait for it burned the
+   * WHOLE turn budget and then threw a raw Playwright TimeoutError instead of a
+   * verdict. A genuinely broken demo took 420s to fail and reported nothing
+   * useful — and widening the budget had made that case worse, not better.
+   */
+  it("calls a page that never became usable broken, and says which part failed", () => {
+    const outcome = classifySmoke({
+      settled: false,
+      timedOut: false,
+      pageUnusable: "no composer appeared within 60000ms",
+      progress: noProgress(),
+    });
+    expect(outcome.verdict).toBe("broken");
+    expect(outcome.reason).toContain("composer");
+    // Cheap to re-prove: this fails in seconds, so one retry costs nothing.
+    expect(outcome.retryable).toBe(true);
+  });
+
+  it("prefers the page fault over the generic 'never produced a turn' reason", () => {
+    const vague = classifySmoke({ settled: false, timedOut: true, progress: noProgress() });
+    const precise = classifySmoke({ settled: false, timedOut: false, pageUnusable: "the composer never armed", progress: noProgress() });
+    expect(vague.verdict).toBe("broken");
+    expect(precise.verdict).toBe("broken");
+    expect(precise.reason).not.toBe(vague.reason);
   });
 
   // The other dead-agent shape: nothing errors, nothing arrives either. This is
