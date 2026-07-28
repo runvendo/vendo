@@ -5,7 +5,6 @@ import {
   riskLabelSchema,
   stepSchema,
   toolDescriptorSchema,
-  type DomainManifest,
   type FieldSemantic,
   type JsonSchema,
   type Step,
@@ -234,13 +233,6 @@ export const VENDO_TOOLS_FORMAT = "vendo/tools@3" as const;
 
 export const VENDO_OVERRIDES_FORMAT = "vendo/overrides@3" as const;
 
-/** ONE DomainManifest definition for the pair: the generated copy
- *  (tools.json) evolves additively like every generated artifact, the
- *  authored copy (overrides.json) fails loudly on a typo. */
-const domainManifestShape = { has: z.array(z.string()), hasNot: z.array(z.string()) };
-const generatedDomainManifestSchema = z.object(domainManifestShape).passthrough() satisfies z.ZodType<DomainManifest>;
-const authoredDomainManifestSchema = z.object(domainManifestShape).strict() satisfies z.ZodType<DomainManifest>;
-
 /** 04-actions §2: a descriptor plus its execution binding — one entry of `.vendo/tools.json`. */
 export type ExtractedTool = ToolDescriptor & {
   binding: PrimitiveToolBinding;
@@ -296,21 +288,18 @@ export const extractedToolSchema = toolDescriptorSchema.extend({
 }) satisfies z.ZodType<ExtractedTool>;
 
 /** `.vendo/tools.json` — generated, regenerated wholesale by `vendo sync`,
- *  never hand-edited. `watermark` is the git tree hash of the last sync;
- *  `domains` is the sync-derived manifest (host additions merge in from
- *  overrides.json). Passthrough like every generated artifact. */
+ *  never hand-edited. `watermark` is the git tree hash of the last sync.
+ *  Passthrough like every generated artifact. */
 export interface ToolsFile {
   format: typeof VENDO_TOOLS_FORMAT;
   tools: ExtractedTool[];
   watermark?: string;
-  domains?: DomainManifest;
 }
 
 export const toolsFileSchema = z.object({
   format: z.literal(VENDO_TOOLS_FORMAT),
   tools: z.array(extractedToolSchema),
   watermark: z.string().min(1).optional(),
-  domains: generatedDomainManifestSchema.optional(),
 }).passthrough() satisfies z.ZodType<ToolsFile>;
 
 /**
@@ -378,11 +367,10 @@ export const compoundToolSchema = toolDescriptorSchema.extend({
 
 /**
  * `.vendo/overrides.json` (vendo/overrides@3) — the AUTHORED layer, the only
- * human-edited file: per-tool overrides plus the host-owned `domains`
- * additions (unioned over the generated manifest), the agent-authored
- * `compounds` and `briefs`, and remix slot opt-outs. Strict on purpose — a
- * typo must fail loudly — except compounds and briefs entries, which keep
- * their passthrough (additive) behavior.
+ * human-edited file: per-tool overrides plus the agent-authored `compounds`
+ * and `briefs`, and remix slot opt-outs. Strict on purpose — a typo must fail
+ * loudly — except compounds and briefs entries, which keep their passthrough
+ * (additive) behavior.
  */
 /** The host-curated tool menu for ONE surface. Curation, not security: a menu
  *  decides what a surface OFFERS, never what the guard allows — `disabled`,
@@ -411,7 +399,6 @@ const overridesSurfacesSchema = z.object({
 export interface OverridesFile {
   format: typeof VENDO_OVERRIDES_FORMAT;
   tools: Record<string, ToolOverride>;
-  domains?: DomainManifest;
   compounds?: CompoundTool[];
   briefs?: CapabilityBrief[];
   surfaces?: OverridesSurfaces;
@@ -421,7 +408,6 @@ export interface OverridesFile {
 export const overridesFileSchema = z.object({
   format: z.literal(VENDO_OVERRIDES_FORMAT),
   tools: z.record(toolOverrideSchema),
-  domains: authoredDomainManifestSchema.optional(),
   compounds: z.array(compoundToolSchema).optional(),
   briefs: z.array(capabilityBriefSchema).optional(),
   surfaces: overridesSurfacesSchema.optional(),

@@ -1,7 +1,7 @@
 import {
   createActions,
   createConnectGate,
-  mergedSemanticsAndDomains,
+  mergedHostSemantics,
   overridesFileSchema,
   VENDO_TOOLS_FORMAT,
   type ActionsRegistry,
@@ -1272,7 +1272,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // seam from VENDO_API_KEY (adapter rule: the surfaces themselves never read
   // the key; cloudKeyOptions lives only here). Constructing it is PURE (closures
   // only, no fetch). It is READ only from LAZY call sites — the block provider
-  // seams (design-rules/theme/semantics/domains thunks, the brief resolver, the
+  // seams (design-rules/theme/semantics thunks, the brief resolver, the
   // guard policy fallback, the actions overrides injection) — never at compose,
   // so createVendo stays I/O-free at module init (portability-gate). The
   // snapshot warms on its first (cold) read and revalidates in the background,
@@ -1427,7 +1427,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // defaults the Cloud tools connector for a wholly unset slot.
   const resolvedConnectors = selectConnectors(config.connectors, config.connectorApps);
   // #557 — cloud overrides.json feeds the actions registry's tool ENABLEMENT
-  // (disabled/audience), not only app-generation semantics/domains. The registry
+  // (disabled/audience), not only app-generation semantics. The registry
   // resolves `config.overrides` ONCE through its memoized `loadHost`, and every
   // tool-serving path (descriptors/execute/search/surfaceMenu) awaits loadHost
   // before it exposes anything — so a cloud-disabled tool is NEVER live before
@@ -1603,7 +1603,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ? configDesignRules
     : () => selectConfigSurface("design-rules.md", { readFile: readSurfaceFile, cloud: configCloud }).value;
   const pinBaselines = dotVendoPinBaselines(config.profileDir);
-  // W3 + cse lane 3 — field semantics + domain manifest from the merged .vendo
+  // W3 + cse lane 3 — field semantics from the merged .vendo
   // pair (generated tools.json overlaid by overrides.json). The OVERRIDES
   // surface resolves file → cloud; tools.json stays a
   // local generation input (not a cloud surface). Resolved LIVE per generation
@@ -1614,7 +1614,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // JSON.parse per generation is negligible against generation cost. Malformed
   // → loud + absent, same stance as catalog.json. Task 15a: each in-memory
   // profile piece replaces its file/cloud leg of the merge, per piece.
-  const hostSemanticsProvider = (): ReturnType<typeof mergedSemanticsAndDomains> => {
+  const hostSemanticsProvider = (): ReturnType<typeof mergedHostSemantics> => {
     const parsedFile = (name: string): unknown => {
       const raw = dotVendoFile(name, surfaceRoot);
       return raw === undefined ? undefined : JSON.parse(raw) as unknown;
@@ -1623,7 +1623,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       ? undefined
       : selectConfigSurface("overrides.json", { readFile: readSurfaceFile, cloud: configCloud }).value;
     try {
-      return mergedSemanticsAndDomains({
+      return mergedHostSemantics({
         tools: config.profile?.tools !== undefined
           ? { format: VENDO_TOOLS_FORMAT, tools: config.profile.tools }
           : parsedFile("tools.json"),
@@ -1771,16 +1771,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // paint.model otherwise; paint.disabled survives as the one-lane switch.
     ...(inference.paint === undefined ? {} : { paint: inference.paint }),
     ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
-    // cse lane 3 — theme/semantics/domains flow as PROVIDER thunks so a
-    // cloud-owned surface applies without a compose-time fetch. semantics/domains
-    // resolve live per generation (pick up cloud overrides as the snapshot warms);
+    // cse lane 3 — theme/semantics flow as PROVIDER thunks so a
+    // cloud-owned surface applies without a compose-time fetch. semantics
+    // resolves live per generation (picks up cloud overrides as the snapshot warms);
     // theme is boot-once via memoizeOnce (structural, next-load). Each returns
     // undefined when unset, which the engine treats exactly as an omitted value.
     theme: themeProvider,
     designRules,
     ...(appsCloud === undefined ? {} : { cloud: cloudApps(appsCloud) }),
-    semantics: () => hostSemanticsProvider()?.semantics,
-    domains: () => hostSemanticsProvider()?.domains,
+    semantics: hostSemanticsProvider,
     // Re-gate 2026-07-26 finding 2 — the create-time shape sampler skips
     // connector tools whose toolkit is not connected for the caller. Backed by
     // the same connections lookup (and per-subject cache) the agent's

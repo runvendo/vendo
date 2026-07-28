@@ -769,34 +769,5 @@
       },
       "srcHash": "sha256:3aaabc0c7dcfc4f4b4c835307f88a4c6660a2ce5ff3665dd457b1d701b55dfeb"
     }
-  ],
-  "domains": {
-    "has": [
-      "accounts",
-      "transactions (account + card)",
-      "cards",
-      "budgets",
-      "spending insights",
-      "cashflow insights",
-      "recurring insights",
-      "goals",
-      "notifications",
-      "payees",
-      "scheduled payments",
-      "money transfers",
-      "profile",
-      "merch orders"
-    ],
-    "hasNot": [
-      "payroll",
-      "crypto",
-      "loans",
-      "mortgages",
-      "investments or brokerage",
-      "credit score",
-      "taxes",
-      "insurance",
-      "invoices"
-    ]
-  }
+  ]
 }

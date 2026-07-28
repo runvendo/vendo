@@ -14,7 +14,6 @@ import {
   findDeprecatedReshapeUsage,
   printWire,
   type AppDocument,
-  type DomainManifest,
   type NormalizedCatalog,
   type ShapeType,
   type ToolSemantics,
@@ -155,9 +154,6 @@ export interface GenerationDependencies {
    *  shape cards, drive Kit format defaults, and feed the law checks. Keyed
    *  by tool name. */
   semantics?: Readonly<Record<string, ToolSemantics>>;
-  /** The host's domain manifest (has / has-NOT), surfaced to generation as
-   *  fact so out-of-domain asks get a Disclaimer, never invented data. */
-  domains?: DomainManifest;
   /** 06-apps §5 — additive, optional partial-tree streaming seam. */
   onPartial?: (partial: GeneratedPartial) => void | Promise<void>;
   /**

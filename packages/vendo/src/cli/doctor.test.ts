@@ -324,7 +324,6 @@ describe("vendo doctor", () => {
         binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
         srcHash: "sha256:abc",
       }],
-      domains: { has: ["invoices"], hasNot: [] },
     }));
     await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
       format: "vendo/overrides@3",

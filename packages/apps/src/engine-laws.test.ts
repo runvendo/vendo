@@ -366,8 +366,8 @@ describe("law 2 — actions ground in the real tool surface", () => {
   });
 });
 
-describe("semantics + domain manifest reach the generation prompt (W3 §Context)", () => {
-  it("annotates shape cards with field semantics and states the domain manifest as fact", async () => {
+describe("semantics reach the generation prompt (W3 §Context)", () => {
+  it("annotates shape cards with field semantics", async () => {
     let captured = "";
     const model = scriptedLanguageModel((call) => {
       captured = promptText(call);
@@ -380,13 +380,9 @@ describe("semantics + domain manifest reach the generation prompt (W3 §Context)
           "rows.amountCents": { kind: "money", unit: "cents" },
         },
       },
-      domains: { has: ["accounts", "transactions"], hasNot: ["payroll", "crypto"] },
     }));
     expect(captured).toContain("totalCents: number:money.cents");
     expect(captured).toContain("amountCents: number:money.cents");
-    expect(captured).toContain("DATA DOMAINS");
-    expect(captured).toContain("This host HAS data for: accounts, transactions.");
-    expect(captured).toContain("This host has NO data for: payroll, crypto.");
   });
 });
 

@@ -1869,21 +1869,29 @@ describe("app design rules (spec 2026-07-20)", () => {
     expect(sections.every((section) => section.startsWith("File rules: airy layouts."))).toBe(true);
   });
 
-  it("re-resolves cloud overrides semantics/domains per generation — merged live, not locked (cse lane 3, #557)", async () => {
+  it("re-resolves cloud overrides semantics per generation — merged live, not locked (cse lane 3, #557)", async () => {
     // The trap: memoizing the semantics provider would lock its first result for
     // the process lifetime. It must re-resolve per generation so both a local
     // tools.json edit AND the cloud-owned overrides keep applying. NOTE (#557):
     // enablement now resolves the overrides surface AUTHORITATIVELY on the first
     // request (the generation's own descriptors() read awaits it), which also
-    // warms the shared config snapshot — so the cloud-owned domains are picked
+    // warms the shared config snapshot — so the cloud-owned semantics are picked
     // up as soon as the first generation, no longer only after a cold window.
+    const hostOrigin = "https://host-overrides.test";
+    const toolsFile = (amount: "cents" | "dollars"): string => JSON.stringify({
+      format: "vendo/tools@3",
+      tools: [{
+        name: "host_ledger",
+        description: "Ledger rows",
+        inputSchema: { type: "object", properties: {} },
+        risk: "read",
+        binding: { kind: "route", method: "GET", path: "/ledger", argsIn: "query" },
+        semantics: { amount: { kind: "money", unit: amount } },
+      }],
+    });
     const root = await mkdtemp(join(tmpdir(), "vendo-cloud-overrides-"));
     await mkdir(join(root, ".vendo"), { recursive: true });
-    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
-      format: "vendo/tools@3",
-      tools: [],
-      domains: { has: ["local_ledger"], hasNot: [] },
-    }));
+    await writeFile(join(root, ".vendo", "tools.json"), toolsFile("cents"));
     // NOTE: no local overrides.json — the overrides surface is cloud-owned.
     const originalCwd = process.cwd();
     process.chdir(root);
@@ -1892,7 +1900,14 @@ describe("app design rules (spec 2026-07-20)", () => {
     vi.stubEnv("E2B_API_KEY", "");
     vi.stubEnv("VENDO_API_KEY", "vnd_cloud_key");
     vi.stubEnv("VENDO_CLOUD_URL", "https://cloud-overrides.test");
-    const cloudOverrides = { format: "vendo/overrides@3", tools: {}, domains: { has: ["cloud_ledger"], hasNot: [] } };
+    // A trusted origin so the create-time shape sampler's route read resolves.
+    vi.stubEnv("VENDO_BASE_URL", hostOrigin);
+    // The cloud-owned authored layer annotates a SECOND field, so the merged
+    // view can only be right if both legs applied.
+    const cloudOverrides = {
+      format: "vendo/overrides@3",
+      tools: { host_ledger: { semantics: { dueAt: { kind: "date", format: "iso" } } } },
+    };
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/api/v1/config")) {
@@ -1901,6 +1916,8 @@ describe("app design rules (spec 2026-07-20)", () => {
           { headers: { etag: '"rel_1"' } },
         );
       }
+      // The create-time shape sampler's one read of the host route.
+      if (url.startsWith(`${hostOrigin}/ledger`)) return Response.json({ amount: 1200, dueAt: "2026-01-31" });
       throw new Error(`unexpected fetch ${url}`);
     }));
 
@@ -1908,32 +1925,34 @@ describe("app design rules (spec 2026-07-20)", () => {
     await store.ensureSchema();
     const prompts: string[] = [];
     // Explicit store wins over the key (BYO); connectors:[] avoids the cloud
-    // tools connector's descriptor fetch — the ONLY fetch is /api/v1/config.
-    const vendo = createVendo({ model: appGenModel(prompts), principal: async () => principal, store, connectors: [] });
+    // tools connector's descriptor fetch — the ONLY config fetch is /api/v1/config.
+    const vendo = createVendo({
+      model: appGenModel(prompts),
+      principal: async () => principal,
+      store,
+      connectors: [],
+    });
     cleanups.push(async () => { await vendo.store.close(); });
 
-    const domainsLine = (all: string[]): string =>
-      all.filter((p) => p.includes("DATA DOMAINS")).join("\n");
+    const shapeCard = (all: string[]): string =>
+      all.filter((p) => p.includes("TOOL RESPONSE SHAPES")).join("\n");
 
-    // First generation: local domains always apply; this generation's own
+    // First generation: local semantics always apply; this generation's own
     // descriptors() read also resolves the cloud-owned overrides (enablement,
     // #557) and warms the shared config snapshot for what follows.
     await vendo.apps.create({ prompt: "Build a dashboard" }, ctx);
-    expect(domainsLine(prompts)).toContain("local_ledger");
+    expect(shapeCard(prompts)).toContain("amount: number:money.cents");
+    expect(shapeCard(prompts)).toContain("dueAt: string:date.iso");
 
     // Edit the LOCAL tools.json and generate again: the change is reflected,
     // proving the semantics provider is re-resolved live per generation (not
     // memoized), and the cloud-owned overrides still merge in.
-    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify({
-      format: "vendo/tools@3",
-      tools: [],
-      domains: { has: ["local_ledger_v2"], hasNot: [] },
-    }));
+    await writeFile(join(root, ".vendo", "tools.json"), toolsFile("dollars"));
     prompts.length = 0;
     await vendo.apps.create({ prompt: "Build another dashboard" }, ctx);
 
-    expect(domainsLine(prompts)).toContain("local_ledger_v2");
-    expect(domainsLine(prompts)).toContain("cloud_ledger");
+    expect(shapeCard(prompts)).toContain("amount: number:money.dollars");
+    expect(shapeCard(prompts)).toContain("dueAt: string:date.iso");
   });
 });
 

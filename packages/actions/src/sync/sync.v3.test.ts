@@ -6,7 +6,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { VENDO_TOOLS_FORMAT, toolsFileSchema } from "../formats.js";
-import { deriveDomains, domainFromToolName } from "./domains.js";
 import { vendoSync } from "./index.js";
 
 const run = promisify(execFile);
@@ -45,17 +44,8 @@ async function readJson(file: string): Promise<any> {
 
 const sha256 = (bytes: string): string => `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
 
-describe("domain derivation (moved from the CLI semantics module)", () => {
-  it("derives noun domains from tool names, dropping verbs and plumbing", () => {
-    expect(domainFromToolName("host_listAccountTransactions")).toBe("account transactions");
-    expect(domainFromToolName("host_getCashflowInsights")).toBe("cashflow insights");
-    expect(domainFromToolName("host_auth_create")).toBeUndefined();
-    expect(deriveDomains(["host_listInvoices", "host_getInvoices", "host_voice_create"])).toEqual(["invoices"]);
-  });
-});
-
 describe("vendo sync writes vendo/tools@3", () => {
-  it("writes the v3 format with derived domains and per-tool srcHash, deterministically", async () => {
+  it("writes the v3 format with per-tool srcHash, deterministically", async () => {
     const { root, out } = await temporaryHost();
     await writeHostFile(root, "openapi.json", SPEC);
     await vendoSync({ root, out });
@@ -63,8 +53,6 @@ describe("vendo sync writes vendo/tools@3", () => {
     const file = await readJson(path.join(out, "tools.json"));
     expect(toolsFileSchema.safeParse(file).success).toBe(true);
     expect(file.format).toBe(VENDO_TOOLS_FORMAT);
-    // domains derived from tool names on first sync
-    expect(file.domains).toEqual({ has: ["invoice", "invoices"], hasNot: [] });
     // outside a git repo the watermark is omitted, never guessed
     expect(file.watermark).toBeUndefined();
     // openapi tools carry the spec file's content hash
@@ -195,16 +183,15 @@ describe("vendo sync writes vendo/tools@3", () => {
     await writeHostFile(root, "openapi.json", SPEC);
     await vendoSync({ root, out });
 
-    // simulate the CLI's dev-server inference having landed semantics + a curated manifest
+    // simulate the CLI's dev-server inference having landed semantics
     const file = await readJson(path.join(out, "tools.json"));
     for (const tool of file.tools) {
       if (tool.name === "host_listInvoices") tool.semantics = { "data.amountCents": { kind: "money", unit: "cents" } };
       if (tool.name === "host_createInvoice") tool.semantics = { "data.id": { kind: "id", entity: "invoice" } };
     }
-    file.domains = { has: ["invoices"], hasNot: ["crypto"] };
     await fs.writeFile(path.join(out, "tools.json"), `${JSON.stringify(file, null, 2)}\n`, "utf8");
 
-    // the spec loses createInvoice; a re-sync keeps listInvoices' semantics and the curated manifest
+    // the spec loses createInvoice; a re-sync keeps listInvoices' semantics
     await writeHostFile(root, "openapi.json", `${JSON.stringify({
       openapi: "3.1.0",
       info: { title: "test", version: "1" },
@@ -214,7 +201,6 @@ describe("vendo sync writes vendo/tools@3", () => {
     const next = await readJson(path.join(out, "tools.json"));
     expect(next.tools).toHaveLength(1);
     expect(next.tools[0].semantics).toEqual({ "data.amountCents": { kind: "money", unit: "cents" } });
-    expect(next.domains).toEqual({ has: ["invoices"], hasNot: ["crypto"] });
   });
 
   it("drops carried semantics when a same-named tool's binding changed; an unchanged binding still carries", async () => {

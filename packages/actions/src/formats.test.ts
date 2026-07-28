@@ -104,7 +104,6 @@ describe("toolsFileSchema", () => {
   it("parses a v3 tools file with the new machine-layer fields", () => {
     const parsed = toolsFileSchema.parse(toolsFile({
       watermark: "3d1f2ab90c7e5f6a8b4d0e1c2a3b4c5d6e7f8091",
-      domains: { has: ["invoices", "clients"], hasNot: ["payroll"] },
       tools: [extractedTool({
         audience: "end-user",
         semantics: { "data.amountCents": { kind: "money", unit: "cents" } },
@@ -112,7 +111,6 @@ describe("toolsFileSchema", () => {
       })],
     }));
     expect(parsed.watermark).toBe("3d1f2ab90c7e5f6a8b4d0e1c2a3b4c5d6e7f8091");
-    expect(parsed.domains).toEqual({ has: ["invoices", "clients"], hasNot: ["payroll"] });
     expect(parsed.tools[0]?.audience).toBe("end-user");
     expect(parsed.tools[0]?.semantics).toEqual({ "data.amountCents": { kind: "money", unit: "cents" } });
     expect(parsed.tools[0]?.srcHash).toBe("sha256:abc123");
@@ -134,13 +132,6 @@ describe("toolsFileSchema", () => {
     expect((parsed as Record<string, unknown>).generatedBy).toBe("vendo sync");
   });
 
-  it("keeps unknown keys inside the generated domains manifest too (the authored copy stays strict)", () => {
-    const parsed = toolsFileSchema.parse(toolsFile({
-      domains: { has: ["invoices"], hasNot: [], derivedFrom: "tool-names" },
-    }));
-    expect((parsed.domains as Record<string, unknown>).derivedFrom).toBe("tool-names");
-  });
-
   it("stays deterministic: rejects compound bindings, pointing at overrides.json", () => {
     const result = toolsFileSchema.safeParse(toolsFile({ tools: [compoundTool()] }));
     expect(result.success).toBe(false);
@@ -149,7 +140,7 @@ describe("toolsFileSchema", () => {
 });
 
 describe("overridesFileSchema", () => {
-  it("parses the authored layer: per-tool overrides plus domains, compounds, briefs, remix", () => {
+  it("parses the authored layer: per-tool overrides plus compounds, briefs, remix", () => {
     const parsed = overridesFileSchema.parse(overridesFile({
       tools: {
         host_invoices_list: {
@@ -161,13 +152,11 @@ describe("overridesFileSchema", () => {
           semantics: { "data.amountCents": { kind: "money", unit: "cents", currency: "USD" } },
         },
       },
-      domains: { has: ["projects"], hasNot: ["inventory"] },
       compounds: [compoundTool()],
       briefs: [{ name: "bulk-paste", text: "call host_cells_update per row", tools: ["host_cells_update"] }],
       remix: { ignoreSlots: ["invoice-card"] },
     }));
     expect(parsed.tools.host_invoices_list?.audience).toBe("end-user");
-    expect(parsed.domains).toEqual({ has: ["projects"], hasNot: ["inventory"] });
     expect(parsed.compounds).toHaveLength(1);
     expect(parsed.briefs).toHaveLength(1);
     expect(parsed.remix).toEqual({ ignoreSlots: ["invoice-card"] });
@@ -176,7 +165,9 @@ describe("overridesFileSchema", () => {
   it("stays strict: a typo at the file or per-tool level fails loudly", () => {
     expect(overridesFileSchema.safeParse(overridesFile({ compunds: [] })).success).toBe(false);
     expect(overridesFileSchema.safeParse(overridesFile({ tools: { host_x: { descriptin: "typo" } } })).success).toBe(false);
-    expect(overridesFileSchema.safeParse(overridesFile({ domains: { has: [], hasNot: [], hasMaybe: [] } })).success).toBe(false);
+    // a REMOVED key is a typo now: the deleted domains manifest fails loudly
+    // rather than being silently ignored.
+    expect(overridesFileSchema.safeParse(overridesFile({ domains: { has: [] } })).success).toBe(false);
     expect(overridesFileSchema.safeParse(overridesFile({ format: "vendo/overrides@1" })).success).toBe(false);
   });
 

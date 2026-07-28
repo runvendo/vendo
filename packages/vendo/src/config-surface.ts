@@ -28,15 +28,15 @@ export function isConfigSurface(name: string): name is ConfigSurfaceName {
 }
 
 /** Informational note for the overrides surface (#557, now landed): a
- * cloud-published overrides.json gates BOTH app GENERATION (field semantics +
- * the domain manifest) and tool ENABLEMENT (disabled / audience) at runtime.
+ * cloud-published overrides.json gates BOTH app GENERATION (field semantics)
+ * and tool ENABLEMENT (disabled / audience) at runtime.
  * Enablement resolves boot-once — the actions registry consults the published
  * overrides on the first request after boot — so pushing overrides.json to
  * cloud and deleting the local file DOES disable tools at runtime (it applies
  * on the next restart; app generation picks it up live per generation).
  * Surfaced by `config status`, `config push <overrides>`, and doctor. */
 export const OVERRIDES_ENABLEMENT_NOTE =
-  "Note: hosted overrides.json gates BOTH app generation (semantics/domains) and tool enablement "
+  "Note: hosted overrides.json gates BOTH app generation (field semantics) and tool enablement "
   + "(disabled/audience) at runtime. Enablement resolves boot-once on the first request, so a console "
   + "publish (or deleting the local .vendo/overrides.json) applies on the next restart; app generation "
   + "picks it up live per generation.";

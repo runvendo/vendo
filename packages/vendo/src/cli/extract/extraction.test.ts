@@ -168,7 +168,6 @@ describe("applyDraft (deterministic verification)", () => {
     const root = await fixture({
       format: "vendo/overrides@3",
       tools: {},
-      domains: { has: ["billing"], hasNot: ["payroll"] },
       briefs: [{ name: "bulk", text: "one invoice per row" }],
       remix: { ignoreSlots: ["invoice-card"] },
     });
@@ -179,7 +178,6 @@ describe("applyDraft (deterministic verification)", () => {
     });
     const overrides = JSON.parse(await readFile(join(root, ".vendo", "overrides.json"), "utf8"));
     expect(overrides.format).toBe("vendo/overrides@3");
-    expect(overrides.domains).toEqual({ has: ["billing"], hasNot: ["payroll"] });
     expect(overrides.briefs).toEqual([{ name: "bulk", text: "one invoice per row" }]);
     expect(overrides.remix).toEqual({ ignoreSlots: ["invoice-card"] });
   });

@@ -1131,24 +1131,5 @@
       },
       "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
     }
-  ],
-  "domains": {
-    "has": [
-      "clients",
-      "client documents",
-      "client messages",
-      "deadlines",
-      "filing activity",
-      "practice dashboard (documents outstanding/received, deadlines)"
-    ],
-    "hasNot": [
-      "invoices or billing",
-      "payroll",
-      "bank transactions",
-      "expenses",
-      "tax calculations",
-      "time tracking",
-      "e-signatures"
-    ]
-  }
+  ]
 }
