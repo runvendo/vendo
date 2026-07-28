@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { assertDisjointOwnership, type AgentRunResult, type RunAgentFn } from "./agent.js";
 import type { BrandBrief } from "./brief.js";
-import { buildAgentJobs, regroundBeats, runBuild, syncTools, ungroundedBeats } from "./build.js";
+import { buildAgentJobs, domainApi, regroundBeats, runBuild, syncTools, ungroundedBeats } from "./build.js";
 import { demoPaths, parseDemoFolderConfig, requiredBeatKeys, type DemoTheme } from "./demo-folder.js";
 import type { ExecFn } from "./exec.js";
 
@@ -196,6 +196,37 @@ describe("buildAgentJobs", () => {
     // Captured :id segments arrive as search params, not a handler argument.
     expect(server.prompt).toContain('searchParams.get("id")');
     expect(server.prompt).toContain("server/store.ts");
+  });
+
+  // A live run died at the host build after ten minutes of generation because
+  // the server agent exported `listLicenses` (from the stem) while the screens
+  // agent imported `listVendorLicenses` (from the name). Both prompts must
+  // carry the SAME identifiers.
+  it("pins one identical domain API in both the server and screens prompts", () => {
+    const jobs = buildAgentJobs(jobOptions);
+    const server = jobs.find((job) => job.name === "server") as { prompt: string };
+    const screens = jobs.find((job) => job.name === "screens") as { prompt: string };
+    for (const api of domainApi(brief)) {
+      expect(server.prompt).toContain(api.list);
+      expect(screens.prompt).toContain(api.list);
+      expect(server.prompt).toContain(api.get);
+      expect(server.prompt).toContain(api.action);
+    }
+  });
+
+  it("derives the list name from the plural stem, never from the PascalCase name", () => {
+    // "Entry"/"entries" is the case that makes name-pluralisation wrong, and
+    // "bank-transactions" is the case that makes it hyphenated.
+    expect(domainApi({
+      ...brief,
+      entities: [
+        { name: "Entry", stem: "entries", action: "voidEntry", fields: [], sampleRecordNames: [] },
+        { name: "BankTransaction", stem: "bank-transactions", action: "syncTransaction", fields: [], sampleRecordNames: [] },
+      ],
+    })).toEqual([
+      { name: "Entry", list: "listEntries", get: "getEntry", action: "voidEntry" },
+      { name: "BankTransaction", list: "listBankTransactions", get: "getBankTransaction", action: "syncTransaction" },
+    ]);
   });
 
   it("pins the kit's real export list in the screens prompt and forbids @vendoai/*", () => {

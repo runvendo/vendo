@@ -77,6 +77,32 @@ Non-negotiable rules:
 - NEVER import from \`@vendoai/*\`. The host's manifest step rejects it and the build fails: everything Vendo arrives through \`@host/vendo-kit\`, already themed and already pointed at this slug's wire.`;
 }
 
+/** "bank-transactions" → "BankTransactions". */
+function pascal(stem: string): string {
+  return stem.split(/[^a-z0-9]+/i).filter((part) => part !== "").map((part) => part[0]?.toUpperCase() + part.slice(1)).join("");
+}
+
+/**
+ * The EXACT functions server/entities.ts exports and screens/index.tsx imports.
+ *
+ * Both are written by different agents, at the same time, from the same brief —
+ * so the names cannot be left to either one's taste. A live run proved it: the
+ * server agent derived `listLicenses` from the entity's stem while the screens
+ * agent derived `listVendorLicenses` from its name, and the host build failed on
+ * "export listVendorLicenses was not found" after ten minutes of generation.
+ * The list name comes off the STEM because a stem is already the plural
+ * ("licenses"), where pluralising a PascalCase name is guesswork ("Entry" →
+ * "Entrys").
+ */
+export function domainApi(brief: BrandBrief): { list: string; get: string; action: string; name: string }[] {
+  return brief.entities.map((entity) => ({
+    name: entity.name,
+    list: `list${pascal(entity.stem)}`,
+    get: `get${entity.name}`,
+    action: entity.action,
+  }));
+}
+
 function entityBlock(brief: BrandBrief): string {
   return brief.entities
     .map((entity) => [
@@ -119,7 +145,9 @@ YOUR TASK (four files, exactly these shapes — the host imports them by name):
 - server/seed.ts: \`export interface SeedData\` and \`export function buildSeed(anchor: Date = new Date()): SeedData\`. Import the seeded prng as \`import { mulberry32 } from "@host/prng"\` — never Math.random, and derive every date from \`anchor\` rather than the clock, or the demo looks different on every boot. 10-20 records per entity: right magnitudes, coherent dates (created before updated, nothing after the anchor), a realistic status spread.
 - The sample records above must seed in a state the mutating action can STILL act on — not already archived, closed, voided or paid. A beat names one of them, and an already-actioned record makes the agent correctly decline: no consent card appears and the beat dies in front of the prospect. Pin their state explicitly instead of leaving it to the prng.
 - server/store.ts: exactly \`import { storeFor } from "@host/server/demo-store"\`, \`import { buildSeed } from "./seed"\`, \`export const getStore = () => storeFor(buildSeed)\`. Nothing else. This is load-bearing: a plain module singleton is instantiated ONCE PER ROUTE BUNDLE in a production Next build, so the page and the API would hold different copies and an approved mutation would visibly not happen on the page. \`storeFor\` is the host's one keyed store.
-- server/entities.ts: the domain types above, plus the read and write functions the page and the routes both call — a list function per entity and the ONE mutating action per entity ("${brief.entities.map((entity) => entity.action).join('", "')}"). They reach the data through \`getStore()\` from ./store. Throw a named error class for "no such record" so routes can answer 404. One mutation each, nothing speculative.
+- server/entities.ts: the domain types above, plus the read and write functions the page and the routes both call. Export these names EXACTLY — the screens agent is importing them from this file RIGHT NOW and a different name fails the host build:
+${domainApi(brief).map((api) => `  · \`${api.list}(): ${api.name}[]\`, \`${api.get}(id: string): ${api.name} | undefined\`, \`${api.action}(id: string): ${api.name}\``).join("\n")}
+  They reach the data through \`getStore()\` from ./store. Throw a named error class for "no such record" so routes can answer 404. One mutation each, nothing speculative.
 - server/routes.ts: \`import type { DemoRoutes } from "@host/lib/demo-module"\` and \`export const routes: DemoRoutes\`. Keys are \`"METHOD /path"\` where path is what follows \`/api/<slug>\`, e.g. \`"GET /${brief.entities[0]?.stem ?? "records"}"\` and \`"POST /${brief.entities[0]?.stem ?? "records"}/:id/${brief.entities[0]?.action ?? "act"}"\`. A handler takes \`(request: Request)\` — NOT a store argument — and reads captured \`:name\` segments as SEARCH PARAMS (\`new URL(request.url).searchParams.get("id")\`), because that is how the host passes them. Answer \`Response.json({ data: ... })\` on success and \`Response.json({ error: { message, code } }, { status })\` on failure, exactly like demos/_example. That envelope must be what openapi.json describes: a shape the spec does not describe is a shape the agent mis-reads, and the pill dead-ends in front of the prospect.
 - openapi.json: declare EVERY route in routes.ts — matching operationId, a one-sentence summary in the product's own words, path/query parameters with descriptions, the \`{ data: ... }\` response schema, and x-vendo-formats for money fields stored in cents.
 
@@ -143,7 +171,8 @@ ${entities}
 Read demos/_example/screens/index.tsx in this same repo FIRST: it is the host's own worked example, and what must survive your rewrite is its SHAPE — a server component with no props, reading data through ../server, rendering the kit's surfaces.
 
 YOUR TASK:
-- screens/index.tsx default-exports the product page as a SERVER component (no "use client"). It receives NO props. It reads the demo's data by calling the domain functions another agent is writing in \`../server/entities\` (e.g. \`import { list${brief.entities[0]?.name ?? "Record"}s } from "../server/entities"\`) and NEVER by fetching: a screen that fetched and guessed the route's envelope shipped once as a perfect-looking report page that listed nothing at all.
+- screens/index.tsx default-exports the product page as a SERVER component (no "use client"). It receives NO props. It reads the demo's data through the domain functions another agent is writing in \`../server/entities\` RIGHT NOW, and NEVER by fetching (a screen that fetched and guessed the route's envelope shipped once as a perfect-looking report page that listed nothing at all). Import EXACTLY these names — inventing a variant fails the host build:
+  \`import { ${domainApi(brief).map((api) => api.list).join(", ")} } from "../server/entities"\`
 - The page is a STRUCTURAL 1:1 clone of ${brief.referenceScreenshot}: same regions, same nav labels (${brief.nav.join(" · ")}), same column set, same header composition, same density — populated from the seeded ${brief.entities.map((entity) => entity.name).join(" / ")} records. ${brief.productSurface}
 - You may add sibling components under screens/ and import them.
 - Render the Vendo surfaces where BRIEF.md's placement says: trigger in the ${brief.placement.trigger}, ${brief.placement.slot}. Import them ONLY from \`@host/vendo-kit\`, which exports exactly: VendoTrigger, VendoSlot, VendoPage, VendoThread, VendoOverlay, VendoActivities, useDemo. \`<VendoTrigger prompt="...">Label</VendoTrigger>\` is the entry point and \`<VendoSlot id="..." />\` is where a generated view lands. VendoRoot and the overlay layer are mounted by the HOST around your page — do not mount them yourself, and never re-implement a surface: the kit arrives themed for this demo and pointed at this slug's wire.
