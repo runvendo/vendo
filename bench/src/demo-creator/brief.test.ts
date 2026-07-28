@@ -111,7 +111,7 @@ describe("allowedPalette", () => {
   // The prompt tells the model "OPERATOR NOTES — AUTHORITATIVE ... where one
   // contradicts anything below, the operator's note WINS", and the closed
   // palette is below that line. A prospect whose in-product palette differs
-  // from their marketing site (SWICH Merchant Portal: dark emerald portal,
+  // from their marketing site (Acme Merchant Portal: dark emerald portal,
   // white/blue website) made the two instructions unsatisfiable — the brief
   // obeyed the notes and the validator rejected every sample, twice, ending the
   // run. Hexes the operator pinned in the notes ARE evidence, so they join the

@@ -11,12 +11,12 @@
  * wall-clock deadline, and these are the turn latencies measured on this machine
  * against the deployed Cloud posture (see {@link observedSmokeLatenciesMs}):
  *
- *   run 2  zelty-orders          89_122ms  settled   (this gate, on the new budget)
- *   run C  ramp-invoices        104_612ms  settled
- *   run E  ramp-licenses        129_058ms  ERRORED ("the response didn't finish")
- *   run D  ramp-reimbursements  135_675ms  settled
- *   run 1  ramp-cards           165_121ms  settled   ← 14.9s under the deadline
- *   run B  ramp-bills          ≥182_835ms  KILLED BY THE DEADLINE
+ *   run 2  globex-orders             89_122ms  settled   (this gate, on the new budget)
+ *   run C  contoso-invoices         104_612ms  settled
+ *   run E  contoso-licenses         129_058ms  ERRORED ("the response didn't finish")
+ *   run D  contoso-reimbursements   135_675ms  settled
+ *   run 1  contoso-cards            165_121ms  settled   ← 14.9s under the deadline
+ *   run B  contoso-bills           ≥182_835ms  KILLED BY THE DEADLINE
  *
  * The deadline sat inside that distribution, so it was a coin flip: two of six
  * runs died on demos that were otherwise fine, each costing ~18 minutes and ~$4.

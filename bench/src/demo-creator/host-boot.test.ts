@@ -73,7 +73,7 @@ describe("generateManifest", () => {
    * The real script prints a HEADER and then the problems, one per line:
    *
    *   [gen-manifest] the demo folder contract is not honored:
-   *     demos/ramp-bills: missing tools.json
+   *     demos/contoso-bills: missing tools.json
    *
    * Reporting only the first line therefore reported a failure with no reason at
    * all — every actual cause is on a later line. It cost a diagnosis round on a
@@ -83,7 +83,7 @@ describe("generateManifest", () => {
     const demosRepo = await fakeDemosRepo(["acme"]);
     const { exec } = fakeExec([{
       code: 1,
-      stderr: "[gen-manifest] the demo folder contract is not honored:\n  demos/ramp-bills: missing tools.json\n  demos/zelty/theme.json is not legible",
+      stderr: "[gen-manifest] the demo folder contract is not honored:\n  demos/contoso-bills: missing tools.json\n  demos/globex/theme.json is not legible",
     }]);
     const error = await generateManifest({ demosRepo, exec }).catch((thrown: unknown) => thrown as Error);
     expect(error.message).toContain("missing tools.json");

@@ -353,7 +353,7 @@ describe("buildAgentJobs", () => {
   });
 
   // A non-English prospect is the common case, not the exception, and a human
-  // remembering to add `strings` afterwards is how Zelty shipped with an English
+  // remembering to add `strings` afterwards is how Globex shipped with an English
   // panel over a Spanish product.
   it("tells the beats agent to localise the host's chrome for a non-English product", () => {
     const beats = buildAgentJobs(jobOptions).find((job) => job.name === "beats");

@@ -83,7 +83,7 @@ describe("parseJudgeVerdict", () => {
 
 describe("buildJudgePrompt", () => {
   it("pins the five dimensions and the harsh-judging framing", () => {
-    const prompt = buildJudgePrompt({ prospect: "Linear" });
+    const prompt = buildJudgePrompt({ prospect: "Acme" });
     for (const dimension of judgeDimensions) expect(prompt).toContain(`"${dimension}"`);
     expect(prompt).toContain("harsh");
     expect(prompt).toContain("EVIDENCE");
@@ -245,7 +245,7 @@ describe("renderFidelityReport", () => {
   it("marks sub-threshold rows as FAIL and lists the notes", () => {
     const verdict: JudgeVerdict = parseJudgeVerdict(verdictJson({ type: 3 }));
     const report = renderFidelityReport({
-      prospect: "Linear",
+      prospect: "Acme",
       verdict,
       builtScreens: ["/x/built-acme.png"],
       evidence: [{ label: "EVIDENCE operator screenshot", path: "/x/op.png" }],
@@ -267,7 +267,7 @@ describe("renderFidelityReport", () => {
         : score),
     };
     const report = renderFidelityReport({
-      prospect: "Linear", verdict: messy, builtScreens: [], evidence: [], notes: [],
+      prospect: "Acme", verdict: messy, builtScreens: [], evidence: [], notes: [],
     });
     const rows = report.split("\n").filter((line) => line.startsWith("| ") && !line.startsWith("| ---"));
     // Header + one row per dimension, and every row has the same column count —
@@ -282,7 +282,7 @@ describe("renderFidelityReport", () => {
     const extra = JSON.parse(verdictJson({})) as Record<string, unknown>;
     extra.overall = { score: 7 };
     const report = renderFidelityReport({
-      prospect: "Linear",
+      prospect: "Acme",
       verdict: parseJudgeVerdict(JSON.stringify(extra)),
       builtScreens: [], evidence: [], notes: [],
     });
