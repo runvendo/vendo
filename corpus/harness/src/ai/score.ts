@@ -17,9 +17,18 @@ import { aiExpectedToolIdentity, type AiExpectedTool, type RepoAiExpectations } 
  *
  * The one join that matters: a tool's EFFECTIVE state is `tools.json` entry ⊕ its
  * applied judgment, computed by `applyJudgment` itself rather than re-implemented
- * here. That means the corpus grades exactly what the runtime will see, including
- * the two rules that are easy to get wrong by hand — a judgment whose binding
- * moved is INERT, and `pending` loosenings are never merged.
+ * here, so the corpus inherits the two rules that are easiest to get wrong by
+ * hand — a judgment whose binding moved is INERT, and `pending` loosenings are
+ * never merged.
+ *
+ * That is the state the CHANNEL decided, and it is what `vendo doctor` and
+ * `vendo try` display. It is NOT, as of this commit, what the embedded agent
+ * enforces: `createActions`' host loader
+ * (`packages/actions/src/runtime/registry.ts` `loadHost`) reads `tools.json` and
+ * `overrides.json` only, and `applyJudgment` has no runtime call site — so a
+ * judgment's hardenings do not reach the running catalog. Reported by Lane D
+ * rather than papered over here; this rubric deliberately scores the decision the
+ * channel made, because that is the thing under test.
  *
  * Dimensions:
  * - pass — did the judgment pass produce a judgments file at all (hard failure);
