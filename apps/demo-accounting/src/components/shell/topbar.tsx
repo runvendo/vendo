@@ -6,7 +6,6 @@ import { Bell, Search } from "lucide-react"
 
 export interface TopbarUser {
   display: string
-  avatarUrl?: string
   /** True only for auto-minted sessions (DEMO_AUTOLOGIN) — shows the
    * "Live demo" chip; credential logins never set it. */
   autologin?: boolean
@@ -91,18 +90,11 @@ export function Topbar({ user }: { user?: TopbarUser }) {
           type="button"
           className="flex items-center gap-2 rounded-full border border-line py-1 pr-3 pl-1 transition-colors hover:bg-surface"
         >
-          {user?.avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={user.avatarUrl}
-              alt=""
-              className="h-6 w-6 rounded-full object-cover"
-            />
-          ) : (
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ink text-[10px] font-semibold text-white">
-              {initials(display)}
-            </span>
-          )}
+          {/* Generated initials, never a portrait: Cadence's staff are invented
+              people, so no real person's likeness may stand in for one. */}
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ink text-[10px] font-semibold text-white">
+            {initials(display)}
+          </span>
           <span className="text-[13px] font-medium">{display}</span>
         </button>
       </div>

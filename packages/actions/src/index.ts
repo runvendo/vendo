@@ -1,5 +1,10 @@
 /** @vendoai/actions — every API becomes agent tools (docs/contracts/04-actions.md). */
 export * from "./formats.js";
+// Tool identity + the judgment layer's deterministic half. Both are at the
+// ROOT, not behind the node-only ./sync entry: the runtime registry applies
+// judgments, and writing one means computing bindingIdentity.
+export * from "./binding-identity.js";
+export * from "./judgments.js";
 export * from "./host-semantics.js";
 export * from "./connectors/connector.js";
 export { composioConnector } from "./connectors/composio.js";

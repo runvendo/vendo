@@ -396,27 +396,13 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-md hr { border: 0; border-top: 1px solid var(--vendo-border); margin: 10px 0; }
 .fl-turn-user .fl-md a, .fl-turn-user .fl-md code { color: inherit; border-color: var(--vendo-border); }
 
-/* ---------- generating: quiet status + skeleton (tool chips are hidden) ---------- */
-.fl-generating { align-self: flex-start; display: flex; align-items: center; gap: 8px;
-  font-size: 12.5px; color: var(--vendo-fg-muted); }
-.fl-generating .fl-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--vendo-accent);
-  animation: fl-pulse 1.2s ease infinite; }
 @keyframes fl-pulse { 0%,100% { opacity: .28; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
-.fl-skeleton { align-self: flex-start; width: 100%; border-radius: var(--vendo-radius);
-  border: 1px solid var(--vendo-border); background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  padding: var(--vendo-density-card-padding); box-shadow: var(--vendo-shadow); }
+/* The shimmer bar, shared by the markdown table's forming row. */
 .fl-skeleton-bar { background: linear-gradient(90deg,
     color-mix(in srgb, var(--vendo-fg) 5%, transparent) 25%,
     color-mix(in srgb, var(--vendo-fg) 10%, transparent) 37%,
     color-mix(in srgb, var(--vendo-fg) 5%, transparent) 63%);
   background-size: 400% 100%; animation: fl-shimmer 1.5s ease infinite; border-radius: 6px; }
-/* An answer taking shape: three shortening lines of "text". */
-.fl-skeleton-bar { height: 10px; }
-.fl-skeleton-bar + .fl-skeleton-bar { margin-top: 9px; }
-.fl-skeleton-bar:nth-child(1) { width: 91%; }
-.fl-skeleton-bar:nth-child(2) { width: 76%; }
-.fl-skeleton-bar:nth-child(3) { width: 58%; }
 @keyframes fl-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
 /* ---------- glass skeleton (2026-07-05 recipe): a view taking shape ---------- */
@@ -1182,7 +1168,7 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   .fl-stage { animation: none; }
   /* Silence every looping loader for vestibular-sensitive users. */
   .fl-caret, .fl-md--streaming > :last-child::after { animation: none; opacity: 1; }
-  .fl-typing span, .fl-generating .fl-pulse, .fl-skeleton-bar,
+  .fl-typing span, .fl-skeleton-bar,
   .fl-tool-spin, .fl-tool-spinner, .fl-act-pulse, .fl-act-spin, .fl-connect-spin,
   .fl-auto-created-live::after { animation: none; }
   /* Glass skeleton: the sweep and pulse freeze; the blocks stay tinted. */

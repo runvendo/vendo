@@ -13,25 +13,117 @@ export function isRenderableNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/** The host's display currency + locale for every Kit formatter. */
+export interface KitIntl {
+  /** ISO 4217 code, e.g. "PKR". */
+  currency: string;
+  /** BCP-47 locale, e.g. "en-PK". */
+  locale: string;
+}
+
+const FALLBACK_INTL: KitIntl = { currency: "USD", locale: "en-US" };
+
+/**
+ * Ambient, because the Kit's formatters are PURE FUNCTIONS, not components:
+ * `applyFormat` runs inside DataTable/CardList/Stat/every chart, and the jail
+ * hands islands a bare `fmt.money`. React context cannot reach those call
+ * sites, so a host that bills in rupees would otherwise be stuck with the
+ * hardcoded "$" no matter what its tool semantics declare.
+ *
+ * Set once per host (VendoProvider does it from its `intl` prop). One page =
+ * one display currency; a per-value currency still wins via the options
+ * argument, which is how a genuinely multi-currency row renders.
+ */
+let ambientIntl: KitIntl = FALLBACK_INTL;
+
+/** Does Intl accept this pair, or would every amount throw at render time? */
+function isUsableIntl(currency: string, locale: string): boolean {
+  try {
+    new Intl.NumberFormat(locale, { style: "currency", currency });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Install the ambient currency/locale. Unspecified fields RESET to the
+ * built-in default rather than merging with whatever ran before, so the same
+ * input always produces the same state regardless of call order.
+ *
+ * A currency/locale Intl rejects is dropped for the default: a typo in host
+ * config costs the "$" it would have fixed, never a screen of placeholders.
+ */
+export function setKitIntl(next: Partial<KitIntl> | undefined): void {
+  const candidate = {
+    currency: next?.currency ?? FALLBACK_INTL.currency,
+    locale: next?.locale ?? FALLBACK_INTL.locale,
+  };
+  ambientIntl = isUsableIntl(candidate.currency, candidate.locale) ? candidate : FALLBACK_INTL;
+}
+
+/** The currency/locale every formatter falls back to. */
+export function getKitIntl(): KitIntl {
+  return ambientIntl;
+}
+
 export interface MoneyOptions {
-  /** ISO 4217 code; defaults to USD. */
+  /** ISO 4217 code; defaults to the ambient currency (USD until set). */
   currency?: string;
-  /** BCP-47 locale; defaults to en-US. */
+  /** BCP-47 locale; defaults to the ambient locale (en-US until set). */
   locale?: string;
 }
 
 /**
- * Format an **integer number of cents** (the minor unit) as currency.
- * `123456` → `"$1,234.56"`. Zero-decimal currencies (JPY) are handled by Intl.
+ * ISO 4217 minor units, for the currencies that are not the 2-digit default.
+ *
+ * The divisor CANNOT come from `resolvedOptions().maximumFractionDigits`: that
+ * is a locale DISPLAY preference out of CLDR, and for some currencies it
+ * genuinely disagrees with the ISO minor unit. PKR is the case that bit us —
+ * Node's ICU reports 2 digits, Chrome's reports 0 — so the identical paisa
+ * amount formatted as "PKR 107.68" on the server and "PKR 10,768" in the
+ * browser. A static table is the only engine-independent answer.
+ */
+const MINOR_UNITS: Record<string, number> = {
+  BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0, PYG: 0,
+  RWF: 0, UGX: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
+  BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+  CLF: 4,
+};
+
+/** How many minor units make one major unit of `currency`. */
+export function currencyMinorUnits(currency: string): number {
+  return MINOR_UNITS[currency.toUpperCase()] ?? 2;
+}
+
+/**
+ * Format an **integer number of minor units** as currency.
+ * `123456` → `"$1,234.56"`. Zero-decimal (JPY) and three-decimal (KWD)
+ * currencies scale by their own ISO minor unit.
  * Returns `null` for any non-finite input so `$NaN` can never ship.
  */
 export function formatMoney(cents: number, options: MoneyOptions = {}): string | null {
   if (!isRenderableNumber(cents)) return null;
-  const currency = options.currency ?? "USD";
-  const formatter = new Intl.NumberFormat(options.locale ?? "en-US", { style: "currency", currency });
-  // Divide by the currency's actual minor-unit exponent (2 for USD, 0 for JPY).
-  const fractionDigits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
-  return formatter.format(cents / 10 ** fractionDigits);
+  const currency = options.currency ?? ambientIntl.currency;
+  const digits = currencyMinorUnits(currency);
+  let formatter: Intl.NumberFormat;
+  try {
+    // Pin the displayed digits to the ISO minor unit too: left to CLDR, a
+    // browser would round PKR 107.68 to "PKR 108" and silently drop the paisa
+    // the host actually stored.
+    formatter = new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
+      style: "currency",
+      currency,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+  } catch {
+    // A per-value `currency` is model-authored, so an invalid code is reachable
+    // from generation. Stay total like the rest of the tier: placeholder, not a
+    // thrown RangeError that takes the whole view down.
+    return null;
+  }
+  return formatter.format(cents / 10 ** digits);
 }
 
 export interface PercentOptions {
@@ -49,7 +141,7 @@ export interface PercentOptions {
 export function formatPercent(value: number, options: PercentOptions = {}): string | null {
   if (!isRenderableNumber(value)) return null;
   const ratio = options.whole ? value / 100 : value;
-  return new Intl.NumberFormat(options.locale ?? "en-US", {
+  return new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
     style: "percent",
     minimumFractionDigits: options.fractionDigits ?? 0,
     maximumFractionDigits: options.fractionDigits ?? 0,
@@ -66,7 +158,7 @@ export interface NumOptions {
 /** Format a plain number with thousands grouping. Returns `null` if non-finite. */
 export function formatNum(value: number, options: NumOptions = {}): string | null {
   if (!isRenderableNumber(value)) return null;
-  return new Intl.NumberFormat(options.locale ?? "en-US", {
+  return new Intl.NumberFormat(options.locale ?? ambientIntl.locale, {
     notation: options.notation ?? "standard",
     maximumFractionDigits: options.maximumFractionDigits,
     minimumFractionDigits: options.minimumFractionDigits,
@@ -109,7 +201,7 @@ export function formatDateTime(value: DateInput, options: DateTimeOptions = {}):
   const date = toDate(value);
   if (!date) return null;
   const mode = options.mode ?? "date";
-  const locale = options.locale ?? "en-US";
+  const locale = options.locale ?? ambientIntl.locale;
   // A date-only ISO string ("2026-03-14") is parsed as UTC midnight; formatting
   // it in a behind-UTC local zone would slip it to the previous calendar day.
   // Pin such values to UTC so the day the host meant is the day we show.

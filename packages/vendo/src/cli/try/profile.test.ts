@@ -188,6 +188,109 @@ describe("assembleTryProfile override merge semantics", () => {
     });
   });
 
+  it("layers judgments between the skeleton and overrides, exactly as the runtime resolves them", async () => {
+    const root = await emptyRoot();
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify(toolsFixture()));
+    await writeFile(join(root, ".vendo", "judgments.json"), JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: {
+        host_invoices_list: {
+          binding: "GET /api/invoices",
+          fields: { description: "Lists the signed-in customer's invoices.", risk: "read" },
+          evidence: "const session = await auth();",
+        },
+        host_invoices_delete: {
+          // bindingIdentity normalizes path params: {id} → {}.
+          binding: "DELETE /api/invoices/{}",
+          fields: { risk: "destructive", disabled: true },
+          evidence: "await db.invoice.delete({ where: { id } });",
+        },
+      },
+    }));
+
+    const profile = await assembleTryProfile(root);
+
+    expect(profile.tools.counts).toEqual({ total: 2, enabled: 1 });
+    expect(profile.tools.list.find((tool) => tool.name === "host_invoices_list")).toEqual({
+      name: "host_invoices_list",
+      description: "Lists the signed-in customer's invoices.",
+      risk: "read",
+      disabled: false,
+    });
+    expect(profile.tools.list.find((tool) => tool.name === "host_invoices_delete")).toEqual({
+      name: "host_invoices_delete",
+      description: "DELETE /api/invoices/{id}",
+      risk: "destructive",
+      disabled: true,
+    });
+  });
+
+  it("a human overrides.json entry still wins over a judgment", async () => {
+    const root = await emptyRoot();
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify(toolsFixture()));
+    await writeFile(join(root, ".vendo", "judgments.json"), JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: {
+        host_invoices_list: {
+          binding: "GET /api/invoices",
+          fields: { description: "the model's wording", disabled: true },
+          evidence: "const session = await auth();",
+        },
+      },
+    }));
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
+      format: "vendo/overrides@3",
+      tools: { host_invoices_list: { description: "the human's wording", disabled: false } },
+    }));
+
+    const profile = await assembleTryProfile(root);
+
+    expect(profile.tools.list.find((tool) => tool.name === "host_invoices_list")).toEqual({
+      name: "host_invoices_list",
+      description: "the human's wording",
+      risk: "read",
+      disabled: false,
+    });
+  });
+
+  it("ignores a judgment whose binding moved — an inert entry changes nothing", async () => {
+    const root = await emptyRoot();
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify(toolsFixture()));
+    await writeFile(join(root, ".vendo", "judgments.json"), JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: {
+        host_invoices_list: {
+          binding: "GET /api/old-invoices",
+          fields: { description: "stale", disabled: true },
+          evidence: "the handler moved",
+        },
+      },
+    }));
+
+    const profile = await assembleTryProfile(root);
+
+    expect(profile.tools.counts).toEqual({ total: 2, enabled: 2 });
+    expect(profile.tools.list.find((tool) => tool.name === "host_invoices_list")?.description)
+      .toBe("GET /api/invoices");
+  });
+
+  it("ignores a malformed judgments.json and keeps the extracted tool surface", async () => {
+    const root = await emptyRoot();
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "tools.json"), JSON.stringify(toolsFixture()));
+    await writeFile(join(root, ".vendo", "judgments.json"), JSON.stringify({
+      format: "vendo/judgments@1",
+      tools: { host_invoices_list: { binding: "GET /api/invoices", fields: { risk: "chaotic" }, evidence: "e" } },
+    }));
+
+    const profile = await assembleTryProfile(root);
+
+    expect(profile.tools.counts).toEqual({ total: 2, enabled: 2 });
+  });
+
   it("ignores a malformed overrides.json and keeps the extracted tool surface", async () => {
     const root = await emptyRoot();
     await mkdir(join(root, ".vendo"), { recursive: true });

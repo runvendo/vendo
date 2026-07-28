@@ -5,6 +5,7 @@ import { createContext, useContext, useMemo, type ComponentType, type ReactNode 
 import { createVendoClient, type VendoClient } from "./client.js";
 import type { VendoDiscoverability, VendoGreeting } from "./chrome/discoverability.js";
 import type { ToolMetaMap } from "./chrome/humanize.js";
+import { getKitIntl, setKitIntl, type KitIntl } from "./kit/format.js";
 import { defaultVendoTheme, resolveTheme } from "./theme.js";
 import type { VoiceDriver } from "./voice/driver.js";
 
@@ -43,6 +44,9 @@ export interface VendoContextValue {
   /** Host greeting-as-tutorial content (§6): intro + starter prompts, the
       `.vendo/greeting.json` shape. Absent = the built-in generic greeting. */
   greeting?: VendoGreeting;
+  /** The host's display currency + locale for every Kit formatter — what a
+      generated `format:"money"` column or `<Money cents/>` renders in. */
+  intl: KitIntl;
 }
 
 /** One connectable toolkit in the connect dock (ENG-225). */
@@ -94,9 +98,21 @@ export function VendoProvider(props: {
   connectors?: ConnectorOption[];
   discoverability?: VendoDiscoverability;
   greeting?: VendoGreeting;
+  /** Display currency + locale, e.g. `{ currency: "PKR" }` for a Pakistani
+      host. Omitted fields fall back to USD / en-US. */
+  intl?: Partial<KitIntl>;
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting, children } = props;
+  const { client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting, intl, children } = props;
+  const currency = intl?.currency;
+  const locale = intl?.locale;
+  // Installed during RENDER, not in an effect: the formatters are called while
+  // children render (and on the server, where effects never run), so an effect
+  // would paint one pass of "$" before correcting itself.
+  const resolvedIntl = useMemo(() => {
+    setKitIntl({ ...(currency === undefined ? {} : { currency }), ...(locale === undefined ? {} : { locale }) });
+    return getKitIntl();
+  }, [currency, locale]);
   const value = useMemo<VendoContextValue>(
     () => ({
       client: client ?? createVendoClient({}),
@@ -109,8 +125,9 @@ export function VendoProvider(props: {
       connectors: connectors ?? "auto",
       discoverability: discoverability ?? "default",
       greeting,
+      intl: resolvedIntl,
     }),
-    [client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting],
+    [client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting, resolvedIntl],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }
@@ -146,4 +163,10 @@ export function useVendoDiscoverability(): VendoDiscoverability {
 /** Host greeting-as-tutorial content, provider-optional (absent = built-in). */
 export function useVendoGreeting(): VendoGreeting | undefined {
   return useContext(VendoContext)?.greeting;
+}
+
+/** Display currency + locale, provider-optional (standalone surfaces get the
+    ambient defaults, which are USD/en-US until a provider sets them). */
+export function useVendoIntl(): KitIntl {
+  return useContext(VendoContext)?.intl ?? getKitIntl();
 }

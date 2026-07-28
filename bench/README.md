@@ -23,42 +23,44 @@ run is a separate explicit command.
 - `src/benches/*` — one file per suite; `src/run.ts` — the CLI.
 - `demo-capture/` — README and gitignored output for the four UI-generation
   demo GIF beats; the TypeScript capture driver lives in `src/demo-capture/`.
-- `src/demo-creator/` — the per-prospect demo tooling (`demo:create` /
-  `demo:research` / `demo:chips` / `demo:deploy` / `demo:reap`; verified via
-  `demo:capture -- demo-beats`, hosted via `tools/demo-router` at
-  demos.vendo.run). The creator-agent contract (PLAYBOOK) and the GTM
-  driver skill live in the `runvendo/vendo-skills` repo
-  (`shared/demo-creator/`, linked at `~/.claude/skills/demo-creator/`) —
-  agent-facing docs are skills, not repo code.
+- `src/demo-creator/` — the per-prospect demo tooling: two commands,
+  `demo:pipeline` (screenshots → live demo) and `demo:fix` (free-text
+  feedback → re-shipped demo). The Slack driver skill lives in the
+  `runvendo/vendo-skills` repo (`shared/demo-creator/`) — agent-facing docs
+  are skills, not repo code.
 
-  **Generated demos are built OUTSIDE this repo.** A demo carries a
-  prospect's logo, palette, copy and seeded data; while clones landed in
-  `apps/`, one `git add -A` published all of it in the OSS repo. So
-  `demo:create` targets `<os-tmp>/vendo-demos/demo-<id>` by default, and
-  `apps/demo-*` is gitignored (bar the three real apps) for the
-  `--target-dir apps` case. See `src/demo-creator/scratch.ts` for the
-  mechanics; the short version:
+  **A generated demo is never a file in this repo.** It carries a prospect's
+  logo, palette, copy and seeded data, so it is a folder
+  (`demos/<slug>/`) in the PRIVATE `runvendo/vendo-demos` host repo — cloned
+  to `~/.vendo/vendo-demos` by default, overridable with `--demos-repo`. All
+  the demos share ONE multi-tenant Next host in that repo, which discovers
+  them at BUILD time (`host/scripts/gen-manifest.mjs` writes static imports —
+  no runtime filesystem scanning), so shipping a demo is a commit plus one
+  `railway up` of the host.
 
-  - A scratch clone is a plain, self-contained pnpm project. Its
-    `workspace:*` deps are repointed at `pnpm pack` tarballs of THIS tree's
-    `@vendoai/*`, vendored into the clone's `vendor/` (~6MB, ~10s), and
-    forced transitively through the clone's own `pnpm-workspace.yaml`
-    overrides — which also carry the repo root's security floors.
-  - Vendoring, not published version pins: main runs ahead of the registry
-    at the same version string, so pinning would demo a release-old Vendo
-    (and today fails outright — workspace 0.4.8 exports `vendoModel`,
-    published 0.4.8 does not).
-  - Run `pnpm build` at the repo root before creating a clone: vendoring packs
-    what is on disk, so `demo:create` refuses any package whose `dist/` is
-    missing OR older than its `src/` — stale output would mean the demo runs
-    package code that disagrees with the checkout, silently.
-  - The creator harness itself runs on `ANTHROPIC_API_KEY` (chips, the
-    fidelity judge, and the `claude` CLI rewrite agents), even though the
-    demo it generates runs on `VENDO_API_KEY`.
-  - `demo:deploy` follows the same split. In-repo apps deploy the monorepo
-    (repo-root Docker context, turbo filter) exactly as before; a scratch
-    clone deploys ITSELF — `railway up <appDir>`, a standalone Dockerfile,
-    and a clone-local `.dockerignore`.
+  The six stages, one module each:
+
+  - `evidence.ts` (+ `context-dev.ts`) — copies the operator's screenshots
+    into `RESEARCH/` and gathers brand evidence from context.dev (brand +
+    logo, rendered colours, fonts, site markdown). Every call fails SOFT and
+    is named in the brief.
+  - `brief.ts` — ONE vision call over the screenshots + evidence. Writes
+    `theme.json` (hexes are COPIED from the evidence; the model only assigns
+    roles) and `BRIEF.md`, the digest every build agent reads first.
+  - `build.ts` — three parallel headless `claude` agents (server + openapi,
+    screens, beats), then `vendo sync` for the real tool surface, then chip
+    grounding (`chips.ts`) so no pill names a capability the demo lacks.
+  - `assemble.ts` / `host-boot.ts` — manifest, host build (a demo that does
+    not build is never pushed), boot, and ONE smoke turn that gates on hard
+    error only (the turn errored, or never settled) — never on content.
+  - `judge.ts` — ONE fidelity pass, five pinned dimensions, printed as a
+    `SCORES:` line. It records; it does not gate. Ship regardless.
+  - `ship.ts` — commit the folder, push, `railway up` the host (with the
+    measured 6× BadRecordMac retry), poll the public URL, print `LIVE:`.
+
+  The creator harness itself runs on `ANTHROPIC_API_KEY` (the brief, the
+  judge, and the `claude` CLI build agents) plus `CONTEXT_DEV_API_KEY`, even
+  though the demo it generates runs on the host's `VENDO_API_KEY`.
 - `budgets.json` — the permanent gate thresholds.
 - `RESULTS.md` — a full captured run (deterministic + live) from a real machine.
 

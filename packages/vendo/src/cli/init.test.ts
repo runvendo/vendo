@@ -1540,7 +1540,7 @@ describe("vendo init (zero-question)", () => {
       manualSteps: string[];
       extraction: { tools: unknown[]; warnings: string[] };
       riskRecommendations: unknown[];
-      aiPolish: { instructions: string; draftSchema: Record<string, unknown>; apply: string };
+      aiPolish?: unknown;
     };
     expect(plan.framework).toBe("next");
     expect(plan.writes).toContain(".vendo/tools.json");
@@ -1554,12 +1554,11 @@ describe("vendo init (zero-question)", () => {
     expect(plan.manualSteps).toEqual([]);
     expect(Array.isArray(plan.extraction.tools)).toBe(true);
     expect(Array.isArray(plan.riskRecommendations)).toBe(true);
-    // The delegation contract rides the plan: instructions an external agent
-    // executes, the draft schema, and the apply command that runs the guards.
-    expect(plan.aiPolish.instructions).toContain("never lower");
-    expect(plan.aiPolish.instructions).toContain("Statically extracted tools");
-    expect(plan.aiPolish.draftSchema).toMatchObject({ type: "object", required: ["brief", "tools"] });
-    expect(plan.aiPolish.apply).toContain("vendo extract --apply");
+    // The delegated AI-polish contract is GONE with the draft channel it fed:
+    // there is no `vendo extract --apply` for an external agent to land a draft
+    // through, and judgment now needs quoted evidence a delegated draft cannot
+    // carry. The plan stays deterministic facts only.
+    expect(plan.aiPolish).toBeUndefined();
     expect(await tree(root)).toEqual(before); // --agent wrote nothing
   });
 });

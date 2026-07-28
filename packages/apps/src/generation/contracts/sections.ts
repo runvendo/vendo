@@ -2,7 +2,7 @@
  * Shared prompt sections — the pieces every generation contract (create,
  * exemplar-led create, edit, instant paint) composes from: role lines, the
  * clock, component styling, the catalog/theme/design-rules trio, the host
- * tool/shape/domain sections, the generated COMPONENTS section, and the
+ * tool/shape sections, the generated COMPONENTS section, and the
  * island contract.
  */
 import {
@@ -180,14 +180,6 @@ export const hostToolSections = (deps: GenerationDependencies): GenerationPrompt
   ...(deps.tools === undefined || deps.tools.length === 0 ? [] : [{
     id: "catalog" as const,
     content: `HOST TOOLS (the ONLY tools a binding — inline reference or <Query> — or an action may name; anything else is a validation error). Every call's args MUST match the tool's (input: …) sketch exactly — same field names, same nesting (a field shown as {body: {…}} means the args object carries a "body" object), and same UNITS: a field marked (integer cents) takes minor units — multiply a user-typed dollar amount by 100 (e.g. $25 → 2500) and send a whole number; a field marked (dollars) takes the dollar amount itself. Never send the raw dollar number to a cents field:\n${deps.tools.map(({ name, description, risk, inputSchema }) => `- ${name} [${risk}]${toolInputSketch(inputSchema)}: ${description}`).join("\n")}`,
-  }]),
-  // The domain manifest is FACT derived at sync, not guidance: it tells the
-  // model what data exists at all, so an out-of-domain ask becomes an honest
-  // disclaimer instead of a repurposed tool or invented figures.
-  ...(deps.domains === undefined || (deps.domains.has.length === 0 && deps.domains.hasNot.length === 0) ? [] : [{
-    id: "catalog" as const,
-    content: `DATA DOMAINS (fact, derived from this host's tools — not guidance):${deps.domains.has.length === 0 ? "" : `\n- This host HAS data for: ${deps.domains.has.join(", ")}.`}${deps.domains.hasNot.length === 0 ? "" : `\n- This host has NO data for: ${deps.domains.hasNot.join(", ")}.`}
-- An ask about a domain not covered above cannot be answered with real data: never repurpose an unrelated tool and never invent figures — cover the gap in the single "About this view" note (never per-tile prose).`,
   }]),
   ...(deps.toolShapes === undefined || Object.keys(deps.toolShapes).length === 0 ? [] : [{
     id: "catalog" as const,

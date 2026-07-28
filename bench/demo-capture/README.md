@@ -84,10 +84,14 @@ artifact while `*-maple.gif` and `*-cadence.gif` remain available for review.
 
 ## Generic template-derived demos (`--host-config`)
 
-`demo-beats` is the acceptance check for a generated per-prospect demo (the
-full creator flow — `demo:create` → `demo:research` → rewrite → this capture →
-`demo:deploy` — is contracted in the `demo-creator` skill's PLAYBOOK.md,
-in the vendo-skills repo at `~/.claude/skills/demo-creator/`). A
+`demo-beats` is the acceptance check for a generated per-prospect demo. The
+creator flow itself is now ONE command — `pnpm --filter @vendoai/bench
+demo:pipeline` (evidence → brief → build → assemble → judge → ship), with
+`demo:fix` for a second pass; `demo:create`, `demo:research` and `demo:deploy`
+no longer exist, and the demo-creator skill's PLAYBOOK.md is gone (the skill's
+SKILL.md in the vendo-skills repo is the whole driver contract). Generated demos
+live as folders in the private `vendo-demos` host repo and this capture is not
+part of the pipeline — it is the manual acceptance check you run against one. A
 passing run proves exactly this contract: the app boots from its own
 directory, every configured beat's prompt submits and settles without a
 surfaced error, each beat's DECLARED expectations are met (`expectsView` — a

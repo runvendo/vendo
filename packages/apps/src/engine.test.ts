@@ -1367,28 +1367,19 @@ describe("wire create", () => {
     expect(await run(() => ({ accent: "#1D4ED8" }))).toContain('"accent": "#1D4ED8"');
   });
 
-  it("semantics and domains accept provider forms resolved per generation", async () => {
+  it("semantics accepts a provider form resolved per generation", async () => {
     const semanticsProvider = vi.fn(() => ({ "invoices.list": { total: { kind: "money.cents" } } }));
-    let prompt = "";
-    const model = scriptedLanguageModel((call) => {
-      const text = promptText(call);
-      if (text.includes("DATA DOMAINS")) prompt = text;
-      return wireCreate();
-    });
     const runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
       tools,
       catalog,
-      model,
-      // Provider forms — resolved once per generation, never at compose.
-      domains: () => ({ has: ["invoices"], hasNot: ["shipments"] }),
+      model: scriptedLanguageModel(wireCreate()),
+      // Provider form — resolved once per generation, never at compose.
       semantics: semanticsProvider as never,
     });
+    expect(semanticsProvider).not.toHaveBeenCalled();
     await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
-    // domains provider resolved → its facts reach the prompt.
-    expect(prompt).toContain("This host HAS data for: invoices");
-    expect(prompt).toContain("This host has NO data for: shipments");
     // semantics provider was invoked (resolved), proving the lazy path fires.
     expect(semanticsProvider).toHaveBeenCalled();
   });

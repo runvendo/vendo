@@ -4,9 +4,9 @@
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
-    "predev": "vendo sync . --no-watermark",
+    "predev": "vendo sync . --no-ai",
     "dev": "next dev",
-    "prebuild": "vendo sync . --no-watermark",
+    "prebuild": "vendo sync . --no-ai",
     "build": "next build",
     "start": "next start",
     "mcp:e2e": "tsx scripts/mcp-e2e.ts",

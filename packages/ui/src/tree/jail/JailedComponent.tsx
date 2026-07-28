@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { islandToolFallbackManifest, islandVendoActionNames, type Json, type ToolOutcome } from "@vendoai/core";
+import { useVendoIntl } from "../../context.js";
 import { ContainedNotice } from "../notice.js";
 import { FormingSkeleton } from "../forming-skeleton.js";
 import { JAIL_RUNTIME_SOURCE } from "./runtime-bundle.gen.js";
@@ -169,6 +170,9 @@ export function JailedComponent({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string>();
   const srcDoc = useMemo(buildJailSrcdoc, []);
+  // Read from context rather than a prop: every caller already renders inside
+  // the provider, and the currency is not a per-island decision.
+  const intl = useVendoIntl();
   // The island's tool surface, resolved on the HOST side only. A stamped
   // manifest wins; an unstamped document falls back to scanning the source the
   // host itself holds. The legacy action channel additionally admits the
@@ -211,6 +215,7 @@ export function JailedComponent({
         ...(furnishing?.subSources === undefined ? {} : { subSources: furnishing.subSources }),
         ...(furnishing?.styles === undefined ? {} : { styles: furnishing.styles }),
         ...(themeVars === undefined ? {} : { themeVars }),
+        intl,
       }, "*");
     };
     const handleMessage = (event: MessageEvent) => {
@@ -315,7 +320,7 @@ export function JailedComponent({
       window.removeEventListener("message", handleMessage);
       iframe.removeEventListener("load", sendRender);
     };
-  }, [allowedActions, effectiveProps, furnishing, manifest, onAction, onStateSet, source, themeVars]);
+  }, [allowedActions, effectiveProps, furnishing, intl, manifest, onAction, onStateSet, source, themeVars]);
 
   if (error) {
     // Mid-stream, a crash is not a verdict: the island's source may still be

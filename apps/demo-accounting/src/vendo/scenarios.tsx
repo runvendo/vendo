@@ -7,9 +7,9 @@ type SuggestionCard = Exclude<NonNullable<VendoThreadProps["suggestions"]>[numbe
 /** demo-refresh Part 6 — the Cadence scenario ladder, rendered as starter
  *  cards on the empty thread (overlay and full page). Tapping a card SENDS
  *  the prompt: generated UI → per-send approval emails → calendar automation
- *  → pin-to-dashboard. NOTE: the spec drafts these around invoices, but this
- *  host has no billing domain (.vendo/semantics.json hasNot) — the ladder is
- *  re-grounded on what Cadence actually tracks: client documents + deadlines. */
+ *  → pin-to-dashboard. NOTE: the spec drafts these around invoices, but Cadence
+ *  exposes no billing tools — the ladder is re-grounded on what it actually
+ *  tracks: client documents + deadlines. */
 export const cadenceScenarios: SuggestionCard[] = [
   {
     title: "Who's behind on documents?",

@@ -80,7 +80,7 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
   const baseUrl = config.baseUrl ?? "/api/vendo";
   const headers = { ...(config.headers ?? {}) };
 
-  async function request(path: string, init?: RequestInit): Promise<Response> {
+  async function send(path: string, init?: RequestInit): Promise<Response> {
     return ensureOk(
       await fetch(route(baseUrl, path), {
         ...init,
@@ -90,6 +90,47 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
         },
       }),
     );
+  }
+
+  /** ONE VISITOR, ONE ANONYMOUS IDENTITY.
+   *
+   *  An anonymous visitor's identity IS the opaque session pointer the door
+   *  mints on a cookie-less request, and the door mints one PER REQUEST — it
+   *  cannot do otherwise, because two cookie-less requests are indistinguishable
+   *  from two visitors and the cookie is the only identity there is. A cold load
+   *  mounts several hooks at once (/status, /approvals, /activity, …), so every
+   *  one of them left cookie-less and minted its own subject; the jar kept
+   *  whichever Set-Cookie landed last and the rest were orphaned. The run then
+   *  created its consent approval under one subject while Approve decided as
+   *  another, and guard correctly refused it: "Approval apr_… was not found".
+   *
+   *  The browser IS the visitor boundary, so this is the layer that can close
+   *  the race honestly: the FIRST request through a client may leave cookie-less,
+   *  and every request issued before it answers waits for it, then travels with
+   *  the pointer it established. Costs one extra round trip on a cold load and
+   *  nothing afterwards. Deliberately NOT solved by fingerprinting the requester
+   *  (IP/User-Agent would merge two real visitors behind one NAT into a single
+   *  session) nor by deriving the pointer from request attributes (that would
+   *  make a live session guessable, where today it is a 2^128 search).
+   *
+   *  A failed first request releases the gate rather than holding it, so a cold
+   *  load that starts with an error degrades to the old behaviour, never worse.
+   *  See test/anon-session-race.test.ts — the assertion only fails under real
+   *  concurrency, which is why a sequential probe once "eliminated" this bug. */
+  let established: Promise<void> | undefined;
+
+  async function request(path: string, init?: RequestInit): Promise<Response> {
+    if (established === undefined) {
+      let settle!: () => void;
+      established = new Promise<void>(resolve => { settle = resolve; });
+      try {
+        return await send(path, init);
+      } finally {
+        settle();
+      }
+    }
+    await established;
+    return send(path, init);
   }
 
   async function readJson<T>(path: string, init?: RequestInit): Promise<T> {

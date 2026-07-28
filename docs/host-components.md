@@ -74,9 +74,10 @@ const invoiceCard = remixable({
 
 In development the helper reports the module to the Vendo wire, which captures
 the source only when no valid static baseline exists. The capture route is not
-mounted in production. `vendo sync` exits non-zero for any unresolved slot; a
-slot that is intentionally never capturable can be acknowledged in the
-human-owned `.vendo/overrides.json`:
+mounted in production. Remix is experimental: `vendo sync` warns for any
+unresolved slot (the component cannot be forked until resolved) but never
+fails the run; a slot that is intentionally never capturable can be
+acknowledged in the human-owned `.vendo/overrides.json`:
 
 `vendo init` offers remix wrapping: every statically capturable
 `{ name, component }` registration that is not yet remixable becomes a

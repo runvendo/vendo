@@ -1,22 +1,24 @@
-import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import type { DemoBeat, DemoConfig } from "demo-template/demo-config";
+import { readFile } from "node:fs/promises";
+import type { DemoBeat } from "demo-template/demo-config";
 
 /**
- * `demo:chips` — the demo's example pills, derived from the demo's OWN tool
+ * Chip grounding — the demo's example pills, derived from the demo's OWN tool
  * surface instead of invented.
  *
- * The chip strip is the first thing a prospect reads, and until now every chip
- * was a string an agent made up from a plan. `vendo sync` already extracts the
- * app's real routes into `.vendo/tools.json`, so the honest source for "what
- * can I try here?" is that file: the pills then name capabilities the demo can
- * actually perform, in the prospect's own vocabulary.
+ * The chip strip is the first thing a prospect reads, and once every chip was a
+ * string an agent made up from a plan. `vendo sync` extracts the demo's real
+ * routes into a tools.json, so the honest source for "what can I try here?" is
+ * that file: the pills then name capabilities the demo can actually perform, in
+ * the prospect's own vocabulary.
  *
  * Deliberately one cheap model call and no judge loop — this is a sales tool,
- * and a wrong pill costs a confusing chip, not a broken demo. Explicit beats
- * always win: a hand-authored (or agent-authored) beat carries the
- * `expectsView`/`expectsApproval` contract that `demo-beats` verifies, so it
- * is kept verbatim and derived pills only fill the remainder.
+ * and a wrong pill costs a confusing chip, not a broken demo. Authored beats
+ * always win: the beats agent's own beat carries the
+ * `expectsView`/`expectsApproval` declarations the beat arc is validated on
+ * (demo-folder.ts's `beatVarietyProblems`), so it is kept verbatim and derived
+ * pills only fill the remainder.
+ *
+ * The caller is build.ts's grounding pass (stage 3 of `demo:pipeline`).
  */
 
 /** How many pills the strip shows at most, derived and explicit together. */
@@ -26,15 +28,7 @@ export const maxChips = 5;
  * fewer pills rather than padding the strip with ones that do not work. */
 export const targetDerivedChips = 5;
 
-/** The `TODO(creator): ` fence `demo:create` puts on the template's samples —
- * a placeholder is NOT an explicit beat and loses to a derived one. */
-const placeholderFence = "TODO(creator): ";
-
-export function isPlaceholderBeat(beat: DemoBeat): boolean {
-  return beat.prompt.startsWith(placeholderFence) || beat.chip.startsWith(placeholderFence);
-}
-
-/** One entry of `.vendo/tools.json`, narrowed to what a chip needs. */
+/** One entry of the demo's tools.json, narrowed to what a chip needs. */
 export interface ExtractedTool {
   name: string;
   description?: string;
@@ -88,14 +82,18 @@ export function capabilityTokens(tool: ExtractedTool): Set<string> {
 }
 
 /**
- * Reads the app's extracted tool surface. A missing or malformed file is not
- * an error: the app may simply have no OpenAPI routes yet, and the contract is
- * "no chips, no crash".
+ * Reads an extracted tool surface, given the PATH of the tools.json — no layout
+ * opinion at all, because `vendo sync` writes it to `<root>/.vendo/tools.json`
+ * while the frozen demo-folder contract keeps it at `demos/<slug>/tools.json`.
+ *
+ * A missing or malformed file is not an error: the demo may simply have no
+ * OpenAPI routes yet, and the contract is "no chips, no crash" — the caller
+ * decides whether zero tools is fatal.
  */
-export async function readExtractedTools(appDir: string): Promise<ExtractedTool[]> {
+export async function readExtractedTools(toolsPath: string): Promise<ExtractedTool[]> {
   let raw: string;
   try {
-    raw = await readFile(path.join(appDir, ".vendo", "tools.json"), "utf8");
+    raw = await readFile(toolsPath, "utf8");
   } catch {
     return [];
   }
@@ -136,7 +134,7 @@ export type ChipModelFn = (prompt: string) => Promise<string>;
  * OPERATOR-side credential, deliberately NOT the Vendo ladder. The demo this
  * generates rides VENDO_API_KEY (see apps/demo-template's Cloud posture), but
  * the creator harness itself is Anthropic-bound end to end — the fidelity
- * judge takes the same rung and the rewrite stage shells out to the `claude`
+ * judge takes the same rung and the build agents shell out to the `claude`
  * CLI — so a chips stage that quietly fell back to the Cloud gateway would
  * only move the failure to the next stage. Say so up front instead: without a
  * provider key the whole pipeline is unusable, and an operator holding only a
@@ -145,8 +143,8 @@ export type ChipModelFn = (prompt: string) => Promise<string>;
 export const defaultChipModel: ChipModelFn = async (prompt) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error(
-      "demo:chips needs ANTHROPIC_API_KEY — the demo-creator harness runs on a provider key "
-      + "(so do the fidelity judge and the rewrite agents), even though the demo it generates runs on VENDO_API_KEY. "
+      "Chip grounding needs ANTHROPIC_API_KEY — the demo-creator harness runs on a provider key "
+      + "(so do the fidelity judge and the build agents), even though the demo it generates runs on VENDO_API_KEY. "
       + "Source the Flowlet .env, or pass your own model via the `model` seam.",
     );
   }
@@ -176,7 +174,7 @@ Write ${targetDerivedChips} example prompts a ${options.prospect} user would pla
 - Each one must be achievable with the tools above. Never invent a capability that is not listed.
 - Write in ${options.prospect}'s domain vocabulary, not in API terms — say "overdue invoices", not "host_listInvoices".
 - Imperative, not questions ("Show me ...", "Draft ...") — a question gets a prose answer instead of a generated view.
-- Vary them: at least one that renders a view over data, and at least one that takes an action.
+- Vary them across the five things this product's agent can do: render a VIEW over data, take an ACTION (with the user's approval), set up a recurring AUTOMATION, CONNECT an outside account (Gmail, Google Calendar or Slack), and SAVE a generated view as a reusable app. One of each, in that order, whenever the surface above supports it.
 - "chip" is a short label (2-5 words, sentence case). "prompt" is the full sentence typed into the composer.
 - "key" is a lowercase-hyphenated slug, unique.
 - NEVER name a specific record id, invoice number, customer or ticket in the prompt. You cannot see the demo's seeded data, so an invented id ("Void invoice INV-1042") sends the agent looking for a record that does not exist and the pill dead-ends in front of the prospect. Phrase actions over a described record instead ("the oldest unpaid invoice", "the largest open dispute").
@@ -297,7 +295,8 @@ export function parseChipsReply(
 
     seen.add(slug);
     // No expectsView/expectsApproval: a derived pill is not a verification
-    // contract, so `demo-beats` only needs it to settle cleanly.
+    // contract, and the beat arc's required declarations ride the authored
+    // beats it merges behind.
     beats.push({ key: slug, chip: chip.trim(), prompt: prompt.trim() });
   }
   // Ship fewer, never pad: a short strip of pills that all work beats a full
@@ -308,124 +307,36 @@ export function parseChipsReply(
   return beats.slice(0, targetDerivedChips);
 }
 
+/** What a prospect actually reads on a pill, normalised for comparison. */
+function wording(beat: DemoBeat): string {
+  return `${beat.chip.trim().toLowerCase()}|${beat.prompt.trim().toLowerCase()}`;
+}
+
 /**
- * Explicit wins. Non-placeholder beats keep their order and their expectation
- * declarations; derived pills fill up to {@link maxChips}, skipping any key an
- * explicit beat already owns.
+ * Existing beats win. Every one keeps its order and its expectation
+ * declarations; derived pills fill up to {@link maxChips}.
+ *
+ * Three things this deduplicates, all of which shipped a visible duplicate chip:
+ *  - an AUTHORED duplicate key (the old `[...existing]` copied them verbatim;
+ *    `taken` only ever stopped a derived collision);
+ *  - a derived pill whose key an existing beat owns;
+ *  - a derived pill whose WORDING an existing beat already carries — which is
+ *    exactly what regrounding produces: it rewrites an ungrounded beat's text
+ *    with a derived pill and keeps the beat's key, so appending that pill again
+ *    under its own key put the same sentence on the strip twice.
+ *
+ * The cap applies to the whole result, not only to the appending loop.
  */
 export function mergeBeats(existing: readonly DemoBeat[], derived: readonly DemoBeat[]): DemoBeat[] {
-  const explicit = existing.filter((beat) => !isPlaceholderBeat(beat));
-  const taken = new Set(explicit.map((beat) => beat.key));
-  const merged = [...explicit];
-  for (const beat of derived) {
+  const taken = new Set<string>();
+  const said = new Set<string>();
+  const merged: DemoBeat[] = [];
+  for (const beat of [...existing, ...derived]) {
     if (merged.length >= maxChips) break;
-    if (taken.has(beat.key)) continue;
+    if (taken.has(beat.key) || said.has(wording(beat))) continue;
     taken.add(beat.key);
+    said.add(wording(beat));
     merged.push(beat);
   }
   return merged;
-}
-
-export interface DeriveChipsResult {
-  /**
-   * The pills this stage derived from the tool surface. EMPTY when the app has
-   * no surface: with nothing to ground a pill in, the honest output is no
-   * pills — inventing them is the behavior this stage exists to replace.
-   */
-  chips: DemoBeat[];
-  /** What demo.config.json holds afterwards. Unchanged when `chips` is empty. */
-  beats: DemoBeat[];
-  /** How many of `beats` came from the tool surface. */
-  derived: number;
-  /** How many hand/agent-authored beats were kept verbatim. */
-  kept: number;
-  /** Set when the app has no usable tool surface — a no-op, not a failure. */
-  skipped?: "no-tools";
-}
-
-export interface DemoChipsArgs {
-  /** App directory; relative paths anchor at the repo root. */
-  app: string;
-  /** Overrides demo.config's `prospect` for the derivation prompt only. */
-  prospect?: string;
-}
-
-const valueOptions = new Set(["--app", "--prospect"]);
-
-export function parseDemoChipsArgs(argv: string[]): DemoChipsArgs {
-  const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
-  const options = new Map<string, string>();
-  for (let index = 0; index < normalizedArgv.length; index += 1) {
-    const option = normalizedArgv[index];
-    if (!option?.startsWith("--")) throw new Error(`Unexpected argument: ${option ?? ""}`);
-    if (!valueOptions.has(option)) throw new Error(`Unknown option: ${option}`);
-    const value = normalizedArgv[index + 1];
-    if (value === undefined || value.startsWith("--")) throw new Error(`${option} requires a value`);
-    options.set(option, value);
-    index += 1;
-  }
-  const app = options.get("--app");
-  if (app === undefined) throw new Error("--app is required (the demo app directory)");
-  const prospect = options.get("--prospect");
-  return { app, ...(prospect === undefined ? {} : { prospect }) };
-}
-
-export interface DeriveChipsIo {
-  model?: ChipModelFn;
-  write?: (line: string) => void;
-}
-
-/**
- * Derives the pills for one demo app and writes them into its
- * demo.config.json. Never widens the config's shape — downstream (the chip
- * strip, the capture harness, the caps guard) sees the same `beats` array it
- * always did.
- */
-export async function runDeriveChips(
-  args: { appDir: string; prospect?: string },
-  io: DeriveChipsIo = {},
-): Promise<DeriveChipsResult> {
-  const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
-  const configPath = path.join(args.appDir, "demo.config.json");
-  const { parseDemoConfig } = await import("demo-template/demo-config");
-  const config: DemoConfig = parseDemoConfig(
-    JSON.parse(await readFile(configPath, "utf8")),
-    `demo config at "${configPath}"`,
-  );
-
-  const tools = await readExtractedTools(args.appDir);
-  if (tools.length === 0) {
-    // No surface to ground anything in, so this stage derives NOTHING — the
-    // whole point is that a pill names a real capability. The config is left
-    // exactly as found: the demo keeps whatever beats it was authored with
-    // (the template's strict schema requires at least one anyway), and no
-    // model is called.
-    write("[chips] no tool surface in .vendo/tools.json — deriving no chips");
-    const kept = config.beats.filter((beat) => !isPlaceholderBeat(beat)).length;
-    return { chips: [], beats: config.beats, derived: 0, kept, skipped: "no-tools" };
-  }
-
-  const model = io.model ?? defaultChipModel;
-  const chips = parseChipsReply(
-    await model(buildChipsPrompt({ prospect: args.prospect ?? config.prospect, tools })),
-    tools,
-    (message) => write(`[chips] ${message}`),
-  );
-  if (chips.length === 0) {
-    // Grounding rejected everything. Shipping the demo's existing beats
-    // untouched is the honest outcome — the alternative is padding the strip
-    // with pills that refuse when a prospect clicks them.
-    write("[chips] nothing survived grounding — leaving the demo's beats untouched");
-    const keptOnly = config.beats.filter((beat) => !isPlaceholderBeat(beat)).length;
-    return { chips: [], beats: config.beats, derived: 0, kept: keptOnly };
-  }
-  const beats = mergeBeats(config.beats, chips);
-  const kept = beats.length - beats.filter((beat) => chips.some((candidate) => candidate.key === beat.key)).length;
-
-  // Re-parse before writing: a derived beat that breaks the template's strict
-  // schema must fail here, not at the app's next boot.
-  const next = parseDemoConfig({ ...config, beats }, `derived demo config at "${configPath}"`);
-  await writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`);
-  write(`[chips] ${beats.length} pills from ${tools.length} extracted tools (${kept} kept, ${beats.length - kept} derived)`);
-  return { chips, beats, derived: beats.length - kept, kept };
 }

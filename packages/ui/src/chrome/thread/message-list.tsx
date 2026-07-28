@@ -13,7 +13,7 @@ export function MessageList({
   scroll, messageWindow, busy, risks, isRestored,
   activeAssistantId, lastUserId, lastAssistantId, onEditLast, onRegenerateLast,
   approvals, guardApprovals, cardRefs, respond, onMorph,
-  sendMessage, awaitingFirstChunk, working,
+  sendMessage, working,
 }: {
   scroll: ReturnType<typeof useStickToBottom>;
   messageWindow: ReturnType<typeof useMessageWindow>;
@@ -32,7 +32,6 @@ export function MessageList({
   onMorph: ComponentProps<typeof ThreadApprovals>["onMorph"];
   /** The thread's send — connect cards use it for the post-connect continuation. */
   sendMessage: (message: { text: string }) => unknown;
-  awaitingFirstChunk: boolean;
   working: boolean;
 }) {
   return (
@@ -81,19 +80,6 @@ export function MessageList({
           respond={respond}
           onMorph={onMorph}
         />
-        {awaitingFirstChunk ? (
-          <>
-            <div className="fl-generating">
-              <span className="fl-pulse" aria-hidden="true" />
-              Generating&hellip;
-            </div>
-            <div className="fl-skeleton" aria-hidden="true">
-              <div className="fl-skeleton-bar" />
-              <div className="fl-skeleton-bar" />
-              <div className="fl-skeleton-bar" />
-            </div>
-          </>
-        ) : null}
         {working ? <FluidThinking label="Working" /> : null}
       </div>
       {/* Lane picks 3A + 6B — the jump affordance ("N new replies · …") now

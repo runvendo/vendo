@@ -6,12 +6,14 @@ import { describe, expect, it } from "vitest";
 import { buildJudgePrompt, defaultJudgeModel, fidelityThreshold, parseJudgeVerdict } from "./judge.js";
 
 /**
- * LIVE judge test (criteria 35/36): feed the real vision judge fixture images
- * where the built screen deliberately breaks ONE dimension (palette — a red
- * clone of a violet product) and assert that exact dimension lands below the
- * threshold in the verdict. Needs ANTHROPIC_API_KEY (source flowlet/.env)
- * AND the explicit VENDO_LIVE_TESTS=1 opt-in, so a keyed `pnpm test` never
- * silently spends. ~1 model call, a few cents.
+ * LIVE judge test: feed the real vision judge fixture images where the built
+ * screen deliberately breaks ONE dimension (palette — a red clone of a violet
+ * product) and assert that exact dimension lands below the threshold in the
+ * verdict. The scores no longer gate the ship, so this is what keeps them from
+ * decaying into noise: a judge that cannot see a wrong palette is a judge whose
+ * numbers nobody should read. Needs ANTHROPIC_API_KEY (source flowlet/.env) AND
+ * the explicit VENDO_LIVE_TESTS=1 opt-in, so a keyed `pnpm test` never silently
+ * spends. ~1 model call, a few cents.
  */
 
 const hasKey = typeof process.env.ANTHROPIC_API_KEY === "string" && process.env.ANTHROPIC_API_KEY !== ""
@@ -60,7 +62,6 @@ describe.skipIf(!hasKey)("live judge (fixture images)", () => {
       const palette = verdict.scores.find((score) => score.dimension === "palette");
       expect(palette, "palette dimension present").toBeDefined();
       expect(palette?.score ?? 10, `palette must fail (got ${palette?.score}: ${palette?.justification})`).toBeLessThan(fidelityThreshold);
-      expect(verdict.failing).toContain("palette");
       // Structure is identical, so layout must NOT be the thing that fails hardest:
       const layout = verdict.scores.find((score) => score.dimension === "layout");
       expect((layout?.score ?? 0) > (palette?.score ?? 0), "layout should outscore the broken palette").toBe(true);

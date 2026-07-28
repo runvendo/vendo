@@ -67,7 +67,7 @@ export const demoHosts: Record<ConcreteDemoHost, DemoHostDefinition> = {
  *  - `threadId` derives deterministically from the demo id the same way the
  *    concrete hosts pin theirs (`thr_maple_demo`): hyphens become
  *    underscores, e.g. "acme-widgets" → `thr_acme_widgets_demo`.
- *  - Password knobs: `demo:create` injects a login wall into every clone
+ *  - Password knobs: a template-derived app fronts itself with a login wall
  *    (DEMO_PASSWORD env on the deployment, seeded fallback `<id>-demo`), and
  *    the sign-in helper still no-ops for any host without a /login form.
  *
@@ -108,9 +108,9 @@ export async function configDemoHost(appDir: string): Promise<{ host: CaptureHos
       packageName,
       route: "/vendo",
       threadId: `thr_${config.id.replaceAll("-", "_")}_demo`,
-      // demo:create injects a login wall into every clone; the sign-in helper
-      // drives it with the deployment knob or the seeded fallback (the same
-      // pattern as the first-party hosts).
+      // A template-derived app fronts itself with a login wall; the sign-in
+      // helper drives it with the deployment knob or the seeded fallback (the
+      // same pattern as the first-party hosts).
       demoPasswordEnv: "DEMO_PASSWORD",
       demoPasswordFallback: `${config.id}-demo`,
     },

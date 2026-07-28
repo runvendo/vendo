@@ -33,20 +33,6 @@ export type ToolSemantics = Record<string, FieldSemantic>;
 
 export const toolSemanticsSchema: z.ZodType<ToolSemantics> = z.record(fieldSemanticSchema);
 
-/** The domain manifest: what data domains this host covers (derived from tool
- *  names at sync, host-editable) and what it explicitly does NOT — surfaced
- *  to generation as fact so an out-of-domain ask gets a Disclaimer, never
- *  invented data. */
-export interface DomainManifest {
-  has: string[];
-  hasNot: string[];
-}
-
-export const domainManifestSchema: z.ZodType<DomainManifest> = z.object({
-  has: z.array(z.string()),
-  hasNot: z.array(z.string()),
-});
-
 // ---------------------------------------------------------------------------
 // Inference (name patterns + sampled values; conservative — anything unsure
 // stays plain and is simply omitted from the file).

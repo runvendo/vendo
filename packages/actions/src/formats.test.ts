@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  VENDO_JUDGMENTS_FORMAT,
   VENDO_OVERRIDES_FORMAT,
   VENDO_TOOLS_FORMAT,
   compoundBindingSchema,
   compoundToolSchema,
+  judgmentsFileSchema,
   overridesFileSchema,
   toolBindingSchema,
   toolsFileSchema,
   type CompoundBinding,
+  type JudgmentsFile,
   type ToolBinding,
 } from "./formats.js";
 
@@ -103,16 +106,12 @@ const overridesFile = (overrides: Record<string, unknown> = {}): Record<string, 
 describe("toolsFileSchema", () => {
   it("parses a v3 tools file with the new machine-layer fields", () => {
     const parsed = toolsFileSchema.parse(toolsFile({
-      watermark: "3d1f2ab90c7e5f6a8b4d0e1c2a3b4c5d6e7f8091",
-      domains: { has: ["invoices", "clients"], hasNot: ["payroll"] },
       tools: [extractedTool({
         audience: "end-user",
         semantics: { "data.amountCents": { kind: "money", unit: "cents" } },
         srcHash: "sha256:abc123",
       })],
     }));
-    expect(parsed.watermark).toBe("3d1f2ab90c7e5f6a8b4d0e1c2a3b4c5d6e7f8091");
-    expect(parsed.domains).toEqual({ has: ["invoices", "clients"], hasNot: ["payroll"] });
     expect(parsed.tools[0]?.audience).toBe("end-user");
     expect(parsed.tools[0]?.semantics).toEqual({ "data.amountCents": { kind: "money", unit: "cents" } });
     expect(parsed.tools[0]?.srcHash).toBe("sha256:abc123");
@@ -134,13 +133,6 @@ describe("toolsFileSchema", () => {
     expect((parsed as Record<string, unknown>).generatedBy).toBe("vendo sync");
   });
 
-  it("keeps unknown keys inside the generated domains manifest too (the authored copy stays strict)", () => {
-    const parsed = toolsFileSchema.parse(toolsFile({
-      domains: { has: ["invoices"], hasNot: [], derivedFrom: "tool-names" },
-    }));
-    expect((parsed.domains as Record<string, unknown>).derivedFrom).toBe("tool-names");
-  });
-
   it("stays deterministic: rejects compound bindings, pointing at overrides.json", () => {
     const result = toolsFileSchema.safeParse(toolsFile({ tools: [compoundTool()] }));
     expect(result.success).toBe(false);
@@ -149,7 +141,7 @@ describe("toolsFileSchema", () => {
 });
 
 describe("overridesFileSchema", () => {
-  it("parses the authored layer: per-tool overrides plus domains, compounds, briefs, remix", () => {
+  it("parses the authored layer: per-tool overrides plus compounds, briefs, remix", () => {
     const parsed = overridesFileSchema.parse(overridesFile({
       tools: {
         host_invoices_list: {
@@ -161,13 +153,11 @@ describe("overridesFileSchema", () => {
           semantics: { "data.amountCents": { kind: "money", unit: "cents", currency: "USD" } },
         },
       },
-      domains: { has: ["projects"], hasNot: ["inventory"] },
       compounds: [compoundTool()],
       briefs: [{ name: "bulk-paste", text: "call host_cells_update per row", tools: ["host_cells_update"] }],
       remix: { ignoreSlots: ["invoice-card"] },
     }));
     expect(parsed.tools.host_invoices_list?.audience).toBe("end-user");
-    expect(parsed.domains).toEqual({ has: ["projects"], hasNot: ["inventory"] });
     expect(parsed.compounds).toHaveLength(1);
     expect(parsed.briefs).toHaveLength(1);
     expect(parsed.remix).toEqual({ ignoreSlots: ["invoice-card"] });
@@ -176,7 +166,9 @@ describe("overridesFileSchema", () => {
   it("stays strict: a typo at the file or per-tool level fails loudly", () => {
     expect(overridesFileSchema.safeParse(overridesFile({ compunds: [] })).success).toBe(false);
     expect(overridesFileSchema.safeParse(overridesFile({ tools: { host_x: { descriptin: "typo" } } })).success).toBe(false);
-    expect(overridesFileSchema.safeParse(overridesFile({ domains: { has: [], hasNot: [], hasMaybe: [] } })).success).toBe(false);
+    // a REMOVED key is a typo now: the deleted domains manifest fails loudly
+    // rather than being silently ignored.
+    expect(overridesFileSchema.safeParse(overridesFile({ domains: { has: [] } })).success).toBe(false);
     expect(overridesFileSchema.safeParse(overridesFile({ format: "vendo/overrides@1" })).success).toBe(false);
   });
 
@@ -190,3 +182,122 @@ describe("overridesFileSchema", () => {
   });
 });
 
+
+// --- the third file: .vendo/judgments.json (the AI layer) ---
+
+const judgment = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  binding: "GET /api/invoices",
+  evidence: "return NextResponse.json(await db.invoice.findMany())",
+  fields: { description: "List the signed-in client's invoices", risk: "read" },
+  ...overrides,
+});
+
+const judgmentsFile = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  format: VENDO_JUDGMENTS_FORMAT,
+  tools: { host_invoices_list: judgment() },
+  ...overrides,
+});
+
+describe("judgmentsFileSchema", () => {
+  it("parses a judgments file with fields, srcHash, and queued loosenings", () => {
+    const parsed = judgmentsFileSchema.parse(judgmentsFile({
+      tools: {
+        host_invoices_list: judgment({
+          srcHash: "sha256:abc123",
+          fields: {
+            description: "List the signed-in client's invoices",
+            title: "List invoices",
+            risk: "read",
+            critical: true,
+            disabled: true,
+            audience: "operator",
+            semantics: { "data.amountCents": { kind: "money", unit: "cents" } },
+          },
+          pending: [
+            { field: "disabled", value: false, evidence: "the handler filters by session.userId", reason: "safe for end users" },
+            { field: "risk", value: "read", evidence: "no writes in the handler" },
+          ],
+        }),
+      },
+    }));
+    const entry = parsed.tools.host_invoices_list!;
+    expect(entry.binding).toBe("GET /api/invoices");
+    expect(entry.srcHash).toBe("sha256:abc123");
+    expect(entry.fields.semantics).toEqual({ "data.amountCents": { kind: "money", unit: "cents" } });
+    expect(entry.pending).toHaveLength(2);
+    expect(entry.pending?.[0]).toMatchObject({ field: "disabled", value: false });
+    // Type-level: the declared interface is what the schema parses.
+    const typed: JudgmentsFile = parsed;
+    expect(typed.format).toBe("vendo/judgments@1");
+  });
+
+  it("requires evidence at BOTH levels — an unevidenced judgment or loosening fails loudly", () => {
+    const { evidence: _dropped, ...noEvidence } = judgment();
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({ tools: { host_x: noEvidence } })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({ tools: { host_x: judgment({ evidence: "" }) } })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({
+      tools: { host_x: judgment({ pending: [{ field: "disabled", value: false }] }) },
+    })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({
+      tools: { host_x: judgment({ pending: [{ field: "disabled", value: false, evidence: "" }] }) },
+    })).success).toBe(false);
+  });
+
+  it("bounds evidence and prose so a model cannot smuggle a document into the file", () => {
+    const long = "x".repeat(501);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({ tools: { host_x: judgment({ evidence: long }) } })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({
+      tools: { host_x: judgment({ pending: [{ field: "risk", value: "read", evidence: long }] }) },
+    })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({
+      tools: { host_x: judgment({ fields: { description: long } }) },
+    })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({
+      tools: { host_x: judgment({ fields: { title: "y".repeat(61) } }) },
+    })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({
+      tools: { host_x: judgment({ pending: [{ field: "risk", value: "read", evidence: "ok", reason: "z".repeat(301) }] }) },
+    })).success).toBe(false);
+  });
+
+  it("only the four capability fields can be queued as a pending loosening", () => {
+    for (const field of ["risk", "critical", "disabled", "audience"]) {
+      expect(judgmentsFileSchema.safeParse(judgmentsFile({
+        tools: { host_x: judgment({ pending: [{ field, value: "x", evidence: "quoted handler line" }] }) },
+      })).success).toBe(true);
+    }
+    // Prose is never a loosening — it routes with the hardenings.
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({
+      tools: { host_x: judgment({ pending: [{ field: "description", value: "x", evidence: "quoted handler line" }] }) },
+    })).success).toBe(false);
+  });
+
+  it("rejects a wrong format tag and a malformed field value", () => {
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({ format: "vendo/judgments@2" })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({ tools: { host_x: judgment({ fields: { risk: "nuclear" } }) } })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({ tools: { host_x: judgment({ fields: { disabled: "true" } }) } })).success).toBe(false);
+    expect(judgmentsFileSchema.safeParse(judgmentsFile({ tools: { host_x: judgment({ binding: "" }) } })).success).toBe(false);
+  });
+
+  it("keeps unknown keys at the FILE level (generated-artifact convention, additive evolution)", () => {
+    const parsed = judgmentsFileSchema.parse(judgmentsFile({ generatedAt: "2026-07-28" }));
+    expect((parsed as Record<string, unknown>).generatedAt).toBe("2026-07-28");
+  });
+
+  it("stays strict inside `fields`: the deterministic skeleton is not expressible there", () => {
+    // The whole safety story is that a judgment cannot touch identity, bindings
+    // or schemas. `fields` is passthrough → a model smuggles `binding` in and
+    // applyJudgment spreads it onto the tool. It must fail loudly instead.
+    for (const smuggled of [
+      { binding: { kind: "route", method: "DELETE", path: "/api/wipe", argsIn: "body" } },
+      { inputSchema: { type: "object" } },
+      { name: "host_something_else" },
+      { descriptin: "typo" },
+    ]) {
+      expect(
+        judgmentsFileSchema.safeParse(judgmentsFile({ tools: { host_x: judgment({ fields: smuggled }) } })).success,
+        JSON.stringify(smuggled),
+      ).toBe(false);
+    }
+  });
+});

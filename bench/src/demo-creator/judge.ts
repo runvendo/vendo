@@ -1,30 +1,27 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "@playwright/test";
-import { bootDemoHost, configDemoHost } from "../demo-capture/hosts.js";
-import type { ExecFn } from "./deploy.js";
-import { defaultExec } from "./deploy.js";
-import type { ResearchReport } from "./research.js";
-import { defaultRunAgent, fencedFiles, type RewritePlan, type RunAgentFn } from "./rewrite.js";
-import { appBuildCommand } from "./scratch.js";
+import { demoPaths } from "./demo-folder.js";
+import { delay, firstLine } from "./exec.js";
 
 /**
- * The visual judge loop — the stage that keeps `demo:pipeline` from silently
- * shipping a mediocre clone. After the rewrite builds, the demo's screens are
- * screenshotted (booting the app the same way demo-capture does) and a vision
- * model scores them against BOTH the operator-provided screenshots and the
- * live-site research capture, on five pinned dimensions (logo, palette, type,
- * layout, copyTone), 1-10 each. Every dimension must reach 7. Below the bar,
- * each failing dimension gets ONE targeted fix agent per round (capped), then
- * rebuild → recapture → re-judge. Rounds exhausted below the bar ⇒ the run
- * PARKS with a ship-or-park report — it never deploys.
+ * Stage 5 — the visual judge, ONE pass.
+ *
+ * The demo is already built and running inside the vendo-demos host (stage 4
+ * booted it and hands us its base URL). We screenshot the demo's own routes,
+ * hand them to a vision model alongside the operator's evidence screenshots,
+ * and record five pinned scores (logo, palette, type, layout, copyTone).
+ *
+ * The scores are a REPORT, not a gate: the contract is SHIP REGARDLESS. There
+ * is no fix loop and nothing parks here — a missing evidence class or a dead
+ * judge model is a NOTE in RESEARCH/FIDELITY.md and an honest SCORES line, and
+ * the pipeline ships anyway. Human judgement decides what to do with a 4.
  */
 
 export const judgeDimensions = ["logo", "palette", "type", "layout", "copyTone"] as const;
 export type JudgeDimension = (typeof judgeDimensions)[number];
 
-/** Every dimension must score at least this to ship. */
+/** The bar a dimension has to clear to read as "right". */
 export const fidelityThreshold = 7;
 
 export interface DimensionScore {
@@ -36,8 +33,9 @@ export interface DimensionScore {
 
 export interface JudgeVerdict {
   scores: DimensionScore[];
-  failing: JudgeDimension[];
-  pass: boolean;
+  /** Keys the rubric never asked for, e.g. `overall`, `logo.confidence`. The
+   * scores are still used; this is how they stop being silently dropped. */
+  extras: string[];
 }
 
 const dimensionRubric: Record<JudgeDimension, string> = {
@@ -49,7 +47,7 @@ const dimensionRubric: Record<JudgeDimension, string> = {
 };
 
 export function buildJudgePrompt(options: { prospect: string }): string {
-  return `You are a harsh brand-fidelity judge. The images that follow are labeled either EVIDENCE (the real ${options.prospect} product: operator-provided screenshots and a live-site capture) or BUILT (screens of a demo app that is supposed to mimic ${options.prospect} exactly).
+  return `You are a harsh brand-fidelity judge. The images that follow are labeled either EVIDENCE (the real ${options.prospect} product: operator-provided screenshots) or BUILT (screens of a demo app that is supposed to mimic ${options.prospect} exactly).
 
 Score the BUILT screens against the EVIDENCE on five dimensions, 1-10 each. Be harsh: start every dimension at 5 and move only on visible evidence. A prospect employee glancing at the BUILT screens should believe they are looking at their own product.
 
@@ -61,31 +59,133 @@ ${judgeDimensions.map((dimension) => `  "${dimension}": { "score": <1-10 integer
 }`;
 }
 
-/** Parses the judge model's JSON into a verdict; every pinned dimension must
- * be present with an integer 1-10 score and a non-empty justification. */
-export function parseJudgeVerdict(raw: string): JudgeVerdict {
+/**
+ * Every stage that asks a model for JSON gets the same tolerance: models
+ * sometimes fence the object or top it with a sentence, and losing a whole
+ * vision call to that is silly. `label` names the asking stage in the error,
+ * which is the only thing that makes a live-run log readable.
+ *
+ * Lives here because this is where the model-reply lessons were learned; the
+ * brief stage (same model, same seam) imports it.
+ */
+export function extractJsonObject(raw: string, label: string): Record<string, unknown> {
   const unfenced = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   const start = unfenced.indexOf("{");
   const end = unfenced.lastIndexOf("}");
-  if (start === -1 || end <= start) throw new Error(`Judge did not return JSON:\n${raw.slice(0, 400)}`);
-  let parsed: Record<string, { score?: unknown; justification?: unknown }>;
+  if (start === -1 || end <= start) throw new Error(`${label} did not return JSON:\n${raw.slice(0, 400)}`);
   try {
-    parsed = JSON.parse(unfenced.slice(start, end + 1)) as typeof parsed;
+    return JSON.parse(unfenced.slice(start, end + 1)) as Record<string, unknown>;
   } catch (error) {
-    throw new Error(`Judge returned invalid JSON (${error instanceof Error ? error.message : String(error)}):\n${raw.slice(0, 400)}`);
+    throw new Error(`${label} returned invalid JSON (${error instanceof Error ? error.message : String(error)}):\n${raw.slice(0, 400)}`);
+  }
+}
+
+/**
+ * The keys an object literal declares AT the given brace depth, in order,
+ * duplicates included — string- and escape-aware.
+ *
+ * `JSON.parse` cannot answer this: it collapses `{"logo":…,"logo":…}` to the LAST
+ * value silently, so a model that emitted two different logo scores had the
+ * recorded one decided by ordering. The only way to see the ambiguity is to read
+ * the text.
+ */
+export function declaredKeys(objectText: string): string[] {
+  const keys: string[] = [];
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let current = "";
+  let capturing = false;
+  for (let index = 0; index < objectText.length; index += 1) {
+    const character = objectText[index] as string;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') {
+        inString = false;
+        if (capturing) {
+          // A string at depth 1 is a key only if a colon follows it.
+          const rest = objectText.slice(index + 1).trimStart();
+          if (rest.startsWith(":")) keys.push(current);
+          capturing = false;
+        }
+      } else if (capturing) current += character;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      if (depth === 1) {
+        capturing = true;
+        current = "";
+      }
+      continue;
+    }
+    if (character === "{" || character === "[") depth += 1;
+    else if (character === "}" || character === "]") depth -= 1;
+  }
+  return keys;
+}
+
+/** Parses the judge model's JSON into a verdict; every pinned dimension must be
+ * present exactly once with an integer 1-10 score. Anything the rubric did not
+ * ask for is reported rather than dropped. */
+export function parseJudgeVerdict(raw: string): JudgeVerdict {
+  const parsed = extractJsonObject(raw, "Judge");
+  const declared = declaredKeys(rawObjectText(raw));
+  const duplicates = [...new Set(declared.filter((key, index) => declared.indexOf(key) !== index))];
+  if (duplicates.length > 0) {
+    throw new Error(
+      `Judge output rejected: duplicate key(s) ${duplicates.map((key) => `"${key}"`).join(", ")} — two answers for one dimension, and JSON parsing would silently keep whichever came last`,
+    );
   }
   const scores: DimensionScore[] = [];
+  const extras: string[] = [];
   for (const dimension of judgeDimensions) {
-    const entry = parsed[dimension];
+    const entry = parsed[dimension] as { score?: unknown; justification?: unknown } | undefined;
     const score = entry?.score;
     if (typeof score !== "number" || !Number.isInteger(score) || score < 1 || score > 10) {
       throw new Error(`Judge output rejected: "${dimension}" needs an integer score 1-10 (got ${JSON.stringify(score)})`);
     }
-    const justification = typeof entry?.justification === "string" && entry.justification !== "" ? entry.justification : "(no justification given)";
+    const given = entry?.justification;
+    // Whitespace-only is absent: a blank table cell reads as "the judge had
+    // nothing to say", which is not what happened.
+    const justification = typeof given === "string" && given.trim() !== "" ? given : "(no justification given)";
     scores.push({ dimension, score, justification });
+    for (const field of Object.keys(entry as Record<string, unknown>)) {
+      if (field !== "score" && field !== "justification") extras.push(`${dimension}.${field}`);
+    }
   }
-  const failing = scores.filter((entry) => entry.score < fidelityThreshold).map((entry) => entry.dimension);
-  return { scores, failing, pass: failing.length === 0 };
+  for (const key of Object.keys(parsed)) {
+    if (!(judgeDimensions as readonly string[]).includes(key)) extras.push(key);
+  }
+  return { scores, extras };
+}
+
+/** The JSON object's own text, as {@link extractJsonObject} finds it — the input
+ * {@link declaredKeys} has to read (a re-serialised parse has already lost the
+ * duplicates it exists to detect). */
+function rawObjectText(raw: string): string {
+  const unfenced = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const start = unfenced.indexOf("{");
+  const end = unfenced.lastIndexOf("}");
+  return start === -1 || end <= start ? "{}" : unfenced.slice(start, end + 1);
+}
+
+/**
+ * The one line the pipeline prints as `SCORES: ` + this, e.g.
+ * `logo=PASS palette=8 type=7 layout=9 copyTone=8`.
+ *
+ * `logo` is the one dimension reported as PASS/FAIL rather than a number: the
+ * model still scores it 1-10 through the shared rubric, and PASS means it
+ * reached {@link fidelityThreshold}. A logo is binary to a human — it is
+ * either their mark or it isn't — so a number there invites false precision.
+ */
+export function formatScoresLine(verdict: JudgeVerdict): string {
+  return verdict.scores
+    .map((score) => score.dimension === "logo"
+      ? `logo=${score.score >= fidelityThreshold ? "PASS" : "FAIL"}`
+      : `${score.dimension}=${score.score}`)
+    .join(" ");
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +193,7 @@ export function parseJudgeVerdict(raw: string): JudgeVerdict {
 // ---------------------------------------------------------------------------
 
 export interface JudgeImage {
-  /** Shown to the model right before the image, e.g. 'BUILT screen "/" (Board)'. */
+  /** Shown to the model right before the image, e.g. 'BUILT screen /acme'. */
   label: string;
   path: string;
 }
@@ -101,11 +201,23 @@ export interface JudgeImage {
 /** Model seam: prompt + labeled images in, raw model text out. */
 export type JudgeModelFn = (prompt: string, images: JudgeImage[]) => Promise<string>;
 
+/**
+ * The judge's retry budget, tightened.
+ *
+ * It was 30s/60s/120s across TWO model tiers, and `runJudge` rerolls the whole
+ * call once on malformed JSON: 4 attempts × 2 models × 2 rolls = up to 16 vision
+ * calls and ~14 minutes inside a 20-minute end-to-end target — for scores that
+ * are a REPORT and never block the ship.
+ *
+ * ONE backoff per tier: the burst this exists for (opus-5 Overloaded for 6+
+ * minutes straight, observed live) is answered by the SONNET TIER, not by waiting
+ * longer on a model that is out. Worst case is now 8 vision calls and ~2 minutes,
+ * both pinned by a test.
+ */
+export const judgeBackoffsMs = [30_000];
+
 /** Vision call through the stock ai SDK + ANTHROPIC_API_KEY (lazy import —
- * only the judge pays for it). API overload passes in minutes, and one judge
- * call gates a ~$9 rewrite — so on top of the SDK's own quick retries, wait
- * out transient errors with 30s/60s/120s backoff before giving up (an
- * "Overloaded" burst killed a live run at judge:round-1). */
+ * only the judge pays for it). */
 export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
   const [{ createAnthropic }, { generateText }] = await Promise.all([import("@ai-sdk/anthropic"), import("ai")]);
   const anthropic = createAnthropic({});
@@ -117,7 +229,7 @@ export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
     content.push({ type: "text", text: `\n${image.label}:` });
     content.push({ type: "image", image: await readFile(image.path) });
   }
-  const backoffsMs = [30_000, 60_000, 120_000];
+  const backoffsMs = judgeBackoffsMs;
   // Tier fallback after the backoff exhausts: a sustained opus overload must
   // not kill a run that a sonnet judge can score (observed live: opus-5
   // Overloaded for 6+ minutes straight).
@@ -136,7 +248,7 @@ export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
         lastError = error;
         const wait = backoffsMs[attempt];
         if (wait === undefined) break; // next model tier
-        await new Promise((resolve) => setTimeout(resolve, wait));
+        await delay(wait);
       }
     }
   }
@@ -144,299 +256,244 @@ export const defaultJudgeModel: JudgeModelFn = async (prompt, images) => {
 };
 
 // ---------------------------------------------------------------------------
-// Built-screen capture (reuses the demo-capture boot)
+// Evidence + built-screen capture
 // ---------------------------------------------------------------------------
 
-export interface CaptureScreensOptions {
-  appDir: string;
-  repoRoot: string;
-  /** Routes to screenshot, e.g. ["/", "/backlog"]. */
-  routes: string[];
-  port: number;
-  /** Absolute output directory for the round's screenshots. */
-  outDir: string;
-  logFile: string;
+const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+
+/**
+ * The evidence half of the comparison: the operator screenshots stage 1 copied
+ * into `demos/<slug>/RESEARCH/`. Read straight off disk by extension rather
+ * than from a manifest, so any naming the evidence stage picks is honored.
+ * Subdirectories are skipped on purpose — `RESEARCH/context-dev/` holds raw API
+ * responses and `RESEARCH/judge/` holds our own built screenshots.
+ */
+export async function readEvidenceImages(researchDir: string): Promise<JudgeImage[]> {
+  const entries = await readdir(researchDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && imageExtensions.has(path.extname(entry.name).toLowerCase()))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => ({
+      label: `EVIDENCE operator screenshot (${name} — real logged-in product UI)`,
+      path: path.join(researchDir, name),
+    }));
 }
 
-/** Boots the built demo (same machinery as demo-capture), signs in through
- * the injected login wall, and screenshots each route at the research
- * viewport (1440x900). Returns absolute paths. */
+export interface CaptureScreensOptions {
+  /** Base URL of the ALREADY-RUNNING host (stage 4 booted it). */
+  baseUrl: string;
+  /** Routes to screenshot, e.g. ["/acme", "/acme/vendo"]. */
+  routes: string[];
+  /** Absolute output directory for the screenshots. */
+  outDir: string;
+}
+
+/**
+ * Screenshots each route at the research viewport (1440x900) and returns
+ * absolute paths. Boots nothing (stage 4 owns the host process) and signs in
+ * to nothing — the host auto-logs in via its own middleware.
+ */
 export async function captureBuiltScreens(options: CaptureScreensOptions): Promise<string[]> {
-  const { host } = await configDemoHost(options.appDir);
-  const running = await bootDemoHost({
-    host,
-    port: options.port,
-    repoRoot: options.repoRoot,
-    appDir: options.appDir,
-    logFile: options.logFile,
-    timeoutMs: 180_000,
-  });
   await mkdir(options.outDir, { recursive: true });
   const saved: string[] = [];
   const browser = await chromium.launch();
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
-    // The clone ships a login wall (injected at demo:create); authenticate
-    // once, then the cookie carries the rest of the routes.
-    await page.goto(new URL("/", running.baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 60_000 });
-    const loginForm = page.locator('form[action="/login"]');
-    if (await loginForm.count() > 0) {
-      const password = (host.demoPasswordEnv === undefined ? undefined : process.env[host.demoPasswordEnv])
-        ?? host.demoPasswordFallback ?? "";
-      await loginForm.locator('input[name="password"]').fill(password);
-      await loginForm.locator('button[type="submit"]').click();
-      await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 60_000, waitUntil: "commit" });
-    }
     for (const route of options.routes) {
-      await page.goto(new URL(route, running.baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await page.goto(new URL(route, options.baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: 60_000 });
+      // networkidle is best-effort (a demo with a live connection never idles);
+      // the fixed settle is what actually catches late-mounting client chrome.
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
       await page.waitForTimeout(500);
-      const stem = route === "/" ? "home" : route.replaceAll("/", "-").replace(/^-+|-+$/g, "");
+      const stem = route.replaceAll("/", "-").replace(/^-+|-+$/g, "") || "home";
       const filePath = path.join(options.outDir, `built-${stem}.png`);
       await page.screenshot({ path: filePath });
       saved.push(filePath);
     }
   } finally {
     await browser.close().catch(() => undefined);
-    await running.stop();
   }
   return saved;
 }
 
 // ---------------------------------------------------------------------------
-// Evidence selection + fix prompts + report
+// The report
 // ---------------------------------------------------------------------------
 
-/** The judge compares against BOTH operator screenshots and the live-site
- * capture — criterion 36 requires both classes, so a missing class is a
- * hard verdict (`missing`), not a silent drop: the loop PARKS on it rather
- * than shipping a demo scored against half the evidence. */
-export function selectEvidenceImages(report: ResearchReport, researchDir: string): {
-  images: JudgeImage[];
-  /** Evidence classes required by criterion 36 that are absent on disk. */
-  missing: ("operator-screenshots" | "live-site-capture")[];
-} {
-  const operator: JudgeImage[] = report.operatorScreenshots
-    .map((shot) => ({
-      label: `EVIDENCE operator screenshot (${shot.file} — real logged-in product UI)`,
-      path: path.join(researchDir, shot.file),
-    }))
-    .filter((image) => existsSync(image.path));
-  const live: JudgeImage[] = [];
-  for (const page of report.pages) {
-    if ("error" in page || page.botChallenge) continue;
-    const candidate = {
-      label: `EVIDENCE live-site capture (${page.url})`,
-      path: path.join(researchDir, page.screenshots.viewport),
-    };
-    if (existsSync(candidate.path)) {
-      live.push(candidate);
-      break; // one live capture is enough alongside the operator shots
-    }
-  }
-  const missing: ("operator-screenshots" | "live-site-capture")[] = [];
-  if (operator.length === 0) missing.push("operator-screenshots");
-  if (live.length === 0) missing.push("live-site-capture");
-  return { images: [...operator, ...live], missing };
+/**
+ * One Markdown table cell of MODEL TEXT.
+ *
+ * A justification is whatever the judge wrote, and it goes straight into a table
+ * row: a `|` splits the row into extra columns and a newline ends the row early,
+ * so one chatty justification silently broke the whole score table.
+ */
+function cell(text: string): string {
+  return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 }
 
-export function buildFixPrompt(options: {
-  prospect: string;
-  dimension: JudgeDimension;
-  score: DimensionScore;
-  round: number;
-}): string {
-  const targets: Record<JudgeDimension, string> = {
-    logo: "src/app/layout.tsx and the shell components (src/components/shell/) — the logo file itself lives in public/brand/",
-    palette: "src/app/globals.css and any component carrying hard-coded colors; .vendo/theme.json may be corrected ONLY with exact values from RESEARCH/research.json colorRoles",
-    type: "the font loading in src/app/layout.tsx and the type scale in src/app/globals.css",
-    layout: "src/app/page.tsx and src/components/home/ — region-by-region against the reference screen",
-    copyTone: "src/server/seed.ts, visible labels in the pages/components, and demo.config.json beat copy",
-  };
-  return `You are a targeted FIX agent for a ${options.prospect} demo (round ${options.round}). The visual judge failed ONE dimension; fix exactly that, with the smallest change set.
-
-FAILED DIMENSION: ${options.dimension} — scored ${options.score.score}/10 (needs ${fidelityThreshold}).
-Judge's justification: ${options.score.justification}
-
-Read RESEARCH/BRAND.md and LOOK at the evidence images it lists (operator screenshots first), then at RESEARCH/judge/ for the built-screen captures the judge saw. Likely files: ${targets[options.dimension]}.
-
-Rules: NEVER touch the fenced files (${fencedFiles.join(", ")}). All data stays invented EXCEPT whatever BRAND.md's OPERATOR NOTES section pins down — those are authoritative and must survive your fix untouched. Do not "fix" other dimensions — one dimension, minimal diff.`;
-}
-
-export interface JudgeRound {
-  round: number;
-  verdict: JudgeVerdict;
-  builtScreens: string[];
-}
-
-/** RESEARCH/FIDELITY.md — the per-dimension score table for every round,
- * written whether the run ships or parks (criterion 35: a parked run names
- * each failed dimension). */
+/** RESEARCH/FIDELITY.md — the score table plus every note that kept a score
+ * from being computed. Written on every run, scored or not. */
 export function renderFidelityReport(options: {
   prospect: string;
-  rounds: JudgeRound[];
-  parked: boolean;
+  verdict?: JudgeVerdict;
+  builtScreens: string[];
   evidence: JudgeImage[];
+  notes: string[];
 }): string {
-  const roundBlocks = options.rounds.map((round) => {
-    const rows = round.verdict.scores
-      .map((score) => `| ${score.dimension} | ${score.score} | ${score.score >= fidelityThreshold ? "pass" : "FAIL"} | ${score.justification} |`)
-      .join("\n");
-    return `## Round ${round.round} — ${round.verdict.pass ? "PASS" : `FAIL (${round.verdict.failing.join(", ")})`}
-
-| Dimension | Score | ≥${fidelityThreshold}? | Justification |
+  const table = options.verdict === undefined
+    ? "No scores: the judge did not complete. See the notes above."
+    : `| Dimension | Score | ≥${fidelityThreshold}? | Justification |
 | --- | --- | --- | --- |
-${rows}
-
-Built screens: ${round.builtScreens.map((screen) => path.basename(screen)).join(", ")}`;
-  }).join("\n\n");
-  const final = options.rounds[options.rounds.length - 1];
+${options.verdict.scores
+  .map((score) => `| ${score.dimension} | ${score.score} | ${score.score >= fidelityThreshold ? "pass" : "FAIL"} | ${cell(score.justification)} |`)
+  .join("\n")}`;
+  // Keys the rubric never asked for are a note, not a silence: they mean the
+  // model answered a slightly different question than the one we asked.
+  const extras = options.verdict?.extras ?? [];
+  const notes = extras.length === 0
+    ? options.notes
+    : [...options.notes, `the judge also returned key(s) the rubric never asked for, which were not scored: ${extras.join(", ")}`];
   return `# Fidelity report — ${options.prospect}
 
-Verdict: ${options.parked ? `**PARKED — DO NOT SHIP.** Failing dimensions after all rounds: ${final?.verdict.failing.join(", ") ?? "(none scored)"}` : "**SHIP** — every dimension at or above the bar."}
-Threshold: every dimension ≥ ${fidelityThreshold}/10. Scored against ${options.evidence.length} evidence image(s): ${options.evidence.map((image) => image.label).join("; ")}.
+${options.verdict === undefined ? "Scores: none (see notes)." : `Scores: ${formatScoresLine(options.verdict)}`}
+Bar: ${fidelityThreshold}/10 per dimension (a report, not a gate — this stage never blocks the ship).
+Scored against ${options.evidence.length} evidence image(s)${options.evidence.length === 0 ? "" : `: ${options.evidence.map((image) => image.label).join("; ")}`}.
+Built screens: ${options.builtScreens.length === 0 ? "(none captured)" : options.builtScreens.map((screen) => path.basename(screen)).join(", ")}
 
-${roundBlocks}
+${notes.map((note) => `NOTE: ${note}`).join("\n")}${notes.length === 0 ? "" : "\n"}
+${table}
 `;
 }
 
 // ---------------------------------------------------------------------------
-// The loop
+// The stage
 // ---------------------------------------------------------------------------
 
-export interface JudgeLoopArgs {
+export interface JudgeArgs {
+  slug: string;
   prospect: string;
-  packageName: string;
-  plan: RewritePlan;
-  port: number;
+  /** Base URL of the host stage 4 left running. */
+  baseUrl: string;
 }
 
-export interface JudgeLoopIo {
-  appDir: string;
-  repoRoot: string;
+export interface JudgeIo {
+  demosRepo: string;
   judgeModel?: JudgeModelFn;
   captureScreens?: (options: CaptureScreensOptions) => Promise<string[]>;
-  runAgent?: RunAgentFn;
-  exec?: ExecFn;
   write?: (line: string) => void;
-  env?: NodeJS.ProcessEnv;
-  runStage?: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
-  /** The pipeline's wall-clock-cap signal (checked each round; kills fix agents). */
+  /** The pipeline's wall-clock-cap signal. */
   signal?: AbortSignal;
+  runStage?: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
 }
 
-export interface JudgeLoopResult {
-  rounds: JudgeRound[];
-  parked: boolean;
+export interface JudgeResult {
+  /** Absent when the judge could not score at all — the run still ships. */
+  verdict?: JudgeVerdict;
+  builtScreens: string[];
   reportPath: string;
-  costUsd: number;
+  /** What the pipeline prints after `SCORES: `. */
+  scoresLine: string;
+  notes: string[];
 }
 
-/** Initial judge + up to this many fix-and-rejudge rounds. Keeps the loop
- * inside the 45-minute budget next to a ~10-minute Railway floor. */
-export const maxFixRounds = 2;
+/** The SCORES line for a run the judge never scored — an honest "we don't
+ * know", so a reader never mistakes silence for a pass. */
+const judgeFailedLine = "judge=FAILED";
 
-export async function runJudgeLoop(args: JudgeLoopArgs, io: JudgeLoopIo): Promise<JudgeLoopResult> {
+export async function runJudge(args: JudgeArgs, io: JudgeIo): Promise<JudgeResult> {
   const judgeModel = io.judgeModel ?? defaultJudgeModel;
   const captureScreens = io.captureScreens ?? captureBuiltScreens;
-  const runAgent = io.runAgent ?? defaultRunAgent;
-  const exec = io.exec ?? defaultExec;
   const write = io.write ?? ((line: string) => process.stdout.write(`${line}\n`));
-  const env = io.env ?? process.env;
   const runStage = io.runStage ?? (async <T>(_name: string, fn: () => Promise<T>): Promise<T> => await fn());
-  const model = env.VENDO_DEMO_AGENT_MODEL ?? "sonnet";
 
-  const researchDir = path.join(io.appDir, "RESEARCH");
-  const report = JSON.parse(await readFile(path.join(researchDir, "research.json"), "utf8")) as ResearchReport;
-  const { images: evidence, missing } = selectEvidenceImages(report, researchDir);
-  if (missing.length > 0) {
-    // Criterion 36: every score is computed against BOTH operator screenshots
-    // and the live-site capture. A run without either class parks — it never
-    // ships on half the evidence.
-    const reportPath = path.join(researchDir, "FIDELITY.md");
-    await writeFile(reportPath, `# Fidelity report — ${args.prospect}
-
-Verdict: **PARKED — DO NOT SHIP.** The judge requires BOTH evidence classes and the run is missing: ${missing.join(", ")}.
-No dimension was scored; provide the missing evidence (operator screenshots via --screenshots; a clean live capture via demo:research) and re-run.
-`);
-    write(`[judge] PARKED: missing required evidence class(es): ${missing.join(", ")}`);
-    return { rounds: [], parked: true, reportPath, costUsd: 0 };
+  const paths = demoPaths(io.demosRepo, args.slug);
+  const notes: string[] = [];
+  // SHIP REGARDLESS means the FILESYSTEM too: this read and the report write
+  // below used to sit outside every catch, so a missing or unwritable RESEARCH/
+  // threw out of the judge, the pipeline awaited it before ship, and a finished
+  // demo never deployed over a directory permission.
+  let evidence: JudgeImage[] = [];
+  try {
+    evidence = await readEvidenceImages(paths.researchDir);
+  } catch (error) {
+    notes.push(`could not read the evidence screenshots in ${path.join("demos", args.slug, "RESEARCH")}/: ${causeLine(error)}`);
   }
-  const routes = args.plan.screens.map((screen) => screen.route);
-  const prompt = buildJudgePrompt({ prospect: args.prospect });
+  // The old loop PARKED on a missing evidence class. Scores are now a report,
+  // so a missing class is a note — but with nothing to compare against there
+  // is nothing honest to score, so the model call is skipped rather than paid
+  // for a verdict about a demo the judge cannot see the target of.
+  if (evidence.length === 0) {
+    notes.push(`no operator screenshots in ${path.join("demos", args.slug, "RESEARCH")}/ — nothing to score the build against`);
+  }
 
-  const rounds: JudgeRound[] = [];
-  let costUsd = 0;
-  let parked = false;
-
-  for (let round = 1; ; round += 1) {
-    if (io.signal?.aborted) throw io.signal.reason instanceof Error ? io.signal.reason : new Error("judge aborted");
-    const roundResult = await runStage(`judge:round-${round}`, async () => {
-      const outDir = path.join(researchDir, "judge", `round-${round}`);
-      const builtScreens = await captureScreens({
-        appDir: io.appDir,
-        repoRoot: io.repoRoot,
-        routes,
-        port: args.port,
-        outDir,
-        logFile: path.join(outDir, "server.log"),
-      });
-      const builtImages: JudgeImage[] = builtScreens.map((screen, index) => ({
-        label: `BUILT screen ${routes[index] ?? path.basename(screen)}`,
-        path: screen,
-      }));
-      // One reroll on malformed output: models occasionally glitch the JSON
-      // (a live run died on a doubled colon), and a fresh sample is cheaper
-      // than losing the whole run to it.
-      let verdict: JudgeVerdict;
+  // The product page and the full Vendo page — the two routes a prospect opens.
+  const routes = [`/${args.slug}`, `/${args.slug}/vendo`];
+  let verdict: JudgeVerdict | undefined;
+  let builtScreens: string[] = [];
+  if (evidence.length > 0) {
+    await runStage("judge", async () => {
+      if (io.signal?.aborted) {
+        notes.push("skipped: the run's wall-clock cap fired before the judge");
+        return;
+      }
       try {
-        verdict = parseJudgeVerdict(await judgeModel(prompt, [...evidence, ...builtImages]));
+        builtScreens = await captureScreens({
+          baseUrl: args.baseUrl,
+          routes,
+          outDir: path.join(paths.researchDir, "judge"),
+        });
+        const builtImages: JudgeImage[] = builtScreens.map((screen, index) => ({
+          label: `BUILT screen ${routes[index] ?? path.basename(screen)}`,
+          path: screen,
+        }));
+        const prompt = buildJudgePrompt({ prospect: args.prospect });
+        const images = [...evidence, ...builtImages];
+        // One reroll on malformed output: models occasionally glitch the JSON
+        // (a live run died on a doubled colon), and a fresh sample is cheaper
+        // than losing the scores to it.
+        try {
+          verdict = parseJudgeVerdict(await judgeModel(prompt, images));
+        } catch (error) {
+          write(`[judge] verdict parse failed (${causeLine(error)}) — rerolling once`);
+          verdict = parseJudgeVerdict(await judgeModel(prompt, images));
+        }
+        write(`[judge] ${formatScoresLine(verdict)}`);
       } catch (error) {
-        write(`[judge] verdict parse failed (${error instanceof Error ? error.message.split("\n")[0] : String(error)}) — rerolling once`);
-        verdict = parseJudgeVerdict(await judgeModel(prompt, [...evidence, ...builtImages]));
-      }
-      write(`[judge] round ${round}: ${verdict.scores.map((score) => `${score.dimension}=${score.score}`).join(" ")} → ${verdict.pass ? "PASS" : `FAIL (${verdict.failing.join(", ")})`}`);
-      return { round, verdict, builtScreens };
-    });
-    rounds.push(roundResult);
-
-    if (roundResult.verdict.pass) break;
-    if (round > maxFixRounds) {
-      parked = true;
-      write(`[judge] rounds exhausted below threshold — PARKING (no deploy). Failing: ${roundResult.verdict.failing.join(", ")}`);
-      break;
-    }
-
-    await runStage(`judge:fix-${round}`, async () => {
-      // One targeted fix agent per failing dimension, run SERIALLY: fixes for
-      // different dimensions legitimately touch the same files (globals.css),
-      // so parallel here would race.
-      for (const dimension of roundResult.verdict.failing) {
-        const score = roundResult.verdict.scores.find((entry) => entry.dimension === dimension) as DimensionScore;
-        write(`[judge] fix round ${round}: ${dimension} (${score.score}/10)`);
-        const fix = await runAgent({
-          name: `fix-${dimension}-${round}`,
-          prompt: buildFixPrompt({ prospect: args.prospect, dimension, score, round }),
-          maxBudgetUsd: 5,
-          timeoutMs: 12 * 60 * 1000,
-          model,
-        }, { cwd: io.appDir, env, ...(io.signal === undefined ? {} : { signal: io.signal }) });
-        costUsd += fix.costUsd ?? 0;
-        if (fix.code !== 0) throw new Error(`Fix agent for ${dimension} failed (exit ${fix.code}):\n${fix.output.slice(0, 1000)}`);
-      }
-      // Same build seam the rewrite's repair loop uses: a standalone clone is
-      // NOT a workspace member, so a monorepo turbo filter finds no package and
-      // fails the round on a demo that built fine.
-      const buildStep = appBuildCommand({ repoRoot: io.repoRoot, appDir: io.appDir, packageName: args.packageName });
-      const build = await exec(buildStep.command, { cwd: buildStep.cwd });
-      if (build.code !== 0) {
-        throw new Error(`Build broken after fidelity fixes:\n${(build.stderr || build.stdout).slice(-3000)}`);
+        // SHIP REGARDLESS: a dead judge costs us the scores, not the demo.
+        notes.push(`the judge did not score this demo: ${causeLine(error)}`);
+        write(`[judge] scoring failed — shipping unscored (${causeLine(error)})`);
       }
     });
   }
 
-  const reportPath = path.join(researchDir, "FIDELITY.md");
-  await writeFile(reportPath, renderFidelityReport({ prospect: args.prospect, rounds, parked, evidence }));
-  return { rounds, parked, reportPath, costUsd };
+  const reportPath = path.join(paths.researchDir, "FIDELITY.md");
+  try {
+    await writeFile(
+      reportPath,
+      renderFidelityReport({ prospect: args.prospect, ...(verdict === undefined ? {} : { verdict }), builtScreens, evidence, notes }),
+    );
+  } catch (error) {
+    // The scores are already in the return value and on stdout; losing the file
+    // costs the record, not the demo.
+    const note = `could not write ${path.join("demos", args.slug, "RESEARCH", "FIDELITY.md")}: ${causeLine(error)}`;
+    notes.push(note);
+    write(`[judge] ${note}`);
+  }
+  return {
+    ...(verdict === undefined ? {} : { verdict }),
+    builtScreens,
+    reportPath,
+    scoresLine: verdict === undefined ? judgeFailedLine : formatScoresLine(verdict),
+    notes,
+  };
+}
+
+/** One-line cause for a note, a log line or a rethrow: unwrap the Error, then
+ * take the first line through exec.ts's shared splitter. Exported for the brief
+ * stage, which rethrows the same way. */
+export function causeLine(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return firstLine(message) ?? message;
 }

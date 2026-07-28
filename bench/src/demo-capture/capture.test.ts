@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Page } from "@playwright/test";
-import { demoBeatPlan, waitForTurn } from "./capture.js";
+import { demoBeatPlan, VendoTurnError, VendoTurnTimeout, waitForTurn } from "./capture.js";
 
 describe("demoBeatPlan", () => {
   it("sequences the config beats into one continuous overlay story", () => {
@@ -131,5 +131,34 @@ describe("waitForTurn", () => {
       requireView: false,
     });
     expect(approvals).toBe(0);
+  });
+
+  // A caller has to be able to tell "this turn errored" from "this turn ran out
+  // of clock" WITHOUT parsing prose. The demo pipeline's smoke gate decides
+  // whether a generated demo is broken or merely slow on exactly that
+  // difference, and it used to have nothing but the message text to go on.
+  it("throws a distinguishable error when the turn surfaces one", async () => {
+    const page = fakePage([{ composerEnabled: true, errorText: "Something went wrong and the response didn’t finish." }]);
+    const thrown = await waitForTurn({ page, previousAssistantTurns: 0, timeoutMs: 5_000, requireView: false })
+      .catch((error: unknown) => error);
+    expect(thrown).toBeInstanceOf(VendoTurnError);
+    expect(thrown).not.toBeInstanceOf(VendoTurnTimeout);
+    expect((thrown as VendoTurnError).surfaced).toBe("Something went wrong and the response didn’t finish.");
+  });
+
+  it("throws a distinguishable error when it runs out of clock", async () => {
+    const page = fakePage([{ composerEnabled: true }]);
+    const thrown = await waitForTurn({ page, previousAssistantTurns: 0, timeoutMs: 0, requireView: false })
+      .catch((error: unknown) => error);
+    expect(thrown).toBeInstanceOf(VendoTurnTimeout);
+    expect(thrown).not.toBeInstanceOf(VendoTurnError);
+  });
+
+  // Both stay plain Errors to every existing caller.
+  it("keeps both failures readable as ordinary errors", async () => {
+    const timedOut = await waitForTurn({ page: fakePage([{ composerEnabled: true }]), previousAssistantTurns: 0, timeoutMs: 0, requireView: false })
+      .catch((error: unknown) => error as Error);
+    expect(timedOut).toBeInstanceOf(Error);
+    expect(timedOut.message).toMatch(/Timed out after 0ms waiting for the generated Vendo turn/);
   });
 });

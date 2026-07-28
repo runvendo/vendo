@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// ENG-217 — streaming polish: the generating skeleton fills the window between
+// ENG-217 — streaming polish: liveness (FluidThinking) fills the window between
 // send and the FIRST chunk, the lone caret marks a streamed turn that is still
 // empty, and the trailing caret (.fl-md--streaming) rides actively-flowing
 // text. Each affordance exists only during its own streaming moment.
@@ -15,7 +15,7 @@ function sendFromComposer(text: string) {
   fireEvent.keyDown(composer, { key: "Enter" });
 }
 
-describe("streaming polish: caret + generating skeleton (ENG-217)", () => {
+describe("streaming polish: caret + liveness (ENG-217)", () => {
   let wire: Awaited<ReturnType<typeof createWireServer>>;
   let client: VendoClient;
 
@@ -29,25 +29,6 @@ describe("streaming polish: caret + generating skeleton (ENG-217)", () => {
     await wire.close();
   });
 
-  it("shows the generating skeleton between send and the first chunk, then yields", async () => {
-    let releaseTurn = () => undefined as void;
-    wire.state.turnStartGate = new Promise<void>(resolve => { releaseTurn = resolve; });
-    const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
-    await screen.findByText("Existing thread");
-
-    sendFromComposer("Hello");
-    await waitFor(() => expect(view.container.querySelector(".fl-generating")).toBeTruthy());
-    expect(view.container.querySelector(".fl-skeleton")).toBeTruthy();
-    // the skeleton replaces the working dots in this window
-    expect(view.container.querySelector(".fl-typing")).toBeNull();
-
-    await act(async () => releaseTurn());
-    // first chunk landed: the skeleton yields (tool chips + working take over)
-    await waitFor(() => expect(view.container.querySelector(".fl-generating")).toBeNull());
-    expect(view.container.querySelector(".fl-skeleton")).toBeNull();
-    expect(await screen.findByText("Turn complete")).toBeTruthy();
-  });
-
   it("shows the lone caret while a streamed turn is still empty, never after", async () => {
     let releaseText = () => undefined as void;
     wire.state.textStartGate = new Promise<void>(resolve => { releaseText = resolve; });
@@ -58,11 +39,31 @@ describe("streaming polish: caret + generating skeleton (ENG-217)", () => {
     await waitFor(() => expect(view.container.querySelector(".fl-caret")).toBeTruthy());
     // the caret IS the liveness indicator now — no doubled affordances
     expect(view.container.querySelector(".fl-typing")).toBeNull();
-    expect(view.container.querySelector(".fl-generating")).toBeNull();
 
     await act(async () => releaseText());
     expect(await screen.findByText("Turn complete")).toBeTruthy();
     await waitFor(() => expect(view.container.querySelector(".fl-caret")).toBeNull());
+  });
+
+  it("narrates the pre-first-chunk wait with liveness only — never view-shaped furniture", async () => {
+    let releaseTurn = () => undefined as void;
+    wire.state.turnStartGate = new Promise<void>(resolve => { releaseTurn = resolve; });
+    const view = render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+
+    sendFromComposer("What is this?");
+    // The turn is live and has produced nothing: liveness shows.
+    await waitFor(() => expect(view.container.querySelector(".fl-typing, .fl-thinking")).toBeTruthy());
+    // …and NOTHING that reads as a view being built. A prose-only turn never
+    // calls vendo_apps_create, so a document-shaped skeleton card here is a
+    // promise the turn may never keep (live demo, 2026-07-28).
+    expect(view.container.querySelector(".fl-skeleton")).toBeNull();
+    expect(view.container.querySelector(".fl-generating")).toBeNull();
+
+    await act(async () => releaseTurn());
+    expect(await screen.findByText("Turn complete")).toBeTruthy();
+    // …and liveness stands down once the turn settles.
+    await waitFor(() => expect(view.container.querySelector(".fl-typing, .fl-thinking")).toBeNull());
   });
 
   it("marks flowing text as streaming (trailing caret) only while the stream is live", async () => {

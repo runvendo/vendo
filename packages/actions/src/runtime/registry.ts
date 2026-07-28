@@ -16,6 +16,7 @@ import type { Connector } from "../connectors/connector.js";
 import {
   VENDO_OVERRIDES_FORMAT,
   extractedToolSchema,
+  judgmentsFileSchema,
   overridesFileSchema,
   toolsFileSchema,
   type CapabilityBrief,
@@ -23,6 +24,7 @@ import {
   type ExtractedTool,
   type GraphqlBinding,
   type HttpMethod,
+  type JudgmentsFile,
   type OpenApiBinding,
   type OverridesFile,
   type RouteBinding,
@@ -31,6 +33,7 @@ import {
   type ToolOverride,
   type TrpcBinding,
 } from "../formats.js";
+import { applyJudgment } from "../judgments.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
 import { error, isArgsObject } from "./outcome.js";
 import { searchToolDescriptors, tokenize, type ToolSearchMatch, type ToolSearchOptions } from "./search.js";
@@ -244,6 +247,22 @@ function withPathArgs(path: string, args: Record<string, unknown>): { path: stri
 
 function joinedUrl(baseUrl: string, path: string): URL {
   return new URL(`${baseUrl.replace(/\/$/, "")}${path}`);
+}
+
+/**
+ * How a failed host call names what it called: origin **and** path. A wire
+ * origin pointing at the wrong host 404s every tool while every path is
+ * correct, and a message carrying only the path reads exactly like a malformed
+ * path — so the origin is never omitted.
+ *
+ * Assembled from the URL's safe parts rather than scrubbed after the fact:
+ * `host` cannot contain userinfo, and dropping `search` drops query-string
+ * tokens. A baseUrl may carry either (`https://svc:pw@host`,
+ * `https://ghp_x@host`, `?access_token=…`) and this string reaches host logs
+ * and the model.
+ */
+function requestTarget(url: URL): string {
+  return `${url.protocol}//${url.host}${url.pathname}`;
 }
 
 function resolveUrl(binding: RouteBinding | OpenApiBinding, configuredBaseUrl?: string): URL {
@@ -687,7 +706,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       if (!response.ok) {
         return error(
           "http-error",
-          `${method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
+          `${method} ${requestTarget(url)} → ${response.status}: ${text.slice(0, 200)}`,
         );
       }
       if (text) {
@@ -712,12 +731,28 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
   return actAsMinted ? withActAs(outcome, "minted") : outcome;
 }
 
-/** The loaded host view of `.vendo/`: the machine layer plus the authored one. */
+/** The loaded host view of `.vendo/`: the machine layer, the AI one, and the
+ *  authored one. */
 interface LoadedHost {
   tools: ExtractedTool[];
+  judgments: JudgmentsFile | undefined;
   overrides: OverridesFile;
   compounds: CompoundTool[];
   briefs: CapabilityBrief[];
+}
+
+/** One host tool's EFFECTIVE state: the extracted skeleton hardened by its
+ *  standing judgment, then corrected by the human's override. Judgments are a
+ *  HOST-tool layer only — connector, registry, and compound tools never carry
+ *  one, so they keep going through `mergeOverride` alone.
+ *
+ *  Every reader of host enablement goes through here. Deriving `disabled` by
+ *  hand anywhere else reads a pre-judgment surface and lies. */
+function effectiveHostTool(host: LoadedHost, extracted: ExtractedTool): ExtractedTool {
+  return mergeOverride(
+    applyJudgment({ ...extracted }, host.judgments?.tools[extracted.name]),
+    host.overrides.tools[extracted.name],
+  );
 }
 
 export function createActions(config: RegistryConfig): ActionsRegistry {
@@ -745,13 +780,14 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   let zeroLiveWarned = false;
   const warnZeroLiveTools = (host: LoadedHost): LoadedHost => {
     if (zeroLiveWarned) return host;
-    const live = host.tools.filter((tool) => !(host.overrides.tools[tool.name]?.disabled ?? tool.disabled ?? false));
+    const live = host.tools.filter((tool) => effectiveHostTool(host, tool).disabled !== true);
     if (live.length === 0) {
       zeroLiveWarned = true;
       console.warn(
         "[vendo] zero live host tools — every extracted tool is absent, disabled, or excluded, so the agent cannot "
-        + "act on this product's API. Review .vendo/tools.json and the audience exclusions in .vendo/overrides.json, "
-        + "or re-run `vendo init` extraction. (Connector-only deployments can ignore this.)",
+        + "act on this product's API. Review .vendo/tools.json, the judgments in .vendo/judgments.json, and the "
+        + "audience exclusions in .vendo/overrides.json, or re-run `vendo init` extraction. (Connector-only "
+        + "deployments can ignore this.)",
       );
     }
     return host;
@@ -778,6 +814,10 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       if (!config.dir) {
         return {
           tools: configuredTools ?? [],
+          // No dir, no judgments: judgments.json has no injection channel
+          // (nothing writes the file yet — the judge channel is its own lane),
+          // so a dir-less host simply has no AI layer.
+          judgments: undefined,
           // An injected overrides doc still applies without a .vendo dir
           // (non-file / cloud-only hosts).
           overrides: injectedOverrides ?? emptyOverrides,
@@ -793,10 +833,15 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       // run at all when the in-memory piece already fully substitutes for it
       // — see readOptionalVendoJson's non-ENOENT handling for the residual
       // reads that DO still run.
-      const [toolsFile, overridesFileRead] = await Promise.all([
+      const [toolsFile, judgmentsFileRead, overridesFileRead] = await Promise.all([
         configuredTools !== undefined
           ? Promise.resolve(undefined)
           : readOptionalVendoJson(config.dir, "tools.json", (value) => toolsFileSchema.parse(value)),
+        // Absent → undefined, exactly like the pair. MALFORMED → throws, the
+        // same fail-closed posture as overrides.json and for the same reason:
+        // this file can carry disables and audience exclusions, so silently
+        // ignoring a broken one would silently LOOSEN the surface.
+        readOptionalVendoJson(config.dir, "judgments.json", (value) => judgmentsFileSchema.parse(value)),
         injectedOverrides !== undefined
           ? Promise.resolve(undefined)
           : readOptionalVendoJson(config.dir, "overrides.json", (value) => overridesFileSchema.parse(value)),
@@ -804,6 +849,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const overrides = injectedOverrides ?? overridesFileRead ?? emptyOverrides;
       return {
         tools: configuredTools ?? toolsFile?.tools ?? [],
+        judgments: judgmentsFileRead,
         overrides,
         compounds: overrides.compounds ?? [],
         briefs: overrides.briefs ?? [],
@@ -861,7 +907,7 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       }
 
       for (const extracted of host.tools) {
-        const merged = mergeOverride({ ...extracted }, host.overrides.tools[extracted.name]);
+        const merged = effectiveHostTool(host, extracted);
         const descriptor = descriptorOf(merged);
         if (merged.audience !== undefined) audience.set(merged.name, merged.audience);
         const disabled = merged.disabled === true;

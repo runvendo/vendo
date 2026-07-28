@@ -1,37 +1,22 @@
-import type { DomainManifest, ToolSemantics } from "@vendoai/core";
-import { overridesFileSchema, toolsFileSchema } from "./formats.js";
-
-/** The generation-facing merged view of the `.vendo` pair: per-tool field
- *  semantics with the authored overlay applied, and the domain manifest with
- *  the authored additions unioned in. */
-export interface MergedHostSemantics {
-  semantics: Record<string, ToolSemantics>;
-  domains?: DomainManifest;
-}
-
-const unionDomains = (generated?: DomainManifest, authored?: DomainManifest): DomainManifest | undefined => {
-  if (generated === undefined && authored === undefined) return undefined;
-  const has = new Set([...(generated?.has ?? []), ...(authored?.has ?? [])]);
-  const hasNot = new Set([...(generated?.hasNot ?? []), ...(authored?.hasNot ?? [])]);
-  // Authored wins on a direct contradiction: a human/agent classification in
-  // overrides.json overrides the opposite auto-derived one, so generation never
-  // receives a domain as both HAS and has-NO (which would make it disclaim
-  // available data or invent absent data).
-  for (const domain of authored?.has ?? []) hasNot.delete(domain);
-  for (const domain of authored?.hasNot ?? []) has.delete(domain);
-  return { has: [...has], hasNot: [...hasNot] };
-};
+import type { ToolSemantics } from "@vendoai/core";
+import { judgmentsFileSchema, overridesFileSchema, toolsFileSchema } from "./formats.js";
 
 /**
- * Merged semantics + domains for the umbrella's apps composition: takes the RAW
- * parsed JSON of the `.vendo` files (either may be absent) and returns
- * undefined when nothing applies. Malformed input throws; the caller decides
- * how loud to be.
+ * The generation-facing merged view of the `.vendo` trio: per-tool field
+ * semantics with the AI and authored overlays applied, keyed by tool name.
+ * Takes the RAW parsed JSON of the `.vendo` files (any may be absent) and
+ * returns undefined when nothing applies. Malformed input throws; the caller
+ * decides how loud to be.
+ *
+ * Overlay order is the layer order by AUTHOR: the scanner's inferred hints, the
+ * judge's corrections, then the human's — authored last so it wins, matching
+ * the registry's capability merge.
  */
-export function mergedSemanticsAndDomains(
-  files: { tools?: unknown; overrides?: unknown },
-): MergedHostSemantics | undefined {
+export function mergedHostSemantics(
+  files: { tools?: unknown; judgments?: unknown; overrides?: unknown },
+): Record<string, ToolSemantics> | undefined {
   const toolsFile = files.tools === undefined ? undefined : toolsFileSchema.parse(files.tools);
+  const judgmentsFile = files.judgments === undefined ? undefined : judgmentsFileSchema.parse(files.judgments);
   const overridesFile = files.overrides === undefined ? undefined : overridesFileSchema.parse(files.overrides);
 
   const semantics: Record<string, ToolSemantics> = {};
@@ -40,9 +25,12 @@ export function mergedSemanticsAndDomains(
     semantics[name] = { ...semantics[name], ...layer };
   };
   for (const tool of toolsFile?.tools ?? []) overlay(tool.name, tool.semantics);
+  // Semantics are generation HINTS, not capability, so this view stays on the
+  // file's raw-JSON terms: no binding guard (the registry's `applyJudgment`
+  // owns that for anything that can move capability) and `pending` is ignored
+  // here because a loosening can only ever name one of the four grades.
+  for (const [name, judged] of Object.entries(judgmentsFile?.tools ?? {})) overlay(name, judged.fields.semantics);
   for (const [name, override] of Object.entries(overridesFile?.tools ?? {})) overlay(name, override.semantics);
 
-  const domains = unionDomains(toolsFile?.domains, overridesFile?.domains);
-  if (Object.keys(semantics).length === 0 && domains === undefined) return undefined;
-  return { semantics, ...(domains === undefined ? {} : { domains }) };
+  return Object.keys(semantics).length === 0 ? undefined : semantics;
 }

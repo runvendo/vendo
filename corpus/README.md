@@ -109,18 +109,41 @@ per-repo logs as the `corpus-scorecard` artifact (30-day retention). The AI
 half — layer 2 scoring and the init AI polish pass — runs nightly on the Mac
 mini, not on GitHub.
 
-## AI extraction matrix
+## Judgment channel matrix
 
-`pnpm corpus ai` measures the AI extraction pass (the `vendo init` agent that
-drafts tool descriptions, risk grades, wakes, and the product brief) per repo
-and per model. For each selected repo it runs the normal checkout, bootstrap,
-local-package injection, and `vendo init` (producing the static
-`.vendo/tools.json`), then for each model runs the real extraction flow — the
-staged pipeline (survey → draft-per-surface → cross-check → brief) through the
-Claude Agent SDK harness, then the deterministic applyDraft guards into a
-clean per-model scratch root — and scores the result against
+`pnpm corpus ai` measures the judgment channel (the pass that grades tool
+descriptions, risk, critical marks, and wakes with quoted evidence and an
+independent skeptic) per repo and per model. For each selected repo it runs the
+normal checkout, bootstrap, local-package injection, and `vendo init` (producing
+the static `.vendo/tools.json`), then for each model runs the real
+`runJudgmentPass` — reading the actual repo, writing into a clean per-model
+scratch `.vendo` — and scores the `judgments.json` it wrote against
 `corpus/expectations/<repo>/ai-expected.json` (format documented in
 `corpus/expectations/README.md`).
+
+Two things about a cell are worth knowing:
+
+- it runs `mode: "full"`, `loosenings: "review"` with an auto-approving
+  `confirm`. A loosening (a risk downgrade, a woken tool) is precisely what the
+  channel will not apply on its own, and an unattended review DECLINES by
+  default — so without the auto-yes the matrix would only ever measure
+  hardenings.
+- it is scored from the judgments file read back off disk, not from the pass's
+  return value, because that file is the channel's actual output — the artifact a
+  human reviews, `vendo doctor`/`vendo try` display, and the runtime resolves
+  through `effectiveHostTool` (`packages/actions/src/runtime/registry.ts`,
+  `mergeOverride(applyJudgment(extracted, judgment), override)`). The rubric
+  computes that same state with the same `applyJudgment`, so it grades what the
+  channel decided rather than a re-implementation.
+
+Scored dimensions: risk accuracy against the labels (both directions —
+hardenings and downgrades), critical marks, wake decisions, evidence present on
+every applied judgment, and description-quality proxies.
+
+Two of those columns cannot score against today's labels: no `ai-expected.json`
+in the corpus populates `critical` or `wake`, and no `disabled` tool carries a
+joined label, so `Critical` and `Wake` render `—` everywhere. Fix the labels
+before reading those columns as a verdict.
 
 - Repos default to every one with an `ai-expected.json`; pass names to filter.
 - Models: repeat `--model <id>` (or comma-separate) to build the matrix; each

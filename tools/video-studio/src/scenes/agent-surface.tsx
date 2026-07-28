@@ -223,7 +223,6 @@ export const Transcript: React.FC<{messages: UIMessage[]}> = ({messages}) => (
     respond={noop}
     onMorph={noop}
     sendMessage={noop}
-    awaitingFirstChunk={false}
     working={false}
   />
 );

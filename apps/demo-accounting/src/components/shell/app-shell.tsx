@@ -4,11 +4,6 @@ import { resolveCadenceSession, sessionToken } from "@/server/session"
 import { Sidebar } from "./sidebar"
 import { Topbar, type TopbarUser } from "./topbar"
 
-/** Staff with a real headshot in public/avatars; everyone else gets initials. */
-const AVATARS: Record<string, string> = {
-  "daniel@cadence.test": "/avatars/daniel.jpg",
-}
-
 async function sessionUser(): Promise<TopbarUser | undefined> {
   const cookie = (await headers()).get("cookie")
   if (!cookie) return undefined
@@ -17,7 +12,6 @@ async function sessionUser(): Promise<TopbarUser | undefined> {
   if (!session) return undefined
   return {
     display: session.display,
-    avatarUrl: session.email ? AVATARS[session.email] : undefined,
     // Chip gate: the claim rides only proxy-minted tokens (DEMO_AUTOLOGIN);
     // a GoTrue credential login never carries it. The token was just verified
     // by resolveCadenceSession above, so a decode-only claim read is safe.

@@ -213,12 +213,12 @@ export function VendoThread({
   const assistantHasVisibleText = activeAssistant?.parts.some(
     part => part.type === "text" && part.text.trim().length > 0,
   ) ?? false;
-  // ENG-217 — the three streaming moments each get exactly ONE affordance:
-  // before the first chunk the generating skeleton holds the floor; a streamed
+  // ENG-217 — the streaming moments each get exactly ONE affordance: a streamed
   // turn whose text is still empty shows the lone caret (renderPart); once
-  // text flows the trailing caret rides .fl-md--streaming. FluidThinking
-  // covers the remaining gap (tool phases with no text yet).
-  const awaitingFirstChunk = busy && (activeAssistant === undefined || activeAssistant.parts.length === 0);
+  // text flows the trailing caret rides .fl-md--streaming. FluidThinking covers
+  // every remaining gap, INCLUDING the wait before the first chunk — that
+  // window used to get a document-shaped skeleton card, which promised a view
+  // on turns that never build one (live demo, 2026-07-28).
   const lastPart = activeAssistant?.parts.at(-1);
   const caretShowing = busy && lastPart?.type === "text" && lastPart.state === "streaming"
     && lastPart.text.trim().length === 0;
@@ -226,7 +226,7 @@ export function VendoThread({
   // progress voice — the thinking indicator between beats reads as two
   // indicators fighting.
   const hasBeats = activeAssistant?.parts.some(part => isToolUIPart(part)) ?? false;
-  const working = busy && !assistantHasVisibleText && !awaitingFirstChunk && !caretShowing && !hasBeats;
+  const working = busy && !assistantHasVisibleText && !caretShowing && !hasBeats;
 
   // ENG-215 — edit the last user turn: drop it (and anything after) from the
   // transcript and refill the composer, so re-sending amends rather than
@@ -366,7 +366,7 @@ export function VendoThread({
   // other busy moment narrates through the quiet Working ribbon.
   const textActivelyStreaming = lastPart?.type === "text" && lastPart.state === "streaming"
     && lastPart.text.trim().length > 0;
-  const quietBusy = busy && !awaitingFirstChunk && activeToolPart === undefined
+  const quietBusy = busy && activeToolPart === undefined
     && !textActivelyStreaming && !caretShowing && !working;
   const ribbon = activeToolPart ? (
     <StatusRibbon
@@ -523,7 +523,6 @@ export function VendoThread({
           respond={respondOnce}
           onMorph={setMorph}
           sendMessage={message => thread.sendMessage(message)}
-          awaitingFirstChunk={awaitingFirstChunk}
           working={working}
         />
         {errorBanner}

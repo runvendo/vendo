@@ -6,9 +6,9 @@ description: "Every path inside the .vendo directory, which tool writes it, and 
 
 | Path | Written by | Format |
 | --- | --- | --- |
-| `tools.json` | sync | `vendo/tools@3` (04) — tools with inferred field `semantics`, the `domains` manifest, per-tool `srcHash`, a per-tool `enriched` marker (set by the AI enrichment pass; absent = structural defaults), and the `watermark` (git tree at the last enrichment; absent until one runs) |
+| `tools.json` | sync | `vendo/tools@3` (04) — tools with inferred field `semantics`, per-tool `srcHash`, a per-tool `enriched` marker (set by the AI enrichment pass; absent = structural defaults), and the `watermark` (git tree at the last enrichment; absent until one runs) |
 | `catalog.json` | sync | `vendo/catalog@1` (04) |
-| `overrides.json` | init / human | `vendo/overrides@3` (04) — per-tool overrides plus your `domains` additions, `compounds`, `briefs`, and per-surface tool menus (`surfaces.agent` / `surfaces.mcp`, see [Curate the tool menu](/capabilities/mcp#curate-the-tool-menu)) |
+| `overrides.json` | init / human | `vendo/overrides@3` (04) — per-tool overrides plus `compounds`, `briefs`, and per-surface tool menus (`surfaces.agent` / `surfaces.mcp`, see [Curate the tool menu](/capabilities/mcp#curate-the-tool-menu)) |
 | `policy.json` | init / human | `vendo/policy@1` (05) |
 | `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
 | `brief.md` | init | product brief for the system prompt (03 §3) |

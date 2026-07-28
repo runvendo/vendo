@@ -5,7 +5,6 @@ import {
   riskLabelSchema,
   stepSchema,
   toolDescriptorSchema,
-  type DomainManifest,
   type FieldSemantic,
   type JsonSchema,
   type Step,
@@ -234,13 +233,6 @@ export const VENDO_TOOLS_FORMAT = "vendo/tools@3" as const;
 
 export const VENDO_OVERRIDES_FORMAT = "vendo/overrides@3" as const;
 
-/** ONE DomainManifest definition for the pair: the generated copy
- *  (tools.json) evolves additively like every generated artifact, the
- *  authored copy (overrides.json) fails loudly on a typo. */
-const domainManifestShape = { has: z.array(z.string()), hasNot: z.array(z.string()) };
-const generatedDomainManifestSchema = z.object(domainManifestShape).passthrough() satisfies z.ZodType<DomainManifest>;
-const authoredDomainManifestSchema = z.object(domainManifestShape).strict() satisfies z.ZodType<DomainManifest>;
-
 /** 04-actions §2: a descriptor plus its execution binding — one entry of `.vendo/tools.json`. */
 export type ExtractedTool = ToolDescriptor & {
   binding: PrimitiveToolBinding;
@@ -267,13 +259,6 @@ export type ExtractedTool = ToolDescriptor & {
   semantics?: Record<string, FieldSemantic>;
   /** The handler-source content hash incremental sync diffs against. */
   srcHash?: string;
-  /** cse lane 1c — provenance marker: this entry's judgment fields
-   *  (description, risk, critical, disabled, audience, semantics) were
-   *  reviewed by sync's AI enrichment pass. Absent = unenriched (structural
-   *  defaults only). Carried across structural syncs; the enrichment pass
-   *  strips it when the tool's source changed and the model failed to
-   *  account for it (stale-unenriched → re-enriched next keyed sync). */
-  enriched?: boolean;
 };
 
 export const extractedToolSchema = toolDescriptorSchema.extend({
@@ -284,7 +269,6 @@ export const extractedToolSchema = toolDescriptorSchema.extend({
   audience: z.enum(["end-user", "operator", "internal"]).optional(),
   semantics: z.record(fieldSemanticSchema).optional(),
   srcHash: z.string().min(1).optional(),
-  enriched: z.boolean().optional(),
 }).superRefine((tool, context) => {
   if ((tool.binding as { kind?: string }).kind === "compound") {
     context.addIssue({
@@ -296,21 +280,15 @@ export const extractedToolSchema = toolDescriptorSchema.extend({
 }) satisfies z.ZodType<ExtractedTool>;
 
 /** `.vendo/tools.json` — generated, regenerated wholesale by `vendo sync`,
- *  never hand-edited. `watermark` is the git tree hash of the last sync;
- *  `domains` is the sync-derived manifest (host additions merge in from
- *  overrides.json). Passthrough like every generated artifact. */
+ *  never hand-edited. Passthrough like every generated artifact. */
 export interface ToolsFile {
   format: typeof VENDO_TOOLS_FORMAT;
   tools: ExtractedTool[];
-  watermark?: string;
-  domains?: DomainManifest;
 }
 
 export const toolsFileSchema = z.object({
   format: z.literal(VENDO_TOOLS_FORMAT),
   tools: z.array(extractedToolSchema),
-  watermark: z.string().min(1).optional(),
-  domains: generatedDomainManifestSchema.optional(),
 }).passthrough() satisfies z.ZodType<ToolsFile>;
 
 /**
@@ -378,11 +356,10 @@ export const compoundToolSchema = toolDescriptorSchema.extend({
 
 /**
  * `.vendo/overrides.json` (vendo/overrides@3) — the AUTHORED layer, the only
- * human-edited file: per-tool overrides plus the host-owned `domains`
- * additions (unioned over the generated manifest), the agent-authored
- * `compounds` and `briefs`, and remix slot opt-outs. Strict on purpose — a
- * typo must fail loudly — except compounds and briefs entries, which keep
- * their passthrough (additive) behavior.
+ * human-edited file: per-tool overrides plus the agent-authored `compounds`
+ * and `briefs`, and remix slot opt-outs. Strict on purpose — a typo must fail
+ * loudly — except compounds and briefs entries, which keep their passthrough
+ * (additive) behavior.
  */
 /** The host-curated tool menu for ONE surface. Curation, not security: a menu
  *  decides what a surface OFFERS, never what the guard allows — `disabled`,
@@ -411,7 +388,6 @@ const overridesSurfacesSchema = z.object({
 export interface OverridesFile {
   format: typeof VENDO_OVERRIDES_FORMAT;
   tools: Record<string, ToolOverride>;
-  domains?: DomainManifest;
   compounds?: CompoundTool[];
   briefs?: CapabilityBrief[];
   surfaces?: OverridesSurfaces;
@@ -421,7 +397,6 @@ export interface OverridesFile {
 export const overridesFileSchema = z.object({
   format: z.literal(VENDO_OVERRIDES_FORMAT),
   tools: z.record(toolOverrideSchema),
-  domains: authoredDomainManifestSchema.optional(),
   compounds: z.array(compoundToolSchema).optional(),
   briefs: z.array(capabilityBriefSchema).optional(),
   surfaces: overridesSurfacesSchema.optional(),
@@ -429,6 +404,92 @@ export const overridesFileSchema = z.object({
     ignoreSlots: z.array(z.string().min(1)),
   }).strict().optional(),
 }).strict() satisfies z.ZodType<OverridesFile>;
+
+/**
+ * `.vendo/judgments.json` — the AI layer, the third file of `.vendo/`, split
+ * from `tools.json` by AUTHOR the same way `overrides.json` is: the model
+ * writes here, the deterministic scanner never does, and a human never has to.
+ * Generated, regenerated by the judge pass, keyed by tool name.
+ */
+export const VENDO_JUDGMENTS_FORMAT = "vendo/judgments@1" as const;
+
+/** The AI-writable surface — same field family as ToolOverride so the three
+ *  layers merge with one shape vocabulary. */
+export interface JudgmentFields {
+  description?: string;
+  title?: string;
+  risk?: "read" | "write" | "destructive";
+  critical?: boolean;
+  /** true = harden; false = approved wake-up (only ever arrives here after a
+   *  human accepted the queued loosening — the model cannot write it itself). */
+  disabled?: boolean;
+  audience?: "end-user" | "operator" | "internal";
+  semantics?: Record<string, FieldSemantic>;
+}
+
+export const judgmentFieldsSchema = z.object({
+  description: z.string().max(500).optional(),
+  title: z.string().min(1).max(60).optional(),
+  risk: riskLabelSchema.optional(),
+  critical: z.boolean().optional(),
+  disabled: z.boolean().optional(),
+  audience: z.enum(["end-user", "operator", "internal"]).optional(),
+  semantics: z.record(fieldSemanticSchema).optional(),
+  // STRICT like its sibling `toolOverrideSchema`: this is the whole AI-writable
+  // surface, and `applyJudgment` spreads it onto the tool. A passthrough here
+  // would let a model smuggle `binding` or `inputSchema` into a judgment and
+  // rewrite the deterministic skeleton. Identity is not expressible.
+}).strict() satisfies z.ZodType<JudgmentFields>;
+
+/** One queued loosening awaiting human review. NEVER merged at runtime: the
+ *  only fields a loosening can touch are the four capability grades, and each
+ *  one costs a quoted piece of evidence. */
+export interface PendingLoosening {
+  field: "risk" | "critical" | "disabled" | "audience";
+  value: string | boolean;
+  evidence: string;
+  reason?: string;
+}
+
+export const pendingLooseningSchema = z.object({
+  field: z.enum(["risk", "critical", "disabled", "audience"]),
+  value: z.union([z.string(), z.boolean()]),
+  evidence: z.string().min(1).max(500),
+  reason: z.string().max(300).optional(),
+}).passthrough() satisfies z.ZodType<PendingLoosening>;
+
+export interface ToolJudgment {
+  /** bindingIdentity(tool.binding) at judgment time — a mismatch makes the
+   *  whole entry inert rather than applying a judgment of another handler. */
+  binding: string;
+  srcHash?: string;
+  fields: JudgmentFields;
+  /** The quoted handler snippet the judgment rests on. REQUIRED: a grade with
+   *  no evidence is an opinion, and opinions do not move capability. */
+  evidence: string;
+  pending?: PendingLoosening[];
+}
+
+export const toolJudgmentSchema = z.object({
+  binding: z.string().min(1),
+  srcHash: z.string().min(1).optional(),
+  fields: judgmentFieldsSchema,
+  evidence: z.string().min(1).max(500),
+  pending: z.array(pendingLooseningSchema).optional(),
+}).passthrough() satisfies z.ZodType<ToolJudgment>;
+
+export interface JudgmentsFile {
+  format: typeof VENDO_JUDGMENTS_FORMAT;
+  tools: Record<string, ToolJudgment>;
+}
+
+/** Passthrough at the file level (generated-artifact convention), but every
+ *  bound above is load-bearing: this file can carry DISABLES, so a malformed
+ *  one must fail loudly at parse. Silently ignoring it would silently loosen. */
+export const judgmentsFileSchema = z.object({
+  format: z.literal(VENDO_JUDGMENTS_FORMAT),
+  tools: z.record(toolJudgmentSchema),
+}).passthrough() satisfies z.ZodType<JudgmentsFile>;
 
 /**
  * Remixable component baseline captured by sync (06 §8, written to

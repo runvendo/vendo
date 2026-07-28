@@ -11,6 +11,7 @@ import {
   Input, LineChart, Money, Num, Percent, Progress, Row, Select, Sparkline,
   Stack, Stat, Surface, Tabs, Text, Textarea,
   applyFormat, formatDateTime, formatMoney, formatNum, formatPercent,
+  setKitIntl, type KitIntl,
 } from "../../kit/index.js";
 
 declare global {
@@ -459,6 +460,11 @@ window.addEventListener("message", (event) => {
 
   if (message.kind === "render" && typeof message.source === "string") {
     applyThemeVars(message.themeVars);
+    // The jail is a separate realm with its own module instances, so the
+    // host's ambient currency does not cross the iframe boundary on its own —
+    // an island's <Money/> would print "$" while the tree around it prints
+    // the host's currency. Re-install it here, before anything renders.
+    setKitIntl(message.intl as Partial<KitIntl> | undefined);
     applyHostStyles(message.styles);
     void renderComponent(
       message.source,
