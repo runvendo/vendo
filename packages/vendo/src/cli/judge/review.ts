@@ -34,7 +34,11 @@ export interface LooseningReviewItem {
   reason?: string;
 }
 
-const show = (value: string | boolean): string => String(value);
+/** Render one side of the diff. `to` is a `PendingLoosening.value` — an
+ *  arbitrary string on the wire, and the "new" side of the very line a human
+ *  reads to grant capability — so it is sanitized like every other untrusted
+ *  string here. Booleans cannot carry control bytes; strings can. */
+const show = (value: string | boolean): string => sanitize(String(value));
 
 /** The reviewable diff: one heading per tool, then `field: old → new` with the
  *  evidence quote and reason indented under it. */
@@ -44,9 +48,11 @@ export function renderLooseningDiff(items: LooseningReviewItem[]): string[] {
   for (const item of items) {
     if (item.name !== current) {
       current = item.name;
-      // Tool names are pattern-constrained (TOOL_NAME_PATTERN) and matched
-      // against tools.json before they get here, so the heading is safe as-is.
-      lines.push(`  ${item.name}`);
+      // Tool names reaching here have been matched against tools.json, so they
+      // are pattern-constrained — but this diff is the single line that decides
+      // a capability grant, and "safe because of an argument three hops away" is
+      // not a property worth betting a terminal on. Sanitize unconditionally.
+      lines.push(`  ${sanitize(item.name)}`);
     }
     lines.push(`    ${item.field}: ${show(item.from)} → ${show(item.to)}`);
     lines.push(`      "${sanitize(item.evidence)}"`);
