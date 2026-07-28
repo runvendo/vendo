@@ -893,3 +893,208 @@ describe("runJudgmentPass — model-authored names cannot spoof the terminal", (
     expect(printed).toContain("rejected by the skeptic");
   });
 });
+
+// ---------------------------------------------------------------------------
+// BUG 1 (live corpus diagnostic): a syntax slip two characters from the end of
+// otherwise-perfect output destroyed whole batches, because parseArtifact calls
+// bare JSON.parse on the fenced block.
+// ---------------------------------------------------------------------------
+
+describe("runJudgmentPass — a malformed batch is repaired, never discarded", () => {
+  const fence = (body: string): string => `Here is my judgment.\n\n\`\`\`json\n${body}\n\`\`\`\n`;
+  const grade = (index: number): string =>
+    `    { "name": "host_tool_${index}", "risk": "read", "evidence": "return await db.select().from(t${index})",`
+    + ` "reason": "plain authenticated read" }`;
+
+  it("recovers all 20 rallly grades from a TRAILING COMMA after the narrative", async () => {
+    // 20 tools graded destructive by the scanner; the model correctly downgrades
+    // every one. Before the fix all 20 were lost to the stray comma.
+    const tools = Array.from({ length: 20 }, (_, i) => tool(`host_tool_${i}`, { risk: "destructive" }));
+    const fixture = await host(tools);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      loosenings: "queue",
+      harness: scripted([
+        fence(
+          `{\n  "tools": [\n${Array.from({ length: 20 }, (_, i) => grade(i)).join(",\n")}\n  ],\n`
+          + `  "narrative": "Five are plain authenticated reads mislabeled destructive.",\n}`,
+        ),
+        reply({
+          verdicts: Array.from({ length: 20 }, (_, i) => ({
+            name: `host_tool_${i}`, field: "risk", verdict: "uphold",
+          })),
+        }),
+      ]),
+    }));
+
+    expect(result.status).toBe("judged");
+    // Every downgrade survived and is queued for a human, as the doctrine requires.
+    expect(result).toMatchObject({ queued: 20 });
+    const file = await readJudgments(fixture);
+    expect(Object.keys(file.tools)).toHaveLength(20);
+    expect(file.tools.host_tool_0!.pending![0]!.value).toBe("read");
+    // The repair is reported, not hidden.
+    expect([...bus.logs, ...bus.errors].join("\n")).toMatch(/repair/i);
+  });
+
+  it("recovers both teable grades from a MISSING `]` on missedSurfaces", async () => {
+    const fixture = await host([
+      tool("host_tool_0", { risk: "destructive" }),
+      tool("host_tool_1", { risk: "destructive" }),
+    ]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      loosenings: "queue",
+      harness: scripted([
+        fence(
+          `{\n  "tools": [\n${grade(0)},\n${grade(1)}\n  ],\n`
+          + `  "narrative": "Two handlers reviewed.",\n`
+          + `  "missedSurfaces": ["The GraphQL surface under packages/core produced zero tools."\n}`,
+        ),
+        reply({ verdicts: [
+          { name: "host_tool_0", field: "risk", verdict: "uphold" },
+          { name: "host_tool_1", field: "risk", verdict: "uphold" },
+        ] }),
+      ]),
+    }));
+
+    expect(result.status).toBe("judged");
+    expect(result).toMatchObject({ queued: 2 });
+    const file = await readJudgments(fixture);
+    expect(Object.keys(file.tools)).toHaveLength(2);
+    const printed = [...bus.logs, ...bus.errors].join("\n");
+    // The advisory that broke the JSON is itself recovered and surfaced.
+    expect(printed).toContain("The GraphQL surface under packages/core");
+    expect(printed).toMatch(/repair/i);
+  });
+
+  it("a genuinely unparseable batch STILL fails loudly — never a silent zero-tools success", async () => {
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([fence(`{"tools": [ %%% this is not json at all `)]),
+    }));
+    expect(result.status).toBe("skipped");
+    expect(bus.errors.join("\n")).toMatch(/warning/i);
+    await expect(readFile(fixture.judgmentsPath, "utf8")).rejects.toThrow();
+  });
+
+  it("an inner tool object alone is NOT accepted as an empty batch", async () => {
+    // The span-scan trap: a bare tool object would satisfy an envelope whose
+    // `tools` defaults to [], yielding a cheerful "0 tools judged".
+    const fixture = await host([tool("host_a")]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([`{ "name": "host_a", "risk": "read", "evidence": "db.select()" }`]),
+    }));
+    expect(result.status).toBe("skipped");
+    await expect(readFile(fixture.judgmentsPath, "utf8")).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG 2 backstop: the prompt is the primary fix, but when the model hedges
+// upward anyway, a grade that CONTRADICTS its own reason must not auto-apply.
+// ---------------------------------------------------------------------------
+
+describe("runJudgmentPass — a risk grade that contradicts its own reason is dropped", () => {
+  /** skateshop host_revalidate_list, verbatim shape. */
+  it("drops `write` when the reason asserts no data change", async () => {
+    const fixture = await host([tool("host_revalidate_list", { risk: "read" })]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{
+          name: "host_revalidate_list",
+          risk: "write",
+          evidence: "revalidatePath(`/lists/${id}`)",
+          reason: "Only invalidates the Next.js path cache for the list route; no data changes.",
+        }], narrative: "" }),
+        reply({ verdicts: [{ name: "host_revalidate_list", field: "risk", verdict: "uphold" }] }),
+      ]),
+    }));
+
+    // The spurious HARDENING never lands: the tool keeps its read grade.
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_revalidate_list?.fields.risk).toBeUndefined();
+    expect(result).toMatchObject({ inconsistentRisk: 1 });
+    expect([...bus.logs, ...bus.errors].join("\n")).toMatch(/contradict/i);
+  });
+
+  /** openstatus host_trpc_edge_get, verbatim shape. */
+  it("drops `write` when the reason says the handler dispatches read procedures", async () => {
+    const fixture = await host([tool("host_trpc_edge_get", { risk: "read" })]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{
+          name: "host_trpc_edge_get",
+          risk: "write",
+          evidence: "export const GET = handler",
+          reason: "GET dispatches query (read) procedures only; does not mutate stored state.",
+        }], narrative: "" }),
+        reply({ verdicts: [{ name: "host_trpc_edge_get", field: "risk", verdict: "uphold" }] }),
+      ]),
+    }));
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_trpc_edge_get?.fields.risk).toBeUndefined();
+    expect(result).toMatchObject({ inconsistentRisk: 1 });
+  });
+
+  it("a `read` grade with the same reason is untouched — the rule only catches contradiction", async () => {
+    const fixture = await host([tool("host_x", { risk: "destructive" })]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      loosenings: "queue",
+      harness: scripted([
+        reply({ tools: [{
+          name: "host_x",
+          risk: "read",
+          evidence: "return db.select()",
+          reason: "Read-only handler; no data changes.",
+        }], narrative: "" }),
+        reply({ verdicts: [{ name: "host_x", field: "risk", verdict: "uphold" }] }),
+      ]),
+    }));
+    // The legitimate downgrade still routes to a human, doctrine intact.
+    expect(result).toMatchObject({ queued: 1, inconsistentRisk: 0 });
+  });
+
+  it("a genuine `write` whose reason describes a mutation is untouched", async () => {
+    const fixture = await host([tool("host_y", { risk: "read" })]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{
+          name: "host_y",
+          risk: "write",
+          evidence: "await db.update(rows).set({ done: true })",
+          reason: "Updates the row's done flag in Postgres.",
+        }], narrative: "" }),
+        reply({ verdicts: [{ name: "host_y", field: "risk", verdict: "uphold" }] }),
+      ]),
+    }));
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_y!.fields.risk).toBe("write");
+    expect(result).toMatchObject({ inconsistentRisk: 0 });
+  });
+
+  it("a NEGATED claim is not a no-mutation claim (`not read-only`)", async () => {
+    const fixture = await host([tool("host_z", { risk: "read" })]);
+    const bus = channel();
+    const result = await runJudgmentPass(options(fixture, bus, {
+      harness: scripted([
+        reply({ tools: [{
+          name: "host_z",
+          risk: "write",
+          evidence: "await db.insert(t)",
+          reason: "This endpoint is not read-only; it inserts a row.",
+        }], narrative: "" }),
+        reply({ verdicts: [{ name: "host_z", field: "risk", verdict: "uphold" }] }),
+      ]),
+    }));
+    const file = await readJudgments(fixture);
+    expect(file.tools.host_z!.fields.risk).toBe("write");
+    expect(result).toMatchObject({ inconsistentRisk: 0 });
+  });
+});

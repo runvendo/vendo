@@ -113,3 +113,38 @@ describe("composeSkepticInstructions", () => {
     expect(text).toMatch(/did not return a verdict|final/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// BUG 2 (live corpus diagnostic): "LOWER it when the handler provably only
+// reads" was read as "provably INERT", so the model hedged upward — emitting
+// `write` while its own reason asserted no data change. Three verbatim cases:
+// skateshop host_revalidate_list ("Only invalidates the Next.js path cache ...
+// no data changes" -> write), openstatus host_trpc_edge_get ("GET dispatches
+// query (read) procedures" -> write), skateshop host_uploadthing_list ("not an
+// app read" used as a write justification).
+// ---------------------------------------------------------------------------
+
+describe("JUDGE_OUTPUT_RULES — the risk test is mutation of stored state", () => {
+  it("states the actual test rather than the hedge-inviting `provably only reads`", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/mutat\w* of stored state|mutates stored state|no mutation of stored state/i);
+    expect(JUDGE_OUTPUT_RULES).not.toMatch(/provably only reads/i);
+  });
+
+  it("names the four things that are NOT mutations, so they cannot justify `write`", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/cache invalidation|invalidating a cache/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/pure computation/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/serializ/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/protocol metadata/i);
+  });
+
+  it("requires the grade to agree with the reason", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/self-consisten|must agree|contradict/i);
+    // The rule has to be stated as a hard consequence, not a suggestion.
+    expect(JUDGE_OUTPUT_RULES).toMatch(/risk must be "?read"?/i);
+  });
+
+  it("keeps the doctrine: a raise applies, a lowering waits for a human", () => {
+    expect(JUDGE_OUTPUT_RULES).toMatch(/raise applies|applies immediately/i);
+    expect(JUDGE_OUTPUT_RULES).toMatch(/queued for a human/i);
+  });
+});

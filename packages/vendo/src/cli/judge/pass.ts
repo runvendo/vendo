@@ -18,7 +18,8 @@ import {
   type PendingLoosening,
   type ToolJudgment,
 } from "@vendoai/actions";
-import { parseArtifact, type ExtractionHarness } from "../extract/harness.js";
+import type { ExtractionHarness } from "../extract/harness.js";
+import { parseJudgeArtifact } from "./parse.js";
 import { readOptional, type Output } from "../shared.js";
 import { resolveJudgmentEngine, type ResolveEngineOptions } from "./engine.js";
 import { composeJudgeInstructions, composeSkepticInstructions, type SkepticSubject } from "./prompts.js";
@@ -95,7 +96,13 @@ const NARRATIVE_LIMIT = 4000;
  * counted and reported rather than silently absorbed.
  */
 const judgeResultSchema = z.object({
-  tools: z.array(z.unknown()).default([]),
+  // REQUIRED, not `.default([])`. A default here is what lets a bare inner tool
+  // object pose as a valid empty envelope, so any span-scanning parse would
+  // return a cheerful "0 tools judged" instead of failing — a silent empty
+  // success that gets SCORED, where a loud failure would have been retried.
+  // Requiring the key makes that impossible. A genuinely empty batch still says
+  // so explicitly with `"tools": []`, which the prompt asks for.
+  tools: z.array(z.unknown()),
   missedSurfaces: z.unknown().optional(),
   narrative: z.unknown().optional(),
 });
@@ -180,8 +187,39 @@ const skepticVerdictSchema = z.object({
  *  verdict that does not parse leaves its (tool, field) unexamined, which routes
  *  into the re-ask and then into rejection. */
 const skepticResultSchema = z.object({
-  verdicts: z.array(z.unknown()).default([]),
+  // Required for the same reason as `tools` above. An unparseable skeptic reply
+  // already fails closed (everything unexamined → re-ask → rejected), but a
+  // reply that merely LOOKS empty must not be mistaken for a real one.
+  verdicts: z.array(z.unknown()),
 });
+
+/**
+ * Phrases in which a proposal's own reason asserts the handler mutates nothing.
+ *
+ * Deliberately NARROW. This is a backstop for a model contradicting itself, and
+ * a false positive would silently discard a real grade — so it fires only on an
+ * explicit no-state-change claim, never on an inference. The primary fix is the
+ * risk rule in prompts.ts, which now states the actual test (mutation of stored
+ * state) instead of the "provably only reads" phrasing the model read as
+ * "provably inert" and hedged around.
+ */
+const NO_MUTATION_CLAIMS: readonly RegExp[] = [
+  /\bno\s+(?:data|state|db|database|persistent)\s+(?:change|changes|mutation|mutations|write|writes)\b/i,
+  /\bno\s+(?:mutations?|writes)\b/i,
+  /\b(?:does|do)\s+not\s+(?:modify|mutate|write|persist|change)\b/i,
+  /\b(?:doesn't|don't|never)\s+(?:modify|mutate|write|persist|change)\b/i,
+  /\bread[-\s]only\b/i,
+  /\bonly\s+reads\b/i,
+  /\bno\s+side[-\s]effects?\b/i,
+];
+
+/** "…is not read-only" is the OPPOSITE claim, and must not read as one. */
+const NEGATED_NO_MUTATION = /\b(?:not|isn't|aren't)\s+(?:a\s+|an\s+)?read[-\s]only\b/i;
+
+function assertsNoMutation(reason: string): boolean {
+  if (NEGATED_NO_MUTATION.test(reason)) return false;
+  return NO_MUTATION_CLAIMS.some((pattern) => pattern.test(reason));
+}
 
 /** Every field a judgment may carry, in the order the narrative reports them. */
 const JUDGMENT_FIELDS = ["description", "title", "risk", "critical", "disabled", "audience", "semantics"] as const;
@@ -224,6 +262,8 @@ export interface JudgmentPassCounts {
   /** Advisory and prose strings truncated or dropped so they could not discard a
    *  judgment. Never fatal — surfaced so a clamped lead is visible. */
   advisoriesClamped: number;
+  /** Risk grades dropped for contradicting their own stated reason. */
+  inconsistentRisk: number;
 }
 
 export type JudgmentPassResult =
@@ -420,6 +460,8 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   const artifactDir = join(options.out, "data", "judge");
   await rm(artifactDir, { recursive: true, force: true });
   const notes: string[] = [];
+  /** Stages whose output needed a syntax repair — warned about, never hidden. */
+  const repairedStages: string[] = [];
   const writeArtifact = async (stage: string, body: unknown): Promise<void> => {
     await writeIfChanged(join(artifactDir, `${stage}.json`), `${JSON.stringify(body, null, 2)}\n`);
   };
@@ -440,9 +482,18 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
         instructions,
         ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress }),
       });
-      const artifact = parseArtifact(text, schema);
-      await writeArtifact(stage, artifact);
-      return artifact;
+      // Tolerant of a syntax slip, loud about anything it cannot rescue — see
+      // judge/parse.ts for the two preserved failures that motivate it.
+      const parsed = parseJudgeArtifact(text, schema);
+      if (parsed.repaired) {
+        repairedStages.push(stage);
+        // The RAW text rides along in the artifact so the slip stays diagnosable
+        // after a repair, not just after a failure.
+        await writeArtifact(stage, { stage, repaired: true, artifact: parsed.artifact, raw: text });
+      } else {
+        await writeArtifact(stage, parsed.artifact);
+      }
+      return parsed.artifact;
     } catch (error) {
       await writeArtifact(stage, { stage, error: failure(error), ...(text === null ? {} : { raw: text }) });
       throw error;
@@ -457,6 +508,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
   const evidenceless: string[] = [];
   const malformed: string[] = [];
   const unknownTools: string[] = [];
+  const inconsistentRisk: string[] = [];
   const missedSurfaces: string[] = [];
   const narratives: string[] = [];
   let advisoriesClamped = 0;
@@ -517,6 +569,21 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
       for (const key of JUDGMENT_FIELDS) {
         const value = parsed.data[key];
         if (value !== undefined) Object.assign(fields, { [key]: value });
+      }
+      // Self-consistency backstop. The model hedges upward: it emits `write`
+      // while its own reason says the handler changes no stored state (cache
+      // revalidation, a GET dispatching query procedures). Such a grade is
+      // DROPPED, not corrected in either direction — applying it would auto-apply
+      // a hardening the reason itself denies, and rewriting it to `read` would
+      // apply a loosening no human approved. Dropping leaves the tool's standing
+      // grade untouched, which is the only move that loosens nothing.
+      if (
+        (fields.risk === "write" || fields.risk === "destructive")
+        && parsed.data.reason !== undefined
+        && assertsNoMutation(parsed.data.reason)
+      ) {
+        delete fields.risk;
+        inconsistentRisk.push(parsed.data.name);
       }
       proposals.set(parsed.data.name, {
         candidate,
@@ -758,6 +825,12 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     output.log(`  no evidence → rejected (${evidenceless.length}): ${listed(evidenceless)}`);
   }
   if (malformed.length > 0) output.log(`  malformed proposals ignored (${malformed.length}): ${listed(malformed)}`);
+  if (inconsistentRisk.length > 0) {
+    output.log(
+      `  risk grade contradicted its own reason, dropped (${inconsistentRisk.length}):`
+      + ` ${listed(inconsistentRisk)}`,
+    );
+  }
   if (discredited.length > 0) {
     output.log(`  wholly rejected, left unjudged (${discredited.length}): ${listed(discredited)}`);
   }
@@ -768,6 +841,12 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     output.error(
       `warning: ${advisoriesClamped} advisory string${advisoriesClamped === 1 ? "" : "s"} clamped`
       + " (over-long or unusable) — tool judgments were unaffected",
+    );
+  }
+  if (repairedStages.length > 0) {
+    output.error(
+      `warning: ${repairedStages.length} model reply had malformed JSON and was repaired`
+      + ` (${repairedStages.join(", ")}) — grades recovered; raw output kept in .vendo/data/judge/`,
     );
   }
   for (const note of notes) output.error(`warning: ${sanitize(note)}`);
@@ -790,6 +869,7 @@ export async function runJudgmentPass(options: JudgmentPassOptions): Promise<Jud
     unexaminedRejected: unexaminedRejected.length,
     evidenceless: evidenceless.length,
     advisoriesClamped,
+    inconsistentRisk: inconsistentRisk.length,
   };
 }
 
