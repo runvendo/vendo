@@ -123,7 +123,7 @@ Commands:
   run       Clone, bootstrap, inject local Vendo, run init, and execute selected layers.
   boot      Clone, bootstrap, inject local Vendo, run init, boot one deep-tier app, and wait for Ctrl-C.
   gallery   Boot configured deep-tier repos and capture native/generated screenshots, GIFs, and timings.
-  ai        Run the AI extraction matrix (repo × model) and score against ai-expected.json labels.
+  ai        Run the judgment-channel matrix (repo × model) and score against ai-expected.json labels.
             Needs a real model credential (ANTHROPIC_API_KEY or a Claude Code login); never part of pnpm test.
   install-eval  Prove a real coding agent installs Vendo from the docs' copy-paste prompt alone:
             clean fixture copies (${INSTALL_EVAL_FIXTURES.map((fixture) => fixture.name).join(", ")}),
@@ -1022,12 +1022,12 @@ async function runAiCommand(options: AiCommandOptions, deps: ResolvedDeps): Prom
   const harness = deps.createExtractionHarness(sdkDir);
   const credential = await harness.availability({ root: deps.workspaceRoot ?? defaultWorkspaceRoot, env });
   if (credential === null) {
-    deps.stderr("The AI extraction matrix needs a real model credential and cannot run without one.");
+    deps.stderr("The judgment-channel matrix needs a real model credential and cannot run without one.");
     deps.stderr("Set ANTHROPIC_API_KEY in the environment or log into Claude Code (`claude login`), then re-run `pnpm corpus ai`.");
     return 1;
   }
   const progress = options.json ? deps.stderr : deps.stdout;
-  progress(`AI extraction matrix: ${repos.length} repo(s) × ${options.models.length} model(s), credential: ${credential}.`);
+  progress(`Judgment channel matrix: ${repos.length} repo(s) × ${options.models.length} model(s), credential: ${credential}.`);
 
   const injector = deps.createInjector({ context, workspaceRoot: deps.workspaceRoot });
   const results: AiRepoResult[] = [];
@@ -1052,7 +1052,7 @@ async function runAiCommand(options: AiCommandOptions, deps: ResolvedDeps): Prom
         onProgress: progress,
       }));
     } catch (error) {
-      deps.stderr(`AI matrix failed for ${repo.name}: ${errorMessage(error)}`);
+      deps.stderr(`Judgment matrix failed for ${repo.name}: ${errorMessage(error)}`);
       results.push({ repo: repo.name, failure: errorMessage(error), labeled: false, models: [] });
     }
   }
