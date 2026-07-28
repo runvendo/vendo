@@ -486,9 +486,43 @@ describe("host HTTP execution", () => {
     const failed = await actions.execute({ id: "3", tool: "host_probe", args: { mode: "fail" } }, ctx);
     expect(toolOutcomeSchema.parse(failed)).toMatchObject({ status: "error", error: { code: "http-error" } });
     if (failed.status === "error") {
-      expect(failed.error.message).toContain("GET /probe → 503:");
-      expect(failed.error.message).toHaveLength("GET /probe → 503: ".length + 200);
+      const prefix = `GET http://127.0.0.1:${port}/probe → 503: `;
+      expect(failed.error.message).toContain(prefix);
+      expect(failed.error.message).toHaveLength(prefix.length + 200);
     }
+  });
+
+  // A wrong wire origin 404s every tool call while every path is correct, so an
+  // http failure that carries only the path reads exactly like a wrong path.
+  it("names the origin in an http failure without leaking the URL's credentials", async () => {
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: "https://svc:s3cret-password@wrong-host.test:8443",
+      fetch: async () => new Response("no such route", { status: 404 }),
+    });
+    const failed = await actions.execute(
+      { id: "1", tool: "host_probe", args: { access_token: "sk-live-querytoken" } },
+      ctx,
+    );
+    expect(failed).toMatchObject({ status: "error", error: { code: "http-error" } });
+    if (failed.status !== "error") return;
+    expect(failed.error.message).toBe("GET https://wrong-host.test:8443/probe → 404: no such route");
+    expect(failed.error.message).not.toContain("s3cret-password");
+    expect(failed.error.message).not.toContain("svc");
+    expect(failed.error.message).not.toContain("sk-live-querytoken");
+  });
+
+  it("keeps token-only userinfo out of an http failure", async () => {
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: "https://ghp_tokenonlyuserinfo@wrong-host.test",
+      fetch: async () => new Response("nope", { status: 500 }),
+    });
+    const failed = await actions.execute({ id: "1", tool: "host_probe", args: {} }, ctx);
+    expect(failed).toMatchObject({ status: "error", error: { code: "http-error" } });
+    if (failed.status !== "error") return;
+    expect(failed.error.message).toBe("GET https://wrong-host.test/probe → 500: nope");
+    expect(failed.error.message).not.toContain("ghp_");
   });
 
   it("returns validation and network outcomes instead of throwing per-call failures", async () => {

@@ -246,6 +246,22 @@ function joinedUrl(baseUrl: string, path: string): URL {
   return new URL(`${baseUrl.replace(/\/$/, "")}${path}`);
 }
 
+/**
+ * How a failed host call names what it called: origin **and** path. A wire
+ * origin pointing at the wrong host 404s every tool while every path is
+ * correct, and a message carrying only the path reads exactly like a malformed
+ * path — so the origin is never omitted.
+ *
+ * Assembled from the URL's safe parts rather than scrubbed after the fact:
+ * `host` cannot contain userinfo, and dropping `search` drops query-string
+ * tokens. A baseUrl may carry either (`https://svc:pw@host`,
+ * `https://ghp_x@host`, `?access_token=…`) and this string reaches host logs
+ * and the model.
+ */
+function requestTarget(url: URL): string {
+  return `${url.protocol}//${url.host}${url.pathname}`;
+}
+
 function resolveUrl(binding: RouteBinding | OpenApiBinding, configuredBaseUrl?: string): URL {
   let baseUrl: string | undefined;
   if (binding.kind === "openapi" && binding.baseUrl) {
@@ -687,7 +703,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       if (!response.ok) {
         return error(
           "http-error",
-          `${method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
+          `${method} ${requestTarget(url)} → ${response.status}: ${text.slice(0, 200)}`,
         );
       }
       if (text) {
