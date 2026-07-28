@@ -39,6 +39,7 @@ import { createAppData } from "./app-data.js";
 import { appLifecycleEvent } from "./audit.js";
 import { createAppCaller } from "./call.js";
 import { createParkedActions } from "./parked-action.js";
+import type { Check } from "./checking/types.js";
 import type {
   CloudAppsClient,
   PublishRecord,
@@ -175,6 +176,10 @@ export interface AppsConfig {
   /** W4 pipeline knobs, passed to the generation engine: structured repair
    *  (default on), outline+region-parallel tier-2 and the end pass (opt-in). */
   pipeline?: GenerationDependencies["pipeline"];
+  /** The host's own checks over a generated app (checking/types.ts). APPENDED
+   *  to the built-in fact checks and the reviewer — a host can add findings,
+   *  never remove or replace a built-in one. */
+  checks?: readonly Check[];
   /** The composition-normalized catalog (01 §14): derived schemas included.
    *  The provider (function) form of theme/semantics/domains below mirrors
    *  designRules: it is resolved lazily per create/edit (in

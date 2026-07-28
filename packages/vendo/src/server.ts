@@ -455,6 +455,11 @@ export interface CreateVendoConfig {
         regionParallel, endPass) — opt-in while the A/B is measured; threaded
         verbatim to the apps engine. */
     pipeline?: AppsConfig["pipeline"];
+    /** The host's own checks over a generated app: each one reports findings
+        (`block` stops the app shipping as-is, `warn` rides along) the same way
+        the built-in fact checks and the AI reviewer do. APPENDED to the
+        built-ins — a host adds findings, it never removes one. */
+    checks?: AppsConfig["checks"];
     /** Host design rules for app generation (spec 2026-07-20): the same prose
         `.vendo/design-rules.md` carries, for hosts that prefer programmatic
         config. A non-blank string wins over the file and is fixed for the
@@ -1771,6 +1776,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // paint.model otherwise; paint.disabled survives as the one-lane switch.
     ...(inference.paint === undefined ? {} : { paint: inference.paint }),
     ...(config.apps?.pipeline === undefined ? {} : { pipeline: config.apps.pipeline }),
+    ...(config.apps?.checks === undefined ? {} : { checks: config.apps.checks }),
     // cse lane 3 — theme/semantics/domains flow as PROVIDER thunks so a
     // cloud-owned surface applies without a compose-time fetch. semantics/domains
     // resolve live per generation (pick up cloud overrides as the snapshot warms);

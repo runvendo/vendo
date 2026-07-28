@@ -94,6 +94,14 @@ export {
 // The generation seam for the genui-bench vendo lane: the SAME modelEngine
 // createApps() rides, driven directly with production PipelineConfig defaults
 // (no forked engine config). Additive export — engine behavior is unchanged.
+// The checking layer's contract: the shape a host writes an AppsConfig.checks
+// entry in, and the finding shape every check reports (checking/types.ts).
+export type {
+  Check,
+  CheckInput,
+  CheckingLayer,
+  Finding,
+} from "./checking/types.js";
 export {
   modelEngine,
   type GeneratedAppDocument,
