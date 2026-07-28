@@ -7,9 +7,9 @@
     "./demo-config": "./src/lib/demo-config.ts"
   },
   "scripts": {
-    "predev": "vendo sync .",
+    "predev": "vendo sync . --no-ai",
     "dev": "next dev",
-    "prebuild": "vendo sync .",
+    "prebuild": "vendo sync . --no-ai",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

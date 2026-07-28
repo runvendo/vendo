@@ -6,7 +6,6 @@ import { runCloud } from "./cli/cloud/index.js";
 import { runConfig } from "./cli/config.js";
 import { runDoctor } from "./cli/doctor.js";
 import { runEject } from "./cli/eject.js";
-import { runExtractApply } from "./cli/extract/apply.js";
 import { runInit, type InitOptions } from "./cli/init.js";
 import { runKnowledge } from "./cli/knowledge/index.js";
 import { runMcp } from "./cli/mcp/index.js";
@@ -25,17 +24,15 @@ Commands:
   doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
 
 Advanced:
-  sync [dir]      Re-extract tools and baselines, then AI-enrich entries the code diff affected (keyless: structural only; --strict is the CI gate)
+  sync [dir]      Re-extract tools and baselines, then judge what moved — evidence-backed grades, loosenings held for a human (keyless: structural only; --strict is the CI gate)
   eject <surface> [dir]  Copy a shipped chrome surface's presentation source into your repo (--list to see surfaces)
-  extract [dir]   Apply a coding agent's extraction draft through the deterministic guards (--apply <draft.json>)
   knowledge <verb> Sync local docs/glossary/API sources into the product knowledge base (add, list, remove, sync)
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API
   config <command> Push/pull a .vendo surface to/from hosted config, or show surface owners
 
 Options:
-  --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations, the aiPolish delegation contract
-  --apply <draft.json>       Extract only: draft file an external agent produced from the plan's aiPolish contract
+  --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations
   --yes                      Init: skip the cloud-login offer; doctor: auto-start the dev server
   --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
   --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
@@ -43,18 +40,17 @@ Options:
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
-  --ai-polish                Init only: consent to the AI extraction pass without a prompt (works non-interactively)
+  --ai-polish                Init only: consent to the judgment pass without a prompt (works non-interactively)
   --engine <name>            Init/try/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
   --url <url>                Doctor/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
-  --review                   Sync only: show the AI enrichment narrative and confirm before writing
-  --full                     Sync only: force full re-enrichment instead of the watermark diff
-  --no-watermark             Sync only: workspace-internal sync — no watermark bookkeeping, no AI enrichment
+  --review                   Sync only: show the queued + new loosenings and confirm before writing
+  --full                     Sync only: judge the whole catalog instead of only what moved
   --port <port>              Try only: listen on a fixed port (default: any free port)
   --no-open                  Try only: print the URL without opening the browser
-  --no-ai                    Try only: skip the background AI deepening (the demo stays on the deterministic profile)
+  --no-ai                    Sync: skip the judgment pass (workspace-internal syncs); try: skip the background AI deepening
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
@@ -83,14 +79,15 @@ const INIT_VALUE_OPTIONS = ["--auth", "--framework", "--cloud-key", "--theme", "
     bad value fails as loudly as an unknown flag, with the valid choices. */
 const INIT_AUTH_VALUES = ["authJs", "clerk", "supabase", "auth0", "jwt", "none"];
 const INIT_FRAMEWORK_VALUES = ["next", "express", "custom"];
-/** The user-facing engine families (extraction.ts's ENGINE_FAMILIES values) —
+/** The user-facing engine families (judge/engine.ts's ENGINE_FAMILIES values) —
     one ladder, so `init --engine` and `try --engine` accept the same names. */
 const ENGINE_VALUES = ["claude", "codex", "npx"];
-const EXTRACT_FLAGS = new Set(["--force"]);
-const EXTRACT_VALUE_OPTIONS = ["--apply"];
 const DOCTOR_FLAGS = new Set(["--json", "--yes"]);
 const DOCTOR_VALUE_OPTIONS = ["--url"];
-const SYNC_FLAGS = new Set(["--strict", "--json", "--report", "--review", "--full", "--no-watermark"]);
+/** `--no-watermark` is the pre-judgment-layer name for `--no-ai`; it stays
+    accepted (and undocumented) so the demo hooks and any pinned script that
+    still passes it keep working. */
+const SYNC_FLAGS = new Set(["--strict", "--json", "--report", "--review", "--full", "--no-ai", "--no-watermark"]);
 const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url", "--engine"];
 const LOGIN_VALUE_OPTIONS = ["--api-url", "--wait"];
 
@@ -245,25 +242,6 @@ export async function main(argv: string[]): Promise<number> {
       }),
     });
   }
-  if (command === "extract") {
-    const problems = optionErrors(args, EXTRACT_FLAGS, EXTRACT_VALUE_OPTIONS);
-    if (!args.some((arg) => arg === "--apply" || arg.startsWith("--apply="))) {
-      problems.push("--apply <draft.json> is required");
-    } else if (option(args, "--apply") === "") {
-      // `--apply=` slips past the missing-value check with an empty string,
-      // which would resolve to the cwd instead of failing loudly.
-      problems.push("--apply requires a value");
-    }
-    if (problems.length > 0) {
-      console.error(`vendo extract: ${problems.join("; ")}\n\n${HELP}`);
-      return 1;
-    }
-    return runExtractApply({
-      targetDir: target(args),
-      apply: option(args, "--apply")!,
-      force: args.includes("--force"),
-    });
-  }
   if (command === "eject") {
     const positional = args.filter((value) => !value.startsWith("--"));
     const list = args.includes("--list");
@@ -339,7 +317,7 @@ export async function main(argv: string[]): Promise<number> {
       apiUrl: option(args, "--api-url"),
       review: args.includes("--review"),
       full: args.includes("--full"),
-      noWatermark: args.includes("--no-watermark"),
+      noAi: args.includes("--no-ai") || args.includes("--no-watermark"),
       ...(engine === undefined ? {} : { engine }),
     });
   }
