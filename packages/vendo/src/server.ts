@@ -1627,6 +1627,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
         tools: config.profile?.tools !== undefined
           ? { format: VENDO_TOOLS_FORMAT, tools: config.profile.tools }
           : parsedFile("tools.json"),
+        // The AI layer's semantics, read live off the same local disk leg as
+        // tools.json: judgments.json is not a cloud config surface, and there
+        // is no in-memory profile piece for it.
+        judgments: parsedFile("judgments.json"),
         overrides: config.profile?.overrides
           ?? (overridesRaw === undefined ? undefined : JSON.parse(overridesRaw) as unknown),
       });
