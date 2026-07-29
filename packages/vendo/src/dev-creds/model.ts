@@ -6,6 +6,7 @@ import type { LanguageModel } from "ai";
 import { resolveCloudBaseUrl } from "../cli/cloud/client.js";
 import {
   describeDevCredential,
+  detectDevCredential,
   resolveDevCredential,
   type DevCredential,
   type EnvKeyProvider,
@@ -265,6 +266,7 @@ export class DevModelController {
   private readonly slot: VendoModelSlot;
   private readonly name: string | undefined;
   private resolution: Promise<Resolution> | null = null;
+  private resolvedModelId: string | undefined;
   private announced = false;
   /** Per-instance slot config bound by createVendo (bindVendoModelSlots). */
   private slotModels: ConfigurableSlotModels = {};
@@ -302,9 +304,34 @@ export class DevModelController {
   resolve(): Promise<Resolution> {
     this.resolution ??= this.resolveOnce().then((resolution) => {
       if (resolution.mode === "unavailable") console.error(`[vendo] ${resolution.message}`);
+      else this.resolvedModelId = resolution.model.modelId;
       return resolution;
     });
     return this.resolution;
+  }
+
+  /** The model id this instance calls — the resolved rung's own id once
+   *  resolution has run, and before that the id resolution WILL pick, which
+   *  the pure env ladder can answer synchronously (detectDevCredential).
+   *
+   *  It has to be answerable BEFORE the first call, because that call is
+   *  composed from it: @vendoai/apps reads `model.modelId` to decide whether
+   *  the family still accepts `temperature`. A placeholder id there reads as
+   *  "not a Claude model", so a ladder pinned to a Claude 5 rung kept
+   *  `temperature: 0` and every generation 400'd.
+   *
+   *  Undefined only when there is no credential to resolve at all — the
+   *  wrapper keeps its placeholder id, and no call can succeed anyway. */
+  get modelId(): string | undefined {
+    if (this.resolvedModelId !== undefined) return this.resolvedModelId;
+    const configured = this.configured;
+    if (configured !== undefined && typeof configured !== "string") {
+      return (configured as { modelId?: string }).modelId;
+    }
+    const credential = detectDevCredential({ env: this.env });
+    if (credential.rung === "env-key") return this.pickModelId(DEFAULT_MODELS[credential.provider]!);
+    if (credential.rung === "vendo-cloud") return this.pickModelId(CLOUD_MODEL);
+    return undefined;
   }
 
   private announce(line: string): void {
@@ -317,7 +344,7 @@ export class DevModelController {
   /** The string-tier model id for the resolved rung. Precedence (spec §DX
    *  surfaces): env pin → deprecated agent-slot pin → configured slot string
    *  (models.judge) → the verbatim name → the per-rung slot default. */
-  private modelId(spec: ProviderSpec): string {
+  private pickModelId(spec: ProviderSpec): string {
     const pin = nonBlank(this.env[SLOT_PIN_ENV[this.slot]]);
     if (pin !== undefined) return pin;
     if (this.slot === "agent") {
@@ -352,7 +379,7 @@ export class DevModelController {
     const factory = loaded[spec.factory] as (
       config: { apiKey: string; baseURL?: string },
     ) => (model: string) => LanguageModelV3Like;
-    const modelId = this.modelId(spec);
+    const modelId = this.pickModelId(spec);
     const model = factory(config)(modelId);
     this.announce(`${describeDevCredential(credential)} → ${modelId}${announceSuffix}`);
     return { mode: "delegate", model, credential };
@@ -467,12 +494,18 @@ function rejectedKey(credential: DevCredential | undefined, error: unknown): Ven
   return undefined;
 }
 
-function lazyModel(controller: DevModelController, provider: string, modelId: string): LanguageModel {
+function lazyModel(controller: DevModelController, provider: string, placeholder: string): LanguageModel {
   const model: LanguageModelV3Like = {
     specificationVersion: "v3",
     // The lazy IDENTITY is vendo's own by design (the family name is the seam).
     provider,
-    modelId,
+    // The model ID is NOT: a caller composing this call decides how to call it
+    // from the id (sampling params, above all), so it has to name the resolved
+    // rung, not the seam. A getter because the rung resolves lazily; the
+    // placeholder survives only where there is no credential and so no real id.
+    get modelId() {
+      return controller.modelId ?? placeholder;
+    },
     // CAPABILITY, though, must be the resolved provider's: the SDK reads
     // supportedUrls to decide whether a remote image/PDF is ingested natively
     // or downloaded first, so answering "none" makes callers fetch files the

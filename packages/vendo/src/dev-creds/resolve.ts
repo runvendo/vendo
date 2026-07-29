@@ -40,6 +40,16 @@ function present(env: Record<string, string | undefined>, name: string): boolean
 export async function resolveDevCredential(
   options: ResolveDevCredentialOptions = {},
 ): Promise<DevCredential> {
+  return detectDevCredential(options);
+}
+
+/** The same detection, without the awaitable seam: nothing here touches the
+ *  network or the disk, so the rung — and with it the model id the ladder will
+ *  call — is knowable synchronously. The lazy model wrapper needs exactly that
+ *  to answer `modelId` honestly before its first call (dev-creds/model.ts). */
+export function detectDevCredential(
+  options: ResolveDevCredentialOptions = {},
+): DevCredential {
   const env = options.env ?? process.env;
 
   const pinned = env["VENDO_DEV_CREDENTIAL"]?.trim();

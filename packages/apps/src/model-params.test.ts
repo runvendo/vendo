@@ -217,3 +217,39 @@ describe("engine model calls (integration)", () => {
     for (const call of calls) expect(call.temperature).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #692: vendo's model ladder hands the engine a lazily-resolving wrapper whose
+// modelId is a GETTER over the resolved rung — the id is not a fixed string on
+// the object. The rule must read it at call time, per call, or a ladder pinned
+// to a Claude 5 rung keeps temperature: 0 and 400s. (The ladder half — that the
+// getter answers the real rung id — is pinned in
+// packages/vendo/src/dev-creds/model.test.ts.)
+// ---------------------------------------------------------------------------
+
+/** A recording model shaped like the ladder wrapper: the id is only knowable
+ *  through the getter, never as an own value on the object. */
+const laddered = (rungId: string): ReturnType<typeof recordingModel> => {
+  const { model, calls } = recordingModel("vendo-env");
+  Object.defineProperty(model, "modelId", { get: () => rungId });
+  return { model, calls };
+};
+
+describe("engine model calls behind the vendo model ladder", () => {
+  it("sends NO temperature when the ladder resolves to a Claude 5 rung", async () => {
+    const { model, calls } = laddered("claude-sonnet-5");
+    await createWith(model);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call.temperature).toBeUndefined();
+      expect(call.maxOutputTokens).toBe(UNKNOWN_MODEL_MAX_OUTPUT_TOKENS);
+    }
+  });
+
+  it("still sends temperature: 0 when the ladder resolves to Sonnet 4.6", async () => {
+    const { model, calls } = laddered("claude-sonnet-4-6");
+    await createWith(model);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) expect(call.temperature).toBe(0);
+  });
+});
