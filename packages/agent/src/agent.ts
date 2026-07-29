@@ -17,6 +17,7 @@ import {
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import {
+  APICallError,
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
@@ -399,12 +400,14 @@ function wireErrorMessage(error: unknown): string {
     return `Vendo: ${formatMeterExhausted(refusal)} (cloud-required)`;
   }
   // The other first-hour failure: the key exists but the gateway/provider
-  // rejected it (401), also a provider APICallError and never a VendoError.
-  // Whichever key it was, only OUR sentence travels. Models built by vendo's
-  // credential ladder annotate their own rung before this gate, so what
-  // reaches here is a host-wired provider whose rung nobody can know — hence
-  // one sentence that names both exits without prescribing the wrong one.
-  if (typeof error === "object" && error !== null && (error as { statusCode?: unknown }).statusCode === 401) {
+  // rejected it (401). Only a MODEL call's error qualifies — APICallError is
+  // the ai-SDK provider shape (marker-based, so a second SDK copy still
+  // matches), which keeps a tool/connector 401 from printing model-key
+  // instructions. Models built by vendo's credential ladder annotate their own
+  // rung before this gate, so what reaches here is a host-wired provider whose
+  // rung nobody can know — hence one sentence that names both exits without
+  // prescribing the wrong one.
+  if (APICallError.isInstance(error) && error.statusCode === 401) {
     return `Vendo: ${MODEL_KEY_REJECTED} (validation)`;
   }
   return "An error occurred while generating the response.";

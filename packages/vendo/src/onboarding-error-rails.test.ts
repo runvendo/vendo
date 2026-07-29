@@ -86,9 +86,10 @@ describe("a rejected key names the rung it was rejected on", () => {
   });
 
   it("sends an env-key rung to its own env var, never to `vendo login`", async () => {
+    const refused = unauthorized();
     const controller = new DevModelController({
       env: { OPENAI_API_KEY: "sk-o" },
-      importModule: failingProvider("createOpenAI", unauthorized()),
+      importModule: failingProvider("createOpenAI", refused),
     });
     const error = await rejection(controller.doGenerate({ prompt: [] }));
     expect(error.code).toBe("validation");
@@ -97,6 +98,23 @@ describe("a rejected key names the rung it was rejected on", () => {
       + "a revoked or mistyped key fails exactly this way.",
     );
     expect(error.message).not.toContain("vendo login");
+    // The provider's own error stays reachable for the operator log (request
+    // ids, response headers) — the crafted message replaces it only on the wire.
+    expect(error.cause).toBe(refused);
+  });
+
+  it("routes the model the surfaces are handed through the same rail (`vendo try` takes controller.model())", async () => {
+    const controller = new DevModelController({
+      env: { OPENAI_API_KEY: "sk-o" },
+      importModule: failingProvider("createOpenAI", unauthorized()),
+    });
+    // The try surface probes resolve() for its capability flags, then serves
+    // turns with controller.model() — handing over the raw provider model the
+    // resolution carries would lose the rung.
+    expect((await controller.resolve()).mode).toBe("delegate");
+    const model = controller.model() as unknown as { doStream(options: unknown): Promise<unknown> };
+    const error = await rejection(model.doStream({ prompt: [] }));
+    expect(error.message).toContain("check OPENAI_API_KEY in .env.local");
   });
 
   it("leaves a 401 carrying the meter refusal to the pricing rail, and every other failure untouched", async () => {

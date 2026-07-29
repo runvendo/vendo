@@ -18,3 +18,7 @@ re-minted with `vendo login`, a BYO provider key is checked in `.env.local` —
 neither is ever sent the other's next step. A 401 from a provider the host wired
 itself (no knowable rung) gets one sentence naming both exits. A 401 that
 carries the Cloud meter refusal still renders the pricing sentence.
+
+`npx vendo try` turns ride that same rail now: the surface is handed the
+ladder's own model instead of the raw provider one, so a rejected key names the
+rung it was rejected on there too.

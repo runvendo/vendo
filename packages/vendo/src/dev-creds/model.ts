@@ -399,6 +399,14 @@ export class DevModelController {
     return { mode: "unavailable", message: NO_CREDENTIAL_MESSAGE };
   }
 
+  /** This controller's own lazy model — the credential-aware call path, so a
+   *  rejected key keeps its rung's fix (rejectedKey below). Callers that probe
+   *  `resolve()` first (vendo try's capability flags) must hand THIS to the
+   *  runtime, never the raw provider model the resolution carries. */
+  model(): LanguageModel {
+    return lazyModel(this, "vendo", this.name ?? "vendo-env");
+  }
+
   async doGenerate(callOptions: unknown): Promise<unknown> {
     const resolution = await this.resolve();
     if (resolution.mode === "unavailable") throw new VendoError("validation", resolution.message);
@@ -423,7 +431,10 @@ const PROVIDER_LABELS: Record<EnvKeyProvider, string> = {
  *  telling a BYO-key host to run `vendo login` (or a Cloud host to edit a
  *  provider key) sends them the wrong way. A 401 carrying the Cloud meter
  *  refusal keeps its own richer sentence — the agent's pricing rail formats
- *  that from the body — and every other error travels untouched. */
+ *  that from the body — and every other error travels untouched. The status
+ *  duck-check is enough here (unlike the agent's gate, which must prove the
+ *  error came from a model call): this only ever sees the model call's own
+ *  failure, whichever ai-SDK copy the host's provider install came from. */
 function rejectedKey(credential: DevCredential | undefined, error: unknown): VendoError | undefined {
   const rejected = typeof error === "object" && error !== null
     && (error as { statusCode?: unknown }).statusCode === 401
@@ -453,7 +464,12 @@ async function delegateCall<T>(
   try {
     return await invoke(resolution.model);
   } catch (error) {
-    throw rejectedKey(resolution.credential, error) ?? error;
+    const fix = rejectedKey(resolution.credential, error);
+    if (fix === undefined) throw error;
+    // The provider error stays the `cause`: its request id and response headers
+    // are the operator's diagnostic trail, and the agent logs the thrown error
+    // verbatim (cause included) before the wire ever sees the crafted message.
+    throw Object.assign(fix, { cause: error });
   }
 }
 
