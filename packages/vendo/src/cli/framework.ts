@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { walk } from "./theme/walk.js";
 
@@ -48,6 +48,24 @@ export async function detectFramework(root: string): Promise<HostFramework> {
   } catch {
     return "unknown";
   }
+}
+
+/** The workspace packages that look like the real host, for an init run one
+    level too high: a monorepo root declares neither next nor express, so
+    detection lands on the runtime-neutral custom scaffold and the dev never
+    notices. Deliberately just the two conventional workspace dirs — a hint
+    that names a candidate, not a workspace-glob resolver. Paths are relative
+    and posix-style (they go straight into a `vendo init <dir>` suggestion). */
+export async function workspaceHostCandidates(root: string): Promise<string[]> {
+  const candidates: string[] = [];
+  for (const group of ["apps", "packages"]) {
+    const entries = await readdir(join(root, group), { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (await detectFramework(join(root, group, entry.name)) !== "unknown") candidates.push(`${group}/${entry.name}`);
+    }
+  }
+  return candidates;
 }
 
 /** Bounded source scan shared by init and doctor so their wiring verdicts

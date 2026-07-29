@@ -6,7 +6,7 @@ import { isVendoKey, resolveCloudBaseUrl } from "./client.js";
 import { errorMessage, printJson } from "./output.js";
 import { deletePendingClaim, readPendingClaim, writePendingClaim } from "./pending-claim.js";
 import { writeCloudSession, type CloudSession } from "./session.js";
-import { upsertEnvLocal } from "../cloud-init.js";
+import { upsertEnvLocal, warnEnvLocalNotIgnored } from "../cloud-init.js";
 import { browserOpenCommand } from "../playground.js";
 import { CLI_VERSION, consoleOutput, withCommandRun, type Output, type TelemetryOptions } from "../shared.js";
 
@@ -346,6 +346,7 @@ export async function runDeviceLogin(
         // receipt. A resumed run names the full path: it may differ from cwd.
         output.log(`Approved — wrote VENDO_API_KEY (…${key.slice(-4)}) to ${
           resume !== null ? join(root, ".env.local") : ".env.local"}.`);
+        await warnEnvLocalNotIgnored(root, output);
         if (options.rerunHint !== false) {
           output.log("Re-run `vendo init` to finish wiring (it picks the key up from .env.local).");
         }

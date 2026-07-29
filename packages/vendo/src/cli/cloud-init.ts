@@ -1,3 +1,4 @@
+import { execFile, type ExecFileException } from "node:child_process";
 import { stdin, stdout } from "node:process";
 import { join } from "node:path";
 import type { DevCredential } from "../dev-creds/resolve.js";
@@ -25,22 +26,39 @@ import {
 
 /** Upsert one NAME=value line in .env.local without clobbering other lines.
     Exported for init's --cloud-key flag, which lands a supplied key exactly
-    where the mint below would. */
+    where the mint below would. Every caller follows the write with
+    `warnEnvLocalNotIgnored` — a secret just landed on disk. */
 export async function upsertEnvLocal(root: string, name: string, value: string): Promise<void> {
   const path = join(root, ".env.local");
-  const current = await readOptional(path);
+  await writeText(path, upsertLine(await readOptional(path), name, value));
+}
+
+function upsertLine(current: string | null, name: string, value: string): string {
   const line = `${name}=${value}`;
-  if (current === null || current.length === 0) {
-    await writeText(path, `${line}\n`);
-    return;
-  }
+  if (current === null || current.length === 0) return `${line}\n`;
   const pattern = new RegExp(`^\\s*${name}\\s*=.*$`, "m");
-  if (pattern.test(current)) {
-    await writeText(path, current.replace(pattern, line));
-    return;
-  }
-  const separator = current.endsWith("\n") ? "" : "\n";
-  await writeText(path, `${current}${separator}${line}\n`);
+  if (pattern.test(current)) return current.replace(pattern, line);
+  return `${current}${current.endsWith("\n") ? "" : "\n"}${line}\n`;
+}
+
+/** One loud line when the file we just wrote a secret into would be committed.
+    Never blocks the write (the key is already minted and unrecoverable) — the
+    dev needs to know, not to be stopped. */
+export async function warnEnvLocalNotIgnored(root: string, output: Output): Promise<void> {
+  if (await gitIgnoresEnvLocal(root)) return;
+  output.error("warning: .env.local holds a secret and is NOT gitignored — add `.env.local` to .gitignore before you commit.");
+}
+
+/** `git check-ignore` is the only authority that reads nested .gitignore files
+    and negations correctly. Exit 1 is the ONLY "not ignored" answer: exit 128
+    (not a repo) and a failed spawn (no git) mean there is nothing to leak
+    into, so they stay silent. */
+function gitIgnoresEnvLocal(root: string): Promise<boolean> {
+  return new Promise((settle) => {
+    execFile("git", ["check-ignore", "-q", ".env.local"], { cwd: root }, (error) => {
+      settle((error as ExecFileException | null)?.code !== 1);
+    });
+  });
 }
 
 /** The auth.md protocol file on Vendo Cloud (Agent Install DX, Layer 2). */
