@@ -30,8 +30,14 @@ import { causeLine, defaultJudgeModel, extractJsonObject, type JudgeImage, type 
  *
  * Everything else that can be measured IS measured: font family, body size and
  * radius come off the styleguide, not the model's eye. The model's own calls are
- * limited to what only eyes can decide — density, motion, and the structural
- * reading of the screenshots.
+ * limited to what only eyes can decide — density and the structural reading of
+ * the screenshots. Motion is NOT one of those: a static screenshot carries no
+ * motion signal, so asking the vision call to guess "full" vs "reduced" is
+ * asking it to hallucinate — it guessed "reduced" on more than half of every
+ * demo built so far, which zeroes out every built-in @vendoai/ui animation
+ * (VendoOverlay open/close, MorphToast, ...) sitewide. Motion is hardcoded
+ * "full" instead; a real prefers-reduced-motion accessibility need is already
+ * handled at runtime by the components themselves, not by a per-brand guess.
  */
 
 export interface BriefEntity {
@@ -245,8 +251,7 @@ Output ONLY a JSON object (no prose, no markdown fence), exactly this shape:
   "colors": {
 ${themeColorTokens.map((token) => `    "${token}": { "hex": "<EXACT hex from the list>", "reason": "<one line>" }`).join(",\n")}
   },
-  "density": "compact" | "comfortable",
-  "motion": "full" | "reduced"
+  "density": "compact" | "comfortable"
 }
 
 ALL record names and data are INVENTED — the evidence informs STYLE, never DATA.
@@ -257,7 +262,7 @@ button, the slot is the panel a generated view renders into, so it needs a
 content column — a row inside <main>, or a full-width band above a table or a
 stat strip. Never place it in a control row (a top bar, a filter/date cluster, a
 toolbar): those give it no width, and it is the panel, not the button, that goes
-there. "density"/"motion" are your read of the screenshots.`;
+there. "density" is your read of the screenshots.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -409,9 +414,11 @@ export function parseBriefReply(
     typography: deriveTypography(options.evidence, themeNotes),
     radius: deriveRadius(options.evidence, themeNotes),
     density: parseEnum(parsed["density"], ["compact", "comfortable"] as const, "density"),
-    motion: parseEnum(parsed["motion"], ["full", "reduced"] as const, "motion"),
+    // Not a vision read: a static screenshot has no motion signal, so this is
+    // never asked of the model — see the module doc comment.
+    motion: "full",
   };
-  themeNotes.push(`density/motion: ${theme.density}/${theme.motion} — the vision call's read of the screenshots`);
+  themeNotes.push(`density: ${theme.density} — the vision call's read of the screenshots; motion: full (not derived from screenshots)`);
 
   const referenceScreenshot = requireString(parsed["referenceScreenshot"], "referenceScreenshot");
   if (!options.evidence.screenshots.some((shot) => shot.file === referenceScreenshot)) {

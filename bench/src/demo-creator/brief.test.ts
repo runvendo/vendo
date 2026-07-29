@@ -208,11 +208,22 @@ describe("parseBriefReply colours", () => {
     expect(theme.colors.surface).toBe("#FFFFFF");
   });
 
-  it("produces a theme parseDemoTheme accepts, with the model's density and motion", () => {
+  it("produces a theme parseDemoTheme accepts, with the model's density", () => {
     const { theme } = parseBriefReply(reply(), parseOptions());
     expect(() => parseDemoTheme(theme)).not.toThrow();
     expect(theme.colors.accent).toBe("#1E6BFF");
     expect(theme.density).toBe("compact");
+    expect(theme.motion).toBe("full");
+  });
+
+  // A static screenshot carries no motion signal — the vision call is never
+  // asked for one, and even a reply that volunteers "reduced" (e.g. a stale
+  // fixture, or a model that ignores the schema) must not silence every
+  // built-in @vendoai/ui animation sitewide.
+  it("hardcodes motion to full regardless of what the model reply says", () => {
+    const parsed = JSON.parse(reply()) as Record<string, unknown>;
+    parsed["motion"] = "reduced";
+    const { theme } = parseBriefReply(JSON.stringify(parsed), parseOptions());
     expect(theme.motion).toBe("full");
   });
 
