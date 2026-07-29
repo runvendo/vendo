@@ -43,20 +43,52 @@ function upsertLine(current: string | null, name: string, value: string): string
 
 /** One loud line when the file we just wrote a secret into would be committed.
     Never blocks the write (the key is already minted and unrecoverable) — the
-    dev needs to know, not to be stopped. */
+    dev needs to know, not to be stopped. Three honest outcomes, each with the
+    remediation that actually works for it. */
 export async function warnEnvLocalNotIgnored(root: string, output: Output): Promise<void> {
-  if (await gitIgnoresEnvLocal(root)) return;
-  output.error("warning: .env.local holds a secret and is NOT gitignored — add `.env.local` to .gitignore before you commit.");
+  // Tracked outranks ignored: a file already in the index is committed no
+  // matter what .gitignore says (check-ignore answers from the patterns alone,
+  // so it can call a tracked file "ignored"), and only `git rm --cached`
+  // undoes that.
+  if (await gitTracks(root, ".env.local")) {
+    output.error("warning: .env.local holds a secret and is TRACKED by git — .gitignore alone will NOT stop the next commit: run `git rm --cached .env.local`, then add `.env.local` to .gitignore.");
+    return;
+  }
+  const verdict = await gitCheckIgnore(root, ".env.local");
+  if (verdict.kind === "ignored") return;
+  if (verdict.kind === "not-ignored") {
+    output.error("warning: .env.local holds a secret and is NOT gitignored — add `.env.local` to .gitignore before you commit.");
+    return;
+  }
+  output.error(`warning: .env.local holds a secret and git could not say whether it is ignored (${verdict.reason}) — check it yourself before you commit.`);
 }
 
-/** `git check-ignore` is the only authority that reads nested .gitignore files
-    and negations correctly. Exit 1 is the ONLY "not ignored" answer: exit 128
-    (not a repo) and a failed spawn (no git) mean there is nothing to leak
-    into, so they stay silent. */
-function gitIgnoresEnvLocal(root: string): Promise<boolean> {
+/** Exit 0 only when the path is in the index. Every other outcome (untracked,
+    no repository, no git) is "not tracked" — the check-ignore verdict is what
+    decides those. */
+function gitTracks(root: string, path: string): Promise<boolean> {
   return new Promise((settle) => {
-    execFile("git", ["check-ignore", "-q", ".env.local"], { cwd: root }, (error) => {
-      settle((error as ExecFileException | null)?.code !== 1);
+    execFile("git", ["ls-files", "--error-unmatch", "--", path], { cwd: root }, (error) => settle(error === null));
+  });
+}
+
+type IgnoreVerdict = { kind: "ignored" } | { kind: "not-ignored" } | { kind: "unknown"; reason: string };
+
+/** `git check-ignore` is the only authority that reads nested .gitignore files
+    and negations correctly: exit 0 is "ignored", exit 1 is "not ignored".
+    Everything else is a failure, and the failure MODE decides — no git and no
+    repository anywhere mean there is nothing to leak into (silent), but a real
+    repository that errors (dubious ownership, an unreadable config) must not
+    pass silently for "ignored"; the caller says so out loud instead. */
+function gitCheckIgnore(root: string, path: string): Promise<IgnoreVerdict> {
+  return new Promise((settle) => {
+    execFile("git", ["check-ignore", "-q", "--", path], { cwd: root }, (error, _stdout, stderr) => {
+      if (error === null) return settle({ kind: "ignored" });
+      if ((error as ExecFileException).code === 1) return settle({ kind: "not-ignored" });
+      if ((error as ExecFileException).code === "ENOENT" || /not a git repository/i.test(stderr)) {
+        return settle({ kind: "ignored" });
+      }
+      settle({ kind: "unknown", reason: (stderr.trim().split("\n")[0] ?? "git failed").slice(0, 200) });
     });
   });
 }

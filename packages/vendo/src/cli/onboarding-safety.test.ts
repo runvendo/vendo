@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { warnEnvLocalNotIgnored } from "./cloud-init.js";
 import { workspaceHostCandidates } from "./framework.js";
 import { runInit } from "./init.js";
@@ -60,30 +60,76 @@ function run(root: string, sink: { output: Output }, extra: Partial<Parameters<t
 }
 
 describe("the .env.local secret write warns when git would commit it", () => {
-  it("warns, naming the fix, when .env.local is not ignored", async () => {
+  /** The verdict must come from the REPO, never from whoever runs the suite: a
+      developer with .env.local in their global excludes (or a ~/.gitconfig
+      core.excludesFile) would otherwise flip these assertions. */
+  beforeEach(async () => {
+    const home = await tempDir("vendo-git-home-");
+    vi.stubEnv("HOME", home);
+    vi.stubEnv("XDG_CONFIG_HOME", home);
+    vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null");
+    vi.stubEnv("GIT_CONFIG_SYSTEM", "/dev/null");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  /** A repo holding an untracked .env.local — the state right after a mint. */
+  async function repo(): Promise<string> {
     const root = await tempDir("vendo-gitignore-");
     execFileSync("git", ["init", "-q"], { cwd: root });
+    await writeFile(join(root, ".env.local"), "VENDO_API_KEY=x\n");
+    return root;
+  }
+
+  it("warns, naming the fix, when .env.local is not ignored", async () => {
     const sink = output();
-    await warnEnvLocalNotIgnored(root, sink.output);
+    await warnEnvLocalNotIgnored(await repo(), sink.output);
     const warning = sink.errors.join("\n");
-    expect(warning).toContain(".env.local");
-    expect(warning).toContain(".gitignore");
+    expect(warning).toContain("NOT gitignored");
+    expect(warning).toContain("add `.env.local` to .gitignore");
     expect(sink.logs).toEqual([]);
   });
 
   it("stays silent when .gitignore covers .env.local", async () => {
-    const root = await tempDir("vendo-gitignore-ok-");
-    execFileSync("git", ["init", "-q"], { cwd: root });
+    const root = await repo();
     await writeFile(join(root, ".gitignore"), ".env*.local\n");
     const sink = output();
     await warnEnvLocalNotIgnored(root, sink.output);
     expect(sink.errors).toEqual([]);
   });
 
+  it("an ALREADY TRACKED .env.local gets the remediation that actually works", async () => {
+    // git check-ignore reports a tracked file as NOT ignored even when a
+    // pattern matches it, so "add it to .gitignore" would be both the wrong
+    // advice and useless: the file is in the index and commits anyway.
+    const root = await repo();
+    await writeFile(join(root, ".gitignore"), ".env*.local\n");
+    execFileSync("git", ["add", "-f", ".env.local"], { cwd: root });
+    const sink = output();
+    await warnEnvLocalNotIgnored(root, sink.output);
+    const warning = sink.errors.join("\n");
+    expect(warning).toContain("TRACKED by git");
+    expect(warning).toContain("git rm --cached .env.local");
+    expect(warning).not.toContain("is NOT gitignored");
+  });
+
   it("stays silent outside a git repo — nothing to leak into", async () => {
     const sink = output();
     await warnEnvLocalNotIgnored(await tempDir("vendo-gitignore-nogit-"), sink.output);
     expect(sink.errors).toEqual([]);
+  });
+
+  it("a real repo where git ERRORS is never silently treated as ignored", async () => {
+    // Broken config inside a live repo: git can answer neither question, and
+    // the old "anything but exit 1 means ignored" rule swallowed the warning.
+    const root = await repo();
+    await writeFile(join(root, ".git", "config"), "[core\nnot valid\n");
+    const sink = output();
+    await warnEnvLocalNotIgnored(root, sink.output);
+    const warning = sink.errors.join("\n");
+    expect(warning).toContain("could not say whether it is ignored");
+    expect(warning).toContain("bad config line");
   });
 
   it("--cloud-key surfaces the warning right after the write, and never blocks it", async () => {
@@ -111,17 +157,57 @@ describe("exactly one askYesNo", () => {
 });
 
 describe("the closing line tells the truth about the model key", () => {
+  const LIVE = "Then start your dev server — the agent is live in your app.";
+  const PENDING = "Then start your dev server — the agent is live once you add a model key.";
+
   it("keyless: live once a key is added", async () => {
     const sink = output();
     expect(await run(await pagesHost(), sink)).toBe(0);
-    expect(sink.logs.join("\n")).toContain("Then start your dev server — the agent is live once you add a model key.");
-    expect(sink.logs.join("\n")).not.toContain("the agent is live in your app.");
+    expect(sink.logs.join("\n")).toContain(PENDING);
+    expect(sink.logs.join("\n")).not.toContain(LIVE);
   });
 
   it("keyed: live in your app", async () => {
     const sink = output();
     expect(await run(await pagesHost(), sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
-    expect(sink.logs.join("\n")).toContain("Then start your dev server — the agent is live in your app.");
+    expect(sink.logs.join("\n")).toContain(LIVE);
+  });
+
+  it("an UNUSABLE VENDO_API_KEY is not a live agent, even though it resolves a rung", async () => {
+    // resolveDevCredential only checks that VENDO_API_KEY is non-blank, so a
+    // malformed key still resolves rung "vendo-cloud" — and the run would
+    // print "not usable" and "the agent is live in your app" together.
+    const sink = output();
+    expect(await run(await pagesHost(), sink, {
+      env: { VENDO_API_KEY: "not-a-vendo-key" },
+      cloud: { cloudProbe: async () => ({ present: true, ok: false, error: "malformed", unlocks: ["x"] as readonly string[] }) },
+    })).toBe(0);
+    expect(sink.errors.join("\n")).toContain("not usable");
+    expect(sink.logs.join("\n")).toContain(PENDING);
+    expect(sink.logs.join("\n")).not.toContain(LIVE);
+  });
+
+  it("VENDO_DEV_CREDENTIAL=vendo-cloud with no key at all is not live either", async () => {
+    const sink = output();
+    expect(await run(await pagesHost(), sink, { env: { VENDO_DEV_CREDENTIAL: "vendo-cloud" } })).toBe(0);
+    expect(sink.logs.join("\n")).toContain(PENDING);
+    expect(sink.logs.join("\n")).not.toContain(LIVE);
+  });
+
+  it("a key minted mid-run IS live", async () => {
+    const root = await pagesHost();
+    const sink = output();
+    expect(await run(root, sink, {
+      cloud: {
+        cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] as readonly string[] }),
+        confirm: async () => true,
+        deviceLogin: async () => {
+          await writeFile(join(root, ".env.local"), `VENDO_API_KEY=vnd_${"a".repeat(40)}\n`);
+          return 0;
+        },
+      },
+    })).toBe(0);
+    expect(sink.logs.join("\n")).toContain(LIVE);
   });
 });
 
@@ -139,8 +225,8 @@ describe("a pages-only host is told to wire the file it actually has", () => {
 });
 
 describe("an init at a monorepo root names the workspace host", () => {
-  async function monorepo(): Promise<string> {
-    const root = await tempDir("vendo-init-monorepo-");
+  async function monorepo(prefix = "vendo-init-monorepo-"): Promise<string> {
+    const root = await tempDir(prefix);
     await mkdir(join(root, "apps", "web"), { recursive: true });
     await mkdir(join(root, "packages", "ui"), { recursive: true });
     await writeFile(join(root, "package.json"), JSON.stringify({ name: "monorepo", private: true }));
@@ -149,22 +235,34 @@ describe("an init at a monorepo root names the workspace host", () => {
     return root;
   }
 
+  function hintFor(root: string, sink: { output: Output }): Promise<number> {
+    return run(root, sink, { interactive: true, confirmAuth: async () => false, selectAuth: async () => "none" });
+  }
+
   it("lists only the workspace packages that look like hosts", async () => {
     expect(await workspaceHostCandidates(await monorepo())).toEqual(["apps/web"]);
     expect(await workspaceHostCandidates(await tempDir("vendo-init-flat-"))).toEqual([]);
   });
 
   it("interactive: hints at apps/web instead of silently scaffolding the root", async () => {
+    const root = await monorepo();
     const sink = output();
-    expect(await run(await monorepo(), sink, {
-      interactive: true,
-      confirmAuth: async () => false,
-      selectAuth: async () => "none",
-    })).toBe(0);
+    expect(await hintFor(root, sink)).toBe(0);
     const hint = sink.errors.join("\n");
     expect(hint).toContain("did you mean apps/web?");
-    expect(hint).toContain("vendo init apps/web");
+    expect(hint).toContain("looks like the host");
     expect(hint).toContain("--framework");
+    // The suggested command has to resolve from the CALLER's cwd, not from
+    // init's target root: `vendo init apps/web` run from elsewhere lands in a
+    // sibling of the caller, not inside the monorepo.
+    expect(hint).toContain(`vendo init ${join(root, "apps", "web")}`);
+  });
+
+  it("quotes a suggested path containing a space", async () => {
+    const root = await monorepo("vendo init monorepo ");
+    const sink = output();
+    expect(await hintFor(root, sink)).toBe(0);
+    expect(sink.errors.join("\n")).toContain(`vendo init ${JSON.stringify(join(root, "apps", "web"))}`);
   });
 
   it("non-interactive is unchanged: the exact-flag error, no hint", async () => {

@@ -271,6 +271,17 @@ async function detectRouter(root: string, framework: Exclude<HostFramework, "unk
   return "none";
 }
 
+/** A path for a command the caller will paste into their OWN shell: relative
+    to their cwd while it stays inside it, else absolute. A path relative to
+    init's target root resolves somewhere else entirely when the two differ
+    (`vendo init monorepo` from /work must not suggest `vendo init apps/web`).
+    Quoted when it contains a space, so the suggestion survives copy-paste. */
+function pastePath(target: string): string {
+  const rel = relative(process.cwd(), target);
+  const path = rel !== "" && !rel.startsWith("..") ? rel : target;
+  return path.includes(" ") ? JSON.stringify(path) : path;
+}
+
 /** The file whose client root the <VendoRoot> paste belongs in, and the child
     expression it wraps there. A pages-only host has NO app/layout.tsx to wrap
     — its client root is pages/_app.tsx, and the generated vendo-root.tsx is a
@@ -1017,8 +1028,9 @@ export async function runInit(options: InitOptions): Promise<number> {
     const candidates = await workspaceHostCandidates(root);
     if (candidates.length > 0) {
       output.error(
-        `warning: no next or express dependency here, but ${candidates.join(", ")} look like hosts — ` +
-        `did you mean ${candidates[0]}? Re-run there (vendo init ${candidates[0]}) or pass --framework to scaffold this directory anyway.`,
+        `warning: no next or express dependency in this directory, but ${candidates.join(", ")} ` +
+        `${candidates.length === 1 ? "looks" : "look"} like the host — did you mean ${candidates[0]}? ` +
+        `Re-run there (vendo init ${pastePath(join(root, candidates[0]!))}) or pass --framework to scaffold this directory anyway.`,
       );
     }
   }
@@ -1365,11 +1377,17 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.log("\nLast steps are yours:");
       for (const line of manualSteps) output.log(`  ${line}`);
     }
-    // Keyless runs are wired but not answering: the agent needs a model before
-    // anything happens, so the closing line must not claim otherwise.
-    output.log(credential.rung === "none"
-      ? "\nThen start your dev server — the agent is live once you add a model key."
-      : "\nThen start your dev server — the agent is live in your app.");
+    // A run without a USABLE model credential is wired but not answering, so
+    // the closing line must not claim otherwise. The rung alone is not that
+    // answer: resolveDevCredential only checks that VENDO_API_KEY is non-blank
+    // (and VENDO_DEV_CREDENTIAL=vendo-cloud pins the rung with no key at all),
+    // so a malformed key resolves "vendo-cloud" while the cloud step — the one
+    // thing that inspected the key — already said it is not usable.
+    const modelReady = credential.rung === "env-key"
+      || (credential.rung === "vendo-cloud" && cloud.keyValid);
+    output.log(modelReady
+      ? "\nThen start your dev server — the agent is live in your app."
+      : "\nThen start your dev server — the agent is live once you add a model key.");
     output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
 
     // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
