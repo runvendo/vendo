@@ -177,38 +177,31 @@ describe("the closing line tells the truth about the model key", () => {
   const LIVE = "Then start your dev server — the agent is live in your app.";
   const PENDING = "Then start your dev server — the agent is live once you add a model key.";
 
-  it("keyless: live once a key is added", async () => {
-    const sink = output();
-    expect(await run(await pagesHost(), sink)).toBe(0);
-    expect(sink.logs.join("\n")).toContain(PENDING);
-    expect(sink.logs.join("\n")).not.toContain(LIVE);
+  it("no usable key — however the rung resolved — is live only once one is added", async () => {
+    // A resolved rung is not a usable key: resolveDevCredential only checks
+    // that VENDO_API_KEY is non-blank, and VENDO_DEV_CREDENTIAL=vendo-cloud
+    // pins the rung with no key at all — so both used to print "the agent is
+    // live in your app", the malformed one right beside "not usable".
+    const keyless: Partial<Parameters<typeof runInit>[0]>[] = [
+      {},
+      {
+        env: { VENDO_API_KEY: "not-a-vendo-key" },
+        cloud: { cloudProbe: async () => ({ present: true, ok: false, error: "malformed", unlocks: ["x"] as readonly string[] }) },
+      },
+      { env: { VENDO_DEV_CREDENTIAL: "vendo-cloud" } },
+    ];
+    for (const extra of keyless) {
+      const sink = output();
+      expect(await run(await pagesHost(), sink, extra)).toBe(0);
+      expect(sink.logs.join("\n")).toContain(PENDING);
+      expect(sink.logs.join("\n")).not.toContain(LIVE);
+    }
   });
 
   it("keyed: live in your app", async () => {
     const sink = output();
     expect(await run(await pagesHost(), sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
     expect(sink.logs.join("\n")).toContain(LIVE);
-  });
-
-  it("an UNUSABLE VENDO_API_KEY is not a live agent, even though it resolves a rung", async () => {
-    // resolveDevCredential only checks that VENDO_API_KEY is non-blank, so a
-    // malformed key still resolves rung "vendo-cloud" — and the run would
-    // print "not usable" and "the agent is live in your app" together.
-    const sink = output();
-    expect(await run(await pagesHost(), sink, {
-      env: { VENDO_API_KEY: "not-a-vendo-key" },
-      cloud: { cloudProbe: async () => ({ present: true, ok: false, error: "malformed", unlocks: ["x"] as readonly string[] }) },
-    })).toBe(0);
-    expect(sink.errors.join("\n")).toContain("not usable");
-    expect(sink.logs.join("\n")).toContain(PENDING);
-    expect(sink.logs.join("\n")).not.toContain(LIVE);
-  });
-
-  it("VENDO_DEV_CREDENTIAL=vendo-cloud with no key at all is not live either", async () => {
-    const sink = output();
-    expect(await run(await pagesHost(), sink, { env: { VENDO_DEV_CREDENTIAL: "vendo-cloud" } })).toBe(0);
-    expect(sink.logs.join("\n")).toContain(PENDING);
-    expect(sink.logs.join("\n")).not.toContain(LIVE);
   });
 
   it("a re-run over an existing composition states the condition — it may pass its own model", async () => {

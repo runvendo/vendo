@@ -32,15 +32,12 @@ import {
     `warnEnvLocalNotIgnored` — a secret just landed on disk. */
 export async function upsertEnvLocal(root: string, name: string, value: string): Promise<void> {
   const path = join(root, ".env.local");
-  await writeText(path, upsertLine(await readOptional(path), name, value));
-}
-
-function upsertLine(current: string | null, name: string, value: string): string {
+  const current = (await readOptional(path)) ?? "";
   const line = `${name}=${value}`;
-  if (current === null || current.length === 0) return `${line}\n`;
   const pattern = new RegExp(`^\\s*${name}\\s*=.*$`, "m");
-  if (pattern.test(current)) return current.replace(pattern, line);
-  return `${current}${current.endsWith("\n") ? "" : "\n"}${line}\n`;
+  await writeText(path, pattern.test(current)
+    ? current.replace(pattern, line)
+    : `${current}${current === "" || current.endsWith("\n") ? "" : "\n"}${line}\n`);
 }
 
 /** One loud line when the file we just wrote a secret into would be committed.
@@ -50,32 +47,32 @@ function upsertLine(current: string | null, name: string, value: string): string
 export async function warnEnvLocalNotIgnored(root: string, output: Output): Promise<void> {
   // The write follows symlinks, so the file git must be asked about is the REAL
   // one: a .env.local that is itself gitignored can point straight at a tracked
-  // file, and asking about the link would call that safe.
+  // file, and asking about the link would call that safe. Both sides resolved,
+  // or the name is nonsense whenever the ROOT itself sits under a link (every
+  // macOS temp dir: /var → /private/var). Ask the repository that holds the
+  // SECRET, which a link can move — or take out of every working tree, where
+  // there is nothing to leak into.
   const link = join(root, ".env.local");
   const file = await realpath(link).catch(() => link);
-  // Both sides resolved, or the name is nonsense whenever the ROOT itself sits
-  // under a link (every macOS temp dir: /var → /private/var).
   const name = relative(await realpath(root).catch(() => root), file);
-  // Ask the repository that holds the SECRET, which a link can move (or take
-  // out of every working tree, where there is nothing to leak into).
   const where = dirname(file);
   if (!(await insideWorkTree(where))) return;
 
-  // Tracked outranks ignored: a file already in the index is committed no
-  // matter what .gitignore says (check-ignore answers from the patterns alone,
-  // and reports a tracked file as NOT ignored even when a pattern matches it),
-  // and only `git rm --cached` undoes that.
+  const verdict = await gitCheckIgnore(where, file);
+  if (verdict.kind === "ignored") return;
+  if (verdict.kind === "unknown") {
+    output.error(`warning: ${name} holds a secret and git could not say whether it is ignored (${verdict.reason}) — check it yourself before you commit.`);
+    return;
+  }
+  // check-ignore answers from the patterns alone, so it calls a TRACKED file
+  // "not ignored" even when a pattern matches it — and a file already in the
+  // index commits no matter what .gitignore says. Only `git rm --cached` undoes
+  // that, so the index is what decides between the two remedies.
   if (await gitTracks(where, file)) {
     output.error(`warning: ${name} holds a secret and is TRACKED by git — .gitignore alone will NOT stop the next commit: run \`git rm --cached ${name}\`, then add \`${name}\` to .gitignore.`);
     return;
   }
-  const verdict = await gitCheckIgnore(where, file);
-  if (verdict.kind === "ignored") return;
-  if (verdict.kind === "not-ignored") {
-    output.error(`warning: ${name} holds a secret and is NOT gitignored — add \`${name}\` to .gitignore before you commit.`);
-    return;
-  }
-  output.error(`warning: ${name} holds a secret and git could not say whether it is ignored (${verdict.reason}) — check it yourself before you commit.`);
+  output.error(`warning: ${name} holds a secret and is NOT gitignored — add \`${name}\` to .gitignore before you commit.`);
 }
 
 /** Is this path inside a git working tree? Answered by walking up for a `.git`
@@ -90,8 +87,9 @@ async function insideWorkTree(from: string): Promise<boolean> {
   }
 }
 
-/** Exit 0 only when the path is in the index. Every other outcome (untracked,
-    git cannot run) is "not tracked" — the check-ignore verdict decides those. */
+/** Exit 0 only when the path is in the index — every other outcome is "not
+    tracked". Asked only after check-ignore reported "not ignored", so the
+    common (ignored) case costs no second subprocess. */
 function gitTracks(cwd: string, path: string): Promise<boolean> {
   return new Promise((settle) => {
     execFile("git", ["ls-files", "--error-unmatch", "--", path], { cwd }, (error) => settle(error === null));

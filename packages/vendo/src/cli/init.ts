@@ -275,21 +275,14 @@ async function detectRouter(root: string, framework: Exclude<HostFramework, "unk
     to their cwd while it stays inside it, "." when it IS their cwd, else
     absolute. A path relative to init's target root resolves somewhere else
     entirely when the two differ (`vendo init monorepo` from /work must not
-    suggest `vendo init apps/web`). */
+    suggest `vendo init apps/web`). Quoted with POSIX single quotes when it
+    needs it: nothing expands inside them, while double quotes would still let
+    a directory named `$(…)` be substituted by the pasting shell. */
 function pastePath(target: string): string {
   const rel = relative(process.cwd(), target);
   if (rel === "") return ".";
-  return shellQuote(rel.startsWith("..") ? target : rel);
-}
-
-/** POSIX single-quote escaping, applied only to a path that needs it. Single
-    quotes are the only inert quoting: nothing expands inside them, and an
-    embedded quote closes-escapes-reopens. Double quotes would NOT be safe — a
-    directory named `$(…)` or holding a backtick is substituted by the shell
-    that pastes the suggestion, so the "safe" quoting would run it. */
-function shellQuote(path: string): string {
-  if (/^[\w./@+-]+$/.test(path)) return path;
-  return `'${path.replace(/'/g, "'\\''")}'`;
+  const path = rel.startsWith("..") ? target : rel;
+  return /^[\w./@+-]+$/.test(path) ? path : `'${path.replace(/'/g, "'\\''")}'`;
 }
 
 /** The file whose client root the <VendoRoot> paste belongs in, and the child
@@ -512,8 +505,6 @@ async function manualWiringLines(root: string, layout: LayoutWiring, withRegistr
     ];
   }
   const app = await appDirectory(root);
-  // app/layout.tsx for an app-router host, pages/_app.tsx for a pages-only one
-  // — never an instruction naming a file the host doesn't have.
   const { file: entry, children } = await clientRoot(root);
   const entryDir = dirname(entry);
   const entryRel = relative(root, entry);
@@ -1021,20 +1012,17 @@ export async function runInit(options: InitOptions): Promise<number> {
   const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
   // An undetectable framework has NO safe default: a non-interactive run
   // (agents) errors with the exact flag instead of guessing the Next layout
-  // into an unknown host. Interactive runs keep today's fall-through.
-  if (options.framework === undefined && (options.yes === true || !interactive)
-    && await detectFramework(root) === "unknown") {
-    output.error(
-      "Framework not detected (no next or express dependency in package.json) and this run cannot ask. " +
-      "Pass --framework. Examples: vendo init --yes --framework next · --framework custom (any Web-standard runtime: Cloudflare Workers, Bun, Hono, ...)",
-    );
-    return 1;
-  }
-  // The interactive counterpart: an undetectable root falls through to the
-  // custom scaffold, which is silently wrong when the host is a workspace
-  // package one level down. Name the candidates instead of guessing for them.
-  if (options.framework === undefined && options.yes !== true && interactive
-    && await detectFramework(root) === "unknown") {
+  // into an unknown host. An interactive run keeps today's fall-through to the
+  // custom scaffold — silently wrong when the host is a workspace package one
+  // level down, so name the candidates instead of guessing for them.
+  if (options.framework === undefined && await detectFramework(root) === "unknown") {
+    if (options.yes === true || !interactive) {
+      output.error(
+        "Framework not detected (no next or express dependency in package.json) and this run cannot ask. " +
+        "Pass --framework. Examples: vendo init --yes --framework next · --framework custom (any Web-standard runtime: Cloudflare Workers, Bun, Hono, ...)",
+      );
+      return 1;
+    }
     const candidates = await workspaceHostCandidates(root);
     if (candidates.length > 0) {
       output.error(
@@ -1392,21 +1380,18 @@ export async function runInit(options: InitOptions): Promise<number> {
     // answer: resolveDevCredential only checks that VENDO_API_KEY is non-blank
     // (and VENDO_DEV_CREDENTIAL=vendo-cloud pins the rung with no key at all),
     // so a malformed key resolves "vendo-cloud" while the cloud step — the one
-    // thing that inspected the key — already said it is not usable.
+    // thing that inspected the key — already said it is not usable. Keyless,
+    // the composition decides: one written THIS run passes no model, so "no
+    // key" is the whole story, while one init did not write may pass its own
+    // `model` to createVendo — nothing here can see that, so state the
+    // condition rather than guess either way.
     const modelReady = credential.rung === "env-key"
       || (credential.rung === "vendo-cloud" && cloud.keyValid);
-    if (modelReady) {
-      output.log("\nThen start your dev server — the agent is live in your app.");
-    } else if (compositionPath !== null) {
-      // The composition was written THIS run and the generated one passes no
-      // model, so "no key" really is the whole story.
-      output.log("\nThen start your dev server — the agent is live once you add a model key.");
-    } else {
-      // A composition this run did not write may pass its own `model` to
-      // createVendo, which needs no env key at all. Nothing here can see that,
-      // so state the condition rather than guess either way.
-      output.log("\nThen start your dev server — no model key resolved here, so the agent is live only if your composition passes its own model.");
-    }
+    output.log(`\nThen start your dev server — ${modelReady
+      ? "the agent is live in your app."
+      : compositionPath !== null
+        ? "the agent is live once you add a model key."
+        : "no model key resolved here, so the agent is live only if your composition passes its own model."}`);
     output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
 
     // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
