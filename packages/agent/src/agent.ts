@@ -363,6 +363,10 @@ function providerHistory(messages: UIMessage[]): UIMessage[] {
 
 /** 03-agent §1 */
 
+const MODEL_KEY_REJECTED =
+  "the model provider rejected the API key (401). On a Vendo Cloud key, run `vendo login` to mint a fresh "
+  + "VENDO_API_KEY; on your own provider key, check it in .env.local.";
+
 /** The one gate raw errors pass on their way to the wire. Vendo's OWN errors
  *  (code + operator-crafted message) are safe and actionable, so they travel
  *  recognizably prefixed — the thread UI renders the detail line only for
@@ -393,6 +397,15 @@ function wireErrorMessage(error: unknown): string {
   const refusal = meterExhaustedFromError(error);
   if (refusal !== undefined) {
     return `Vendo: ${formatMeterExhausted(refusal)} (cloud-required)`;
+  }
+  // The other first-hour failure: the key exists but the gateway/provider
+  // rejected it (401), also a provider APICallError and never a VendoError.
+  // Whichever key it was, only OUR sentence travels. Models built by vendo's
+  // credential ladder annotate their own rung before this gate, so what
+  // reaches here is a host-wired provider whose rung nobody can know — hence
+  // one sentence that names both exits without prescribing the wrong one.
+  if (typeof error === "object" && error !== null && (error as { statusCode?: unknown }).statusCode === 401) {
+    return `Vendo: ${MODEL_KEY_REJECTED} (validation)`;
   }
   return "An error occurred while generating the response.";
 }

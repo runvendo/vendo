@@ -1,12 +1,14 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { meterExhaustedFromError, VendoError } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { resolveCloudBaseUrl } from "../cli/cloud/client.js";
 import {
   describeDevCredential,
   resolveDevCredential,
   type DevCredential,
+  type EnvKeyProvider,
   type ResolveDevCredentialOptions,
 } from "./resolve.js";
 
@@ -69,7 +71,9 @@ interface LanguageModelV3Like {
 }
 
 type Resolution =
-  | { mode: "delegate"; model: LanguageModelV3Like }
+  /** The credential rides along so a rejected key can name its own fix
+   *  (rejectedKey below); an explicit host-passed model object has none. */
+  | { mode: "delegate"; model: LanguageModelV3Like; credential?: DevCredential }
   | { mode: "unavailable"; message: string };
 
 interface ProviderSpec {
@@ -351,7 +355,7 @@ export class DevModelController {
     const modelId = this.modelId(spec);
     const model = factory(config)(modelId);
     this.announce(`${describeDevCredential(credential)} → ${modelId}${announceSuffix}`);
-    return { mode: "delegate", model };
+    return { mode: "delegate", model, credential };
   }
 
   private async resolveOnce(): Promise<Resolution> {
@@ -397,14 +401,59 @@ export class DevModelController {
 
   async doGenerate(callOptions: unknown): Promise<unknown> {
     const resolution = await this.resolve();
-    if (resolution.mode === "delegate") return resolution.model.doGenerate(callOptions);
-    throw new Error(resolution.message);
+    if (resolution.mode === "unavailable") throw new VendoError("validation", resolution.message);
+    return delegateCall(resolution, (model) => model.doGenerate(callOptions));
   }
 
   async doStream(callOptions: unknown): Promise<unknown> {
     const resolution = await this.resolve();
-    if (resolution.mode === "delegate") return resolution.model.doStream(callOptions);
-    throw new Error(resolution.message);
+    if (resolution.mode === "unavailable") throw new VendoError("validation", resolution.message);
+    return delegateCall(resolution, (model) => model.doStream(callOptions));
+  }
+}
+
+const PROVIDER_LABELS: Record<EnvKeyProvider, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google: "Google",
+};
+
+/** The rejected-key fix, per rung. Only the ladder knows WHICH credential the
+ *  provider just refused, so this is the one place the next step can be right:
+ *  telling a BYO-key host to run `vendo login` (or a Cloud host to edit a
+ *  provider key) sends them the wrong way. A 401 carrying the Cloud meter
+ *  refusal keeps its own richer sentence — the agent's pricing rail formats
+ *  that from the body — and every other error travels untouched. */
+function rejectedKey(credential: DevCredential | undefined, error: unknown): VendoError | undefined {
+  const rejected = typeof error === "object" && error !== null
+    && (error as { statusCode?: unknown }).statusCode === 401
+    && meterExhaustedFromError(error) === undefined;
+  if (!rejected) return undefined;
+  if (credential?.rung === "vendo-cloud") {
+    return new VendoError(
+      "cloud-required",
+      "VENDO_API_KEY was rejected by the Vendo Cloud model gateway (401) — run `vendo login` to mint a fresh key "
+      + "(it lands in .env.local), or manage project keys in the Vendo Cloud console.",
+    );
+  }
+  if (credential?.rung === "env-key") {
+    return new VendoError(
+      "validation",
+      `your ${PROVIDER_LABELS[credential.provider]} API key was rejected (401) — check ${credential.envVar} `
+      + "in .env.local; a revoked or mistyped key fails exactly this way.",
+    );
+  }
+  return undefined;
+}
+
+async function delegateCall<T>(
+  resolution: Extract<Resolution, { mode: "delegate" }>,
+  invoke: (model: LanguageModelV3Like) => PromiseLike<T>,
+): Promise<T> {
+  try {
+    return await invoke(resolution.model);
+  } catch (error) {
+    throw rejectedKey(resolution.credential, error) ?? error;
   }
 }
 
