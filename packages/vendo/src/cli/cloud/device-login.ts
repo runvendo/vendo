@@ -422,6 +422,18 @@ export async function runDeviceLogin(
     }
   } catch (error) {
     output.error(errorMessage(error));
+    // A transient failure (network, DNS, a killed fetch) deliberately leaves
+    // the claim file in place, so say so — otherwise the reader assumes the
+    // ceremony is lost and starts over, abandoning an approval that would
+    // still land. Terminal outcomes above already deleted the claim, so this
+    // line only appears when a resume can actually succeed.
+    const survived = await readPendingClaim(claimCwd, pendingHome);
+    if (survived !== null && survived.expires_at > now()) {
+      output.error(
+        `Your pending approval survives — code ${survived.user_code}. ` +
+        "Re-run `vendo login` to resume this same request.",
+      );
+    }
     return 1;
   }
 }

@@ -33,10 +33,10 @@ Advanced:
 
 Options:
   --agent                    Init only: print a read-only JSON plan — code changes, extracted tools, risk recommendations
-  --yes                      Init: skip the cloud-login offer; doctor: auto-start the dev server
+  --yes                      Init: accept the detected auth preset, skip the cloud offer + AI polish + theme review, end with the agent tail; doctor: auto-start the dev server
   --force                    Init/server-json: overwrite owned or generated files; eject: overwrite an ejected dir
   --auth <preset>            Init only: wire this auth preset without asking (authJs, clerk, supabase, auth0, jwt, none)
-  --framework <name>         Init only: override framework detection (next, express) — required non-interactively when detection fails
+  --framework <name>         Init only: override framework detection (next, express, custom) — required non-interactively when detection fails
   --cloud-key <key>          Init only: write this Vendo Cloud key to .env.local instead of the login offer
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
