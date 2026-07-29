@@ -17,14 +17,28 @@ npx vendo init
 ```
 
 The `vendoai` package is a thin alias. The scoped package is the canonical
-install. `vendo init` asks for no data — no interview, no keys to paste, no
-per-diff approvals. What an interactive run does ask are consent questions you
-answer with Enter or y/n: the detected auth preset, the Vendo Cloud starter-key
-offer (only when no provider key is set), consent for the AI polish pass, a
-review of any theme slot the extractor was unsure about, a `zod` bump when your
-pin is below 3.25, and a closing "star the repo?". `--yes` and non-interactive
-runs answer all of them silently. Init writes the whole server side and mounts
-the visible surface for you:
+install. `vendo init` runs no interview: there are no keys to paste and no
+per-diff approvals. An interactive run does stop for a few decisions, all of
+them Enter-to-accept or y/n:
+
+- the detected auth preset;
+- the Vendo Cloud starter-key offer, only when no provider key is set;
+- consent for the AI polish pass, naming the provider your source goes to;
+- one aggregated **loosening review** — if the polish pass proposes waking a
+  disabled tool or lowering a risk grade, init shows the diff and asks once
+  before applying any of it;
+- a `zod` bump, when your pin is below 3.25;
+- a closing "star the repo?".
+
+One question is not y/n: when the extractor is unsure of a theme slot it prints
+what it found and takes a replacement **value** (a hex colour, a font stack) —
+Enter keeps the extracted one.
+
+`--yes` and non-interactive runs answer every one of them without stopping.
+Loosenings are the one decision that has no unattended default: risk is never
+lowered without a human, so they are held as pending and printed with the
+command to review them (`vendo sync --review`), never silently applied. Init
+writes the whole server side and mounts the visible surface for you:
 
 - the catch-all route `app/api/vendo/[...vendo]/route.ts` holding the entire
   `createVendo` composition (on Express or any other Web-standard runtime,
@@ -328,12 +342,23 @@ degrade per stage — a failed surface is skipped with a note instead of
 aborting the run.
 
 Everything it proposes passes deterministic guards before applying: only
-extracted tool names are accepted, risk can be raised but never lowered,
-waking a disabled tool requires reasoning plus an explicit grade, and human
-decisions always win (existing `.vendo/overrides.json` fields and a
-hand-written `brief.md` are never overwritten). The output lands in the
-override channel, so `vendo sync` regeneration keeps it. Skipped silently in
-non-interactive runs; re-run `vendo init` any time to add it.
+extracted tool names are accepted, every proposal carries a verbatim source
+quote and is checked by an independent skeptic, waking a disabled tool requires
+reasoning plus an explicit grade, and human decisions always win (existing
+`.vendo/overrides.json` fields and a hand-written `brief.md` are never
+overwritten).
+
+Tightenings — a raised risk grade, a better description — apply themselves.
+Loosenings do not: lowering a risk grade or waking a disabled tool is held as
+`pending` in `.vendo/judgments.json` until a human approves it, which is the
+aggregated review above. Any run with nobody to ask — `--yes` included — leaves
+them pending and prints `vendo sync --review`, never applying them silently and
+never stopping to wait. Judgments live in their own file, so
+`overrides.json` keeps meaning only "what a person decided" and a re-sync can
+never clobber either.
+
+Without `--ai-polish` the whole pass is skipped silently in non-interactive
+runs, since consent cannot be assumed; re-run `vendo init` any time to add it.
 
 ### Bring your own coding agent
 
@@ -438,7 +463,7 @@ seams, never both.
 importable by a host — the umbrella's root entry re-exports the contract types
 and `@vendoai/vendo/server` carries the composition ones — and this block is
 compiled against the real `CreateVendoConfig` in
-`packages/vendo/src/cli/quickstart-config-surface.ts`, so it cannot drift:
+`packages/vendo/src/cli/quickstart-config-surface.docs-check.ts`, so it cannot drift:
 
 ```ts
 import type {

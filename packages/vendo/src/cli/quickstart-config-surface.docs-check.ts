@@ -15,6 +15,10 @@
  * import specifiers below: a package cannot resolve itself by name, so the
  * doc's host-facing `@vendoai/vendo` becomes the local entry here).
  *
+ * The `.docs-check.ts` suffix is load-bearing: `tsconfig.json` excludes it from
+ * the build (this is test scaffolding — it must not ship as dead declarations in
+ * every tarball) and `tsconfig.docs-check.json` picks it back up for typecheck.
+ *
  * Generated once from the doc; edit the doc and re-derive, never one alone.
  */
 import type { CreateVendoConfig as RealCreateVendoConfig, Vendo as RealVendo } from "../server.js";

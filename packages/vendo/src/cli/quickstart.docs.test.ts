@@ -12,8 +12,8 @@ import { registrySource, routeSource, vendoRootWrapperSource } from "./init-scaf
  *
  *   1. the three generated files' code blocks vs the `init-scaffolds.ts`
  *      exports that actually write them,
- *   2. the config listing vs `quickstart-config-surface.ts`, byte for byte —
- *      that file holds the same block and is compiled against the real
+ *   2. the config listing vs `quickstart-config-surface.docs-check.ts`, byte for
+ *      byte — that file holds the same block and is compiled against the real
  *      `CreateVendoConfig`/`Vendo` (nested shapes and optionality included), so
  *      the types and the imports are checked by `pnpm typecheck` rather than by
  *      a list maintained here,
@@ -25,23 +25,39 @@ import { registrySource, routeSource, vendoRootWrapperSource } from "./init-scaf
  *   5. no deprecated `model:` / `paint:` pin in the composition examples.
  *
  * NOTE: `tsconfig.json` excludes `*.test.ts`, so nothing in THIS file is
- * typechecked. Every compile-time guarantee lives in the fixture, which is not
- * excluded — that is why it exists as its own module.
+ * typechecked. Every compile-time guarantee lives in the fixture instead, under
+ * its own `tsconfig.docs-check.json` — typechecked, never emitted.
  */
 
 const QUICKSTART = new URL("../../../../docs/quickstart.md", import.meta.url);
 const SERVER_SOURCE = new URL("../server.ts", import.meta.url);
-const CONFIG_FIXTURE = new URL("./quickstart-config-surface.ts", import.meta.url);
+const CONFIG_FIXTURE = new URL("./quickstart-config-surface.docs-check.ts", import.meta.url);
 
 /** The fixture's copy of the doc block, between its markers. */
 const FIXTURE_REGION = /^\/\/ --- BEGIN docs\/quickstart\.md config surface ---\n([\s\S]*?)^\/\/ --- END docs\/quickstart\.md config surface ---$/m;
 
 /** The only difference the fixture is allowed: a package cannot resolve itself
- *  by name, so the doc's host-facing specifiers become the local entries. */
-const LOCAL_ENTRIES: ReadonlyArray<readonly [string, string]> = [
-  ['from "@vendoai/vendo/server";', 'from "../server.js";'],
-  ['from "@vendoai/vendo";', 'from "../index.js";'],
+ *  by name, so the doc's host-facing specifiers become the local entries.
+ *
+ *  Anchored to an import declaration's own closing line, not matched loosely:
+ *  an unanchored replace lets a `from "@vendoai/vendo";` inside a COMMENT
+ *  absorb the rewrite (String.replace takes the first hit only) while the real
+ *  import already reads `from "../index.js";` — byte identity and the
+ *  host-installability check would both pass over host code that cannot
+ *  resolve. */
+const LOCAL_ENTRIES: ReadonlyArray<readonly [RegExp, string, string]> = [
+  [/^\} from "@vendoai\/vendo\/server";$/gm, '} from "../server.js";', '@vendoai/vendo/server'],
+  [/^\} from "@vendoai\/vendo";$/gm, '} from "../index.js";', '@vendoai/vendo'],
 ];
+
+/** Import declarations only — `from "x"` at the end of a line that is not a
+ *  comment. Used to assert the doc names the PUBLIC specifiers for real. */
+function importSpecifiers(source: string): string[] {
+  return source
+    .split("\n")
+    .filter((line) => !/^\s*(?:\/\/|\*|\/\*)/.test(line))
+    .flatMap((line) => [...line.matchAll(/\bfrom ["']([^"']+)["'];?\s*$/g)].map((match) => match[1]!));
+}
 
 /** The packages a host installs directly (09-vendo §1): the umbrella, its
  *  subpaths, the UI package, and the `vendoai` alias. Anything else in a
@@ -160,8 +176,9 @@ describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
   it("never tells a host to import a transitive package", async () => {
     const blocks = codeBlocks(await readFile(QUICKSTART, "utf8"));
     for (const block of blocks) {
-      for (const match of block.body.matchAll(/\bfrom ["']([^"']+)["']/g)) {
-        const specifier = match[1]!;
+      // Import declarations only: a specifier quoted inside a comment is prose,
+      // and must not be able to stand in for the one a host actually pastes.
+      for (const specifier of importSpecifiers(block.body)) {
         if (!specifier.startsWith("@vendoai/") && !specifier.startsWith("vendoai")) continue;
         expect(HOST_INSTALLABLE.test(specifier), `${specifier} is not installable by a host`).toBe(true);
       }
@@ -188,16 +205,25 @@ describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
     expect(region, "the fixture lost its BEGIN/END markers").toBeDefined();
 
     const localized = LOCAL_ENTRIES.reduce(
-      (source, [published, local]) => source.replace(published, local),
+      (source, [declaration, local]) => source.replace(declaration, local),
       listing,
     );
     // Byte equality is the point: the fixture is what `pnpm typecheck` compiles
     // against the real types, so anything the doc says that the fixture doesn't
     // is unverified. Re-derive the fixture from the doc block, never by hand.
     expect(region).toBe(localized);
-    // And the rewrite must have actually applied — a doc that stopped naming
-    // the public specifiers would otherwise match a stale fixture.
-    for (const [published] of LOCAL_ENTRIES) expect(listing).toContain(published);
+    // And the rewrite must have applied to real import declarations — a doc
+    // that stopped naming the public specifiers, or hid one in a comment,
+    // would otherwise match a stale fixture.
+    const specifiers = importSpecifiers(listing);
+    for (const [, , published] of LOCAL_ENTRIES) {
+      expect(specifiers, `the listing must import from ${published}`).toContain(published);
+    }
+    // Nothing in the listing may import from a relative path: that is the
+    // fixture's private rewrite, never something a host could paste.
+    for (const specifier of specifiers) {
+      expect(specifier.startsWith("."), `relative import in the doc: ${specifier}`).toBe(false);
+    }
   });
 
   it("lists exactly createVendo's config keys, deprecations included", async () => {

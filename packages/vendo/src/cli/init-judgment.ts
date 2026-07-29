@@ -206,21 +206,36 @@ export async function runInitJudgment(options: InitJudgmentOptions): Promise<Ini
     // Judgment first: the brief reads the GRADED catalog, so it must run after
     // the pass has settled names and descriptions. Init judges the whole
     // catalog (mode "full" — a fresh install has judged nothing), and an
-    // interactive run reviews loosenings inline instead of queueing them.
+    // ATTENDED run reviews loosenings inline instead of queueing them.
     if (toolsAvailable) {
-      await runJudgmentPass({
+      // `--yes` means every question is already answered, so it must not reach
+      // the aggregated loosening review either — a TTY run with --ai-polish
+      // --yes used to BLOCK there on the first proposed wake/downgrade. An
+      // unattended run cannot answer, and the guard law forbids the other
+      // default (risk is never lowered without a human), so loosenings queue:
+      // held as `pending`, nothing applied, and the pass prints the count plus
+      // `vendo sync --review`.
+      const attended = interactive && !options.yes;
+      const pass = await runJudgmentPass({
         root,
         out: vendoDir,
         mode: "full",
-        loosenings: interactive ? "review" : "queue",
+        loosenings: attended ? "review" : "queue",
         env,
         output,
         harness: chosen.harness,
         appName,
         onProgress,
-        ...(options.confirm === undefined ? {} : { confirm: options.confirm }),
+        // Withheld when unattended too: nothing downstream may acquire a way to
+        // ask, whatever the mode.
+        ...(attended && options.confirm !== undefined ? { confirm: options.confirm } : {}),
         ...(options.resolveCredential === undefined ? {} : { resolveCredential: options.resolveCredential }),
       });
+      // The pass already printed the count and `vendo sync --review`; say WHY
+      // they were held, so an unattended caller doesn't read it as a refusal.
+      if (!attended && pass.status === "judged" && pass.queued > 0) {
+        output.log("  (held, not applied: this run had no one to ask — re-run `vendo init` in a terminal to review them inline)");
+      }
 
       const brief = await runBriefStage({ ...context, judged: await judgedSummaries(vendoDir) });
       notes.push(...brief.notes);

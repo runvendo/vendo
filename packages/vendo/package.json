@@ -97,7 +97,7 @@
     "pretest": "pnpm run build:playground",
     "test": "vitest run",
     "pretypecheck": "pnpm run build:playground",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.docs-check.json --noEmit",
     "pretest:coverage": "pnpm run build:playground",
     "test:coverage": "vitest run --coverage"
   },

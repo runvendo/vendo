@@ -5,5 +5,14 @@
     "rootDir": "src"
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.test-util.ts", "src/**/__fixtures__/**"]
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.test-util.ts",
+    "src/**/__fixtures__/**",
+    // Docs-parity fixtures: typechecked by tsconfig.docs-check.json (see the
+    // `typecheck` script), never emitted — they would otherwise ship dead
+    // declarations in every published tarball.
+    "src/**/*.docs-check.ts"
+  ]
 }
