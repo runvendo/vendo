@@ -5,8 +5,7 @@
   // every published tarball). Their own program, never built.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true,
-    "declaration": false
+    "noEmit": true
   },
   "include": ["src/**/*.docs-check.ts"]
 }

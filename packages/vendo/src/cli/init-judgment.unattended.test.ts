@@ -98,6 +98,10 @@ describe("the loosening review never blocks an unattended init", () => {
     expect(passed.loosenings).toBe("queue");
     expect(passed.confirm).toBeUndefined();
     expect(confirm).not.toHaveBeenCalled();
+    // The pass owns the count + `vendo sync --review` line; this is the WHY,
+    // so a queued result never reads as a refusal or a silent apply.
+    expect(output.lines.join("\n")).toContain("held, not applied");
+    expect(output.lines.join("\n")).toContain("re-run `vendo init` in a terminal");
   });
 
   it("queues loosenings in a non-TTY run", async () => {
@@ -117,18 +121,6 @@ describe("the loosening review never blocks an unattended init", () => {
     const passed = runJudgmentPass.mock.calls[0]![0] as { loosenings: string; confirm?: unknown };
     expect(passed.loosenings).toBe("queue");
     expect(passed.confirm).toBeUndefined();
-  });
-
-  it("says the held loosenings were not applied and how to review them", async () => {
-    const root = await projectWithTools();
-    const output = silentOutput();
-
-    await runInitJudgment({ root, output, env: {}, yes: true, consent: true, interactive: true });
-
-    // The pass owns the count + `vendo sync --review` line; this is the WHY,
-    // so a queued result never reads as a refusal or a silent apply.
-    expect(output.lines.join("\n")).toContain("held, not applied");
-    expect(output.lines.join("\n")).toContain("re-run `vendo init` in a terminal");
   });
 
   it("still reviews inline when a human is actually there", async () => {

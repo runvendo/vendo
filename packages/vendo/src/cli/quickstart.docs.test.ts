@@ -40,18 +40,18 @@ const FIXTURE_REGION = /^\/\/ --- BEGIN docs\/quickstart\.md config surface ---\
  *  by name, so the doc's host-facing specifiers become the local entries.
  *
  *  Anchored to an import declaration's own closing line, not matched loosely:
- *  an unanchored replace lets a `from "@vendoai/vendo";` inside a COMMENT
- *  absorb the rewrite (String.replace takes the first hit only) while the real
- *  import already reads `from "../index.js";` — byte identity and the
- *  host-installability check would both pass over host code that cannot
- *  resolve. */
-const LOCAL_ENTRIES: ReadonlyArray<readonly [RegExp, string, string]> = [
-  [/^\} from "@vendoai\/vendo\/server";$/gm, '} from "../server.js";', '@vendoai/vendo/server'],
-  [/^\} from "@vendoai\/vendo";$/gm, '} from "../index.js";', '@vendoai/vendo'],
+ *  a `from "@vendoai/vendo";` quoted inside a COMMENT must not be able to
+ *  absorb the rewrite while the real import already reads `from "../index.js";`
+ *  — byte identity and the host-installability check would both then pass over
+ *  host code that cannot resolve. */
+const LOCAL_ENTRIES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^\} from "@vendoai\/vendo\/server";$/gm, '} from "../server.js";'],
+  [/^\} from "@vendoai\/vendo";$/gm, '} from "../index.js";'],
 ];
 
 /** Import declarations only — `from "x"` at the end of a line that is not a
- *  comment. Used to assert the doc names the PUBLIC specifiers for real. */
+ *  comment, so a specifier quoted in prose is never mistaken for one a host
+ *  pastes. */
 function importSpecifiers(source: string): string[] {
   return source
     .split("\n")
@@ -64,30 +64,23 @@ function importSpecifiers(source: string): string[] {
  *  quickstart code block is a transitive dependency the reader cannot import. */
 const HOST_INSTALLABLE = /^(?:@vendoai\/(?:vendo|ui)|vendoai)(?:\/[\w./-]+)?$/;
 
-interface CodeBlock {
-  lang: string;
-  body: string;
-}
-
-function codeBlocks(markdown: string): CodeBlock[] {
-  const blocks: CodeBlock[] = [];
-  const pattern = /^```(\w*)\n([\s\S]*?)^```$/gm;
-  for (const match of markdown.matchAll(pattern)) blocks.push({ lang: match[1]!, body: match[2]! });
-  return blocks;
+/** Every fenced block's body. */
+function codeBlocks(markdown: string): string[] {
+  return [...markdown.matchAll(/^```\w*\n([\s\S]*?)^```$/gm)].map((match) => match[1]!);
 }
 
 /** The block whose first line is the `// <path>` marker the doc labels it with. */
-function blockFor(blocks: CodeBlock[], marker: string): string {
-  const found = blocks.filter((block) => block.body.startsWith(`// ${marker}`));
+function blockFor(blocks: string[], marker: string): string {
+  const found = blocks.filter((block) => block.startsWith(`// ${marker}`));
   expect(found.length, `expected exactly one code block starting with "// ${marker}"`).toBe(1);
-  return found[0]!.body;
+  return found[0]!;
 }
 
 /** The one block declaring the config surface. */
-function configListing(blocks: CodeBlock[]): string {
-  const found = blocks.filter((block) => block.body.includes("export interface CreateVendoConfig {"));
+function configListing(blocks: string[]): string {
+  const found = blocks.filter((block) => block.includes("export interface CreateVendoConfig {"));
   expect(found.length, "expected exactly one config-surface code block").toBe(1);
-  return found[0]!.body;
+  return found[0]!;
 }
 
 /** Load-bearing lines: code only, comments and blank lines dropped. */
@@ -98,52 +91,31 @@ function codeLines(source: string): string[] {
     .filter((line) => line.trim() !== "" && !/^\s*(?:\/\*|\*)/.test(line));
 }
 
-/** Comments collapsed to a brace-free marker that survives the line scan, so
- *  @deprecated stays attributable without a doc comment's `{tenant}` breaking
- *  the depth count. */
-function markComments(source: string): string {
-  const mark = (comment: string): string => (comment.includes("@deprecated") ? "/*!*/" : "");
-  return source.replace(/\/\*[\s\S]*?\*\//g, mark).replace(/\/\/[^\n]*/g, mark);
-}
-
-/** The interface's own members — depth-1 keys, in declaration order, each
- *  flagged when its comment says @deprecated. */
-function interfaceMembers(source: string, name: string): Array<{ key: string; deprecated: boolean }> {
-  const marked = markComments(source);
-  const declaration = marked.indexOf(`interface ${name} {`);
+/** An interface declaration's body — through the closing `}` in column 0. Both
+ *  sources are 2-space formatted, so nothing but the terminator sits there. */
+function interfaceBody(source: string, name: string): string {
+  const declaration = source.indexOf(`interface ${name} {`);
   expect(declaration, `interface ${name} not found`).toBeGreaterThanOrEqual(0);
-  const bodyStart = marked.indexOf("{", declaration) + 1;
-  let depth = 1;
-  let cursor = bodyStart;
-  while (depth > 0) {
-    const char = marked[cursor];
-    expect(char, `unterminated interface ${name}`).toBeDefined();
-    if (char === "{") depth += 1;
-    else if (char === "}") depth -= 1;
-    cursor += 1;
-  }
-
-  const members: Array<{ key: string; deprecated: boolean }> = [];
-  let nesting = 0;
-  let pendingDeprecated = false;
-  for (const line of marked.slice(bodyStart, cursor - 1).split("\n")) {
-    if (nesting === 0) {
-      const member = /^\s*(\w+)\??\s*[:(]/.exec(line);
-      if (member !== null) {
-        members.push({ key: member[1]!, deprecated: pendingDeprecated || line.includes("/*!*/") });
-        pendingDeprecated = false;
-      } else if (line.includes("/*!*/")) {
-        pendingDeprecated = true;
-      }
-    }
-    nesting += (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
-  }
-  return members;
+  return source.slice(declaration).split(/^\}$/m)[0]!;
 }
+
+/** The interface's own members, in declaration order. Indentation is the depth
+ *  signal: a nested member sits deeper than two spaces. */
+function interfaceMembers(source: string, name: string): string[] {
+  return [...interfaceBody(source, name).matchAll(/^ {2}(\w+)\??\s*[:(]/gm)].map((match) => match[1]!);
+}
+
+/** The members whose own comment says @deprecated — the one fact the compiled
+ *  fixture's type identity cannot carry. */
+function deprecatedMembers(source: string, name: string): string[] {
+  const pattern = /@deprecated[\s\S]*?\*\/\s+(\w+)\??\s*[:(]/g;
+  return [...interfaceBody(source, name).matchAll(pattern)].map((match) => match[1]!);
+}
+
+const blocks = codeBlocks(await readFile(QUICKSTART, "utf8"));
 
 describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
-  it("shows the registry scaffold's own import, not a transitive one", async () => {
-    const blocks = codeBlocks(await readFile(QUICKSTART, "utf8"));
+  it("shows the registry scaffold's own import, not a transitive one", () => {
     const documented = blockFor(blocks, "vendo/registry.tsx");
     const scaffold = registrySource("tsx");
 
@@ -155,8 +127,7 @@ describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
     expect(documented).toContain("satisfies ComponentRegistry");
   });
 
-  it("shows the route scaffold verbatim as the primary composition", async () => {
-    const blocks = codeBlocks(await readFile(QUICKSTART, "utf8"));
+  it("shows the route scaffold verbatim as the primary composition", () => {
     const documented = blockFor(blocks, "app/api/vendo/[...vendo]/route.ts");
     const scaffold = routeSource({
       serverActions: false,
@@ -166,40 +137,37 @@ describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
     expect(codeLines(documented)).toEqual(codeLines(scaffold));
   });
 
-  it("shows the client-mount scaffold verbatim", async () => {
-    const blocks = codeBlocks(await readFile(QUICKSTART, "utf8"));
+  it("shows the client-mount scaffold verbatim", () => {
     const documented = blockFor(blocks, "vendo/vendo-root.tsx");
     const scaffold = vendoRootWrapperSource({ themeSpecifier: "../.vendo/theme.json" });
     expect(codeLines(documented)).toEqual(codeLines(scaffold));
   });
 
-  it("never tells a host to import a transitive package", async () => {
-    const blocks = codeBlocks(await readFile(QUICKSTART, "utf8"));
+  it("never tells a host to import a transitive package", () => {
     for (const block of blocks) {
       // Import declarations only: a specifier quoted inside a comment is prose,
       // and must not be able to stand in for the one a host actually pastes.
-      for (const specifier of importSpecifiers(block.body)) {
+      for (const specifier of importSpecifiers(block)) {
         if (!specifier.startsWith("@vendoai/") && !specifier.startsWith("vendoai")) continue;
         expect(HOST_INSTALLABLE.test(specifier), `${specifier} is not installable by a host`).toBe(true);
       }
     }
   });
 
-  it("pins no deprecated model in the composition examples", async () => {
-    const blocks = codeBlocks(await readFile(QUICKSTART, "utf8"));
+  it("pins no deprecated model in the composition examples", () => {
     // Every ts/tsx block that composes: the deprecated top-level `model:` and
     // `paint:` keys must never appear as the example a reader copies.
-    const compositions = blocks.filter((block) => block.body.includes("createVendo({"));
+    const compositions = blocks.filter((block) => block.includes("createVendo({"));
     expect(compositions.length).toBeGreaterThan(0);
     for (const block of compositions) {
-      for (const line of codeLines(block.body)) {
+      for (const line of codeLines(block)) {
         expect(/^\s*(?:model|paint)\s*:/.test(line), `deprecated pin in a composition example: ${line}`).toBe(false);
       }
     }
   });
 
   it("keeps the config listing byte-identical to the compiled fixture", async () => {
-    const listing = configListing(codeBlocks(await readFile(QUICKSTART, "utf8")));
+    const listing = configListing(blocks);
     const fixture = await readFile(CONFIG_FIXTURE, "utf8");
     const region = FIXTURE_REGION.exec(fixture)?.[1];
     expect(region, "the fixture lost its BEGIN/END markers").toBeDefined();
@@ -211,31 +179,23 @@ describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
     // Byte equality is the point: the fixture is what `pnpm typecheck` compiles
     // against the real types, so anything the doc says that the fixture doesn't
     // is unverified. Re-derive the fixture from the doc block, never by hand.
+    // It also proves the rewrite hit real import declarations — a doc that
+    // stopped naming the public specifiers no longer matches the fixture.
     expect(region).toBe(localized);
-    // And the rewrite must have applied to real import declarations — a doc
-    // that stopped naming the public specifiers, or hid one in a comment,
-    // would otherwise match a stale fixture.
-    const specifiers = importSpecifiers(listing);
-    for (const [, , published] of LOCAL_ENTRIES) {
-      expect(specifiers, `the listing must import from ${published}`).toContain(published);
-    }
     // Nothing in the listing may import from a relative path: that is the
     // fixture's private rewrite, never something a host could paste.
-    for (const specifier of specifiers) {
+    for (const specifier of importSpecifiers(listing)) {
       expect(specifier.startsWith("."), `relative import in the doc: ${specifier}`).toBe(false);
     }
   });
 
-  it("lists exactly createVendo's config keys, deprecations included", async () => {
-    const listing = configListing(codeBlocks(await readFile(QUICKSTART, "utf8")));
+  it("lists exactly the documented interfaces' members, deprecations included", async () => {
+    const listing = configListing(blocks);
     const source = await readFile(SERVER_SOURCE, "utf8");
-    expect(interfaceMembers(listing, "CreateVendoConfig"))
-      .toEqual(interfaceMembers(source, "CreateVendoConfig"));
-  });
-
-  it("lists exactly the Vendo interface's members", async () => {
-    const listing = configListing(codeBlocks(await readFile(QUICKSTART, "utf8")));
-    const source = await readFile(SERVER_SOURCE, "utf8");
-    expect(interfaceMembers(listing, "Vendo")).toEqual(interfaceMembers(source, "Vendo"));
+    for (const name of ["CreateVendoConfig", "Vendo"]) {
+      expect(interfaceMembers(listing, name), name).toEqual(interfaceMembers(source, name));
+    }
+    expect(deprecatedMembers(listing, "CreateVendoConfig"))
+      .toEqual(deprecatedMembers(source, "CreateVendoConfig"));
   });
 });
