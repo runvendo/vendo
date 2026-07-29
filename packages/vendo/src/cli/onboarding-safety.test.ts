@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -120,6 +120,23 @@ describe("the .env.local secret write warns when git would commit it", () => {
     expect(sink.errors).toEqual([]);
   });
 
+  it("a symlinked .env.local is judged by the file the write really lands in", async () => {
+    // The write follows the link, so a gitignored .env.local pointing at a
+    // TRACKED file is the worst case: asking git about the link calls it safe.
+    const root = await repo();
+    await mkdir(join(root, "config"), { recursive: true });
+    await writeFile(join(root, "config", "dev.env"), "SOMETHING=1\n");
+    execFileSync("git", ["add", "-f", join("config", "dev.env")], { cwd: root });
+    await writeFile(join(root, ".gitignore"), ".env.local\n");
+    await rm(join(root, ".env.local"));
+    await symlink(join(root, "config", "dev.env"), join(root, ".env.local"));
+    const sink = output();
+    await warnEnvLocalNotIgnored(root, sink.output);
+    const warning = sink.errors.join("\n");
+    expect(warning).toContain("TRACKED by git");
+    expect(warning).toContain(join("config", "dev.env"));
+  });
+
   it("a real repo where git ERRORS is never silently treated as ignored", async () => {
     // Broken config inside a live repo: git can answer neither question, and
     // the old "anything but exit 1 means ignored" rule swallowed the warning.
@@ -194,6 +211,19 @@ describe("the closing line tells the truth about the model key", () => {
     expect(sink.logs.join("\n")).not.toContain(LIVE);
   });
 
+  it("a re-run over an existing composition states the condition — it may pass its own model", async () => {
+    // createVendo({ model }) needs no env key, so a keyless re-run over a
+    // composition init did not write must claim neither "live" nor "not live".
+    const root = await pagesHost();
+    expect(await run(root, output())).toBe(0);
+    const sink = output();
+    expect(await run(root, sink)).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("no model key resolved here, so the agent is live only if your composition passes its own model.");
+    expect(logs).not.toContain(LIVE);
+    expect(logs).not.toContain(PENDING);
+  });
+
   it("a key minted mid-run IS live", async () => {
     const root = await pagesHost();
     const sink = output();
@@ -258,11 +288,30 @@ describe("an init at a monorepo root names the workspace host", () => {
     expect(hint).toContain(`vendo init ${join(root, "apps", "web")}`);
   });
 
-  it("quotes a suggested path containing a space", async () => {
-    const root = await monorepo("vendo init monorepo ");
+  it("single-quotes a suggested path the shell would otherwise mangle", async () => {
+    // Double quotes are NOT enough: `$(…)` inside them is command-substituted
+    // by the shell the suggestion is pasted into.
+    const root = await monorepo("vendo init $(printf SUBSTITUTED) ");
     const sink = output();
     expect(await hintFor(root, sink)).toBe(0);
-    expect(sink.errors.join("\n")).toContain(`vendo init ${JSON.stringify(join(root, "apps", "web"))}`);
+    const hint = sink.errors.join("\n");
+    expect(hint).toContain(`vendo init '${join(root, "apps", "web")}'`);
+    expect(hint).not.toContain(`"${join(root, "apps", "web")}"`);
+  });
+
+  it("suggests `.` when the caller is already standing in the host dir", async () => {
+    // `cd repo/apps/web && vendo init ../..` — the suggestion must be the cwd
+    // itself, not an absolute path (relative() returns "" for that case).
+    const root = await monorepo();
+    const host = join(root, "apps", "web");
+    const spy = vi.spyOn(process, "cwd").mockReturnValue(host);
+    try {
+      const sink = output();
+      expect(await hintFor(root, sink)).toBe(0);
+      expect(sink.errors.join("\n")).toContain("vendo init .");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("non-interactive is unchanged: the exact-flag error, no hint", async () => {
