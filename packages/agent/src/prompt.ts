@@ -35,7 +35,7 @@ const PRESENTATION_PROMPT = `Presentation
 // side-quest of searches, speculative unconnected calls, and approval spam.
 const DISCOVERY_BUDGET_PROMPT = `Discovery budget
 - Use vendo_tools_search at most 2 times per user intent; prefer the host's own tools whenever they can fulfill the ask.
-- Never call a tool for a service you know is unconnected. A connect-required result means stop calling that service: tell the user what it needs and point them to the connect card that appeared.
+- Never call a tool for a service you know is unconnected. A connect-required result means stop calling that service: tell the user what it needs. A connect card appears with that result on that turn only — on later turns, point the user to the connect (link) button in the message box instead; never claim a card "should have appeared".
 - When a needed service is unconnected, say so plainly and surface the connect step — do not try other tools of the same service or hunt for substitutes across the catalog.`;
 
 /** 03-agent §3: company directions are mandatory policy context and fail closed. */

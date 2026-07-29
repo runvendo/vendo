@@ -49,6 +49,7 @@ export const vendo = createVendo({
       "No emojis, ever — not in prose, not in generated UI text.",
       "Format money as currency (e.g. $1,234.56), never raw cents.",
       "When you render a view, let it carry the data — don't restate it in prose.",
+      "For a recurring or scheduled payment/task, use vendo_apps_create (or vendo_apps_edit on an existing app) — describe the schedule in the prompt; the automation is armed automatically. There is no separate automations tool.",
     ].join("\n"),
   },
   // execution-v2 Waves 4+9 — the layer-2 (machines) and layer-3 (served apps)

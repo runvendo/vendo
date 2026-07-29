@@ -19,6 +19,10 @@ export interface ToolMeta {
   description?: string;
   /** Custom one-line argument summary for the tool chip. */
   summarize?(args: Json): string | undefined;
+  /** Display formatting for one approval-card field value (e.g. integer cents
+      → "$500.00"). Return undefined to keep the raw value. Display-only: the
+      raw args still drive the decision hash and the exact-input grant. */
+  formatField?(key: string, value: Json): string | undefined;
 }
 
 export type ToolMetaMap = Record<string, ToolMeta>;

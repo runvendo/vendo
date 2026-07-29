@@ -25,7 +25,7 @@ const descriptors: ToolDescriptor[] = [
     // Empty-states batch — calling agents were pre-computing data into the
     // prompt ("Total Spent: $0.00"), which the engine's data-honesty law
     // rejects as hand-typed figures; the app binds live host data itself.
-    description: "Create a Vendo app from a natural-language prompt. Pass the user's request (with any clarifying context) as the prompt. Never bake data values you computed or fetched (counts, totals, amounts) into the prompt — the app binds live host data itself and hardcoded figures fail its build. Never specify fonts, colors, or branding — the app inherits the host theme.",
+    description: "Create a Vendo app from a natural-language prompt — including a recurring or scheduled task (e.g. a recurring payment, a daily digest): describe the schedule and the action in the prompt and the automation is armed as part of the same call; no separate automations tool exists. Pass the user's request (with any clarifying context) as the prompt. Never bake data values you computed or fetched (counts, totals, amounts) into the prompt — the app binds live host data itself and hardcoded figures fail its build. Never specify fonts, colors, or branding — the app inherits the host theme.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -40,7 +40,7 @@ const descriptors: ToolDescriptor[] = [
   },
   {
     name: "vendo_apps_edit",
-    description: "Edit an existing Vendo app with one natural-language instruction. If the result has failure.retryable=true, retry vendo_apps_edit on the same appId with a narrower instruction; do not rebuild it with vendo_apps_create.",
+    description: "Edit an existing Vendo app with one natural-language instruction — this is also how you add or change a recurring/scheduled automation on an app (e.g. \"send this every hour\"). If the result has failure.retryable=true, retry vendo_apps_edit on the same appId with a narrower instruction; do not rebuild it with vendo_apps_create.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",

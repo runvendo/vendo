@@ -47,7 +47,7 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
       row.querySelector("dt")?.textContent,
       row.querySelector("dd")?.textContent,
     ]);
-    expect(rows).toEqual([["invoiceId", "inv_42"], ["permanent", "true"]]);
+    expect(rows).toEqual([["Invoice id", "inv_42"], ["Permanent", "true"]]);
     expect(screen.getByText("destructive").getAttribute("data-risk")).toBe("destructive");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect((screen.getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled).toBe(false));

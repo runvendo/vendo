@@ -366,7 +366,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-md > :first-child { margin-top: 0; }
 .fl-md > :last-child { margin-bottom: 0; }
 .fl-md p { margin: 0 0 8px; }
+/* Explicit list-style: host CSS resets (Tailwind preflight) set none globally
+   and the thread renders in the host's cascade, eating the bullets. */
 .fl-md ul, .fl-md ol { margin: 0 0 8px; padding-left: 20px; }
+.fl-md ul { list-style: disc; }
+.fl-md ol { list-style: decimal; }
 .fl-md li { margin: 2px 0; }
 .fl-md li > p { margin: 0; }
 .fl-md h1, .fl-md h2, .fl-md h3, .fl-md h4 { margin: 10px 0 6px; font-weight: 650; line-height: 1.3;

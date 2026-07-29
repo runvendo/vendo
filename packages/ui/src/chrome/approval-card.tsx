@@ -1,20 +1,24 @@
-import { canonicalJson, sha256Hex, type ApprovalDecision, type ApprovalRequest } from "@vendoai/core";
+import { canonicalJson, sha256Hex, type ApprovalDecision, type ApprovalRequest, type Json } from "@vendoai/core";
 import { useState } from "react";
 import { useVendoTools } from "../context.js";
 import { ContainedNotice } from "../tree/notice.js";
 import { toolPresentation } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { humanizeToolName, type ToolMeta } from "./humanize.js";
 
-/** Flat, primitive-valued args render as aligned field rows; anything nested
-    falls back to the raw JSON preview (real inputs, always). */
-function flatFields(args: unknown): Array<[string, string]> | undefined {
+/** Flat, primitive-valued args render as aligned field rows — humanized label,
+    host-formatted value (ToolMeta.formatField), raw value on the tooltip so
+    the real input stays one hover away; anything nested falls back to the raw
+    JSON preview (real inputs, always). */
+function flatFields(args: unknown, meta?: ToolMeta): Array<[string, string, string]> | undefined {
   if (typeof args !== "object" || args === null || Array.isArray(args)) return undefined;
   const entries = Object.entries(args as Record<string, unknown>);
   if (entries.length === 0 || entries.length > 8) return undefined;
-  const rows: Array<[string, string]> = [];
+  const rows: Array<[string, string, string]> = [];
   for (const [key, value] of entries) {
     if (value !== null && typeof value === "object") return undefined;
-    rows.push([key, String(value)]);
+    const raw = String(value);
+    rows.push([humanizeToolName(key), meta?.formatField?.(key, value as Json) ?? raw, raw]);
   }
   return rows;
 }
@@ -75,7 +79,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
   );
   const title = presentation.title;
   const description = (presentation.description ?? approval.descriptor.description).trim();
-  const fields = flatFields(approval.call.args);
+  const fields = flatFields(approval.call.args, meta);
   // Lane pick 1-A — consequence-first: when the presentation can truthfully
   // say what approving does in one sentence, that sentence leads and the raw
   // fields fold behind a "Details" disclosure (still the same real inputs,
@@ -164,10 +168,10 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
         {(() => {
           const inputs = fields ? (
             <dl className="fl-approval-fields" aria-label="Real tool inputs" style={{ display: "grid", gap: "7px", margin: 0 }}>
-              {fields.map(([key, value]) => (
-                <div className="fl-approval-field" key={key}>
-                  <dt>{key}</dt>
-                  <dd>{value}</dd>
+              {fields.map(([label, value, raw]) => (
+                <div className="fl-approval-field" key={label}>
+                  <dt>{label}</dt>
+                  <dd title={raw === value ? undefined : raw}>{value}</dd>
                 </div>
               ))}
             </dl>
