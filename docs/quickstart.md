@@ -17,8 +17,14 @@ npx vendo init
 ```
 
 The `vendoai` package is a thin alias. The scoped package is the canonical
-install. `vendo init` asks nothing on the happy path. It writes the whole
-server side and mounts the visible surface for you:
+install. `vendo init` asks for no data — no interview, no keys to paste, no
+per-diff approvals. What an interactive run does ask are consent questions you
+answer with Enter or y/n: the detected auth preset, the Vendo Cloud starter-key
+offer (only when no provider key is set), consent for the AI polish pass, a
+review of any theme slot the extractor was unsure about, a `zod` bump when your
+pin is below 3.25, and a closing "star the repo?". `--yes` and non-interactive
+runs answer all of them silently. Init writes the whole server side and mounts
+the visible surface for you:
 
 - the catch-all route `app/api/vendo/[...vendo]/route.ts` holding the entire
   `createVendo` composition (on Express or any other Web-standard runtime,
@@ -45,10 +51,8 @@ like everything else. When the layout can't be edited unambiguously, init
 degrades to printing the paste lines instead — see
 [the client mount](#vendovendo-roottsx--the-client-mount).
 
-When it detects your auth provider in package.json it asks once to confirm the
-preset (consent-style, Enter accepts; `--yes` and non-interactive runs accept
-it silently). Then start your dev server — the agent is live in your app — and
-run `npx vendo doctor` to verify everything with one real model turn.
+Then start your dev server — the agent is live in your app — and run
+`npx vendo doctor` to verify everything with one real model turn.
 
 ## Non-interactive runs (agents)
 
@@ -162,8 +166,10 @@ see [actAs preset recipes](./act-as-presets.md) for the full list, the
 hosts without a shipped preset.
 
 `models` and `catalog` are the only other keys most hosts touch on day one.
-Every key is optional — a bare `createVendo()` legitimately boots, with an
-env-resolved model, anonymous ephemeral sessions, and PGlite persistence.
+Every key is optional — `createVendo({})` legitimately boots, with an
+env-resolved model, anonymous ephemeral sessions, and PGlite persistence. (The
+config object itself is required: `createVendo()` with no argument does not
+typecheck and throws at runtime.)
 The `policy: {}` line activates the `.vendo/policy.json` file init wrote, so
 the scaffolded default posture is: destructive tools ask, reads run. Remove
 the `policy` key entirely and every call auto-runs (audited, with the
@@ -428,10 +434,11 @@ absent (see [Model keys](#model-keys)), and with neither `auth` nor
 validation error at compose time. Pick the preset or hand-wire the three
 seams, never both.
 
-Every type below is importable by a host: the umbrella's root entry re-exports
-the contract types, and `@vendoai/vendo/server` carries the composition ones.
-(`ServerActionHandler` is the only exception — the generated `vendo-actions.ts`
-map is the surface you use, never the type.)
+`createVendo(config: CreateVendoConfig): Vendo`, in full. Every type is
+importable by a host — the umbrella's root entry re-exports the contract types
+and `@vendoai/vendo/server` carries the composition ones — and this block is
+compiled against the real `CreateVendoConfig` in
+`packages/vendo/src/cli/quickstart-config-surface.ts`, so it cannot drift:
 
 ```ts
 import type {
@@ -441,10 +448,10 @@ import type {
   PolicyFile, Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry,
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "@vendoai/vendo";
-import type { ConnectionsService, HostAuthPreset, ModelsConfig } from "@vendoai/vendo/server";
+import type {
+  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler,
+} from "@vendoai/vendo/server";
 import type { LanguageModel } from "ai";
-
-export function createVendo(config: CreateVendoConfig): Vendo;
 
 export interface CreateVendoConfig {
   /** @deprecated superseded by `models.agent`. */
@@ -481,7 +488,11 @@ export interface CreateVendoConfig {
     policy?: PolicyFile;
     designRules?: string;
   };
-  mcp?: boolean | { baseUrl?: string; remoteAs?: object; federation?: object };
+  mcp?: boolean | {            // the door; `baseUrl` is its PUBLIC base URL
+    baseUrl?: string;
+    remoteAs?: { issuer: string; jwksUri?: string; audience: string };
+    federation?: { secret: string };
+  };
   oauth?: HostOAuthAdapter;   // escape hatch; required when `mcp` is true and `auth` is absent
   agent?: {
     instructions?: string;
@@ -498,7 +509,14 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
-    pipeline?: Record<string, boolean>; // generation-pipeline opt-ins
+    pipeline?: {              // generation-pipeline knobs, measured before default-on
+      structuredRepair?: boolean;
+      regionParallel?: boolean;
+      endPass?: boolean;
+      exemplarContract?: boolean;
+      smokeRender?: boolean;
+      rebind?: boolean;
+    };
     designRules?: string;
   };
 }

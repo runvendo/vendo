@@ -1,36 +1,47 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { registrySource, routeSource, vendoRootWrapperSource } from "./init-scaffolds.js";
-// The quickstart's config-surface import block, compiled here: every type the
-// doc tells a host to import must really live on the umbrella's own entries, so
-// a rename or a removed re-export breaks `pnpm typecheck` instead of the reader.
-import type {
-  ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, CatalogFile,
-  ComponentCatalog, ComponentRegistry, Connector, ExtractedTool,
-  HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile, PolicyConfig,
-  PolicyFile, Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry,
-  VendoAgent, VendoGuard, VendoStore, VendoTheme,
-} from "../index.js";
-import type { ConnectionsService, HostAuthPreset, ModelsConfig } from "../server.js";
 
 /**
  * Quickstart drift gate. `docs/quickstart.md` is the first code a host ever
- * pastes, and it rotted three ways at once (a `@vendoai/core` import no host
- * can resolve under pnpm strict linking, a deprecated `model:` pin as the
- * primary example, and a config listing missing keys its own prose referenced).
- * Prose can't be tested; the load-bearing lines can:
+ * pastes, and it rotted four ways at once (a `@vendoai/core` import no host can
+ * resolve under pnpm strict linking, a deprecated `model:` pin as the primary
+ * example, a config listing missing keys its own prose referenced, and an intro
+ * describing an init that no longer exists). Prose can't be tested; the
+ * load-bearing lines can:
  *
  *   1. the three generated files' code blocks vs the `init-scaffolds.ts`
  *      exports that actually write them,
- *   2. the config listing's key set vs `CreateVendoConfig`/`Vendo` in
- *      `server.ts`, including which keys are marked @deprecated,
- *   3. every `@vendoai/*` import specifier in a code block resolvable from a
+ *   2. the config listing vs `quickstart-config-surface.ts`, byte for byte —
+ *      that file holds the same block and is compiled against the real
+ *      `CreateVendoConfig`/`Vendo` (nested shapes and optionality included), so
+ *      the types and the imports are checked by `pnpm typecheck` rather than by
+ *      a list maintained here,
+ *   3. the listing's top-level key set and @deprecated marks vs `server.ts` —
+ *      a readable failure for the most common drift, and the one thing types
+ *      cannot carry,
+ *   4. every `@vendoai/*` import specifier in a code block resolvable from a
  *      host's own node_modules (never a transitive package),
- *   4. no deprecated `model:` / `paint:` pin in the composition examples.
+ *   5. no deprecated `model:` / `paint:` pin in the composition examples.
+ *
+ * NOTE: `tsconfig.json` excludes `*.test.ts`, so nothing in THIS file is
+ * typechecked. Every compile-time guarantee lives in the fixture, which is not
+ * excluded — that is why it exists as its own module.
  */
 
 const QUICKSTART = new URL("../../../../docs/quickstart.md", import.meta.url);
 const SERVER_SOURCE = new URL("../server.ts", import.meta.url);
+const CONFIG_FIXTURE = new URL("./quickstart-config-surface.ts", import.meta.url);
+
+/** The fixture's copy of the doc block, between its markers. */
+const FIXTURE_REGION = /^\/\/ --- BEGIN docs\/quickstart\.md config surface ---\n([\s\S]*?)^\/\/ --- END docs\/quickstart\.md config surface ---$/m;
+
+/** The only difference the fixture is allowed: a package cannot resolve itself
+ *  by name, so the doc's host-facing specifiers become the local entries. */
+const LOCAL_ENTRIES: ReadonlyArray<readonly [string, string]> = [
+  ['from "@vendoai/vendo/server";', 'from "../server.js";'],
+  ['from "@vendoai/vendo";', 'from "../index.js";'],
+];
 
 /** The packages a host installs directly (09-vendo §1): the umbrella, its
  *  subpaths, the UI package, and the `vendoai` alias. Anything else in a
@@ -170,6 +181,25 @@ describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
     }
   });
 
+  it("keeps the config listing byte-identical to the compiled fixture", async () => {
+    const listing = configListing(codeBlocks(await readFile(QUICKSTART, "utf8")));
+    const fixture = await readFile(CONFIG_FIXTURE, "utf8");
+    const region = FIXTURE_REGION.exec(fixture)?.[1];
+    expect(region, "the fixture lost its BEGIN/END markers").toBeDefined();
+
+    const localized = LOCAL_ENTRIES.reduce(
+      (source, [published, local]) => source.replace(published, local),
+      listing,
+    );
+    // Byte equality is the point: the fixture is what `pnpm typecheck` compiles
+    // against the real types, so anything the doc says that the fixture doesn't
+    // is unverified. Re-derive the fixture from the doc block, never by hand.
+    expect(region).toBe(localized);
+    // And the rewrite must have actually applied — a doc that stopped naming
+    // the public specifiers would otherwise match a stale fixture.
+    for (const [published] of LOCAL_ENTRIES) expect(listing).toContain(published);
+  });
+
   it("lists exactly createVendo's config keys, deprecations included", async () => {
     const listing = configListing(codeBlocks(await readFile(QUICKSTART, "utf8")));
     const source = await readFile(SERVER_SOURCE, "utf8");
@@ -183,35 +213,3 @@ describe("docs/quickstart.md stays 1:1 with the surfaces it documents", () => {
     expect(interfaceMembers(listing, "Vendo")).toEqual(interfaceMembers(source, "Vendo"));
   });
 });
-
-/** Referencing every imported type keeps the compiled import block honest —
- *  an unused type-only import is not an error, so it must be used. */
-export type QuickstartConfigSurface = {
-  actAs: ActAs;
-  actions: ActionsRegistry;
-  apps: AppsRuntime;
-  automations: AutomationsEngine;
-  catalogFile: CatalogFile;
-  catalog: ComponentCatalog | ComponentRegistry;
-  connectors: Connector[];
-  connections: ConnectionsService;
-  tools: ExtractedTool[];
-  oauth: HostOAuthAdapter;
-  auth: HostAuthPreset;
-  payload: Json;
-  judge: Judge;
-  knowledge: KnowledgeAdapter;
-  models: ModelsConfig;
-  overrides: OverridesFile;
-  policy: PolicyConfig;
-  policyFile: PolicyFile;
-  principal: Principal;
-  runs: RunId[];
-  sandbox: SandboxAdapter;
-  secrets: SecretsProvider;
-  guardedTools: ToolRegistry;
-  agent: VendoAgent;
-  guard: VendoGuard;
-  store: VendoStore;
-  theme: VendoTheme;
-};

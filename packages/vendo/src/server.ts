@@ -230,7 +230,10 @@ export interface Vendo {
 // beside createVendo/CreateVendoConfig: the hosted try venue (a Worker in the
 // console repo) composes typed `profile` pieces against the umbrella alone,
 // without adding a direct @vendoai/actions or @vendoai/core dependency.
-export type { CatalogFile, ExtractedTool, OverridesFile } from "@vendoai/actions";
+// ServerActionHandler rides along for the same reason: it is the value type of
+// the documented `serverActions` config key, so a host must be able to name it
+// without adding a direct @vendoai/actions dependency.
+export type { CatalogFile, ExtractedTool, OverridesFile, ServerActionHandler } from "@vendoai/actions";
 export type { VendoTheme } from "@vendoai/core";
 export type { PolicyFile } from "@vendoai/guard";
 
