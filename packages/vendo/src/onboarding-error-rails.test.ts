@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VendoError } from "@vendoai/core";
 import { createStore } from "@vendoai/store";
+import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { liveModelTurn } from "./cli/doctor-live.js";
 import { DevModelController, NO_CREDENTIAL_MESSAGE, vendoModel } from "./dev-creds/model.js";
@@ -38,6 +39,14 @@ function failingProvider(factoryName: string, error: unknown, supportedUrls: Rec
 
 const unauthorized = (body: unknown = { error: { message: "invalid x-api-key" } }) =>
   Object.assign(new Error("Unauthorized"), { statusCode: 401, responseBody: JSON.stringify(body) });
+
+/** The lazy model's own surface, behind the ai-SDK LanguageModel type. */
+function lazy(model: LanguageModel): {
+  supportedUrls: PromiseLike<Record<string, RegExp[]>> | Record<string, RegExp[]>;
+  doStream(options: unknown): Promise<unknown>;
+} {
+  return model as unknown as ReturnType<typeof lazy>;
+}
 
 async function rejection(call: Promise<unknown>): Promise<VendoError> {
   const error = await call.then(() => undefined, (thrown: unknown) => thrown);
@@ -101,44 +110,28 @@ describe("a rejected key names the rung it was rejected on", () => {
     // The provider's own error stays reachable for the operator log (request
     // ids, response headers) — the crafted message replaces it only on the wire.
     expect(error.cause).toBe(refused);
-  });
 
-  it("routes the model the surfaces are handed through the same rail (`vendo try` takes controller.model())", async () => {
-    const controller = new DevModelController({
-      env: { OPENAI_API_KEY: "sk-o" },
-      importModule: failingProvider("createOpenAI", unauthorized()),
-    });
-    // The try surface probes resolve() for its capability flags, then serves
-    // turns with controller.model() — handing over the raw provider model the
-    // resolution carries would lose the rung.
+    // The same rail through the model the surfaces are handed: `vendo try`
+    // probes resolve() for its capability flags, then serves turns with
+    // controller.model() — the raw provider model would lose the rung.
     expect((await controller.resolve()).mode).toBe("delegate");
-    const model = controller.model() as unknown as { doStream(options: unknown): Promise<unknown> };
-    const error = await rejection(model.doStream({ prompt: [] }));
-    expect(error.message).toContain("check OPENAI_API_KEY in .env.local");
+    const viaModel = await rejection(lazy(controller.model()).doStream({ prompt: [] }));
+    expect(viaModel.message).toBe(error.message);
   });
 
-  it("forwards the resolved provider's supportedUrls, so native file ingestion is not lost", async () => {
+  it("forwards the resolved provider's supportedUrls, and answers {} when nothing resolves", async () => {
     // The SDK reads supportedUrls to decide whether a remote image/PDF is sent
     // by URL or downloaded first. A wrapper claiming none makes callers fetch
     // files the provider could fetch itself — which fails outright under
-    // restricted egress.
+    // restricted egress. Reading it must never throw, keyless included.
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const patterns = { "image/*": [/^https:\/\/example\.test\/.*$/] };
     const controller = new DevModelController({
       env: { OPENAI_API_KEY: "sk-o" },
       importModule: failingProvider("createOpenAI", unauthorized(), patterns),
     });
-    const model = controller.model() as unknown as {
-      supportedUrls: PromiseLike<Record<string, RegExp[]>> | Record<string, RegExp[]>;
-    };
-    expect(await model.supportedUrls).toEqual(patterns);
-  });
-
-  it("answers empty supportedUrls when no credential resolves (never throws at capability-read time)", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const model = vendoModel(undefined, { env: {} }) as unknown as {
-      supportedUrls: PromiseLike<Record<string, RegExp[]>> | Record<string, RegExp[]>;
-    };
-    expect(await model.supportedUrls).toEqual({});
+    expect(await lazy(controller.model()).supportedUrls).toEqual(patterns);
+    expect(await lazy(vendoModel(undefined, { env: {} })).supportedUrls).toEqual({});
   });
 
   it("leaves a 401 carrying the meter refusal to the pricing rail, and every other failure untouched", async () => {
