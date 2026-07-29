@@ -17,7 +17,6 @@ import {
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import {
-  APICallError,
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
@@ -364,10 +363,6 @@ function providerHistory(messages: UIMessage[]): UIMessage[] {
 
 /** 03-agent §1 */
 
-const MODEL_KEY_REJECTED =
-  "the model provider rejected the API key (401). On a Vendo Cloud key, run `vendo login` to mint a fresh "
-  + "VENDO_API_KEY; on your own provider key, check it in .env.local.";
-
 /** The one gate raw errors pass on their way to the wire. Vendo's OWN errors
  *  (code + operator-crafted message) are safe and actionable, so they travel
  *  recognizably prefixed — the thread UI renders the detail line only for
@@ -399,17 +394,15 @@ function wireErrorMessage(error: unknown): string {
   if (refusal !== undefined) {
     return `Vendo: ${formatMeterExhausted(refusal)} (cloud-required)`;
   }
-  // The other first-hour failure: the key exists but the gateway/provider
-  // rejected it (401). Only a MODEL call's error qualifies — APICallError is
-  // the ai-SDK provider shape (marker-based, so a second SDK copy still
-  // matches), which keeps a tool/connector 401 from printing model-key
-  // instructions. Models built by vendo's credential ladder annotate their own
-  // rung before this gate, so what reaches here is a host-wired provider whose
-  // rung nobody can know — hence one sentence that names both exits without
-  // prescribing the wrong one.
-  if (APICallError.isInstance(error) && error.statusCode === 401) {
-    return `Vendo: ${MODEL_KEY_REJECTED} (validation)`;
-  }
+  // A rejected key (401) is NOT classified here, deliberately. This gate sees
+  // every failure a turn can throw — a connector's descriptors() call included
+  // — and an ai-SDK error shape proves the SHAPE, never the ORIGIN, so a tool
+  // 401 would arrive indistinguishable from the model's and get told to go
+  // re-mint a model key. The credential ladder wraps its own 401s with the fix
+  // for the rung it resolved (vendo's dev-creds/model), which is the only place
+  // that knows the call was the model's; those arrive above as VendoErrors. A
+  // provider the host wired itself keeps the generic line: we genuinely do not
+  // know it was the model, and the real error is in the server log.
   return "An error occurred while generating the response.";
 }
 

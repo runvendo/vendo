@@ -65,7 +65,9 @@ interface LanguageModelV3Like {
   specificationVersion: "v3";
   provider: string;
   modelId: string;
-  supportedUrls: Record<string, RegExp[]>;
+  /** The spec allows a promise, which is what makes the lazy rung able to
+   *  forward the resolved provider's real patterns (lazyModel below). */
+  supportedUrls: PromiseLike<Record<string, RegExp[]>> | Record<string, RegExp[]>;
   doGenerate(options: unknown): PromiseLike<unknown>;
   doStream(options: unknown): PromiseLike<unknown>;
 }
@@ -476,9 +478,19 @@ async function delegateCall<T>(
 function lazyModel(controller: DevModelController, provider: string, modelId: string): LanguageModel {
   const model: LanguageModelV3Like = {
     specificationVersion: "v3",
+    // The lazy identity is vendo's own by design (the family name is the
+    // seam), but CAPABILITY must be the resolved provider's: the SDK reads
+    // supportedUrls to decide whether a remote image/PDF is ingested natively
+    // or downloaded first, so answering "none" makes callers fetch files the
+    // provider could have fetched itself — fatal under restricted egress. The
+    // spec allows a promise here, which is what lets a lazy rung answer.
     provider,
     modelId,
-    supportedUrls: {},
+    get supportedUrls() {
+      return controller.resolve().then((resolution) => (
+        resolution.mode === "delegate" ? resolution.model.supportedUrls : {}
+      ));
+    },
     doGenerate: (callOptions) => controller.doGenerate(callOptions),
     doStream: (callOptions) => controller.doStream(callOptions),
   };

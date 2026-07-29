@@ -23,13 +23,13 @@ afterEach(async () => {
 });
 
 /** A provider module whose model fails every call with `error`. */
-function failingProvider(factoryName: string, error: unknown) {
+function failingProvider(factoryName: string, error: unknown, supportedUrls: Record<string, RegExp[]> = {}) {
   return async (): Promise<Record<string, unknown>> => ({
     [factoryName]: () => (modelId: string) => ({
       specificationVersion: "v3",
       provider: "scripted",
       modelId,
-      supportedUrls: {},
+      supportedUrls,
       doGenerate: async () => { throw error; },
       doStream: async () => { throw error; },
     }),
@@ -115,6 +115,30 @@ describe("a rejected key names the rung it was rejected on", () => {
     const model = controller.model() as unknown as { doStream(options: unknown): Promise<unknown> };
     const error = await rejection(model.doStream({ prompt: [] }));
     expect(error.message).toContain("check OPENAI_API_KEY in .env.local");
+  });
+
+  it("forwards the resolved provider's supportedUrls, so native file ingestion is not lost", async () => {
+    // The SDK reads supportedUrls to decide whether a remote image/PDF is sent
+    // by URL or downloaded first. A wrapper claiming none makes callers fetch
+    // files the provider could fetch itself — which fails outright under
+    // restricted egress.
+    const patterns = { "image/*": [/^https:\/\/example\.test\/.*$/] };
+    const controller = new DevModelController({
+      env: { OPENAI_API_KEY: "sk-o" },
+      importModule: failingProvider("createOpenAI", unauthorized(), patterns),
+    });
+    const model = controller.model() as unknown as {
+      supportedUrls: PromiseLike<Record<string, RegExp[]>> | Record<string, RegExp[]>;
+    };
+    expect(await model.supportedUrls).toEqual(patterns);
+  });
+
+  it("answers empty supportedUrls when no credential resolves (never throws at capability-read time)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = vendoModel(undefined, { env: {} }) as unknown as {
+      supportedUrls: PromiseLike<Record<string, RegExp[]>> | Record<string, RegExp[]>;
+    };
+    expect(await model.supportedUrls).toEqual({});
   });
 
   it("leaves a 401 carrying the meter refusal to the pricing rail, and every other failure untouched", async () => {
