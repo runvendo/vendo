@@ -86,8 +86,8 @@ export const vendo = createVendo({
   // connectorApps scopes THAT auto-composed cloud pair to the same toolkits
   // the BYO line uses — the demo never advertises the console's full catalog.
   ...(composioApiKey
-    ? { connectors: [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "slack"] })] }
-    : { connectorApps: ["gmail", "slack"] }),
+    ? { connectors: [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "outlook", "slack"] })] }
+    : { connectorApps: ["gmail", "outlook", "slack"] }),
   // Store posture — an explicit demo decision (README "Store posture"). The
   // DEPLOYED demo leaves this slot unset so the VENDO_API_KEY env ladder
   // composes the Cloud HOSTED store: Railway's container filesystem is

@@ -42,6 +42,6 @@ export const vendo = createVendo({
   // scopes the VENDO_API_KEY-composed Cloud pair to the same toolkits — the
   // demo gets connectors in cloud posture, never the console's full catalog.
   ...(composioApiKey
-    ? { connectors: [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "googlecalendar", "slack"] })] }
-    : { connectorApps: ["gmail", "googlecalendar", "slack"] }),
+    ? { connectors: [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "googlecalendar", "outlook", "slack"] })] }
+    : { connectorApps: ["gmail", "googlecalendar", "outlook", "slack"] }),
 });
