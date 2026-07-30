@@ -6,6 +6,7 @@ import type { LanguageModel } from "ai";
 import { resolveCloudBaseUrl } from "../cli/cloud/client.js";
 import {
   describeDevCredential,
+  ENV_KEY_VARS,
   resolveDevCredential,
   type DevCredential,
   type EnvKeyProvider,
@@ -335,9 +336,33 @@ export class DevModelController {
   lazyModelId(fallback: string): string {
     const pin = nonBlank(this.env[SLOT_PIN_ENV[this.slot]]);
     if (pin !== undefined) return pin;
+    const spec = this.lazyProviderSpec();
+    if (this.slot === "agent" && spec !== undefined) {
+      const legacy = nonBlank(this.env[spec.modelEnv]);
+      if (legacy !== undefined) return legacy;
+    }
     const configured = this.configured;
     if (typeof configured === "string" && nonBlank(configured) !== undefined) return configured.trim();
+    if (this.name !== undefined) return this.name;
+    if (spec === CLOUD_MODEL) return CLOUD_FAMILY[this.slot];
+    if (spec !== undefined) return FAST_SLOTS.has(this.slot) ? spec.fast : spec.model;
     return fallback;
+  }
+
+  private lazyProviderSpec(): ProviderSpec | undefined {
+    const pinned = nonBlank(this.env["VENDO_DEV_CREDENTIAL"]);
+    if (pinned === "vendo-cloud") return CLOUD_MODEL;
+    if (pinned === "none") return undefined;
+    const pinnedEnvKey = /^env-key:(anthropic|openai|google)$/.exec(pinned ?? "");
+    if (pinnedEnvKey !== null) {
+      const provider = pinnedEnvKey[1] as EnvKeyProvider;
+      const envVar = ENV_KEY_VARS.find((entry) => entry.provider === provider)!.envVar;
+      return nonBlank(this.env[envVar]) === undefined ? undefined : DEFAULT_MODELS[provider];
+    }
+    for (const { envVar, provider } of ENV_KEY_VARS) {
+      if (nonBlank(this.env[envVar]) !== undefined) return DEFAULT_MODELS[provider];
+    }
+    return nonBlank(this.env["VENDO_API_KEY"]) === undefined ? undefined : CLOUD_MODEL;
   }
 
   /** The shared delegate rung: load the provider module (an install failure
