@@ -160,6 +160,24 @@ describe("one visitor, one anonymous identity", () => {
     expect(cookies.jar().get(ANON_COOKIE)).toMatch(ANON_ID_PATTERN);
   });
 
+  it("shares the cold-load gate across client instances for the same wire base", async () => {
+    const clients = [
+      createVendoClient({ baseUrl: door.url }),
+      createVendoClient({ baseUrl: `${door.url}/` }),
+      createVendoClient({ baseUrl: door.url }),
+    ];
+
+    await Promise.all([
+      clients[0]!.apps.list(),
+      clients[1]!.threads.list(),
+      clients[2]!.connections.list(),
+    ]);
+
+    expect(door.identities()).toHaveLength(3);
+    expect(new Set(door.identities()).size).toBe(1);
+    expect(door.mints()).toBe(1);
+  });
+
   it("keeps the visitor on the identity the jar already holds (no re-mint)", async () => {
     const client = createVendoClient({ baseUrl: door.url });
 
