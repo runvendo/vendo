@@ -5,6 +5,7 @@ import {
   VENDO_KNOWLEDGE_RESULT_KIND,
   VENDO_VIEW_STREAM,
   toVendoWirePart,
+  vendoAutomationPartSchema,
   vendoCitationsPartSchema,
   vendoKnowledgeCitationSchema,
   vendoViewStreamId,
@@ -18,6 +19,7 @@ import {
   type ToolOutcome,
   type ToolRegistry,
   type VendoApprovalPart,
+  type VendoAutomationPart,
   type VendoBuildFailedPart,
   type VendoCitationsPart,
   type VendoConnectPart,
@@ -32,7 +34,7 @@ import {
   type UIMessageStreamWriter,
 } from "ai";
 
-type VendoPart = VendoApprovalPart | VendoBuildFailedPart | VendoCitationsPart | VendoConnectPart | VendoViewPart;
+type VendoPart = VendoApprovalPart | VendoAutomationPart | VendoBuildFailedPart | VendoCitationsPart | VendoConnectPart | VendoViewPart;
 
 /** 03-agent §2 */
 export interface ToolBridgeOptions {
@@ -204,6 +206,31 @@ export function addAgentTool(tools: ToolSet, descriptor: ToolDescriptor, options
           : null;
         const view = vendoViewPartSchema.safeParse(candidate);
         if (view.success) writePart(options.writer, view.data, vendoViewStreamId(view.data.appId));
+        // The automation card (01 §16 amendment, stream-parts): an edit that
+        // rode the escalation ladder to an automation carries the authored
+        // envelope on its output — land it in the thread as a card, not
+        // prose. Scoped to the edit tool by NAME, never by output shape,
+        // for the same §16 reason as the view part above.
+        if (descriptor.name === "vendo_apps_edit") {
+          const automation = surface?.automation as Record<string, unknown> | undefined;
+          const app = surface?.app as Record<string, unknown> | undefined;
+          if (automation !== undefined && app !== undefined) {
+            const part = vendoAutomationPartSchema.safeParse({
+              type: "data-vendo-automation",
+              appId: app.id,
+              name: app.name,
+              enabled: automation.enabled,
+              trigger: automation.trigger,
+              ...(typeof app.description === "string" && app.description.length > 0
+                ? { description: app.description }
+                : {}),
+              ...(Array.isArray(automation.pendingGrants) && automation.pendingGrants.length > 0
+                ? { pendingGrants: automation.pendingGrants.length }
+                : {}),
+            });
+            if (part.success) writePart(options.writer, part.data, `vendo-automation-${String(app.id)}`);
+          }
+        }
       } else if (outcome.status === "pending-approval") {
         writePart(options.writer, approvalPart(toolCallId, descriptor.risk, outcome.approvalId));
       } else if (outcome.status === "connect-required") {

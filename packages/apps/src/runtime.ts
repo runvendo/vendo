@@ -249,6 +249,10 @@ export interface EditResult {
   automation?: {
     mode: "steps" | "agentic";
     trigger: Trigger;
+    /** What the arming actually produced — false when the seam left the
+     * trigger disarmed or arming threw (the issues entry says why). The
+     * thread's automation card needs the true state, not an inference. */
+    enabled: boolean;
     resultsCollection?: string;
     pendingGrants?: ApprovalRequest[];
   };
@@ -1700,10 +1704,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       armTrigger: config.armAutomation === undefined,
     });
     let pendingGrants: ApprovalRequest[] | undefined;
+    // Direct arming happened inside persistEdit (armTrigger) — enabled unless
+    // a seam below reports otherwise.
+    let enabled = true;
     if (config.armAutomation !== undefined) {
       try {
         const armed = await config.armAutomation(previous.id, ctx);
         if (armed.missing.length > 0) pendingGrants = structuredClone(armed.missing);
+        enabled = armed.enabled;
         // A seam that answers without arming is the same miss as a thrown one:
         // the trigger must never sit silently disarmed.
         if (!armed.enabled) {
@@ -1712,6 +1720,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       } catch (error) {
         // Never a silently dead automation: the trigger is on the document but
         // disarmed — say so, with the arming surface to use.
+        enabled = false;
         issues.push(`the automation was authored but arming it failed (${error instanceof Error ? error.message : "unknown error"}) — enable it explicitly via the automations engine (automations.enable / POST /automations/:appId/enable)`);
       }
     }
@@ -1727,6 +1736,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       automation: {
         mode,
         trigger: structuredClone(plan.trigger),
+        enabled,
         ...(plan.resultsCollection === undefined ? {} : { resultsCollection: plan.resultsCollection }),
         ...(pendingGrants === undefined ? {} : { pendingGrants }),
       },
