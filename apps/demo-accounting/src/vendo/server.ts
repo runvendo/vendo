@@ -38,10 +38,9 @@ export const vendo = createVendo({
       endPass: true,
     },
   },
-  // BYO Composio when Cadence brings its own key; otherwise connectorApps
-  // scopes the VENDO_API_KEY-composed Cloud pair to the same toolkits — the
-  // demo gets connectors in cloud posture, never the console's full catalog.
-  ...(composioApiKey
-    ? { connectors: [composioConnector({ apiKey: composioApiKey, apps: ["gmail", "googlecalendar", "outlook", "slack"] })] }
-    : { connectorApps: ["gmail", "googlecalendar", "outlook", "slack"] }),
+  // BYO Composio when Cadence brings its own key; otherwise the slot stays
+  // UNSET so a VENDO_API_KEY deployment composes the Cloud pair. No apps
+  // scoping (2026-07-30 ruling): the dock offers every toolkit with an
+  // enabled auth config on the account — new connectors need no redeploy.
+  ...(composioApiKey ? { connectors: [composioConnector({ apiKey: composioApiKey })] } : {}),
 });
