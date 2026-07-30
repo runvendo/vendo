@@ -1,5 +1,141 @@
 # @vendoai/actions
 
+## 0.6.0
+
+### Minor Changes
+
+- 89153f8: Delete the pre-v3 `.vendo` format layer and the semantics dev-server pass.
+
+  `.vendo/` is now one format, not two. The `vendo/tools@1` / `vendo/overrides@1`
+  schemas, `vendo/capabilities@1`, `vendo/semantics@1`, `vendoFileVersion`, and
+  every dual-format reader and in-memory migration fold are gone; the surviving
+  `@3` names lost their `V3` suffix (`toolsFileSchema`, `overridesFileSchema`,
+  `ExtractedTool`, `OverridesFile`, `VENDO_TOOLS_FORMAT`, `VENDO_OVERRIDES_FORMAT`
+  — now exported from `@vendoai/actions`, and the persisted tag strings
+  `"vendo/tools@3"` / `"vendo/overrides@3"` are unchanged).
+
+  `vendo sync` also no longer calls a running dev server to infer field
+  semantics: the `POST /sync/semantics` route and its CLI pass are deleted, so a
+  sync never executes host endpoints as a side effect. The per-tool `semantics`
+  field itself is untouched — sync's AI enrichment proposes it and
+  `overrides.json → tools[name].semantics` still wins forever.
+
+  Removed public types: `CapabilitiesFile`, `SemanticsFile`, `OverridesFileV3`
+  (use `OverridesFile`). Removed config: `createActions({ capabilities })`,
+  `createVendo({ profile: { capabilities, semantics } })` — compounds and briefs
+  live in `overrides.json`.
+
+- 3ae3d13: Delete template tool descriptions and the domains manifest.
+
+  `vendo sync` no longer invents a description for a tool your API does not
+  describe. The deterministic `"Use this to …"` generator is gone: an
+  undescribed tool carries `""` in `.vendo/tools.json`, which is the honest
+  keyless state. Sync's AI enrichment pass proposes real descriptions when a
+  model credential is present, and `overrides.json → tools[name].description`
+  still wins forever.
+
+  The domains manifest is gone end to end. Generation already receives the full
+  tool list, so a derived summary of tool nouns told the model nothing new — and
+  a finite `hasNot` can never enumerate what a host lacks. Removed: the `domains`
+  field from both `.vendo/tools.json` and `.vendo/overrides.json`, the
+  `DATA DOMAINS` prompt section, and the `domains` provider slot on the apps
+  runtime.
+
+  Removed public API: `DomainManifest` and `domainManifestSchema` (from
+  `@vendoai/core`); the `domains` field on `ToolsFile` / `OverridesFile`;
+  `createApps({ domains })`. `mergedSemanticsAndDomains` is now
+  `mergedHostSemantics` and returns the per-tool semantics record directly
+  (the `MergedHostSemantics` wrapper type is gone).
+
+  `.vendo/overrides.json` is strict, so a leftover `domains` key now fails
+  loudly at parse — delete it and re-run `vendo sync`.
+
+- 127aa29: Add the judgment layer's core: `.vendo/judgments.json` and the direction rule.
+  Remove the `watermark` and `enriched` fields and the restrictive-only clamp they
+  served.
+
+  `.vendo/` gains a THIRD file, split from the other two by author the same way
+  `overrides.json` is: `vendo/judgments@1` (`judgmentsFileSchema`,
+  `JudgmentsFile`, `ToolJudgment`, `JudgmentFields`, `PendingLoosening`) is where
+  the model writes. Every entry costs a quoted piece of handler evidence —
+  `evidence` is required and length-bounded at both levels, and a malformed file
+  fails loudly at parse rather than being ignored, because it can carry disables.
+
+  The new `@vendoai/actions` root exports replace the old clamp:
+
+  - `classifyField(tool, field, value)` — "harden" or "loosen". Risk up, audience
+    narrowed, `disabled: true`, `critical: true` harden; the inverses loosen.
+    Prose and semantics route with the hardenings.
+  - `splitProposal(tool, proposal)` — hardenings apply; loosenings are QUEUED as
+    `pending` with their own evidence instead of being refused and forgotten, and
+    wait for a human. Direction is computed against the tool's effective state
+    (skeleton ⊕ the standing judgment), so judgments only ever ratchet tighter.
+  - `applyJudgment(tool, judgment)` — inert when the judgment's `binding` no
+    longer matches the tool's identity, so a stale judgment never grades another
+    handler. Semantics merge per key; `pending` is never applied; an
+    operator/internal audience still composes `disabled: true` (fail-closed).
+  - `pruneJudgments(file, tools)`, `RISK_RANK`, `AUDIENCE_RANK`.
+  - `bindingIdentity` / `dedupKey` now also ship from the package root (pure, no
+    node imports) — writing a judgment means computing a binding identity, and
+    the runtime side cannot reach the node-only `./sync` entry.
+
+  Removed: `clampEnrichment`, `applyEnrichmentFields`, `carryEnrichment`,
+  `gitTreeHash`, `EnrichmentFields`, `ClampedEnrichment`, and `RISK_RANK` /
+  `AUDIENCE_RANK` from `@vendoai/actions/sync` (the ranks moved to the root).
+  Removed fields: `ToolsFile.watermark`, `ExtractedTool.enriched`, and the
+  `watermark` option on `vendoSync`. The per-tool `semantics` carry across
+  structural syncs is unchanged, and so is `ExtractedTool.outputSchema` — a
+  declared response shape is not a judgment, and it is load-bearing for
+  first-try prop binding (docs/verification/demo-live-readiness/donut-bind).
+
+### Patch Changes
+
+- b14b209: Wire `.vendo/judgments.json` into the runtime read path: the AI layer now
+  actually applies, between the machine layer and the human one.
+
+  Host tools compose as `tools.json < judgments.json < overrides.json` — the
+  scanner's skeleton, hardened by its standing judgment, then corrected by the
+  authored override, which still wins last. `LoadedHost` carries the parsed
+  judgments file, and `loadHost` reads it in the same `Promise.all` as the pair.
+  Absent is fine; MALFORMED fails loudly at load, the same fail-closed posture as
+  `overrides.json` and for the same reason — the file can carry disables and
+  audience exclusions, so silently ignoring a broken one would silently loosen the
+  live surface.
+
+  Judgments are a HOST-tool layer only: connector, registry, and compound tools
+  are untouched. Lane A's safety properties hold on the read path — a `pending`
+  loosening never applies, and a judgment whose `binding` no longer matches the
+  tool's identity is wholly inert.
+
+  `mergedHostSemantics` gains the matching leg, so generation sees the same three
+  layers: `tools.json` semantics, then `judgments.json` `fields.semantics`, then
+  the authored overrides. `createVendo`'s host-semantics provider reads
+  `.vendo/judgments.json` alongside the pair, live per generation.
+
+  Also fixed: the zero-live-host-tools boot warning derived enablement by hand
+  from `overrides.json` alone, so a deployment whose host tools were all disabled
+  by judgments would have shipped a silently useless agent without warning. It now
+  reads the same effective state the registry dispatches from.
+
+- 5987985: A failed host call now names the origin it called, not just the path.
+
+  `http-error` outcomes were formatted `GET /customers → 404: …`. When a
+  deployment's `VENDO_BASE_URL` points at the wrong host, every tool 404s while
+  every path is correct — and that message reads exactly like a malformed path.
+  It now reads:
+
+  ```
+  GET https://api.example.com/customers → 404: no such route
+  ```
+
+  The target is assembled from the URL's origin and path only, so a `baseUrl`
+  carrying userinfo (`https://svc:pw@host`, `https://ghp_x@host`) or a
+  query-string token never reaches an error message, a host log, or the model.
+
+- Updated dependencies [89153f8]
+- Updated dependencies [3ae3d13]
+  - @vendoai/core@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes

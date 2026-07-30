@@ -1,5 +1,89 @@
 # @vendoai/ui
 
+## 0.6.0
+
+### Minor Changes
+
+- a7199db: Chrome polish wave + the automation card's missing emitter.
+
+  - **Status ribbon docks onto the composer** (Codex-style): narrower than the
+    composer, top corners only, its bottom edge tucked behind the card — no more
+    floating pill with a gap, on both the page surface and the overlay's
+    dock-anchor DOM.
+  - **Approval card de-escalated**: the ceremony card keeps the neutral surface
+    with a single amber accent bar instead of the full yellow wash; the
+    ALL-CAPS "CRITICAL" eyebrow is gone; risk slugs render in the user's
+    language ("Irreversible", "Makes changes", "Read-only") with the raw slug
+    intact on `data-risk` and the tooltip.
+  - **App-card dot stands down when ready**: the pulsing build dot fades and
+    collapses once the view is generated; the ready bar carries just the name.
+  - **`.fl-btn` is a non-wrapping flex row**: icon + label ride one line (the
+    connect card's "Connecting…" spinner no longer folds onto its own line).
+  - **`VendoPage` accepts `thread`** (`suggestions` + `discoverability`
+    passthrough to the chat tab), so hosts can move their curated landing onto
+    the full workspace; Maple's Ask Maple page and Cadence's assistant now
+    render the workspace console.
+  - **The automation card now actually streams**: `vendo_apps_edit` ok-outputs
+    that armed an automation emit `data-vendo-automation` from the agent tool
+    bridge (name-scoped, 01 §16), and the apps runtime reports the armed
+    trigger's true `enabled` state on `EditResult.automation`. The playground
+    gallery gains an "Automation created" scenario.
+
+### Patch Changes
+
+- 9532dc0: A turn that builds nothing no longer looks like it is building something.
+
+  Between send and the first streamed chunk the thread painted a document-shaped
+  skeleton card under a "Generating…" label. That window has no idea yet whether
+  the turn will produce a view: on the live demos it showed on every turn, then
+  resolved into plain prose or a refusal, which read as a generated view that had
+  failed to arrive.
+
+  The pre-first-chunk window now uses the same quiet liveness indicator every
+  other waiting moment in a turn already uses, so the transcript promises nothing
+  it may not deliver. Nothing changed about how a real build narrates: tool calls
+  still speak through the status ribbon, and a forming generated view still shows
+  "Building your view…" on the app card until it settles.
+
+  `.fl-generating` and the `.fl-skeleton` card are removed from the chrome
+  stylesheet (`.fl-skeleton-bar` stays — the markdown table's forming row uses
+  it). The internal `MessageList` no longer takes `awaitingFirstChunk`.
+
+- d6c231e: One visitor, one anonymous identity — consent-gated actions stop failing silently.
+
+  An anonymous visitor's identity IS the opaque session pointer the door mints on a
+  cookie-less wire request, and the door mints one PER REQUEST. A cold page load
+  mounts several hooks at once (`/status`, `/approvals`, `/automations`,
+  `/activity`, `/connections/catalog`, `/connections`), so every one of them left
+  cookie-less and minted its own subject; the browser's jar kept whichever
+  `Set-Cookie` landed last and the rest were orphaned. Measured live: one page load
+  produced four distinct subjects, three orphaned.
+
+  The damage lands on the trust mechanism at the centre of the product. An agent
+  run created its consent approval under one subject, the user's Approve arrived as
+  another, and guard correctly refused another subject's approval — surfacing as
+  `Approval apr_… was not found` and a run stuck on "waiting for your approval"
+  forever. Every consent-gated action failed this way, and the same split emptied
+  the activity feed mid-run.
+
+  The browser is the visitor boundary, so `createVendoClient` is the layer that can
+  close the race honestly: the first request through a client may leave
+  cookie-less, and every request issued before it answers now waits for it and
+  travels with the pointer it established. Costs one extra round trip on a cold
+  load and nothing afterwards; a failed first request releases the gate rather than
+  holding it, so the old behaviour is the floor, never something worse.
+
+  Deliberately NOT solved by fingerprinting the requester (IP/User-Agent would
+  merge two real visitors behind one NAT into a single session, sharing threads,
+  grants and approvals) nor by deriving the pointer from request attributes (that
+  would make a live session guessable, where today it is a 2^128 search). Hosts
+  that already mint the pointer on their document response keep working unchanged —
+  the door treats a pre-established pointer as canonical.
+
+- Updated dependencies [89153f8]
+- Updated dependencies [3ae3d13]
+  - @vendoai/core@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes

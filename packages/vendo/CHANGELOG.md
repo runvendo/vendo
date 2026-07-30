@@ -1,5 +1,323 @@
 # @vendoai/vendo
 
+## 0.6.0
+
+### Minor Changes
+
+- 89153f8: Delete the pre-v3 `.vendo` format layer and the semantics dev-server pass.
+
+  `.vendo/` is now one format, not two. The `vendo/tools@1` / `vendo/overrides@1`
+  schemas, `vendo/capabilities@1`, `vendo/semantics@1`, `vendoFileVersion`, and
+  every dual-format reader and in-memory migration fold are gone; the surviving
+  `@3` names lost their `V3` suffix (`toolsFileSchema`, `overridesFileSchema`,
+  `ExtractedTool`, `OverridesFile`, `VENDO_TOOLS_FORMAT`, `VENDO_OVERRIDES_FORMAT`
+  — now exported from `@vendoai/actions`, and the persisted tag strings
+  `"vendo/tools@3"` / `"vendo/overrides@3"` are unchanged).
+
+  `vendo sync` also no longer calls a running dev server to infer field
+  semantics: the `POST /sync/semantics` route and its CLI pass are deleted, so a
+  sync never executes host endpoints as a side effect. The per-tool `semantics`
+  field itself is untouched — sync's AI enrichment proposes it and
+  `overrides.json → tools[name].semantics` still wins forever.
+
+  Removed public types: `CapabilitiesFile`, `SemanticsFile`, `OverridesFileV3`
+  (use `OverridesFile`). Removed config: `createActions({ capabilities })`,
+  `createVendo({ profile: { capabilities, semantics } })` — compounds and briefs
+  live in `overrides.json`.
+
+- 3ae3d13: Delete template tool descriptions and the domains manifest.
+
+  `vendo sync` no longer invents a description for a tool your API does not
+  describe. The deterministic `"Use this to …"` generator is gone: an
+  undescribed tool carries `""` in `.vendo/tools.json`, which is the honest
+  keyless state. Sync's AI enrichment pass proposes real descriptions when a
+  model credential is present, and `overrides.json → tools[name].description`
+  still wins forever.
+
+  The domains manifest is gone end to end. Generation already receives the full
+  tool list, so a derived summary of tool nouns told the model nothing new — and
+  a finite `hasNot` can never enumerate what a host lacks. Removed: the `domains`
+  field from both `.vendo/tools.json` and `.vendo/overrides.json`, the
+  `DATA DOMAINS` prompt section, and the `domains` provider slot on the apps
+  runtime.
+
+  Removed public API: `DomainManifest` and `domainManifestSchema` (from
+  `@vendoai/core`); the `domains` field on `ToolsFile` / `OverridesFile`;
+  `createApps({ domains })`. `mergedSemanticsAndDomains` is now
+  `mergedHostSemantics` and returns the per-tool semantics record directly
+  (the `MergedHostSemantics` wrapper type is gone).
+
+  `.vendo/overrides.json` is strict, so a leftover `domains` key now fails
+  loudly at parse — delete it and re-run `vendo sync`.
+
+- 020fc8e: Add the judgment channel: a judge pass, an independent skeptic, and the human
+  gate on loosenings (`packages/vendo/src/cli/judge/`).
+
+  `runJudgmentPass()` reads the deterministic `.vendo/tools.json`, asks a model to
+  grade it, then asks a SECOND independent run to tear that answer apart, and
+  writes only what survives into `.vendo/judgments.json`. Not yet wired into
+  `init`/`sync`/`try` — that is the next change; this one adds the module and its
+  tests.
+
+  The shape follows from one failure mode: a single model pass allowed to grade
+  capability will confidently justify a grade the code does not support, in either
+  direction. An over-tight grade silently breaks a working product; a loose one
+  hands out capability. So:
+
+  - the JUDGE proposes, and every proposal costs a VERBATIM quote from the
+    handler. No quote, no proposal — rejected at parse and counted in the
+    narrative, never discarded silently. One bad proposal cannot fail a whole
+    batch of twenty.
+  - the SKEPTIC is a second run (fresh conversation, same engine) whose only job
+    is to check each field against the real source, including whether the quoted
+    evidence appears in the file at all. It rejects hardenings as readily as
+    loosenings.
+  - anything the skeptic never examined gets exactly ONE re-ask and is then
+    REJECTED, with an honest count. Unexamined never means applied. A proposal
+    whose every field is rejected writes no entry at all, so a discredited quote
+    is never recorded as provenance.
+  - survivors route through the direction rule in `@vendoai/actions`: hardenings
+    and prose apply themselves; loosenings either aggregate into ONE review diff
+    (`loosenings: "review"`) or park as `pending` (`loosenings: "queue"`).
+
+  Risk may now move in BOTH directions and a wake-up (`disabled: false`) may be
+  proposed for a scanner-disabled tool — the old clamp could only refuse those,
+  so a real finding evaporated into a log line.
+
+  The engine ladder merges the two that existed (enrichment's resolver and init's
+  selection) into one: the credential gate runs first so a keyless repo never
+  probes a harness, an `--engine` pin never falls back to another provider, and
+  availability is swept across the whole ladder so the unavailable-pin message can
+  name the real alternatives. Keyless degrades to one calm line
+  (`judgment: structural-only …`) with zero errors.
+
+  Every model-originated string and every evidence snippet is treated as untrusted
+  repo content and stripped of C0/C1/DEL control characters before it reaches a
+  terminal — including the review diff, which is exactly what an attacker would
+  want to spoof.
+
+  Also dedupes `askYesNo`: the copy in `cli/extract/extraction.ts` is removed in
+  favor of the existing one in `cli/shared.ts` (which additionally guards against
+  blocking on a non-TTY stdin). Importers updated; no call-site behavior change
+  for interactive runs.
+
+- a9aa714: Wire the judgment channel into `init`, `sync` and `try`, and delete the three AI
+  systems it replaces.
+
+  `init` and `sync` now run `runJudgmentPass` instead of the staged AI extraction
+  and the sync enrichment pass. The difference that matters is WHERE model output
+  lands and what it costs to get there: a proposal needs a verbatim source quote,
+  an independent skeptic checks it against the real handler, hardenings and prose
+  apply themselves into `.vendo/judgments.json`, and loosenings — lower risk, wider
+  audience, a woken tool, a cleared critical mark — wait for a human. So
+  `overrides.json` goes back to meaning only "what a person decided", and a
+  re-sync can no longer clobber either file.
+
+  Deleted outright: the staged extraction pipeline (survey → draft-per-surface →
+  cross-check) with its prompts, `runAiExtraction`/`applyDraft` and the whole
+  `cli/enrich/` pass (watermark diff, restrictive-only clamp, tripwire), and the
+  `vendo extract --apply` delegation path — including the `aiPolish` contract the
+  `init --agent` plan used to carry, which no external agent can honour now that a
+  judgment requires quoted evidence. `vendo extract` exits as an unknown command.
+
+  The prose half survives as two focused stages, `runBriefStage` and
+  `runThemeStage`; the brief prompt now reads the JUDGED catalog rather than a
+  draft. `vendo try`'s background deepening runs judgment → brief → seeds and
+  queues loosenings instead of prompting, since that surface is non-interactive by
+  design.
+
+  Flags: `vendo sync --no-watermark` is renamed `--no-ai` (the old name keeps
+  working as a silent alias); `--review` now shows the queued and new loosenings;
+  `--full` judges the whole catalog instead of only what moved.
+
+  Also fixed: `vendo doctor`'s live-surface check and the `try` profile's tool
+  summaries hand-rolled a tools+overrides merge that would have disagreed with the
+  runtime once judgments existed. Both now resolve the same three layers the
+  runtime does — skeleton ⊕ judgments ⊕ overrides — so a disable either surface
+  reports is one the agent actually sees.
+
+### Patch Changes
+
+- db1915e: Teach the judge three labeling rules the mutation test cannot derive.
+
+  The risk section of the judge prompt now states, alongside the mutation test:
+
+  - **A catch-all route is graded at its worst operation.** When one URL fronts
+    many operations (`[...nextauth]`, `[trpc]`, an upload or OAuth SDK handler),
+    which method reaches which operation is decided inside the dependency, not in
+    the host's source — so the tool is graded at the most dangerous operation
+    reachable behind that URL, and when the source cannot settle it, at the worst
+    plausible one, said out loud in the reason.
+  - **`destructive` needs bulk or irreversible loss.** A hard delete of one easily
+    re-created row or object — remove a member, cancel an invite, remove an image
+    — is a `write`. If every delete were destructive the top grade would mean
+    nothing.
+  - **An unrecallable outbound effect is a `write` with no row written** — mail or
+    SMS sent, a webhook delivered, a payment captured, an external checkout or
+    billing-portal session created.
+
+  Doctrine is unchanged: hardenings still apply immediately, loosenings still need
+  the skeptic and a human, and the self-consistency check still drops a grade that
+  contradicts its own reason.
+
+- b14b209: Wire `.vendo/judgments.json` into the runtime read path: the AI layer now
+  actually applies, between the machine layer and the human one.
+
+  Host tools compose as `tools.json < judgments.json < overrides.json` — the
+  scanner's skeleton, hardened by its standing judgment, then corrected by the
+  authored override, which still wins last. `LoadedHost` carries the parsed
+  judgments file, and `loadHost` reads it in the same `Promise.all` as the pair.
+  Absent is fine; MALFORMED fails loudly at load, the same fail-closed posture as
+  `overrides.json` and for the same reason — the file can carry disables and
+  audience exclusions, so silently ignoring a broken one would silently loosen the
+  live surface.
+
+  Judgments are a HOST-tool layer only: connector, registry, and compound tools
+  are untouched. Lane A's safety properties hold on the read path — a `pending`
+  loosening never applies, and a judgment whose `binding` no longer matches the
+  tool's identity is wholly inert.
+
+  `mergedHostSemantics` gains the matching leg, so generation sees the same three
+  layers: `tools.json` semantics, then `judgments.json` `fields.semantics`, then
+  the authored overrides. `createVendo`'s host-semantics provider reads
+  `.vendo/judgments.json` alongside the pair, live per generation.
+
+  Also fixed: the zero-live-host-tools boot warning derived enablement by hand
+  from `overrides.json` alone, so a deployment whose host tools were all disabled
+  by judgments would have shipped a silently useless agent without warning. It now
+  reads the same effective state the registry dispatches from.
+
+- 23cdb00: Onboarding safety and honesty: four fixes to the first `vendo init`.
+
+  - **A secret written into a committed file now says so.** `vendo login` and
+    `vendo init --cloud-key` land `VENDO_API_KEY` in `.env.local`, and now say one
+    line about whether git will commit it, with the remediation that actually
+    works: `git rm --cached` when the file is already tracked (where .gitignore
+    cannot help), the .gitignore line when it is untracked and unignored, and an
+    explicit "git could not answer" when a live repo errors. Symlinks are resolved
+    first, so a gitignored `.env.local` pointing at a tracked file is judged by
+    the file the write really lands in. Silent when the file is ignored, and when
+    there is no working tree or no git at all. The write is never blocked — the
+    key is already minted.
+  - **The closing line stopped guessing in both directions.** It claimed "the
+    agent is live in your app" whenever a rung resolved — including a malformed
+    `VENDO_API_KEY` or `VENDO_DEV_CREDENTIAL=vendo-cloud` with no key, neither of
+    which can serve a turn. Now: a usable credential says live; a composition
+    scaffolded this run with no key says "live once you add a model key"; and a
+    re-run over a composition Vendo did not write states the condition, because
+    that composition may pass its own `model` and nothing here can see it.
+  - **A pages-only Next host gets instructions that work.** The manual wiring
+    paste and the agent tail named `app/layout.tsx`, a file such a host does not
+    have. They now name `pages/_app.tsx` and wrap `<Component {...pageProps} />`
+    (the generated `vendo/vendo-root.tsx` is a client component, so it mounts
+    there unchanged). Where the API route segment is scaffolded is unchanged.
+  - **An interactive init at a monorepo root names the real host.** Detection
+    finds no `next`/`express` at a workspace root and falls through to the
+    runtime-neutral `custom` scaffold — silently one level too high. It now names
+    the workspace packages that do look like hosts ("did you mean apps/web?") and
+    suggests a path that resolves from the caller's own cwd, single-quoted when the
+    shell would otherwise mangle it. Non-interactive runs already errored with the
+    exact flag; unchanged.
+
+- e4d674b: The two first-hour model failures now show their fix instead of a generic error.
+
+  A keyless app and a missing provider install already had exact instructions —
+  but the model ladder threw them as plain `Error`s, so the wire's safe-error gate
+  replaced them with "An error occurred while generating the response." in the
+  thread and "the turn returned an error frame" in `vendo doctor`. The honest
+  message only ever reached the server log. Both are `VendoError`s now, so the
+  existing rail carries them to the thread banner and doctor's live-turn line.
+
+  A rejected key (401) got the same generic line. The ladder knows which rung it
+  resolved, so it now says which key was refused and what to do: a Cloud key is
+  re-minted with `vendo login`, a BYO provider key is checked in `.env.local` —
+  neither is ever sent the other's next step. The provider's own error stays on
+  `cause`, so its request id still reaches the server log. A 401 the ladder cannot
+  attribute — a provider the host wired itself, or a tool's own HTTP failure —
+  keeps the generic line rather than guessing it was about the model key. A 401
+  carrying the Cloud meter refusal still renders the pricing sentence.
+
+  `npx vendo try` turns ride that same rail now: the surface is handed the
+  ladder's own model instead of the raw provider one, so a rejected key names the
+  rung it was rejected on there too. That lazy model also forwards the resolved
+  provider's `supportedUrls`, so a remote image or PDF the provider can ingest
+  natively is no longer downloaded first — which is what made such a turn fail
+  outright under restricted egress.
+
+- 2f0a421: `vendo init --yes` no longer blocks on the loosening review, and three CLI help
+  and error lines now say what the code actually does.
+
+  `--yes` promises every question is already answered. It kept that promise for
+  the AI-polish consent and broke it one step later: with `--ai-polish` granting
+  consent, a run in a terminal reached the aggregated loosening review and waited
+  for a human the moment the judgment pass proposed waking a disabled tool or
+  lowering a risk grade — so `vendo init --yes --ai-polish` could hang in CI or
+  under an agent. Unattended runs now queue loosenings instead: held as `pending`,
+  nothing applied, printed with `vendo sync --review`. Auto-applying was never an
+  option — risk is not lowered without a human — and no `confirm` seam is handed
+  to the pass at all when the run is unattended, so nothing downstream can block
+  either.
+
+  `--yes` claimed only "skip the cloud-login offer". It also accepts the detected
+  auth preset, skips the AI polish pass and the theme review, and swaps the
+  interactive success screen for the agent tail — an agent reading the old line
+  could not predict any of that. `--framework` listed `next, express` while
+  `custom` (the runtime-neutral scaffold for Workers, Bun, Deno, Hono, and Lambda
+  adapters) has been accepted all along.
+
+  When `vendo login` dies on a transient failure — network, DNS, a killed fetch —
+  it printed the raw error and nothing else, so the reader assumed the ceremony
+  was lost and started over, abandoning an approval that would still have landed.
+  It now names the surviving pairing code and says that re-running `vendo login`
+  resumes the same request. The line appears only when a resume can actually
+  succeed: every terminal outcome already deletes the claim.
+
+- c52629b: Remix is experimental: unresolved remixable slots now warn (`experimental:` prefix, slot + reason + fix hint) instead of failing `vendo sync` with exit 2. Slots are still never skipped silently; acknowledge intentionally uncapturable ones in `overrides.json` → `remix.ignoreSlots`.
+- a7199db: Chrome polish wave + the automation card's missing emitter.
+
+  - **Status ribbon docks onto the composer** (Codex-style): narrower than the
+    composer, top corners only, its bottom edge tucked behind the card — no more
+    floating pill with a gap, on both the page surface and the overlay's
+    dock-anchor DOM.
+  - **Approval card de-escalated**: the ceremony card keeps the neutral surface
+    with a single amber accent bar instead of the full yellow wash; the
+    ALL-CAPS "CRITICAL" eyebrow is gone; risk slugs render in the user's
+    language ("Irreversible", "Makes changes", "Read-only") with the raw slug
+    intact on `data-risk` and the tooltip.
+  - **App-card dot stands down when ready**: the pulsing build dot fades and
+    collapses once the view is generated; the ready bar carries just the name.
+  - **`.fl-btn` is a non-wrapping flex row**: icon + label ride one line (the
+    connect card's "Connecting…" spinner no longer folds onto its own line).
+  - **`VendoPage` accepts `thread`** (`suggestions` + `discoverability`
+    passthrough to the chat tab), so hosts can move their curated landing onto
+    the full workspace; Maple's Ask Maple page and Cadence's assistant now
+    render the workspace console.
+  - **The automation card now actually streams**: `vendo_apps_edit` ok-outputs
+    that armed an automation emit `data-vendo-automation` from the agent tool
+    bridge (name-scoped, 01 §16), and the apps runtime reports the armed
+    trigger's true `enabled` state on `EditResult.automation`. The playground
+    gallery gains an "Automation created" scenario.
+
+- Updated dependencies [89153f8]
+- Updated dependencies [3ae3d13]
+- Updated dependencies [127aa29]
+- Updated dependencies [b14b209]
+- Updated dependencies [9532dc0]
+- Updated dependencies [e4d674b]
+- Updated dependencies [d6c231e]
+- Updated dependencies [5987985]
+- Updated dependencies [a7199db]
+  - @vendoai/core@0.6.0
+  - @vendoai/actions@0.6.0
+  - @vendoai/apps@0.6.0
+  - @vendoai/ui@0.6.0
+  - @vendoai/agent@0.6.0
+  - @vendoai/automations@0.6.0
+  - @vendoai/guard@0.6.0
+  - @vendoai/knowledge@0.6.0
+  - @vendoai/mcp@0.6.0
+  - @vendoai/store@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # @vendoai/store
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies [89153f8]
+- Updated dependencies [3ae3d13]
+  - @vendoai/core@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes
