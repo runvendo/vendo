@@ -493,6 +493,7 @@ describe("vendoModel (the vendo model family entry)", () => {
       importModule: scriptedProvider("createAnthropic"),
     });
     bindVendoModelSlots(bound, { judge: explicit });
+    expect((bound as unknown as { modelId: string }).modelId).toBe("host-judge");
     expect(await resolvedId(bound)).toBe("host-judge");
   });
 

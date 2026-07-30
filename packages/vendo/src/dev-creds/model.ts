@@ -334,6 +334,11 @@ export class DevModelController {
 
   /** Best sync id for callers that inspect `model.modelId` before first use. */
   lazyModelId(fallback: string): string {
+    const configured = this.configured;
+    if (configured !== undefined && typeof configured !== "string") {
+      const modelId = (configured as { modelId?: unknown }).modelId;
+      if (typeof modelId === "string" && nonBlank(modelId) !== undefined) return modelId.trim();
+    }
     const pin = nonBlank(this.env[SLOT_PIN_ENV[this.slot]]);
     if (pin !== undefined) return pin;
     const spec = this.lazyProviderSpec();
@@ -341,7 +346,6 @@ export class DevModelController {
       const legacy = nonBlank(this.env[spec.modelEnv]);
       if (legacy !== undefined) return legacy;
     }
-    const configured = this.configured;
     if (typeof configured === "string" && nonBlank(configured) !== undefined) return configured.trim();
     if (this.name !== undefined) return this.name;
     if (spec === CLOUD_MODEL) return CLOUD_FAMILY[this.slot];
