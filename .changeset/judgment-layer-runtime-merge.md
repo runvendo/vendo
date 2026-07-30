@@ -1,6 +1,6 @@
 ---
 "@vendoai/actions": patch
-"vendo": patch
+"@vendoai/vendo": patch
 ---
 
 Wire `.vendo/judgments.json` into the runtime read path: the AI layer now
