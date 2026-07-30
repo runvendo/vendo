@@ -7,7 +7,11 @@
 </p>
 
 <p align="center">
-  Vendo puts an agent inside your product: customers build views, act through your APIs, and automate work, inside your brand and guardrails.
+  Vendo embeds an agent in your product that lets every customer automate their work, build their own views, and connect their tools, inside your brand and your guardrails.
+</p>
+
+<p align="center">
+  Vendo is for B2B SaaS teams whose customers keep asking for bespoke features. It is an <b>embedded agent</b>: it acts through your product's own API as the signed-in user, and renders the UI it generates in a sandboxed, brand-native surface. Your source code is never touched. Learn more at <a href="https://vendo.run">vendo.run</a>, or read the docs at <a href="https://docs.vendo.run">docs.vendo.run</a>.
 </p>
 
 <p align="center">
