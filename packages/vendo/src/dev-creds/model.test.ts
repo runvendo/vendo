@@ -478,6 +478,55 @@ describe("vendoModel (the vendo model family entry)", () => {
     expect(await resolvedId(bound)).toBe("host-judge");
   });
 
+  // #692: the wrapper reported the literal "vendo-env" as its modelId, so
+  // @vendoai/apps' model-params (which reads model.modelId to decide whether
+  // the family still accepts `temperature`) saw a non-Claude id behind every
+  // ladder, kept temperature: 0, and every Claude 5 rung 400'd on the first
+  // call. The id has to be honest BEFORE resolution, which the pure env ladder
+  // can answer. The other half of the chain — the engine reading that id per
+  // call — is pinned in packages/apps/src/model-params.test.ts.
+  it("reports the pinned rung's real model id BEFORE the first call", () => {
+    const idOf = (model: LanguageModel): string => (model as unknown as { modelId: string }).modelId;
+    const pinned = vendoModel(undefined, {
+      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-5" },
+      importModule: scriptedProvider("createAnthropic"),
+    });
+    expect(idOf(pinned)).toBe("claude-sonnet-5");
+    // Every other way the id is chosen answers the same way, unresolved.
+    expect(idOf(vendoModel("claude-opus-4-8", { env: { ANTHROPIC_API_KEY: "sk-a" } }))).toBe("claude-opus-4-8");
+    expect(idOf(vendoModel(undefined, { env: { ANTHROPIC_API_KEY: "sk-a" } }))).toBe("claude-sonnet-4-6");
+    expect(idOf(vendoModel(undefined, { slot: "paint", env: { OPENAI_API_KEY: "sk-o" } }))).toBe("gpt-5-mini");
+    expect(idOf(vendoModel(undefined, { env: { VENDO_API_KEY: "vnd_x" } }))).toBe("vendo");
+    // No credential, no real id: the placeholder stays, and no call succeeds.
+    expect(idOf(vendoModel(undefined, { env: {} }))).toBe("vendo-env");
+  });
+
+  it("keeps reporting the id it actually called the provider with", async () => {
+    const model = vendoModel(undefined, {
+      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-5" },
+      importModule: scriptedProvider("createAnthropic"),
+    });
+    expect(await resolvedId(model)).toBe("claude-sonnet-5");
+    expect((model as unknown as { modelId: string }).modelId).toBe("claude-sonnet-5");
+    // A binding that arrives late cannot rewrite the id already in flight.
+    bindVendoModelSlots(model, { judge: "vendo-strong" });
+    expect((model as unknown as { modelId: string }).modelId).toBe("claude-sonnet-5");
+  });
+
+  it("reports a bound explicit model object's own id", () => {
+    const explicit = {
+      specificationVersion: "v3",
+      provider: "host",
+      modelId: "host-judge",
+      supportedUrls: {},
+      doGenerate: async () => ({ modelId: "host-judge" }),
+      doStream: async () => ({ modelId: "host-judge" }),
+    } as unknown as LanguageModel;
+    const bound = vendoModel("vendo-judge", { env: { VENDO_API_KEY: "vnd_x" } });
+    bindVendoModelSlots(bound, { judge: explicit });
+    expect((bound as unknown as { modelId: string }).modelId).toBe("host-judge");
+  });
+
   it("binding a BYO model object (not a vendoModel instance) is a no-op", () => {
     const byo = {
       specificationVersion: "v3",
