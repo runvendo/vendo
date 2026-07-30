@@ -11,10 +11,11 @@ import { cadenceScenarios } from "@/vendo/scenarios"
 
 const threadProps = vi.fn()
 
+// The page now mounts the full workspace (VendoPage) and hands the thread
+// contract through its `thread` prop — same invariants, read at the new seam.
 vi.mock("@vendoai/ui/chrome", () => ({
-  ActivityPanel: () => null,
-  VendoThread: (props: Record<string, unknown>) => {
-    threadProps(props)
+  VendoPage: ({ thread }: { thread: Record<string, unknown> }) => {
+    threadProps(thread)
     return null
   },
 }))

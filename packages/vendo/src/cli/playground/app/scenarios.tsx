@@ -9,6 +9,7 @@ import { VendoActivities, VendoOverlay, VendoPage, VendoSlot, VendoThread } from
 import { useMemo, type ReactElement } from "react";
 import {
   approvalScript,
+  automationScript,
   brokenViewPayload,
   connectScript,
   emptyActivitiesFixtures,
@@ -20,7 +21,7 @@ import {
 
 export interface PlaygroundScenario {
   id: string;
-  group: "Overlay" | "Thread" | "Approvals" | "Activities" | "Slot" | "Page" | "Mobile";
+  group: "Overlay" | "Thread" | "Approvals" | "Automations" | "Activities" | "Slot" | "Page" | "Mobile";
   title: string;
   description: string;
   /** Scripted turns this scenario's sends play (ScriptedTransport). */
@@ -145,6 +146,15 @@ export const scenarios: PlaygroundScenario[] = [
     description: "A write action parks the turn on an in-thread approval card. Approve it and the SAME turn resumes: the tool runs and the agent confirms.",
     script: approvalScript(),
     autoSend: "Give my team a heads-up about the at-risk renewals.",
+    render: () => <ThreadPane />,
+  },
+  {
+    id: "automation-created",
+    group: "Automations",
+    title: "Automation created",
+    description: "A turn that arms an automation: the trigger → action card lands in the transcript as a card (data-vendo-automation), showing the standing permission it still needs.",
+    script: automationScript(),
+    autoSend: "Every morning, flag any renewal account that has gone quiet.",
     render: () => <ThreadPane />,
   },
   {

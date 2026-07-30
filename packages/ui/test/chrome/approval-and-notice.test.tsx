@@ -41,14 +41,17 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
   it("shows the real inputs as fields and emits basic approve and deny decisions", async () => {
     const onDecide = vi.fn();
     render(<VendoProvider client={client}><ApprovalCard approval={approval} onDecide={onDecide} /></VendoProvider>);
-    // Flat args render as aligned key→value rows — the same real values, structured.
+    // Flat args render as aligned key→value rows — labels prettified for
+    // reading, values verbatim unless the host formats them (then the raw
+    // value rides the dd tooltip — the consent honesty contract).
     const fields = screen.getByLabelText("Real tool inputs");
     const rows = [...fields.querySelectorAll(".fl-approval-field")].map(row => [
       row.querySelector("dt")?.textContent,
       row.querySelector("dd")?.textContent,
     ]);
     expect(rows).toEqual([["Invoice id", "inv_42"], ["Permanent", "true"]]);
-    expect(screen.getByText("destructive").getAttribute("data-risk")).toBe("destructive");
+    // The risk chip speaks the user's language; the data attr keeps the slug.
+    expect(screen.getByText("Irreversible").getAttribute("data-risk")).toBe("destructive");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect((screen.getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));

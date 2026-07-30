@@ -1,55 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { ActivityPanel, VendoThread } from "@vendoai/ui/chrome";
+import { VendoPage } from "@vendoai/ui/chrome";
 import { VendoRoot } from "@/components/vendo/VendoRoot";
 import { useTryThisChips } from "@/components/vendo/use-try-this-chips";
 import { cadenceScenarios } from "@/vendo/scenarios";
 
-function PageSurface() {
-  const [activityOpen, setActivityOpen] = useState(false);
+/** The assistant IS the shipped workspace console (VendoPage) — threads,
+ *  apps, automations, accounts and activity tabs, the same surface the Vendo
+ *  playground showcases — with Cadence's curated starter cards riding the
+ *  chat tab (2026-07-30 polish: replaces the hand-rolled Chat/Activity
+ *  two-tab shell). */
+export default function AssistantPage() {
   // "Try this" chips (demo-hygiene): pre-generated prompts as pill chips one
   // tier below the scenario cards; absent entirely while the cache is empty.
-  const chips = useTryThisChips()
-  const suggestions = chips.length === 0 ? cadenceScenarios : [...cadenceScenarios, ...chips]
-  return (
-    <div className="fl-page">
-      <div className="fl-tabbar">
-        <span className="fl-tab" aria-selected="true">Chat</span>
-        <button
-          type="button"
-          className="fl-tab fl-tab-trust"
-          aria-label="Activity — what Vendo has done"
-          onClick={() => setActivityOpen(true)}
-        >
-          Activity
-        </button>
-      </div>
-      <div className="fl-page-body">
-        <div className="fl-page-pane">
-          {/* demo-refresh Part 6 — the scenario ladder as starter cards on the
-              empty landing (same set the overlay's thread shows).
-              discoverability="quiet" matches Maple: the fire-once
-              greeting-as-tutorial would otherwise replace the cards+chips on
-              the FIRST-ever visit (and burn the flag). */}
-          <VendoThread suggestions={suggestions} discoverability="quiet" />
-        </div>
-      </div>
-      {activityOpen ? (
-        <div className="fl-trust-overlay" role="presentation" onClick={() => setActivityOpen(false)}>
-          <div onClick={(event) => event.stopPropagation()}>
-            <button type="button" onClick={() => setActivityOpen(false)}>Close</button>
-            <ActivityPanel />
-            {/* VENDO-MIGRATION: 08-ui ships activity, approvals, and grants
-                hooks, but no combined TrustScreen or compiled-rule editor. */}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-export default function AssistantPage() {
+  const chips = useTryThisChips();
+  const suggestions = chips.length === 0 ? cadenceScenarios : [...cadenceScenarios, ...chips];
   return (
     <div
       style={{
@@ -66,7 +31,7 @@ export default function AssistantPage() {
       }}
     >
       <VendoRoot>
-        <PageSurface />
+        <VendoPage thread={{ suggestions, discoverability: "quiet" }} />
       </VendoRoot>
     </div>
   );

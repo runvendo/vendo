@@ -6,6 +6,14 @@ import { toolPresentation } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { humanizeToolName, type ToolMeta } from "./humanize.js";
 
+/** The wire risk slugs, in the user's language (the raw slug stays available
+    on the chip's tooltip via the tool name; end users never read jargon). */
+const RISK_LABEL: Record<string, string> = {
+  read: "Read-only",
+  write: "Makes changes",
+  destructive: "Irreversible",
+};
+
 /** Flat, primitive-valued args render as aligned field rows — humanized label,
     host-formatted value (ToolMeta.formatField), raw value on the tooltip so
     the real input stays one hover away; anything nested falls back to the raw
@@ -143,7 +151,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
             )}
           </span>
           <div className="fl-approval-heading">
-            <div className="fl-approval-eyebrow">{critical ? "CRITICAL" : presentation.eyebrow}</div>
+            <div className="fl-approval-eyebrow">{presentation.eyebrow}</div>
             <div className="fl-approval-title">{title}</div>
             {showDescription ? <div className="fl-approval-desc">{description}</div> : null}
           </div>
@@ -153,7 +161,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
             title={approval.descriptor.name}
             style={{ marginLeft: "auto", padding: "2px 7px", fontSize: "10px", cursor: "default" }}
           >
-            {approval.descriptor.risk}
+            {RISK_LABEL[approval.descriptor.risk] ?? approval.descriptor.risk}
           </span>
         </div>
         {consequence ? (

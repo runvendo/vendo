@@ -238,7 +238,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   border-bottom: 1px solid var(--vendo-border);
   background: color-mix(in srgb, var(--vendo-surface) 92%, var(--vendo-fg) 8%); }
 .fl-appcard-dot { width: 8px; height: 8px; border-radius: 999px; flex: none;
-  background: var(--vendo-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-accent) 16%, transparent); }
+  background: var(--vendo-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vendo-accent) 16%, transparent);
+  transition: width .2s ease, margin-right .2s ease, opacity .2s ease; }
+/* The dot narrates the BUILD only — once the view is ready it fades and
+   collapses (margin swallows the flex gap), leaving just the app's name. */
+.fl-appcard-bar[data-state="ready"] .fl-appcard-dot { opacity: 0; width: 0; margin-right: -8px;
+  box-shadow: none; }
 .fl-appcard-name { font: 600 12.5px/1 var(--vendo-font); color: var(--vendo-fg);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-appcard-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -529,7 +534,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 /* Connect-card lifecycle (2026-07 demo feedback): the button spins while the
    OAuth window is open, then becomes a quiet permanent Connected badge. */
 .fl-connect-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; display: inline-block;
-  vertical-align: -2px; margin-right: 7px;
   border: 2px solid color-mix(in srgb, currentColor 35%, transparent); border-top-color: currentColor;
   animation: fl-spin .7s linear infinite; }
 .fl-connect-done { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px 5px 8px;
@@ -643,6 +647,9 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   clip-path: polygon(14% 44%, 0 62%, 40% 100%, 100% 18%, 84% 4%, 39% 68%); }
 .fl-btn { border: 1px solid var(--vendo-border); border-radius: 9px; padding: 8px 15px;
   font: 550 12.5px/1 var(--vendo-font); letter-spacing: -.006em;
+  /* Icon + label ride one non-wrapping row (a squeezed flex row used to fold
+     the connect spinner onto its own line above the label). */
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap;
   background: var(--vendo-surface); color: var(--vendo-fg); cursor: pointer;
   box-shadow: 0 1px 1.5px color-mix(in srgb, var(--vendo-fg) 5%, transparent);
   transition: background .13s, border-color .13s, transform .05s, box-shadow .13s; }
@@ -658,7 +665,10 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-btn-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid color-mix(in srgb, var(--vendo-accent-fg) 35%, transparent);
   border-top-color: var(--vendo-accent-fg); animation: fl-spin .7s linear infinite; }
-.fl-approval--ceremony { border-color: var(--vendo-warn-border); background: var(--vendo-warn-bg); }
+/* Ceremony stays on the neutral card — the amber lives in one accent bar,
+   the icon and the eyebrow (refactoring-ui: accent border over full wash). */
+.fl-approval--ceremony { border-color: var(--vendo-warn-border);
+  box-shadow: inset 3px 0 0 var(--vendo-warn), var(--vendo-shadow); }
 .fl-approval--ceremony .fl-approval-ic { color: var(--vendo-warn); background: color-mix(in srgb, var(--vendo-warn) 16%, transparent); }
 .fl-approval--ceremony .fl-approval-eyebrow { color: var(--vendo-warn); }
 .fl-approval-unverified { margin-left: 8px; padding: 1px 6px; border-radius: 999px; font-size: 9.5px;
@@ -668,7 +678,8 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-btn-ceremony { background: var(--vendo-warn); color: var(--vendo-warn-on-fill); border-color: transparent;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-warn) 40%, transparent); }
 .fl-btn-ceremony:hover { opacity: .92; background: var(--vendo-warn); border-color: transparent; }
-.fl-approval--escalation { border-color: var(--vendo-warn-border); background: var(--vendo-warn-bg); }
+.fl-approval--escalation { border-color: var(--vendo-warn-border);
+  box-shadow: inset 3px 0 0 var(--vendo-warn), var(--vendo-shadow); }
 .fl-approval--escalation .fl-approval-ic { color: var(--vendo-warn); background: color-mix(in srgb, var(--vendo-warn) 16%, transparent); }
 .fl-approval--escalation .fl-approval-eyebrow { color: var(--vendo-warn); }
 .fl-approval-reason { margin: 10px 0 0; font: 400 12.5px/1.4 var(--vendo-font); color: var(--vendo-fg);
@@ -1952,11 +1963,18 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    mobile jump, 8A-8E markdown). Derived from existing tokens only.
    ==================================================================== */
 
-/* C1 — live status ribbon (glued above the composer while a turn works). */
-.fl-ribbon { display: flex; align-items: center; gap: 9px; margin: 0 16px -6px; padding: 8px 12px;
-  border: 1px solid var(--vendo-border); border-radius: 12px; background: var(--vendo-glass-strong);
+/* C1 — live status ribbon, tucked BEHIND the composer (one unit, Codex-
+   style): narrower than the composer, top corners only, and its bottom edge
+   slides under the card — the composer (position:relative) paints over the
+   overlap, so the composer keeps its own full radius. The composer sits
+   either adjacent or inside the dock anchor, so both DOM shapes lose their
+   top margin. */
+.fl-ribbon { display: flex; align-items: center; gap: 9px; margin: 0 30px -12px; padding: 7px 12px 19px;
+  border: 1px solid var(--vendo-border); border-bottom: 0; border-radius: 14px 14px 0 0;
+  background: color-mix(in srgb, var(--vendo-fg) 3%, var(--vendo-glass-strong));
   -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  font: 500 12.5px/1.3 var(--vendo-font); color: var(--vendo-fg-muted); box-shadow: var(--vendo-shadow); }
+  font: 500 12.5px/1.3 var(--vendo-font); color: var(--vendo-fg-muted); }
+.fl-ribbon + .fl-composer, .fl-ribbon + .fl-dock-anchor .fl-composer { margin-top: 0; }
 .fl-ribbon .fl-beat-orb { width: 9px; height: 9px; }
 .fl-ribbon-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--vendo-fg); font-weight: 550; }

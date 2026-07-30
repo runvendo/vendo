@@ -17,14 +17,15 @@ import { mapleScenarios } from "@/vendo/scenarios";
 
 const threadProps = vi.fn();
 
+// The page now mounts the full workspace (VendoPage) and hands the thread
+// contract through its `thread` prop — the invariants under test are the
+// same, read at the new seam.
 vi.mock("@vendoai/ui/chrome", () => ({
-  VendoActivities: () => null,
-  VendoThread: (props: Record<string, unknown>) => {
-    threadProps(props);
+  VendoPage: ({ thread }: { thread: Record<string, unknown> }) => {
+    threadProps(thread);
     return null;
   },
 }));
-vi.mock("@vendoai/ui/voice", () => ({ VendoStage: () => null }));
 vi.mock("@/components/vendo/VendoRoot", () => ({
   VendoRoot: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));

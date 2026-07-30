@@ -259,6 +259,52 @@ export function approvalScript(): DirectorScript {
   };
 }
 
+/** An edit that rides the escalation ladder to an automation: the authored
+    trigger→action card (data-vendo-automation) lands in the transcript with
+    the standing permission it still needs, then the agent narrates. */
+export function automationScript(): DirectorScript {
+  return {
+    turns: [
+      {
+        cues: [
+          chunk(0, { type: "start" }),
+          chunk(100, { type: "start-step" }),
+          chunk(400, { type: "tool-input-start", toolCallId: "call_arm", toolName: "vendo_apps_edit" }),
+          chunk(300, {
+            type: "tool-input-available",
+            toolCallId: "call_arm",
+            toolName: "vendo_apps_edit",
+            input: { appId: "app_renewals", instruction: "every morning, flag any renewal account that has gone quiet" },
+          }),
+          chunk(1600, {
+            type: "data-vendo-automation",
+            id: "vendo-automation-app_renewals",
+            data: {
+              appId: "app_renewals",
+              name: "Renewals watchdog",
+              enabled: true,
+              trigger: {
+                on: { kind: "schedule", every: "1d" },
+                run: { kind: "agentic", prompt: "check renewals; flag any account quiet for 60+ days" },
+              },
+              description: "Every morning, checks your renewals and flags any account that has gone quiet.",
+              pendingGrants: 1,
+            },
+          }),
+          chunk(500, { type: "tool-output-available", toolCallId: "call_arm", output: { ok: true, appId: "app_renewals" } }),
+          chunk(500, { type: "text-start", id: "txt_automation" }),
+          chunk(150, { type: "text-delta", id: "txt_automation", delta: "Your Renewals watchdog is armed — " }),
+          chunk(170, { type: "text-delta", id: "txt_automation", delta: "it runs every morning and flags any account that goes quiet. " }),
+          chunk(170, { type: "text-delta", id: "txt_automation", delta: "It still needs one standing permission to run while you're away." }),
+          chunk(120, { type: "text-end", id: "txt_automation" }),
+          chunk(100, { type: "finish-step" }),
+          chunk(50, { type: "finish" }),
+        ],
+      },
+    ],
+  };
+}
+
 /** A connector call that needs a per-user connected account first (04 §3). */
 export function connectScript(): DirectorScript {
   return {

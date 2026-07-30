@@ -14,7 +14,7 @@ export { VendoOverlay, type VendoOverlayProps } from "./vendo-overlay.js";
 export { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
 export { openVendoConversation, type OpenConversationOptions } from "./overlay-registry.js";
 export { VendoTrigger, type VendoTriggerProps } from "./vendo-trigger.js";
-export { VendoPage } from "./vendo-page.js";
+export { VendoPage, type VendoPageProps } from "./vendo-page.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
 export { type HotkeyChord, type PaletteHotkey } from "./palette-hotkey.js";
 export { VendoSlot } from "./vendo-slot.js";
