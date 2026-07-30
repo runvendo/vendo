@@ -331,6 +331,15 @@ export class DevModelController {
     return FAST_SLOTS.has(this.slot) ? spec.fast : spec.model;
   }
 
+  /** Best sync id for callers that inspect `model.modelId` before first use. */
+  lazyModelId(fallback: string): string {
+    const pin = nonBlank(this.env[SLOT_PIN_ENV[this.slot]]);
+    if (pin !== undefined) return pin;
+    const configured = this.configured;
+    if (typeof configured === "string" && nonBlank(configured) !== undefined) return configured.trim();
+    return fallback;
+  }
+
   /** The shared delegate rung: load the provider module (an install failure
    *  resolves unavailable with the exact install command), pick the model id
    *  (per-slot precedence above), and hand the factory-built model back. */
@@ -470,9 +479,12 @@ function rejectedKey(credential: DevCredential | undefined, error: unknown): Ven
 function lazyModel(controller: DevModelController, provider: string, modelId: string): LanguageModel {
   const model: LanguageModelV3Like = {
     specificationVersion: "v3",
-    // The lazy IDENTITY is vendo's own by design (the family name is the seam).
+    // The lazy id is usually Vendo's family seam, but sync pins/config must be
+    // visible to capability checks that inspect modelId before first use.
     provider,
-    modelId,
+    get modelId() {
+      return controller.lazyModelId(modelId);
+    },
     // CAPABILITY, though, must be the resolved provider's: the SDK reads
     // supportedUrls to decide whether a remote image/PDF is ingested natively
     // or downloaded first, so answering "none" makes callers fetch files the

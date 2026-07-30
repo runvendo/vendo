@@ -362,6 +362,9 @@ describe("vendoModel (the vendo model family entry)", () => {
   });
 
   it("VENDO_MODEL pins the agent slot above a configured name string", async () => {
+    expect((vendoModel(undefined, {
+      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-5" },
+    }) as unknown as { modelId: string }).modelId).toBe("claude-sonnet-5");
     expect(await resolvedId(vendoModel("claude-opus-4-8", {
       env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-4-6" },
       importModule: scriptedProvider("createAnthropic"),
