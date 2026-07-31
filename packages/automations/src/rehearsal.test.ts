@@ -209,6 +209,34 @@ describe("rehearse() fire-time enumeration", () => {
     // The MOST RECENT firings are kept.
     expect(report.firings.at(-1)?.scheduledFor).toBe("2026-07-12T12:00:00.000Z");
   });
+
+  it("a truncated schedule's first kept firing windows back to the discarded previous firing", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, app("app_hourly_windowed", {
+      on: { kind: "schedule", cron: "0 * * * *" },
+      run: { kind: "steps", steps: [{ id: "transactions", tool: "host_listTransactions" }] },
+    }));
+    await seedApp(store, app("app_every_dense", {
+      on: { kind: "schedule", every: "1h" },
+      run: { kind: "steps", steps: [{ id: "transactions", tool: "host_listTransactions" }] },
+    }));
+    const automations = engine(store, guardBoundRegistry([transactionsTool]));
+    const cron = await automations.rehearse("app_hourly_windowed", ctx());
+    expect(cron.truncated).toBe(true);
+    expect(cron.firings[0]?.scheduledFor).toBe("2026-07-09T23:00:00.000Z");
+    // One schedule interval, not the full 30-day report window.
+    expect(cron.firings[0]?.steps[0]?.window).toEqual({
+      from: "2026-07-09T22:00:00.000Z",
+      to: "2026-07-09T23:00:00.000Z",
+    });
+    const every = await automations.rehearse("app_every_dense", ctx());
+    expect(every.truncated).toBe(true);
+    expect(every.firings[0]?.scheduledFor).toBe("2026-07-09T22:00:00.000Z");
+    expect(every.firings[0]?.steps[0]?.window).toEqual({
+      from: "2026-07-09T21:00:00.000Z",
+      to: "2026-07-09T22:00:00.000Z",
+    });
+  });
 });
 
 describe("rehearse() executes steps under the rehearsal venue", () => {

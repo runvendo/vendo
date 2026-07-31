@@ -373,14 +373,17 @@ const validateForEachItems = (step: Step, value: Json): Json[] => {
  *  `every` has no enable cursor on a disabled automation, so its cadence is
  *  anchored at the window end (the most recent firing lands one interval ago);
  *  `at` contributes its single instant when it falls inside the window. Keeps
- *  the MOST RECENT `REHEARSAL_MAX_FIRINGS` and reports truncation. */
+ *  the MOST RECENT `REHEARSAL_MAX_FIRINGS` and reports truncation, along with
+ *  `preceding` — the discarded fire time immediately before the first kept
+ *  firing, so the first kept firing's window stays one schedule interval. */
 const rehearsalFireTimes = (
   source: Extract<TriggerSource, { kind: "schedule" }>,
   from: Date,
   to: Date,
-): { times: Date[]; truncated: boolean } => {
+): { times: Date[]; truncated: boolean; preceding?: Date } => {
   const times: Date[] = [];
   let truncated = false;
+  let preceding: Date | undefined;
   if (source.cron !== undefined) {
     const cron = new Cron(source.cron, { timezone: "UTC", paused: true });
     let cursor = from;
@@ -391,7 +394,7 @@ const rehearsalFireTimes = (
       if (next === null || next.getTime() > to.getTime()) break;
       times.push(next);
       if (times.length > REHEARSAL_MAX_FIRINGS) {
-        times.shift();
+        preceding = times.shift() as Date;
         truncated = true;
       }
       cursor = next;
@@ -403,6 +406,7 @@ const rehearsalFireTimes = (
     for (let at = to.getTime() - interval; at >= from.getTime(); at -= interval) {
       if (recentFirst.length === REHEARSAL_MAX_FIRINGS) {
         truncated = true;
+        preceding = new Date(at);
         break;
       }
       recentFirst.push(new Date(at));
@@ -412,7 +416,7 @@ const rehearsalFireTimes = (
     const at = Date.parse(source.at);
     if (at >= from.getTime() && at <= to.getTime()) times.push(new Date(at));
   }
-  return { times, truncated };
+  return { times, truncated, ...(preceding === undefined ? {} : { preceding }) };
 };
 
 /** Whether a tool's input schema declares string `from`/`to` params rehearse()
@@ -1662,14 +1666,15 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     }
     const to = now();
     const from = new Date(to.getTime() - REHEARSAL_WINDOW_MS);
-    const { times, truncated } = rehearsalFireTimes(trigger.on, from, to);
+    const { times, truncated, preceding } = rehearsalFireTimes(trigger.on, from, to);
     const base = { caller: ctx, appId };
     const firings: RehearsalFiring[] = [];
     for (let index = 0; index < times.length; index += 1) {
       const firedAt = times[index] as Date;
-      // The firing's window reaches back to the PREVIOUS firing; the first
-      // in-window firing falls back to the report window's own start.
-      const windowFrom = index > 0 ? times[index - 1] as Date : from;
+      // The firing's window reaches back to the PREVIOUS firing — including a
+      // firing the cap discarded (`preceding`); only when no earlier fire time
+      // exists does the first firing fall back to the report window's start.
+      const windowFrom = index > 0 ? times[index - 1] as Date : preceding ?? from;
       firings.push(await rehearseFiring(trigger.run.steps, byName, base, windowFrom, firedAt));
     }
     return {

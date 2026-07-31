@@ -414,6 +414,7 @@ class GuardImplementation implements VendoGuard {
         // fall through to the ordinary decision + execution path below (they
         // ride the live interactive session; #checkWithMetadata converts any
         // would-ask into an honest block so rehearsal never parks approvals).
+        let rehearsalResolved: ToolDescriptor | undefined;
         if (ctx.venue === "rehearsal") {
           const effective = await this.#effectiveDescriptor(call, descriptor, ctx);
           if (effective.risk !== "read") {
@@ -434,9 +435,13 @@ class GuardImplementation implements VendoGuard {
             );
             return { status: "ok", output };
           }
+          // The gate's read verdict IS the decision path's descriptor: risk is
+          // resolved exactly once per rehearsal call, so a flaky classifier
+          // can never say "read" here and "write" at decision time.
+          rehearsalResolved = effective;
         }
 
-        const completed = await this.#checkWithMetadata(call, descriptor, ctx);
+        const completed = await this.#checkWithMetadata(call, descriptor, ctx, true, rehearsalResolved);
         const { decision } = completed;
         let outcome: ToolOutcome;
 
@@ -542,9 +547,15 @@ class GuardImplementation implements VendoGuard {
     descriptor: ToolDescriptor,
     ctx: RunContext,
     commitRun = true,
+    resolved?: ToolDescriptor,
   ): Promise<CompletedDecision> {
-    const effectiveDescriptor = await this.#effectiveDescriptor(call, descriptor, ctx);
-    const callsTripped = commitRun
+    const effectiveDescriptor = resolved ?? await this.#effectiveDescriptor(call, descriptor, ctx);
+    // Rehearsal reads never CHARGE the shared per-subject window — a full
+    // 62-firing replay arrives back-to-back in one request and would trip the
+    // breaker mid-rehearsal and throttle the user's concurrent live reads.
+    // Peek-only keeps the verdict honest (a window genuinely tripped by live
+    // traffic still blocks the rehearsal row) without spending slots.
+    const callsTripped = commitRun && ctx.venue !== "rehearsal"
       ? this.#recordCall(ctx.principal.subject)
       : this.#peekCallsTripped(ctx.principal.subject);
     const metadata = await this.#pipeline(call, effectiveDescriptor, ctx);
@@ -698,11 +709,12 @@ class GuardImplementation implements VendoGuard {
     return active.length > this.#maxCallsPerMinute;
   }
 
-  /** `#recordCall`'s read-only twin for `previewCheck` (commitRun=false): the
-   *  same "would this trip the per-minute breaker" verdict, +1 for the call
-   *  this preview itself represents (the moments-later real check registers
-   *  it for real), but never touches `#callWindows` — a preview must answer
-   *  truthfully without spending the window slot the real check still owes. */
+  /** `#recordCall`'s read-only twin for `previewCheck` (commitRun=false) and
+   *  the rehearsal venue: the same "would this trip the per-minute breaker"
+   *  verdict, +1 for the call this check itself represents, but never touches
+   *  `#callWindows` — a preview answers truthfully without spending the window
+   *  slot the real check still owes, and a rehearsal read never spends one
+   *  at all (its volume is bounded by the 62-firing cap instead). */
   #peekCallsTripped(subject: string): boolean {
     const cutoff = Date.now() - 60_000;
     const active = (this.#callWindows.get(subject) ?? []).filter(

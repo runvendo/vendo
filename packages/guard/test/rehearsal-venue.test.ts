@@ -117,6 +117,71 @@ describe("rehearsal venue at the guard choke point", () => {
     expect(read?.outcome).toBe("ok");
   });
 
+  it("a full-length rehearsal (62 reads) never trips the call-rate breaker on itself", async () => {
+    const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    for (let index = 0; index < 62; index += 1) {
+      const outcome = await bound.execute(call("host_read", { q: index }, `call_${index}`), rehearsalCtx);
+      expect(outcome).toMatchObject({ status: "ok" });
+    }
+    expect(tools.executions).toHaveLength(62);
+  });
+
+  it("rehearsal reads never spend the subject's window: a chat read right after still runs", async () => {
+    const guard = createGuard({
+      store: createMemoryStore(),
+      policy: demoPolicy,
+      breakers: { maxCallsPerMinute: 2 },
+    });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    for (let index = 0; index < 5; index += 1) {
+      expect(await bound.execute(call("host_read", { q: index }, `call_r${index}`), rehearsalCtx))
+        .toMatchObject({ status: "ok" });
+    }
+    const chat = await bound.execute(call("host_read", { q: "live" }, "call_chat"), context());
+    expect(chat).toMatchObject({ status: "ok" });
+    expect(await guard.approvals.pending(alice)).toHaveLength(0);
+  });
+
+  it("a window genuinely tripped by live traffic still blocks the rehearsal read honestly", async () => {
+    const guard = createGuard({
+      store: createMemoryStore(),
+      policy: demoPolicy,
+      breakers: { maxCallsPerMinute: 1 },
+    });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    expect(await bound.execute(call("host_read", { q: 1 }, "call_live1"), context()))
+      .toMatchObject({ status: "ok" });
+    expect(await bound.execute(call("host_read", { q: 2 }, "call_live2"), context()))
+      .toMatchObject({ status: "pending-approval" });
+    const rehearsed = await bound.execute(call("host_read", { q: 3 }, "call_rh"), rehearsalCtx);
+    expect(rehearsed).toMatchObject({
+      status: "blocked",
+      reason: "call-rate limit reached during rehearsal",
+    });
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("resolves risk exactly once per rehearsal call — the gate's verdict IS the decision's", async () => {
+    let resolutions = 0;
+    const guard = createGuard({
+      store: createMemoryStore(),
+      policy: demoPolicy,
+      resolveRisk: () => {
+        resolutions += 1;
+        return resolutions === 1 ? "read" : "write";
+      },
+    });
+    const tools = new FixtureTools();
+    const outcome = await guard.bind(tools).execute(call("host_read", { q: 1 }), rehearsalCtx);
+    expect(resolutions).toBe(1);
+    expect(outcome).toMatchObject({ status: "ok" });
+    expect(tools.executions).toHaveLength(1);
+  });
+
   it("chat and automation venues are untouched: a write still parks", async () => {
     const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
     const tools = new FixtureTools();
