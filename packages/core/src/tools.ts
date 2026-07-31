@@ -124,3 +124,23 @@ export interface ToolRegistry {
   descriptors(): Promise<ToolDescriptor[]>;
   execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
 }
+
+/** Additive venue "rehearsal" (07-automations rehearse()): the structured
+ *  simulated outcome the guard returns — as an ok outcome's `output` — for a
+ *  write/destructive-risk call made under the rehearsal venue. Nothing
+ *  executed; `args` are the call's fully resolved arguments (JSONata already
+ *  evaluated against real upstream step outputs), so surfaces can show the
+ *  exact action the enabled automation would have taken. */
+export interface RehearsalSimulation {
+  rehearsalSimulated: true;
+  tool: string;
+  risk: Exclude<RiskLabel, "read">;
+  args: Json;
+}
+
+/** Whether an ok outcome's `output` is the rehearsal venue's simulated card. */
+export function isRehearsalSimulation(output: unknown): output is RehearsalSimulation {
+  return typeof output === "object" && output !== null
+    && (output as { rehearsalSimulated?: unknown }).rehearsalSimulated === true
+    && typeof (output as { tool?: unknown }).tool === "string";
+}

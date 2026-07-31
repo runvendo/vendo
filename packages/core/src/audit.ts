@@ -29,7 +29,7 @@ export const auditEventSchema = z.object({
   at: isoDateTimeSchema,
   kind: z.enum(["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share", "door-auth", "principal"]),
   principal: principalSchema,
-  venue: z.enum(["chat", "app", "automation", "mcp"]),
+  venue: z.enum(["chat", "app", "automation", "mcp", "rehearsal"]),
   presence: z.enum(["present", "away"]),
   appId: appIdSchema.optional(),
   trigger: triggerRefSchema.optional(),

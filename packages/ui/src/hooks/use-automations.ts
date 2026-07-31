@@ -3,7 +3,7 @@ import type { AppId, RunId } from "@vendoai/core";
 import { useCallback } from "react";
 import { useVendoContext } from "../context.js";
 import { type PollOptions, useResource } from "./use-resource.js";
-import type { AutomationEntry, EnableResult, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
+import type { AutomationEntry, EnableResult, RehearsalReport, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 
 export function useAutomations(options?: PollOptions): {
   /** Back-compat alias for `data` (contract §3). */
@@ -16,6 +16,7 @@ export function useAutomations(options?: PollOptions): {
   disable(id: AppId): Promise<void>;
   runs(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
   dryRun(id: AppId): Promise<RunPlan>;
+  rehearse(id: AppId): Promise<RehearsalReport>;
   stopRun(runId: RunId): Promise<void>;
 } {
   const { client } = useVendoContext();
@@ -48,6 +49,7 @@ export function useAutomations(options?: PollOptions): {
     disable,
     runs: client.runs.list,
     dryRun: client.automations.dryRun,
+    rehearse: client.automations.rehearse,
     stopRun: client.runs.stop,
   };
 }

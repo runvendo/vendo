@@ -3,6 +3,7 @@ import {
   approvalRequestSchema,
   appDocumentSchema,
   descriptorHash,
+  isRehearsalSimulation,
   permissionGrantSchema,
   triggerSchema,
   webhookSubject,
@@ -28,6 +29,8 @@ import { z } from "zod";
 import type {
   AutomationsConfig,
   AutomationsEngine,
+  RehearsalFiring,
+  RehearsalStep,
   RunPlan,
   RunRecord,
   RunStatus,
@@ -48,6 +51,14 @@ const DELIVERIES = "automations:deliveries";
 const WEBHOOK_MAX_BYTES = 1024 * 1024;
 const RESUME_MAX_BYTES = 512 * 1024;
 const FOREACH_MAX_ITEMS = 1000;
+/** rehearse() — the trailing window it replays. */
+const REHEARSAL_WINDOW_MS = 30 * 86_400_000;
+/** rehearse() keeps at most this many (most recent) firings — covers twice-daily
+ *  crons over the full window; denser schedules report `truncated: true`. */
+const REHEARSAL_MAX_FIRINGS = 62;
+/** Enumeration backstop: covers a minute-granularity cron across the window. */
+const REHEARSAL_MAX_ITERATIONS = 50_000;
+const REHEARSAL_PREVIEW_CHARS = 240;
 
 const appRowSchema = z.object({
   subject: z.string(),
@@ -355,6 +366,66 @@ const validateForEachItems = (step: Step, value: Json): Json[] => {
   if (!Array.isArray(value)) throw new Error(`step ${step.id} forEach did not produce an array`);
   if (value.length > FOREACH_MAX_ITEMS) throw new Error(`step ${step.id} forEach exceeds ${FOREACH_MAX_ITEMS} items`);
   return value;
+};
+
+/** rehearse() — the schedule's would-have-fired instants inside [from, to],
+ *  oldest first. Cron enumerates with croner in UTC (same engine as the tick);
+ *  `every` has no enable cursor on a disabled automation, so its cadence is
+ *  anchored at the window end (the most recent firing lands one interval ago);
+ *  `at` contributes its single instant when it falls inside the window. Keeps
+ *  the MOST RECENT `REHEARSAL_MAX_FIRINGS` and reports truncation. */
+const rehearsalFireTimes = (
+  source: Extract<TriggerSource, { kind: "schedule" }>,
+  from: Date,
+  to: Date,
+): { times: Date[]; truncated: boolean } => {
+  const times: Date[] = [];
+  let truncated = false;
+  if (source.cron !== undefined) {
+    const cron = new Cron(source.cron, { timezone: "UTC", paused: true });
+    let cursor = from;
+    let iterations = 0;
+    while (iterations < REHEARSAL_MAX_ITERATIONS) {
+      iterations += 1;
+      const next = cron.nextRun(cursor);
+      if (next === null || next.getTime() > to.getTime()) break;
+      times.push(next);
+      if (times.length > REHEARSAL_MAX_FIRINGS) {
+        times.shift();
+        truncated = true;
+      }
+      cursor = next;
+    }
+    if (iterations >= REHEARSAL_MAX_ITERATIONS) truncated = true;
+  } else if (source.every !== undefined) {
+    const interval = durationMs(source.every) as number;
+    const recentFirst: Date[] = [];
+    for (let at = to.getTime() - interval; at >= from.getTime(); at -= interval) {
+      if (recentFirst.length === REHEARSAL_MAX_FIRINGS) {
+        truncated = true;
+        break;
+      }
+      recentFirst.push(new Date(at));
+    }
+    times.push(...recentFirst.reverse());
+  } else if (source.at !== undefined) {
+    const at = Date.parse(source.at);
+    if (at >= from.getTime() && at <= to.getTime()) times.push(new Date(at));
+  }
+  return { times, truncated };
+};
+
+/** Whether a tool's input schema declares string `from`/`to` params rehearse()
+ *  can pin to the firing's window. */
+const acceptsDateBounds = (descriptor: ToolDescriptor): boolean => {
+  const schema = descriptor.inputSchema as { properties?: Record<string, { type?: unknown }> };
+  return schema.properties?.["from"]?.type === "string"
+    && schema.properties?.["to"]?.type === "string";
+};
+
+const rehearsalPreview = (output: Json): string => {
+  const text = JSON.stringify(output) ?? "null";
+  return text.length > REHEARSAL_PREVIEW_CHARS ? `${text.slice(0, REHEARSAL_PREVIEW_CHARS - 1)}…` : text;
 };
 
 export const createAutomationsEngine = (config: AutomationsConfig): AutomationsEngine => {
@@ -1465,6 +1536,151 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return plan;
   };
 
+  /** One rehearsed firing: the steps executor's semantics (if / forEach /
+   *  JSONata args over the firing's event and real upstream outputs), executed
+   *  through the guard-bound registry under the `rehearsal` venue — reads run
+   *  for real, writes resolve to the guard's simulated card. Nothing persists
+   *  to run history and no approvals can park (the guard blocks would-asks). */
+  const rehearseFiring = async (
+    steps: Step[],
+    byName: Map<string, ToolDescriptor>,
+    base: { caller: RunContext; appId: string },
+    windowFrom: Date,
+    firedAt: Date,
+  ): Promise<RehearsalFiring> => {
+    const event: Json = { scheduledFor: firedAt.toISOString(), firedAt: firedAt.toISOString() };
+    // Rehearsal reads RIDE THE LIVE INTERACTIVE SESSION: the caller's session
+    // id and request headers carry over so present-venue host reads
+    // authenticate exactly as chat reads do (04 §4 header forwarding).
+    const rehearsalCtx: RunContext = {
+      principal: base.caller.principal,
+      venue: "rehearsal",
+      presence: "present",
+      sessionId: base.caller.sessionId,
+      appId: base.appId,
+      trigger: { runId: id("run_rehearsal_") as RunId, kind: "schedule" },
+      ...(base.caller.requestHeaders === undefined ? {} : { requestHeaders: base.caller.requestHeaders }),
+    };
+    const rows: RehearsalStep[] = [];
+    const outputs: Record<string, Json> = {};
+    let simulatedActions = 0;
+    let failed = false;
+
+    for (const step of steps) {
+      let items: Json[] | undefined;
+      try {
+        if (step.if !== undefined && !await evaluate(step.if, { event, steps: outputs, item: undefined })) {
+          rows.push({ id: step.id, tool: step.tool, status: "skipped", detail: "condition was false" });
+          continue;
+        }
+        if (step.forEach !== undefined) {
+          items = validateForEachItems(step, await evaluate(step.forEach, { event, steps: outputs, item: undefined }));
+        }
+      } catch (error) {
+        rows.push({ id: step.id, tool: step.tool, status: "error", detail: message(error) });
+        failed = true;
+        break;
+      }
+      if (step.tool.startsWith("fn:")) {
+        rows.push({ id: step.id, tool: step.tool, status: "skipped", detail: "app function calls don't execute in rehearsal" });
+        continue;
+      }
+      const descriptor = byName.get(step.tool) as ToolDescriptor;
+      const iterations: Array<{ item?: Json }> = items === undefined ? [{}] : items.map((item) => ({ item }));
+      const iterationOutputs: Json[] = [];
+      for (const iteration of iterations) {
+        let args: Record<string, Json>;
+        try {
+          args = await stepArgs(step, event, outputs, iteration.item);
+        } catch (error) {
+          rows.push({ id: step.id, tool: step.tool, status: "error", detail: message(error) });
+          failed = true;
+          break;
+        }
+        // Pin the firing's window onto date-bounded reads the step left open.
+        if (descriptor.risk === "read" && acceptsDateBounds(descriptor)) {
+          args["from"] ??= windowFrom.toISOString();
+          args["to"] ??= firedAt.toISOString();
+        }
+        const bounded = typeof args["from"] === "string" && typeof args["to"] === "string";
+        const call: ToolCall = { id: id("call_"), tool: step.tool, args };
+        const outcome = await config.tools.execute(call, rehearsalCtx);
+        const row: RehearsalStep = { id: step.id, tool: step.tool, status: "ok" };
+        if (Object.keys(args).length > 0) row.args = clone(args);
+        if (outcome.status === "ok") {
+          if (isRehearsalSimulation(outcome.output)) {
+            row.status = "simulated";
+            simulatedActions += 1;
+          } else {
+            row.preview = rehearsalPreview(outcome.output);
+            if (descriptor.risk === "read") {
+              if (bounded) {
+                row.window = { from: String(args["from"]), to: String(args["to"]) };
+                row.evaluatedOn = "window";
+              } else {
+                row.evaluatedOn = "today";
+              }
+            }
+          }
+          rows.push(row);
+          iterationOutputs.push(outcome.output);
+          continue;
+        }
+        row.status = outcome.status === "blocked" ? "blocked" : "error";
+        row.detail = errorForOutcome(outcome).message;
+        rows.push(row);
+        failed = true;
+        break;
+      }
+      if (failed) break;
+      outputs[step.id] = items === undefined ? iterationOutputs[0] ?? null : iterationOutputs;
+    }
+
+    const status: RehearsalFiring["status"] = failed
+      ? "error"
+      : rows.length > 0 && rows.every((row) => row.status === "skipped")
+        ? "skipped"
+        : "fired";
+    return { scheduledFor: firedAt.toISOString(), status, simulatedActions, steps: rows };
+  };
+
+  const rehearse: AutomationsEngine["rehearse"] = async (appId, ctx) => {
+    const found = await ownedApp(appId, ctx.principal.subject);
+    if (found.row.doc.trigger === undefined) throw new VendoError("validation", "app has no trigger");
+    const trigger = validateTrigger(found.row.doc.trigger);
+    if (trigger.on.kind !== "schedule") {
+      throw new VendoError("validation", "rehearsal supports schedule triggers only");
+    }
+    if (trigger.run.kind !== "steps") {
+      throw new VendoError("validation", "rehearsal supports steps automations only");
+    }
+    const byName = await descriptors();
+    for (const step of trigger.run.steps) {
+      if (!step.tool.startsWith("fn:") && !byName.has(step.tool)) {
+        throw new VendoError("validation", `unknown tool in automation: ${step.tool}`);
+      }
+    }
+    const to = now();
+    const from = new Date(to.getTime() - REHEARSAL_WINDOW_MS);
+    const { times, truncated } = rehearsalFireTimes(trigger.on, from, to);
+    const base = { caller: ctx, appId };
+    const firings: RehearsalFiring[] = [];
+    for (let index = 0; index < times.length; index += 1) {
+      const firedAt = times[index] as Date;
+      // The firing's window reaches back to the PREVIOUS firing; the first
+      // in-window firing falls back to the report window's own start.
+      const windowFrom = index > 0 ? times[index - 1] as Date : from;
+      firings.push(await rehearseFiring(trigger.run.steps, byName, base, windowFrom, firedAt));
+    }
+    return {
+      appId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      firings,
+      ...(truncated ? { truncated: true } : {}),
+    };
+  };
+
   const runsGet: AutomationsEngine["runs"]["get"] = async (runId, ctx) => {
     const stored = await config.store.records(RUNS).get(runId);
     if (stored === null) return null;
@@ -1542,5 +1758,6 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     webhook,
     runs: { get: runsGet, list: runsList, stop: runsStop },
     dryRun,
+    rehearse,
   };
 };

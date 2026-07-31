@@ -19,6 +19,7 @@ export const automationRoutes: RouteEntry[] = [
       return json({});
     }
     if (segments[2] === "dry-run") return json(await deps.automations.dryRun(appId, ctx));
+    if (segments[2] === "rehearse") return json(await deps.automations.rehearse(appId, ctx));
     return undefined;
   }),
 ];

@@ -13,6 +13,7 @@ import type {
   ApprovalRequest,
   AuditEvent,
   IsoDateTime,
+  Json,
   RunId,
   ThreadId,
   TriggerSource,
@@ -186,6 +187,37 @@ export interface RunRecord {
 export interface RunPlan {
   steps: Array<{ id: string; tool: string; wouldAsk: boolean }>;
   grantsMissing: string[];
+}
+
+/** Additive (rehearse) — one step row of a rehearsal firing. "simulated" =
+ *  the guard resolved a write/destructive call to its simulated card instead
+ *  of executing; `args` carry the fully resolved arguments. */
+export interface RehearsalStep {
+  id: string;
+  tool: string;
+  status: "ok" | "simulated" | "skipped" | "blocked" | "error";
+  args?: Record<string, Json>;
+  preview?: string;
+  window?: { from: IsoDateTime; to: IsoDateTime };
+  evaluatedOn?: "window" | "today";
+  detail?: string;
+}
+
+/** Additive (rehearse) — one historical firing of the trigger. */
+export interface RehearsalFiring {
+  scheduledFor: IsoDateTime;
+  status: "fired" | "skipped" | "error";
+  simulatedActions: number;
+  steps: RehearsalStep[];
+}
+
+/** Additive — what `POST /automations/:id/rehearse` returns. */
+export interface RehearsalReport {
+  appId: AppId;
+  from: IsoDateTime;
+  to: IsoDateTime;
+  firings: RehearsalFiring[];
+  truncated?: boolean;
 }
 
 /** 07-automations §1 — one entry of `GET /automations`. `pendingGrants` /

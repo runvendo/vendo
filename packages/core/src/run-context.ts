@@ -30,10 +30,15 @@ const mcpConsentSchema = z.object({
     CORE-2 (wave 5): `grant` and `mcpConsent` are promoted to first-class
     optional fields — the guard attaches the exact grant behind an away
     execution, the MCP door attaches its consent projection — replacing the
-    structural twins downstream blocks used to declare. */
+    structural twins downstream blocks used to declare.
+    Additive venue "rehearsal" (07-automations rehearse()): the automation
+    preview that replays a trigger's historical firings through the live
+    interactive session — the guard executes read-risk tools for real and
+    resolves write/destructive-risk tools to a simulated outcome, never
+    parking approvals and never requiring grants. */
 export interface RunContext {
   principal: Principal;
-  venue: "chat" | "app" | "automation" | "mcp";
+  venue: "chat" | "app" | "automation" | "mcp" | "rehearsal";
   presence: "present" | "away";
   sessionId: string;
   appId?: AppId;
@@ -47,7 +52,7 @@ export interface RunContext {
 /** 01-core §3 */
 export const runContextSchema = z.object({
   principal: principalSchema,
-  venue: z.enum(["chat", "app", "automation", "mcp"]),
+  venue: z.enum(["chat", "app", "automation", "mcp", "rehearsal"]),
   presence: z.enum(["present", "away"]),
   sessionId: z.string(),
   appId: appIdSchema.optional(),

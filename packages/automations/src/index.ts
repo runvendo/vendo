@@ -77,6 +77,49 @@ export interface RunPlan {
   grantsMissing: string[];
 }
 
+/** Additive (rehearse()) — one step row of a rehearsal firing. */
+export interface RehearsalStep {
+  id: string;
+  tool: string;
+  /** "simulated" = write/destructive risk; the guard resolved the call to its
+   *  simulated card instead of executing. "skipped" = an `if` condition was
+   *  false, or the step is an app function call (fn:, not rehearsed in v1). */
+  status: "ok" | "simulated" | "skipped" | "blocked" | "error";
+  /** The call's fully resolved arguments (JSONata evaluated against the
+   *  firing's event and REAL upstream step outputs). */
+  args?: Record<string, Json>;
+  /** Truncated JSON preview of a real read's output. */
+  preview?: string;
+  /** The date bounds the call carried (pinned to the firing's window when the
+   *  tool accepts `from`/`to` and the step left them unset). */
+  window?: { from: IsoDateTime; to: IsoDateTime };
+  /** "window" = the read was date-bounded to the firing's window; "today" =
+   *  the tool takes no date bounds, so the row reflects today's data. */
+  evaluatedOn?: "window" | "today";
+  detail?: string;
+}
+
+/** Additive (rehearse()) — one historical firing of the trigger. */
+export interface RehearsalFiring {
+  scheduledFor: IsoDateTime;
+  /** "skipped" = every step's `if` condition was false, nothing evaluated. */
+  status: "fired" | "skipped" | "error";
+  /** Count of simulated write/destructive actions in this firing. */
+  simulatedActions: number;
+  steps: RehearsalStep[];
+}
+
+/** Additive (rehearse()) — what `POST /automations/:id/rehearse` returns. */
+export interface RehearsalReport {
+  appId: AppId;
+  from: IsoDateTime;
+  to: IsoDateTime;
+  firings: RehearsalFiring[];
+  /** True when the schedule fired more often than the report keeps; the MOST
+   *  RECENT firings are kept (never a silent cap). */
+  truncated?: boolean;
+}
+
 /** 07 §1 */
 export interface AutomationsEngine {
   /** Arm/disarm an app's trigger. Enabling runs the grant-capture flow (07 §3).
@@ -112,6 +155,12 @@ export interface AutomationsEngine {
   };
   /** Preview: what would run, nothing executes. */
   dryRun(appId: AppId, ctx: RunContext, event?: Json): Promise<RunPlan>;
+  /** Rehearsal (additive): replay the schedule's firings over the trailing
+   *  30 days through the steps executor under the guard's `rehearsal` venue —
+   *  reads execute for real on the live interactive session, writes resolve
+   *  to simulated cards, no grants are required and nothing persists to run
+   *  history. v1: steps automations on schedule triggers only. */
+  rehearse(appId: AppId, ctx: RunContext): Promise<RehearsalReport>;
 }
 
 /** 07 §1 — the engine. */

@@ -136,7 +136,7 @@ describe("§2 — principalSchema pins kind to user | org (block-actions design 
 
 describe("§3 — run context and trigger ref", () => {
   it("accepts every venue and presence, and carries request headers", () => {
-    for (const venue of ["chat", "app", "automation", "mcp"] as const) {
+    for (const venue of ["chat", "app", "automation", "mcp", "rehearsal"] as const) {
       for (const presence of ["present", "away"] as const) {
         expect(runContextSchema.safeParse({
           principal: { kind: "user", subject: "u" },

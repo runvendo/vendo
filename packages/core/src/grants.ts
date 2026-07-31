@@ -107,7 +107,7 @@ export const approvalRequestSchema = z.object({
   }).passthrough().optional(),
   ctx: z.object({
     principal: principalSchema,
-    venue: z.enum(["chat", "app", "automation", "mcp"]),
+    venue: z.enum(["chat", "app", "automation", "mcp", "rehearsal"]),
     presence: z.enum(["present", "away"]),
     appId: appIdSchema.optional(),
     trigger: triggerRefSchema.optional(),

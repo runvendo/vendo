@@ -207,6 +207,38 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         ],
         grantsMissing: [],
       }),
+      rehearse: async (id) => {
+        const to = Date.now();
+        const week = 7 * 86_400_000;
+        return {
+          appId: id,
+          from: new Date(to - 30 * 86_400_000).toISOString(),
+          to: new Date(to).toISOString(),
+          firings: [4, 3, 2, 1].map((weeksAgo) => {
+            const firedAt = new Date(to - weeksAgo * week).toISOString();
+            return {
+              scheduledFor: firedAt,
+              status: "fired" as const,
+              simulatedActions: 1,
+              steps: [
+                {
+                  id: "step_1",
+                  tool: "host_listRenewals",
+                  status: "ok" as const,
+                  window: { from: new Date(to - (weeksAgo + 1) * week).toISOString(), to: firedAt },
+                  evaluatedOn: "window" as const,
+                },
+                {
+                  id: "step_2",
+                  tool: "slack_SLACK_SEND_MESSAGE",
+                  status: "simulated" as const,
+                  args: { channel: "#renewals", message: "2 renewals close this week" },
+                },
+              ],
+            };
+          }),
+        };
+      },
     },
 
     runs: {

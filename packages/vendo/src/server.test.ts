@@ -135,6 +135,9 @@ function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.automations, "enable").mockResolvedValue({ enabled: true, missing: [] });
   vi.spyOn(vendo.automations, "disable").mockResolvedValue();
   vi.spyOn(vendo.automations, "dryRun").mockResolvedValue({ steps: [], grantsMissing: [] });
+  vi.spyOn(vendo.automations, "rehearse").mockResolvedValue({
+    appId: "app_wire", from: new Date(0).toISOString(), to: new Date().toISOString(), firings: [],
+  });
   vi.spyOn(vendo.automations.runs, "list").mockResolvedValue({ runs: [] });
   vi.spyOn(vendo.automations.runs, "get").mockResolvedValue({
     id: "run_x", appId: "app_wire", trigger: { kind: "schedule" }, status: "ok",
@@ -174,6 +177,7 @@ describe("09 §3 public wire", () => {
       request("POST", "/automations/app_wire/enable", {}),
       request("POST", "/automations/app_wire/disable", {}),
       request("POST", "/automations/app_wire/dry-run", {}),
+      request("POST", "/automations/app_wire/rehearse", {}),
       request("GET", "/runs?status=ok"),
       request("GET", "/runs/run_x"),
       request("POST", "/runs/run_x/stop", {}),

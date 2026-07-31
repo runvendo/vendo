@@ -4,11 +4,12 @@ import { APPROVALS_DECIDED_EVENT } from "../client-impl.js";
 import { useVendoContext, useVendoTheme } from "../context.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
-import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
+import type { RehearsalFiring, RehearsalReport, RehearsalStep, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 import { formatAuditTime } from "./activity-semantics.js";
 import { automationFlow } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { GrantSetCard } from "./grant-set-card.js";
+import { humanizeToolName } from "./humanize.js";
 
 const ENABLE_CELEBRATION_MS = 3_100;
 const REDUCED_ENABLE_CELEBRATION_MS = 900;
@@ -40,6 +41,107 @@ function runRollup(runs: RunRecord[]): string {
     .filter(status => counts.has(status))
     .map(status => `${counts.get(status)} ${RUN_STATUS_ROLLUP[status]}`)
     .join(" · ");
+}
+
+/** "Jul 18" — short day label for rehearsal windows and firing rows. */
+function formatRehearsalDay(iso: string): string {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return iso;
+  return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+const REHEARSAL_FIRING_LABEL: Record<RehearsalFiring["status"], string> = {
+  fired: "fired",
+  skipped: "skipped",
+  error: "stopped",
+};
+
+/** One rehearsed step row: reads show what they ran against (the pinned
+    window, or "today's data" when the tool takes no date bounds); simulated
+    writes render as the simulated-action card with their resolved arguments —
+    the exact call the enabled automation would have made, never executed. */
+function RehearsalStepRow({ step }: { step: RehearsalStep }) {
+  const name = humanizeToolName(step.tool);
+  if (step.status === "simulated") {
+    return (
+      <div className="fl-act-row" style={{ alignItems: "flex-start" }}>
+        <span className="fl-act-ic" aria-hidden="true">✉</span>
+        <span style={{ minWidth: 0 }}>
+          <strong className="fl-act-lbl">{name} — simulated</strong>
+          <span className="fl-act-sub" style={{ display: "block" }}>Not executed — this is what it would have sent</span>
+          {step.args !== undefined && Object.keys(step.args).length > 0 ? (
+            <code className="fl-act-peek" style={{ display: "block", overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(step.args, null, 1)}
+            </code>
+          ) : null}
+        </span>
+      </div>
+    );
+  }
+  const scope = step.status === "ok"
+    ? step.evaluatedOn === "window" && step.window !== undefined
+      ? `${formatRehearsalDay(step.window.from)} → ${formatRehearsalDay(step.window.to)}`
+      : step.evaluatedOn === "today"
+        ? "evaluated on today's data"
+        : undefined
+    : step.detail;
+  return (
+    <div className="fl-act-row">
+      <span className={`fl-act-ic ${step.status === "ok" ? "fl-act-tick" : step.status === "skipped" ? "" : "fl-act-x"}`} aria-hidden="true">
+        {step.status === "ok" ? "✓" : step.status === "skipped" ? "–" : "✕"}
+      </span>
+      <strong className="fl-act-lbl">{name}</strong>
+      <span className="fl-act-sub">
+        {step.status === "ok" ? scope : `${step.status}${scope !== undefined ? ` · ${scope}` : ""}`}
+      </span>
+    </div>
+  );
+}
+
+/** The rehearsal timeline: fired/skipped per date over the trailing 30 days,
+    newest first, with per-firing step detail. Purely a preview — the header
+    says so, and the enable toggle + grant capture stay the one consent path. */
+function RehearsalTimeline({ name, report }: { name: string; report: RehearsalReport }) {
+  const fired = report.firings.filter(firing => firing.status === "fired").length;
+  const simulated = report.firings.reduce((count, firing) => count + firing.simulatedActions, 0);
+  const newestFirst = report.firings.slice().reverse();
+  return (
+    <div
+      className="fl-auto-flow"
+      aria-label={`Rehearsal for ${name}`}
+      style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}
+    >
+      <strong className="fl-auto-title">Rehearsal — last 30 days</strong>
+      <div className="fl-auto-sub" style={{ display: "block" }}>
+        {report.firings.length === 0
+          ? "This schedule would not have fired in the last 30 days."
+          : `Would have fired ${fired} time${fired === 1 ? "" : "s"}`
+            + (simulated > 0 ? ` · ${simulated} simulated action${simulated === 1 ? "" : "s"} — nothing was executed` : " · nothing was executed")
+            + (report.truncated === true ? " · showing the most recent firings" : "")}
+      </div>
+      {newestFirst.length > 0 ? (
+        <div className="fl-act-body" style={{ maxHeight: 320, overflowY: "auto" }}>
+          {newestFirst.map(firing => (
+            <article key={firing.scheduledFor}>
+              <div className="fl-act-row">
+                <span
+                  className={`fl-act-ic ${firing.status === "error" ? "fl-act-x" : "fl-act-tick"}`}
+                  aria-hidden="true"
+                >
+                  {firing.status === "fired" ? "✓" : firing.status === "skipped" ? "–" : "✕"}
+                </span>
+                <strong className="fl-act-lbl">{formatAuditTime(firing.scheduledFor)}</strong>
+                <span className="fl-act-sub">{REHEARSAL_FIRING_LABEL[firing.status]}</span>
+              </div>
+              {firing.steps.map((step, index) => (
+                <RehearsalStepRow key={`${firing.scheduledFor}-${step.id}-${index}`} step={step} />
+              ))}
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** Lane pick 7-A — liveness. `every` durations the wire uses ("30m", "6h",
@@ -103,6 +205,7 @@ export function AutomationsPanel() {
   const { client } = useVendoContext();
   const theme = useVendoTheme();
   const [plans, setPlans] = useState<Record<AppId, RunPlan | undefined>>({});
+  const [rehearsals, setRehearsals] = useState<Record<AppId, RehearsalReport | undefined>>({});
   const [runs, setRuns] = useState<Record<AppId, RunRecord[] | undefined>>({});
   const [recent, setRecent] = useState<Record<AppId, RunRecord[] | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
@@ -436,6 +539,15 @@ export function AutomationsPanel() {
                 <button
                   className="fl-btn"
                   type="button"
+                  disabled={busy[`rehearse-${appId}`]}
+                  onClick={() => void during(`rehearse-${appId}`, async () => {
+                    const report = await automations.rehearse(appId);
+                    setRehearsals(current => ({ ...current, [appId]: report }));
+                  })}
+                >{busy[`rehearse-${appId}`] ? "Rehearsing…" : "Rehearse · last 30 days"}</button>
+                <button
+                  className="fl-btn"
+                  type="button"
                   aria-expanded={appRuns !== undefined}
                   onClick={() => void during(`runs-${appId}`, async () => {
                     if (appRuns !== undefined) {
@@ -464,6 +576,8 @@ export function AutomationsPanel() {
                   }}
                 />
               ) : null}
+
+              {rehearsals[appId] ? <RehearsalTimeline name={entry.app.name} report={rehearsals[appId]!} /> : null}
 
               {plans[appId] ? (
                 <div

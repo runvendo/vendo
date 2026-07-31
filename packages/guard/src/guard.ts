@@ -18,6 +18,7 @@ import type {
   Principal,
   RecordQuery,
   RecordStore,
+  RehearsalSimulation,
   RunContext,
   StoreAdapter,
   ToolCall,
@@ -406,6 +407,35 @@ class GuardImplementation implements VendoGuard {
           return outcome;
         }
 
+        // Rehearsal venue (07-automations rehearse()): a write/destructive
+        // call NEVER executes — it resolves, right here at the choke point, to
+        // the structured simulated card carrying the fully resolved arguments,
+        // and is audited under the rehearsal venue like any other call. Reads
+        // fall through to the ordinary decision + execution path below (they
+        // ride the live interactive session; #checkWithMetadata converts any
+        // would-ask into an honest block so rehearsal never parks approvals).
+        if (ctx.venue === "rehearsal") {
+          const effective = await this.#effectiveDescriptor(call, descriptor, ctx);
+          if (effective.risk !== "read") {
+            const output: RehearsalSimulation = {
+              rehearsalSimulated: true,
+              tool: call.tool,
+              risk: effective.risk,
+              args: cloneJson(call.args),
+            };
+            await this.report(
+              eventFromContext(ctx, {
+                kind: "tool-call",
+                tool: call.tool,
+                inputPreview: preview,
+                outcome: "ok",
+                detail: { rehearsalSimulated: true, risk: effective.risk },
+              }),
+            );
+            return { status: "ok", output };
+          }
+        }
+
         const completed = await this.#checkWithMetadata(call, descriptor, ctx);
         const { decision } = completed;
         let outcome: ToolOutcome;
@@ -551,6 +581,23 @@ class GuardImplementation implements VendoGuard {
         // moments-later real check (execute, commitRun=true) does this once.
         this.#writeCounts.set(runKey, { count: writes + 1, touchedAt: Date.now() });
       }
+    }
+
+    // Rehearsal never parks: the venue's contract is no grants and no asks —
+    // an approval card would outlive the preview and could mint authority the
+    // user only meant to rehearse. A would-ask call resolves to an honest
+    // block instead (writes never even reach this path — bind() resolves them
+    // to the simulated card), still audited under the rehearsal venue.
+    if (ctx.venue === "rehearsal" && draft.action === "ask") {
+      draft = {
+        action: "block",
+        reason: draft.decidedBy === "breaker"
+          ? "call-rate limit reached during rehearsal"
+          : "this call would ask for approval; rehearsal never asks",
+        decidedBy: draft.decidedBy === "judge" || draft.decidedBy === "breaker"
+          ? draft.decidedBy
+          : "rule",
+      };
     }
 
     if (draft.action === "ask") {
