@@ -1,5 +1,46 @@
 # @vendoai/vendo
 
+## 0.6.1
+
+### Patch Changes
+
+- 35e7431: The plain-http anonymous-session cookie is now `Path=/`, matching the secure
+  `__Host-` form (#693). The cold-load race fix has hosts mint the pointer on
+  their document response, mint-unless-present — but a `Path=/api/vendo` cookie
+  never rides a document/page request, so on plain-http localhost such a host
+  re-minted on every page load and status poll, overwriting the cookie's one jar
+  slot and moving the visitor onto a fresh `anonymous_<id>` subject: list
+  endpoints answered `[]` and the second message on any thread failed with
+  `threadId is already in use`. https was never affected because `__Host-`
+  requires `Path=/`. Existing `Path=/api/vendo` cookies keep working — the wire
+  reads the pointer by name and honors it as-is.
+- a2bd192: A Claude 5 model pinned through the model ladder can generate again (#692).
+
+  `vendoModel()`'s lazy wrapper reports its family id (`"vendo-env"`) by design,
+  so model-params' Claude 5 allowlist never saw the resolved rung's real id: the
+  engine's `temperature: 0` rode through the ladder and a pinned Claude 5 model
+  (`VENDO_MODEL=claude-sonnet-5` with `ANTHROPIC_API_KEY`) rejected every call
+  with 400 "`temperature` is deprecated for this model". Sampling support is now
+  re-decided at call time against the RESOLVED rung — the one moment the real id
+  is known — dropping the sampling params such a rung rejects and setting the
+  explicit output cap that guards against a sampling-era provider's silent 4096
+  truncation. Sampling-era Claude and non-Claude rungs pass through untouched.
+  `@vendoai/apps` exports the capability rule (`acceptsSamplingParams`,
+  `UNKNOWN_MODEL_MAX_OUTPUT_TOKENS`) so the umbrella rides the engine's one
+  allowlist instead of a copy.
+
+- Updated dependencies [a2bd192]
+  - @vendoai/apps@0.6.1
+  - @vendoai/automations@0.6.1
+  - @vendoai/core@0.6.1
+  - @vendoai/store@0.6.1
+  - @vendoai/agent@0.6.1
+  - @vendoai/actions@0.6.1
+  - @vendoai/guard@0.6.1
+  - @vendoai/ui@0.6.1
+  - @vendoai/mcp@0.6.1
+  - @vendoai/knowledge@0.6.1
+
 ## 0.6.0
 
 ### Minor Changes
