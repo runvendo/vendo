@@ -156,7 +156,7 @@ export interface AutomationsEngine {
   /** Preview: what would run, nothing executes. */
   dryRun(appId: AppId, ctx: RunContext, event?: Json): Promise<RunPlan>;
   /** Rehearsal (additive): replay the schedule's firings over the trailing
-   *  30 days through the steps executor under the guard's `rehearsal` venue —
+   *  7 days through the steps executor under the guard's `rehearsal` venue —
    *  reads execute for real on the live interactive session, writes resolve
    *  to simulated cards, no grants are required and nothing persists to run
    *  history. v1: steps automations on schedule triggers only. */

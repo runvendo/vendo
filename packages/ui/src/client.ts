@@ -139,7 +139,7 @@ export interface VendoClient {
     enable(id: AppId): Promise<EnableResult>;
     disable(id: AppId): Promise<void>;
     dryRun(id: AppId): Promise<RunPlan>;
-    /** POST /automations/:id/rehearse — replay the schedule's last-30-days
+    /** POST /automations/:id/rehearse — replay the schedule's last-7-days
      *  firings; reads run for real, writes come back as simulated cards. */
     rehearse(id: AppId): Promise<RehearsalReport>;
   };

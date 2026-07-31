@@ -209,13 +209,13 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
       }),
       rehearse: async (id) => {
         const to = Date.now();
-        const week = 7 * 86_400_000;
+        const day = 86_400_000;
         return {
           appId: id,
-          from: new Date(to - 30 * 86_400_000).toISOString(),
+          from: new Date(to - 7 * day).toISOString(),
           to: new Date(to).toISOString(),
-          firings: [4, 3, 2, 1].map((weeksAgo) => {
-            const firedAt = new Date(to - weeksAgo * week).toISOString();
+          firings: [6, 4, 2].map((daysAgo) => {
+            const firedAt = new Date(to - daysAgo * day).toISOString();
             return {
               scheduledFor: firedAt,
               status: "fired" as const,
@@ -225,7 +225,7 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
                   id: "step_1",
                   tool: "host_listRenewals",
                   status: "ok" as const,
-                  window: { from: new Date(to - (weeksAgo + 1) * week).toISOString(), to: firedAt },
+                  window: { from: new Date(to - (daysAgo + 2) * day).toISOString(), to: firedAt },
                   evaluatedOn: "window" as const,
                 },
                 {

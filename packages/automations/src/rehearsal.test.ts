@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import { createAutomations } from "./index.js";
 
 /**
- * rehearse() — the trailing-30-days replay of a schedule trigger through the
+ * rehearse() — the trailing-7-days replay of a schedule trigger through the
  * steps executor under the guard's rehearsal venue. The registry double here
  * plays the role of the ALREADY guard-bound registry the engine is composed
  * with: reads answer real data, write/destructive tools answer the guard's
@@ -135,7 +135,7 @@ const engine = (
 });
 
 describe("rehearse() fire-time enumeration", () => {
-  it("enumerates a daily cron's firings over the trailing 30 days, oldest first", async () => {
+  it("enumerates a daily cron's firings over the trailing 7 days, oldest first", async () => {
     const store = memoryStoreAdapter();
     const doc = app("app_daily", {
       on: { kind: "schedule", cron: "0 8 * * *" },
@@ -144,17 +144,17 @@ describe("rehearse() fire-time enumeration", () => {
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
     const report = await automations.rehearse("app_daily", ctx());
-    // Window: 2026-06-12T12:00Z → 2026-07-12T12:00Z; 08:00 firings land on
-    // Jun 13 … Jul 12 (Jun 12 08:00 precedes the window start).
-    expect(report.firings).toHaveLength(30);
-    expect(report.firings[0]?.scheduledFor).toBe("2026-06-13T08:00:00.000Z");
+    // Window: 2026-07-05T12:00Z → 2026-07-12T12:00Z; 08:00 firings land on
+    // Jul 6 … Jul 12 (Jul 5 08:00 precedes the window start).
+    expect(report.firings).toHaveLength(7);
+    expect(report.firings[0]?.scheduledFor).toBe("2026-07-06T08:00:00.000Z");
     expect(report.firings.at(-1)?.scheduledFor).toBe("2026-07-12T08:00:00.000Z");
     expect(report.truncated).toBeUndefined();
-    expect(report.from).toBe("2026-06-12T12:00:00.000Z");
+    expect(report.from).toBe("2026-07-05T12:00:00.000Z");
     expect(report.to).toBe("2026-07-12T12:00:00.000Z");
   });
 
-  it("enumerates a weekly cron (Fridays 17:00) — five Fridays in the window", async () => {
+  it("enumerates a weekly cron (Fridays 17:00) — the single Friday in the window", async () => {
     const store = memoryStoreAdapter();
     const doc = app("app_weekly", {
       on: { kind: "schedule", cron: "0 17 * * 5" },
@@ -164,10 +164,6 @@ describe("rehearse() fire-time enumeration", () => {
     const automations = engine(store, guardBoundRegistry([transactionsTool]));
     const report = await automations.rehearse("app_weekly", ctx());
     expect(report.firings.map((firing) => firing.scheduledFor)).toEqual([
-      "2026-06-12T17:00:00.000Z",
-      "2026-06-19T17:00:00.000Z",
-      "2026-06-26T17:00:00.000Z",
-      "2026-07-03T17:00:00.000Z",
       "2026-07-10T17:00:00.000Z",
     ]);
   });
@@ -179,7 +175,7 @@ describe("rehearse() fire-time enumeration", () => {
       run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
     }));
     await seedApp(store, app("app_at", {
-      on: { kind: "schedule", at: "2026-07-01T09:00:00.000Z" },
+      on: { kind: "schedule", at: "2026-07-08T09:00:00.000Z" },
       run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
     }));
     await seedApp(store, app("app_at_past", {
@@ -188,10 +184,10 @@ describe("rehearse() fire-time enumeration", () => {
     }));
     const automations = engine(store, guardBoundRegistry([balanceTool]));
     const every = await automations.rehearse("app_every", ctx());
-    expect(every.firings).toHaveLength(30);
+    expect(every.firings).toHaveLength(7);
     expect(every.firings.at(-1)?.scheduledFor).toBe("2026-07-11T12:00:00.000Z");
     expect((await automations.rehearse("app_at", ctx())).firings.map((firing) => firing.scheduledFor))
-      .toEqual(["2026-07-01T09:00:00.000Z"]);
+      .toEqual(["2026-07-08T09:00:00.000Z"]);
     expect((await automations.rehearse("app_at_past", ctx())).firings).toHaveLength(0);
   });
 
@@ -224,7 +220,7 @@ describe("rehearse() fire-time enumeration", () => {
     const cron = await automations.rehearse("app_hourly_windowed", ctx());
     expect(cron.truncated).toBe(true);
     expect(cron.firings[0]?.scheduledFor).toBe("2026-07-09T23:00:00.000Z");
-    // One schedule interval, not the full 30-day report window.
+    // One schedule interval, not the full 7-day report window.
     expect(cron.firings[0]?.steps[0]?.window).toEqual({
       from: "2026-07-09T22:00:00.000Z",
       to: "2026-07-09T23:00:00.000Z",
@@ -294,7 +290,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
   it("pins date bounds to the firing's window when the tool accepts from/to; labels the rest today", async () => {
     const store = memoryStoreAdapter();
     const doc = app("app_digest", {
-      on: { kind: "schedule", cron: "0 17 * * 5" },
+      on: { kind: "schedule", cron: "0 17 * * *" },
       run: {
         kind: "steps",
         steps: [
@@ -308,7 +304,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     const automations = engine(store, tools);
     const report = await automations.rehearse("app_digest", ctx());
     const second = report.firings[1];
-    expect(second?.scheduledFor).toBe("2026-06-19T17:00:00.000Z");
+    expect(second?.scheduledFor).toBe("2026-07-06T17:00:00.000Z");
     const [balance, transactions] = second?.steps ?? [];
     expect(balance).toMatchObject({ status: "ok", evaluatedOn: "today" });
     expect(balance?.window).toBeUndefined();
@@ -316,39 +312,41 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     expect(transactions).toMatchObject({
       status: "ok",
       evaluatedOn: "window",
-      window: { from: "2026-06-12T17:00:00.000Z", to: "2026-06-19T17:00:00.000Z" },
+      window: { from: "2026-07-05T17:00:00.000Z", to: "2026-07-06T17:00:00.000Z" },
     });
     const pinnedCall = tools.calls.find(({ call, ctx: callCtx }) =>
       call.tool === "host_listTransactions"
-      && (call.args as Record<string, unknown>)["to"] === "2026-06-19T17:00:00.000Z");
+      && (call.args as Record<string, unknown>)["to"] === "2026-07-06T17:00:00.000Z");
     expect(pinnedCall).toBeDefined();
-    expect((pinnedCall?.call.args as Record<string, unknown>)["from"]).toBe("2026-06-12T17:00:00.000Z");
+    expect((pinnedCall?.call.args as Record<string, unknown>)["from"]).toBe("2026-07-05T17:00:00.000Z");
     // The first firing falls back to the report window's own start.
-    expect(report.firings[0]?.steps[1]?.window?.from).toBe("2026-06-12T12:00:00.000Z");
+    expect(report.firings[0]?.steps[1]?.window?.from).toBe("2026-07-05T12:00:00.000Z");
   });
 
   it("evaluates if-conditions per firing on the firing's event; false skips the step", async () => {
     const store = memoryStoreAdapter();
     const doc = app("app_conditional", {
-      on: { kind: "schedule", cron: "0 17 * * 5" },
+      on: { kind: "schedule", cron: "0 8 * * *" },
       run: {
         kind: "steps",
         steps: [{
           id: "balance",
           tool: "host_listAccounts",
-          // Only fires in June.
-          if: "$contains(event.firedAt, '2026-06')",
+          // Only fires on single-digit July days (Jul 6–9 in this window).
+          if: "$contains(event.firedAt, '2026-07-0')",
         }],
       },
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
     const report = await automations.rehearse("app_conditional", ctx());
-    const june = report.firings.filter((firing) => firing.scheduledFor.startsWith("2026-06"));
-    const july = report.firings.filter((firing) => firing.scheduledFor.startsWith("2026-07"));
-    expect(june.every((firing) => firing.status === "fired")).toBe(true);
-    expect(july.every((firing) => firing.status === "skipped")).toBe(true);
-    expect(july[0]?.steps[0]).toMatchObject({ status: "skipped" });
+    const early = report.firings.filter((firing) => firing.scheduledFor.startsWith("2026-07-0"));
+    const late = report.firings.filter((firing) => firing.scheduledFor.startsWith("2026-07-1"));
+    expect(early).toHaveLength(4);
+    expect(late).toHaveLength(3);
+    expect(early.every((firing) => firing.status === "fired")).toBe(true);
+    expect(late.every((firing) => firing.status === "skipped")).toBe(true);
+    expect(late[0]?.steps[0]).toMatchObject({ status: "skipped" });
   });
 
   it("persists nothing to run history and requires no grants", async () => {
@@ -360,7 +358,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
     const report = await automations.rehearse("app_daily", ctx());
-    expect(report.firings).toHaveLength(30);
+    expect(report.firings).toHaveLength(7);
     expect((await store.records("vendo_runs").list({})).records).toHaveLength(0);
     expect((await store.records("vendo_grants").list({})).records).toHaveLength(0);
     expect((await store.records("vendo_approvals").list({})).records).toHaveLength(0);
@@ -369,7 +367,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
   it("a blocked call stops the firing with an error row; later firings still rehearse", async () => {
     const store = memoryStoreAdapter();
     const doc = app("app_blocked", {
-      on: { kind: "schedule", cron: "0 17 * * 5" },
+      on: { kind: "schedule", cron: "0 8 * * *" },
       run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
     });
     await seedApp(store, doc);

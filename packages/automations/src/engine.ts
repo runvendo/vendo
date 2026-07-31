@@ -52,9 +52,10 @@ const WEBHOOK_MAX_BYTES = 1024 * 1024;
 const RESUME_MAX_BYTES = 512 * 1024;
 const FOREACH_MAX_ITEMS = 1000;
 /** rehearse() — the trailing window it replays. */
-const REHEARSAL_WINDOW_MS = 30 * 86_400_000;
-/** rehearse() keeps at most this many (most recent) firings — covers twice-daily
- *  crons over the full window; denser schedules report `truncated: true`. */
+const REHEARSAL_WINDOW_MS = 7 * 86_400_000;
+/** rehearse() keeps at most this many (most recent) firings — covers schedules
+ *  up to ~8 firings/day over the full window; denser schedules (e.g. hourly)
+ *  report `truncated: true`. */
 const REHEARSAL_MAX_FIRINGS = 62;
 /** Enumeration backstop: covers a minute-granularity cron across the window. */
 const REHEARSAL_MAX_ITERATIONS = 50_000;

@@ -98,7 +98,7 @@ function RehearsalStepRow({ step }: { step: RehearsalStep }) {
   );
 }
 
-/** The rehearsal timeline: fired/skipped per date over the trailing 30 days,
+/** The rehearsal timeline: fired/skipped per date over the trailing 7 days,
     newest first, with per-firing step detail. Purely a preview — the header
     says so, and the enable toggle + grant capture stay the one consent path. */
 function RehearsalTimeline({ name, report }: { name: string; report: RehearsalReport }) {
@@ -111,10 +111,10 @@ function RehearsalTimeline({ name, report }: { name: string; report: RehearsalRe
       aria-label={`Rehearsal for ${name}`}
       style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}
     >
-      <strong className="fl-auto-title">Rehearsal — last 30 days</strong>
+      <strong className="fl-auto-title">Rehearsal — last 7 days</strong>
       <div className="fl-auto-sub" style={{ display: "block" }}>
         {report.firings.length === 0
-          ? "This schedule would not have fired in the last 30 days."
+          ? "This schedule would not have fired in the last 7 days."
           : `Would have fired ${fired} time${fired === 1 ? "" : "s"}`
             + (simulated > 0 ? ` · ${simulated} simulated action${simulated === 1 ? "" : "s"} — nothing was executed` : " · nothing was executed")
             + (report.truncated === true ? " · showing the most recent firings" : "")}
@@ -544,7 +544,7 @@ export function AutomationsPanel() {
                     const report = await automations.rehearse(appId);
                     setRehearsals(current => ({ ...current, [appId]: report }));
                   })}
-                >{busy[`rehearse-${appId}`] ? "Rehearsing…" : "Rehearse · last 30 days"}</button>
+                >{busy[`rehearse-${appId}`] ? "Rehearsing…" : "Rehearse · last 7 days"}</button>
                 <button
                   className="fl-btn"
                   type="button"
