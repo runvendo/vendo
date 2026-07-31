@@ -5,7 +5,7 @@ import {
   type Principal,
   type RunContext,
 } from "@vendoai/core";
-import { BASE_PATH, hex, type WireDeps } from "./shared.js";
+import { hex, type WireDeps } from "./shared.js";
 
 /** The anonymous-session machinery + the one shared per-request context
     resolution pass (kill-list B4): opaque anon cookie mint/read/clear, the
@@ -83,11 +83,18 @@ function readAnonCookie(cookieHeader: string | null, secure: boolean): string | 
 
 /** The Set-Cookie for a freshly minted anonymous session. Secure requests get
     the fixation-proof `__Host-` form (Secure + Path=/, per the prefix rules);
-    insecure (localhost http dev) keeps the plain name scoped to the wire base. */
+    insecure (localhost http dev) keeps the plain name. BOTH forms are Path=/:
+    the cold-load race fix lets a host mint the pointer on its DOCUMENT
+    response, mint-unless-present (anon-session-race.test.ts) — and a document
+    request only presents the cookie if its Path covers paths outside the wire
+    base. A BASE_PATH-scoped plain-http cookie was invisible on every page
+    request, so such a host re-minted per page load into the cookie's one jar
+    slot, moving the visitor onto a fresh subject each time (#693); https never
+    had the bug because `__Host-` REQUIRES Path=/. */
 function buildAnonCookie(id: string, secure: boolean): string {
   return secure
     ? `${ANON_COOKIE_SECURE}=${id}; Path=/; HttpOnly; SameSite=Lax; Secure`
-    : `${ANON_COOKIE}=${id}; Path=${BASE_PATH}; HttpOnly; SameSite=Lax`;
+    : `${ANON_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax`;
 }
 
 /** The Set-Cookie that CLEARS the anonymous session (block-actions design §C:
@@ -97,7 +104,7 @@ function buildAnonCookie(id: string, secure: boolean): string {
 function clearedAnonCookie(secure: boolean): string {
   return secure
     ? `${ANON_COOKIE_SECURE}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`
-    : `${ANON_COOKIE}=; Path=${BASE_PATH}; HttpOnly; SameSite=Lax; Max-Age=0`;
+    : `${ANON_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 }
 
 /** Append the minted Set-Cookie to the response. Stream/SSE responses carry
