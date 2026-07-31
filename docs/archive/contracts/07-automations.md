@@ -39,8 +39,11 @@ export interface AutomationsEngine {
     stop(id: RunId, ctx: RunContext): Promise<void>;                    // kill switch: best-effort cancel, marks "stopped"
   };
   dryRun(appId: AppId, ctx: RunContext, event?: Json): Promise<RunPlan>;   // preview: what would run, nothing executes
+  rehearse(appId: AppId, ctx: RunContext): Promise<RehearsalReport>;   // preview: replay the schedule's trailing-7-day firings under the guard's rehearsal venue (05-guard §2); nothing persists to run history
 }
 ```
+
+`rehearse()` (additive, v1): enumerates the schedule trigger's would-have-fired instants over the trailing 7 days (croner, UTC — the same clock `tick` uses), anchoring `every` cadences at the window end since a disabled automation has no enable cursor, and replays each firing's steps through the guard's `rehearsal` venue (05-guard §2) — reads execute for real, writes resolve to simulated cards. The report caps at the 62 most recent firings with an explicit `truncated` flag; a truncated report still windows its first kept firing against the discarded firing immediately before it, not the report's start. A step whose input schema declares string `from`/`to` params and leaves them unset gets those pinned to the firing's window (previous firing → this firing; the very first firing, with no earlier fire time, falls back to the report's window start); a boundless read is labeled `evaluatedOn: "today"`. Nothing persists to run history. v1 scope: schedule triggers and the `steps` run model only — agentic runs and `fn:` app-function steps are not rehearsed.
 
 ## 2. Triggers (semantics for core §11 shapes)
 
@@ -82,7 +85,7 @@ export interface RunRecord {
 export interface RunPlan { steps: Array<{ id: string; tool: string; wouldAsk: boolean }>; grantsMissing: string[] }
 ```
 
-Users can see, preview, and stop what runs as them: `runs.list` + `dryRun` + `runs.stop` are the OSS surface (backing ui's automations views, 08 §4). Digest emails and rate caps: deferred by the page ("details deferred") — not contracted in v0.
+Users can see, preview, and stop what runs as them: `runs.list` + `dryRun` + `rehearse` + `runs.stop` are the OSS surface (backing ui's automations views, 08 §4). Digest emails and rate caps: deferred by the page ("details deferred") — not contracted in v0.
 
 ## Amendments
 
@@ -91,3 +94,9 @@ Users can see, preview, and stop what runs as them: `runs.list` + `dryRun` + `ru
 - **Changed:** the run models' (§4) `runContext` no longer branches on `isOrgSubject(subject)`; every run's principal is `{ kind: "user", subject }`. Org-owned automations (org principal, admin approval) never shipped a store/wire surface in OSS and are gone.
 - **Why:** simplify-v2 kill-list A5 — orgs are a Vendo-Cloud-side feature; the OSS repo keeps no org-principal code paths.
 - **Authorized by:** the Yousef-approved simplify-v2 kill-list (`docs/superpowers/specs/2026-07-16-simplify-v2-kill-list-design.md`, §A5).
+
+### 2026-08-01 — Automation Rehearsal v1 (`rehearse()`)
+
+- **Changed:** §1 adds `rehearse(appId, ctx): Promise<RehearsalReport>` beside `dryRun`: a trailing-7-day replay of a schedule trigger's would-have-fired instants through the guard's rehearsal venue (05-guard §2), reads live and writes simulated, capped at the 62 most recent firings (explicit `truncated` flag, preceding-firing windowing), with `from`/`to` read params pinned per firing and nothing persisted to run history. v1: schedule triggers and the `steps` run model only.
+- **Why:** the approved Automation Rehearsal v1 pitch — one click previews a standing automation's real effect before the user arms it, closing the trust cliff of enabling with no preview.
+- **Approved by:** Ayush Amawate (@Ayush2k02).
