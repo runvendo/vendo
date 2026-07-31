@@ -3,6 +3,7 @@ import Module from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { UNKNOWN_MODEL_MAX_OUTPUT_TOKENS } from "@vendoai/apps";
 import type { LanguageModel } from "ai";
 import {
   DevModelController,
@@ -187,6 +188,74 @@ describe("devModel (env-resolving default model)", () => {
       }),
     });
     expect(await controller.doGenerate({ prompt: [] })).toEqual({ modelId: "claude-opus-4-8" });
+  });
+});
+
+// Sampling capability is re-decided at call time against the RESOLVED rung
+// (#692): the wrapper's own modelId is the family name by design, so
+// model-params' Claude 5 allowlist sends the engine's `temperature: 0`
+// through the ladder — the ladder must drop it before the rung 400s.
+describe("call-time sampling params on the resolved rung", () => {
+  /** Provider module whose stub model echoes the call options it received. */
+  function optionsEcho(factoryName: string) {
+    return async (): Promise<Record<string, unknown>> => ({
+      [factoryName]: () => (modelId: string) => ({
+        specificationVersion: "v3",
+        provider: "scripted",
+        modelId,
+        supportedUrls: {},
+        doGenerate: async (options: unknown) => ({ modelId, options }),
+        doStream: async (options: unknown) => ({ modelId, options }),
+      }),
+    });
+  }
+
+  it("drops temperature/topP/topK and caps output for a ladder-resolved Claude 5 model", async () => {
+    const controller = new DevModelController({
+      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-5" },
+      importModule: optionsEcho("createAnthropic"),
+    });
+    expect(await controller.doGenerate({ prompt: [], temperature: 0, topP: 0.9, topK: 40 })).toEqual({
+      modelId: "claude-sonnet-5",
+      options: { prompt: [], maxOutputTokens: UNKNOWN_MODEL_MAX_OUTPUT_TOKENS },
+    });
+    expect(await controller.doStream({ prompt: [], temperature: 0 })).toEqual({
+      modelId: "claude-sonnet-5",
+      options: { prompt: [], maxOutputTokens: UNKNOWN_MODEL_MAX_OUTPUT_TOKENS },
+    });
+  });
+
+  it("keeps a caller's explicit output cap while dropping the sampling params", async () => {
+    const controller = new DevModelController({
+      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-opus-5" },
+      importModule: optionsEcho("createAnthropic"),
+    });
+    expect(await controller.doGenerate({ prompt: [], temperature: 0, maxOutputTokens: 9_000 })).toEqual({
+      modelId: "claude-opus-5",
+      options: { prompt: [], maxOutputTokens: 9_000 },
+    });
+  });
+
+  it("leaves a non-Claude resolution untouched — temperature still flows", async () => {
+    const controller = new DevModelController({
+      env: { OPENAI_API_KEY: "sk-o" },
+      importModule: optionsEcho("createOpenAI"),
+    });
+    expect(await controller.doGenerate({ prompt: [], temperature: 0 })).toEqual({
+      modelId: "gpt-5",
+      options: { prompt: [], temperature: 0 },
+    });
+  });
+
+  it("leaves a sampling-era Claude resolution untouched", async () => {
+    const controller = new DevModelController({
+      env: { ANTHROPIC_API_KEY: "sk-a", VENDO_MODEL: "claude-sonnet-4-6" },
+      importModule: optionsEcho("createAnthropic"),
+    });
+    expect(await controller.doGenerate({ prompt: [], temperature: 0 })).toEqual({
+      modelId: "claude-sonnet-4-6",
+      options: { prompt: [], temperature: 0 },
+    });
   });
 });
 

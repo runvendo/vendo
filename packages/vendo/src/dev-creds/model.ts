@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { acceptsSamplingParams, UNKNOWN_MODEL_MAX_OUTPUT_TOKENS } from "@vendoai/apps";
 import { meterExhaustedFromError, VendoError } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { resolveCloudBaseUrl } from "../cli/cloud/client.js";
@@ -408,18 +409,21 @@ export class DevModelController {
   }
 
   doGenerate(callOptions: unknown): Promise<unknown> {
-    return this.call((model) => model.doGenerate(callOptions));
+    return this.call(callOptions, (model, options) => model.doGenerate(options));
   }
 
   doStream(callOptions: unknown): Promise<unknown> {
-    return this.call((model) => model.doStream(callOptions));
+    return this.call(callOptions, (model, options) => model.doStream(options));
   }
 
-  private async call<T>(invoke: (model: LanguageModelV3Like) => PromiseLike<T>): Promise<T> {
+  private async call<T>(
+    callOptions: unknown,
+    invoke: (model: LanguageModelV3Like, options: unknown) => PromiseLike<T>,
+  ): Promise<T> {
     const resolution = await this.resolve();
     if (resolution.mode === "unavailable") throw new VendoError("validation", resolution.message);
     try {
-      return await invoke(resolution.model);
+      return await invoke(resolution.model, resolvedCallOptions(callOptions, resolution.model));
     } catch (error) {
       const fix = rejectedKey(resolution.credential, error);
       if (fix === undefined) throw error;
@@ -465,6 +469,25 @@ function rejectedKey(credential: DevCredential | undefined, error: unknown): Ven
     );
   }
   return undefined;
+}
+
+/** Sampling params, re-decided against the RESOLVED rung. The lazy wrapper's
+ *  modelId is the family name by design (lazyModel below), so model-params'
+ *  Claude 5 allowlist never sees the real id: the engine's `temperature: 0`
+ *  rides through the ladder and a pinned Claude 5 rung 400s every call (#692).
+ *  Call time is after resolution — the one moment the real id is known — so a
+ *  rejecting rung's sampling params are dropped here and the explicit output
+ *  cap is set (same rule and reasons as modelCallParams: a sampling-era
+ *  provider registry silently truncates an unknown id at 4096 otherwise).
+ *  Sampling-era Claude and non-Claude rungs pass through untouched. */
+function resolvedCallOptions(callOptions: unknown, model: LanguageModelV3Like): unknown {
+  if (acceptsSamplingParams(model.modelId)) return callOptions;
+  const options = { ...(callOptions as Record<string, unknown>) };
+  delete options["temperature"];
+  delete options["topP"];
+  delete options["topK"];
+  options["maxOutputTokens"] ??= UNKNOWN_MODEL_MAX_OUTPUT_TOKENS;
+  return options;
 }
 
 function lazyModel(controller: DevModelController, provider: string, modelId: string): LanguageModel {
