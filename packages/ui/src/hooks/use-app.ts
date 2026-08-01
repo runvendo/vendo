@@ -4,6 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
 import type { EditResult, OpenSurface, VersionEntry } from "../wire-types.js";
 
+/** How many times a load may try before the error becomes the user's problem.
+ *  A pinned app is mounted, unattended chrome — one dropped `apps.open` used to
+ *  leave every surface on its skeleton until a full page reload. */
+const LOAD_ATTEMPTS = 3;
+/** Doubling from here: 300ms, 600ms. Short enough that a transient blip heals
+ *  inside the skeleton the user is already looking at. */
+const RETRY_BASE_MS = 300;
+
 export function useApp(appId: AppId): {
   app: AppDocument | undefined;
   /** Alias for `app` — the consistent `data` field across data hooks (§3). */
@@ -30,19 +38,27 @@ export function useApp(appId: AppId): {
     // Mirror useResource: bump per call, so overlapping refreshes (manual +
     // edit + undo) can never let a stale response clobber newer app state.
     const generation = (generationRef.current += 1);
+    const current = () => generation === generationRef.current;
     if (!loadedRef.current) setIsLoading(true);
-    try {
-      const [nextApp, nextSurface] = await Promise.all([client.apps.get(appId), client.apps.open(appId)]);
-      if (generation !== generationRef.current) return;
-      setApp(nextApp);
-      setSurface(nextSurface);
-      setError(undefined);
-      loadedRef.current = true;
-    } catch (reason) {
-      if (generation !== generationRef.current) return;
-      setError(reason instanceof Error ? reason : new Error(String(reason)));
-    } finally {
-      if (generation === generationRef.current) setIsLoading(false);
+    setError(undefined);
+    for (let attempt = 1; current(); attempt += 1) {
+      try {
+        const [nextApp, nextSurface] = await Promise.all([client.apps.get(appId), client.apps.open(appId)]);
+        if (!current()) return;
+        setApp(nextApp);
+        setSurface(nextSurface);
+        loadedRef.current = true;
+        setIsLoading(false);
+        return;
+      } catch (reason) {
+        if (!current()) return;
+        if (attempt >= LOAD_ATTEMPTS) {
+          setError(reason instanceof Error ? reason : new Error(String(reason)));
+          setIsLoading(false);
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, RETRY_BASE_MS * 2 ** (attempt - 1)));
+      }
     }
   }, [appId, client]);
 

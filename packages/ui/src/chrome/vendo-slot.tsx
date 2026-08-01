@@ -41,9 +41,25 @@ function SlotGhost({ label, detail, loading = false }: { label: string; detail?:
   );
 }
 
+/** The terminal load failure. useApp already spent its retries, so this is a
+ *  dead end until the user asks again — and without a way to ask, the slot sat
+ *  on its skeleton until a page reload (Keystone graduates A5). */
+function SlotLoadFailed({ reason, onRetry }: { reason: Error; onRetry(): void }) {
+  return (
+    <div className="fl-slot-ghost">
+      <GhostSkeleton />
+      <span className="fl-slot-cta" role="alert">
+        <span className="fl-slot-cta-label">This view didn’t load</span>
+        <small>{reason.message}</small>
+        <button type="button" className="fl-invite-btn" onClick={onRetry}>Try again</button>
+      </span>
+    </div>
+  );
+}
+
 function MountedApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
-  const { surface, refresh } = useApp(appId);
+  const { surface, error, isLoading, refresh } = useApp(appId);
   // Wave 7 H2 — the served-surface keepalive: user activity pings the machine
   // (host-proxied) so an embedded served app doesn't idle out under the user;
   // a "woke" ping re-opens for the fresh machine URL.
@@ -51,7 +67,10 @@ function MountedApp({ appId }: { appId: string }) {
     () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
     [appId, client, refresh],
   );
-  if (!surface) return <SlotGhost label="Loading app…" loading />;
+  if (!surface) {
+    if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
+    return <SlotGhost label="Loading app…" loading />;
+  }
   return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
