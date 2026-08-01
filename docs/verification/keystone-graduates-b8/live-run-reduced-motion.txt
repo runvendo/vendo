@@ -1,0 +1,10 @@
+signed in → http://localhost:3210/
+home-hero slot mounted (empty invitation: false)
+sent (1): Show my spending by category as a chart
+app card ready, Pin to dashboard offered
+t+   0ms  ghost=0 stage=0 ring=0 panelVisible=false 
+t+ 200ms  ghost=0 stage=0 ring=0 panelVisible=false 
+t+ 600ms  ghost=0 stage=0 ring=0 panelVisible=false 
+t+1200ms  ghost=0 stage=0 ring=0 panelVisible=false 
+real animation durations reported by the browser: [{"duration":180,"delay":0,"easing":"ease-out"}]
+slot filled 32ms after the click, measured in-page (the default poll cadence is 5000ms; wall clock 1672ms includes the slowed capture)
