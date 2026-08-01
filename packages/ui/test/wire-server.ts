@@ -12,7 +12,7 @@ import type {
 } from "@vendoai/core";
 import { createServer, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ApprovalResolution, AutomationEntry, RunRecord, Thread, ThreadSummary, VersionEntry } from "../src/index.js";
+import type { ApprovalResolution, AutomationEntry, RehearsalFiring, RehearsalReport, RunRecord, Thread, ThreadSummary, VersionEntry } from "../src/index.js";
 
 export interface RecordedRequest {
   method: string;
@@ -844,6 +844,50 @@ export async function createWireServer(options: WireServerOptions = {}) {
             item.ctx.venue === "automation" && item.ctx.appId === entry.app.id).length;
           return pending === 0 ? entry : { ...entry, pendingGrants: pending, grantSetId: GRANT_SET_ID };
         }));
+      }
+      const rehearseMatch = url.pathname.match(/^\/automations\/([^/]+)\/rehearse$/);
+      if (method === "POST" && rehearseMatch) {
+        const id = decodeURIComponent(rehearseMatch[1] ?? "");
+        const entry = state.automations.find(item => item.app.id === id);
+        if (!entry) return wireError(response, "not-found", "Automation not found", 404);
+        // Mirror the real wire route's server-side clamp (07-automations §1):
+        // exactly 7 or 30, defaulting to 30 for anything else. The window then
+        // drives how many trailing daily firings the report replays, so the
+        // 7d/30d toggle produces a visibly different report (fewer firings and
+        // a nearer `from` on 7d).
+        const requested = (parsedBody as { windowDays?: unknown } | undefined)?.windowDays;
+        const windowDays: 7 | 30 = requested === 7 ? 7 : 30;
+        const day = 86_400_000;
+        const to = Date.parse(NOW);
+        const from = to - windowDays * day;
+        const firings = [] as RehearsalFiring[];
+        for (let firedAt = to - day; firedAt >= from; firedAt -= day) {
+          firings.unshift({
+            scheduledFor: new Date(firedAt).toISOString(),
+            status: "fired",
+            simulatedActions: 1,
+            steps: [
+              {
+                id: "renewals",
+                tool: "host_listRenewals",
+                status: "ok",
+                window: { from: new Date(firedAt - 2 * day).toISOString(), to: new Date(firedAt).toISOString() },
+                evaluatedOn: "window",
+                result: { totalCents: 42_000, breakdown: [
+                  { label: "Northwind Traders", cents: 18_000 },
+                  { label: "Contoso Ltd", cents: 24_000 },
+                ] },
+              },
+              {
+                id: "notify",
+                tool: "slack_SLACK_SEND_MESSAGE",
+                status: "simulated",
+                args: { channel: "#renewals", message: "2 renewals close this week" },
+              },
+            ],
+          });
+        }
+        return json(response, { appId: id, windowDays, from: new Date(from).toISOString(), to: NOW, firings } satisfies RehearsalReport);
       }
       const automationMatch = url.pathname.match(/^\/automations\/([^/]+)\/(enable|disable|dry-run)$/);
       if (method === "POST" && automationMatch) {
