@@ -13,10 +13,11 @@ rect read out of the live page:
 | Hover | wrapper revealed; pill `opacity: 1`; seed `opacity: 0` (the seed has become the pill) |
 | Grace, 80ms after the pointer leaves | still revealed — this is the travel to the pill |
 | Grace, 480ms after | released |
-| Click | composer value `""`; chip `aria-label="Remixing: Top Merchants"`, text `REMIXING Top Merchants ×`; **zero** `POST /threads` |
+| Keyboard | `.fl-remix-pill` takes focus directly and the focus alone reveals it |
+| Click | composer value `""`; chip `aria-label="Remixing: Top Merchants"`, text `REMIXING Top Merchants ×`; **zero** `POST /api/vendo/threads` |
 | Chip placement | 13px from the panel's top, 13px from its left — level with the panel's ✕/＋/expand controls (12px) |
-| Keyboard | `.fl-remix-pill` takes focus directly and the focus reveals it |
-| Reduced motion | pill `transition-property: all` (i.e. the guarded rule dropped out, initial value, no duration); `opacity: 1` measured 60ms after hover — it snapped |
+| Send | the turn's text is exactly `group these by merchant\n\nRemixing the "Top Merchants" component on this page.`; the chip is gone (0 in the DOM) |
+| Reduced motion | pill `transition-duration: 0s` (the guarded rule dropped out) and `opacity: 1` measured 60ms after hover — it snapped |
 
 Captures (gitignored per `docs/verification/README.md`; kept in the lane
 worktree as `proof/remix-proof-*.png`):
@@ -28,8 +29,11 @@ worktree as `proof/remix-proof-*.png`):
 - `4-keyboard-focus` — the pill revealed by focus, with its focus ring.
 - `5-reduced-motion-hover` — the same bloomed state, reached with no travel.
 
-Unit coverage is `packages/ui/test/chrome/remixable.test.tsx` (12 cases: rest
+The driver is `proof/remix-proof.mjs` in the lane worktree; the host was
+`pnpm --filter demo-bank dev` on :3100 against the patched workspace packages.
+
+Unit coverage is `packages/ui/test/chrome/remixable.test.tsx` (13 cases: rest
 state, bloom, grace hold, grace cancel, focus reveal, empty-composer open,
-attach-and-clear on send, empty-draft guard, dismiss, draft preservation,
-dev warning, the programmatic seam) plus the reduced-motion CSS assertion and
+attach-and-clear on send, empty-draft guard, dismiss, failed-attachment
+restore, draft preservation, dev warning, the programmatic seam) plus the reduced-motion CSS assertion and
 the `Remixable` entry in `test/ssr.test.tsx`.
