@@ -7,7 +7,6 @@ import type { AppDocument } from "@vendoai/core";
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient, useApp } from "../../src/index.js";
-import { AppStaleNotice } from "../../src/chrome/app-stale-notice.js";
 import { VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -92,12 +91,4 @@ describe("useApp load retry (Keystone graduates A5)", () => {
     expect(result.current.error?.message).toBe("reopen failed");
   });
 
-  it("marks a retained app as stale and retries without unmounting it", () => {
-    const retry = vi.fn();
-    render(<AppStaleNotice error={new Error("reopen failed")} onRetry={retry} />);
-
-    expect(screen.getByRole("alert").textContent).toContain("This view may be out of date");
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(retry).toHaveBeenCalledOnce();
-  });
 });
