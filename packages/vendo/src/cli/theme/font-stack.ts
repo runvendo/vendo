@@ -137,9 +137,32 @@ const GEIST_FONTS = [
   { importName: "GeistMono", specifier: "geist/font/mono", family: "Geist Mono", variable: "--font-geist-mono" },
 ] as const;
 
-/** `import { A, B as C } from "next/font/google"` — the specifier list. */
-const GOOGLE_IMPORT_LIST = /import\s*\{([^}]*)\}\s*from\s*["']next\/font\/google["']/g;
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/** Comments are not code: a commented-out `import { GeistSans } …` or a
+ *  migration note quoting a loader call must never register as a font. Block
+ *  comments go entirely; a line comment goes from `//` to end of line unless
+ *  the slashes are a URL's `://`. */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+/** Every `import { A, B as C } from "<module>"` binding in the source, as
+ *  imported/local pairs. */
+function importedNames(source: string, module: string): Array<{ imported: string; local: string }> {
+  const imports = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*["']${module}["']`, "g");
+  const names: Array<{ imported: string; local: string }> = [];
+  for (const match of source.matchAll(imports)) {
+    for (const specifier of match[1]!.split(",")) {
+      const [imported, alias] = specifier.split(/\bas\b/).map((part) => part.trim());
+      const local = alias ?? imported;
+      if (imported === undefined || local === undefined) continue;
+      if (!IDENTIFIER.test(imported) || !IDENTIFIER.test(local)) continue;
+      names.push({ imported, local });
+    }
+  }
+  return names;
+}
 
 /** The `variable: "--font-x"` option of a loader call, read from the options
  *  up to the call's first `)`. Every documented next/font option list is
@@ -167,24 +190,22 @@ function scannedLoaderVariable(source: string, callee: string): string | null {
  * `next/font/local` is deliberately absent: its loader declares a variable but
  * no family name, so there is nothing to resolve a var() to.
  */
-function scanFontBindings(source: string): FontBinding[] {
+function scanFontBindings(rawSource: string): FontBinding[] {
+  const source = withoutComments(rawSource);
   const bindings: FontBinding[] = [];
   for (const font of GEIST_FONTS) {
-    if (source.includes(font.specifier) && new RegExp(`\\b${font.importName}\\b`).test(source)) {
-      bindings.push({ variable: font.variable, family: font.family, applied: false });
+    for (const { imported } of importedNames(source, font.specifier)) {
+      if (imported === font.importName) {
+        bindings.push({ variable: font.variable, family: font.family, applied: false });
+      }
     }
   }
-  for (const match of source.matchAll(GOOGLE_IMPORT_LIST)) {
-    for (const specifier of match[1]!.split(",")) {
-      const [imported, alias] = specifier.split(/\bas\b/).map((part) => part.trim());
-      const callee = alias ?? imported;
-      if (imported === undefined || !IDENTIFIER.test(imported) || callee === undefined || !IDENTIFIER.test(callee)) continue;
-      bindings.push({
-        variable: scannedLoaderVariable(source, callee),
-        family: imported.replace(/_/g, " "),
-        applied: false,
-      });
-    }
+  for (const { imported, local } of importedNames(source, "next/font/google")) {
+    bindings.push({
+      variable: scannedLoaderVariable(source, local),
+      family: imported.replace(/_/g, " "),
+      applied: false,
+    });
   }
   return bindings;
 }

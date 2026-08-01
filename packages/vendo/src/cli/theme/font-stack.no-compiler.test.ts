@@ -84,6 +84,16 @@ describe("layoutFontBindings without a TypeScript compiler", () => {
     ]);
   });
 
+  it("reads no font out of commented-out imports (review: text is not evidence)", async () => {
+    const { layoutFontBindings } = await import("./font-stack.js");
+    expect(layoutFontBindings(`
+      // Old migration note: import { GeistSans } from "geist/font/sans";
+      /* was: import { Inter } from "next/font/google";
+         const inter = Inter({ variable: "--font-inter" }); */
+      export default function L({ children }) { return <body>{children}</body>; }
+    `)).toEqual([]);
+  });
+
   it("never claims a font is applied — proof-requiring derivations stay closed", async () => {
     const { deriveBodyFontStack, layoutFontBindings } = await import("./font-stack.js");
     // One next/font family, applied in the markup, no --font-sans to lean on:
