@@ -94,6 +94,15 @@ describe("layoutFontBindings without a TypeScript compiler", () => {
     `)).toEqual([]);
   });
 
+  it("reads no variable out of a loader call quoted in a string (review)", async () => {
+    const { layoutFontBindings } = await import("./font-stack.js");
+    expect(layoutFontBindings(`
+      import { Inter } from "next/font/google";
+      const usage = "example: Inter({ variable: '--font-example' })";
+      export default function L({ children }) { return <body>{children}</body>; }
+    `)).toEqual([{ variable: null, family: "Inter", applied: false }]);
+  });
+
   it("never claims a font is applied — proof-requiring derivations stay closed", async () => {
     const { deriveBodyFontStack, layoutFontBindings } = await import("./font-stack.js");
     // One next/font family, applied in the markup, no --font-sans to lean on:

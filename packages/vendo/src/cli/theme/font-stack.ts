@@ -164,12 +164,17 @@ function importedNames(source: string, module: string): Array<{ imported: string
   return names;
 }
 
-/** The `variable: "--font-x"` option of a loader call, read from the options
- *  up to the call's first `)`. Every documented next/font option list is
- *  paren-free; anything fancier resolves to null and fails closed. */
+/** The `variable: "--font-x"` option of a loader call. The call must be a
+ *  declaration's initializer — `const inter = Inter({ … })`, the shape the
+ *  compiler path requires too — so an example inside a string or doc text is
+ *  never read as configuration. Options are taken up to the call's first `)`:
+ *  every documented next/font option list is paren-free, and anything fancier
+ *  resolves to null and fails closed. */
 function scannedLoaderVariable(source: string, callee: string): string | null {
-  const call = new RegExp(`\\b${callee}\\s*\\(([^)]*)\\)`).exec(source);
-  return call?.[1]?.match(/\bvariable\s*:\s*["']([^"']+)["']/)?.[1] ?? null;
+  const declaration = new RegExp(
+    `\\b(?:const|let|var)\\s+[A-Za-z_$][\\w$]*\\s*=\\s*${callee}\\s*\\(([^)]*)\\)`,
+  ).exec(source);
+  return declaration?.[1]?.match(/\bvariable\s*:\s*["']([^"']+)["']/)?.[1] ?? null;
 }
 
 /**
