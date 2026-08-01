@@ -13,8 +13,8 @@ import { ConnectCard } from "../connect-card.js";
 import { GrantSetCard, type GrantSetPermission } from "../grant-set-card.js";
 import { toolkitDisplayName, toolTitle } from "../humanize.js";
 import { Markdown } from "../markdown.js";
-import { usePinAction } from "../pin-ceremony.js";
 import type { MorphToastProps } from "../morph-toast.js";
+import { usePinAction } from "../pin-ceremony.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
 import { SentAttachment } from "./attachments.js";
 import {
