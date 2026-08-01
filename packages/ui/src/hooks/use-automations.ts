@@ -16,7 +16,7 @@ export function useAutomations(options?: PollOptions): {
   disable(id: AppId): Promise<void>;
   runs(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
   dryRun(id: AppId): Promise<RunPlan>;
-  rehearse(id: AppId): Promise<RehearsalReport>;
+  rehearse(id: AppId, windowDays?: 7 | 30): Promise<RehearsalReport>;
   stopRun(runId: RunId): Promise<void>;
 } {
   const { client } = useVendoContext();

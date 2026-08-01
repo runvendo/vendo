@@ -221,7 +221,8 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
       enable: id => json(`/automations/${idPath(id)}/enable`, "POST"),
       disable: id => json(`/automations/${idPath(id)}/disable`, "POST"),
       dryRun: id => json(`/automations/${idPath(id)}/dry-run`, "POST"),
-      rehearse: id => json(`/automations/${idPath(id)}/rehearse`, "POST"),
+      rehearse: (id, windowDays) =>
+        json(`/automations/${idPath(id)}/rehearse`, "POST", windowDays === undefined ? {} : { windowDays }),
     },
     runs: {
       list: filter => {

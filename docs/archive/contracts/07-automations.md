@@ -100,3 +100,9 @@ Users can see, preview, and stop what runs as them: `runs.list` + `dryRun` + `re
 - **Changed:** §1 adds `rehearse(appId, ctx): Promise<RehearsalReport>` beside `dryRun`: a trailing-7-day replay of a schedule trigger's would-have-fired instants through the guard's rehearsal venue (05-guard §2), reads live and writes simulated, capped at the 62 most recent firings (explicit `truncated` flag, preceding-firing windowing), with `from`/`to` read params pinned per firing and nothing persisted to run history. v1: schedule triggers and the `steps` run model only.
 - **Why:** the approved Automation Rehearsal v1 pitch — one click previews a standing automation's real effect before the user arms it, closing the trust cliff of enabling with no preview.
 - **Approved by:** Ayush Amawate (@Ayush2k02).
+
+### 2026-08-02 — Rehearsal window selectable (7 / 30 days, 30-day default)
+
+- **Changed:** `rehearse` gains a trailing-window parameter — `rehearse(appId, ctx, windowDays?: 7 | 30)` — replacing the fixed 7-day constant; omitting it defaults to **30 days**. `RehearsalReport` gains `windowDays: 7 | 30` (the resolved window) so surfaces render "last N days" from the report itself. The wire route `POST /automations/:id/rehearse` accepts `windowDays` in the request body and clamps it server-side to `{7, 30}`, defaulting to 30 for anything else (an out-of-range value falls back, never errors or passes through raw).
+- **Why:** 30 days is the more useful default preview horizon for most schedules, but a 7-day view stays one click away; making the window a report field lets the UI put the choice in the results panel after the first rehearsal rather than on the trigger. Supersedes the fixed "trailing 7 days" of the 2026-08-01 v1 entry above (kept as historical record).
+- **Approved by:** Ayush Amawate (@Ayush2k02).

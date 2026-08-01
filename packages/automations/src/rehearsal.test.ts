@@ -18,12 +18,15 @@ import { describe, expect, it } from "vitest";
 import { createAutomations } from "./index.js";
 
 /**
- * rehearse() — the trailing-7-days replay of a schedule trigger through the
- * steps executor under the guard's rehearsal venue. The registry double here
- * plays the role of the ALREADY guard-bound registry the engine is composed
- * with: reads answer real data, write/destructive tools answer the guard's
- * simulated card (the read-vs-write split itself is the guard's and is tested
- * in packages/guard/test/rehearsal-venue.test.ts).
+ * rehearse() — the trailing-window replay of a schedule trigger through the
+ * steps executor under the guard's rehearsal venue. The window is selectable
+ * (7 or 30 days, defaulting to 30 when omitted); tests that assert exact
+ * firing counts/dates against a 7-day gap pass `windowDays: 7` explicitly so
+ * their intent survives the 30-day default. The registry double here plays the
+ * role of the ALREADY guard-bound registry the engine is composed with: reads
+ * answer real data, write/destructive tools answer the guard's simulated card
+ * (the read-vs-write split itself is the guard's and is tested in
+ * packages/guard/test/rehearsal-venue.test.ts).
  */
 
 const NOW = new Date("2026-07-12T12:00:00.000Z");
@@ -143,9 +146,10 @@ describe("rehearse() fire-time enumeration", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const report = await automations.rehearse("app_daily", ctx());
+    const report = await automations.rehearse("app_daily", ctx(), 7);
     // Window: 2026-07-05T12:00Z → 2026-07-12T12:00Z; 08:00 firings land on
     // Jul 6 … Jul 12 (Jul 5 08:00 precedes the window start).
+    expect(report.windowDays).toBe(7);
     expect(report.firings).toHaveLength(7);
     expect(report.firings[0]?.scheduledFor).toBe("2026-07-06T08:00:00.000Z");
     expect(report.firings.at(-1)?.scheduledFor).toBe("2026-07-12T08:00:00.000Z");
@@ -162,7 +166,7 @@ describe("rehearse() fire-time enumeration", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([transactionsTool]));
-    const report = await automations.rehearse("app_weekly", ctx());
+    const report = await automations.rehearse("app_weekly", ctx(), 7);
     expect(report.firings.map((firing) => firing.scheduledFor)).toEqual([
       "2026-07-10T17:00:00.000Z",
     ]);
@@ -183,12 +187,12 @@ describe("rehearse() fire-time enumeration", () => {
       run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
     }));
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const every = await automations.rehearse("app_every", ctx());
+    const every = await automations.rehearse("app_every", ctx(), 7);
     expect(every.firings).toHaveLength(7);
     expect(every.firings.at(-1)?.scheduledFor).toBe("2026-07-11T12:00:00.000Z");
-    expect((await automations.rehearse("app_at", ctx())).firings.map((firing) => firing.scheduledFor))
+    expect((await automations.rehearse("app_at", ctx(), 7)).firings.map((firing) => firing.scheduledFor))
       .toEqual(["2026-07-08T09:00:00.000Z"]);
-    expect((await automations.rehearse("app_at_past", ctx())).firings).toHaveLength(0);
+    expect((await automations.rehearse("app_at_past", ctx(), 7)).firings).toHaveLength(0);
   });
 
   it("caps dense schedules at the most recent firings and says so", async () => {
@@ -199,7 +203,7 @@ describe("rehearse() fire-time enumeration", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const report = await automations.rehearse("app_hourly", ctx());
+    const report = await automations.rehearse("app_hourly", ctx(), 7);
     expect(report.truncated).toBe(true);
     expect(report.firings).toHaveLength(62);
     // The MOST RECENT firings are kept.
@@ -217,7 +221,7 @@ describe("rehearse() fire-time enumeration", () => {
       run: { kind: "steps", steps: [{ id: "transactions", tool: "host_listTransactions" }] },
     }));
     const automations = engine(store, guardBoundRegistry([transactionsTool]));
-    const cron = await automations.rehearse("app_hourly_windowed", ctx());
+    const cron = await automations.rehearse("app_hourly_windowed", ctx(), 7);
     expect(cron.truncated).toBe(true);
     expect(cron.firings[0]?.scheduledFor).toBe("2026-07-09T23:00:00.000Z");
     // One schedule interval, not the full 7-day report window.
@@ -225,7 +229,7 @@ describe("rehearse() fire-time enumeration", () => {
       from: "2026-07-09T22:00:00.000Z",
       to: "2026-07-09T23:00:00.000Z",
     });
-    const every = await automations.rehearse("app_every_dense", ctx());
+    const every = await automations.rehearse("app_every_dense", ctx(), 7);
     expect(every.truncated).toBe(true);
     expect(every.firings[0]?.scheduledFor).toBe("2026-07-09T22:00:00.000Z");
     expect(every.firings[0]?.steps[0]?.window).toEqual({
@@ -368,7 +372,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     await seedApp(store, doc);
     const tools = guardBoundRegistry([balanceTool, transactionsTool]);
     const automations = engine(store, tools);
-    const report = await automations.rehearse("app_digest", ctx());
+    const report = await automations.rehearse("app_digest", ctx(), 7);
     const second = report.firings[1];
     expect(second?.scheduledFor).toBe("2026-07-06T17:00:00.000Z");
     const [balance, transactions] = second?.steps ?? [];
@@ -405,7 +409,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const report = await automations.rehearse("app_conditional", ctx());
+    const report = await automations.rehearse("app_conditional", ctx(), 7);
     const early = report.firings.filter((firing) => firing.scheduledFor.startsWith("2026-07-0"));
     const late = report.firings.filter((firing) => firing.scheduledFor.startsWith("2026-07-1"));
     expect(early).toHaveLength(4);
@@ -423,7 +427,7 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     });
     await seedApp(store, doc);
     const automations = engine(store, guardBoundRegistry([balanceTool]));
-    const report = await automations.rehearse("app_daily", ctx());
+    const report = await automations.rehearse("app_daily", ctx(), 7);
     expect(report.firings).toHaveLength(7);
     expect((await store.records("vendo_runs").list({})).records).toHaveLength(0);
     expect((await store.records("vendo_grants").list({})).records).toHaveLength(0);
@@ -449,6 +453,39 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     expect(report.firings[0]).toMatchObject({ status: "error" });
     expect(report.firings[0]?.steps[0]).toMatchObject({ status: "blocked", detail: "not now" });
     expect(report.firings.slice(1).every((firing) => firing.status === "fired")).toBe(true);
+  });
+});
+
+describe("rehearse() window selection", () => {
+  const dailyApp = () => app("app_daily", {
+    on: { kind: "schedule", cron: "0 8 * * *" },
+    run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
+  });
+
+  it("defaults to a 30-day window when no window is given", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, dailyApp());
+    const automations = engine(store, guardBoundRegistry([balanceTool]));
+    const report = await automations.rehearse("app_daily", ctx());
+    expect(report.windowDays).toBe(30);
+    // NOW − 30 days.
+    expect(report.from).toBe("2026-06-12T12:00:00.000Z");
+    expect(report.to).toBe("2026-07-12T12:00:00.000Z");
+  });
+
+  it("honours explicit 7 and 30 windows, which resolve different `from` bounds", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, dailyApp());
+    const automations = engine(store, guardBoundRegistry([balanceTool]));
+    const week = await automations.rehearse("app_daily", ctx(), 7);
+    const month = await automations.rehearse("app_daily", ctx(), 30);
+    expect(week.windowDays).toBe(7);
+    expect(month.windowDays).toBe(30);
+    expect(week.from).toBe("2026-07-05T12:00:00.000Z");
+    expect(month.from).toBe("2026-06-12T12:00:00.000Z");
+    expect(week.from).not.toBe(month.from);
+    // The wider window enumerates strictly more firings for the same schedule.
+    expect(month.firings.length).toBeGreaterThan(week.firings.length);
   });
 });
 

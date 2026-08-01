@@ -220,6 +220,9 @@ export interface RehearsalFiring {
 /** Additive — what `POST /automations/:id/rehearse` returns. */
 export interface RehearsalReport {
   appId: AppId;
+  /** The resolved trailing window this report replays (7 or 30 days); the UI
+   *  renders "last N days" and the toggle's selected state from this. */
+  windowDays: 7 | 30;
   from: IsoDateTime;
   to: IsoDateTime;
   firings: RehearsalFiring[];

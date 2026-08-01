@@ -1,6 +1,12 @@
 import type { RunStatus } from "@vendoai/automations";
 import { VendoError } from "@vendoai/core";
-import { json, route, string, type RouteEntry } from "./shared.js";
+import { json, requestJson, route, string, type RouteEntry } from "./shared.js";
+
+/** Rehearsal window crosses an HTTP boundary, so clamp it server-side to the
+ *  two valid values, defaulting to 30 for anything else (07-automations §1). */
+function rehearsalWindowDays(value: unknown): 7 | 30 {
+  return value === 7 ? 7 : 30;
+}
 
 /** 07-automations / 09 §3 — the /automations wire area. */
 export const automationRoutes: RouteEntry[] = [
@@ -10,7 +16,7 @@ export const automationRoutes: RouteEntry[] = [
   // Grouped like the old if-chain arm (`segments.length === 3 && POST`):
   // context resolves before the operation check, and an unknown operation
   // falls through to the table's not-found.
-  route("POST", "/automations/:appId/:op", async ({ deps, context, params, segments }) => {
+  route("POST", "/automations/:appId/:op", async ({ request, deps, context, params, segments }) => {
     const appId = string(params["appId"], "app id");
     const ctx = await context("automation");
     if (segments[2] === "enable") return json(await deps.automations.enable(appId, ctx));
@@ -19,7 +25,10 @@ export const automationRoutes: RouteEntry[] = [
       return json({});
     }
     if (segments[2] === "dry-run") return json(await deps.automations.dryRun(appId, ctx));
-    if (segments[2] === "rehearse") return json(await deps.automations.rehearse(appId, ctx));
+    if (segments[2] === "rehearse") {
+      const body = await requestJson(request);
+      return json(await deps.automations.rehearse(appId, ctx, rehearsalWindowDays(body["windowDays"])));
+    }
     return undefined;
   }),
 ];

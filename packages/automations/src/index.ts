@@ -121,6 +121,10 @@ export interface RehearsalFiring {
 /** Additive (rehearse()) — what `POST /automations/:id/rehearse` returns. */
 export interface RehearsalReport {
   appId: AppId;
+  /** The resolved trailing window this report replays (07 §1 amendment):
+   *  exactly 7 or 30 days. The UI renders "last N days" from this rather than
+   *  tracking its own copy of what was requested. */
+  windowDays: 7 | 30;
   from: IsoDateTime;
   to: IsoDateTime;
   firings: RehearsalFiring[];
@@ -164,12 +168,13 @@ export interface AutomationsEngine {
   };
   /** Preview: what would run, nothing executes. */
   dryRun(appId: AppId, ctx: RunContext, event?: Json): Promise<RunPlan>;
-  /** Rehearsal (additive): replay the schedule's firings over the trailing
-   *  7 days through the steps executor under the guard's `rehearsal` venue —
-   *  reads execute for real on the live interactive session, writes resolve
-   *  to simulated cards, no grants are required and nothing persists to run
-   *  history. v1: steps automations on schedule triggers only. */
-  rehearse(appId: AppId, ctx: RunContext): Promise<RehearsalReport>;
+  /** Rehearsal (additive): replay the schedule's firings over a trailing
+   *  window (`windowDays`, 7 or 30, defaulting to 30) through the steps
+   *  executor under the guard's `rehearsal` venue — reads execute for real on
+   *  the live interactive session, writes resolve to simulated cards, no
+   *  grants are required and nothing persists to run history. v1: steps
+   *  automations on schedule triggers only. */
+  rehearse(appId: AppId, ctx: RunContext, windowDays?: 7 | 30): Promise<RehearsalReport>;
 }
 
 /** 07 §1 — the engine. */

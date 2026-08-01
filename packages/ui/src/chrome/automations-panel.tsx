@@ -133,14 +133,26 @@ function RehearsalStepRow({ step }: { step: RehearsalStep }) {
   );
 }
 
-/** The rehearsal timeline: one line per firing over the trailing 7 days,
-    newest first — date/time, fired status, and the firing's one resolved
-    headline number (a real read's total, formatted in the host's currency).
-    The latest firing's per-step detail (the money breakdown, simulated cards)
-    expands by default; older firings expand on click. Purely a preview — the
-    header says so, and the enable toggle + grant capture stay the one consent
-    path. */
-function RehearsalTimeline({ name, report }: { name: string; report: RehearsalReport }) {
+/** The rehearsal timeline: one line per firing over the trailing window
+    (7 or 30 days — `report.windowDays`), newest first — date/time, fired
+    status, and the firing's one resolved headline number (a real read's total,
+    formatted in the host's currency). The latest firing's per-step detail (the
+    money breakdown, simulated cards) expands by default; older firings expand
+    on click. A small 7d/30d control in the header re-fetches this report over
+    the chosen window in place (`onWindowChange`), disabled while `busy`. Purely
+    a preview — the header says so, and the enable toggle + grant capture stay
+    the one consent path. */
+function RehearsalTimeline({
+  name,
+  report,
+  busy,
+  onWindowChange,
+}: {
+  name: string;
+  report: RehearsalReport;
+  busy: boolean;
+  onWindowChange: (windowDays: 7 | 30) => void;
+}) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const fired = report.firings.filter(firing => firing.status === "fired").length;
   const simulated = report.firings.reduce((count, firing) => count + firing.simulatedActions, 0);
@@ -152,10 +164,38 @@ function RehearsalTimeline({ name, report }: { name: string; report: RehearsalRe
       aria-label={`Rehearsal for ${name}`}
       style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}
     >
-      <strong className="fl-auto-title">Rehearsal — last 7 days</strong>
+      <div style={{ alignItems: "center", display: "flex", gap: 8, justifyContent: "space-between" }}>
+        <strong className="fl-auto-title">Rehearsal — last {report.windowDays} days</strong>
+        <div
+          role="group"
+          aria-label="Rehearsal window"
+          style={{ display: "inline-flex", flexShrink: 0, gap: 2 }}
+        >
+          {([7, 30] as const).map(windowDays => {
+            const selected = report.windowDays === windowDays;
+            return (
+              <button
+                key={windowDays}
+                className="fl-btn"
+                type="button"
+                aria-pressed={selected}
+                disabled={busy || selected}
+                onClick={() => onWindowChange(windowDays)}
+                style={{
+                  fontSize: 11,
+                  fontWeight: selected ? 600 : 400,
+                  opacity: !selected && busy ? 0.6 : 1,
+                  padding: "2px 8px",
+                  ...(selected ? { background: "var(--vendo-fg)", color: "var(--vendo-bg)" } : {}),
+                }}
+              >{windowDays}d</button>
+            );
+          })}
+        </div>
+      </div>
       <div className="fl-auto-sub" style={{ display: "block" }}>
         {report.firings.length === 0
-          ? "This schedule would not have fired in the last 7 days."
+          ? `This schedule would not have fired in the last ${report.windowDays} days.`
           : `Would have fired ${fired} time${fired === 1 ? "" : "s"}`
             + (simulated > 0 ? ` · ${simulated} simulated action${simulated === 1 ? "" : "s"} — nothing was executed` : " · nothing was executed")
             + (report.truncated === true ? " · showing the most recent firings" : "")}
@@ -616,7 +656,7 @@ export function AutomationsPanel() {
                     const report = await automations.rehearse(appId);
                     setRehearsals(current => ({ ...current, [appId]: report }));
                   })}
-                >{busy[`rehearse-${appId}`] ? "Rehearsing…" : "Rehearse · last 7 days"}</button>
+                >{busy[`rehearse-${appId}`] ? "Rehearsing…" : "Rehearse"}</button>
                 <button
                   className="fl-btn"
                   type="button"
@@ -649,7 +689,17 @@ export function AutomationsPanel() {
                 />
               ) : null}
 
-              {rehearsals[appId] ? <RehearsalTimeline name={entry.app.name} report={rehearsals[appId]!} /> : null}
+              {rehearsals[appId] ? (
+                <RehearsalTimeline
+                  name={entry.app.name}
+                  report={rehearsals[appId]!}
+                  busy={busy[`rehearse-${appId}`] ?? false}
+                  onWindowChange={windowDays => void during(`rehearse-${appId}`, async () => {
+                    const report = await automations.rehearse(appId, windowDays);
+                    setRehearsals(current => ({ ...current, [appId]: report }));
+                  })}
+                />
+              ) : null}
 
               {plans[appId] ? (
                 <div

@@ -207,12 +207,14 @@ export function createFakeClient(fixtures: PlaygroundFixtures): VendoClient {
         ],
         grantsMissing: [],
       }),
-      rehearse: async (id) => {
+      rehearse: async (id, windowDays) => {
         const to = Date.now();
         const day = 86_400_000;
+        const resolvedWindowDays = windowDays === 7 ? 7 : 30;
         return {
           appId: id,
-          from: new Date(to - 7 * day).toISOString(),
+          windowDays: resolvedWindowDays,
+          from: new Date(to - resolvedWindowDays * day).toISOString(),
           to: new Date(to).toISOString(),
           firings: [6, 4, 2].map((daysAgo) => {
             const firedAt = new Date(to - daysAgo * day).toISOString();

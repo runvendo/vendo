@@ -51,8 +51,16 @@ const DELIVERIES = "automations:deliveries";
 const WEBHOOK_MAX_BYTES = 1024 * 1024;
 const RESUME_MAX_BYTES = 512 * 1024;
 const FOREACH_MAX_ITEMS = 1000;
-/** rehearse() — the trailing window it replays. */
-const REHEARSAL_WINDOW_MS = 7 * 86_400_000;
+/** rehearse() — the trailing window it replays, in days. Selectable at the
+ *  call site (07-automations §1 amendment): exactly 7 or 30, defaulting to 30
+ *  when omitted. */
+const REHEARSAL_WINDOW_DAYS = [7, 30] as const;
+const REHEARSAL_DEFAULT_WINDOW_DAYS = 30;
+/** Resolve a requested window to a valid day count, defaulting to 30. */
+const resolveRehearsalWindowDays = (windowDays?: 7 | 30): 7 | 30 =>
+  windowDays !== undefined && REHEARSAL_WINDOW_DAYS.includes(windowDays)
+    ? windowDays
+    : REHEARSAL_DEFAULT_WINDOW_DAYS;
 /** rehearse() keeps at most this many (most recent) firings — covers schedules
  *  up to ~8 firings/day over the full window; denser schedules (e.g. hourly)
  *  report `truncated: true`. */
@@ -1701,7 +1709,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return { scheduledFor: firedAt.toISOString(), status, simulatedActions, steps: rows };
   };
 
-  const rehearse: AutomationsEngine["rehearse"] = async (appId, ctx) => {
+  const rehearse: AutomationsEngine["rehearse"] = async (appId, ctx, windowDays) => {
     const found = await ownedApp(appId, ctx.principal.subject);
     if (found.row.doc.trigger === undefined) throw new VendoError("validation", "app has no trigger");
     const trigger = validateTrigger(found.row.doc.trigger);
@@ -1717,8 +1725,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         throw new VendoError("validation", `unknown tool in automation: ${step.tool}`);
       }
     }
+    const resolvedWindowDays = resolveRehearsalWindowDays(windowDays);
     const to = now();
-    const from = new Date(to.getTime() - REHEARSAL_WINDOW_MS);
+    const from = new Date(to.getTime() - resolvedWindowDays * 86_400_000);
     const { times, truncated, preceding } = rehearsalFireTimes(trigger.on, from, to);
     const base = { caller: ctx, appId };
     const firings: RehearsalFiring[] = [];
@@ -1732,6 +1741,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     }
     return {
       appId,
+      windowDays: resolvedWindowDays,
       from: from.toISOString(),
       to: to.toISOString(),
       firings,
