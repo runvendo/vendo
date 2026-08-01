@@ -14,6 +14,7 @@ export type { VendoAppEmbedProps, VendoApprovalEmbedProps, VendoApprovalEmbedSta
 // exported from the root so a BYO chat page needs only `@vendoai/ui`.
 export { VendoAppEmbed, VendoApprovalEmbed, VendoToolResult } from "./chrome/embeds.js";
 export * from "./hooks/index.js";
+export { announcePin, onPinAnnounced } from "./pin-events.js";
 export { defaultVendoTheme, resolveTheme, themeCssVariables } from "./theme.js";
 export { useVoice, type UseVoiceResult } from "./voice/use-voice.js";
 export * from "./wire-types.js";

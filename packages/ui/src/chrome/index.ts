@@ -13,6 +13,7 @@ export { NoPolicyNotice } from "./no-policy-notice.js";
 export { VendoOverlay, type VendoOverlayProps } from "./vendo-overlay.js";
 export { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
 export { openVendoConversation, type OpenConversationOptions } from "./overlay-registry.js";
+export { playPinCeremony, usePinAction, type PinCeremonyOptions } from "./pin-ceremony.js";
 export { VendoTrigger, type VendoTriggerProps } from "./vendo-trigger.js";
 export { VendoPage, type VendoPageProps } from "./vendo-page.js";
 export { VendoPalette, type VendoCommand } from "./vendo-palette.js";
