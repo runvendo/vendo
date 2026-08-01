@@ -28,6 +28,7 @@ import {
   type StopCondition,
   type ToolSet,
   type UIMessage,
+  type UIMessageStreamWriter,
 } from "ai";
 import { assembleSystemPrompt } from "./prompt.js";
 import { createRunner } from "./runner.js";
@@ -129,7 +130,35 @@ interface AgentConfig {
    *  not run — needsApproval must NOT consult the guard (no approval minted);
    *  execute() returns the outcome from the (gate-wrapped) registry instead. */
   preflight?: (call: ToolCall, ctx: RunContext) => Promise<ToolOutcome | undefined>;
+  /** Tour mode's hook — the scripted-turn seam. Consulted once per turn, after
+   *  the thread is resolved and this message upserted into it, before any model
+   *  work: returning a play REPLACES the provider call for this turn, returning
+   *  undefined leaves the turn untouched.
+   *
+   *  It lives here rather than in the umbrella because everything a scripted
+   *  turn must share with a live one is here: the resolved thread (which is how
+   *  a tour knows what has already played), the persistence in `onFinish`
+   *  (which is what makes a scripted turn editable by the next, live one), and
+   *  the response contract. A seam in the wire route would have to rebuild all
+   *  three and could only ever approximate them.
+   *
+   *  The umbrella owns what a play IS (createVendo's `tours`): matching and
+   *  replay need the apps runtime, and the layering forbids this package from
+   *  seeing it. */
+  scripted?: (input: {
+    message: UIMessage;
+    /** The thread as the turn sees it, `message` already upserted. */
+    messages: readonly UIMessage[];
+    ctx: RunContext;
+  }) => Promise<ScriptedTurn | undefined>;
 }
+
+/** One scripted turn's body: everything it writes goes onto the same stream a
+ *  live turn writes to, and is persisted by the same `onFinish`. */
+export type ScriptedTurn = (input: {
+  writer: UIMessageStreamWriter<UIMessage>;
+  signal?: AbortSignal;
+}) => Promise<void>;
 
 // Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
 // other provider (and by the test mocks), so marking breakpoints degrades to a no-op.
@@ -469,6 +498,19 @@ export function createAgent(config: AgentConfig): VendoAgent {
           // AGENT-3: a client that disconnected before the turn started gets no
           // provider call at all — the stream closes empty but well-formed.
           if (input.signal?.aborted) return;
+          // Tour mode. Ahead of every other decision because a scripted turn
+          // makes none of them: no toolset is built, no system prompt is
+          // assembled, no provider is called. A turn nobody scripted falls
+          // through with nothing written and no trace it was offered here.
+          const play = await config.scripted?.({
+            message: input.message,
+            messages: thread.messages,
+            ctx: input.ctx,
+          });
+          if (play !== undefined) {
+            await play({ writer, ...(input.signal === undefined ? {} : { signal: input.signal }) });
+            return;
+          }
           const missDetector = config.capabilityMiss === undefined
             ? undefined
             : createCapabilityMissDetector({

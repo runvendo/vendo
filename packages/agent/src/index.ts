@@ -1,5 +1,5 @@
 export { createAgent } from "./agent.js";
-export type { VendoAgent } from "./agent.js";
+export type { ScriptedTurn, VendoAgent } from "./agent.js";
 export type { CapabilityMissConfig } from "./capability-miss.js";
 export {
   buildVendoToolPack,

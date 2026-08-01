@@ -34,6 +34,7 @@ const CONFIG_KEYS = [
   "sessions",
   "approvals",
   "apps",
+  "tours",
 ] as const;
 
 // Every listed key exists on the interface…
