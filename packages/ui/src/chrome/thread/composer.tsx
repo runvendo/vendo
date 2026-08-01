@@ -132,7 +132,7 @@ export function useComposer({ busy, sendMessage }: {
   // pill) and auto-sends the instant the turn finishes. A single slot — a second
   // send while one is parked replaces it — because there is only ever one "next"
   // turn. Stop stays the explicit interrupt; queueing never cancels the stream.
-  const [queued, setQueued] = useState<{ text: string; files: File[] } | null>(null);
+  const [queued, setQueued] = useState<{ text: string; files: File[]; remix: RemixContext | null } | null>(null);
   const [attachError, setAttachError] = useState<string>();
   // The surface a <Remixable> gesture attached, riding with the NEXT message
   // (VendoThread renders it as the chip). Composer state rather than a global:
@@ -143,7 +143,7 @@ export function useComposer({ busy, sendMessage }: {
   // ENG-215 — commit a turn to the transport (attachment parts come from the
   // eager-read cache when ready, else a fresh read). Used both by an immediate
   // send and by the deferred flush of a queued message.
-  const dispatch = (text: string, pending: File[]) => {
+  const dispatch = (text: string, pending: File[], attached: RemixContext | null) => {
     void (async () => {
       let parts: Awaited<ReturnType<typeof fileToPart>>[];
       try {
@@ -153,35 +153,44 @@ export function useComposer({ busy, sendMessage }: {
         }));
       } catch (reason) {
         // A file read failed — surface it and restore the message so it never
-        // vanishes silently.
+        // vanishes silently. Including the attached surface: the send it was
+        // spent by never happened, so re-arming it is the user's work to redo
+        // otherwise. `text` is what the user TYPED (the surface is composed in
+        // below, at the moment the turn really leaves), so the restored draft
+        // never shows the composed line.
         setAttachError(reason instanceof Error ? reason.message : "Couldn't read an attachment.");
         setDraft(current => current || text);
         setFiles(current => (current.length > 0 ? current : pending));
+        if (attached !== null) setRemix(current => current ?? attached);
         return;
       }
       setAttachError(undefined);
-      void sendMessage(parts.length > 0 ? { text, files: parts } : { text });
+      const body = withRemixContext(text, attached);
+      void sendMessage(parts.length > 0 ? { text: body, files: parts } : { text: body });
     })();
   };
 
   const send = (override?: string) => {
-    const typed = (override ?? draft).trim();
+    const text = (override ?? draft).trim();
     const pending = files;
     // Guarded on what the USER supplied: an armed surface must never send a
     // turn on its own when the draft is empty.
-    if (!typed && pending.length === 0) return;
-    const text = withRemixContext(typed, remix);
-    // Spent by the message it rides on — queued or immediate, one place.
+    if (!text && pending.length === 0) return;
+    // Spent by the message it rides on — queued or immediate, one place. The
+    // surface travels WITH the message rather than being composed into it here,
+    // so the queued pill shows what the user typed and a failed send can put
+    // the attachment back.
+    const attached = remix;
     setRemix(null);
     // The message leaves the input immediately (whether it sends now or parks).
     setDraft("");
     setFiles([]);
     if (fileRef.current) fileRef.current.value = "";
     if (busy) {
-      setQueued({ text, files: pending });
+      setQueued({ text, files: pending, remix: attached });
       return;
     }
-    dispatch(text, pending);
+    dispatch(text, pending, attached);
   };
 
   // The enclosing overlay's prefill scope (null for embedded threads/pages):
@@ -229,7 +238,7 @@ export function useComposer({ busy, sendMessage }: {
     if (wasBusyRef.current && !busy && queued) {
       const pending = queued;
       setQueued(null);
-      dispatch(pending.text, pending.files);
+      dispatch(pending.text, pending.files, pending.remix);
     }
     wasBusyRef.current = busy;
     // dispatch is recreated each render but closes only over stable setters and

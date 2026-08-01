@@ -138,6 +138,28 @@ describe("Remixable", () => {
     await waitFor(() => expect(sentText(wire)).toBe("just a question"));
   });
 
+  it("puts the attachment back when a failed file read cancels the send", async () => {
+    // Every FileReader errors, so the send's attachment conversion rejects and
+    // the composer restores the message instead of losing it (greptile P1).
+    vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader) {
+      queueMicrotask(() => this.onerror?.(new ProgressEvent("error") as ProgressEvent<FileReader>));
+    });
+    mount();
+    fireEvent.click(pill());
+    const panel = dialog();
+    const composer = within(panel).getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
+    const input = panel.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(input, { target: { files: [new File(["x"], "chart.csv", { type: "text/csv" })] } });
+    fireEvent.change(composer, { target: { value: "group these" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+
+    await within(panel).findByRole("alert");
+    // The typed text comes back UNCOMPOSED, and the surface is armed again.
+    expect(composer.value).toBe("group these");
+    expect(within(panel).getByRole("status", { name: "Remixing: Rent Roll" })).toBeTruthy();
+    expect(wire.requests.filter(r => r.method === "POST" && r.path === "/threads")).toHaveLength(0);
+  });
+
   it("does not wipe a draft already in the composer", async () => {
     mount();
     const panel = render(<VendoProvider client={client}><VendoThread /></VendoProvider>);
