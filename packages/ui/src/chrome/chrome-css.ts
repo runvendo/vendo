@@ -741,8 +741,14 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
     0 10px 28px color-mix(in srgb, var(--vendo-fg) 7%, transparent),
     0 0 0 3px var(--vendo-accent-soft); }
 .fl-composer-drag { border-color: var(--vendo-accent); }
-/* align-items:flex-end so the buttons sit at the bottom as the field grows. */
-.fl-composer-row { display: flex; align-items: flex-end; gap: 10px; }
+/* align-items:flex-start so the text grows DOWNWARD from a fixed top edge and
+   the controls stay where the user last saw them. flex-end (the old rule) was
+   right for a one-line field and wrong for every other: the textarea's own text
+   sits at ITS top, so past one line the row pushed the icons and Send down while
+   the text stayed put — the field read as mis-centred and Send moved under the
+   cursor mid-sentence. At one line the icon's 34px box and the text's 33px line
+   box agree within half a pixel, so the collapsed composer is unchanged. */
+.fl-composer-row { display: flex; align-items: flex-start; gap: 10px; }
 .fl-composer textarea { flex: 1; border: 0; outline: 0; background: transparent; color: var(--vendo-fg);
   font-family: var(--vendo-font); font-size: var(--vendo-base-size); line-height: 1.5; resize: none; max-height: 200px;
   padding: 6px 0; overflow-y: auto; scrollbar-width: none; }

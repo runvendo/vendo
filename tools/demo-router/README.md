@@ -25,8 +25,9 @@ or rows vanish on redeploy.
 
 - `GET /healthz` → `{ok, demos}`
 - `GET /` → 302 `https://vendo.run`
-- `GET /:id` → live: 302 to the demo (counts a hit); expired/killed: 410 page;
-  unknown: 404 page. Ids are never listed publicly.
+- `GET /:id` → live: 302 to the demo, forwarding the visitor's query so deep
+  links survive the hop (counts a hit); expired/killed: 410 page; unknown: 404
+  page. Ids are never listed publicly.
 
 ## Admin API
 

@@ -3,7 +3,7 @@
  * The umbrella composed with `telemetry: true` fires anonymous product telemetry
  * from the wire (server.ts: `deps.telemetry?.track("agent_run", …)` on POST
  * /threads). This journey proves the end-to-end contract of TELEMETRY.md against
- * the REAL composed client by intercepting the PostHog capture endpoint:
+ * the REAL composed client, pointed at a capture endpoint of our own:
  *
  *   - OPT-IN  (consent granted): a wire chat turn produces exactly one capture,
  *     whose event name is in the closed EVENT_ALLOWLIST and whose properties are
@@ -16,13 +16,12 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EVENT_ALLOWLIST, initTelemetry, type EventName, type Telemetry } from "@vendoai/telemetry";
 import { createStack, readSse, resetFixture, textTurn, ADA, type Stack } from "./harness.js";
-
-const POSTHOG = "https://us.i.posthog.com";
 
 interface Capture {
   event: string;
@@ -31,25 +30,34 @@ interface Capture {
   distinct_id?: string;
 }
 
-/** Install a global-fetch shim that captures PostHog capture POSTs and passes
- * every other request (the wire, the host app, host tools) through untouched. */
-function captureTelemetry(): { captures: Capture[]; restore: () => void } {
+/** Stand a real capture endpoint up on loopback and point the client at it
+ * through VENDO_POSTHOG_HOST. A local server, not a fetch stub: the shipped
+ * client posts over a raw socket it can unref (so a stranded telemetry POST
+ * can never hold a process open), which a `globalThis.fetch` shim would never
+ * see. Every other request — the wire, the host app, host tools — is untouched. */
+async function captureTelemetry(): Promise<{ captures: Capture[]; restore: () => Promise<void> }> {
   const captures: Capture[] = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (url.startsWith(POSTHOG)) {
-      const body = typeof init?.body === "string" ? init.body : "";
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
       try {
-        captures.push(JSON.parse(body) as Capture);
+        captures.push(JSON.parse(Buffer.concat(chunks).toString("utf8")) as Capture);
       } catch {
         // A malformed body would itself be a telemetry regression; record nothing.
       }
-      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
-    }
-    return realFetch(input as never, init);
-  }) as typeof fetch;
-  return { captures, restore: () => { globalThis.fetch = realFetch; } };
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("{}");
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("no capture port");
+  process.env.VENDO_POSTHOG_HOST = `http://127.0.0.1:${address.port}`;
+  return {
+    captures,
+    restore: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
 }
 
 async function driveTurn(stack: Stack, threadId: string): Promise<void> {
@@ -72,7 +80,7 @@ async function waitForCaptures(captures: Capture[], atLeast: number, timeoutMs =
 }
 
 let stack: Stack | undefined;
-let restoreFetch: (() => void) | undefined;
+let restoreCapture: (() => Promise<void>) | undefined;
 let tempHome: string | undefined;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -89,8 +97,8 @@ function restoreEnv(): void {
 afterEach(async () => {
   await stack?.close();
   stack = undefined;
-  restoreFetch?.();
-  restoreFetch = undefined;
+  await restoreCapture?.();
+  restoreCapture = undefined;
   restoreEnv();
   if (tempHome !== undefined) await rm(tempHome, { recursive: true, force: true });
   tempHome = undefined;
@@ -99,7 +107,7 @@ afterEach(async () => {
 describe("J11: telemetry emits only allowlisted events, and nothing when opted out", () => {
   it("(opt-in) a wire turn emits exactly one allowlisted, allowlist-scoped event", async () => {
     await resetFixture();
-    saveEnv("CI", "NODE_ENV", "HOME", "VENDO_TELEMETRY_DISABLED", "DO_NOT_TRACK");
+    saveEnv("CI", "NODE_ENV", "HOME", "VENDO_TELEMETRY_DISABLED", "DO_NOT_TRACK", "VENDO_POSTHOG_HOST");
     tempHome = await mkdtemp(join(tmpdir(), "vendo-j11-home-"));
     delete process.env.CI; // CI fails consent closed
     delete process.env.VENDO_TELEMETRY_DISABLED;
@@ -107,8 +115,8 @@ describe("J11: telemetry emits only allowlisted events, and nothing when opted o
     process.env.NODE_ENV = "test"; // runtime consent needs an explicit dev/test env
     process.env.HOME = tempHome;
 
-    const telemetry = captureTelemetry();
-    restoreFetch = telemetry.restore;
+    const telemetry = await captureTelemetry();
+    restoreCapture = telemetry.restore;
 
     stack = await createStack({ telemetry: true, turns: [textTurn("Hi.", "t1")] });
     await driveTurn(stack, "thr_j11_in");
@@ -131,15 +139,15 @@ describe("J11: telemetry emits only allowlisted events, and nothing when opted o
 
   it("(opt-out) the identical turn under VENDO_TELEMETRY_DISABLED emits nothing", async () => {
     await resetFixture();
-    saveEnv("CI", "NODE_ENV", "HOME", "VENDO_TELEMETRY_DISABLED");
+    saveEnv("CI", "NODE_ENV", "HOME", "VENDO_TELEMETRY_DISABLED", "VENDO_POSTHOG_HOST");
     tempHome = await mkdtemp(join(tmpdir(), "vendo-j11-home-"));
     delete process.env.CI;
     process.env.NODE_ENV = "test";
     process.env.HOME = tempHome;
     process.env.VENDO_TELEMETRY_DISABLED = "1"; // explicit env opt-out
 
-    const telemetry = captureTelemetry();
-    restoreFetch = telemetry.restore;
+    const telemetry = await captureTelemetry();
+    restoreCapture = telemetry.restore;
 
     stack = await createStack({ telemetry: true, turns: [textTurn("Hi.", "t1")] });
     await driveTurn(stack, "thr_j11_out");

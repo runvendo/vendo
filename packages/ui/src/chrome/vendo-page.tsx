@@ -134,13 +134,25 @@ function ChatWorkspace({ thread }: { thread?: VendoPageProps["thread"] }) {
 
 function OpenApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
-  const { surface, refresh } = useApp(appId);
+  const { surface, error, isLoading, refresh } = useApp(appId);
   // Wave 7 H2 — same keepalive as VendoSlot's MountedApp (see frames.tsx).
   const keepalive = useMemo(
     () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
     [appId, client, refresh],
   );
-  if (!surface) return <div role="status">Opening app…</div>;
+  if (!surface) {
+    // useApp has already spent its retries; without a way to ask again the
+    // pane sat on "Opening app…" until a page reload (Keystone graduates A5).
+    if (error && !isLoading) {
+      return (
+        <div role="alert" className="fl-error">
+          This app didn’t open — {error.message}
+          <button type="button" className="fl-error-retry" onClick={() => void refresh()}>Try again</button>
+        </div>
+      );
+    }
+    return <div role="status">Opening app…</div>;
+  }
   return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 

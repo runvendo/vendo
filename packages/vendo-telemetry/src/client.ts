@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { request as httpRequest, type ClientRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { resolveConsent } from "./consent.js";
 import { baseProps, projectProps, type ProjectProps } from "./base-props.js";
 import { CLOUD_PROP_KEYS, EVENT_ALLOWLIST, type EventName } from "./events.js";
@@ -69,9 +71,106 @@ function filterToAllowlist(
   return out;
 }
 
-function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
-  if (typeof timer === "object" && timer !== null && "unref" in timer) {
-    (timer as { unref?: () => void }).unref?.();
+/** Posts one capture body. Resolves on success, failure, or timeout — never
+ *  rejects, and never outlives TIMEOUT_MS. */
+type Post = (endpoint: string, body: string) => Promise<void>;
+
+/** A capture endpoint behind a proxy can move (an http→https or bare-host
+ *  redirect); fetch followed those for us, so the raw transport must too. The
+ *  body is replayed as a POST on every hop: this is an API endpoint, where a
+ *  redirect is always a relocation, never a "see other". */
+const REDIRECT_STATUSES = new Set([301, 302, 307, 308]);
+const MAX_REDIRECTS = 3;
+
+/**
+ * The default transport, and the reason it is not `fetch`. Node's global fetch
+ * (undici) leaves a connecting socket alive after the request is aborted: on a
+ * captive-portal network — one that accepts TCP and then never answers —
+ * `vendo init` printed its summary and then sat there doing nothing until
+ * undici's 10s connect timeout expired. A raw request hands us the socket, so
+ * we unref it the moment it exists: a stranded telemetry POST can never be the
+ * last handle keeping the CLI alive, under any network condition.
+ *
+ * The timeout is therefore the ONLY thing holding the caller — ref'd on
+ * purpose, so an exiting process still reports its command's exit code instead
+ * of racing an unref'd event loop to zero handles.
+ */
+function socketPost(endpoint: string, body: string): Promise<void> {
+  return new Promise((resolve) => {
+    let current: ClientRequest | undefined;
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      current?.destroy();
+      resolve();
+    };
+    const timer = setTimeout(finish, TIMEOUT_MS);
+
+    const send = (url: URL, hopsLeft: number): void => {
+      const request = (url.protocol === "http:" ? httpRequest : httpsRequest)(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) },
+      });
+      current = request;
+      // The socket exists only once the agent hands one over; unref it there so
+      // a connect that never completes cannot keep the event loop alive.
+      request.on("socket", (socket) => socket.unref());
+      request.on("error", finish);
+      request.on("response", (response) => {
+        response.resume();
+        const location = response.headers.location;
+        if (hopsLeft > 0 && location !== undefined && REDIRECT_STATUSES.has(response.statusCode ?? 0)) {
+          response.on("end", () => { if (!settled) send(new URL(location, url), hopsLeft - 1); });
+          return;
+        }
+        response.on("end", finish);
+        response.on("error", finish);
+      });
+      request.end(body);
+    };
+    send(new URL(endpoint), MAX_REDIRECTS);
+  });
+}
+
+/** Transport for an injected `fetchImpl` (tests, and hosts that supply their
+ *  own). A fetch response body is not a handle we can unref, so here the
+ *  abort + timeout pair is the whole bound. */
+function fetchPost(fetchImpl: typeof fetch): Post {
+  return (endpoint, body) => new Promise<void>((resolve) => {
+    const controller = new AbortController();
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      controller.abort();
+      finish();
+    }, TIMEOUT_MS);
+
+    void fetchImpl(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      signal: controller.signal,
+    }).then(finish, finish);
+  });
+}
+
+/** Where capture events go. `VENDO_POSTHOG_HOST` redirects them at a
+ *  self-hosted PostHog (and lets the CLI's exit tests aim at a black hole);
+ *  unset means the shipped US cloud. */
+function captureEndpoint(env: Record<string, string | undefined>): string {
+  const host = env.VENDO_POSTHOG_HOST?.trim();
+  if (!host) return POSTHOG_ENDPOINT;
+  try {
+    return new URL("/capture/", host).toString();
+  } catch {
+    return POSTHOG_ENDPOINT;
   }
 }
 
@@ -79,7 +178,8 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 const CLOUD_KEY_RE = /^vnd_[0-9a-f]{40}$/;
 
 export function createTelemetry(deps: TelemetryDeps): Telemetry {
-  const doFetch = deps.fetchImpl ?? fetch;
+  const post: Post = deps.fetchImpl === undefined ? socketPost : fetchPost(deps.fetchImpl);
+  const endpoint = captureEndpoint(deps.env);
   // Cloud lane: a well-formed VENDO_API_KEY marks events as coming from a
   // Cloud-configured install. Producer-set like the base props — callers can
   // never pass `cloud` or `cloudKeyHash` themselves. cloudKeyHash is the
@@ -139,28 +239,7 @@ export function createTelemetry(deps: TelemetryDeps): Telemetry {
           properties,
         });
 
-        const controller = new AbortController();
-        await new Promise<void>((resolve) => {
-          let settled = false;
-          const finish = () => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            resolve();
-          };
-          const timer = setTimeout(() => {
-            controller.abort();
-            finish();
-          }, TIMEOUT_MS);
-          unrefTimer(timer);
-
-          void doFetch(POSTHOG_ENDPOINT, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body,
-            signal: controller.signal,
-          }).then(finish, finish);
-        });
+        await post(endpoint, body);
       } catch {
         // Telemetry must never break a build or dev server. Intentional silent failure.
       }

@@ -143,6 +143,23 @@ describe("composer: type-while-streaming, queued send, edit, regenerate (ENG-215
     await waitFor(() => expect(screen.queryByText("Original question", { selector: ".fl-usertext" })).toBeNull());
   });
 
+  it("top-aligns the composer row so multiline text does not centre itself", async () => {
+    // With `align-items: flex-end` the row's controls ride DOWN as the textarea
+    // grows while the text stays at the top of it: past one line the field
+    // reads as mis-centred and Send moves under the cursor mid-sentence
+    // (Yousef's screenshot, Keystone). Anchoring the row to the top keeps the
+    // icons and Send where the user last saw them; at one line the icon's 34px
+    // box and the text's line box still agree, so the collapsed composer is
+    // unchanged. jsdom has no layout, but it does resolve the cascade — and the
+    // cascade is exactly what this fix is.
+    render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
+    await screen.findByText("Existing thread");
+
+    type("first line\nsecond line\nthird line");
+    const row = composer().closest(".fl-composer-row") as HTMLElement;
+    expect(getComputedStyle(row).alignItems).toBe("flex-start");
+  });
+
   it("regenerates the last assistant response", async () => {
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     await screen.findByText("Existing thread");
