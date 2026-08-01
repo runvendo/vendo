@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type ClientRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { resolveConsent } from "./consent.js";
 import { baseProps, projectProps, type ProjectProps } from "./base-props.js";
@@ -75,6 +75,13 @@ function filterToAllowlist(
  *  rejects, and never outlives TIMEOUT_MS. */
 type Post = (endpoint: string, body: string) => Promise<void>;
 
+/** A capture endpoint behind a proxy can move (an http→https or bare-host
+ *  redirect); fetch followed those for us, so the raw transport must too. The
+ *  body is replayed as a POST on every hop: this is an API endpoint, where a
+ *  redirect is always a relocation, never a "see other". */
+const REDIRECT_STATUSES = new Set([301, 302, 307, 308]);
+const MAX_REDIRECTS = 3;
+
 /**
  * The default transport, and the reason it is not `fetch`. Node's global fetch
  * (undici) leaves a connecting socket alive after the request is aborted: on a
@@ -90,29 +97,40 @@ type Post = (endpoint: string, body: string) => Promise<void>;
  */
 function socketPost(endpoint: string, body: string): Promise<void> {
   return new Promise((resolve) => {
-    const url = new URL(endpoint);
-    const send = url.protocol === "http:" ? httpRequest : httpsRequest;
-    const request = send(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) },
-    });
+    let current: ClientRequest | undefined;
     let settled = false;
     const finish = (): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      request.destroy();
+      current?.destroy();
       resolve();
     };
     const timer = setTimeout(finish, TIMEOUT_MS);
-    request.on("socket", (socket) => socket.unref());
-    request.on("response", (response) => {
-      response.resume();
-      response.on("end", finish);
-      response.on("error", finish);
-    });
-    request.on("error", finish);
-    request.end(body);
+
+    const send = (url: URL, hopsLeft: number): void => {
+      const request = (url.protocol === "http:" ? httpRequest : httpsRequest)(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) },
+      });
+      current = request;
+      // The socket exists only once the agent hands one over; unref it there so
+      // a connect that never completes cannot keep the event loop alive.
+      request.on("socket", (socket) => socket.unref());
+      request.on("error", finish);
+      request.on("response", (response) => {
+        response.resume();
+        const location = response.headers.location;
+        if (hopsLeft > 0 && location !== undefined && REDIRECT_STATUSES.has(response.statusCode ?? 0)) {
+          response.on("end", () => { if (!settled) send(new URL(location, url), hopsLeft - 1); });
+          return;
+        }
+        response.on("end", finish);
+        response.on("error", finish);
+      });
+      request.end(body);
+    };
+    send(new URL(endpoint), MAX_REDIRECTS);
   });
 }
 

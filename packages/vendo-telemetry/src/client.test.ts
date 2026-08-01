@@ -180,6 +180,40 @@ describe("default transport (no fetchImpl)", () => {
     }
   });
 
+  it("follows a capture redirect, the way fetch did (review: proxied self-hosts move)", async () => {
+    const bodies: string[] = [];
+    const destination = createHttpServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        bodies.push(Buffer.concat(chunks).toString("utf8"));
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end("{}");
+      });
+    });
+    await new Promise<void>((resolve) => destination.listen(0, "127.0.0.1", resolve));
+    const destinationPort = (destination.address() as { port: number }).port;
+    const proxy = createHttpServer((request, response) => {
+      request.resume();
+      response.writeHead(308, { location: `http://127.0.0.1:${destinationPort}/capture/` });
+      response.end();
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const proxyPort = (proxy.address() as { port: number }).port;
+    try {
+      const deps = makeDeps({
+        fetchImpl: undefined,
+        env: { VENDO_POSTHOG_HOST: `http://127.0.0.1:${proxyPort}` },
+      });
+      await createTelemetry(deps).track("init_started", { framework: "next" });
+      expect(bodies).toHaveLength(1);
+      expect(JSON.parse(bodies[0]!).event).toBe("init_started");
+    } finally {
+      await new Promise<void>((resolve) => proxy.close(() => resolve()));
+      await new Promise<void>((resolve) => destination.close(() => resolve()));
+    }
+  });
+
   it("returns on the timeout when the endpoint accepts the connection and never answers", async () => {
     const held: Socket[] = [];
     const blackHole = createSocketServer((socket) => {
