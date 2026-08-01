@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createSocketServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -112,6 +114,20 @@ describe("createTelemetry.track", () => {
     await expect(t.track("agent_run", {})).resolves.toBeUndefined();
   });
 
+  it("sends to a VENDO_POSTHOG_HOST override instead of the shipped cloud", async () => {
+    const deps = makeDeps({ env: { VENDO_POSTHOG_HOST: "https://posthog.internal:8000" } });
+    const t = createTelemetry(deps);
+    await t.track("init_started", { framework: "next" });
+    expect(String(deps.fetchImpl.mock.calls[0][0])).toBe("https://posthog.internal:8000/capture/");
+  });
+
+  it("falls back to the shipped cloud when the override is unusable", async () => {
+    const deps = makeDeps({ env: { VENDO_POSTHOG_HOST: "not a url" } });
+    const t = createTelemetry(deps);
+    await t.track("init_started", { framework: "next" });
+    expect(String(deps.fetchImpl.mock.calls[0][0])).toContain("us.i.posthog.com");
+  });
+
   it("returns after the telemetry timeout when fetch never settles", async () => {
     vi.useFakeTimers();
     try {
@@ -127,6 +143,101 @@ describe("createTelemetry.track", () => {
       vi.useRealTimers();
     }
   });
+});
+
+/**
+ * The default transport — no injected fetchImpl, a real socket. It exists
+ * because Node's global fetch keeps a connecting socket alive after an abort,
+ * which held `vendo init` open for ten seconds past its summary on a
+ * captive-portal network. The socket is unref'd, so the timeout is the only
+ * bound; `packages/vendo/src/cli/telemetry-exit.test.ts` proves the exit
+ * guarantee on the real CLI process.
+ */
+describe("default transport (no fetchImpl)", () => {
+  it("posts the capture body over a real socket", async () => {
+    const bodies: string[] = [];
+    const server = createHttpServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        bodies.push(Buffer.concat(chunks).toString("utf8"));
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end("{}");
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const deps = makeDeps({
+        fetchImpl: undefined,
+        env: { VENDO_POSTHOG_HOST: `http://127.0.0.1:${port}` },
+      });
+      await createTelemetry(deps).track("init_started", { framework: "next" });
+      expect(bodies).toHaveLength(1);
+      expect(JSON.parse(bodies[0]!).event).toBe("init_started");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("follows a capture redirect, the way fetch did (review: proxied self-hosts move)", async () => {
+    const bodies: string[] = [];
+    const destination = createHttpServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        bodies.push(Buffer.concat(chunks).toString("utf8"));
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end("{}");
+      });
+    });
+    await new Promise<void>((resolve) => destination.listen(0, "127.0.0.1", resolve));
+    const destinationPort = (destination.address() as { port: number }).port;
+    const proxy = createHttpServer((request, response) => {
+      request.resume();
+      response.writeHead(308, { location: `http://127.0.0.1:${destinationPort}/capture/` });
+      response.end();
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const proxyPort = (proxy.address() as { port: number }).port;
+    try {
+      const deps = makeDeps({
+        fetchImpl: undefined,
+        env: { VENDO_POSTHOG_HOST: `http://127.0.0.1:${proxyPort}` },
+      });
+      await createTelemetry(deps).track("init_started", { framework: "next" });
+      expect(bodies).toHaveLength(1);
+      expect(JSON.parse(bodies[0]!).event).toBe("init_started");
+    } finally {
+      await new Promise<void>((resolve) => proxy.close(() => resolve()));
+      await new Promise<void>((resolve) => destination.close(() => resolve()));
+    }
+  });
+
+  it("returns on the timeout when the endpoint accepts the connection and never answers", async () => {
+    const held: Socket[] = [];
+    const blackHole = createSocketServer((socket) => {
+      socket.on("error", () => {});
+      held.push(socket);
+    });
+    await new Promise<void>((resolve) => blackHole.listen(0, "127.0.0.1", resolve));
+    const port = (blackHole.address() as { port: number }).port;
+    try {
+      const deps = makeDeps({
+        fetchImpl: undefined,
+        // https against a server that never speaks TLS: the handshake hangs,
+        // which is the exact captive-portal shape.
+        env: { VENDO_POSTHOG_HOST: `https://127.0.0.1:${port}` },
+      });
+      const started = Date.now();
+      await expect(createTelemetry(deps).track("init_started", { framework: "next" }))
+        .resolves.toBeUndefined();
+      expect(Date.now() - started).toBeLessThan(4000);
+    } finally {
+      for (const socket of held) socket.destroy();
+      await new Promise<void>((resolve) => blackHole.close(() => resolve()));
+    }
+  }, 15_000);
 });
 
 const CLOUD_KEY = `vnd_${"0123456789abcdef".repeat(2)}01234567`; // 40 hex chars

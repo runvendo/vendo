@@ -152,6 +152,11 @@ import { cloudConfig, type CloudConfig, type CloudConfigResult } from "./cloud-c
 // rides the server surface too: the composition seam (selectConfigSurface)
 // consults it for a `.vendo` surface the host neither set nor keeps on disk.
 export { cloudConfig, type CloudConfig, type CloudConfigDoc, type CloudConfigResult, type CloudConfigOptions } from "./cloud-config.js";
+import { createTourScript, type TourEntry } from "./tours/index.js";
+// Tour mode is plain OSS config — the entry types ride the server surface so a
+// host can name them (`const tours: TourEntry[] = [...]`) without reaching
+// into a subpath.
+export type { TourApp, TourEntry, TourPart, TourResponse } from "./tours/index.js";
 import { selectConfigSurface, type ConfigSurfaceName } from "./config-surface.js";
 export {
   selectConfigSurface,
@@ -466,6 +471,15 @@ export interface CreateVendoConfig {
         restart. */
     designRules?: string;
   };
+  /** Tour mode — deterministic scripted responses in front of the real agent,
+      for demos and onboarding tours. An ordered list of `{ prompt, respond }`
+      entries: an entry fires only on a close variant of its own frozen prompt
+      (normalized similarity, not keywords) and only ONCE per thread, replaying
+      its recorded prose and app documents at a live turn's cadence. Every
+      other ask — including a follow-up about what a tour just put on screen —
+      falls through to the live agent untouched. Plain config: no key, no Cloud
+      dependency, identical behavior with and without VENDO_API_KEY. */
+  tours?: readonly TourEntry[];
 }
 
 /** ENG-237 recommended defaults (documented in the PR body; Yousef-gated as
@@ -1939,6 +1953,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // runs, exposed so needsApproval never mints an approval for a call the
     // gate will refuse with a connect card.
     preflight: (call, ctx) => connectGate.check(call, ctx),
+    // Tour mode. Composed only when a host configured tours, so a deployment
+    // without them has no seam to pay for and no way to grow one.
+    ...(config.tours === undefined || config.tours.length === 0
+      ? {}
+      : { scripted: createTourScript({ tours: config.tours, apps }) }),
   });
   // Per-subject connected-toolkit lookups are cached briefly so a turn never
   // pays a broker round-trip it doesn't need; failures degrade to host tools

@@ -91,6 +91,8 @@ Set `"optedOut": false` in `~/.vendo/telemetry.json` to clear the local opt-out 
 
 ## Where Data Goes
 
-Product events are sent to PostHog US Cloud using a write-only project key. Network calls are fire-and-forget, use a short timeout, and failures are swallowed so telemetry cannot break builds or dev servers.
+Product events are sent to PostHog US Cloud using a write-only project key. Set `VENDO_POSTHOG_HOST` to send them to your own PostHog instead (`VENDO_POSTHOG_KEY` sets the project key); the path is always `/capture/`.
+
+Network calls are fire-and-forget, use a short timeout, and failures are swallowed so telemetry cannot break builds or dev servers. The capture socket is unref'd the moment it exists, so a telemetry POST can never keep the CLI running after a command finishes — on a captive-portal network that accepts the connection and never answers, `vendo init` still exits as soon as it prints its summary.
 
 Published package download attribution is wired through Scarf for npm installs. Scarf registration is an owner-operated package setup step.

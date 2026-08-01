@@ -9,7 +9,8 @@ import { createRegistry, RegistryCorruptError, RegistryValidationError, SLUG_PAT
  * Public surface:
  *   GET /            302 -> https://vendo.run
  *   GET /healthz     200 {ok, demos}
- *   GET /:id         live: 302 -> the demo's Railway domain (+ hit counter)
+ *   GET /:id         live: 302 -> the demo's Railway domain, query forwarded
+ *                    (+ hit counter)
  *                    expired/killed: 410 branded "demo has ended" page
  *                    unknown: 404 variant of the same page
  *   Demo ids are NEVER listed publicly.
@@ -87,6 +88,21 @@ const isHttpsUrl = (value) => {
 };
 
 const isIsoDate = (value) => typeof value === "string" && !Number.isNaN(Date.parse(value));
+
+/**
+ * Carry the visitor's query across the 302. A deep link is only a deep link if
+ * its params survive the hop to the demo's own origin —
+ * `demos.vendo.run/keystone?view=rent-roll` landed on the default view without
+ * this. A registry url may carry its own query; both survive, the visitor's
+ * appended last. Re-encoding through `URL` also means a hostile query can never
+ * smuggle a CR/LF into the `Location` header.
+ */
+function withQuery(target, search) {
+  if (search.size === 0) return target;
+  const resolved = new URL(target);
+  for (const [key, value] of search) resolved.searchParams.append(key, value);
+  return resolved.href;
+}
 
 /** Validate one admin-supplied field; returns an error string or null. */
 function fieldError(field, value) {
@@ -191,7 +207,12 @@ export function createRouterServer({
     switch (route.kind) {
       case "live":
         registry.recordHit(id); // best-effort; never blocks the redirect
-        return respond(response, 302, { Location: route.url, "Cache-Control": "no-store" }, undefined);
+        return respond(
+          response,
+          302,
+          { Location: withQuery(route.url, url.searchParams), "Cache-Control": "no-store" },
+          undefined,
+        );
       case "expired":
       case "killed":
         return respondPage(response, 410);

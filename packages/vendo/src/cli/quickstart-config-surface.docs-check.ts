@@ -37,7 +37,7 @@ import type {
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "../index.js";
 import type {
-  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler,
+  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
 } from "../server.js";
 import type { LanguageModel } from "ai";
 
@@ -107,6 +107,7 @@ export interface CreateVendoConfig {
     };
     designRules?: string;
   };
+  tours?: readonly TourEntry[];
 }
 
 export interface Vendo {

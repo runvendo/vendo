@@ -474,7 +474,7 @@ import type {
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "@vendoai/vendo";
 import type {
-  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler,
+  ConnectionsService, HostAuthPreset, ModelsConfig, ServerActionHandler, TourEntry,
 } from "@vendoai/vendo/server";
 import type { LanguageModel } from "ai";
 
@@ -544,6 +544,7 @@ export interface CreateVendoConfig {
     };
     designRules?: string;
   };
+  tours?: readonly TourEntry[];
 }
 
 export interface Vendo {
