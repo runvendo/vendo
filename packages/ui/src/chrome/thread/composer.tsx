@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { ConnectDockButton, ConnectTray } from "../connect-dock.js";
-import { PrefillScopeContext, registerPrefillConsumer } from "../overlay-registry.js";
+import { PrefillScopeContext, registerPrefillConsumer, type RemixContext } from "../overlay-registry.js";
 import { fileExt, fileToPart, formatBytes } from "./attachments.js";
 
 /** The message shape the composer commits — mirrors useVendoThread.sendMessage. */
@@ -14,6 +14,17 @@ type AttachmentRead = {
   progress: number;
   part?: Awaited<ReturnType<typeof fileToPart>>;
 };
+
+/** What an armed surface adds to the message it rides on. Composed into the
+    text — the same rule `VendoTrigger` uses for its `context` prop — so the
+    attachment reaches the agent over every server, needs no wire change, and
+    survives a reload in the persisted transcript. The user sees exactly what
+    the agent was told. */
+function withRemixContext(text: string, remix: RemixContext | null): string {
+  if (remix === null) return text;
+  const line = `Remixing the "${remix.name}" component on this page.${remix.context ? ` ${remix.context}` : ""}`;
+  return text ? `${text}\n\n${line}` : line;
+}
 
 /** ENG-225 — drag-drop attach: only reacts to drags that actually carry files
     (text selections dragged across the composer must not flash the drop zone).
@@ -123,6 +134,11 @@ export function useComposer({ busy, sendMessage }: {
   // turn. Stop stays the explicit interrupt; queueing never cancels the stream.
   const [queued, setQueued] = useState<{ text: string; files: File[] } | null>(null);
   const [attachError, setAttachError] = useState<string>();
+  // The surface a <Remixable> gesture attached, riding with the NEXT message
+  // (VendoThread renders it as the chip). Composer state rather than a global:
+  // the prefill hand-off already resolves which overlay's composer is the
+  // target, and the send that spends the attachment happens right here.
+  const [remix, setRemix] = useState<RemixContext | null>(null);
 
   // ENG-215 — commit a turn to the transport (attachment parts come from the
   // eager-read cache when ready, else a fresh read). Used both by an immediate
@@ -149,9 +165,14 @@ export function useComposer({ busy, sendMessage }: {
   };
 
   const send = (override?: string) => {
-    const text = (override ?? draft).trim();
+    const typed = (override ?? draft).trim();
     const pending = files;
-    if (!text && pending.length === 0) return;
+    // Guarded on what the USER supplied: an armed surface must never send a
+    // turn on its own when the draft is empty.
+    if (!typed && pending.length === 0) return;
+    const text = withRemixContext(typed, remix);
+    // Spent by the message it rides on — queued or immediate, one place.
+    setRemix(null);
     // The message leaves the input immediately (whether it sends now or parks).
     setDraft("");
     setFiles([]);
@@ -179,7 +200,9 @@ export function useComposer({ busy, sendMessage }: {
   // this composer was still mounting (overlay first open / fresh conversation).
   useEffect(() => {
     const prefill = (prompt: string, sendNow: boolean) => {
-      setDraft(prompt);
+      // A remix gesture delivers no prompt (its whole point is an EMPTY
+      // composer), so an empty hand-off must not wipe a draft in progress.
+      if (prompt.length > 0) setDraft(prompt);
       if (sendNow) queueMicrotask(() => sendRef.current(prompt));
     };
     const onPrefill = (event: Event) => {
@@ -188,7 +211,10 @@ export function useComposer({ busy, sendMessage }: {
       prefill(detail.prompt, detail.send === true);
     };
     window.addEventListener("vendo:prefill", onPrefill);
-    const unregister = registerPrefillConsumer(parked => prefill(parked.prompt, parked.send), prefillScope);
+    const unregister = registerPrefillConsumer(parked => {
+      if (parked.remix !== undefined) setRemix(parked.remix);
+      prefill(parked.prompt, parked.send);
+    }, prefillScope);
     return () => {
       window.removeEventListener("vendo:prefill", onPrefill);
       unregister();
@@ -226,6 +252,7 @@ export function useComposer({ busy, sendMessage }: {
     attachmentPreviews, attachmentReads, retryRead: startRead,
     dockOpen, setDockOpen, dockButtonRef,
     queued, setQueued, attachError, fileRef, textareaRef, send,
+    remix, setRemix,
   };
 }
 

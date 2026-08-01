@@ -127,6 +127,7 @@ each a one-liner:
 | `VendoSlot` | A region of the host page the user can replace with their own generated view. |
 | `VendoActivities` | Drop-in feed of what the agent did + pending approvals, placeable in any host page. |
 | `VendoTrigger` | A button that opens the chat preloaded with a prompt and context. |
+| `Remixable` | Marks any host element remixable: a quiet ✦ that blooms on hover into a Remix pill. |
 
 `VendoPalette` is an optional extra, not part of the default story. Without an
 `onCommand` router its conversation commands open the mounted overlay on their
@@ -183,6 +184,38 @@ Two shelf pieces are placeable anywhere in host pages:
   call `openVendoConversation({ prompt })` from it directly — the same
   registry seam described under "Overlay entry" below.
 
+### Remixable surfaces
+
+Wrap any element the user should be able to reshape:
+
+```tsx
+import { Remixable } from "@vendoai/ui/chrome";
+
+<Remixable name="Rent Roll">
+  <RentRollTable units={units} />
+</Remixable>
+```
+
+At rest a small muted ✦ sits in the element's top-right corner. Hovering (or
+tabbing into) the element blooms it in place into a **✦ Remix** pill, held
+open for a grace period so the cursor can travel to it. Clicking opens the
+conversation surface **empty** with the element attached: a `Remixing · Rent
+Roll` chip in the panel chrome that rides with the next message and clears on
+send. Dismissing the chip drops the attachment. The pill never sends
+anything — a stray click costs a keystroke, not a model call — and under
+`prefers-reduced-motion` the bloom snaps.
+
+Props: `name` (required — the surface in your own words; the chip's label and
+what the agent is told) and `context` (optional one-line grounding about
+what is on screen, appended after the user's message exactly like
+`VendoTrigger`'s `context`). Hosts using their own element call
+`openVendoConversation({ remix: { name, context } })` directly.
+
+`Remixable` is not `VendoSlot`'s `remix` flag: the flag forks the component
+pinned in *that slot* (registered, source-captured, a deterministic fork with
+no model call), while `Remixable` attaches *any* element to the next ask and
+forks nothing on its own.
+
 Chrome derives all styling from `VendoTheme` tokens. The required bar is WCAG
 2.1 AA, complete keyboard access, screen-reader testing, and mobile web.
 Every piece is mobile-friendly by requirement; the overlay becomes a
@@ -211,12 +244,12 @@ starts a fresh thread; `newConversation()` on the hook does the same, and
 hosts managing their own state can bump the `conversationKey` prop.
 
 Any affordance can open the mounted overlay without a ref through the
-registry: `openVendoConversation({ prompt, send, newConversation })` opens
-the most recently mounted overlay, optionally preloading (and sending) a
-prompt into its composer — always the opened overlay's own composer, never
-an embedded thread's. The slot remix flag and the palette defaults route
-through it; it returns `false` when no overlay is mounted so callers can
-fall back.
+registry: `openVendoConversation({ prompt, send, newConversation, remix })`
+opens the most recently mounted overlay, optionally preloading (and sending) a
+prompt into its composer, or attaching a surface with `remix` — always the
+opened overlay's own composer, never an embedded thread's. The slot remix
+flag, `Remixable` and the palette defaults route through it; it returns
+`false` when no overlay is mounted so callers can fall back.
 
 ### Discoverability
 

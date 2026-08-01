@@ -788,6 +788,12 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-queued-hint { margin-left: auto; flex-shrink: 0; color: var(--vendo-fg-muted); font-size: 11px; }
 .fl-queued-rm { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
 
+/* The attached-surface chip: what <Remixable> armed, riding with the next
+   message. Borrows the queued pill's look on purpose — that is already the
+   product's language for "this is pending, and it goes with my message".
+   Placement is lifted to the panel's top-left below (.fl-overlay-panel). */
+.fl-remix-chip { align-self: flex-start; max-width: 100%; }
+
 /* sent attachments (in transcript) */
 .fl-turn-user-att { align-self: flex-end; max-width: 82%; display: flex; flex-wrap: wrap; gap: 6px;
   align-items: flex-start; justify-content: flex-end; }
@@ -1058,6 +1064,23 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    treatment (it shares .fl-overlay-close), only the horizontal offset differs.
    Offsets = close's right + close's width + a 6px gap, per pointer density. */
 .fl-overlay-new { right: 46px; }
+/* The attached-surface chip is the mirror of those controls on the LEFT, level
+   with them, so it reads as part of the panel's chrome rather than as
+   something stacked on the composer. The panel is position:fixed, so it is the
+   positioning context for its whole subtree and the chip can be lifted out of
+   the composer's flow from here. Compact — a header is not a place for a
+   sentence — and max-width ellipsizes a long label instead of colliding with
+   the controls opposite.
+   NOT lifted in the expanded workspace: there the panel's top-left corner is
+   the app stage, so the chip stays in flow above the composer in the rail.
+   Threads mounted outside a panel (VendoPage, an embedded VendoThread) keep
+   the in-flow position for the same reason. */
+.fl-overlay-panel:not([data-vendo-expanded]) .fl-remix-chip {
+  position: absolute; top: 12px; left: 12px; z-index: 5;
+  width: auto; max-width: calc(100% - 130px);
+  padding: 5px 26px 5px 7px; font-size: 11.5px; border-radius: 9px; }
+.fl-overlay-panel:not([data-vendo-expanded]) .fl-remix-chip .fl-queued-rm {
+  top: 50%; right: 4px; transform: translateY(-50%); }
 /* Compact when empty (ui-lane-entry pick P-C): while the thread shows its
    landing (no conversation yet), the panel is a smaller box — greeting,
    starter cards, the bottom-pinned composer, no dead glass — and animates to
@@ -1427,6 +1450,38 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 [data-vendo-slot]:hover .fl-slot-remix, .fl-slot-remix:focus-visible { opacity: 1; pointer-events: auto; }
 .fl-slot-remix:hover { color: var(--vendo-fg); }
 .fl-slot-remix:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+
+/* ---- <Remixable>: the seed that blooms into the pill ----
+   A ~9px muted ✦ at rest in the wrapped element's top-right corner, blooming
+   IN PLACE into the ✦ Remix pill — same corner, same optical centre, so it
+   reads as one mark opening rather than a glyph swapping for a button. The
+   reveal is driven by [data-vendo-revealed] (React state), never :hover: a
+   CSS-only reveal dies on the cursor's way to the pill, which is exactly the
+   travel that has to keep it alive (Remixable holds it open for a grace
+   period). A flat accent pill, never a ring — a projector loses an outline.
+   Both marks sit above the host's own content but never intercept it: the
+   seed is inert, the pill only once revealed. */
+.fl-remixable { position: relative; }
+.fl-remixable-chrome { display: contents; }
+.fl-remix-seed { position: absolute; top: 4px; right: 5px; z-index: 6; pointer-events: none;
+  font-size: 9px; line-height: 1; color: var(--vendo-accent); opacity: .32; }
+.fl-remix-pill { position: absolute; top: 3px; right: 4px; z-index: 6; transform-origin: top right;
+  display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 3px;
+  padding: 3px 8px; background: var(--vendo-accent); color: var(--vendo-accent-fg);
+  font: 600 11px/1.35 var(--vendo-font-family); letter-spacing: .01em; white-space: nowrap;
+  cursor: pointer; opacity: 0; transform: scale(.9); pointer-events: none; }
+.fl-remix-pill-mark { font-size: 10px; line-height: 1; }
+.fl-remixable[data-vendo-revealed] .fl-remix-seed { opacity: 0; transform: scale(1.4); }
+.fl-remixable[data-vendo-revealed] .fl-remix-pill { opacity: 1; transform: scale(1); pointer-events: auto; }
+.fl-remixable[data-vendo-revealed] .fl-remix-pill:active { transform: scale(.97); }
+.fl-remix-pill:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
+/* The bloom itself — guarded, so under reduced motion the two states simply
+   swap with no travel (the .vendo-root[data-vendo-motion="reduced"] rule
+   covers the theme-level dial the same way). */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-remix-seed { transition: opacity 120ms cubic-bezier(.23,1,.32,1), transform 120ms cubic-bezier(.23,1,.32,1); }
+  .fl-remix-pill { transition: opacity 180ms cubic-bezier(.23,1,.32,1), transform 180ms cubic-bezier(.23,1,.32,1); }
+}
 
 /* ---- filled state + overflow menu ---- */
 .fl-slot-filled { position: relative; flex: 1; }

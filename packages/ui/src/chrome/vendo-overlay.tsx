@@ -516,9 +516,13 @@ export function VendoOverlay({
     setOpen(true);
     const fresh = options?.newConversation === true;
     if (fresh) setConversationEpoch(epoch => epoch + 1);
-    if (typeof options?.prompt === "string" && options.prompt.length > 0) {
+    // A remix gesture carries no prompt (the composer opens EMPTY, by design)
+    // but rides the same scoped hand-off, so an attachment parks until this
+    // overlay's composer mounts exactly like a prompt does.
+    const prompt = typeof options?.prompt === "string" ? options.prompt : "";
+    if (prompt.length > 0 || options?.remix !== undefined) {
       deliverPrefill(
-        { prompt: options.prompt, send: options.send === true },
+        { prompt, send: options?.send === true, ...(options?.remix === undefined ? {} : { remix: options.remix }) },
         { scope: prefillScope.current, defer: fresh },
       );
     }

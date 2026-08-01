@@ -223,6 +223,31 @@ markup, never a blank hole.
   caption="A filled slot: the user's pinned Renewals radar mounted in the host page"
 />
 
+## Remixable surfaces
+
+Wrap any element of your own product to mark it remixable:
+
+```tsx
+import { Remixable } from "@vendoai/ui/chrome";
+
+<Remixable name="Rent Roll">
+  <RentRollTable units={units} />
+</Remixable>
+```
+
+At rest a small muted ✦ sits in the element's top-right corner. Hovering (or
+tabbing into) the element blooms it in place into a **✦ Remix** pill, held
+open briefly so the cursor can travel to it. Clicking opens the conversation
+**empty** with the element attached — a `Remixing · Rent Roll` chip in the
+panel chrome that rides with the next message and clears on send. The pill
+never sends anything on its own, and the bloom snaps under
+`prefers-reduced-motion`.
+
+Pass `context` to add one grounding line about what is on screen. Hosts using
+their own element call `openVendoConversation({ remix: { name, context } })`.
+This is not [Slot](#slot)'s `remix` flag, which forks the component pinned in
+that slot; `Remixable` attaches any element to the next ask.
+
 ## Page
 
 The full workspace console: conversation history, the waiting-on-you approval

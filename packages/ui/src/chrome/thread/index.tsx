@@ -321,6 +321,32 @@ export function VendoThread({
     </button>
   ) : null;
 
+  // The surface a <Remixable> gesture attached, riding with the next message.
+  // Rendered beside composerAccessory rather than inside the composer form:
+  // the form's own .fl-dock-anchor is positioned, and inside an overlay panel
+  // the chrome lifts this chip to the panel's top-left corner (chrome-css) so
+  // it reads as part of the panel rather than as something stacked on the
+  // composer. Dismissing it drops the attachment without sending anything.
+  const remixChip = composerApi.remix ? (
+    <div
+      className="fl-queued fl-remix-chip"
+      role="status"
+      aria-live="polite"
+      aria-label={`Remixing: ${composerApi.remix.name}`}
+    >
+      <span className="fl-queued-tag">Remixing</span>
+      <span className="fl-queued-text">{composerApi.remix.name}</span>
+      <button
+        type="button"
+        className="fl-att-rm fl-queued-rm"
+        aria-label={`Stop remixing ${composerApi.remix.name}`}
+        onClick={() => composerApi.setRemix(null)}
+      >
+        ×
+      </button>
+    </div>
+  ) : null;
+
   const composer = (
     <Composer
       composer={composerApi}
@@ -495,6 +521,7 @@ export function VendoThread({
             ) : null}
           </div>
           {errorBanner}
+          {remixChip}
           {composerAccessory}
           {composer}
         </div>
@@ -526,6 +553,7 @@ export function VendoThread({
           working={working}
         />
         {errorBanner}
+        {remixChip}
         {composerAccessory}
         {ribbon}
         {composer}
