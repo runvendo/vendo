@@ -10,6 +10,7 @@ import { automationFlow } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { GrantSetCard } from "./grant-set-card.js";
 import { humanizeToolName } from "./humanize.js";
+import { Money } from "../kit/values.js";
 
 const ENABLE_CELEBRATION_MS = 3_100;
 const REDUCED_ENABLE_CELEBRATION_MS = 900;
@@ -56,10 +57,26 @@ const REHEARSAL_FIRING_LABEL: Record<RehearsalFiring["status"], string> = {
   error: "stopped",
 };
 
-/** One rehearsed step row: reads show what they ran against (the pinned
-    window, or "today's data" when the tool takes no date bounds); simulated
-    writes render as the simulated-action card with their resolved arguments —
-    the exact call the enabled automation would have made, never executed. */
+/** "dining" → "Dining", "Maple Checking" → "Maple Checking": Title-case each
+    word so a lowercase enum label (the spending category) reads as a proper
+    noun while an already-cased account name stays untouched. */
+function titleCase(label: string): string {
+  return label.replace(/\b\w/g, char => char.toUpperCase());
+}
+
+/** The one resolved number a firing surfaces on its single line: the first ok
+    read that carried a numeric summary (a schedule's headline read runs first,
+    e.g. the spending total ahead of the transaction list). */
+function firingHeadline(firing: RehearsalFiring): RehearsalStep["result"] | undefined {
+  return firing.steps.find(step => step.status === "ok" && step.result !== undefined)?.result;
+}
+
+/** One rehearsed step, shown only in a firing's expanded detail: reads show
+    what they ran against (the pinned window, or "today's data" when the tool
+    takes no date bounds) plus a per-item money breakdown when the resolved
+    output had one; simulated writes render as the simulated-action card with
+    their resolved arguments — the exact call the enabled automation would have
+    made, never executed. */
 function RehearsalStepRow({ step }: { step: RehearsalStep }) {
   const name = humanizeToolName(step.tool);
   if (step.status === "simulated") {
@@ -82,29 +99,53 @@ function RehearsalStepRow({ step }: { step: RehearsalStep }) {
     ? step.evaluatedOn === "window" && step.window !== undefined
       ? `${formatRehearsalDay(step.window.from)} → ${formatRehearsalDay(step.window.to)}`
       : step.evaluatedOn === "today"
-        ? "evaluated on today's data"
+        ? "today's data"
         : undefined
     : step.detail;
+  const result = step.status === "ok" ? step.result : undefined;
   return (
-    <div className="fl-act-row">
-      <span className={`fl-act-ic ${step.status === "ok" ? "fl-act-tick" : step.status === "skipped" ? "" : "fl-act-x"}`} aria-hidden="true">
-        {step.status === "ok" ? "✓" : step.status === "skipped" ? "–" : "✕"}
-      </span>
-      <strong className="fl-act-lbl">{name}</strong>
-      <span className="fl-act-sub">
-        {step.status === "ok" ? scope : `${step.status}${scope !== undefined ? ` · ${scope}` : ""}`}
-      </span>
-    </div>
+    <>
+      <div className="fl-act-row">
+        <span className={`fl-act-ic ${step.status === "ok" ? "fl-act-tick" : step.status === "skipped" ? "" : "fl-act-x"}`} aria-hidden="true">
+          {step.status === "ok" ? "✓" : step.status === "skipped" ? "–" : "✕"}
+        </span>
+        <strong className="fl-act-lbl">{name}</strong>
+        <span className="fl-act-sub" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          {scope !== undefined ? <span>{step.status === "ok" ? scope : `${step.status} · ${scope}`}</span> : step.status !== "ok" ? <span>{step.status}</span> : null}
+          {/* A single-value read (no per-item split) carries its number inline;
+              a breakdown renders the total below with its items. */}
+          {result !== undefined && result.breakdown === undefined ? (
+            <strong style={{ color: "var(--vendo-fg)", fontVariantNumeric: "tabular-nums" }}><Money cents={result.totalCents} /></strong>
+          ) : null}
+        </span>
+      </div>
+      {result?.breakdown !== undefined ? (
+        <div className="fl-act-peek">
+          {result.breakdown.map((item, index) => (
+            <div className="fl-act-peek-row" key={`${item.label}-${index}`}>
+              <span className="fl-act-peek-k">{titleCase(item.label)}</span>
+              <span className="fl-act-peek-v"><Money cents={item.cents} /></span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
   );
 }
 
-/** The rehearsal timeline: fired/skipped per date over the trailing 7 days,
-    newest first, with per-firing step detail. Purely a preview — the header
-    says so, and the enable toggle + grant capture stay the one consent path. */
+/** The rehearsal timeline: one line per firing over the trailing 7 days,
+    newest first — date/time, fired status, and the firing's one resolved
+    headline number (a real read's total, formatted in the host's currency).
+    The latest firing's per-step detail (the money breakdown, simulated cards)
+    expands by default; older firings expand on click. Purely a preview — the
+    header says so, and the enable toggle + grant capture stay the one consent
+    path. */
 function RehearsalTimeline({ name, report }: { name: string; report: RehearsalReport }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   const fired = report.firings.filter(firing => firing.status === "fired").length;
   const simulated = report.firings.reduce((count, firing) => count + firing.simulatedActions, 0);
   const newestFirst = report.firings.slice().reverse();
+  const newestKey = newestFirst[0]?.scheduledFor;
   return (
     <div
       className="fl-auto-flow"
@@ -121,23 +162,54 @@ function RehearsalTimeline({ name, report }: { name: string; report: RehearsalRe
       </div>
       {newestFirst.length > 0 ? (
         <div className="fl-act-body" style={{ maxHeight: 320, overflowY: "auto" }}>
-          {newestFirst.map(firing => (
-            <article key={firing.scheduledFor}>
-              <div className="fl-act-row">
-                <span
-                  className={`fl-act-ic ${firing.status === "error" ? "fl-act-x" : "fl-act-tick"}`}
-                  aria-hidden="true"
-                >
-                  {firing.status === "fired" ? "✓" : firing.status === "skipped" ? "–" : "✕"}
-                </span>
-                <strong className="fl-act-lbl">{formatAuditTime(firing.scheduledFor)}</strong>
-                <span className="fl-act-sub">{REHEARSAL_FIRING_LABEL[firing.status]}</span>
-              </div>
-              {firing.steps.map((step, index) => (
-                <RehearsalStepRow key={`${firing.scheduledFor}-${step.id}-${index}`} step={step} />
-              ))}
-            </article>
-          ))}
+          {newestFirst.map(firing => {
+            const key = firing.scheduledFor;
+            const headline = firingHeadline(firing);
+            const hasDetail = firing.steps.length > 0;
+            const opened = hasDetail && (open[key] ?? key === newestKey);
+            return (
+              <article key={key}>
+                <div className="fl-act-row">
+                  <span
+                    className={`fl-act-ic ${firing.status === "error" ? "fl-act-x" : "fl-act-tick"}`}
+                    aria-hidden="true"
+                  >
+                    {firing.status === "fired" ? "✓" : firing.status === "skipped" ? "–" : "✕"}
+                  </span>
+                  <strong className="fl-act-lbl">{formatAuditTime(key)}</strong>
+                  <span className="fl-act-sub" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <span>{REHEARSAL_FIRING_LABEL[firing.status]}</span>
+                    {firing.simulatedActions > 0 ? (
+                      <span>· {firing.simulatedActions} simulated</span>
+                    ) : null}
+                    {headline !== undefined ? (
+                      <strong style={{ color: "var(--vendo-fg)", fontVariantNumeric: "tabular-nums" }}>
+                        <Money cents={headline.totalCents} />
+                      </strong>
+                    ) : null}
+                    {hasDetail ? (
+                      <button
+                        type="button"
+                        aria-expanded={opened}
+                        aria-label={`${opened ? "Hide" : "Show"} details for the ${formatAuditTime(key)} firing`}
+                        onClick={() => setOpen(current => ({ ...current, [key]: !(current[key] ?? key === newestKey) }))}
+                        style={{ border: "none", background: "none", color: "var(--vendo-fg-muted)", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: "0 2px" }}
+                      >
+                        {opened ? "▾" : "▸"}
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+                {opened ? (
+                  <div>
+                    {firing.steps.map((step, index) => (
+                      <RehearsalStepRow key={`${key}-${step.id}-${index}`} step={step} />
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       ) : null}
     </div>

@@ -287,6 +287,72 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     }
   });
 
+  it("summarizes a list read into a headline total + per-item breakdown (shared numeric field only)", async () => {
+    const store = memoryStoreAdapter();
+    const doc = app("app_headline", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
+    });
+    await seedApp(store, doc);
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: [
+        { id: "acc_checking", name: "Maple Checking", balance: 941_220, apy: 0 },
+        { id: "acc_savings", name: "Maple Savings", balance: 2_814_135, apy: 4.25 },
+        { id: "acc_credit", name: "Maple Credit", balance: -128_840 },
+      ],
+    }));
+    const report = await engine(store, tools).rehearse("app_headline", ctx());
+    const step = report.firings[0]?.steps[0];
+    expect(step?.status).toBe("ok");
+    // Total sums the ONE numeric field every element shares (balance); apy is
+    // absent on Maple Credit, so it never enters the sum — and labels come from
+    // the shared `name` field, never a hardcoded per-tool key.
+    expect(step?.result?.totalCents).toBe(941_220 + 2_814_135 - 128_840);
+    expect(step?.result?.breakdown).toEqual([
+      { label: "Maple Checking", cents: 941_220 },
+      { label: "Maple Savings", cents: 2_814_135 },
+      { label: "Maple Credit", cents: -128_840 },
+    ]);
+  });
+
+  it("unwraps a { data: [...] } read and sums the shared amount, labeled by category", async () => {
+    const store = memoryStoreAdapter();
+    const doc = app("app_spending", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "spending", tool: "host_listAccounts" }] },
+    });
+    await seedApp(store, doc);
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: { data: [{ category: "dining", amount: 58_720 }, { category: "transport", amount: 44_140 }] },
+    }));
+    const step = (await engine(store, tools).rehearse("app_spending", ctx())).firings[0]?.steps[0];
+    expect(step?.result?.totalCents).toBe(58_720 + 44_140);
+    expect(step?.result?.breakdown).toEqual([
+      { label: "dining", cents: 58_720 },
+      { label: "transport", cents: 44_140 },
+    ]);
+  });
+
+  it("omits the headline when the read has no single unambiguous numeric field, but still previews it", async () => {
+    const store = memoryStoreAdapter();
+    const doc = app("app_ambiguous", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "rows", tool: "host_listAccounts" }] },
+    });
+    await seedApp(store, doc);
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: [{ name: "A", debit: 100, credit: 5 }, { name: "B", debit: 200, credit: 7 }],
+    }));
+    const step = (await engine(store, tools).rehearse("app_ambiguous", ctx())).firings[0]?.steps[0];
+    expect(step?.result).toBeUndefined();
+    // The resolved output still reaches the client through `preview` — only the
+    // one-number headline is withheld, never invented.
+    expect(step?.preview).toContain("debit");
+  });
+
   it("pins date bounds to the firing's window when the tool accepts from/to; labels the rest today", async () => {
     const store = memoryStoreAdapter();
     const doc = app("app_digest", {

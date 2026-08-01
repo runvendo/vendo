@@ -433,6 +433,56 @@ const rehearsalPreview = (output: Json): string => {
   return text.length > REHEARSAL_PREVIEW_CHARS ? `${text.slice(0, REHEARSAL_PREVIEW_CHARS - 1)}…` : text;
 };
 
+/** Fields tried, in order, for a breakdown row's label — the first that is a
+ *  non-empty string on EVERY element wins. */
+const REHEARSAL_LABEL_FIELDS = ["name", "label", "title", "category", "merchant", "description", "id"];
+
+const isJsonObject = (value: Json): value is Record<string, Json> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** The homogeneous object list a resolved read summarizes over: the output
+ *  itself when it is an array of objects, or the sole array-valued property of
+ *  a wrapper object (`{ data: [...] }`). Undefined for any other shape. */
+const rehearsalObjectList = (output: Json): Array<Record<string, Json>> | undefined => {
+  let candidate: Json = output;
+  if (isJsonObject(candidate)) {
+    const arrays = Object.values(candidate).filter((value): value is Json[] => Array.isArray(value));
+    if (arrays.length !== 1) return undefined;
+    candidate = arrays[0]!;
+  }
+  if (!Array.isArray(candidate) || candidate.length === 0 || !candidate.every(isJsonObject)) return undefined;
+  return candidate as Array<Record<string, Json>>;
+};
+
+/** A shape-driven numeric summary of a real read for the timeline headline:
+ *  the output's homogeneous object list summed over the ONE numeric field
+ *  every element shares (integer minor units — this codebase's cents
+ *  convention). Undefined when there is no such list or the numeric field is
+ *  ambiguous (zero or several shared), so the row shows no number rather than
+ *  an invented one. Never keys off a per-tool field name, so it stays
+ *  host-agnostic. */
+const rehearsalResult = (output: Json): RehearsalStep["result"] => {
+  const list = rehearsalObjectList(output);
+  if (list === undefined) return undefined;
+  let shared: string[] | undefined;
+  for (const row of list) {
+    const numeric = Object.keys(row).filter((key) => typeof row[key] === "number" && Number.isFinite(row[key]));
+    shared = shared === undefined ? numeric : shared.filter((key) => numeric.includes(key));
+    if (shared.length === 0) return undefined;
+  }
+  if (shared === undefined || shared.length !== 1) return undefined;
+  const field = shared[0]!;
+  const labelField = REHEARSAL_LABEL_FIELDS.find((key) =>
+    list.every((row) => typeof row[key] === "string" && (row[key] as string).length > 0));
+  let totalCents = 0;
+  const breakdown = list.map((row, index) => {
+    const cents = Math.round(row[field] as number);
+    totalCents += cents;
+    return { label: labelField !== undefined ? String(row[labelField]) : `Item ${index + 1}`, cents };
+  });
+  return { totalCents, ...(breakdown.length > 1 ? { breakdown } : {}) };
+};
+
 export const createAutomationsEngine = (config: AutomationsConfig): AutomationsEngine => {
   const now = (): Date => config.now?.() ?? new Date();
   const iso = (): string => now().toISOString();
@@ -1619,6 +1669,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           } else {
             row.preview = rehearsalPreview(outcome.output);
             if (descriptor.risk === "read") {
+              const result = rehearsalResult(outcome.output);
+              if (result !== undefined) row.result = result;
               if (bounded) {
                 row.window = { from: String(args["from"]), to: String(args["to"]) };
                 row.evaluatedOn = "window";

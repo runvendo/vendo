@@ -198,6 +198,12 @@ export interface RehearsalStep {
   status: "ok" | "simulated" | "skipped" | "blocked" | "error";
   args?: Record<string, Json>;
   preview?: string;
+  /** A numeric summary of a real read's resolved output (07-automations
+   *  `RehearsalStep.result`): `totalCents` is the timeline row's single-line
+   *  headline, `breakdown` the per-item split for the expandable detail. Both
+   *  integer minor units; absent when the read had no single unambiguous
+   *  numeric field to sum. */
+  result?: { totalCents: number; breakdown?: Array<{ label: string; cents: number }> };
   window?: { from: IsoDateTime; to: IsoDateTime };
   evaluatedOn?: "window" | "today";
   detail?: string;
