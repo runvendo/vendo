@@ -566,8 +566,14 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    automation card's border. Fill the width with the panel's own 16px insets
    (matching .fl-auto-head/.fl-auto-flow) so it reads as one of the automation
    card's sections, not a card jammed in the corner. Scoped to this context so
-   the shared chat/voice/connect approval surfaces are untouched. */
-.fl-automation > .fl-approval { max-width: none; min-width: 0; box-sizing: border-box; margin: 0 16px 16px; }
+   the shared chat/voice/connect approval surfaces are untouched.
+   align-self: stretch + an explicit margin-aware width make the fill EXPLICIT
+   rather than relying on block-box auto-width: the base .fl-approval keeps
+   align-self: flex-start, so the moment this card sits in any flex context
+   (the .fl-automation-approval-slot, a future column layout) it would otherwise
+   shrink to its own content width and float with dead space beside it. */
+.fl-automation > .fl-approval { max-width: none; min-width: 0; box-sizing: border-box;
+  align-self: stretch; width: calc(100% - 32px); margin: 0 16px 16px; }
 .fl-automation-approval { padding: 14px; }
 .fl-auto-approval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .fl-auto-approval-heading { min-width: 0; }
