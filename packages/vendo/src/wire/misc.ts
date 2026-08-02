@@ -59,33 +59,14 @@ async function tickAuthorized(request: Request): Promise<boolean> {
 
 /** The development-only injection seams. Each handler guards on its composed
     dependency and falls through otherwise: production handlers receive no
-    runtimeCapture dependency / no development flag, so these answer the
-    ordinary 404 — there is no guarded-but-mounted production endpoint. */
+    development flag, so these answer the ordinary 404 — there is no
+    guarded-but-mounted production endpoint. */
 export const devRoutes: RouteEntry[] = [
-  route("POST", "/dev/remixable-source", async ({ request, deps, context }) => {
-    if (deps.runtimeCapture === undefined) return undefined;
-    const body = await requestJson(request);
-    // Capture writes .vendo/remixable baselines on the developer's disk, so
-    // it requires a HOST-resolved principal — an anonymous visitor's minted
-    // ephemeral session is not enough, even in a development composition.
-    const captureContext = await context("app");
-    if (captureContext.principal.ephemeral === true) {
-      return json({ error: { code: "blocked", message: "runtime capture requires a host-resolved principal" } }, 401);
-    }
-    if (typeof body["exportable"] !== "boolean") {
-      throw new VendoError("validation", "exportable must be a boolean");
-    }
-    return json(await deps.runtimeCapture.capture({
-      slot: string(body["slot"], "slot"),
-      source: string(body["source"], "source"),
-      exportable: body["exportable"],
-    }));
-  }),
   // 06-apps §9 — the documented LOCAL injection seam for in-client approval
   // records (demos and dev; Cloud's review console mints these in
   // production). Development compositions only: production handlers fall
-  // through to the ordinary 404, exactly like /dev/remixable-source, so no
-  // production surface can self-approve an app into the host page.
+  // through to the ordinary 404, so no production surface can self-approve
+  // an app into the host page.
   route("POST", "/dev/inclient-approval", async ({ request, deps, context }) => {
     if (!deps.development) return undefined;
     const body = await requestJson(request);

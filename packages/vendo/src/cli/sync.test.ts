@@ -18,7 +18,7 @@ const report = (
   tools: { added: [], removed: [], changed },
   breaking,
   pins: { captured: [], drifted: [] },
-  unresolvedPins: [],
+  remixableErrors: [],
   catalog: { discovered: 2, registered: 1 },
   warnings: [],
 });
@@ -206,24 +206,20 @@ describe("vendo sync", () => {
     expect(messages.errors).toContain("warning: failed to push sync report: cloud offline");
   });
 
-  it("warns about every unresolved remixable slot as experimental and exits zero", async () => {
+  it("prints every remixable wrapper error and exits two", async () => {
     const errors: string[] = [];
     const output = { log() {}, error(message: string) { errors.push(message); } };
-    const unresolved = {
+    const failed = {
       ...report(),
-      unresolvedPins: [{
-        slot: "InlineCard",
-        component: "() => null",
-        reason: "inline-component" as const,
-        hint: "run the host in dev with Vendo mounted to runtime-capture it",
-      }],
+      remixableErrors: [
+        "src/app/page.tsx:4 \u2014 <Remixable> must wrap exactly one component element; extract it into a component and wrap that",
+      ],
     };
-    // Remix is experimental: the failed capture warns loudly but never fails
-    // the host's build.
-    expect(await runSync({ targetDir: ".", output, sync: async () => unresolved })).toBe(0);
-    expect(errors.join("\n")).toContain("experimental");
-    expect(errors.join("\n")).toContain("InlineCard [inline-component]");
-    expect(errors.join("\n")).toContain("run the host in dev with Vendo mounted to runtime-capture it");
+    // An uncapturable wrapper is a defended constraint (final-shape spec
+    // 2026-08-02): the sync run fails loudly, never degrades silently.
+    expect(await runSync({ targetDir: ".", output, sync: async () => failed })).toBe(2);
+    expect(errors.join("\n")).toContain("src/app/page.tsx:4");
+    expect(errors.join("\n")).toContain("extract it into a component and wrap that");
   });
 
   it("names drifted slots and says forks stay on the old capture until rebased", async () => {
@@ -240,20 +236,17 @@ describe("vendo sync", () => {
     // Drift alone never fails the sync and never mutates any fork.
   });
 
-  it("still pushes --report and keeps blast-radius exit three when slots are also unresolved", async () => {
+  it("still pushes --report and keeps blast-radius exit three when wrappers also fail", async () => {
     const messages = captureOutput();
     const push = vi.fn(async () => {});
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       impact: [{ tool: "host_x", apps: [{ id: "app_x", title: "X" }], automations: [], grants: 0 }],
     }), { status: 200 })) as typeof fetch;
-    const unresolved = {
+    const failed = {
       ...report([{ tool: "host_x", change: "removed" as const }]),
-      unresolvedPins: [{
-        slot: "InlineCard",
-        component: "() => null",
-        reason: "inline-component" as const,
-        hint: "run the host in dev with Vendo mounted to runtime-capture it",
-      }],
+      remixableErrors: [
+        "src/app/page.tsx:4 \u2014 <Remixable> must wrap exactly one component element; extract it into a component and wrap that",
+      ],
     };
 
     const exit = await runSync({
@@ -264,14 +257,14 @@ describe("vendo sync", () => {
       output: messages.output,
       fetchImpl,
       push,
-      sync: async () => unresolved,
+      sync: async () => failed,
     });
 
-    // Unresolved slots never mask the more severe blast-radius signal, and the
+    // Wrapper errors never mask the more severe blast-radius signal, and the
     // pushed report still carries them for the Cloud console.
     expect(exit).toBe(3);
-    expect(push).toHaveBeenCalledWith(expect.objectContaining({ report: unresolved }));
-    expect(messages.errors.join("\n")).toContain("InlineCard [inline-component]");
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ report: failed }));
+    expect(messages.errors.join("\n")).toContain("src/app/page.tsx:4");
   });
 
   it("prints the init-style catalog summary", async () => {
@@ -306,26 +299,23 @@ describe("vendo sync", () => {
     });
   });
 
-  it("--json carries unresolved slots in the report, exits zero, and keeps stdout to one object", async () => {
+  it("--json carries wrapper errors in the report, exits two, and keeps stdout to one object", async () => {
     const messages = captureOutput();
-    const unresolved = {
+    const failed = {
       ...report(),
-      unresolvedPins: [{
-        slot: "InlineCard",
-        component: "() => null",
-        reason: "inline-component" as const,
-        hint: "run the host in dev with Vendo mounted to runtime-capture it",
-      }],
+      remixableErrors: [
+        "src/app/page.tsx:4 — <Remixable> must wrap exactly one component element; extract it into a component and wrap that",
+      ],
     };
 
-    expect(await runSync({ targetDir: ".", json: true, output: messages.output, sync: async () => unresolved })).toBe(0);
+    expect(await runSync({ targetDir: ".", json: true, output: messages.output, sync: async () => failed })).toBe(2);
 
     expect(messages.logs).toHaveLength(1);
     expect(messages.errors).toHaveLength(0);
     expect(JSON.parse(messages.logs[0]!)).toMatchObject({
-      ok: true,
-      exitCode: 0,
-      report: { unresolvedPins: [{ slot: "InlineCard", reason: "inline-component" }] },
+      ok: false,
+      exitCode: 2,
+      report: { remixableErrors: [expect.stringContaining("src/app/page.tsx:4")] },
       notes: [],
     });
   });

@@ -44,6 +44,8 @@ export interface SyncOptions {
 /** `sync --json` — the one machine-readable object printed on stdout. */
 export interface SyncJsonResult {
   ok: boolean;                       // exitCode === 0
+  /** 2 = uncapturable `<Remixable>` wrapper, or breaking changes under
+   *  --strict; 3 = breaking changes with saved references. */
   exitCode: 0 | 2 | 3;
   report: SyncReportWithWarnings;
   /** [] = nothing referenced the changed tools; null = impact unknown (dev server unreachable). */
@@ -128,16 +130,14 @@ async function sync(options: SyncOptions): Promise<number> {
         output.log(`drifted: ${report.pins.drifted.join(", ")} — existing forks stay on the old capture until each owner rebases (POST /apps/:id/rebase-pin or the vendo_apps_rebase_pin agent tool)`);
       }
     }
-    // Remix is experimental: unresolved slots warn loudly (slot + reason +
-    // fix hint) but never fail the run — breaking a host's build over a
-    // feature labeled experimental is the wrong contract. When remix
-    // graduates, this returns to a hard exit so the remixable promise is
-    // enforced at dev time. In --json mode the human lines are dropped: the
-    // pins ride in report.unresolvedPins.
-    if (report.unresolvedPins.length > 0 && !json) {
-      output.error("experimental: unresolved remixable slots (remix is experimental — these components cannot be forked until resolved):");
-      for (const pin of report.unresolvedPins) {
-        output.error(`  ${pin.slot} [${pin.reason}]: ${pin.hint}`);
+    // A `<Remixable>` wrapper that cannot capture is a hard error (final-shape
+    // spec 2026-08-02): the constraint — one statically importable child — is
+    // defended loudly at sync time, never degraded silently. In --json mode
+    // the human lines are dropped: the errors ride in report.remixableErrors.
+    if (report.remixableErrors.length > 0 && !json) {
+      output.error("error: <Remixable> wrappers that cannot be captured:");
+      for (const remixableError of report.remixableErrors) {
+        output.error(`  ${remixableError}`);
       }
     }
 
@@ -224,7 +224,7 @@ async function sync(options: SyncOptions): Promise<number> {
       }
     }
 
-    let exitCode: SyncJsonResult["exitCode"] = 0;
+    let exitCode: SyncJsonResult["exitCode"] = report.remixableErrors.length > 0 ? 2 : 0;
     if (options.strict === true && report.breaking.length > 0) {
       if (!json) for (const breaking of report.breaking) output.error(`breaking: ${breaking.tool} ${breaking.change}`);
       const breakingTools = new Set(report.breaking.map((breaking) => breaking.tool));
@@ -250,7 +250,7 @@ async function sync(options: SyncOptions): Promise<number> {
       const result: SyncJsonResult = {
         ok: exitCode === 0,
         exitCode,
-        report: { tools: { added: [], removed: [], changed: [] }, breaking: [], pins: { captured: [], drifted: [] }, unresolvedPins: [], catalog: { discovered: 0, registered: 0 }, warnings: [] },
+        report: { tools: { added: [], removed: [], changed: [] }, breaking: [], pins: { captured: [], drifted: [] }, remixableErrors: [], catalog: { discovered: 0, registered: 0 }, warnings: [] },
         impact: null,
         notes,
         error: message,

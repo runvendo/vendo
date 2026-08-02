@@ -170,7 +170,6 @@ import { HostedSessionDoorsMissingError, hostedStore, type HostedStore } from ".
 // adapters: a host can pass it explicitly via createVendo({ store }) with its
 // own options instead of relying on the VENDO_API_KEY default.
 export { hostedStore, type HostedStore, type HostedStoreOptions } from "./hosted-store.js";
-import { createRuntimeCapture } from "./runtime-capture.js";
 import {
   BASE_PATH,
   VERSION,
@@ -314,15 +313,15 @@ export interface CreateVendoConfig {
   judge?: Judge;
   secrets?: SecretsProvider;
   telemetry?: boolean;
-  /** Development-only source capture. NODE_ENV=development enables this with
-      cwd/.vendo defaults; an explicit object supplies a host root for adapters
-      whose process cwd differs. `false` disables the environment default. */
-  development?: boolean | { root?: string; out?: string };
+  /** Development-only injection seams (e.g. /dev/inclient-approval).
+      NODE_ENV=development enables them; `false` disables the environment
+      default. */
+  development?: boolean;
   /** Unified try surface — the project root the `.vendo/` profile is read
       under: the actions files (tools.json/overrides.json via the actions
       block's `dir`), theme.json, brief.md, catalog.json, the
-      per-generation design-rules.md read, the remixable pin baselines, and the
-      development-capture defaults all resolve against it. Unset keeps today's
+      per-generation design-rules.md read, and the remixable pin baselines
+      all resolve against it. Unset keeps today's
       behavior (the process cwd), so `npx vendo try` can mount a real
       composition over a profile living in a temp directory without chdir. */
   profileDir?: string;
@@ -2225,13 +2224,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const development = config.development !== undefined
     ? config.development !== false
     : isDevelopmentEnv;
-  // profileDir fills the capture-root default (its out then derives under it);
-  // an explicit development.root/out always wins.
-  const developmentPaths = {
-    ...(config.profileDir === undefined ? {} : { root: config.profileDir }),
-    ...(typeof config.development === "object" ? config.development : {}),
-  };
-  const runtimeCapture = development ? createRuntimeCapture(developmentPaths) : null;
   const handler = createWireHandler({
     principal: resolvePrincipal,
     ready,
@@ -2263,7 +2255,6 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     sweep: runSweep,
     sweepEnabled,
     ...(door === undefined ? {} : { door }),
-    ...(runtimeCapture === null ? {} : { runtimeCapture }),
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
       // → the wire's own origin, learned from the first VALIDATED request and

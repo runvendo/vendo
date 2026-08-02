@@ -64,9 +64,9 @@ describe("vendoSync host fixture", () => {
       captured: ["AliasedCard", "BarrelCard", "InvoiceCard", "NamespaceCard"],
       drifted: [],
     });
-    expect(first.unresolvedPins).toEqual([]);
+    expect(first.remixableErrors).toEqual([]);
     const invoicePin = JSON.parse(await fs.readFile(path.join(out, "remixable", "InvoiceCard.json"), "utf8"));
-    expect(invoicePin).toMatchObject({ slot: "InvoiceCard", exportable: true });
+    expect(invoicePin).toMatchObject({ slot: "InvoiceCard", exportable: false });
     expect(invoicePin.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(await fs.readFile(path.join(out, "remixable", "AliasedCard.json"), "utf8")).toContain("Aliased import");
     expect(await fs.readFile(path.join(out, "remixable", "BarrelCard.json"), "utf8")).toContain("Barrel chain");
@@ -82,6 +82,6 @@ describe("vendoSync host fixture", () => {
     expect(second.tools).toEqual({ added: [], removed: [], changed: [] });
     expect(second.breaking).toEqual([]);
     expect(second.pins).toEqual({ captured: [], drifted: [] });
-    expect(second.unresolvedPins).toEqual([]);
+    expect(second.remixableErrors).toEqual([]);
   });
 });

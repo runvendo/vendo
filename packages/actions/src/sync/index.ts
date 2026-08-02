@@ -12,7 +12,6 @@ import {
   type SyncReport,
   type ToolOverride,
   type ToolsFile,
-  type UnresolvedPin,
 } from "../formats.js";
 import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged, type SourcedExtractedTool } from "./common.js";
 import { compilerFloorWarning } from "./compiler-gate.js";
@@ -23,7 +22,10 @@ import { capturePins } from "./pins.js";
 
 export type SyncReportWithWarnings = SyncReport & {
   warnings: string[];
-  unresolvedPins: UnresolvedPin[];
+  /** Loud `<Remixable>` wrapper errors ("file:line — message"). The CLI fails
+   *  the run on them: a wrapper that cannot capture is a defended constraint,
+   *  not a degradation. */
+  remixableErrors: string[];
 };
 
 function definedOverride(override: ToolOverride): ToolOverride {
@@ -281,7 +283,7 @@ export async function vendoSync(options: {
   const report: SyncReportWithWarnings = {
     ...comparison,
     pins: { captured: pins.captured, drifted: pins.drifted },
-    unresolvedPins: pins.unresolved,
+    remixableErrors: pins.errors,
     catalog: { discovered: catalogScan.discovered, registered: catalogScan.registered },
     warnings,
   };

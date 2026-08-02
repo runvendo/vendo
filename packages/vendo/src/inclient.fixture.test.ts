@@ -85,23 +85,21 @@ describe.sequential("06-apps §9 — the in-client promotion journey through the
   return <article><span>Net worth</span><strong>$1.2M</strong></article>;
 }\n`;
     await writeFile(join(root, "src", "MapleNetWorthCard.tsx"), hostSource);
-    await writeFile(join(root, "src", "host-catalog.tsx"), `
+    await writeFile(join(root, "src", "page.tsx"), `
+import { Remixable } from "@vendoai/ui/chrome";
 import MapleNetWorthCard from "./MapleNetWorthCard";
-export const hostCatalog = [{
-  name: "net-worth-card",
-  component: MapleNetWorthCard,
-  remixable: true,
-  exportable: true,
-}];
+export default function Page() {
+  return <Remixable><MapleNetWorthCard /></Remixable>;
+}
 `);
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
-    expect(synced.pins.captured).toEqual(["net-worth-card"]);
+    expect(synced.pins.captured).toEqual(["MapleNetWorthCard"]);
 
-    const componentName = pinComponentName("net-worth-card");
+    const componentName = pinComponentName("MapleNetWorthCard");
     const remixedSource = hostSource.replace("$1.2M", "$1.2M — remixed");
     const model = scriptedModel([
       // Edit 1: fork the pin (copies captured source verbatim, records the pin).
-      '<Edit><ForkPin slot="net-worth-card" into="root"/></Edit>',
+      '<Edit><ForkPin slot="MapleNetWorthCard" into="root"/></Edit>',
       // Edit 2: change the fork — the reviewable delta the ship-diff must show.
       `<Edit><Island name="${componentName}">${remixedSource}</Island></Edit>`,
       // Edit 3: any content change after approval — must invalidate the pin.
@@ -116,7 +114,7 @@ export const hostCatalog = [{
       model,
       principal: async () => principal,
       store,
-      development: { root },
+      development: true,
     });
     const ctx = { principal, venue: "app" as const, presence: "present" as const, sessionId: "session_journey" };
 
@@ -146,7 +144,7 @@ export const hostCatalog = [{
       appId,
       versionHash: appVersionHash(remixed.app),
       pins: [{
-        slot: "net-worth-card",
+        slot: "MapleNetWorthCard",
         component: componentName,
         drifted: false,
       }],

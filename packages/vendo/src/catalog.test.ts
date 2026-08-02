@@ -88,7 +88,6 @@ describe("normalizeCatalogConfig (01 §14 registry form + derivation)", () => {
         description: "Use for one headline metric.",
         props: z.object({ value: z.number() }),
         examples: ["<MetricCard value={42} />"],
-        remixable: true,
       },
     };
     const catalog = normalizeCatalogConfig(registry);
@@ -97,7 +96,6 @@ describe("normalizeCatalogConfig (01 §14 registry form + derivation)", () => {
       name: "MetricCard",
       description: "Use for one headline metric.",
       examples: ["<MetricCard value={42} />"],
-      remixable: true,
     });
     expect(catalog[0]).not.toHaveProperty("component");
     expect(catalog[0]).not.toHaveProperty("props");

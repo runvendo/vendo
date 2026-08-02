@@ -2270,7 +2270,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       async fork(input, ctx) {
         const baseline = (config.pinBaselines ?? []).find(({ slot }) => slot === input.slot);
         if (baseline === undefined) {
-          throw new VendoError("not-found", `remixable slot "${input.slot}" has no captured baseline; register the component as remixable and run vendo sync`);
+          throw new VendoError("not-found", `remixable slot "${input.slot}" has no captured baseline; wrap the component in <Remixable> and run vendo sync`);
         }
         const forkOnto = (base: AppDocument): AppDocument => {
           const forked = structuredClone(base);

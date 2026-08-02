@@ -64,7 +64,7 @@ export interface CreateVendoConfig {
   judge?: Judge;
   secrets?: SecretsProvider;
   telemetry?: boolean;
-  development?: boolean | { root?: string; out?: string }; // dev-only source capture
+  development?: boolean;    // dev-only injection seams
   profileDir?: string;        // the project root .vendo/ is read under
   fetch?: typeof fetch;       // the fetch host tool bindings execute through
   profile?: {                 // the same .vendo/ pieces, in memory (filesystem-less venues)

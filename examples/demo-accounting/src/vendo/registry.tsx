@@ -57,18 +57,3 @@ export const cadenceRegistry = {
     examples: ['{"missingCount":8,"clientCount":12}'],
   },
 } satisfies ComponentRegistry;
-
-/**
- * Remixable host slots (06-apps §8), statically captured by `vendo sync` into
- * `.vendo/remixable/<slot>.json`. `sampleProps` mirror the deterministic demo
- * seed so a fork previews with the numbers the real dashboard shows.
- */
-export const cadenceRemixableComponents = [
-  {
-    name: "CadenceMissingDocsHero",
-    component: MissingDocsHero,
-    remixable: true,
-    exportable: true,
-    sampleProps: { missingCount: 8, clientCount: 12 },
-  },
-];

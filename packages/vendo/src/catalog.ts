@@ -134,7 +134,6 @@ function normalizeEntry(entry: RegisteredComponent): NormalizedCatalogEntry {
     ...(entry.propsSchema === undefined ? {} : { propsSchema: entry.propsSchema }),
     ...(derived === undefined ? {} : { propsJsonSchema: derived }),
     ...(entry.examples === undefined ? {} : { examples: entry.examples }),
-    ...(entry.remixable === undefined ? {} : { remixable: entry.remixable }),
   };
 }
 
@@ -154,7 +153,6 @@ export function normalizeCatalogConfig(
     description: entry.description,
     ...(entry.props === undefined ? {} : { propsSchema: entry.props }),
     ...(entry.examples === undefined ? {} : { examples: entry.examples }),
-    ...(entry.remixable === undefined ? {} : { remixable: entry.remixable }),
   }));
 }
 

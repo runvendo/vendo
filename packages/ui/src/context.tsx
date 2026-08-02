@@ -81,7 +81,7 @@ function isRegistryEntry(value: ComponentType | ComponentRegistryEntry): value i
 }
 
 /** Extract the name→component map from either components-input form. Registry
- * data fields (description, props schema, examples, remixable) are server-side
+ * data fields (description, props schema, examples) are server-side
  * concerns the client ignores (01 §14). */
 export function hostComponentMap(components: HostComponentsInput | undefined): Record<string, ComponentType> {
   if (components === undefined) return {};

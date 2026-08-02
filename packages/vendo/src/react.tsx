@@ -98,7 +98,6 @@ export {
 // does not resolve for them (same TS2307 story as the registry's
 // ComponentRegistry import).
 export { VendoOverlay, type VendoOverlayProps } from "@vendoai/ui/chrome";
-export { remixable, type RemixableRegistration, type RemixableReportOptions } from "./remixable.js";
 
 type ProviderProps = ComponentProps<typeof VendoProvider>;
 
