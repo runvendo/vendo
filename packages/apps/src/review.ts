@@ -156,11 +156,15 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
 
   const venueStateFor = async (doc: AppDocument): Promise<InClientVenueState | undefined> => {
     const base = await deps.approvals.venueStateFor(doc);
-    if (!isReviewKind(doc)) return base;
-    // The opener may be serving an older approved snapshot (serveDocFor), so
-    // the review standing speaks about the CURRENT stored version.
+    // The kind — and the standing — belong to the CURRENT stored version: the
+    // opener may be serving an older approved snapshot whose own pins predate
+    // the review-kind fork, and deciding from the served document would
+    // silently drop the "sent for review" indicator. A granted serve is the
+    // one case where the snapshot's kind can differ, so it re-reads too.
+    if (!isReviewKind(doc) && base?.granted !== true) return base;
     const record = await deps.store.records("vendo_apps").get(doc.id);
     const current = record === null ? doc : classifyLegacyPlacements(documentFromRecord(record), deps.baselines);
+    if (!isReviewKind(current)) return base;
     const currentHash = appVersionHash(current);
     if (base?.granted === true) {
       if (base.versionHash === currentHash) return base;
@@ -208,7 +212,9 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
           slot,
           versionHash,
           submittedAt: record.updatedAt,
-          resubmissions: (await rejectionsFor(doc.id)).length,
+          // Distinct rejected VERSIONS, not rejection rows: one resubmission
+          // per superseded rejection even if legacy rows doubled up.
+          resubmissions: new Set((await rejectionsFor(doc.id)).map((rejection) => rejection.versionHash)).size,
           shipDiff: computeShipDiff(doc, baselines()),
         });
       }
@@ -227,6 +233,11 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
       const versionHash = appVersionHash(doc);
       if ((await deps.approvals.verdictFor(doc)).granted) {
         throw new VendoError("conflict", `version ${versionHash} is already approved`);
+      }
+      // A rejected version already left the queue — a second note for the
+      // same version would only inflate the resubmission count.
+      if ((await standingFor(doc.id, versionHash)).status === "rejected") {
+        throw new VendoError("conflict", `version ${versionHash} is already rejected`);
       }
       const rejection = remixRejectionSchema.parse({
         appId: doc.id,

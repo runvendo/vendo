@@ -164,6 +164,37 @@ describe("approval swaps the served version", () => {
     expect((swapped.payload as { inClient?: { review?: unknown } }).inClient?.review).toBeUndefined();
   });
 
+  it("keeps the pending rider when the served approved version predates the review-kind fork", async () => {
+    // v1 has NO pins at all — approved as a plain app. The review-kind fork
+    // arrives in v2. The venue must still say "sent for review" even though
+    // the SERVED document carries no review-kind pin of its own.
+    const { store, runtime } = setup();
+    const v1 = doc("transfer-panel", {
+      pins: undefined,
+      tree: {
+        formatVersion: "vendo-genui/v2",
+        root: "root",
+        nodes: [{ id: "root", component: "Stack", source: "prewired" }],
+      },
+      components: undefined,
+    });
+    await seedAppRow(store, v1, owner.principal.subject);
+    await runtime.inClient.approve({ appId: v1.id, approvedBy: "host-console" }, owner);
+    const v1Hash = appVersionHash(await runtime.get(v1.id, owner) as AppDocument);
+
+    const forked = await runtime.pins.fork({ appId: v1.id, slot: "transfer-panel" }, owner);
+    const v2Hash = appVersionHash(forked.app);
+    expect(v2Hash).not.toBe(v1Hash);
+
+    const surface = await runtime.open(v1.id, owner);
+    if (surface.kind !== "tree") throw new Error("expected tree surface");
+    expect((surface.payload as { inClient?: unknown }).inClient).toMatchObject({
+      granted: true,
+      versionHash: v1Hash,
+      review: { status: "pending", versionHash: v2Hash },
+    });
+  });
+
   it("an approval whose version left the capped history fails closed to pending-review, never the jail", async () => {
     const store = memoryStore();
     const approvals = createInClientApprovals(store);
@@ -214,6 +245,15 @@ describe("rejection", () => {
 
     await expect(runtime.review.reject({ appId: "app_missing", note: "no" }, reviewer))
       .rejects.toMatchObject({ code: "not-found" });
+  });
+
+  it("refuses a second rejection of the same version — the count stays honest", async () => {
+    const { store, runtime } = setup();
+    const app = doc("transfer-panel");
+    await seedAppRow(store, app, owner.principal.subject);
+    await runtime.review.reject({ appId: app.id, note: "First note." }, reviewer);
+    await expect(runtime.review.reject({ appId: app.id, note: "Second note." }, reviewer))
+      .rejects.toMatchObject({ code: "conflict" });
   });
 
   it("records the note, surfaces it to the user, drops the version from the queue, and audits under the owner", async () => {

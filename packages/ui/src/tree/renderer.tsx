@@ -643,7 +643,13 @@ function StatefulTreeView({
 
   // 06-apps §9 — a version change under an existing approval must be LOUD: the
   // surface drops back to the sandbox and says so, in-surface, above the tree.
-  const dropBackNotice = inClient !== undefined && inClient.granted === false && inClient.reason === "version-changed"
+  // Every ungranted reason except review-kind's pending-review (returned
+  // above) keeps this notice, so an unknown future reason still says
+  // SOMETHING rather than silently jailing.
+  const dropBackNotice = inClient !== undefined && inClient.granted === false
+    // Widened: the payload is a wire value, so a FUTURE ungranted reason this
+    // union does not know yet must still drop back loudly, not silently jail.
+    && (inClient.reason as string) !== "pending-review"
     ? (
       <ContainedNotice label="In-client approval invalidated" outcome="blocked">
         This app changed since it was approved for the host page. It is running in the sandbox again until the new version is re-approved.

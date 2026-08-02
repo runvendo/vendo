@@ -162,6 +162,19 @@ export default function Page() {
     const masked = await vendo.handler(request("GET", "/apps/review-queue"));
     expect(masked.status).toBe(200);
     expect(await masked.json()).toEqual([]);
+    // The seam carries the in-client approval seam's FULL scoping: outside a
+    // development composition it is masked for EVERY caller — production
+    // reviews ride Cloud's console or the self-hoster's own admin route over
+    // the runtime surface, never this door.
+    const production = createVendo({
+      principal: async (req): Promise<Principal | null> => {
+        const subject = req.headers.get(USER_HEADER);
+        return subject === null ? null : { kind: "user", subject };
+      },
+      store,
+    });
+    expect(await (await production.handler(request("GET", "/apps/review-queue", { as: reviewer }))).json()).toEqual([]);
+    expect((await production.handler(request("POST", `/apps/${appId}/reject-review`, { as: reviewer, body: { note: "nope" } }))).status).toBe(404);
 
     // 4. Rejection: the note is required; an anonymous caller is masked out.
     const noteless = await vendo.handler(request("POST", `/apps/${appId}/reject-review`, { as: reviewer, body: {} }));
