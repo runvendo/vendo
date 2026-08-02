@@ -222,6 +222,20 @@ describe("vendo sync", () => {
     expect(errors.join("\n")).toContain("extract it into a component and wrap that");
   });
 
+  it("prints one line per pruned stale baseline", async () => {
+    const messages = captureOutput();
+    const pruned = {
+      ...report(),
+      pins: { captured: [], drifted: [], pruned: ["MapleNetWorthCard", "CadenceMissingDocsHero"] },
+    };
+    expect(await runSync({ targetDir: ".", output: messages.output, sync: async () => pruned })).toBe(0);
+    const prunedLines = messages.logs.filter((line) => line.startsWith("pruned:"));
+    expect(prunedLines).toHaveLength(2);
+    expect(prunedLines[0]).toContain("MapleNetWorthCard");
+    expect(prunedLines[1]).toContain("CadenceMissingDocsHero");
+    expect(prunedLines[0]).toContain("stale baseline deleted");
+  });
+
   it("names drifted slots and says forks stay on the old capture until rebased", async () => {
     const messages = captureOutput();
     const drifted = {

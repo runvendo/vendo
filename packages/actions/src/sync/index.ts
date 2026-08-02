@@ -282,7 +282,11 @@ export async function vendoSync(options: {
   if (floorWarning !== null) warnings.push(floorWarning);
   const report: SyncReportWithWarnings = {
     ...comparison,
-    pins: { captured: pins.captured, drifted: pins.drifted },
+    pins: {
+      captured: pins.captured,
+      drifted: pins.drifted,
+      ...(pins.pruned.length === 0 ? {} : { pruned: pins.pruned }),
+    },
     remixableErrors: pins.errors,
     catalog: { discovered: catalogScan.discovered, registered: catalogScan.registered },
     warnings,

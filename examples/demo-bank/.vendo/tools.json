@@ -134,7 +134,7 @@
         "argsIn": "body"
       },
       "note": "input schema partially interpreted; permissive where unknown (appId: unsupported type (unknown); slot: unsupported type (unknown))",
-      "srcHash": "sha256:3396acc44548ff2d621f3101ad7a9e601e96a3b1b1e5ee2cd6c097a6193a4eea"
+      "srcHash": "sha256:2b2382a49fa37795b8d0c105ee6d8a1d8b6c58133d4de957e7fd858b034cb4f1"
     },
     {
       "name": "host_demo_reset_create",

@@ -559,6 +559,8 @@ export interface BreakingChange {
 export interface SyncReport {
   tools: { added: string[]; removed: string[]; changed: string[] };
   breaking: BreakingChange[];
-  pins: { captured: string[]; drifted: string[] };
+  /** `pruned` (absent when empty) — stale baselines deleted because no
+   *  `<Remixable>` wrapper names their slot anymore. */
+  pins: { captured: string[]; drifted: string[]; pruned?: string[] };
   catalog: { discovered: number; registered: number };
 }

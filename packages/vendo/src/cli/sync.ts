@@ -124,6 +124,9 @@ async function sync(options: SyncOptions): Promise<number> {
       for (const warning of report.warnings) output.error(`warning: ${warning}`);
       output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
       output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
+      for (const slot of report.pins.pruned ?? []) {
+        output.log(`pruned: ${slot} — stale baseline deleted (no <Remixable> wrapper names this slot anymore)`);
+      }
       output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
       if (report.pins.drifted.length > 0) {
         // 06-apps §8 — drift never auto-rebases: the fork's owner decides.

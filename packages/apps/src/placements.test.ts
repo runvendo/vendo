@@ -68,10 +68,15 @@ describe("pins/placements split — legacy-row classification", () => {
     expect(classified.pins).toEqual([{ slot: SLOT, base: "sha256:maple-base" }]);
     expect(classified.placements).toEqual(["home-hero"]);
 
-    // A drifted fork (captured slot, superseded hash) is provenance the drift
-    // and rebase surfaces must keep seeing — never a placement.
+    // A drifted fork (superseded hash, forked component on the document — a
+    // real fork always carries its component) is provenance the drift and
+    // rebase surfaces must keep seeing — never a placement. (Checker round-1
+    // ruling 2026-08-02: the slot name proves nothing; the component does.)
     const drifted = classifyLegacyPlacements(
-      seedDoc("app_drifted", { pins: [{ slot: SLOT, base: "sha256:maple-old" }] }),
+      seedDoc("app_drifted", {
+        pins: [{ slot: SLOT, base: "sha256:maple-old" }],
+        components: { [pinComponentName(SLOT)]: SOURCE },
+      }),
       [baseline],
     );
     expect(drifted.pins).toEqual([{ slot: SLOT, base: "sha256:maple-old" }]);
@@ -91,6 +96,26 @@ describe("pins/placements split — legacy-row classification", () => {
       components: { [pinComponentName("gone-slot")]: SOURCE },
     });
     expect(classifyLegacyPlacements(orphanedFork, [baseline])).toBe(orphanedFork);
+  });
+
+  it("classifies a fabricated hash on a CAPTURED slot as a placement — mounts, no drift", async () => {
+    const store = memoryStore();
+    // The pre-split workaround sometimes landed apps in a slot that IS
+    // captured, with a fabricated base. The contract's test is the HASH
+    // (checker round-1 ruling 2026-08-02): no baseline hash matches and no
+    // forked component rides the document, so this is a placement — it
+    // mounts, and it never raises a drift warning.
+    await seedAppRow(
+      store,
+      seedDoc("app_captured_slot", { pins: [{ slot: SLOT, base: "sha256:fabricated" }] }),
+      ctx.principal.subject,
+    );
+    const runtime = runtimeWith(store);
+
+    const listed = await runtime.list(ctx);
+    expect(listed[0]?.placements).toEqual([SLOT]);
+    expect(listed[0]?.pins).toBeUndefined();
+    await expect(runtime.pins.drift("app_captured_slot", ctx)).resolves.toEqual([]);
   });
 
   it("reads a stored legacy row as a placement: slot discovery mounts it, drift stays quiet", async () => {
@@ -127,7 +152,12 @@ describe("pins/placements split — legacy-row classification", () => {
     const store = memoryStore();
     await seedAppRow(
       store,
-      seedDoc("app_drift", { pins: [LEGACY_ROW, { slot: SLOT, base: "sha256:maple-old" }] }),
+      // The drifted fork carries its component, as every real fork does —
+      // that is what keeps it a pin now that the hash is the only test.
+      seedDoc("app_drift", {
+        pins: [LEGACY_ROW, { slot: SLOT, base: "sha256:maple-old" }],
+        components: { [pinComponentName(SLOT)]: SOURCE },
+      }),
       ctx.principal.subject,
     );
     const runtime = runtimeWith(store);

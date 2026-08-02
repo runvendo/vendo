@@ -302,4 +302,32 @@ describe("06-apps §8 — fork idempotency (appId-less dedupe)", () => {
     expect(second.edit).toBeUndefined();
     expect(second.app).toEqual(first.app);
   });
+
+  it("converges to ONE app when two appId-less gestures race past the pre-mint check", async () => {
+    const store = memoryStore();
+    const guard = guardFixture();
+    const runtime = runtimeWith(store, { guard });
+
+    // Promise.all starts both forks before either awaits its store put, so
+    // both pre-mint dedupe lists resolve empty and both gestures mint — the
+    // exact list-then-put race. The post-persist re-check must delete the
+    // newer mint and hand both callers the same surviving app.
+    const [first, second] = await Promise.all([
+      runtime.pins.fork({ slot: SLOT }, ctx),
+      runtime.pins.fork({ slot: SLOT }, ctx),
+    ]);
+
+    // The race really happened (both racers minted) and really converged
+    // (the loser's row was reaped, not just hidden).
+    const operations = guard.audit.map((event) => event.detail?.operation);
+    expect(operations.filter((operation) => operation === "create")).toHaveLength(2);
+    expect(operations.filter((operation) => operation === "delete")).toHaveLength(1);
+
+    expect(second.app.id).toBe(first.app.id);
+    expect(first.version.intent).toBe(`Remix the host component "${SLOT}"`);
+    expect(second.version.intent).toBe(`Remix the host component "${SLOT}"`);
+    const listed = await runtime.list(ctx);
+    expect(listed.filter(({ pins }) => pins?.some((pin) => pin.slot === SLOT))).toHaveLength(1);
+    expect(listed).toHaveLength(1);
+  });
 });

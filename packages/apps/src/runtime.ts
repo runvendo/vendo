@@ -2361,6 +2361,23 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           if (!validation.ok) throw new VendoError("validation", validation.error.message);
           return forked;
         };
+        const carriesSlotPin = (app: AppDocument): boolean =>
+          app.pins?.some((pin) => pin.slot === input.slot) === true;
+        // The deterministic fork a dedupe hit describes was recorded when the
+        // winning app was minted — intents[0] of the pin's replay trail.
+        const dedupedResult = async (existing: AppDocument): Promise<PinForkResult> => {
+          const recorded = (await history.pinIntents(existing.id, input.slot))[0];
+          return {
+            app: existing,
+            version: {
+              at: recorded?.at ?? new Date().toISOString(),
+              intent: recorded?.intent ?? `Remix the host component "${input.slot}"`,
+              rung: rungFor(existing),
+            },
+            slot: input.slot,
+            componentName: pinComponentName(input.slot),
+          };
+        };
         let previous: AppDocument;
         if (input.appId !== undefined) {
           previous = await requireOwned(input.appId, ctx.principal.subject);
@@ -2375,23 +2392,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           // latch is cosmetic). A riding instruction is dropped — the tap
           // that created the fork already carries it, and replaying it here
           // would apply the same edit twice.
-          const existing = (await runtime.list(ctx))
-            .find((app) => app.pins?.some((pin) => pin.slot === input.slot));
-          if (existing !== undefined) {
-            // The deterministic fork this result describes was recorded when
-            // the app was minted — intents[0] of the pin's replay trail.
-            const recorded = (await history.pinIntents(existing.id, input.slot))[0];
-            return {
-              app: existing,
-              version: {
-                at: recorded?.at ?? new Date().toISOString(),
-                intent: recorded?.intent ?? `Remix the host component "${input.slot}"`,
-                rung: rungFor(existing),
-              },
-              slot: input.slot,
-              componentName: pinComponentName(input.slot),
-            };
-          }
+          const existing = (await runtime.list(ctx)).find(carriesSlotPin);
+          if (existing !== undefined) return dedupedResult(existing);
           // The empty-slot Remix gesture: mint the minimal base document the
           // fork lands in, so the fork itself is an ordinary recorded edit
           // (undo returns to the empty base; rebase finds a full trail).
@@ -2431,6 +2433,19 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           slot: input.slot,
           baseHash: baseline.hash,
         });
+        if (input.appId === undefined) {
+          // The pre-mint dedupe is list-then-put: two concurrent gestures can
+          // both find nothing and mint two apps. Close the race after the
+          // persist — list again, and when an OLDER app also carries the
+          // slot's pin, delete the just-minted row and return the older one.
+          // Both racers pick the same winner: list order is deterministic
+          // (createdAt, then id), so only the loser deletes itself.
+          const oldest = (await runtime.list(ctx)).filter(carriesSlotPin).at(-1);
+          if (oldest !== undefined && oldest.id !== persisted.id) {
+            await runtime.delete(persisted.id, ctx);
+            return dedupedResult(oldest);
+          }
+        }
         const componentName = pinComponentName(input.slot);
         const result: PinForkResult = {
           app: persisted,

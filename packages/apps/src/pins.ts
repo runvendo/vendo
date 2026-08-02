@@ -288,12 +288,12 @@ export const detectPinDrift = (
  * hashes and raised false drift warnings. There is no migration script: the
  * runtime classifies stored rows on read (and the classified document
  * normalizes the row on its next write). A `pins` entry whose `base` matches
- * no captured baseline hash is a placement — with two fail-closed carve-outs
- * that stay pins, surfaced by drift and the export gate instead of guessed
- * away: an entry whose SLOT still names a captured baseline (a real, possibly
- * drifted fork drift detection and rebase must keep seeing), and an entry
- * whose forked component source is still on the document (provenance whose
- * baseline disappeared — reclassifying it would launder captured host source
+ * no captured baseline hash is a placement — whether or not the slot is still
+ * captured (checker round-1 ruling 2026-08-02: the contract's test is the
+ * HASH; a real fork, drifted or not, is recognized by its forked component
+ * riding the document, not by its slot name). The one fail-closed carve-out
+ * that stays a pin: an entry whose forked component source is still on the
+ * document (provenance — reclassifying it would launder captured host source
  * past assertPinsExportable). With no baselines captured at all there is no
  * signal to classify against, so the document passes through untouched.
  */
@@ -302,10 +302,8 @@ export const classifyLegacyPlacements = (
   baselines: readonly PinBaseline[] | undefined,
 ): AppDocument => {
   if (baselines === undefined || baselines.length === 0 || doc.pins === undefined || doc.pins.length === 0) return doc;
-  const slots = new Set(baselines.map(({ slot }) => slot));
   const hashes = new Set(baselines.map(({ hash }) => hash));
-  const isPlacement = (pin: Pin): boolean => !slots.has(pin.slot)
-    && !hashes.has(pin.base)
+  const isPlacement = (pin: Pin): boolean => !hashes.has(pin.base)
     && doc.components?.[pinComponentName(pin.slot)] === undefined;
   const legacy = doc.pins.filter(isPlacement);
   if (legacy.length === 0) return doc;

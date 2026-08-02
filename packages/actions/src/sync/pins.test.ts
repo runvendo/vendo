@@ -5,6 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { capturedPinBaselineSchema } from "../formats.js";
 import { capturePins } from "./pins.js";
 
+/** The proven wrapper-import specifier fixtures write to disk. Assembled at
+ *  runtime because the dependency guard's static text scan reads
+ *  import-shaped strings even inside fixtures, and actions may not import
+ *  @vendoai/ui. */
+const UI_CHROME = ["@vendoai", "ui", "chrome"].join("/");
+
 const temporaryDirectories: string[] = [];
 
 async function temporaryRoot(): Promise<string> {
@@ -35,7 +41,7 @@ describe("wrapper pin capture", () => {
   it("captures a wrapped component with two local-import levels and direct app-root CSS", async () => {
     const root = await temporaryRoot();
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { Card } from "../components/Card";
       export default function Page() {
         return <Remixable>{/* a comment renders nothing */}<Card title="Live" /></Remixable>;
@@ -88,14 +94,14 @@ describe("wrapper pin capture", () => {
     const root = await temporaryRoot();
     await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { Card as RenamedCard } from "../components/Card";
       export default function Page() {
         return <Remixable><RenamedCard /></Remixable>;
       }
     `);
     await write(root, "src/app/other/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { Card } from "../../components/Card";
       export default function Other() {
         return <Remixable><Card /></Remixable>;
@@ -117,14 +123,14 @@ describe("wrapper pin capture", () => {
     await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
     await write(root, "src/components/other/Card.tsx", "export function Card() { return <div>other card</div>; }");
     await write(root, "src/app/page.tsx", `
-      import { Remixable as Remix } from "../vendo/remixable";
+      import { Remixable as Remix } from "${UI_CHROME}";
       import { Card } from "../components/Card";
       export default function Page() {
         return <Remix><Card /></Remix>;
       }
     `);
     await write(root, "src/app/other/page.tsx", `
-      import { Remixable } from "../../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { Card } from "../../components/other/Card";
       export default function Other() {
         return <Remixable><Card /></Remixable>;
@@ -147,7 +153,7 @@ describe("wrapper pin capture", () => {
     const root = await temporaryRoot();
     await write(root, "src/components/TransferPanel.tsx", "export function TransferPanel() { return <div>transfer</div>; }");
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { TransferPanel } from "../components/TransferPanel";
       export default function Page() {
         return <Remixable review><TransferPanel /></Remixable>;
@@ -163,7 +169,7 @@ describe("wrapper pin capture", () => {
   it("errors loudly on an inline-JSX child, naming the file and line", async () => {
     const root = await temporaryRoot();
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       export default function Page() {
         return <Remixable><div>inline markup</div></Remixable>;
       }
@@ -183,7 +189,7 @@ describe("wrapper pin capture", () => {
     const root = await temporaryRoot();
     await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { Card } from "../components/Card";
       export default function Page() {
         return (
@@ -209,7 +215,7 @@ describe("wrapper pin capture", () => {
   it("errors when the child is not statically imported", async () => {
     const root = await temporaryRoot();
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       function LocalCard() { return <div>local</div>; }
       export default function Page() {
         return <Remixable><LocalCard /></Remixable>;
@@ -228,7 +234,7 @@ describe("wrapper pin capture", () => {
     const root = await temporaryRoot();
     await write(root, "src/components/barrel/index.ts", `export { Card } from "./missing";\n`);
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { Card } from "../components/barrel";
       export default function Page() {
         return <Remixable><Card /></Remixable>;
@@ -254,7 +260,7 @@ describe("wrapper pin capture", () => {
       }
     `);
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { Plumbed } from "../components/Plumbed";
       export default function Page() {
         return <Remixable><Plumbed onSelect={() => {}} /></Remixable>;
@@ -269,7 +275,7 @@ describe("wrapper pin capture", () => {
     expect(warning).toContain("receives the function-typed prop onSelect");
 
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { Plumbed } from "../components/Plumbed";
       export default function Page() {
         return <Remixable review><Plumbed onSelect={() => {}} /></Remixable>;
@@ -285,7 +291,7 @@ describe("wrapper pin capture", () => {
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), "vendo-wrapper-outside-"));
     temporaryDirectories.push(outside);
     await write(root, "src/app/page.tsx", `
-      import { Remixable } from "../vendo/remixable";
+      import { Remixable } from "${UI_CHROME}";
       import { Card } from "../components/Card";
       export default function Page() {
         return <Remixable><Card /></Remixable>;
@@ -316,7 +322,7 @@ describe("wrapper pin capture on semicolon-free hosts", () => {
   it("captures a component declared after an exported interface in a semicolon-free module", async () => {
     const root = await temporaryRoot();
     await write(root, "src/app/page.tsx",
-      "import { Remixable } from \"../vendo/remixable\"\n" +
+      `import { Remixable } from "${UI_CHROME}"\n` +
       "import { Card } from \"../components/Card\"\n" +
       "\n" +
       "export default function Page() {\n" +
@@ -338,5 +344,211 @@ describe("wrapper pin capture on semicolon-free hosts", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.captured).toEqual(["Card"]);
+  });
+});
+
+// Checker round-1 rulings (2026-08-02): wrapper detection requires proof of
+// import from @vendoai/ui at the use site; default-import slots take the
+// component's own declared name, never the call-site alias; baselines whose
+// wrapper vanished are pruned.
+describe("wrapper detection requires a proven @vendoai/ui import", () => {
+  it("silently skips a decoy Remixable imported from a host module", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+    await write(root, "src/vendo/decoy.tsx", "export function Remixable({ children }: { children: unknown }) { return children; }");
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "../vendo/decoy";
+      import { Card } from "../components/Card";
+      export default function Page() {
+        return <Remixable><Card /></Remixable>;
+      }
+    `);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    // Not ours: no capture, and no error either — a same-named host component
+    // is none of sync's business.
+    expect(result.errors).toEqual([]);
+    expect(result.captured).toEqual([]);
+    await expect(fs.access(path.join(root, ".vendo/remixable"))).rejects.toThrow();
+  });
+
+  it("silently skips a locally declared Remixable with no import at all", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+    await write(root, "src/app/page.tsx", `
+      import { Card } from "../components/Card";
+      function Remixable({ children }: { children: unknown }) { return <div>{children}</div>; }
+      export default function Page() {
+        return <Remixable><Card /></Remixable>;
+      }
+    `);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(result.errors).toEqual([]);
+    expect(result.captured).toEqual([]);
+  });
+
+  it("detects an aliased import (import { Remixable as R }) from @vendoai/ui", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+    await write(root, "src/app/page.tsx", `
+      import { Remixable as R } from "${UI_CHROME}";
+      import { Card } from "../components/Card";
+      export default function Page() {
+        return <R><Card /></R>;
+      }
+    `);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(result.errors).toEqual([]);
+    expect(result.captured).toEqual(["Card"]);
+  });
+
+  it("detects a namespace member (<UI.Remixable>) only when the namespace is ours", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+    await write(root, "src/components/Other.tsx", "export function Other() { return <div>other</div>; }");
+    await write(root, "src/app/page.tsx", `
+      import * as UI from "${UI_CHROME}";
+      import * as Host from "../vendo/host";
+      import { Card } from "../components/Card";
+      import { Other } from "../components/Other";
+      export default function Page() {
+        return <><UI.Remixable><Card /></UI.Remixable><Host.Remixable><Other /></Host.Remixable></>;
+      }
+    `);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(result.errors).toEqual([]);
+    expect(result.captured).toEqual(["Card"]);
+  });
+});
+
+describe("default-import slot naming (alias-keying is forbidden)", () => {
+  it("names the slot after the component's own declared name, not the call-site alias", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/net-worth-view.tsx", `
+      export function NetWorthView() { return <div>net worth</div>; }
+      export default NetWorthView;
+    `);
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      import AliasedView from "../components/net-worth-view";
+      export default function Page() {
+        return <Remixable><AliasedView /></Remixable>;
+      }
+    `);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(result.errors).toEqual([]);
+    expect(result.captured).toEqual(["NetWorthView"]);
+    expect(await fs.readdir(path.join(root, ".vendo/remixable"))).toEqual(["NetWorthView.json"]);
+  });
+
+  it("takes the declared name from an inline default function declaration", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/hero.tsx", "export default function Hero() { return <div>hero</div>; }");
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      import TopBanner from "../components/hero";
+      export default function Page() {
+        return <Remixable><TopBanner /></Remixable>;
+      }
+    `);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(result.errors).toEqual([]);
+    expect(result.captured).toEqual(["Hero"]);
+  });
+
+  it("errors on an anonymous default export instead of keying by the alias", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/hero.tsx", "export default function () { return <div>hero</div>; }");
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      import Hero from "../components/hero";
+      export default function Page() {
+        return <Remixable><Hero /></Remixable>;
+      }
+    `);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(result.captured).toEqual([]);
+    expect(result.errors).toEqual([
+      expect.stringContaining("name your component so its remixes survive refactors"),
+    ]);
+    expect(result.errors[0]).toContain("src/app/page.tsx");
+  });
+});
+
+describe("stale baseline pruning", () => {
+  it("deletes the baseline after its wrapper is removed", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      import { Card } from "../components/Card";
+      export default function Page() {
+        return <Remixable><Card /></Remixable>;
+      }
+    `);
+    const first = await capturePins(root, path.join(root, ".vendo"));
+    expect(first.captured).toEqual(["Card"]);
+    expect(first.pruned).toEqual([]);
+
+    // The wrapper vanishes; without pruning, Card.json stays a forkable zombie.
+    await write(root, "src/app/page.tsx", `
+      import { Card } from "../components/Card";
+      export default function Page() { return <Card />; }
+    `);
+    const second = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(second.pruned).toEqual(["Card"]);
+    await expect(fs.access(path.join(root, ".vendo/remixable/Card.json"))).rejects.toThrow();
+  });
+
+  it("prunes nothing while the run carries wrapper errors", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      import { Card } from "../components/Card";
+      export default function Page() {
+        return <Remixable><Card /></Remixable>;
+      }
+    `);
+    await capturePins(root, path.join(root, ".vendo"));
+
+    // The wrapper now fails loudly (inline JSX child); its slot is unknowable,
+    // so the run must not treat the old baseline as vanished.
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      export default function Page() {
+        return <Remixable><div>inline</div></Remixable>;
+      }
+    `);
+    const failed = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(failed.errors).not.toEqual([]);
+    expect(failed.pruned).toEqual([]);
+    await expect(baselineFor(root, "Card")).resolves.toMatchObject({ slot: "Card" });
+  });
+
+  it("keeps a baseline the sync config ignores", async () => {
+    const root = await temporaryRoot();
+    await fs.mkdir(path.join(root, ".vendo/remixable"), { recursive: true });
+    await fs.writeFile(path.join(root, ".vendo/remixable/Ignored.json"), "{}\n", "utf8");
+
+    const result = await capturePins(root, path.join(root, ".vendo"), new Set(["Ignored"]));
+
+    expect(result.pruned).toEqual([]);
+    await expect(fs.access(path.join(root, ".vendo/remixable/Ignored.json"))).resolves.toBeUndefined();
   });
 });

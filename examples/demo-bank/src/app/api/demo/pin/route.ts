@@ -70,7 +70,8 @@ export async function POST(request: Request) {
 
   // Latest placement wins per slot (useSlotApp takes the newest placed app);
   // clear the slot from any OTHER app this user placed earlier so the swap is
-  // clean.
+  // clean. Read-modify-write race (the records door has no CAS) accepted:
+  // demo host, single user.
   for (const other of await listSubjectApps(user.subject)) {
     if (other.id === appId || !other.data.doc.placements?.includes(slot)) continue;
     await apps.put({

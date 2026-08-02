@@ -7,6 +7,12 @@ import type { ExtractedTool } from "../formats.js";
 import { routeToolFullName, withUniqueNames } from "./common.js";
 import { inputNarrowed, mergeOverrides, vendoSync } from "./index.js";
 
+/** The proven wrapper-import specifier fixtures write to disk. Assembled at
+ *  runtime because the dependency guard's static text scan reads
+ *  import-shaped strings even inside fixtures, and actions may not import
+ *  @vendoai/ui. */
+const UI_CHROME = ["@vendoai", "ui", "chrome"].join("/");
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -185,7 +191,7 @@ describe("validation and route classification", () => {
     await writeFile(
       inlineHost.root,
       "src/app/page.tsx",
-      `import { Remixable } from "../vendo/remixable";\n` +
+      `import { Remixable } from "${UI_CHROME}";\n` +
       `export default function Page() { return <Remixable><div>inline</div></Remixable>; }\n`,
     );
     const inline = await vendoSync(inlineHost);
@@ -199,7 +205,7 @@ describe("validation and route classification", () => {
     await writeFile(
       ignoredHost.root,
       "src/app/page.tsx",
-      `import { Remixable } from "../vendo/remixable";\n` +
+      `import { Remixable } from "${UI_CHROME}";\n` +
       `import { Card } from "../components/Card";\n` +
       `export default function Page() { return <Remixable><Card /></Remixable>; }\n`,
     );

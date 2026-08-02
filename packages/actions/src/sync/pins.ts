@@ -41,6 +41,9 @@ const PLUMBING_HOOK = /^use(?:\w*Context|Router|Pathname|SearchParams|Params)$/u
 export interface PinCaptureResult {
   captured: string[];
   drifted: string[];
+  /** Baselines deleted because no wrapper names their slot this run — a stale
+   *  baseline is a forkable zombie (checker round-1 ruling 2026-08-02). */
+  pruned: string[];
   /** Loud wrapper errors ("file:line — message"); sync must fail on them. */
   errors: string[];
   warnings: string[];
@@ -72,29 +75,49 @@ function tagText(ts: typeof TS, tagName: TS.JsxTagNameExpression, sf: TS.SourceF
   return ts.isIdentifier(tagName) ? tagName.text : tagName.getText(sf);
 }
 
-/** Local names bound to a `Remixable` import, so aliased imports
- *  (`import { Remixable as Remix }`) still register (same posture as
- *  catalog-scan's VendoRoot detection). */
-function remixableNames(ts: typeof TS, sf: TS.SourceFile): Set<string> {
-  const names = new Set(["Remixable"]);
+/** The modules whose `Remixable` export is OURS: `@vendoai/ui` (any subpath —
+ *  the export lives on `@vendoai/ui/chrome`), the `vendoai` alias, and the
+ *  `@vendoai/vendo` umbrella re-export. */
+const REMIXABLE_MODULE = /^(?:@vendoai\/(?:ui|vendo)|vendoai)(?:\/|$)/u;
+
+/** Local bindings PROVEN to be our `Remixable` at the use site: named imports
+ *  (aliased or not — `import { Remixable as Remix }`) and namespace imports
+ *  from a REMIXABLE_MODULE. A same-named component from anywhere else is not
+ *  ours and is skipped silently (checker round-1 ruling 2026-08-02). */
+interface RemixableBindings {
+  names: Set<string>;
+  namespaces: Set<string>;
+}
+
+function remixableBindings(ts: typeof TS, sf: TS.SourceFile): RemixableBindings {
+  const names = new Set<string>();
+  const namespaces = new Set<string>();
   for (const statement of sf.statements) {
-    if (!ts.isImportDeclaration(statement) || statement.importClause?.namedBindings === undefined
-      || !ts.isNamedImports(statement.importClause.namedBindings)) continue;
-    for (const element of statement.importClause.namedBindings.elements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)
+      || !REMIXABLE_MODULE.test(statement.moduleSpecifier.text)) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings === undefined) continue;
+    if (ts.isNamespaceImport(bindings)) {
+      namespaces.add(bindings.name.text);
+      continue;
+    }
+    for (const element of bindings.elements) {
       if ((element.propertyName?.text ?? element.name.text) === "Remixable") names.add(element.name.text);
     }
   }
-  return names;
+  return { names, namespaces };
 }
 
 function isRemixableTag(
   ts: typeof TS,
   tagName: TS.JsxTagNameExpression,
   sf: TS.SourceFile,
-  names: ReadonlySet<string>,
+  bindings: RemixableBindings,
 ): boolean {
   const text = tagText(ts, tagName, sf);
-  return names.has(text) || text.slice(text.lastIndexOf(".") + 1) === "Remixable";
+  if (ts.isIdentifier(tagName)) return bindings.names.has(text);
+  const namespace = text.slice(0, text.indexOf("."));
+  return text.slice(text.lastIndexOf(".") + 1) === "Remixable" && bindings.namespaces.has(namespace);
 }
 
 function reviewFlag(ts: typeof TS, attributes: TS.JsxAttributes): boolean {
@@ -143,13 +166,14 @@ function wrapperSites(
   const parsed = parseModuleSource(source, file);
   if (!parsed) return { sites, errors };
   const { ts, sf } = parsed;
-  const names = remixableNames(ts, sf);
+  const bindings = remixableBindings(ts, sf);
+  if (bindings.names.size === 0 && bindings.namespaces.size === 0) return { sites, errors };
   visitNodes(ts, sf, (node) => {
-    if (ts.isJsxSelfClosingElement(node) && isRemixableTag(ts, node.tagName, sf, names)) {
+    if (ts.isJsxSelfClosingElement(node) && isRemixableTag(ts, node.tagName, sf, bindings)) {
       errors.push(`${relativeFile}:${lineOf(sf, node)} — <Remixable /> wraps nothing; put exactly one component element inside it`);
       return;
     }
-    if (!ts.isJsxElement(node) || !isRemixableTag(ts, node.openingElement.tagName, sf, names)) return;
+    if (!ts.isJsxElement(node) || !isRemixableTag(ts, node.openingElement.tagName, sf, bindings)) return;
     const line = lineOf(sf, node);
     // Whitespace and comment-only expression containers ({/* … */}) render
     // nothing and do not count against the single-child rule.
@@ -404,12 +428,47 @@ async function resolveSite(
     errors.push(`${at} — <Remixable> wraps <${site.childTag}>, but its source resolves outside the host root`);
     return null;
   }
-  // The slot is the exported identifier; a default import has none, so the
-  // call site's local name stands in for it.
-  const slot = reference.imported === "default"
-    ? site.childTag.slice(site.childTag.lastIndexOf(".") + 1)
-    : reference.imported;
+  // The slot is the exported identifier. A default import has none, and
+  // keying by the call-site alias is FORBIDDEN (checker round-1 ruling
+  // 2026-08-02: an alias-keyed slot dies on the next call-site refactor) —
+  // the slot is the component's own declared name in its module.
+  let slot = reference.imported;
+  if (reference.imported === "default") {
+    const declared = defaultExportName(resolved.source, realFile);
+    if (declared === null) {
+      errors.push(`${at} — <Remixable> wraps <${site.childTag}>, but its module's default export is anonymous; name your component so its remixes survive refactors`);
+      return null;
+    }
+    slot = declared;
+  }
   return { ...site, slot, realFile, source: resolved.source };
+}
+
+/** The declared name of a module's default export: `export default function
+ *  Foo`, `export default class Foo`, `export default Foo`, or
+ *  `export { Foo as default }`. Null when the default export is anonymous
+ *  (or wrapped in an expression its author never named). */
+function defaultExportName(source: string, file: string): string | null {
+  const parsed = parseModuleSource(source, file);
+  if (!parsed) return null;
+  const { ts, sf } = parsed;
+  for (const statement of sf.statements) {
+    if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+      return ts.isIdentifier(statement.expression) ? statement.expression.text : null;
+    }
+    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement))
+      && statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword) === true) {
+      return statement.name?.text ?? null;
+    }
+    if (ts.isExportDeclaration(statement) && statement.exportClause !== undefined
+      && ts.isNamedExports(statement.exportClause)) {
+      for (const element of statement.exportClause.elements) {
+        if (element.name.text === "default" && element.propertyName !== undefined
+          && element.propertyName.text !== "default") return element.propertyName.text;
+      }
+    }
+  }
+  return null;
 }
 
 export async function capturePins(
@@ -417,7 +476,7 @@ export async function capturePins(
   out: string,
   ignoreSlots: ReadonlySet<string> = new Set(),
 ): Promise<PinCaptureResult> {
-  const result: PinCaptureResult = { captured: [], drifted: [], errors: [], warnings: [] };
+  const result: PinCaptureResult = { captured: [], drifted: [], pruned: [], errors: [], warnings: [] };
   const realRoot = await fs.realpath(root);
   const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath));
   let stylesPromise: Promise<CapturedPinStyle[]> | undefined;
@@ -495,6 +554,22 @@ export async function capturePins(
     await fs.mkdir(path.dirname(baselineFile), { recursive: true });
     await fs.writeFile(baselineFile, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
     (existing.exists ? result.drifted : result.captured).push(slot);
+  }
+  // A baseline whose slot matches no discovered wrapper is a forkable zombie —
+  // delete it. A run with wrapper errors prunes nothing: an unresolvable
+  // wrapper's slot is unknowable, and deleting its baseline would turn a loud
+  // failure into silent data loss.
+  if (result.errors.length === 0) {
+    const entries = await fs.readdir(remixableDir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    for (const entry of entries.filter((name) => name.endsWith(".json")).sort()) {
+      const slot = entry.slice(0, -".json".length);
+      if (bySlot.has(slot) || ignoreSlots.has(slot)) continue;
+      await fs.rm(path.join(remixableDir, entry));
+      result.pruned.push(slot);
+    }
   }
   result.captured.sort();
   result.drifted.sort();
