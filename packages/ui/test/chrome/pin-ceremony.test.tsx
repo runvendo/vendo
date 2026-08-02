@@ -181,7 +181,7 @@ const pinnedApp: AppDocument = {
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { text: "Invoices app surface" } }],
   },
-  pins: [{ slot: "hero", base: "sha256:abc123" }],
+  placements: ["hero"],
 };
 
 describe("the slot refreshes on the pin, not on the next poll tick", () => {

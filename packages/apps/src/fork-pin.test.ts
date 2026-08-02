@@ -245,3 +245,41 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     expect(rebase.app.components?.[COMPONENT]).toContain("/* v2 */");
   });
 });
+
+// Remix final shape (2026-08-02) — the appId-less gesture is idempotent per
+// (subject, slot): the server dedupes, so a double-tap can never mint a
+// duplicate app and the UI latch is cosmetic.
+describe("06-apps §8 — fork idempotency (appId-less dedupe)", () => {
+  it("returns the existing app on a second gesture instead of minting a duplicate", async () => {
+    const store = memoryStore();
+    const runtime = runtimeWith(store);
+
+    const first = await runtime.pins.fork({ slot: SLOT }, ctx);
+    // The empty-slot mint records the placement slot discovery mounts by.
+    expect(first.app.placements).toEqual([SLOT]);
+    const second = await runtime.pins.fork({ slot: SLOT }, ctx);
+    expect(second.app.id).toBe(first.app.id);
+    expect(second.app).toEqual(first.app);
+    expect(second.slot).toBe(SLOT);
+    expect(second.componentName).toBe(COMPONENT);
+    // The result still describes the recorded deterministic fork.
+    expect(second.version.intent).toBe(`Remix the host component "${SLOT}"`);
+
+    // One app row, not two.
+    const listed = await runtime.list(ctx);
+    expect(listed.filter(({ pins }) => pins?.some((pin) => pin.slot === SLOT))).toHaveLength(1);
+  });
+
+  it("drops a riding instruction on the dedupe hit — no edit, no model call", async () => {
+    const store = memoryStore();
+    // No model configured: an edit attempt on the dedupe path would surface
+    // as a failure-shaped edit, so an undefined `edit` proves none ran.
+    const runtime = runtimeWith(store);
+
+    const first = await runtime.pins.fork({ slot: SLOT }, ctx);
+    const second = await runtime.pins.fork({ slot: SLOT, instruction: "Make it green" }, ctx);
+    expect(second.app.id).toBe(first.app.id);
+    expect(second.edit).toBeUndefined();
+    expect(second.app).toEqual(first.app);
+  });
+});

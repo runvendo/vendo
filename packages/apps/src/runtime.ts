@@ -77,7 +77,7 @@ import { parseVendoManifest } from "./manifest.js";
 import { isDisclaimerOnlyTree } from "./pipeline.js";
 import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow } from "./persistence.js";
-import { detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
+import { classifyLegacyPlacements, detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
   boxAllowlist,
@@ -828,10 +828,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     allowedDomains: (doc) => boxAllowlist(doc, implicitEgress),
   });
 
+  // Pins/placements split (2026-08-02) — every runtime read classifies legacy
+  // rows (classifyLegacyPlacements), so drift, ship-diff, export, and the wire
+  // all see fork provenance in `pins` and slot placement in `placements`; the
+  // next persistEdit writes the classified document, normalizing the row.
   const owned = async (appId: AppId, subject: string): Promise<AppDocument | null> => {
     const record = await apps.get(appId);
     if (record === null || record.refs?.subject !== subject) return null;
-    return documentFromRecord(record);
+    return classifyLegacyPlacements(documentFromRecord(record), config.pinBaselines);
   };
 
   const requireOwned = async (appId: AppId, subject: string): Promise<AppDocument> => {
@@ -1176,9 +1180,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     const assertCurrent = async (): Promise<boolean> => {
       const current = await apps.get(previous.id);
       const row = current === null ? null : rowFromRecord(current);
+      // `previous` came through a classifying read (owned), so the stored row
+      // classifies the same way before comparing — otherwise every edit of a
+      // not-yet-normalized legacy row would read as a concurrent change.
       if (row === null
         || row.subject !== subject
-        || JSON.stringify(row.doc) !== JSON.stringify(previous)) {
+        || JSON.stringify(classifyLegacyPlacements(row.doc, config.pinBaselines)) !== JSON.stringify(previous)) {
         throw new VendoError("conflict", `app changed during edit: ${previous.id}`);
       }
       return row.enabled;
@@ -2020,7 +2027,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       for (const record of records
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))) {
         try {
-          const document = documentFromRecord(record);
+          const document = classifyLegacyPlacements(documentFromRecord(record), config.pinBaselines);
           // A terminally failed build is a tombstone open() reads to resolve
           // the embed — not a real app; it never joins the listable surface.
           if (document.buildFailed !== undefined) continue;
@@ -2291,6 +2298,30 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             throw new VendoError("conflict", "a pin fork requires a vendo-genui/v2 tree app");
           }
         } else {
+          // Idempotent per (subject, slot) — the appId-less gesture dedupes
+          // server-side: when this subject already has an app whose pins name
+          // the slot, that app IS the fork, and it is returned instead of
+          // minting a duplicate (a double-tap can never mint two; the UI
+          // latch is cosmetic). A riding instruction is dropped — the tap
+          // that created the fork already carries it, and replaying it here
+          // would apply the same edit twice.
+          const existing = (await runtime.list(ctx))
+            .find((app) => app.pins?.some((pin) => pin.slot === input.slot));
+          if (existing !== undefined) {
+            // The deterministic fork this result describes was recorded when
+            // the app was minted — intents[0] of the pin's replay trail.
+            const recorded = (await history.pinIntents(existing.id, input.slot))[0];
+            return {
+              app: existing,
+              version: {
+                at: recorded?.at ?? new Date().toISOString(),
+                intent: recorded?.intent ?? `Remix the host component "${input.slot}"`,
+                rung: rungFor(existing),
+              },
+              slot: input.slot,
+              componentName: pinComponentName(input.slot),
+            };
+          }
           // The empty-slot Remix gesture: mint the minimal base document the
           // fork lands in, so the fork itself is an ordinary recorded edit
           // (undo returns to the empty base; rebase finds a full trail).
@@ -2304,6 +2335,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               root: "root",
               nodes: [{ id: "root", component: "Stack", source: "prewired" }],
             },
+            // The empty-slot gesture means "show the remix in THIS slot": the
+            // mint records the placement (location) beside the pin the fork
+            // records (provenance) — slot discovery reads placements only.
+            placements: [input.slot],
           };
           // Dry-run the fork BEFORE persisting the base, so a bad baseline
           // never strands an empty app.

@@ -717,6 +717,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
         const target = existingId === undefined
           ? (() => {
             const minted = app(`app_pin_${state.apps.length + 1}`, `${slot} remix`);
+            // Mirrors the runtime's empty-slot mint: the gesture records the
+            // placement (location) beside the pin (provenance) — slot
+            // discovery reads placements only (2026-08-02 split).
+            minted.placements = [slot];
             state.apps.push(minted);
             return minted;
           })()

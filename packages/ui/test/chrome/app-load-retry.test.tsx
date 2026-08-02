@@ -20,7 +20,7 @@ const pinned: AppDocument = {
     root: "root",
     nodes: [{ id: "root", component: "Text", props: { text: "Invoices app surface" } }],
   },
-  pins: [{ slot: "hero", base: "sha256:abc123" }],
+  placements: ["hero"],
 };
 
 describe("useApp load retry (Keystone graduates A5)", () => {

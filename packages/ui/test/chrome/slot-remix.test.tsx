@@ -63,7 +63,8 @@ describe("VendoSlot remix flag + overlay registry", () => {
       expect(forks.length).toBe(1);
       expect(forks[0]?.body).toEqual({ slot: "hero" });
     });
-    // The forked app mounts through slot discovery (pins carry the slot id).
+    // The forked app mounts through slot discovery (the mint records the
+    // slot as a placement; pins are fork provenance only).
     await waitFor(() => expect(screen.getByText("hero remix app surface")).toBeTruthy());
     expect(wire.requests.filter(r => r.method === "POST" && r.path === "/threads").length).toBe(0);
   });

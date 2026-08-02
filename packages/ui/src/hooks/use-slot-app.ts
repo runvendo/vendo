@@ -1,8 +1,12 @@
-/** Slot pin self-discovery (08-ui §4) — resolve "the app currently pinned to
+/** Slot self-discovery (08-ui §4) — resolve "the app currently placed in
  *  slot X" so hosts never hand-roll the poll-apps-and-filter dance. Rides the
  *  standard useResource lifecycle (SSR-safe: fetching starts in an effect),
- *  polling by default so a pin made in the conversation surface appears in the
- *  slot on its own. */
+ *  polling by default so a placement made in the conversation surface appears
+ *  in the slot on its own. Placement is `doc.placements` ONLY (2026-08-02
+ *  pins/placements split): `pins` records fork provenance and never mounts an
+ *  app in a slot. Legacy rows that stored a placement as a fake-hash pin are
+ *  classified into `placements` by the server's read path, so they arrive
+ *  here already split. */
 import type { AppDocument, AppId } from "@vendoai/core";
 import { useCallback, useEffect } from "react";
 import { useVendoContext } from "../context.js";
@@ -23,7 +27,7 @@ export function useSlotApp(slotId: string, options: PollOptions & {
    *  used by VendoSlot when the host supplies an explicit `appId`/`pin`. */
   enabled?: boolean;
 } = {}): {
-  /** The most recently pinned app for this slot, or undefined when none. */
+  /** The most recently placed app for this slot, or undefined when none. */
   appId: AppId | undefined;
   error: Error | undefined;
   isLoading: boolean;
@@ -57,8 +61,8 @@ export function useSlotApp(slotId: string, options: PollOptions & {
       for (const settle of settles) clearTimeout(settle);
     };
   }, [enabled, refresh]);
-  // Latest pin wins — matching the "the newest remix takes the slot" semantics
-  // the demos established (hero-slot took `.at(-1)`).
-  const appId = data.filter(app => app.pins?.some(pin => pin.slot === slotId)).at(-1)?.id;
+  // Latest placement wins — matching the "the newest remix takes the slot"
+  // semantics the demos established (hero-slot took `.at(-1)`).
+  const appId = data.filter(app => app.placements?.includes(slotId)).at(-1)?.id;
   return { appId, error, isLoading, refresh };
 }
