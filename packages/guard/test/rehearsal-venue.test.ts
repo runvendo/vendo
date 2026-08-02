@@ -2,7 +2,7 @@ import { isRehearsalSimulation } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
-import { alice, call, context, descriptor, FixtureTools } from "./fixtures/tools.js";
+import { alice, call, context, descriptor, FixtureTools, seedGrant } from "./fixtures/tools.js";
 
 /**
  * Rehearsal venue (07-automations rehearse()): before enabling an automation,
@@ -34,7 +34,7 @@ describe("rehearsal venue at the guard choke point", () => {
     expect(tools.executions[0]?.ctx.presence).toBe("present");
   });
 
-  it("never executes a write: returns the simulated card with the resolved args", async () => {
+  it("never executes a write: returns the simulated card with the resolved args + honest verdict", async () => {
     const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
     const tools = new FixtureTools();
     const args = { to: "user@example.com", body: "Balance is $1,500" };
@@ -42,31 +42,90 @@ describe("rehearsal venue at the guard choke point", () => {
     expect(outcome.status).toBe("ok");
     const output = (outcome as { status: "ok"; output: unknown }).output;
     expect(isRehearsalSimulation(output)).toBe(true);
+    // The card now also carries what the ENABLED automation WOULD do: under the
+    // ask-on-write policy with no grant captured yet, this write would ask.
     expect(output).toEqual({
       rehearsalSimulated: true,
       tool: "host_write",
       risk: "write",
       args,
+      wouldAsk: true,
+      grantsMissing: ["host_write"],
     });
     // The registry was never reached: nothing executed.
     expect(tools.executions).toHaveLength(0);
   });
 
-  it("never executes a destructive call either", async () => {
+  it("never executes a destructive call either — and says it would ask", async () => {
     const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
     const tools = new FixtureTools();
     const outcome = await guard.bind(tools).execute(call("host_destructive", { id: "x" }), rehearsalCtx);
     expect(outcome.status).toBe("ok");
-    expect(isRehearsalSimulation((outcome as { status: "ok"; output: unknown }).output)).toBe(true);
+    const output = (outcome as { status: "ok"; output: unknown }).output;
+    expect(isRehearsalSimulation(output)).toBe(true);
+    expect(output).toMatchObject({ wouldAsk: true, grantsMissing: ["host_destructive"] });
     expect(tools.executions).toHaveLength(0);
   });
 
-  it("parks NO approvals for writes — the ask-on-write policy never gets to ask", async () => {
+  it("parks NO approvals for writes — the ask-on-write policy never gets to ask, but the card says it WOULD", async () => {
     const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
     const tools = new FixtureTools();
-    await guard.bind(tools).execute(call("host_write", { v: 1 }), rehearsalCtx);
-    await guard.bind(tools).execute(call("host_destructive", { v: 2 }, "call_2"), rehearsalCtx);
+    const write = await guard.bind(tools).execute(call("host_write", { v: 1 }), rehearsalCtx);
+    const destructive = await guard.bind(tools).execute(call("host_destructive", { v: 2 }, "call_2"), rehearsalCtx);
+    // Core assertion (unchanged): no approval parks during rehearsal.
     expect(await guard.approvals.pending(alice)).toHaveLength(0);
+    // New: the simulated cards now honestly report the would-ask verdict.
+    expect((write as { output: unknown }).output).toMatchObject({ wouldAsk: true, grantsMissing: ["host_write"] });
+    expect((destructive as { output: unknown }).output).toMatchObject({ wouldAsk: true, grantsMissing: ["host_destructive"] });
+  });
+
+  it("a write with a standing grant reports wouldAsk:false (it would simply run once live)", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store, policy: demoPolicy });
+    await seedGrant(store, { descriptor: descriptor("write") });
+    const tools = new FixtureTools();
+    const outcome = await guard.bind(tools).execute(call("host_write", { v: 1 }), rehearsalCtx);
+    expect(outcome.status).toBe("ok");
+    // Still simulated (writes never execute in rehearsal), but the verdict is
+    // honest: the standing grant means the enabled automation would run it.
+    expect((outcome as { output: unknown }).output).toMatchObject({
+      rehearsalSimulated: true,
+      wouldAsk: false,
+      grantsMissing: [],
+    });
+    expect(tools.executions).toHaveLength(0);
+    // Resolving the verdict must NOT have spent/parked anything.
+    expect(await guard.approvals.pending(alice)).toHaveLength(0);
+  });
+
+  it("a policy BLOCK rule on a write reports wouldBlock on the simulated card", async () => {
+    const guard = createGuard({
+      store: createMemoryStore(),
+      policy: { rules: [{ match: { tool: "host_write" }, action: "block" as const, note: "writes are off in this app" }] },
+    });
+    const tools = new FixtureTools();
+    const outcome = await guard.bind(tools).execute(call("host_write", { v: 1 }), rehearsalCtx);
+    expect(outcome.status).toBe("ok");
+    expect((outcome as { output: unknown }).output).toMatchObject({
+      rehearsalSimulated: true,
+      wouldAsk: false,
+      grantsMissing: [],
+      wouldBlock: "writes are off in this app",
+    });
+    expect(tools.executions).toHaveLength(0);
+  });
+
+  it("a critical write reports wouldAsk:true but NOT as a missing grant (a grant can't suppress critical)", async () => {
+    const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
+    const critical = descriptor("write", { name: "host_critical_write", critical: true });
+    const tools = new FixtureTools([critical]);
+    const outcome = await guard.bind(tools).execute(call("host_critical_write"), rehearsalCtx);
+    expect(outcome.status).toBe("ok");
+    expect((outcome as { output: unknown }).output).toMatchObject({
+      rehearsalSimulated: true,
+      wouldAsk: true,
+      grantsMissing: [],
+    });
   });
 
   it("a would-ask READ blocks instead of parking (rehearsal never asks)", async () => {

@@ -418,11 +418,20 @@ class GuardImplementation implements VendoGuard {
         if (ctx.venue === "rehearsal") {
           const effective = await this.#effectiveDescriptor(call, descriptor, ctx);
           if (effective.risk !== "read") {
+            // The write never executes — but resolve what the enabled
+            // automation's policy decision WOULD be so the simulated card can
+            // say "would ask / would be blocked" instead of a rosy "would have
+            // done this". Side-effect-free (no execute, no park, no grant
+            // spend); mirrors dryRun's grantsMissing/wouldAsk shape.
+            const verdict = await this.#rehearsalWriteVerdict(call, effective, ctx);
             const output: RehearsalSimulation = {
               rehearsalSimulated: true,
               tool: call.tool,
               risk: effective.risk,
               args: cloneJson(call.args),
+              wouldAsk: verdict.wouldAsk,
+              grantsMissing: verdict.grantsMissing,
+              ...(verdict.wouldBlock === undefined ? {} : { wouldBlock: verdict.wouldBlock }),
             };
             await this.report(
               eventFromContext(ctx, {
@@ -430,7 +439,13 @@ class GuardImplementation implements VendoGuard {
                 tool: call.tool,
                 inputPreview: preview,
                 outcome: "ok",
-                detail: { rehearsalSimulated: true, risk: effective.risk },
+                detail: {
+                  rehearsalSimulated: true,
+                  risk: effective.risk,
+                  wouldAsk: verdict.wouldAsk,
+                  ...(verdict.grantsMissing.length === 0 ? {} : { grantsMissing: verdict.grantsMissing }),
+                  ...(verdict.wouldBlock === undefined ? {} : { wouldBlock: verdict.wouldBlock }),
+                },
               }),
             );
             return { status: "ok", output };
@@ -749,18 +764,24 @@ class GuardImplementation implements VendoGuard {
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
+    preview = false,
   ): Promise<DecisionMetadata> {
+    // `preview` (rehearsal write verdict): resolve what the decision WOULD be
+    // without side effects — never CONSUME a single-use approval replay, so a
+    // preview can't spend authority the caller only meant to look at. Every
+    // other step below (matching grant, rules, code, judge, default) is already
+    // read-only, so skipping consumption makes the whole pass side-effect-free.
     // An exact approved replay answers a critical ask (05 §2 stays otherwise:
     // grants/rules/judge never suppress critical).
     let consumedReplay = false;
     if (descriptor.critical === true) {
-      consumedReplay = await this.#consumeApprovedCall(call, descriptor, ctx);
+      consumedReplay = preview ? false : await this.#consumeApprovedCall(call, descriptor, ctx);
       if (!consumedReplay) {
         return { decision: { action: "ask", decidedBy: "critical" } };
       }
     }
 
-    if (consumedReplay || await this.#consumeApprovedCall(call, descriptor, ctx)) {
+    if (consumedReplay || (!preview && await this.#consumeApprovedCall(call, descriptor, ctx))) {
       return { decision: { action: "run", decidedBy: "grant" } };
     }
 
@@ -838,6 +859,31 @@ class GuardImplementation implements VendoGuard {
     }
 
     return withInvalidated({ decision: { action: "run", decidedBy: "default" } });
+  }
+
+  /** The rehearsal simulated card's honest verdict for a write/destructive call
+   *  (07-automations rehearse()): what the enabled automation's policy decision
+   *  WOULD be, resolved through the ordinary pipeline in preview mode so it
+   *  neither executes, parks an approval, nor spends a grant. Mirrors dryRun's
+   *  wouldAsk/grantsMissing: a resolved "ask" means the call would still need an
+   *  approval (missing standing grant, or a critical/policy ask); a resolved
+   *  "block" means a policy rule would stop it outright even after enable. */
+  async #rehearsalWriteVerdict(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<{ wouldAsk: boolean; grantsMissing: string[]; wouldBlock?: string }> {
+    const { decision } = await this.#pipeline(call, descriptor, ctx, true);
+    if (decision.action === "block") {
+      return { wouldAsk: false, grantsMissing: [], wouldBlock: decision.reason };
+    }
+    if (decision.action === "ask") {
+      // A critical ask is not a MISSING-GRANT condition (a grant can't suppress
+      // a critical call), so it mirrors dryRun by staying out of grantsMissing.
+      const grantsMissing = decision.decidedBy === "critical" ? [] : [call.tool];
+      return { wouldAsk: true, grantsMissing };
+    }
+    return { wouldAsk: false, grantsMissing: [] };
   }
 
   async #judgeWithTimeout(

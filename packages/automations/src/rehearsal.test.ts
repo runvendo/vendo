@@ -98,6 +98,11 @@ class GuardDouble implements Guard {
 const guardBoundRegistry = (
   descriptors: ToolDescriptor[],
   read: (call: ToolCall, runCtx: RunContext) => ToolOutcome = () => ({ status: "ok", output: {} }),
+  /** Stands in for the guard's honest would-be-live verdict on a simulated
+   *  write (resolved in packages/guard; here it's supplied so the engine's
+   *  threading of it onto RehearsalStep can be asserted). */
+  simulate?: (call: ToolCall, descriptor: ToolDescriptor) =>
+    Pick<RehearsalSimulation, "wouldAsk" | "grantsMissing"> & { wouldBlock?: string },
 ): ToolRegistry & { calls: Array<{ call: ToolCall; ctx: RunContext }>; writesExecuted: number } => {
   const state = {
     calls: [] as Array<{ call: ToolCall; ctx: RunContext }>,
@@ -116,6 +121,7 @@ const guardBoundRegistry = (
           tool: call.tool,
           risk: descriptor.risk,
           args: structuredClone(call.args),
+          ...(simulate === undefined ? {} : simulate(call, descriptor)),
         };
         return { status: "ok", output };
       }
@@ -289,6 +295,104 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       expect(callCtx.appId).toBe("app_alert");
       expect(callCtx.requestHeaders).toEqual({ cookie: "session=live" });
     }
+  });
+
+  it("threads the guard's would-ask / grants-missing verdict from the simulated card onto the step", async () => {
+    const store = memoryStoreAdapter();
+    const doc = app("app_verdict", {
+      on: { kind: "schedule", cron: "0 17 * * 5" },
+      run: { kind: "steps", steps: [{ id: "alert", tool: "host_sendEmail" }] },
+    });
+    await seedApp(store, doc);
+    // The guard-bound registry double reports the write would still ask (no
+    // standing grant captured yet) — the engine must surface that on the row.
+    const tools = guardBoundRegistry(
+      [emailTool],
+      () => ({ status: "ok", output: {} }),
+      (call) => ({ wouldAsk: true, grantsMissing: [call.tool] }),
+    );
+    const firing = (await engine(store, tools).rehearse("app_verdict", ctx())).firings[0];
+    const step = firing?.steps[0];
+    expect(step).toMatchObject({
+      id: "alert",
+      status: "simulated",
+      wouldAsk: true,
+      grantsMissing: ["host_sendEmail"],
+    });
+    expect(step?.wouldBlock).toBeUndefined();
+  });
+
+  it("threads a policy wouldBlock verdict onto the simulated step", async () => {
+    const store = memoryStoreAdapter();
+    const doc = app("app_blocked", {
+      on: { kind: "schedule", cron: "0 17 * * 5" },
+      run: { kind: "steps", steps: [{ id: "alert", tool: "host_sendEmail" }] },
+    });
+    await seedApp(store, doc);
+    const tools = guardBoundRegistry(
+      [emailTool],
+      () => ({ status: "ok", output: {} }),
+      () => ({ wouldAsk: false, grantsMissing: [], wouldBlock: "writes are off in this app" }),
+    );
+    const step = (await engine(store, tools).rehearse("app_blocked", ctx())).firings[0]?.steps[0];
+    expect(step).toMatchObject({ status: "simulated", wouldBlock: "writes are off in this app" });
+    expect(step?.wouldAsk).toBeUndefined();
+    expect(step?.grantsMissing).toBeUndefined();
+  });
+
+  it("a plain simulated write (would run once live) carries no verdict fields on the step", async () => {
+    const store = memoryStoreAdapter();
+    const doc = app("app_plain", {
+      on: { kind: "schedule", cron: "0 17 * * 5" },
+      run: { kind: "steps", steps: [{ id: "alert", tool: "host_sendEmail" }] },
+    });
+    await seedApp(store, doc);
+    // Default double: no verdict → wouldAsk:false/grantsMissing:[] not emitted.
+    const step = (await engine(store, guardBoundRegistry([emailTool])).rehearse("app_plain", ctx())).firings[0]?.steps[0];
+    expect(step).toMatchObject({ status: "simulated" });
+    expect(step?.wouldAsk).toBeUndefined();
+    expect(step?.grantsMissing).toBeUndefined();
+    expect(step?.wouldBlock).toBeUndefined();
+  });
+
+  it("a non-money numeric field (a plain count) never renders as a money headline", async () => {
+    const store = memoryStoreAdapter();
+    const doc = app("app_count", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "rows", tool: "host_listAccounts" }] },
+    });
+    await seedApp(store, doc);
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: [{ name: "Inbox", count: 120 }, { name: "Archive", count: 43 }],
+    }));
+    const step = (await engine(store, tools).rehearse("app_count", ctx())).firings[0]?.steps[0];
+    // The one shared numeric field is `count` — NOT a money name, so no headline
+    // (previously this rendered as $1.20 / $0.43).
+    expect(step?.result).toBeUndefined();
+    // The raw data still reaches the client through the preview, untouched.
+    expect(step?.preview).toContain("count");
+  });
+
+  it("still sums a genuinely-money shared field (amount) into the headline", async () => {
+    const store = memoryStoreAdapter();
+    const doc = app("app_amount", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "rows", tool: "host_listAccounts" }] },
+    });
+    await seedApp(store, doc);
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: [{ name: "Dining", amount: 5_000, count: 3 }, { name: "Transit", amount: 2_500, count: 9 }],
+    }));
+    const step = (await engine(store, tools).rehearse("app_amount", ctx())).firings[0]?.steps[0];
+    // Two shared numerics (amount, count) but only `amount` is a money name, so
+    // it's the unambiguous headline field — count is ignored, not summed.
+    expect(step?.result?.totalCents).toBe(7_500);
+    expect(step?.result?.breakdown).toEqual([
+      { label: "Dining", cents: 5_000 },
+      { label: "Transit", cents: 2_500 },
+    ]);
   });
 
   it("summarizes a list read into a headline total + per-item breakdown (shared numeric field only)", async () => {
@@ -486,6 +590,47 @@ describe("rehearse() window selection", () => {
     expect(week.from).not.toBe(month.from);
     // The wider window enumerates strictly more firings for the same schedule.
     expect(month.firings.length).toBeGreaterThan(week.firings.length);
+  });
+});
+
+describe("rehearse() server-side cooldown", () => {
+  const dailyApp = () => app("app_daily", {
+    on: { kind: "schedule", cron: "0 8 * * *" },
+    run: { kind: "steps", steps: [{ id: "balance", tool: "host_listAccounts" }] },
+  });
+
+  const clockedEngine = (store: StoreAdapter, clock: { ms: number }) => createAutomations({
+    apps: { call: async () => ({ status: "ok", output: {} }) } as never,
+    tools: guardBoundRegistry([balanceTool]),
+    guard: new GuardDouble(),
+    store,
+    now: () => new Date(clock.ms),
+  });
+
+  it("rejects a repeat of the same app+window in quick succession, then clears after the cooldown", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, dailyApp());
+    const clock = { ms: NOW.getTime() };
+    const automations = clockedEngine(store, clock);
+    // First replay runs.
+    await expect(automations.rehearse("app_daily", ctx(), 30)).resolves.toBeDefined();
+    // An immediate repeat of the SAME window is a clear error, not a silent no-op.
+    await expect(automations.rehearse("app_daily", ctx(), 30)).rejects.toThrow(/cooling down/);
+    // Once the cooldown elapses, the same window is allowed again.
+    clock.ms += 3_000;
+    await expect(automations.rehearse("app_daily", ctx(), 30)).resolves.toBeDefined();
+  });
+
+  it("does NOT throttle a legitimate 7d/30d toggle in the same instant (keyed per window)", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, dailyApp());
+    const clock = { ms: NOW.getTime() };
+    const automations = clockedEngine(store, clock);
+    await expect(automations.rehearse("app_daily", ctx(), 30)).resolves.toBeDefined();
+    // Toggling to the other window immediately is fine — different key.
+    await expect(automations.rehearse("app_daily", ctx(), 7)).resolves.toBeDefined();
+    // But re-clicking the SAME window is still throttled.
+    await expect(automations.rehearse("app_daily", ctx(), 7)).rejects.toThrow(/cooling down/);
   });
 });
 

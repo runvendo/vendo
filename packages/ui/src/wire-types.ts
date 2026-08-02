@@ -207,6 +207,15 @@ export interface RehearsalStep {
   window?: { from: IsoDateTime; to: IsoDateTime };
   evaluatedOn?: "window" | "today";
   detail?: string;
+  /** For a "simulated" write: the guard's honest verdict for what the ENABLED
+   *  automation would do with this call. `wouldAsk` = it would still need an
+   *  approval (missing standing grant, critical tool, or policy `ask`);
+   *  `grantsMissing` = the tool(s) whose grant is absent; `wouldBlock` = a
+   *  policy BLOCK rule would stop it outright. Absent/false ⇒ a plain simulated
+   *  action that would run once live. */
+  wouldAsk?: boolean;
+  grantsMissing?: string[];
+  wouldBlock?: string;
 }
 
 /** Additive (rehearse) — one historical firing of the trigger. */

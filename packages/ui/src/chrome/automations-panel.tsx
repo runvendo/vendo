@@ -51,6 +51,15 @@ function formatRehearsalDay(iso: string): string {
   return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** Firings-box sizing (item: fixed 320px left a mostly-empty box for short
+    lists). One collapsed firing row ≈ .fl-act-row (8+8px padding + line;
+    measured ≈ 40px in the demo); REHEARSAL_BODY_MAX_PX is the original ceiling
+    above which the box scrolls internally; REHEARSAL_BODY_PAD_PX is
+    .fl-act-body's vertical padding. */
+const REHEARSAL_FIRING_ROW_PX = 40;
+const REHEARSAL_BODY_PAD_PX = 6;
+const REHEARSAL_BODY_MAX_PX = 320;
+
 const REHEARSAL_FIRING_LABEL: Record<RehearsalFiring["status"], string> = {
   fired: "fired",
   skipped: "skipped",
@@ -71,6 +80,15 @@ function firingHeadline(firing: RehearsalFiring): RehearsalStep["result"] | unde
   return firing.steps.find(step => step.status === "ok" && step.result !== undefined)?.result;
 }
 
+/** How many of a firing's simulated writes would NOT simply run once live — a
+    policy block, or a call that would still ask for approval (missing grant /
+    critical). Surfaced on the collapsed firing row so an honest "would ask"
+    verdict is visible without expanding. */
+function firingWouldStopCount(firing: RehearsalFiring): number {
+  return firing.steps.filter(step =>
+    step.status === "simulated" && (step.wouldBlock !== undefined || step.wouldAsk === true)).length;
+}
+
 /** One rehearsed step, shown only in a firing's expanded detail: reads show
     what they ran against (the pinned window, or "today's data" when the tool
     takes no date bounds) plus a per-item money breakdown when the resolved
@@ -80,12 +98,30 @@ function firingHeadline(firing: RehearsalFiring): RehearsalStep["result"] | unde
 function RehearsalStepRow({ step }: { step: RehearsalStep }) {
   const name = humanizeToolName(step.tool);
   if (step.status === "simulated") {
+    // The honest verdict the guard resolved for this write (07-automations):
+    // a plain simulated action would run once live, but a would-block or
+    // would-ask one would NOT — the card must say so rather than reading rosy.
+    const missing = step.grantsMissing ?? [];
+    const grantList = missing.map(humanizeToolName).join(", ");
+    const wouldStop = step.wouldBlock !== undefined || step.wouldAsk === true;
+    const verdictLabel = step.wouldBlock !== undefined
+      ? "would have been blocked"
+      : step.wouldAsk === true
+        ? "would ask first"
+        : "simulated";
+    const verdictSub = step.wouldBlock !== undefined
+      ? `Would have been blocked — ${step.wouldBlock}`
+      : missing.length > 0
+        ? `Would have been blocked — missing grant: ${grantList} (needs approval before it runs)`
+        : step.wouldAsk === true
+          ? "Would have asked for approval first — this action always needs sign-off"
+          : "Not executed — this is what it would have sent";
     return (
       <div className="fl-act-row" style={{ alignItems: "flex-start" }}>
-        <span className="fl-act-ic" aria-hidden="true">✉</span>
+        <span className={`fl-act-ic ${wouldStop ? "fl-act-x" : ""}`} aria-hidden="true">{wouldStop ? "⚠" : "✉"}</span>
         <span style={{ minWidth: 0 }}>
-          <strong className="fl-act-lbl">{name} — simulated</strong>
-          <span className="fl-act-sub" style={{ display: "block" }}>Not executed — this is what it would have sent</span>
+          <strong className="fl-act-lbl">{name} — {verdictLabel}</strong>
+          <span className="fl-act-sub" style={{ display: "block" }}>{verdictSub}</span>
           {step.args !== undefined && Object.keys(step.args).length > 0 ? (
             <code className="fl-act-peek" style={{ display: "block", overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
               {JSON.stringify(step.args, null, 1)}
@@ -157,6 +193,21 @@ function RehearsalTimeline({
   const fired = report.firings.filter(firing => firing.status === "fired").length;
   const simulated = report.firings.reduce((count, firing) => count + firing.simulatedActions, 0);
   const newestFirst = report.firings.slice().reverse();
+  // The firings box is sized to fit THIS automation's firings (collapsed),
+  // capped at REHEARSAL_BODY_MAX_PX with internal scroll above that — so a
+  // weekly schedule with 1-2 firings no longer reserves a mostly-empty 320px
+  // box. Height is high-water-marked across renders and NEVER shrinks: the
+  // default 30d window (always ≥ the 7d window's firing count) loads first and
+  // locks the larger height, so toggling 7d/30d for the same automation can't
+  // resize the panel or reflow the cards below it.
+  const bodyEstimate = Math.min(
+    REHEARSAL_BODY_MAX_PX,
+    report.firings.length * REHEARSAL_FIRING_ROW_PX + REHEARSAL_BODY_PAD_PX,
+  );
+  const [bodyHeight, setBodyHeight] = useState(bodyEstimate);
+  useEffect(() => {
+    setBodyHeight(prev => Math.max(prev, bodyEstimate));
+  }, [bodyEstimate]);
   return (
     <div
       className="fl-auto-flow"
@@ -199,11 +250,14 @@ function RehearsalTimeline({
             + (simulated > 0 ? ` · ${simulated} simulated action${simulated === 1 ? "" : "s"} — nothing was executed` : " · nothing was executed")
             + (report.truncated === true ? " · showing the most recent firings" : "")}
       </div>
-      {/* Fixed height (not maxHeight): the firings box holds its size whatever
-          the count, so flipping 7d/30d only scrolls its inner content instead
-          of resizing the panel and reflowing every card below it. */}
+      {/* Explicit height (not maxHeight), high-water-marked so it never shrinks
+          on a 7d/30d toggle: the box holds its size across toggles for the same
+          automation — flipping windows only scrolls its inner content instead
+          of resizing the panel and reflowing every card below it — but it is
+          sized to this automation's firings (capped) rather than always
+          reserving 320px, so a short list doesn't leave a mostly-empty box. */}
       {newestFirst.length > 0 ? (
-        <div className="fl-act-body" style={{ height: 320, overflowY: "auto" }}>
+        <div className="fl-act-body" style={{ height: bodyHeight, overflowY: "auto" }}>
           {newestFirst.map(firing => {
             const key = firing.scheduledFor;
             const headline = firingHeadline(firing);
@@ -224,6 +278,12 @@ function RehearsalTimeline({
                     {firing.simulatedActions > 0 ? (
                       <span>· {firing.simulatedActions} simulated</span>
                     ) : null}
+                    {(() => {
+                      const wouldStop = firingWouldStopCount(firing);
+                      return wouldStop > 0 ? (
+                        <span className="fl-act-x" style={{ fontWeight: 600 }}>· {wouldStop} would ask</span>
+                      ) : null;
+                    })()}
                     {headline !== undefined ? (
                       <strong style={{ color: "var(--vendo-fg)", fontVariantNumeric: "tabular-nums" }}>
                         <Money cents={headline.totalCents} />

@@ -106,6 +106,17 @@ export interface RehearsalStep {
    *  the tool takes no date bounds, so the row reflects today's data. */
   evaluatedOn?: "window" | "today";
   detail?: string;
+  /** For a "simulated" write step: the guard's honest verdict for what the
+   *  ENABLED automation would actually do with this call (lifted from the
+   *  RehearsalSimulation card). `wouldAsk` = it would still need an approval
+   *  (no standing grant captured yet, a critical tool, or a policy `ask`);
+   *  `grantsMissing` = the tool(s) whose standing grant is absent (mirrors
+   *  RunPlan.grantsMissing); `wouldBlock` = a policy BLOCK rule would stop it
+   *  outright even after enable. Absent/false ⇒ the write would simply run once
+   *  live, so the card reads as a plain simulated action. */
+  wouldAsk?: boolean;
+  grantsMissing?: string[];
+  wouldBlock?: string;
 }
 
 /** Additive (rehearse()) — one historical firing of the trigger. */

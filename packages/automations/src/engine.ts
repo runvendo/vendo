@@ -65,9 +65,28 @@ const resolveRehearsalWindowDays = (windowDays?: 7 | 30): 7 | 30 =>
  *  up to ~8 firings/day over the full window; denser schedules (e.g. hourly)
  *  report `truncated: true`. */
 const REHEARSAL_MAX_FIRINGS = 62;
-/** Enumeration backstop: covers a minute-granularity cron across the window. */
+/** Enumeration backstop: covers a minute-granularity cron across the window.
+ *  Measured cost of the forward `cron.nextRun()` walk over a 30-day window
+ *  (croner, this machine): daily `0 8 * * *` 31 calls ≈ 2.5ms, weekly 5 calls
+ *  ≈ 0.4ms, hourly `0 * * * *` 721 calls ≈ 66ms — all negligible, and daily/
+ *  weekly is what rehearsal targets (REHEARSAL_MAX_FIRINGS ≈ 8/day). The only
+ *  slow case is a pathological every-minute `* * * * *` schedule: ~43.2k calls
+ *  ≈ 3.9s of synchronous enumeration to find the most-recent 62 firings. Left
+ *  as-is deliberately: that cadence is unusual for a user-facing scheduled
+ *  automation, it reports `truncated: true`, rehearse() is now throttled by
+ *  REHEARSAL_COOLDOWN_MS so it can't be hammered, and this cap bounds the
+ *  absolute worst case. Worth knowing, not worth a backward-enumeration
+ *  rewrite. */
 const REHEARSAL_MAX_ITERATIONS = 50_000;
 const REHEARSAL_PREVIEW_CHARS = 240;
+/** Server-side throttle on rehearse() itself. Each rehearsal replays up to
+ *  REHEARSAL_MAX_FIRINGS × steps REAL host reads, so a burst of clicks (a
+ *  double-click, a second tab, a reload that resets the UI's in-flight
+ *  disable) could fan out to hundreds of upstream calls. This collapses
+ *  repeats to at most one replay per app-per-caller every few seconds. Kept
+ *  short: a deliberate re-run (including the 7d/30d toggle) after reading the
+ *  report clears it, while quick-succession repeats are rejected outright. */
+const REHEARSAL_COOLDOWN_MS = 3_000;
 
 const appRowSchema = z.object({
   subject: z.string(),
@@ -410,7 +429,13 @@ const rehearsalFireTimes = (
     }
     if (iterations >= REHEARSAL_MAX_ITERATIONS) truncated = true;
   } else if (source.every !== undefined) {
-    const interval = durationMs(source.every) as number;
+    const interval = durationMs(source.every);
+    // validateTrigger rejects a malformed `every` at creation, so a null here
+    // means that gate was bypassed somewhere. Fail loudly rather than casting
+    // null to a number and letting NaN cursor math silently misbehave.
+    if (interval === null) {
+      throw new Error(`rehearsal: schedule.every "${source.every}" is not a valid duration (validateTrigger should have rejected it)`);
+    }
     const recentFirst: Date[] = [];
     for (let at = to.getTime() - interval; at >= from.getTime(); at -= interval) {
       if (recentFirst.length === REHEARSAL_MAX_FIRINGS) {
@@ -445,6 +470,21 @@ const rehearsalPreview = (output: Json): string => {
  *  non-empty string on EVERY element wins. */
 const REHEARSAL_LABEL_FIELDS = ["name", "label", "title", "category", "merchant", "description", "id"];
 
+/** Conventionally-money field names (lower-cased) a list read's headline may
+ *  sum as minor units. Restricting to this allowlist — rather than "whichever
+ *  numeric field the rows happen to share" — is what stops a plain count (or
+ *  any other non-money number) rendering as a dollar amount. Covers the fields
+ *  the seeded demo tools mark as `cents` via `x-vendo-formats` (amount,
+ *  balance, netWorth, saved, spent, target, limit, in, out — see
+ *  apps/demo-bank & apps/demo-accounting `openapi.json`; that hint is doc-only
+ *  and never reaches the runtime descriptor, so the name allowlist stands in
+ *  for it) plus the common cents-suffix and money synonyms. */
+const REHEARSAL_MONEY_FIELDS = new Set([
+  "amount", "amountcents", "totalcents", "cents", "total", "subtotal",
+  "balance", "networth", "saved", "spent", "target", "limit",
+  "price", "cost", "fee", "credit", "debit", "in", "out",
+]);
+
 const isJsonObject = (value: Json): value is Record<string, Json> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -463,11 +503,13 @@ const rehearsalObjectList = (output: Json): Array<Record<string, Json>> | undefi
 };
 
 /** A shape-driven numeric summary of a real read for the timeline headline:
- *  the output's homogeneous object list summed over the ONE numeric field
- *  every element shares (integer minor units — this codebase's cents
- *  convention). Undefined when there is no such list or the numeric field is
- *  ambiguous (zero or several shared), so the row shows no number rather than
- *  an invented one. Never keys off a per-tool field name, so it stays
+ *  the output's homogeneous object list summed over the ONE conventionally-money
+ *  numeric field every element shares (integer minor units — this codebase's
+ *  cents convention; see REHEARSAL_MONEY_FIELDS). Undefined when there is no
+ *  such list, no shared money-named numeric field, or several (ambiguous), so
+ *  the row shows no number rather than an invented one. Keys off a MONEY-name
+ *  allowlist rather than a per-tool field name, so a non-money number (e.g. a
+ *  plain `count`) never renders as a dollar amount while it stays
  *  host-agnostic. */
 const rehearsalResult = (output: Json): RehearsalStep["result"] => {
   const list = rehearsalObjectList(output);
@@ -478,8 +520,11 @@ const rehearsalResult = (output: Json): RehearsalStep["result"] => {
     shared = shared === undefined ? numeric : shared.filter((key) => numeric.includes(key));
     if (shared.length === 0) return undefined;
   }
-  if (shared === undefined || shared.length !== 1) return undefined;
-  const field = shared[0]!;
+  // Only a conventionally-money field is summed as cents: a shared numeric
+  // field with a non-money name (a count, an APY, an id) yields no headline.
+  const money = (shared ?? []).filter((key) => REHEARSAL_MONEY_FIELDS.has(key.toLowerCase()));
+  if (money.length !== 1) return undefined;
+  const field = money[0]!;
   const labelField = REHEARSAL_LABEL_FIELDS.find((key) =>
     list.every((row) => typeof row[key] === "string" && (row[key] as string).length > 0));
   let totalCents = 0;
@@ -498,6 +543,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const active = new Set<string>();
   const resuming = new Set<string>();
   const inFlightDeliveries = new Set<string>();
+  // rehearse() cooldown (in-memory, consistent with the guard's call-window
+  // breaker): last replay start per `${subject}:${appId}`, in `now()` ms.
+  const rehearseCooldowns = new Map<string, number>();
   const abortControllers = new Map<string, AbortController>();
   // Minted on first claim, not at construction: Workers forbids generating
   // random values in global scope, and createVendo composes this engine at
@@ -1621,6 +1669,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       presence: "present",
       sessionId: base.caller.sessionId,
       appId: base.appId,
+      // AUDIT-SCOPED ONLY: rehearsal persists nothing to run history (by
+      // design — see rehearse()), so this run id lives exclusively inside the
+      // audit events emitted under the rehearsal venue. It will NEVER match a
+      // row in the runs store; do not join an audit entry on this id against
+      // the runs table expecting to find one.
       trigger: { runId: id("run_rehearsal_") as RunId, kind: "schedule" },
       ...(base.caller.requestHeaders === undefined ? {} : { requestHeaders: base.caller.requestHeaders }),
     };
@@ -1674,6 +1727,15 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           if (isRehearsalSimulation(outcome.output)) {
             row.status = "simulated";
             simulatedActions += 1;
+            // Lift the guard's honest would-be-live verdict onto the row so the
+            // timeline can say "would ask / would be blocked" rather than a
+            // rosy plain simulated card.
+            const sim = outcome.output;
+            if (sim.wouldAsk === true) row.wouldAsk = true;
+            if (sim.grantsMissing !== undefined && sim.grantsMissing.length > 0) {
+              row.grantsMissing = sim.grantsMissing;
+            }
+            if (sim.wouldBlock !== undefined) row.wouldBlock = sim.wouldBlock;
           } else {
             row.preview = rehearsalPreview(outcome.output);
             if (descriptor.risk === "read") {
@@ -1726,6 +1788,27 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }
     }
     const resolvedWindowDays = resolveRehearsalWindowDays(windowDays);
+    // Server-side throttle (07-automations): reject a repeat replay of the same
+    // app+window by the same caller inside the cooldown, so rapid clicks / a
+    // second tab / a reload can't fan out to hundreds of real host reads. The
+    // UI's in-flight button disable is client-only and resets on reload — this
+    // is the real backstop. Keyed by window (7 vs 30) so a legitimate 7d/30d
+    // toggle isn't rejected while repeated same-window Rehearse clicks are.
+    // Prune stale entries opportunistically to bound memory.
+    const cooldownKey = `${ctx.principal.subject}:${appId}:${resolvedWindowDays}`;
+    const nowMs = now().getTime();
+    for (const [key, at] of rehearseCooldowns) {
+      if (nowMs - at >= REHEARSAL_COOLDOWN_MS) rehearseCooldowns.delete(key);
+    }
+    const lastAt = rehearseCooldowns.get(cooldownKey);
+    if (lastAt !== undefined && nowMs - lastAt < REHEARSAL_COOLDOWN_MS) {
+      const retryInMs = REHEARSAL_COOLDOWN_MS - (nowMs - lastAt);
+      throw new VendoError(
+        "conflict",
+        `rehearsal is cooling down; retry in ${Math.ceil(retryInMs / 1000)}s`,
+      );
+    }
+    rehearseCooldowns.set(cooldownKey, nowMs);
     const to = now();
     const from = new Date(to.getTime() - resolvedWindowDays * 86_400_000);
     const { times, truncated, preceding } = rehearsalFireTimes(trigger.on, from, to);
