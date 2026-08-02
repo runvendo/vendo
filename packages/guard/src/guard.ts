@@ -863,17 +863,27 @@ class GuardImplementation implements VendoGuard {
 
   /** The rehearsal simulated card's honest verdict for a write/destructive call
    *  (07-automations rehearse()): what the enabled automation's policy decision
-   *  WOULD be, resolved through the ordinary pipeline in preview mode so it
-   *  neither executes, parks an approval, nor spends a grant. Mirrors dryRun's
-   *  wouldAsk/grantsMissing: a resolved "ask" means the call would still need an
-   *  approval (missing standing grant, or a critical/policy ask); a resolved
-   *  "block" means a policy rule would stop it outright even after enable. */
+   *  WOULD be. Resolved under the AWAY/AUTOMATION context the enabled automation
+   *  actually runs in (venue "automation", presence "away") — NOT the rehearsal/
+   *  present context — so #matchingGrant honors only automation-source, app-bound
+   *  grants and rule matching uses the automation venue, exactly as live. Runs
+   *  through the ordinary pipeline in preview mode so it neither executes, parks
+   *  an approval, nor spends a grant, then applies the 05 §6 away downgrade a
+   *  direct #pipeline call bypasses (a non-grant away "run" has no captured
+   *  authority, so live it would park/ask). Mirrors dryRun's wouldAsk/
+   *  grantsMissing: a resolved "ask" means the call would still need an approval
+   *  (missing standing grant, or a critical/policy ask); a resolved "block" means
+   *  a policy rule would stop it outright even after enable. */
   async #rehearsalWriteVerdict(
     call: ToolCall,
     descriptor: ToolDescriptor,
     ctx: RunContext,
   ): Promise<{ wouldAsk: boolean; grantsMissing: string[]; wouldBlock?: string }> {
-    const { decision } = await this.#pipeline(call, descriptor, ctx, true);
+    const awayCtx: RunContext = { ...ctx, venue: "automation", presence: "away" };
+    let { decision } = await this.#pipeline(call, descriptor, awayCtx, true);
+    if (decision.action === "run" && decision.decidedBy !== "grant") {
+      decision = { action: "ask", decidedBy: "default" };
+    }
     if (decision.action === "block") {
       return { wouldAsk: false, grantsMissing: [], wouldBlock: decision.reason };
     }

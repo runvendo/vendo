@@ -79,15 +79,17 @@ describe("rehearsal venue at the guard choke point", () => {
     expect((destructive as { output: unknown }).output).toMatchObject({ wouldAsk: true, grantsMissing: ["host_destructive"] });
   });
 
-  it("a write with a standing grant reports wouldAsk:false (it would simply run once live)", async () => {
+  it("a write with an automation-source standing grant reports wouldAsk:false (it would simply run once live)", async () => {
     const store = createMemoryStore();
     const guard = createGuard({ store, policy: demoPolicy });
-    await seedGrant(store, { descriptor: descriptor("write") });
+    // The verdict resolves under the away/automation context, so only an
+    // automation-source, app-bound grant (what enable captures) authorizes it.
+    await seedGrant(store, { descriptor: descriptor("write"), source: "automation", appId: "app_1", duration: "standing" });
     const tools = new FixtureTools();
     const outcome = await guard.bind(tools).execute(call("host_write", { v: 1 }), rehearsalCtx);
     expect(outcome.status).toBe("ok");
     // Still simulated (writes never execute in rehearsal), but the verdict is
-    // honest: the standing grant means the enabled automation would run it.
+    // honest: the automation grant means the enabled automation would run it.
     expect((outcome as { output: unknown }).output).toMatchObject({
       rehearsalSimulated: true,
       wouldAsk: false,
@@ -95,6 +97,24 @@ describe("rehearsal venue at the guard choke point", () => {
     });
     expect(tools.executions).toHaveLength(0);
     // Resolving the verdict must NOT have spent/parked anything.
+    expect(await guard.approvals.pending(alice)).toHaveLength(0);
+  });
+
+  it("a CHAT-source grant does NOT suppress the away verdict: the enabled automation still asks", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store, policy: demoPolicy });
+    // A chat grant is not usable away — the enabled automation, running away,
+    // has no captured automation-source authority, so it would still ask.
+    await seedGrant(store, { descriptor: descriptor("write"), source: "chat" });
+    const tools = new FixtureTools();
+    const outcome = await guard.bind(tools).execute(call("host_write", { v: 1 }), rehearsalCtx);
+    expect(outcome.status).toBe("ok");
+    expect((outcome as { output: unknown }).output).toMatchObject({
+      rehearsalSimulated: true,
+      wouldAsk: true,
+      grantsMissing: ["host_write"],
+    });
+    expect(tools.executions).toHaveLength(0);
     expect(await guard.approvals.pending(alice)).toHaveLength(0);
   });
 
