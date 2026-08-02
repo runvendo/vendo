@@ -94,17 +94,39 @@ placements: ["home-hero"]                                          // "show this
 - The demo-bank fake-hash workaround and the orphan `home-hero.json` baseline
   are deleted with the split.
 
-## Review: instant when personal, gated when shared
+## Review: a host policy knob (Yousef 2026-08-02)
+
+Personal-remix review is **configurable by the host**:
+
+```ts
+remix: { review: "none" | "required" }   // default: "none"
+```
+
+- `"none"` (default): a personal remix renders instantly, jailed, that user
+  only.
+- `"required"`: the remix is created but held; the user sees "sent for
+  review" and the fork renders only after a host reviewer approves its
+  ship-diff. Execution stays jailed either way — approval controls *when* the
+  user sees it, never whether it runs in-process.
+
+Independent of the knob, the blast-radius gates are fixed:
 
 | Scope of a remix | Execution | Review |
 |---|---|---|
-| Personal (default) | Jail, that user only | None — instant |
-| Shared with other users | Jail, wider audience | Ship-diff reviewed before others see it |
-| Promoted by the host | Real host code, in-process | Host engineers review the ship-diff like any code change |
+| Personal | Jail, that user only | Per the host's `review` knob |
+| Shared with other users | Jail, wider audience | Ship-diff reviewed before others see it, always |
+| Promoted by the host | Real host code, in-process | Host engineers review the ship-diff like any code change, always |
 
 The ship-diff (`packages/apps/src/ship-diff.ts` — the fork's unified diff
 against the captured baseline, keyed to a version hash) is the review artifact
-at both gates. The sandbox is the nursery; promotion is the graduation.
+at every gate. The sandbox is the nursery; promotion is the graduation.
+
+**Fork-quality warning at sync time:** capture analyzes the wrapped component
+for reach into host plumbing (router, context, callback props) and warns the
+host developer that such a component will fork with degraded behavior — bad
+remix candidates get caught before they ever ship a sparkle. This is the
+mitigation for missing-functionality disappointment; the frozen eval measures
+whether it suffices or the `review` default must flip.
 
 ## Also folded into this shape
 
