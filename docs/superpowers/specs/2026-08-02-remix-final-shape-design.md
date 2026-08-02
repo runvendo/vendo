@@ -55,8 +55,7 @@ The wrapper becomes the registration. One line, one sync run:
 - An **unapproved** fork always renders inside the jail (sandboxed iframe,
   locked CSP) — the frame is the only real security boundary a browser offers,
   and unreviewed model-edited code never runs in-process. A **host-approved**
-  version mounts natively in the page (see Review below); the jail is the
-  draft venue, not a permanent ceiling.
+  version mounts natively in the page (see Review below).
 - **Data is real, two routes:**
   1. In place, the live (JSON-serializable) props the host passes at the call
      site flow across the frame boundary into the fork. Nothing captured,
@@ -69,9 +68,9 @@ The wrapper becomes the registration. One line, one sync run:
   boundary. Declared `sampleProps` die with the registry flag; the fork's seed
   for the dashboard-placement edge case is a snapshot of the serializable live
   props at the wrapper, taken at fork time.
-- Known jail costs accepted for drafts: frame weight per fork, clipped
-  overlays at the boundary, client-only first paint. Approval (below) is the
-  path to zero-seam native execution.
+- Known jail costs accepted for instant-kind remixes: frame weight per fork,
+  clipped overlays at the boundary, client-only first paint. Review-kind
+  components get zero-seam native execution through approval (below).
 
 ## Data model: pins vs placements
 
@@ -95,69 +94,65 @@ placements: ["home-hero"]                                          // "show this
 - The demo-bank fake-hash workaround and the orphan `home-hero.json` baseline
   are deleted with the split.
 
-## Review: draft → approved, and review buys the venue (Yousef 2026-08-02)
+## Review: two component kinds, review buys the venue (Yousef 2026-08-02)
 
-A remix has two states, and host review moves it between them:
-
-```
-user remixes ──► DRAFT: instantly visible, jailed (self-contained behavior
-    │                   works; reach into host plumbing is degraded)
-    │  host reviews the ship-diff, approves
-    ▼
-APPROVED: that exact version mounts IN THE HOST PAGE — native, in place,
-    │     full functionality, hash-pinned to the reviewed version
-    │  user edits again
-    ▼
-back to DRAFT (jailed) until re-approved — fail-closed by construction
-```
-
-This rides the existing in-client approval machinery
-(`packages/apps/src/inclient.ts`): jailed is the default venue; only a stored
-approval matching the CURRENT version's content hash mounts the UI in the host
-page; any hash mismatch drops back to the iframe. Review is not bureaucracy —
-it is what makes a remix fully real. The sandbox is the draft state, not a
-permanent ceiling.
-
-**The policy is per-component, on the wrapper** — because remixability varies
-by component (Yousef: a self-contained chart forks cleanly; a plumbing-heavy
-panel does not):
+Review NEVER affects who can see a remix — remixes are personal, always. It
+decides only sandboxed-vs-in-place. Each wrapped component is one of exactly
+two kinds:
 
 ```tsx
-<Remixable>                      {/* default: drafts="instant" */}
-  <NetWorthCard accounts={accounts} />
+<Remixable>            {/* instant: remix appears immediately, runs SANDBOXED,
+  <NetWorthCard />        forever. No review process exists for it. */}
 </Remixable>
 
-<Remixable drafts="held">        {/* remixes wait for host approval */}
-  <TransferPanel />
-</Remixable>
+<Remixable review>     {/* reviewed: the user sees NOTHING until a host
+  <TransferPanel />       reviewer approves; the approved version then renders
+</Remixable>              IN PLACE as real code. */}
 ```
 
-- `drafts="instant"` (default): the jailed draft renders immediately;
-  approval upgrades that exact version to native in place.
-- `drafts="held"`: the user sees "sent for review"; nothing renders until a
-  reviewer approves, and it then mounts native directly.
+- **Instant** (default): remix → it renders, jailed, done. No queue, no
+  pending state, no approval ceremony — there is nothing to signal. The ✦
+  mark on the remixed component is the management handle (revert, edit).
+- **Reviewed**: after remixing, the original stays and the only user-visible
+  state is "sent for review" (surfaced in the panel). On approval the remix
+  appears in place, native. On rejection the reviewer's note lands in the
+  panel; the work is not deleted — the user can edit and resubmit.
+- **Edits to an approved remix go back through review.** Until the new
+  version is approved, the LAST approved version keeps rendering — never a
+  gap, never unreviewed code in place. This rides the existing hash-pinned
+  in-client approval machinery (`packages/apps/src/inclient.ts`): only a
+  stored approval matching a version's content hash mounts in the host page.
 
-The blast-radius gates are fixed regardless of the knob:
+Fixed gates regardless of kind:
 
-| Scope of a remix | Execution | Review |
+| Scope | Execution | Review |
 |---|---|---|
-| Personal draft | Jail, that user only | None (visible per the wrapper's `drafts`) |
-| Personal approved | Host page, that user only | Ship-diff approved, hash-pinned |
-| Shared with other users | Per approval state | Ship-diff reviewed before others see it, always |
+| Personal, instant component | Jail, that user only | None, ever |
+| Personal, reviewed component | Host page, that user only | Ship-diff approved before the user sees it |
+| Shared with other users | Per component kind | Ship-diff approved before sharing, always (see Sharing) |
 | Promoted by the host | Host codebase | Host engineers review like any code change, always |
 
 The ship-diff (`packages/apps/src/ship-diff.ts` — the fork's unified diff
 against the captured baseline, keyed to a version hash) is the review artifact
-at every gate. Approving is one screen: the diff, approve/reject. Self-hosters
-wire the approval seam themselves; Cloud's console is the ready-made review
-screen (the usual OSS/Cloud split).
+at every gate. Approving is one screen: the user's version rendered live next
+to the host's original, the exact code diff one tap away, approve/reject with
+a note (Yousef's pick). Self-hosters get the approval seam; Cloud's console is
+the ready-made review screen (the usual OSS/Cloud split).
 
 **Fork-quality warning at sync time:** capture analyzes the wrapped component
 for reach into host plumbing (router, context, callback props) and warns the
-host developer — including suggesting `drafts="held"` for plumbing-heavy
-components, so the policy is learned exactly where it would be gotten wrong.
-The frozen eval measures whether draft-quality forks satisfy or the default
-must flip.
+host developer — suggesting `review` for plumbing-heavy components, so the
+policy is learned exactly where it would be gotten wrong.
+
+## Sharing (Yousef 2026-08-02: in scope, rides wave 3)
+
+Sharing a remix = sharing an app that contains a fork, on the wave-3 rebuild
+primitives (grants to user/team/org, `can()`, the share dialog) — nothing new
+is built. Remix adds ONE rule: an app containing a fork can be shared only
+when its current version has an approval; otherwise the share dialog shows
+"needs review first" and can request it. Built as the FINAL wave, after the
+rebuild cutover lands on main, coordinated with the wave-3 orchestrator
+session.
 
 ## Also folded into this shape
 
@@ -182,11 +177,14 @@ must flip.
 - Vendor-authored distribution / ship-app endgame beyond the promote gate
   (see the embedded-agent architecture spec).
 - Any change to generation or the edit dialect.
+- New sharing machinery of any kind — sharing reuses wave-3 primitives only.
 
 ## Sequencing
 
 1. Pins/placements split + migration (small, unblocks an honest eval).
 2. The `<Remixable>`-as-registration build (sync scan, in-place fork mount,
-   chip removal, old-API deletion, idempotent fork route).
+   chip removal, old-API deletion, idempotent fork route, the two component
+   kinds + review flow, console review screen seam).
 3. Frozen REMIX eval re-run → graduation decision.
 4. Housekeeping PR.
+5. Sharing wave — after the rebuild cutover lands on main, on wave-3 grants.
