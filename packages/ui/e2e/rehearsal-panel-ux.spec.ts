@@ -8,9 +8,11 @@ const shot = (name: string) => `${EVIDENCE}/${name}.png`;
  * PR #1 (fm/build-vendo-rehearsal) — the three shipped-Rehearsal UX fixes in
  * AutomationsPanel, exercised against the REAL panel over the harness wire:
  *
- *  1. The rehearsal firings box uses fixed `height:320` (not `maxHeight`), so
- *     flipping the 7d/30d window no longer resizes the panel and reflows the
- *     cards below it — only the inner scroll content changes.
+ *  1. The rehearsal firings box renders at its full natural height with no
+ *     nested inner scroll — the page-level `.fl-auto-scroll` is the single
+ *     scrollbar. A `minHeight` high-water-mark floor (locked by the default 30d
+ *     window) keeps the box from visibly shrinking on the 7d/30d flip, so the
+ *     panel never resizes and reflows the cards below it.
  *  2. The Automations <section> owns a scroll region (`.fl-auto-scroll`), so
  *     under an overflow:hidden host a tall panel scrolls instead of clipping
  *     content below the fold. Removing the class removes the scroll region.
@@ -19,7 +21,7 @@ const shot = (name: string) => `${EVIDENCE}/${name}.png`;
  *     width instead of being clipped out of its box.
  */
 
-test("1) fixed rehearsal box height keeps the panel stable across the 7d/30d flip", async ({ page }) => {
+test("1) full-height rehearsal box has no inner scroll and never shrinks across the 7d/30d flip", async ({ page }) => {
   await openScenario(page, "automations");
 
   await page.getByRole("button", { name: "Rehearse", exact: true }).click();
@@ -29,25 +31,33 @@ test("1) fixed rehearsal box height keeps the panel stable across the 7d/30d fli
   const body = results.locator(".fl-act-body");
   const panelHeightAt = async () => Math.round((await results.boundingBox())!.height);
   const bodyHeightAt = async () => Math.round((await body.boundingBox())!.height);
+  const innerScrollAt = async () =>
+    body.evaluate(el => ({ scrollH: el.scrollHeight, clientH: el.clientHeight }));
 
-  // 30-day window: many rows, but the firings box is pinned to 320.
+  // 30-day window: many rows rendered at full natural height. The box has NO
+  // inner scroll (content is not clipped) and is taller than the old 320 cap.
   const firingsAt30 = await results.locator("article").count();
   const panel30 = await panelHeightAt();
   const box30 = await bodyHeightAt();
-  expect(box30).toBe(320);
+  const scroll30 = await innerScrollAt();
+  expect(scroll30.scrollH).toBeLessThanOrEqual(scroll30.clientH + 1); // no nested inner scroll
+  expect(box30).toBeGreaterThan(320); // full list, past the old cap
   await page.screenshot({ path: shot("ux1-rehearsal-30d"), fullPage: true, animations: "disabled" });
 
-  // Flip to 7d: strictly fewer rows, yet the box (and therefore the whole panel)
-  // must NOT change height — that was the bug (maxHeight shrank to fit 7 rows).
+  // Flip to 7d: strictly fewer rows, yet the minHeight high-water-mark floor
+  // (locked by the 30d window) keeps the box from visibly shrinking — so the
+  // whole panel does not resize and reflow the cards below it.
   await page.getByRole("group", { name: "Rehearsal window" }).getByRole("button", { name: "7d" }).click();
   await expect(results.getByText("Rehearsal — last 7 days")).toBeVisible();
   const firingsAt7 = await results.locator("article").count();
   const panel7 = await panelHeightAt();
   const box7 = await bodyHeightAt();
+  const scroll7 = await innerScrollAt();
 
   expect(firingsAt7).toBeLessThan(firingsAt30); // fewer rows at 7d…
-  expect(box7).toBe(320); // …but the firings box is unchanged…
+  expect(box7).toBeGreaterThanOrEqual(box30); // …but the minHeight floor holds, box never shrinks…
   expect(panel7).toBe(panel30); // …so the panel does not resize/reflow.
+  expect(scroll7.scrollH).toBeLessThanOrEqual(scroll7.clientH + 1); // still no inner scroll
   await page.screenshot({ path: shot("ux1-rehearsal-7d"), fullPage: true, animations: "disabled" });
 });
 
