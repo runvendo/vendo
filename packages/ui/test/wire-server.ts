@@ -4,11 +4,12 @@ import {
   type UIMessage,
   type UIMessageChunk,
 } from "ai";
-import type {
-  AppDocument,
-  ApprovalRequest,
-  AuditEvent,
-  PermissionGrant,
+import {
+  sha256Hex,
+  type AppDocument,
+  type ApprovalRequest,
+  type AuditEvent,
+  type PermissionGrant,
 } from "@vendoai/core";
 import { createServer, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -22,6 +23,16 @@ export interface RecordedRequest {
 }
 
 const NOW = "2026-07-11T12:00:00.000Z";
+
+/** Mirror of the runtime's stable generated-component name for one captured
+ *  slot (`pinComponentName` in @vendoai/apps) — the fixture's forked trees
+ *  must carry the REAL name so the wrapper's in-place mount finds the node. */
+function pinComponentName(slot: string): string {
+  const stem = (slot.match(/[A-Za-z0-9]+/g) ?? [])
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join("") || "Slot";
+  return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
+}
 
 function app(id: string, name: string, automation = false): AppDocument {
   return {
@@ -255,10 +266,6 @@ export async function createWireServer(options: WireServerOptions = {}) {
     // Existing-agents polish — how many open polls `app_building_lands`
     // misses before its build "lands" (the browser harness's build window).
     buildingOpensRemaining: 2,
-    // #492 — apps whose build turn terminally FAILED: a flagged open poll
-    // answers {kind:"failed"} with the reason (the record exists as a failure),
-    // so the embed resolves promptly instead of spinning to its deadline.
-    failedApps: new Map<string, { reason: string; retryable?: boolean }>(),
     /** Backward-compat harness: serve /automations and enable WITHOUT the
      *  grant-set fields (pendingGrants/grantSetId), the payload an older
      *  server emits — new clients must parse and render it unchanged. */
@@ -267,6 +274,10 @@ export async function createWireServer(options: WireServerOptions = {}) {
      *  write threw and the guard swallowed the subscriber error) — the deny
      *  decisions land but the automation row stays enabled. */
     denyDisarmFails: false,
+    // #492 — apps whose build turn terminally FAILED: a flagged open poll
+    // answers {kind:"failed"} with the reason (the record exists as a failure),
+    // so the embed resolves promptly instead of spinning to its deadline.
+    // (Was declared twice; the fuller shape won — now declared once.)
     failedApps: new Map<string, { reason: string; retryable?: boolean; prompt?: string }>(),
     statusErrorCode: undefined as string | undefined,
     failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
@@ -708,19 +719,49 @@ export async function createWireServer(options: WireServerOptions = {}) {
         return empty(response);
       }
 
-      // Gesture-owned forking (2026-07-21): the deterministic fork the Remix
-      // gesture invokes — no model, the fixture mints a pinned app directly.
+      // Gesture-owned forking (2026-07-21): the deterministic fork the ✦
+      // Remix gesture invokes — no model, the fixture mints a pinned app
+      // directly, mirroring the runtime: the pinned island lands in the tree
+      // with the gesture's `props` snapshot as its node props (the dashboard
+      // seed, 2026-08-02 final shape), and the appId-less call dedupes per
+      // slot (W0) — a raced double-tap can never mint two.
       const forkPinAppMatch = url.pathname.match(/^\/apps\/([^/]+)\/fork-pin$/);
       if (method === "POST" && (url.pathname === "/apps/fork-pin" || forkPinAppMatch)) {
-        const slot = (parsedBody as { slot: string }).slot;
+        const { slot, props } = parsedBody as { slot: string; props?: Record<string, unknown> };
         const existingId = forkPinAppMatch ? decodeURIComponent(forkPinAppMatch[1] ?? "") : undefined;
+        const componentName = pinComponentName(slot);
+        if (existingId === undefined) {
+          const deduped = state.apps.find(item => item.pins?.some(pin => pin.slot === slot));
+          if (deduped) {
+            return json(response, {
+              app: deduped,
+              version: { at: NOW, intent: `Remix the host component "${slot}"`, rung: 1 },
+              slot,
+              componentName,
+            });
+          }
+        }
         const target = existingId === undefined
           ? (() => {
             const minted = app(`app_pin_${state.apps.length + 1}`, `${slot} remix`);
-            // Mirrors the runtime's empty-slot mint: the gesture records the
-            // placement (location) beside the pin (provenance) — slot
-            // discovery reads placements only (2026-08-02 split).
+            // Mirrors the runtime's mint: placement (location) beside the pin
+            // (provenance) — slot discovery reads placements only (2026-08-02
+            // split); the wrapper's in-place mount reads pins only.
             minted.placements = [slot];
+            minted.tree = {
+              formatVersion: "vendo-genui/v2",
+              root: "root",
+              nodes: [
+                { id: "root", component: "Stack", source: "prewired", children: [`${componentName.toLowerCase()}-1`] },
+                {
+                  id: `${componentName.toLowerCase()}-1`,
+                  component: componentName,
+                  source: "generated",
+                  ...(props === undefined ? {} : { props }),
+                },
+              ],
+              components: { [componentName]: `export default function Fork() { return <p>${slot} fork</p>; }` },
+            } as AppDocument["tree"];
             state.apps.push(minted);
             return minted;
           })()
@@ -731,7 +772,7 @@ export async function createWireServer(options: WireServerOptions = {}) {
           app: target,
           version: { at: NOW, intent: `Remix the host component "${slot}"`, rung: 1 },
           slot,
-          componentName: `Pinned${slot}`,
+          componentName,
         });
       }
       if (url.pathname === "/apps" && method === "GET") return json(response, state.apps);

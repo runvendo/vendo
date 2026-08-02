@@ -794,12 +794,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-queued-hint { margin-left: auto; flex-shrink: 0; color: var(--vendo-fg-muted); font-size: 11px; }
 .fl-queued-rm { background: var(--vendo-accent-soft); color: var(--vendo-fg); }
 
-/* The attached-surface chip: what <Remixable> armed, riding with the next
-   message. Borrows the queued pill's look on purpose — that is already the
-   product's language for "this is pending, and it goes with my message".
-   Placement is lifted to the panel's top-left below (.fl-overlay-panel). */
-.fl-remix-chip { align-self: flex-start; max-width: 100%; }
-
 /* sent attachments (in transcript) */
 .fl-turn-user-att { align-self: flex-end; max-width: 82%; display: flex; flex-wrap: wrap; gap: 6px;
   align-items: flex-start; justify-content: flex-end; }
@@ -1070,23 +1064,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
    treatment (it shares .fl-overlay-close), only the horizontal offset differs.
    Offsets = close's right + close's width + a 6px gap, per pointer density. */
 .fl-overlay-new { right: 46px; }
-/* The attached-surface chip is the mirror of those controls on the LEFT, level
-   with them, so it reads as part of the panel's chrome rather than as
-   something stacked on the composer. The panel is position:fixed, so it is the
-   positioning context for its whole subtree and the chip can be lifted out of
-   the composer's flow from here. Compact — a header is not a place for a
-   sentence — and max-width ellipsizes a long label instead of colliding with
-   the controls opposite.
-   NOT lifted in the expanded workspace: there the panel's top-left corner is
-   the app stage, so the chip stays in flow above the composer in the rail.
-   Threads mounted outside a panel (VendoPage, an embedded VendoThread) keep
-   the in-flow position for the same reason. */
-.fl-overlay-panel:not([data-vendo-expanded]) .fl-remix-chip {
-  position: absolute; top: 12px; left: 12px; z-index: 5;
-  width: auto; max-width: calc(100% - 130px);
-  padding: 5px 26px 5px 7px; font-size: 11.5px; border-radius: 9px; }
-.fl-overlay-panel:not([data-vendo-expanded]) .fl-remix-chip .fl-queued-rm {
-  top: 50%; right: 4px; transform: translateY(-50%); }
 /* Compact when empty (ui-lane-entry pick P-C): while the thread shows its
    landing (no conversation yet), the panel is a smaller box — greeting,
    starter cards, the bottom-pinned composer, no dead glass — and animates to
@@ -1441,22 +1418,6 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   text-decoration: underline; text-underline-offset: 3px; }
 .fl-invite-own:hover { color: var(--vendo-fg); }
 
-/* ---- remix affordance (ui-usage-dx §2 — remix folds into Slot as a flag) ----
-   Hover-revealed over the slot's content: the filled state (.fl-slot) and the
-   host-original state (the [data-vendo-slot] inline wrapper) share one rule.
-   Focus reveals it too, so it stays keyboard-reachable. */
-.fl-slot-remix { position: absolute; top: 10px; right: 10px; z-index: 6;
-  display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
-  border: 1px solid var(--vendo-border); border-radius: 9px;
-  background: color-mix(in srgb, var(--vendo-surface) 92%, transparent);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  color: var(--vendo-fg-muted); font: 600 11.5px/1 var(--vendo-font-family);
-  box-shadow: var(--vendo-shadow); cursor: pointer;
-  opacity: 0; pointer-events: none; transition: opacity .15s, color .15s; }
-[data-vendo-slot]:hover .fl-slot-remix, .fl-slot-remix:focus-visible { opacity: 1; pointer-events: auto; }
-.fl-slot-remix:hover { color: var(--vendo-fg); }
-.fl-slot-remix:focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
-
 /* ---- <Remixable>: the seed that blooms into the pill ----
    A ~9px muted ✦ at rest in the wrapped element's top-right corner, blooming
    IN PLACE into the ✦ Remix pill — same corner, same optical centre, so it
@@ -1488,6 +1449,27 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   .fl-remix-seed { transition: opacity 120ms cubic-bezier(.23,1,.32,1), transform 120ms cubic-bezier(.23,1,.32,1); }
   .fl-remix-pill { transition: opacity 180ms cubic-bezier(.23,1,.32,1), transform 180ms cubic-bezier(.23,1,.32,1); }
 }
+
+/* ---- ✦ management popover (2026-08-02 final shape) ----
+   The pill on an already-remixed component opens this instead of forking:
+   status line, open-in-panel, revert. Borrows the slot menu's glass look.
+   The wrap carries the pill's absolute position so pill and menu share an
+   anchor; the pill inside it drops its own offset. No entry animation — the
+   popover appears in place (reduced motion needs no special case). */
+.fl-remix-menu-wrap { position: absolute; top: 3px; right: 4px; z-index: 7; }
+.fl-remix-menu-wrap .fl-remix-pill { position: static; }
+.fl-remix-menu { position: absolute; top: 26px; right: 0; min-width: 188px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  border: 1px solid var(--vendo-border-strong); border-radius: 12px;
+  background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
+  box-shadow: var(--vendo-shadow); font-family: var(--vendo-font-family); }
+.fl-remix-status { padding: 6px 9px 7px; font: 500 11px/1.4 var(--vendo-font-family);
+  color: var(--vendo-fg-muted); border-bottom: 1px solid var(--vendo-border); margin-bottom: 3px; }
+.fl-remix-menu button { text-align: left; font: 500 12.5px/1.2 var(--vendo-font-family); padding: 7px 9px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--vendo-fg); cursor: pointer; }
+.fl-remix-menu button:hover { background: var(--vendo-accent-soft); }
+.fl-remix-menu button:disabled { color: var(--vendo-fg-muted); cursor: default; }
+.fl-remix-menu button.is-danger { color: var(--vendo-danger); }
 
 /* ---- filled state + overflow menu ---- */
 .fl-slot-filled { position: relative; flex: 1; }

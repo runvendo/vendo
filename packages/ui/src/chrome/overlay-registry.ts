@@ -2,8 +2,8 @@
  * generalized to the conversation surface (ui-usage-dx §2/§4).
  *
  * A mounted VendoOverlay registers an opener; any affordance that wants to
- * open the chat preloaded with a prompt (the Slot remix flag, a Trigger
- * button, palette default commands) calls `openVendoConversation` without
+ * open the chat preloaded with a prompt (a Trigger button, palette default
+ * commands, the ✦ remix popover) calls `openVendoConversation` without
  * needing a ref to the overlay. LIFO like the palette registries: the most
  * recently mounted overlay owns the call.
  *
@@ -18,24 +18,9 @@
  */
 import { createContext } from "react";
 
-/** A host surface attached to the next message — what `<Remixable>` arms and
- *  the panel shows as its "Remixing · <name>" chip. */
-export interface RemixContext {
-  /** The surface in the host's own words ("Rent Roll"): the chip's label, and
-   *  what the agent is told the ask is about. */
-  name: string;
-  /** One grounding line about what is on screen — same meaning as
-   *  `VendoTrigger`'s `context`. */
-  context?: string;
-}
-
 export interface OpenConversationOptions {
   /** Text to preload into the conversation's composer. */
   prompt?: string;
-  /** Attach a host surface to the next message: the composer opens EMPTY with
-   *  the surface shown as a chip, and it rides with whatever is typed next.
-   *  `<Remixable>` is this call with an affordance around it. */
-  remix?: RemixContext;
   /** Send the prompt immediately (default: leave it in the composer). */
   send?: boolean;
   /** Start a fresh conversation instead of resuming the current one. */
@@ -118,9 +103,6 @@ export function subscribeConversationCommands(listener: () => void): () => void 
 interface Prefill {
   prompt: string;
   send: boolean;
-  /** The surface riding with the next message. Delivered on the same hand-off
-   *  as the prompt so an attachment parks until the composer mounts too. */
-  remix?: RemixContext;
 }
 
 /** Stamped by VendoOverlay around its thread so the composer registers its

@@ -76,8 +76,15 @@ export const appRoutes: RouteEntry[] = [
   route("POST", "/apps/fork-pin", async ({ request, deps, context }) => {
     const ctx = await context("app");
     const body = await requestJson(request);
+    // 2026-08-02 final shape — `props` is the wrapper's serializable live
+    // props at fork time, stored on the fork as its dashboard seed.
+    const props = body["props"];
+    if (props !== undefined && (typeof props !== "object" || props === null || Array.isArray(props))) {
+      throw new VendoError("validation", "props must be an object");
+    }
     return json(await deps.apps.pins.fork({
       slot: string(body["slot"], "slot"),
+      ...(props === undefined ? {} : { props: props as Record<string, Json> }),
       ...(body["instruction"] === undefined ? {} : { instruction: string(body["instruction"], "instruction") }),
     }, ctx));
   }),

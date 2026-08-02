@@ -47,10 +47,10 @@ export default function InsightsPage() {
         </div>
 
         {/* The remixable-surface affordance on one of Maple's OWN components:
-            a quiet ✦ at rest, the Remix pill on hover, and the table attached
-            to whatever the user types next. */}
+            a quiet ✦ at rest, the Remix pill on hover — the gesture forks the
+            captured TopMerchants and the fork mounts here, jailed, in place. */}
         <div className="lg:col-span-2">
-          <Remixable name="Top Merchants">
+          <Remixable>
             <TopMerchants />
           </Remixable>
         </div>

@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { ConnectDockButton, ConnectTray } from "../connect-dock.js";
-import { PrefillScopeContext, registerPrefillConsumer, type RemixContext } from "../overlay-registry.js";
+import { PrefillScopeContext, registerPrefillConsumer } from "../overlay-registry.js";
 import { fileExt, fileToPart, formatBytes } from "./attachments.js";
 
 /** The message shape the composer commits — mirrors useVendoThread.sendMessage. */
@@ -14,17 +14,6 @@ type AttachmentRead = {
   progress: number;
   part?: Awaited<ReturnType<typeof fileToPart>>;
 };
-
-/** What an armed surface adds to the message it rides on. Composed into the
-    text — the same rule `VendoTrigger` uses for its `context` prop — so the
-    attachment reaches the agent over every server, needs no wire change, and
-    survives a reload in the persisted transcript. The user sees exactly what
-    the agent was told. */
-function withRemixContext(text: string, remix: RemixContext | null): string {
-  if (remix === null) return text;
-  const line = `Remixing the "${remix.name}" component on this page.${remix.context ? ` ${remix.context}` : ""}`;
-  return text ? `${text}\n\n${line}` : line;
-}
 
 /** ENG-225 — drag-drop attach: only reacts to drags that actually carry files
     (text selections dragged across the composer must not flash the drop zone).
@@ -132,18 +121,13 @@ export function useComposer({ busy, sendMessage }: {
   // pill) and auto-sends the instant the turn finishes. A single slot — a second
   // send while one is parked replaces it — because there is only ever one "next"
   // turn. Stop stays the explicit interrupt; queueing never cancels the stream.
-  const [queued, setQueued] = useState<{ text: string; files: File[]; remix: RemixContext | null } | null>(null);
+  const [queued, setQueued] = useState<{ text: string; files: File[] } | null>(null);
   const [attachError, setAttachError] = useState<string>();
-  // The surface a <Remixable> gesture attached, riding with the NEXT message
-  // (VendoThread renders it as the chip). Composer state rather than a global:
-  // the prefill hand-off already resolves which overlay's composer is the
-  // target, and the send that spends the attachment happens right here.
-  const [remix, setRemix] = useState<RemixContext | null>(null);
 
   // ENG-215 — commit a turn to the transport (attachment parts come from the
   // eager-read cache when ready, else a fresh read). Used both by an immediate
   // send and by the deferred flush of a queued message.
-  const dispatch = (text: string, pending: File[], attached: RemixContext | null) => {
+  const dispatch = (text: string, pending: File[]) => {
     void (async () => {
       let parts: Awaited<ReturnType<typeof fileToPart>>[];
       try {
@@ -153,64 +137,50 @@ export function useComposer({ busy, sendMessage }: {
         }));
       } catch (reason) {
         // A file read failed — surface it and restore the message so it never
-        // vanishes silently. Including the attached surface: the send it was
-        // spent by never happened, so re-arming it is the user's work to redo
-        // otherwise. `text` is what the user TYPED (the surface is composed in
-        // below, at the moment the turn really leaves), so the restored draft
-        // never shows the composed line.
+        // vanishes silently.
         setAttachError(reason instanceof Error ? reason.message : "Couldn't read an attachment.");
         setDraft(current => current || text);
         setFiles(current => (current.length > 0 ? current : pending));
-        if (attached !== null) setRemix(current => current ?? attached);
         return;
       }
       setAttachError(undefined);
-      const body = withRemixContext(text, attached);
-      void sendMessage(parts.length > 0 ? { text: body, files: parts } : { text: body });
+      void sendMessage(parts.length > 0 ? { text, files: parts } : { text });
     })();
   };
 
   const send = (override?: string) => {
     const text = (override ?? draft).trim();
     const pending = files;
-    // Guarded on what the USER supplied: an armed surface must never send a
-    // turn on its own when the draft is empty.
     if (!text && pending.length === 0) return;
-    // Spent by the message it rides on — queued or immediate, one place. The
-    // surface travels WITH the message rather than being composed into it here,
-    // so the queued pill shows what the user typed and a failed send can put
-    // the attachment back.
-    const attached = remix;
-    setRemix(null);
     // The message leaves the input immediately (whether it sends now or parks).
     setDraft("");
     setFiles([]);
     if (fileRef.current) fileRef.current.value = "";
     if (busy) {
-      setQueued({ text, files: pending, remix: attached });
+      setQueued({ text, files: pending });
       return;
     }
-    dispatch(text, pending, attached);
+    dispatch(text, pending);
   };
 
   // The enclosing overlay's prefill scope (null for embedded threads/pages):
   // registry-delivered prompts are directed at one overlay's composer.
   const prefillScope = useContext(PrefillScopeContext);
   // The listeners below register once but must send with CURRENT composer
-  // state: a first-render `send` closure sees busy=false forever, so a remix
+  // state: a first-render `send` closure sees busy=false forever, so a prompt
   // fired mid-stream would dispatch concurrently instead of parking in the
   // queued slot (the single-in-flight contract).
   const sendRef = useRef(send);
   sendRef.current = send;
-  // Remix bridge: a host affordance (slot remix, a trigger button, the legacy
-  // `vendo:prefill` event) opens this surface and hands it the request to
-  // type + send, so the whole build happens here — the one conversational
-  // place (08-ui §4). The registry consumer also drains a prompt parked while
-  // this composer was still mounting (overlay first open / fresh conversation).
+  // Prefill bridge: a host affordance (a trigger button, the legacy
+  // `vendo:prefill` event, the ✦ remix popover) opens this surface and hands
+  // it the request to type + send, so the whole build happens here — the one
+  // conversational place (08-ui §4). The registry consumer also drains a
+  // prompt parked while this composer was still mounting (overlay first open /
+  // fresh conversation).
   useEffect(() => {
     const prefill = (prompt: string, sendNow: boolean) => {
-      // A remix gesture delivers no prompt (its whole point is an EMPTY
-      // composer), so an empty hand-off must not wipe a draft in progress.
+      // An empty hand-off must not wipe a draft in progress.
       if (prompt.length > 0) setDraft(prompt);
       if (sendNow) queueMicrotask(() => sendRef.current(prompt));
     };
@@ -221,7 +191,6 @@ export function useComposer({ busy, sendMessage }: {
     };
     window.addEventListener("vendo:prefill", onPrefill);
     const unregister = registerPrefillConsumer(parked => {
-      if (parked.remix !== undefined) setRemix(parked.remix);
       prefill(parked.prompt, parked.send);
     }, prefillScope);
     return () => {
@@ -238,7 +207,7 @@ export function useComposer({ busy, sendMessage }: {
     if (wasBusyRef.current && !busy && queued) {
       const pending = queued;
       setQueued(null);
-      dispatch(pending.text, pending.files, pending.remix);
+      dispatch(pending.text, pending.files);
     }
     wasBusyRef.current = busy;
     // dispatch is recreated each render but closes only over stable setters and
@@ -261,7 +230,6 @@ export function useComposer({ busy, sendMessage }: {
     attachmentPreviews, attachmentReads, retryRead: startRead,
     dockOpen, setDockOpen, dockButtonRef,
     queued, setQueued, attachError, fileRef, textareaRef, send,
-    remix, setRemix,
   };
 }
 

@@ -463,6 +463,11 @@ export type PinRebaseResult =
 export interface PinForkInput {
   appId?: AppId;
   slot: string;
+  /** The wrapper's serializable live props at fork time (2026-08-02 final
+   *  shape). Stored as the pinned node's props — the fork's dashboard seed
+   *  when it is placed away from the host page; in place the wrapper streams
+   *  live props over the frame boundary on every render instead. */
+  props?: Record<string, Json>;
   instruction?: string;
 }
 
@@ -2284,7 +2289,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           // applyPinFork prefixes issues with "<ForkPin> failed:" for the
           // stored-app op compiler; a user gesture never saw that op, so the
           // prefix is stripped from the surfaced error.
-          const issues = applyPinFork(forked, { slot: input.slot }, config.pinBaselines)
+          const issues = applyPinFork(
+            forked,
+            { slot: input.slot, ...(input.props === undefined ? {} : { props: input.props }) },
+            config.pinBaselines,
+          )
             .map((issue) => issue.replace(/^<ForkPin> failed: /, ""));
           if (issues.length > 0) throw new VendoError("conflict", issues.join("; "));
           const validation = validateAppDocument(forked);

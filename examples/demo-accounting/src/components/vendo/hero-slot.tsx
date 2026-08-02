@@ -10,9 +10,6 @@ import { VendoRoot } from "./VendoRoot";
 /** The capture slot the dashboard hero was registered under (vendo sync). */
 const HERO_SLOT = "CadenceMissingDocsHero";
 
-const REMIX_PROMPT =
-  "Remix this card — show me who's behind by deadline, nudge them every morning, and post in #team the moment anything comes in.";
-
 /**
  * The dashboard hero, slot-wrapped (06-apps §8). A remix pinned to this slot
  * mounts in place of the original; the original stays the fallback. In
@@ -59,12 +56,12 @@ function HeroSlotBody({
           COMPONENT in the slot (ENG-223) — through the tree renderer + pin
           error boundary, so a broken remix falls back to the original hero
           rather than blanking the cell; otherwise the whole app takes over.
-          The remix flag replaces the old hand-rolled RemixButton + vendo:remix
-          event glue: the slot's own affordance opens the overlay preloaded. */}
+          (2026-08-02 final shape: the slot's remix flag is gone — the remix
+          gesture lives on <Remixable>; W1e converts this host to it.) */}
       {directorSurface ? (
         <VendoSlot id={HERO_SLOT} pin={{ payload: directorSurface.tree as UIPayload }}>{original}</VendoSlot>
       ) : (
-        <VendoSlot id={HERO_SLOT} appId={appId ?? undefined} discover={false} remix remixPrompt={REMIX_PROMPT}>{original}</VendoSlot>
+        <VendoSlot id={HERO_SLOT} appId={appId ?? undefined} discover={false}>{original}</VendoSlot>
       )}
     </div>
   );

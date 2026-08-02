@@ -496,7 +496,7 @@ export function VendoOverlay({
   // VendoThread/VendoPage composer that happened to register later.
   const prefillScope = useRef(Symbol("vendo-overlay-prefill"));
 
-  // Registry opener (ui-usage-dx §2): lets slot remix / trigger / palette
+  // Registry opener (ui-usage-dx §2): lets trigger / palette / remix-popover
   // affordances open this overlay — optionally preloading a prompt or starting
   // fresh — without a ref. The prompt goes through the registry's scoped
   // prefill hand-off, which parks it until the thread's composer mounts
@@ -518,13 +518,10 @@ export function VendoOverlay({
     setOpen(true);
     const fresh = options?.newConversation === true;
     if (fresh) setConversationEpoch(epoch => epoch + 1);
-    // A remix gesture carries no prompt (the composer opens EMPTY, by design)
-    // but rides the same scoped hand-off, so an attachment parks until this
-    // overlay's composer mounts exactly like a prompt does.
     const prompt = typeof options?.prompt === "string" ? options.prompt : "";
-    if (prompt.length > 0 || options?.remix !== undefined) {
+    if (prompt.length > 0) {
       deliverPrefill(
-        { prompt, send: options?.send === true, ...(options?.remix === undefined ? {} : { remix: options.remix }) },
+        { prompt, send: options?.send === true },
         { scope: prefillScope.current, defer: fresh },
       );
     }

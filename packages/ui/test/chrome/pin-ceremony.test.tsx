@@ -158,6 +158,23 @@ describe("the pin ceremony (Keystone graduates B8)", () => {
     expect(flight()).toBeTruthy();
   });
 
+  it("targets a <Remixable> wrapper — the fork's in-place mount boundary (2026-08-02)", async () => {
+    const { panel } = stage();
+    document.querySelector("[data-vendo-slot]")!.remove();
+    stubRects([
+      { selector: "[data-vendo-app-embed]", rect: { left: 400, top: 120, width: 600, height: 400 } },
+      { selector: "[data-vendo-remixable]", rect: { left: 40, top: 600, width: 300, height: 200 } },
+    ]);
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("data-vendo-remixable", "TopMerchants");
+    document.body.append(wrapper);
+    playPinCeremony({ appId: "app_1", slot: "TopMerchants", dismiss: () => panel.remove() });
+    await flushFrames();
+    expect(flight()).toBeTruthy();
+    flight()!.animation.onfinish!();
+    expect(ring()).toBeTruthy();
+  });
+
   it("dismisses and strands nothing when the destination is not mounted", async () => {
     const { panel } = stage();
     document.querySelector("[data-vendo-slot]")!.remove();

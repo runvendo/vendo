@@ -116,8 +116,9 @@ const TYPE_EXPORTS = [
   "OpenConversationOptions",
   "VendoActivitiesProps",
   "VendoTriggerProps",
+  // 2026-08-02 final shape: RemixContext died with the context-chip behavior
+  // (remix always means fork now) — deliberately absent.
   "RemixableProps",
-  "RemixContext",
   // Eject surface types.
   "VendoThreadProps",
   "MorphToastProps",

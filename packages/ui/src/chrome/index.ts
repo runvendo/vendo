@@ -12,7 +12,7 @@ export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
 export { NoPolicyNotice } from "./no-policy-notice.js";
 export { VendoOverlay, type VendoOverlayProps } from "./vendo-overlay.js";
 export { defaultVendoGreeting, hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
-export { openVendoConversation, type OpenConversationOptions, type RemixContext } from "./overlay-registry.js";
+export { openVendoConversation, type OpenConversationOptions } from "./overlay-registry.js";
 export { Remixable, type RemixableProps } from "./remixable.js";
 export { playPinCeremony, usePinAction, type PinCeremonyOptions } from "./pin-ceremony.js";
 export { VendoTrigger, type VendoTriggerProps } from "./vendo-trigger.js";

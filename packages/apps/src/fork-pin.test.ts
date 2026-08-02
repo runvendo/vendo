@@ -111,6 +111,26 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     expect(listed.find(({ id }) => id === forked.app.id)?.pins).toEqual([{ slot: SLOT, base: "sha256:maple-base" }]);
   });
 
+  it("stores the gesture's serializable live props as the pinned node's seed (2026-08-02 final shape)", async () => {
+    const store = memoryStore();
+    const runtime = runtimeWith(store);
+
+    // The wrapper snapshots its serializable live props at fork time; they
+    // land as the pinned node's props — the fork's dashboard seed when it is
+    // placed away from the host page. In place, the wrapper streams live
+    // props instead, merged OVER this seed.
+    const props = { valueCents: 549_071_500, series: [1, 2, 3] };
+    const forked = await runtime.pins.fork({ slot: SLOT, props }, ctx);
+    expect(forked.app.tree?.nodes).toContainEqual(expect.objectContaining({
+      component: COMPONENT,
+      source: "generated",
+      props,
+    }));
+    // Persisted, not just returned.
+    const stored = (await runtime.list(ctx)).find(({ id }) => id === forked.app.id);
+    expect(stored?.tree?.nodes.find((node) => node.component === COMPONENT)?.props).toEqual(props);
+  });
+
   it("runs a gesture instruction as ONE ordinary edit, already scoped to the fork", async () => {
     const store = memoryStore();
     const app = seedDoc();

@@ -119,11 +119,13 @@ export interface VendoClient {
      * POST /apps/fork-pin (no appId) or /apps/:id/fork-pin — the gesture-owned
      * DETERMINISTIC fork of a remixable host slot (06 §8): the engine copies
      * the captured baseline and records the pin with no model call. Without an
-     * appId a minimal app is minted around the fork (the empty-slot Remix
-     * gesture). An optional instruction rides the ordinary edit path
-     * afterwards, already scoped to the forked component.
+     * appId a minimal app is minted around the fork (the `<Remixable>` ✦
+     * gesture). `props` — the wrapper's serializable live props at fork time —
+     * is stored on the fork as its dashboard seed (2026-08-02 final shape). An
+     * optional instruction rides the ordinary edit path afterwards, already
+     * scoped to the forked component.
      */
-    forkPin(input: { appId?: AppId; slot: string; instruction?: string }): Promise<PinForkResult>;
+    forkPin(input: { appId?: AppId; slot: string; props?: Record<string, Json>; instruction?: string }): Promise<PinForkResult>;
     /**
      * POST /apps/:id/machine/ping — the embed surface's keepalive (Wave 7 H2):
      * user activity on an embedded served app rides one host-proxied HEAD

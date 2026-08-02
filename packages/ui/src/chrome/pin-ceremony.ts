@@ -61,16 +61,20 @@ function boxOf(element: Element | null): DOMRect | null {
   return rect.width > 0 && rect.height > 0 ? rect : null;
 }
 
-/** The slot the pin lands in. A named slot is exact; unnamed, the only mounted
- *  slot is unambiguous and every host with one dashboard slot gets the ceremony
- *  for free. Two or more and this returns null — better no animation than one
- *  that flies to the wrong place. */
+/** The destination the pin lands in — a mounted VendoSlot, or a `<Remixable>`
+ *  wrapper (the fork's in-place mount boundary, 2026-08-02 final shape). A
+ *  named destination is exact; unnamed, the only mounted one is unambiguous
+ *  and every host with one dashboard slot gets the ceremony for free. Two or
+ *  more and this returns null — better no animation than one that flies to
+ *  the wrong place. */
 function destinationOf(slot: string | undefined): Element | null {
   // Matched by attribute VALUE rather than an interpolated selector: slot and
   // app ids come from the host, and a quote in one would break the selector.
-  const mounted = [...document.querySelectorAll("[data-vendo-slot]")];
+  const mounted = [...document.querySelectorAll("[data-vendo-slot], [data-vendo-remixable]")];
   if (slot === undefined) return mounted.length === 1 ? mounted[0]! : null;
-  return mounted.find(element => element.getAttribute("data-vendo-slot") === slot) ?? null;
+  return mounted.find(element =>
+    element.getAttribute("data-vendo-slot") === slot || element.getAttribute("data-vendo-remixable") === slot,
+  ) ?? null;
 }
 
 /** The settle pulse: a ring drawn OVER the destination, never a style written
