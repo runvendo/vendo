@@ -559,6 +559,15 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-grantset-outcome { display: flex; align-items: center; gap: 7px; margin-top: 12px; padding-top: 11px;
   border-top: 1px solid var(--vendo-border); font: 600 12.5px/1 var(--vendo-font); color: var(--vendo-fg); }
 .fl-grantset[data-state="denied"] .fl-grantset-outcome { color: var(--vendo-fg-muted); font-weight: 500; }
+/* Approval/grant-set card rendered directly inside an automation card: the
+   card's shared max-width/align-self (tuned for the flex chat column) go inert
+   under .fl-automation's plain block layout, leaving it hugging the panel's
+   bottom-left corner — content and dividers running edge-to-edge against the
+   automation card's border. Fill the width with the panel's own 16px insets
+   (matching .fl-auto-head/.fl-auto-flow) so it reads as one of the automation
+   card's sections, not a card jammed in the corner. Scoped to this context so
+   the shared chat/voice/connect approval surfaces are untouched. */
+.fl-automation > .fl-approval { max-width: none; min-width: 0; box-sizing: border-box; margin: 0 16px 16px; }
 .fl-automation-approval { padding: 14px; }
 .fl-auto-approval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .fl-auto-approval-heading { min-width: 0; }
