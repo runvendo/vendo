@@ -12,9 +12,10 @@ component drifts and rebases as your host code changes; the exact
 registration shapes and capture rules live in the reference section at the
 end.
 
-<Note>Remix — forking a captured component — is **experimental**. Capture
-failures warn instead of failing `vendo sync`, and baseline formats may
-evolve between versions.</Note>
+<Note>Remix — forking a captured component — is **experimental**. Baseline
+formats may evolve between versions. A `<Remixable>` wrapper `vendo sync`
+cannot capture fails the run loudly (exit 2) with the file, line, and
+fix.</Note>
 
 ## Register your components
 
@@ -107,12 +108,94 @@ No seam authors catalog copy today. Edit a scanned entry's `description` and
 `examples` directly in `.vendo/catalog.json`: a rescan preserves that copy on
 a still-scanned entry, keeping unchanged reruns byte-identical.
 
-## Remix, drift, and rebase
+## Remix: fork a wrapped component
 
-Set `remixable` only on components whose real frontend source sync may
-capture. Sync writes a baseline to `.vendo/remixable/<slot>.json`. Shipping a
-pin always requires host review of the net diff. A drifted or erroring pin
-falls back to the original component.
+Remix always means fork. A remix starts from your real component, copied
+byte-for-byte by the engine — never regenerated, never retyped by a model.
+Wrap a component with `<Remixable>` to make it forkable:
+
+```tsx
+import { Remixable } from "@vendoai/ui/chrome";
+
+<Remixable>
+  <NetWorthCard accounts={accounts} />
+</Remixable>
+```
+
+`vendo sync` scans your source for `<Remixable>` usages, resolves the wrapped
+child through its import, and snapshots it into `.vendo/remixable/<slot>.json`:
+the component source, its local imports (two hops), your app-root
+stylesheets, and a content hash. The slot name is the component's own
+exported identifier — for a default export, its declared name — so remixes
+survive call-site refactors. The wrapped child must be a single, statically
+importable component: inline JSX or an unimported component is a loud sync
+error, never a silent degradation. Wrapping the same component in several
+places is legal — one capture, many mount points.
+
+Forking is a user gesture the engine executes deterministically — the model
+never decides to fork. At rest a muted ✦ mark sits in the wrapped element's
+corner and blooms on hover into a **✦ Remix** pill. Clicking it copies the
+captured source into the user's own fork over the wire
+(`POST /api/vendo/apps/fork-pin`) with no model call, records the fork's
+provenance on the app as `pins: [{ slot, base: <baseline hash> }]`, and
+renders it **in place** — the wrapper is the mount boundary, and the page
+morphs for that user only. The route dedupes per user and slot, so a
+double-tap can never mint a duplicate app. On an already-remixed surface the
+same pill opens a small management popover (status, open in panel, revert).
+
+An unapproved fork always renders inside the sandboxed iframe jail. The
+JSON-serializable props your call site passes flow across the frame boundary
+into the fork on every render — nothing captured, nothing stale. Host
+functions do not cross (callbacks, router, context): a fork's behavior is
+rewired through your API instead, exactly like any generated app. Captured
+sub-imports resolve through a per-module import table; only the blessed React
+kit resolves outside it, and captured CSS applies only inside the jailed
+document.
+
+`createVendo` loads every valid `.vendo/remixable/*.json` at startup and
+hands the baselines to the apps runtime. A missing directory means no
+baselines; files that fail schema validation are skipped with a warning and
+do not break composition. Baselines are captured `exportable: false`:
+exporting an app that contains a fork of host source fails with the
+`baseline-forbids-export` error code.
+
+### Instant and review kinds
+
+Review never affects who can see a remix — remixes are personal, always. It
+decides only where the fork executes:
+
+```tsx
+<Remixable>            {/* instant: the remix appears immediately and runs
+  <NetWorthCard />        sandboxed, forever. No review process exists. */}
+</Remixable>
+
+<Remixable review>     {/* reviewed: the user keeps seeing the original until
+  <TransferPanel />       a host reviewer approves; the approved version then
+</Remixable>              renders in place as native code. */}
+```
+
+- **Instant** (the default): remix → it renders, jailed, done. No queue and
+  no approval ceremony; the ✦ mark is the management handle.
+- **Reviewed**: after remixing, the original keeps rendering and the only
+  user-visible state is "sent for review" (surfaced in the panel). On
+  approval the remix mounts natively in the host page — the zero-seam venue
+  the jail cannot offer. On rejection the reviewer's note lands in the panel;
+  the fork is not deleted, so the user can edit and resubmit. Edits to an
+  approved remix go back through review, and the last approved version keeps
+  rendering until the new one is approved — never a gap, never unreviewed
+  code in the page.
+
+The gate rides the hash-pinned in-client approval machinery: only a stored
+approval matching a version's exact content hash mounts in the host page (see
+[the in-client venue](/concepts/in-client-venue)). The review artifact at
+every gate is the ship-diff — the fork's unified diff against the captured
+baseline.
+
+At sync time, capture also analyzes each wrapped component for reach into
+host plumbing (router imports, context-style hooks, function-typed props at
+the call site) and warns when an instant-kind component looks plumbing-heavy,
+suggesting `review`: plumbing does not cross the fork boundary, and an
+approved review-kind remix runs natively where it would have kept working.
 
 ### Drift and rebase
 
@@ -153,33 +236,18 @@ trail. A pin that was forked without any subsequent edits, or an app that
 has graduated to a served HTTP surface, fails closed with `conflict`: there
 is no reproducible trail to replay.
 
-### When static capture cannot see the source
+### When sync cannot capture a wrapper
 
-`vendo sync` never skips a remixable slot silently. When it cannot follow the
-registration to real source (an inline component, a dynamic import, a path it
-cannot resolve, or source outside the project root), it lists the slot with a
-machine-readable reason as an `experimental:` warning — the run still
-succeeds, but that component cannot be forked until the slot is resolved or
-acknowledged.
+`vendo sync` never skips a `<Remixable>` wrapper silently. When it cannot
+resolve the wrapped child to real source — inline JSX, a component that is
+not statically imported, an anonymous default export, or source outside the
+project root — it prints one `error:` line per wrapper naming the file, line,
+and fix, and the run exits 2. There is no softer fallback: an uncapturable
+wrapper would otherwise be a remix affordance that silently cannot fork.
 
-To capture such a slot at runtime instead, wrap the registration with the
-`remixable` helper and pass the module URL:
-
-```ts
-import { remixable } from "@vendoai/vendo/react";
-
-const invoiceCard = remixable({
-  name: "InvoiceCard",
-  component: InvoiceCard,
-  exportable: true,
-}, import.meta.url);
-```
-
-In development the helper reports the module to your Vendo endpoint, which
-writes the same `.vendo/remixable/<slot>.json` baseline sync produces: an
-existing static baseline is never overwritten, and the capture route is not
-mounted in production. A slot that is intentionally never capturable can be
-acknowledged in `.vendo/overrides.json`:
+A component that is intentionally never capturable can be acknowledged in
+`.vendo/overrides.json`; acknowledged slots are skipped without error and
+their baselines are left alone:
 
 ```json
 {
@@ -189,25 +257,11 @@ acknowledged in `.vendo/overrides.json`:
 }
 ```
 
-### Remixing a captured slot
-
-`createVendo` loads every valid `.vendo/remixable/*.json` at startup and hands
-the baselines to the apps runtime. A missing directory means no baselines. Files
-that fail schema validation are skipped with a warning and do not break
-composition.
-
-Once a slot is captured, an edit request against the app (`edit(appId,
-instruction)`, exposed on the wire as `POST /api/vendo/apps/:id/edit`) can fork
-the pin instead of only rewriting generated content. The runtime copies the
-captured source into a deterministic generated component and renders it through
-the same sandboxed jail as any other generated component. Captured sub-imports
-resolve through a per-module import table; only the blessed React kit resolves
-outside that table. It records the pin on the app version as
-`{ slot, base: <baseline hash> }`. A follow-up edit that touches the pinned
-subtree lands as a new version on the same app.
-
-Host components render natively. Generated components remain in the
-sandboxed iframe jail.
+Baselines whose slot no longer matches any `<Remixable>` wrapper are deleted
+on the next successful sync, one printed `pruned:` line per file — a stale
+baseline would otherwise stay forkable forever. A run with wrapper errors
+prunes nothing: an unresolvable wrapper's slot is unknowable, and deleting
+its baseline would turn a loud failure into silent data loss.
 
 ## Registration reference
 
@@ -219,7 +273,6 @@ export interface RegisteredComponent {
   description: string;
   propsSchema?: StandardSchema;   // optional: a schema-less entry is legal
   examples?: string[];            // JSON prop examples shown to the model
-  remixable?: boolean;
 }
 
 export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
@@ -241,16 +294,10 @@ zero-arg binding contract they cannot round-trip a typed value back through
 a bound action. Treat them as display plus local input, not as form fields
 wired to server state.
 
-### Remixable component requirements
+### Remix capture rules
 
-A remixable component's source file must expose the component as a
-**default export**. Sync accepts named-export registrations, but the jail
-refuses to render them with `must have a React default export`. Re-export
-the component as the default from its own file if the surrounding code
-needs the named form.
-
-Sync captures enough of the surrounding host to render a fork in the
-sandboxed jail with its real look and feel:
+Sync captures enough of the surrounding host to render a fork with its real
+look and feel:
 
 - **Source imports, two hops deep.** Sync follows local JavaScript and
   TypeScript imports from the captured component for two hops and captures
@@ -261,53 +308,13 @@ sandboxed jail with its real look and feel:
   canonical app root (`app/layout.*`, `app/root.*`, `pages/_app.*`, or their
   `src/` variants) and applies them inside the jailed document only. Sync
   does not follow component-local stylesheet imports and warns when it sees
-  one.
-- **Sample props.** Sync captures a static, JSON-compatible `sampleProps`
-  object on the remixable registration verbatim. The runtime uses it as
-  stubbed rehearsal data when a fork renders without live tree props; live
-  props always win when they are present. Non-static `sampleProps` are
-  skipped with a warning.
+  one. `@import` statements in captured stylesheets are dropped inside the
+  jail: its CSP allows no stylesheet fetches, so they could never load there.
 
-```ts
-export const catalog: ComponentCatalog = [
-  {
-    name: "NetWorthCard",
-    description: "Summary card of net worth over the last 30 days.",
-    propsSchema: netWorthSchema,
-    remixable: true,
-    sampleProps: {
-      balance: 12500,
-      currency: "USD",
-      trend: "up",
-    },
-  },
-];
-```
+The wrapped component may be a named or a default export — a fork of a
+named-export component gets its jail entry synthesized. An anonymous default
+export (`export default function () { … }`) is a sync error: name the
+component so its remixes survive refactors.
 
 Sync rewrites the baseline whenever any captured payload changes, not only
 the primary component source.
-
-## Remixing a captured slot
-
-`createVendo` loads every valid `.vendo/remixable/*.json` at startup and hands
-the baselines to the apps runtime. A missing directory means no baselines. Files
-that fail schema validation are skipped with a warning and do not break
-composition.
-
-Once a slot is captured, forking it is a USER GESTURE the engine executes
-deterministically — the model never decides to fork. The `<VendoSlot remix>`
-affordance (and the wire routes `POST /api/vendo/apps/fork-pin` and
-`POST /api/vendo/apps/:id/fork-pin`) copy the captured source into a
-deterministic generated component with no model call, record the pin on the
-app version as `{ slot, base: <baseline hash> }`, and render the fork through
-the same sandboxed jail as any other generated component. Captured sub-imports
-resolve through a per-module import table; only the blessed React kit resolves
-outside that table. An instruction riding the gesture reaches the model
-already scoped — an ordinary island edit on the existing fork — and any
-follow-up edit that touches the pinned subtree lands as a new version on the
-same app.
-
-Baselines carry an `exportable` flag. When a pinned slot's baseline is
-`exportable: false`, exporting that app fails with the `baseline-forbids-export`
-error code. Set `exportable: true` on baselines you are willing to include in
-`.vendoapp` bundles that leave the host.

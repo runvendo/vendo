@@ -216,10 +216,21 @@ When tools changed or broke, sync asks the running dev server which saved
 apps, automations, and grants they impact and prints one `impact:` line per
 tool (or `impact unknown` when no server is reachable). Drifted pins get an
 advisory `drifted:` line. Drift never auto-rebases; each fork's owner
-decides. Unresolved remixable slots are listed as `experimental:` warnings —
-remix is experimental, so they never fail the run, but silent remix skips are
-still eliminated: every unresolved slot is named with its reason and fix
-hint.
+decides.
+
+Sync also scans host source for
+[`<Remixable>` wrappers](/connect/host-components#remix-fork-a-wrapped-component)
+and captures each wrapped component into `.vendo/remixable/<slot>.json`. A
+wrapper it cannot capture — inline JSX, a child that is not statically
+imported, an anonymous default export — is a hard `error:` line (one per
+wrapper, with file, line, and fix) and the run exits 2 in any mode: the
+single-importable-child constraint is defended loudly, never degraded
+silently. On a run with no wrapper errors, baselines whose slot matches no
+wrapper anymore are deleted with one `pruned:` line each. Capture also warns
+(`warning:` lines, never failing) when an instant-kind wrapped component
+reaches into host plumbing — router imports, context-style hooks,
+function-typed props — and suggests `<Remixable review>`, since plumbing does
+not cross the fork boundary.
 
 Sync scans exported JSX components referenced by your `<VendoRoot>`
 `components` map and writes `.vendo/catalog.json` (see
@@ -252,7 +263,8 @@ Options:
   breaking tool impacts saved references.
 - `--json`: print exactly one machine-readable object on stdout:
   `{ ok, exitCode, report, impact, notes }`, where `report` carries
-  `tools`/`breaking`/`pins`/`unresolvedPins`/`catalog`/`warnings`, `impact`
+  `tools`/`breaking`/`pins`/`remixableErrors`/`catalog`/`warnings` (`pins`
+  lists the slots captured, drifted, and pruned this run), `impact`
   is the per-tool blast radius (`[]` when nothing changed, `null` when unknown),
   and `notes` collects CLI-level events. An `error` field appears when
   extraction itself failed soft.
@@ -272,7 +284,8 @@ Options:
 ```console
 $ vendo sync --strict --url http://127.0.0.1:3000/api/vendo
 tools: +0 -0 ~1
-pins: 0 captured, 0 drifted
+pins: 1 captured, 0 drifted
+pruned: LegacyHeroCard — stale baseline deleted (no <Remixable> wrapper names this slot anymore)
 breaking: host_listAccounts input-narrowed
 impact: host_listAccounts breaks 1 automation, 1 grant
 ```
@@ -285,11 +298,12 @@ recorded edit trail onto the new baseline. See
 
 Exit codes:
 
-- `0`: success, including fail-soft warnings
-- `2`: unresolved remixable slots (any mode), or breaking changes when
-  `--strict` is set
-- `3`: breaking changes that impact saved apps, automations, or grants when
-  `--strict` is set
+- `0`: success — warnings (missed imports, plumbing hints, drift advisories)
+  never fail the run
+- `2`: `<Remixable>` wrappers that cannot be captured (any mode), or breaking
+  tool changes when `--strict` is set
+- `3`: breaking tool changes that impact saved apps, automations, or grants
+  when `--strict` is set
 
 ## `vendo eject <surface> [dir]`
 

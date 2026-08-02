@@ -439,6 +439,13 @@ function applyThemeVars(vars: unknown): void {
   document.body.style.fontSize = "var(--vendo-font-size, 15px)";
 }
 
+/** Captured host CSS arrives verbatim, `@import` lines included (a Tailwind v4
+ *  root ships `@import "tailwindcss"`). The jail CSP has no style network
+ *  source, so every `@import` is a guaranteed-refused fetch that logs a CSP
+ *  violation on each render — drop the statements before injection; nothing
+ *  the jail could ever load is lost. */
+const stripCssImports = (css: string): string => css.replace(/@import\b[^;]*;/gu, "");
+
 function applyHostStyles(styles: unknown): void {
   document.querySelectorAll("style[data-vendo-host-style]").forEach((element) => element.remove());
   if (!Array.isArray(styles)) return;
@@ -448,7 +455,7 @@ function applyHostStyles(styles: unknown): void {
     style.dataset.vendoHostStyle = typeof candidate.path === "string" ? candidate.path : "captured";
     // textContent keeps captured CSS as inert data at the postMessage boundary;
     // the unchanged CSP still refuses every non-data network source it names.
-    style.textContent = candidate.css;
+    style.textContent = stripCssImports(candidate.css);
     document.head.appendChild(style);
   }
 }
