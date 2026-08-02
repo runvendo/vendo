@@ -51,14 +51,15 @@ function formatRehearsalDay(iso: string): string {
   return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Firings-box sizing (item: fixed 320px left a mostly-empty box for short
-    lists). One collapsed firing row ≈ .fl-act-row (8+8px padding + line;
-    measured ≈ 40px in the demo); REHEARSAL_BODY_MAX_PX is the original ceiling
-    above which the box scrolls internally; REHEARSAL_BODY_PAD_PX is
-    .fl-act-body's vertical padding. */
+/** Firings-box sizing. One collapsed firing row ≈ .fl-act-row (8+8px padding +
+    line; measured ≈ 40px in the demo); REHEARSAL_BODY_PAD_PX is .fl-act-body's
+    vertical padding. The box has no height cap and no internal scroll — a busy
+    automation's full list renders in the page's normal flow, so the page-level
+    .fl-auto-scroll scrollbar is the only one that ever appears. The estimate is
+    used only as a minHeight high-water-mark so toggling 7d/30d for the same
+    automation never visibly shrinks its own results box. */
 const REHEARSAL_FIRING_ROW_PX = 40;
 const REHEARSAL_BODY_PAD_PX = 6;
-const REHEARSAL_BODY_MAX_PX = 320;
 
 const REHEARSAL_FIRING_LABEL: Record<RehearsalFiring["status"], string> = {
   fired: "fired",
@@ -193,17 +194,13 @@ function RehearsalTimeline({
   const fired = report.firings.filter(firing => firing.status === "fired").length;
   const simulated = report.firings.reduce((count, firing) => count + firing.simulatedActions, 0);
   const newestFirst = report.firings.slice().reverse();
-  // The firings box is sized to fit THIS automation's firings (collapsed),
-  // capped at REHEARSAL_BODY_MAX_PX with internal scroll above that — so a
-  // weekly schedule with 1-2 firings no longer reserves a mostly-empty 320px
-  // box. Height is high-water-marked across renders and NEVER shrinks: the
-  // default 30d window (always ≥ the 7d window's firing count) loads first and
-  // locks the larger height, so toggling 7d/30d for the same automation can't
-  // resize the panel or reflow the cards below it.
-  const bodyEstimate = Math.min(
-    REHEARSAL_BODY_MAX_PX,
-    report.firings.length * REHEARSAL_FIRING_ROW_PX + REHEARSAL_BODY_PAD_PX,
-  );
+  // The firings box renders at its full natural height — no cap, no internal
+  // scroll — so a busy automation's list is part of the page's normal flow and
+  // the page-level .fl-auto-scroll scrollbar is the only one. bodyEstimate is a
+  // minHeight high-water-mark that NEVER shrinks: the default 30d window (always
+  // ≥ the 7d window's firing count) loads first and locks the larger floor, so
+  // toggling 7d/30d for the same automation can't visibly shrink its own box.
+  const bodyEstimate = report.firings.length * REHEARSAL_FIRING_ROW_PX + REHEARSAL_BODY_PAD_PX;
   const [bodyHeight, setBodyHeight] = useState(bodyEstimate);
   useEffect(() => {
     setBodyHeight(prev => Math.max(prev, bodyEstimate));
@@ -250,14 +247,13 @@ function RehearsalTimeline({
             + (simulated > 0 ? ` · ${simulated} simulated action${simulated === 1 ? "" : "s"} — nothing was executed` : " · nothing was executed")
             + (report.truncated === true ? " · showing the most recent firings" : "")}
       </div>
-      {/* Explicit height (not maxHeight), high-water-marked so it never shrinks
-          on a 7d/30d toggle: the box holds its size across toggles for the same
-          automation — flipping windows only scrolls its inner content instead
-          of resizing the panel and reflowing every card below it — but it is
-          sized to this automation's firings (capped) rather than always
-          reserving 320px, so a short list doesn't leave a mostly-empty box. */}
+      {/* minHeight (not height/maxHeight) high-water-marked so it never visibly
+          shrinks on a 7d/30d toggle: the box holds its floor across toggles for
+          the same automation, but content grows past it at its natural height
+          with no internal scroll — a busy list simply extends the page and the
+          single page-level scrollbar reaches it. */}
       {newestFirst.length > 0 ? (
-        <div className="fl-act-body" style={{ height: bodyHeight, overflowY: "auto" }}>
+        <div className="fl-act-body" style={{ minHeight: bodyHeight }}>
           {newestFirst.map(firing => {
             const key = firing.scheduledFor;
             const headline = firingHeadline(firing);
