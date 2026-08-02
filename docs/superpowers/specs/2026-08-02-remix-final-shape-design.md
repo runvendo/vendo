@@ -52,10 +52,11 @@ The wrapper becomes the registration. One line, one sync run:
 - The fork **replaces the wrapped element in place**, for that user only. The
   wrapper (`data-vendo-remixable`) is the mount boundary; the host page morphs
   per user. No slot required.
-- The fork always renders inside the jail (sandboxed iframe, locked CSP).
-  **In-process execution of user remixes is ruled out** — the frame is the
-  only real security boundary a browser offers, and in-process model-edited
-  code would force review before first render, killing instant remix.
+- An **unapproved** fork always renders inside the jail (sandboxed iframe,
+  locked CSP) — the frame is the only real security boundary a browser offers,
+  and unreviewed model-edited code never runs in-process. A **host-approved**
+  version mounts natively in the page (see Review below); the jail is the
+  draft venue, not a permanent ceiling.
 - **Data is real, two routes:**
   1. In place, the live (JSON-serializable) props the host passes at the call
      site flow across the frame boundary into the fork. Nothing captured,
@@ -68,9 +69,9 @@ The wrapper becomes the registration. One line, one sync run:
   boundary. Declared `sampleProps` die with the registry flag; the fork's seed
   for the dashboard-placement edge case is a snapshot of the serializable live
   props at the wrapper, taken at fork time.
-- Known jail costs accepted with the ruling: frame weight per fork, clipped
-  overlays at the boundary, client-only first paint. The reviewed **promote**
-  path (below) is the escape hatch to zero-seam native code.
+- Known jail costs accepted for drafts: frame weight per fork, clipped
+  overlays at the boundary, client-only first paint. Approval (below) is the
+  path to zero-seam native execution.
 
 ## Data model: pins vs placements
 
@@ -94,39 +95,69 @@ placements: ["home-hero"]                                          // "show this
 - The demo-bank fake-hash workaround and the orphan `home-hero.json` baseline
   are deleted with the split.
 
-## Review: a host policy knob (Yousef 2026-08-02)
+## Review: draft → approved, and review buys the venue (Yousef 2026-08-02)
 
-Personal-remix review is **configurable by the host**:
+A remix has two states, and host review moves it between them:
 
-```ts
-remix: { review: "none" | "required" }   // default: "none"
+```
+user remixes ──► DRAFT: instantly visible, jailed (self-contained behavior
+    │                   works; reach into host plumbing is degraded)
+    │  host reviews the ship-diff, approves
+    ▼
+APPROVED: that exact version mounts IN THE HOST PAGE — native, in place,
+    │     full functionality, hash-pinned to the reviewed version
+    │  user edits again
+    ▼
+back to DRAFT (jailed) until re-approved — fail-closed by construction
 ```
 
-- `"none"` (default): a personal remix renders instantly, jailed, that user
-  only.
-- `"required"`: the remix is created but held; the user sees "sent for
-  review" and the fork renders only after a host reviewer approves its
-  ship-diff. Execution stays jailed either way — approval controls *when* the
-  user sees it, never whether it runs in-process.
+This rides the existing in-client approval machinery
+(`packages/apps/src/inclient.ts`): jailed is the default venue; only a stored
+approval matching the CURRENT version's content hash mounts the UI in the host
+page; any hash mismatch drops back to the iframe. Review is not bureaucracy —
+it is what makes a remix fully real. The sandbox is the draft state, not a
+permanent ceiling.
 
-Independent of the knob, the blast-radius gates are fixed:
+**The policy is per-component, on the wrapper** — because remixability varies
+by component (Yousef: a self-contained chart forks cleanly; a plumbing-heavy
+panel does not):
+
+```tsx
+<Remixable>                      {/* default: drafts="instant" */}
+  <NetWorthCard accounts={accounts} />
+</Remixable>
+
+<Remixable drafts="held">        {/* remixes wait for host approval */}
+  <TransferPanel />
+</Remixable>
+```
+
+- `drafts="instant"` (default): the jailed draft renders immediately;
+  approval upgrades that exact version to native in place.
+- `drafts="held"`: the user sees "sent for review"; nothing renders until a
+  reviewer approves, and it then mounts native directly.
+
+The blast-radius gates are fixed regardless of the knob:
 
 | Scope of a remix | Execution | Review |
 |---|---|---|
-| Personal | Jail, that user only | Per the host's `review` knob |
-| Shared with other users | Jail, wider audience | Ship-diff reviewed before others see it, always |
-| Promoted by the host | Real host code, in-process | Host engineers review the ship-diff like any code change, always |
+| Personal draft | Jail, that user only | None (visible per the wrapper's `drafts`) |
+| Personal approved | Host page, that user only | Ship-diff approved, hash-pinned |
+| Shared with other users | Per approval state | Ship-diff reviewed before others see it, always |
+| Promoted by the host | Host codebase | Host engineers review like any code change, always |
 
 The ship-diff (`packages/apps/src/ship-diff.ts` — the fork's unified diff
 against the captured baseline, keyed to a version hash) is the review artifact
-at every gate. The sandbox is the nursery; promotion is the graduation.
+at every gate. Approving is one screen: the diff, approve/reject. Self-hosters
+wire the approval seam themselves; Cloud's console is the ready-made review
+screen (the usual OSS/Cloud split).
 
 **Fork-quality warning at sync time:** capture analyzes the wrapped component
 for reach into host plumbing (router, context, callback props) and warns the
-host developer that such a component will fork with degraded behavior — bad
-remix candidates get caught before they ever ship a sparkle. This is the
-mitigation for missing-functionality disappointment; the frozen eval measures
-whether it suffices or the `review` default must flip.
+host developer — including suggesting `drafts="held"` for plumbing-heavy
+components, so the policy is learned exactly where it would be gotten wrong.
+The frozen eval measures whether draft-quality forks satisfy or the default
+must flip.
 
 ## Also folded into this shape
 
