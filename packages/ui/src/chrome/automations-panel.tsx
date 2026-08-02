@@ -136,9 +136,9 @@ function RehearsalStepRow({ step }: { step: RehearsalStep }) {
 /** The rehearsal timeline: one line per firing over the trailing window
     (7 or 30 days — `report.windowDays`), newest first — date/time, fired
     status, and the firing's one resolved headline number (a real read's total,
-    formatted in the host's currency). The latest firing's per-step detail (the
-    money breakdown, simulated cards) expands by default; older firings expand
-    on click. A small 7d/30d control in the header re-fetches this report over
+    formatted in the host's currency). Every firing starts collapsed; its
+    per-step detail (the money breakdown, simulated cards) expands on click,
+    with no exception for the newest. A small 7d/30d control in the header re-fetches this report over
     the chosen window in place (`onWindowChange`), disabled while `busy`. Purely
     a preview — the header says so, and the enable toggle + grant capture stay
     the one consent path. */
@@ -157,7 +157,6 @@ function RehearsalTimeline({
   const fired = report.firings.filter(firing => firing.status === "fired").length;
   const simulated = report.firings.reduce((count, firing) => count + firing.simulatedActions, 0);
   const newestFirst = report.firings.slice().reverse();
-  const newestKey = newestFirst[0]?.scheduledFor;
   return (
     <div
       className="fl-auto-flow"
@@ -206,7 +205,7 @@ function RehearsalTimeline({
             const key = firing.scheduledFor;
             const headline = firingHeadline(firing);
             const hasDetail = firing.steps.length > 0;
-            const opened = hasDetail && (open[key] ?? key === newestKey);
+            const opened = hasDetail && (open[key] ?? false);
             return (
               <article key={key}>
                 <div className="fl-act-row">
@@ -232,7 +231,7 @@ function RehearsalTimeline({
                         type="button"
                         aria-expanded={opened}
                         aria-label={`${opened ? "Hide" : "Show"} details for the ${formatAuditTime(key)} firing`}
-                        onClick={() => setOpen(current => ({ ...current, [key]: !(current[key] ?? key === newestKey) }))}
+                        onClick={() => setOpen(current => ({ ...current, [key]: !(current[key] ?? false) }))}
                         style={{ border: "none", background: "none", color: "var(--vendo-fg-muted)", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: "0 2px" }}
                       >
                         {opened ? "▾" : "▸"}
