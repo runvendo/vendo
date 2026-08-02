@@ -81,6 +81,20 @@ export const appRoutes: RouteEntry[] = [
       ...(body["instruction"] === undefined ? {} : { instruction: string(body["instruction"], "instruction") }),
     }, ctx));
   }),
+  // Remix final shape (2026-08-02) — the review seam for the host's console:
+  // every review-kind version awaiting a reviewer, with requester, slot,
+  // version hash, submission time, resubmission count and the ship-diff
+  // payload. Host-admin scoped on the SAME principal bar as the in-client
+  // approval seam (wire/misc.ts): reviewing is a HOST trust decision, so a
+  // caller without a host-resolved principal gets an EMPTY queue — masked,
+  // never a probe into other subjects' pending work. Like fork-pin above,
+  // this entry must stay ahead of the "/apps/:appId/*" catch-all, whose rest
+  // pattern would otherwise capture appId="review-queue".
+  route("GET", "/apps/review-queue", async ({ deps, context }) => {
+    const ctx = await context("app");
+    if (ctx.principal.ephemeral === true) return json([]);
+    return json(await deps.apps.review.queue());
+  }),
   route("POST", "/apps/import", async ({ request, deps, context }) => {
     // The CSRF floor exempts import (binary body), so it must instead require
     // a non-CORS-safelisted media type — forcing a cross-origin preflight so
@@ -198,6 +212,20 @@ export const appRoutes: RouteEntry[] = [
         slot: string(body["slot"], "slot"),
         ...(body["instruction"] === undefined ? {} : { instruction: string(body["instruction"], "instruction") }),
       }, ctx));
+    }
+    // Remix final shape (2026-08-02) — the reviewer's rejection of the app's
+    // CURRENT review-kind version: the note is REQUIRED (it is what the
+    // user's panel surfaces) and the work is not deleted — a new version
+    // supersedes the rejection. Reviewer-side and cross-subject by design,
+    // so it carries the review seam's host-admin principal bar instead of
+    // owner scoping: a caller without a host-resolved principal gets the
+    // same not-found an unowned app answers (masked).
+    if (request.method === "POST" && operation === "reject-review" && segments.length === 3) {
+      if (ctx.principal.ephemeral === true) {
+        throw new VendoError("not-found", `app not found: ${appId}`);
+      }
+      const body = await requestJson(request);
+      return json(await deps.apps.review.reject({ appId, note: string(body["note"], "note") }, ctx));
     }
     // Wave 7 H2 — the embed surface's keepalive: user activity on an embedded
     // served app rides one host-proxied HEAD through the machine (re-arming

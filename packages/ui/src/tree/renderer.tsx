@@ -596,6 +596,29 @@ function StatefulTreeView({
     [validation.ok ? validation.tree.nodes : validation.error.message],
   );
 
+  // Remix final shape (2026-08-02) — a review-kind version awaiting the host
+  // reviewer renders NOTHING but its standing, checked BEFORE tree validation:
+  // the server ships no executable fork source with `pending-review` (its
+  // generated nodes have no components to validate against), so instead of an
+  // invalid-tree verdict, a jailed fork, or skeletons of stripped components
+  // the surface says "sent for review" — or carries the reviewer's rejection
+  // note back to the user.
+  if (inClient !== undefined && inClient.granted === false && inClient.reason === "pending-review") {
+    const standing = inClient.review;
+    if (standing?.status === "rejected") {
+      return (
+        <ContainedNotice label="Remix rejected" outcome="blocked">
+          {`The host reviewer rejected this remix — "${standing.note}". Edit the remix to resubmit it for review.`}
+        </ContainedNotice>
+      );
+    }
+    return (
+      <ContainedNotice label="Sent for review">
+        This remix was sent to the host for review. The original component stays in place until a reviewer approves it.
+      </ContainedNotice>
+    );
+  }
+
   if (!validation.ok) {
     return (
       <ContainedNotice label="Invalid UI tree" code={validation.error.code}>
@@ -620,7 +643,7 @@ function StatefulTreeView({
 
   // 06-apps §9 — a version change under an existing approval must be LOUD: the
   // surface drops back to the sandbox and says so, in-surface, above the tree.
-  const dropBackNotice = inClient !== undefined && inClient.granted === false
+  const dropBackNotice = inClient !== undefined && inClient.granted === false && inClient.reason === "version-changed"
     ? (
       <ContainedNotice label="In-client approval invalidated" outcome="blocked">
         This app changed since it was approved for the host page. It is running in the sandbox again until the new version is re-approved.

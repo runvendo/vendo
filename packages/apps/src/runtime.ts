@@ -78,6 +78,7 @@ import { isDisclaimerOnlyTree } from "./pipeline.js";
 import { createAppOpener, createProgressiveQueryResolver, machinesDisabledError, servedAppsDisabledError, stripServerAuthoritativeFields } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, listAllRecords, nextEnvStaleAt, rowFromRecord, updateAppRow } from "./persistence.js";
 import { classifyLegacyPlacements, detectPinDrift, hasDefaultExport, pinComponentName, pinForkSource, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
+import { createReviewLifecycle, type RemixRejection, type ReviewQueueEntry } from "./review.js";
 import { collectSecretValues, redactSecretJson, redactSecretText } from "./redaction.js";
 import {
   boxAllowlist,
@@ -546,6 +547,24 @@ export interface AppsRuntime {
     approvals(appId: AppId, ctx: RunContext): Promise<InClientApproval[]>;
     verdict(appId: AppId, ctx: RunContext): Promise<InClientVerdict>;
     approve(input: { appId: AppId; approvedBy: string }, ctx: RunContext): Promise<InClientApproval>;
+  };
+  /**
+   * Remix final shape (2026-08-02) — additive review-kind lifecycle surface
+   * (same additive precedent as `inClient`/`pins`). A review-kind remix (an
+   * app forked from a baseline captured with `review: true`) is invisible to
+   * its own user until a host reviewer approves; the approved version then
+   * mounts natively in place, riding the §9 hash-pin machinery. These two
+   * methods are the reviewer's side and cross owner boundaries BY DESIGN
+   * (the reviewer is not the remixing user): like `history()`, they carry no
+   * owner scoping of their own — the wire layer enforces its host-admin
+   * principal scoping before exposing them.
+   */
+  review: {
+    /** Every review-kind version awaiting review, oldest submission first. */
+    queue(): Promise<ReviewQueueEntry[]>;
+    /** Reject the app's CURRENT version with a note the user's panel surfaces.
+     *  The work is not deleted; a new version supersedes the rejection. */
+    reject(input: { appId: AppId; note: string }, ctx: RunContext): Promise<RemixRejection>;
   };
   /**
    * 06-apps §8 — additive drift→rebase surface (same additive precedent as
@@ -1087,6 +1106,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   config.guard.onApprovalDecision((id, approved) => onApprovalDecision(id, approved));
 
   const inClientApprovals = createInClientApprovals(config.store);
+  // Remix final shape (2026-08-02) — review-kind gating over the §9 hash-pin
+  // machinery: which document open() serves and the venue vocabulary the
+  // client resolves ("pending-review" = show the ORIGINAL, never a jailed
+  // fork; a served older approved version carries the current standing).
+  const review = createReviewLifecycle({
+    store: config.store,
+    baselines: config.pinBaselines,
+    approvals: inClientApprovals,
+    history,
+  });
   // execution-v2 Lane D — fn: refs on a machine-bearing app resolve over the
   // v2 box door (the same wake Lane C's wire proxy rides); the wrap leaves
   // every other ref on the existing caller. Queries hit this at open(),
@@ -1107,7 +1136,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const opener = createAppOpener(
     caller,
     config.pinBaselines,
-    (doc) => inClientApprovals.venueStateFor(doc),
+    // Review-aware venue: instant-kind answers exactly the plain hash-pin
+    // venue; review-kind never answers a jail state (review.ts).
+    (doc) => review.venueStateFor(doc),
     // Wave 4 (layer 3) — the served surface: wake-on-open over the machine
     // lifecycle, the provider's public ingress URL for $PORT, and the theming
     // handoff (host theme tokens as a query param the served app MAY consume).
@@ -2050,6 +2081,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
       await inClientApprovals.clear(appId);
+      await review.clear(appId);
       await exposure.clearForApp(appId);
       await egressApprovals.clearForApp(appId);
       await parkedActions.clearForApp(appId);
@@ -2191,7 +2223,12 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     async open(appId, ctx) {
-      return opener(await requireOwned(appId, ctx.principal.subject), ctx);
+      const app = await requireOwned(appId, ctx.principal.subject);
+      // Review-kind (2026-08-02): an unapproved current version is invisible —
+      // open() serves the newest APPROVED version from the existing history
+      // instead (or the pending state when none was ever approved). Instant
+      // kind passes through untouched.
+      return opener(await review.serveDocFor(app), ctx);
     },
 
     async call(appId, ref, args, ctx) {
@@ -2261,6 +2298,30 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           approvedBy: approval.approvedBy,
         });
         return approval;
+      },
+    },
+
+    review: {
+      async queue() {
+        return review.queue();
+      },
+      async reject(input, ctx) {
+        // Reviewer-side, cross-subject by design: the app is looked up
+        // WITHOUT owner scoping (the wire's host-admin gate stands in front).
+        const record = await apps.get(input.appId);
+        if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
+        const row = rowFromRecord(record);
+        const doc = classifyLegacyPlacements(row.doc, config.pinBaselines);
+        const rejection = await review.reject({ doc, note: input.note, by: ctx.principal.subject });
+        // The audit event lands under the OWNER's subject so the rejection is
+        // loud in the remixing user's activity, not the reviewer's.
+        await reportGuard(row.subject, doc.id, ctx, {
+          operation: "review-reject",
+          versionHash: rejection.versionHash,
+          by: rejection.by,
+          note: rejection.note,
+        });
+        return rejection;
       },
     },
 

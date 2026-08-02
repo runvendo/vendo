@@ -70,7 +70,16 @@ export { appVersionHash } from "./version-hash.js";
 export {
   type InClientVenueState,
   type InClientVerdict,
+  type ReviewStanding,
 } from "./inclient.js";
+// Remix final shape (2026-08-02) — the review-kind lifecycle vocabulary:
+// the queue entry the console seam lists and the rejection record the note
+// surfaces from (AppsRuntime.review is the behavior surface).
+export {
+  remixRejectionSchema,
+  type RemixRejection,
+  type ReviewQueueEntry,
+} from "./review.js";
 export {
   type ShipDiff,
   type ShipDiffGenerated,

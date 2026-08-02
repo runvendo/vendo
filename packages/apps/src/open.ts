@@ -316,6 +316,14 @@ export const createAppOpener = (
     if (pinDrift.length > 0) {
       (tree as Tree & { pinDrift: PinDrift[] }).pinDrift = pinDrift;
     }
+    // Review-kind gate (2026-08-02): an unapproved review-kind version ships
+    // NO executable source — no components, no componentTools, no furnishings,
+    // no resolved query data — so a jailed fork render cannot occur even on a
+    // client that ignores the venue state. The client keeps the ORIGINAL host
+    // component in place and surfaces the standing riding `inClient`.
+    if (inClient?.granted === false && inClient.reason === "pending-review") {
+      return { kind: "tree", payload: tree as unknown as UIPayload };
+    }
     attachPinFurnishings(tree, app, pinBaselines);
     const queries = createProgressiveQueryResolver(caller, app, ctx);
     queries.update(tree);

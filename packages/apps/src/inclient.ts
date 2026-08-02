@@ -1,4 +1,4 @@
-import type { AppDocument, AppId, RecordStore, StoreAdapter } from "@vendoai/core";
+import type { AppDocument, AppId, IsoDateTime, RecordStore, StoreAdapter } from "@vendoai/core";
 import { listAllRecords } from "./persistence.js";
 import { inClientApprovalSchema, type InClientApproval } from "./pins.js";
 import { appVersionHash } from "./version-hash.js";
@@ -14,14 +14,30 @@ export type InClientVerdict =
   | { granted: false; versionHash: string; reason: "no-approval" | "version-changed" };
 
 /**
+ * Remix final shape (2026-08-02) — where the CURRENT version of a review-kind
+ * app stands with the host reviewer, riding the venue state so the user's
+ * panel can say "sent for review" or surface the rejection note. Server-
+ * authoritative like the rest of the venue field.
+ */
+export type ReviewStanding =
+  | { status: "pending"; versionHash: string }
+  | { status: "rejected"; versionHash: string; note: string; by: string; at: IsoDateTime };
+
+/**
  * The additive in-client venue state the opener rides inside the tree payload
  * (like `furnishings` — UIPayload is forward-compatible; the frozen
  * OpenSurface shape stays intact). The client's renderer treats a missing
  * field as the default: jailed.
+ *
+ * Review-kind additions (2026-08-02): `reason: "pending-review"` means the
+ * client shows the ORIGINAL host component — never a jailed fork; the granted
+ * state's optional `review` rider means an OLDER approved version is being
+ * served while the current one awaits review.
  */
 export type InClientVenueState =
-  | { granted: true; versionHash: string; approvedBy: string; at: string }
-  | { granted: false; versionHash: string; reason: "version-changed" };
+  | { granted: true; versionHash: string; approvedBy: string; at: string; review?: ReviewStanding }
+  | { granted: false; versionHash: string; reason: "version-changed" }
+  | { granted: false; versionHash: string; reason: "pending-review"; review: ReviewStanding };
 
 export interface InClientApprovalAccess {
   /** All stored approvals for one app — an audit trail, one per approved version. */

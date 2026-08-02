@@ -18,6 +18,11 @@ export interface PinBaseline {
   hash: string;
   exportable: boolean;
   capturedAt: IsoDateTime;
+  /** Remix final shape (2026-08-02) — the component kind, captured by sync
+   *  from the `<Remixable review>` wrapper prop: a fork of a review-kind
+   *  baseline is invisible to its own user until a host reviewer approves,
+   *  then mounts natively. Absent = instant (jailed, no review process). */
+  review?: boolean;
   sourceImports?: Record<string, string>;
   subSources?: Record<string, PinSubSource>;
   sampleProps?: Record<string, Json>;
@@ -53,6 +58,7 @@ export const pinBaselineSchema = z.object({
   hash: z.string().startsWith("sha256:"),
   exportable: z.boolean(),
   capturedAt: isoDateTimeSchema,
+  review: z.boolean().optional(),
   sourceImports: z.record(z.string()).optional(),
   subSources: z.record(pinSubSourceSchema).optional(),
   sampleProps: z.record(z.unknown()).optional(),
