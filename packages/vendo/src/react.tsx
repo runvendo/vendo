@@ -60,6 +60,10 @@ export {
   ScriptedTransport,
   type DirectorCue,
   type DirectorScript,
+  // pin-events.ts — the bus a slot re-reads on, for a host that pins from its
+  // own control instead of a Vendo surface.
+  announcePin,
+  onPinAnnounced,
   // theme.ts
   defaultVendoTheme,
   resolveTheme,

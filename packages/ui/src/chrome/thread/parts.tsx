@@ -14,6 +14,7 @@ import { GrantSetCard, type GrantSetPermission } from "../grant-set-card.js";
 import { toolkitDisplayName, toolTitle } from "../humanize.js";
 import { Markdown } from "../markdown.js";
 import type { MorphToastProps } from "../morph-toast.js";
+import { usePinAction } from "../pin-ceremony.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
 import { SentAttachment } from "./attachments.js";
 import {
@@ -279,7 +280,8 @@ const PREVIEW_MAX_HEIGHT = 300;
     one exists) and, while the workspace is expanded, clicking the card
     features this app on the big stage. */
 function ThreadAppCard({ appId, payload, restored }: { appId: string; payload: UIPayload; restored: boolean }) {
-  const { client, components, onPin } = useVendoContext();
+  const { client, components } = useVendoContext();
+  const pin = usePinAction();
   const split = useSplitView();
   const streaming = (payload as { streaming?: boolean }).streaming === true;
   // When a LIVE build settles (streaming flips off), the full-size card
@@ -402,11 +404,11 @@ function ThreadAppCard({ appId, payload, restored }: { appId: string; payload: U
             the view is ready), replacing the old full-width footer row. The
             renderer lane's data-state/label/hairline markup above is the
             shared contract and stays untouched. */}
-        {!streaming && onPin ? (
+        {!streaming && pin ? (
           <button
             type="button"
             className="fl-barpin"
-            onClick={() => onPin({ appId, payload })}
+            onClick={() => pin({ appId, payload })}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
