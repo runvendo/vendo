@@ -53,7 +53,13 @@ export interface RemixableProps {
 /** The slot name is the wrapped component's identifier — the same exported
  *  name `vendo sync` captures the baseline under. Inline JSX or a plain
  *  element is a loud sync-time error, so at runtime it simply gets no
- *  affordance. */
+ *  affordance.
+ *
+ *  MINIFICATION: a production bundle erases `Function.name`, so a wrapped
+ *  component must carry React's canonical `displayName` (set to its exported
+ *  identifier) for the affordance to exist in production builds — dev always
+ *  resolves, which is exactly why the gap is easy to miss. Flagged to the
+ *  driving session for sync-time enforcement. */
 function slotOf(children: ReactNode): string | null {
   if (!isValidElement(children) || typeof children.type === "string") return null;
   const type = children.type as { displayName?: string; name?: string };

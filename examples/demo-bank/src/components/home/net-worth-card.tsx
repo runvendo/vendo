@@ -1,4 +1,5 @@
 "use client"
+import { Remixable } from "@vendoai/ui/chrome"
 import { useProfile, useAccounts } from "@/lib/hooks"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -34,5 +35,12 @@ export function NetWorthCard() {
     )
   }
 
-  return <NetWorthView valueCents={profile.netWorth} series={series} />
+  // The remixable surface is the PRESENTATIONAL view: the ✦ gesture forks the
+  // captured component and mounts the fork jailed, in place — the live
+  // valueCents/series computed here keep flowing into it on every render.
+  return (
+    <Remixable>
+      <NetWorthView valueCents={profile.netWorth} series={series} />
+    </Remixable>
+  )
 }

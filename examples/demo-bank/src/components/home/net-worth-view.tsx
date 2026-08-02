@@ -290,6 +290,12 @@ export function NetWorthView({
   )
 }
 
+// <Remixable> derives its remix slot from this identity at runtime, and the
+// production bundle minifies the function name away — displayName is the
+// React-canonical identity that survives, matching the exported identifier
+// sync captures the baseline under.
+NetWorthView.displayName = "NetWorthView"
+
 // The jail's module loader renders a fork's DEFAULT export (08-ui §5), so a
 // remixable component must carry one; the named export stays for host imports.
 export default NetWorthView
