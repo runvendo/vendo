@@ -727,6 +727,54 @@ function InClientScenario() {
   );
 }
 
+/** Remix final shape (2026-08-02) — the review-kind standing scenario: the
+ *  payload the server ships for an unapproved review-kind version (venue
+ *  `pending-review`, NO component source travels), once awaiting review and
+ *  once carrying the reviewer's rejection note. Neither may jail-render. */
+function reviewStandingTree(review: Record<string, unknown>): UIPayload {
+  return {
+    formatVersion: "vendo-genui/v2",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", children: ["fork"] },
+      { id: "fork", component: "RemixedPanel", source: "generated" },
+    ],
+    ...({ inClient: { granted: false, versionHash: "sha256:under-review", reason: "pending-review", review } } as object),
+  } as UIPayload;
+}
+
+function ReviewStandingScenario() {
+  const onAction = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+  return (
+    <TreeThemeBoundary>
+      <div className="inclient-grid">
+        <section aria-label="Remix sent for review">
+          <h2>Pending — sent for review</h2>
+          <TreeView
+            tree={reviewStandingTree({ status: "pending", versionHash: "sha256:under-review" })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+        <section aria-label="Remix rejected with a note">
+          <h2>Rejected — the reviewer&apos;s note comes back</h2>
+          <TreeView
+            tree={reviewStandingTree({
+              status: "rejected",
+              versionHash: "sha256:under-review",
+              note: "Keep the original balance label.",
+              by: "host_reviewer",
+              at: NOW,
+            })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+      </div>
+    </TreeThemeBoundary>
+  );
+}
+
 /** 06-apps §8 — the drift notice scenario: the host updated the component a
  *  pin was remixed from, so the payload carries a server-written `pinDrift`
  *  report. The surface says so loudly ABOVE the tree while the remixed fork
@@ -1889,6 +1937,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
+    case "/tree-review": return { title: "Review-kind standing (pending / rejected)", content: <ReviewStandingScenario /> };
     case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
