@@ -1,7 +1,7 @@
 import { SignJWT } from "jose"
 import { NextRequest } from "next/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { proxy } from "../../proxy"
+import { config, proxy } from "../../proxy"
 import { isAutologinToken, mintAutologinToken } from "../autologin"
 import { resolveCadenceSession, SESSION_COOKIE } from "../session"
 import { cadenceDemoUsers, supabaseAnonKey, supabaseJwtSecret, supabaseUrl } from "../users"
@@ -22,6 +22,33 @@ function stubDemoDeployment(): void {
   vi.stubEnv("DEMO_AUTOLOGIN", "1")
   vi.stubEnv("VENDO_BASE_URL", "http://localhost:3100")
 }
+
+/**
+ * The redirect target as path+query, asserted to stay on the request's OWN
+ * origin and under the mount point.
+ *
+ * Cadence is served in place at demos.vendo.run/cadence, so a bounce to a path
+ * missing the `/cadence` prefix lands on nothing. The origin cannot be fixed
+ * here — Next's proxy runtime rejects a relative Location and emits absolute
+ * ones itself — so it is rewritten at the edge; what this pins is that the
+ * proxy never *introduces* a foreign origin of its own.
+ */
+function locationOf(response: Response, request: NextRequest): string {
+  const location = new URL(response.headers.get("location")!)
+  expect(location.origin).toBe(request.nextUrl.origin)
+  expect(location.pathname, "every redirect stays under the mount point").toMatch(/^\/cadence(?:\/|$)/u)
+  return `${location.pathname}${location.search}`
+}
+
+describe("proxy matcher", () => {
+  /** Next prefixes every matcher with the mount point, so the catch-all becomes
+   *  `/cadence/((?!…).*)` and does not match the bare `/cadence` a visitor
+   *  types. Dropping the explicit "/" leaves the dashboard as the one page the
+   *  gate never sees — and it renders a signed-out visitor a signed-in page. */
+  it("covers the bare mount root, not just paths under it", () => {
+    expect(config.matcher).toContain("/")
+  })
+})
 
 describe("auto-login token minting", () => {
   it("round-trips the UNCHANGED session verifier as the primary seeded user", async () => {
@@ -113,18 +140,21 @@ describe("proxy auto-login behavior", () => {
     stubDemoDeployment()
     // /logout clears the cookie and 303s to /login — with the flag that
     // continuation must never show a login form.
-    const response = await proxy(requestFor("/login"))
+    const request = requestFor("/login")
+    const response = await proxy(request)
     expect(response.status).toBe(307)
-    expect(new URL(response.headers.get("location")!).pathname).toBe("/")
+    expect(locationOf(response, request)).toBe("/cadence/")
     expect(response.headers.get("set-cookie")).toContain(`${SESSION_COOKIE}=`)
   })
 
   it("/login honors a same-origin returnTo and collapses foreign ones", async () => {
     stubDemoDeployment()
-    const same = await proxy(requestFor("/login?returnTo=%2Fclients%3Fq%3Dblue"))
-    expect(new URL(same.headers.get("location")!).pathname).toBe("/clients")
-    const foreign = await proxy(requestFor(`/login?returnTo=${encodeURIComponent("https://evil.example/phish")}`))
-    expect(new URL(foreign.headers.get("location")!).pathname).toBe("/")
+    const sameRequest = requestFor("/login?returnTo=%2Fclients%3Fq%3Dblue")
+    const same = await proxy(sameRequest)
+    expect(locationOf(same, sameRequest)).toBe("/cadence/clients?q=blue")
+    const foreignRequest = requestFor(`/login?returnTo=${encodeURIComponent("https://evil.example/phish")}`)
+    const foreign = await proxy(foreignRequest)
+    expect(locationOf(foreign, foreignRequest)).toBe("/cadence/")
   })
 
   it("without the flag, /login still renders the form (passes through untouched)", async () => {
@@ -143,7 +173,7 @@ describe("proxy auto-login behavior", () => {
     const response = await proxy(spoofed)
     // Normal unauthenticated flow: bounce to /login, nothing minted.
     expect(response.status).toBe(307)
-    expect(new URL(response.headers.get("location")!).pathname).toBe("/login")
+    expect(locationOf(response, spoofed)).toBe("/cadence/login?returnTo=%2Fclients")
     expect(response.headers.get("set-cookie")).toBeNull()
   })
 
@@ -162,7 +192,7 @@ describe("proxy auto-login behavior", () => {
     })
     const response = await proxy(loopback)
     expect(response.status).toBe(307)
-    expect(new URL(response.headers.get("location")!).pathname).toBe("/login")
+    expect(locationOf(response, loopback)).toBe("/cadence/login?returnTo=%2Fclients")
     expect(response.headers.get("set-cookie")).toBeNull()
   })
 

@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { VendoRoot as UmbrellaVendoRoot } from "@vendoai/vendo/react";
 import { ScriptedTransport, type DirectorScript, type ToolMetaMap } from "@vendoai/ui";
+import { withBasePath } from "@/lib/base-path";
 import { cadenceRegistry } from "@/vendo/registry";
 import { cadenceTheme } from "@/vendo/theme";
 import { cadenceRealtimeVoiceDriver } from "./voice-realtime";
@@ -37,6 +38,10 @@ const cadenceToolMeta: ToolMetaMap = {
  * live take by setting `globalThis.__vendoDirectorRecord = true` before a
  * run, then save `__vendoDirectorRecording` as the script's cues.
  */
+/** The Vendo door under the mount point. The provider's default is the bare
+ *  `/api/vendo`, which 404s once the app is served at a subpath. */
+const VENDO_DOOR = withBasePath("/api/vendo");
+
 const noopSubscribe = () => () => {};
 /** Client-only flag, hydration-safe: false on the server, real value on the client. */
 function useDirectorRequested(): boolean {
@@ -56,7 +61,7 @@ function useDirectorTransport(): { enabled: boolean; transport?: ScriptedTranspo
     if (!enabled) return;
     let alive = true;
     // Cache-busted: a stale cached script replays old component sources.
-    void fetch(`/vendo-director/script.json?v=${Date.now()}`, { cache: "no-store" })
+    void fetch(withBasePath(`/vendo-director/script.json?v=${Date.now()}`), { cache: "no-store" })
       .then(response => (response.ok ? (response.json() as Promise<DirectorScript>) : undefined))
       .then(script => {
         if (alive && (script?.cues?.length || script?.turns?.length)) setTransport(new ScriptedTransport(script));
@@ -92,7 +97,7 @@ export function VendoRoot({
   if (directorEligible && director.enabled && !director.transport) return null;
   if (!directorEligible) {
     return (
-      <UmbrellaVendoRoot components={cadenceRegistry} theme={cadenceTheme} tools={cadenceToolMeta} voice={{ driver: cadenceRealtimeVoiceDriver }} greeting={cadenceGreeting} onPin={onPin}>
+      <UmbrellaVendoRoot baseUrl={VENDO_DOOR} components={cadenceRegistry} theme={cadenceTheme} tools={cadenceToolMeta} voice={{ driver: cadenceRealtimeVoiceDriver }} greeting={cadenceGreeting} onPin={onPin}>
         {children}
       </UmbrellaVendoRoot>
     );
@@ -100,6 +105,7 @@ export function VendoRoot({
   return (
     <UmbrellaVendoRoot
       key={director.transport ? "vendo-director" : "vendo-live"}
+      baseUrl={VENDO_DOOR}
       components={cadenceRegistry}
       theme={cadenceTheme}
       tools={cadenceToolMeta}

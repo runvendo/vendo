@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "/"
+      "url": "/cadence"
     }
   ],
   "paths": {

@@ -1,5 +1,6 @@
 import { createVendoClient } from "@vendoai/ui";
 import { createVoiceActBridge, realtimeVoiceDriver } from "@vendoai/ui/voice";
+import { withBasePath } from "@/lib/base-path";
 
 /** Cadence's WebRTC voice surface (08-ui §1), with the ENG-319 live pipeline:
  * the realtime model acts through Vendo mid-call via the `vendo_act` bridge —
@@ -7,7 +8,7 @@ import { createVoiceActBridge, realtimeVoiceDriver } from "@vendoai/ui/voice";
  * stage's consent bar. */
 export const cadenceRealtimeVoiceDriver = realtimeVoiceDriver({
   getSession: async () => {
-    const response = await fetch("/api/voice", { method: "POST" });
+    const response = await fetch(withBasePath("/api/voice"), { method: "POST" });
     const body = (await response.json().catch(() => ({}))) as {
       clientSecret?: string;
       model?: string;
@@ -23,5 +24,5 @@ export const cadenceRealtimeVoiceDriver = realtimeVoiceDriver({
     + "that touches clients, deadlines, documents, views or messages — describe the action in plain "
     + "language and speak from its result. Anything needing permission is asked on screen; tell the "
     + "user to look at the consent card when the result says so.",
-  act: createVoiceActBridge({ client: createVendoClient({ baseUrl: "/api/vendo" }) }),
+  act: createVoiceActBridge({ client: createVendoClient({ baseUrl: withBasePath("/api/vendo") }) }),
 });

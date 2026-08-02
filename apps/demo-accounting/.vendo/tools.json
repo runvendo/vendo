@@ -13,7 +13,7 @@
         "kind": "openapi",
         "operationId": "createVoiceSession",
         "method": "POST",
-        "path": "/api/voice"
+        "path": "/cadence/api/voice"
       },
       "outputSchema": {
         "type": "object",
@@ -26,7 +26,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_getClient",
@@ -48,7 +48,7 @@
         "kind": "openapi",
         "operationId": "getClient",
         "method": "GET",
-        "path": "/api/clients/{id}"
+        "path": "/cadence/api/clients/{id}"
       },
       "outputSchema": {
         "type": "object",
@@ -129,7 +129,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_getDashboard",
@@ -143,7 +143,7 @@
         "kind": "openapi",
         "operationId": "getDashboard",
         "method": "GET",
-        "path": "/api/dashboard"
+        "path": "/cadence/api/dashboard"
       },
       "outputSchema": {
         "type": "object",
@@ -191,20 +191,7 @@
           }
         }
       },
-      "semantics": {
-        "data.nearestDeadline": {
-          "kind": "date",
-          "format": "iso"
-        },
-        "data.nearestDeadlineClient.id": {
-          "kind": "id"
-        },
-        "data.nearestDeadlineClient.filingDeadline": {
-          "kind": "date",
-          "format": "iso"
-        }
-      },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_listActivity",
@@ -223,7 +210,7 @@
         "kind": "openapi",
         "operationId": "listActivity",
         "method": "GET",
-        "path": "/api/activity"
+        "path": "/cadence/api/activity"
       },
       "outputSchema": {
         "type": "object",
@@ -261,30 +248,7 @@
           }
         }
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.type": {
-          "kind": "enum",
-          "labels": {
-            "deadline_approaching": "Deadline approaching",
-            "document_rejected": "Document rejected",
-            "document_verified": "Document verified",
-            "message_sent": "Message sent",
-            "upload_received": "Upload received"
-          }
-        },
-        "data.clientId": {
-          "kind": "id",
-          "entity": "client"
-        },
-        "data.at": {
-          "kind": "date",
-          "format": "iso"
-        }
-      },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_listClientDocuments",
@@ -306,7 +270,7 @@
         "kind": "openapi",
         "operationId": "listClientDocuments",
         "method": "GET",
-        "path": "/api/clients/{id}/documents"
+        "path": "/cadence/api/clients/{id}/documents"
       },
       "outputSchema": {
         "type": "object",
@@ -359,7 +323,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_listClientMessages",
@@ -381,7 +345,7 @@
         "kind": "openapi",
         "operationId": "listClientMessages",
         "method": "GET",
-        "path": "/api/clients/{id}/messages"
+        "path": "/cadence/api/clients/{id}/messages"
       },
       "outputSchema": {
         "type": "object",
@@ -420,7 +384,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_listClients",
@@ -446,7 +410,7 @@
         "kind": "openapi",
         "operationId": "listClients",
         "method": "GET",
-        "path": "/api/clients"
+        "path": "/cadence/api/clients"
       },
       "outputSchema": {
         "type": "object",
@@ -530,40 +494,7 @@
           }
         }
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.entityType": {
-          "kind": "enum",
-          "labels": {
-            "c_corp": "C corp",
-            "individual": "Individual",
-            "partnership": "Partnership",
-            "s_corp": "S corp",
-            "sole_prop": "Sole prop"
-          }
-        },
-        "data.assigneeId": {
-          "kind": "id",
-          "entity": "assignee"
-        },
-        "data.filingDeadline": {
-          "kind": "date",
-          "format": "iso"
-        },
-        "data.status": {
-          "kind": "enum",
-          "labels": {
-            "complete": "Complete",
-            "missing_docs": "Missing docs"
-          }
-        },
-        "data.assignee.id": {
-          "kind": "id"
-        }
-      },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_listDeadlines",
@@ -577,7 +508,7 @@
         "kind": "openapi",
         "operationId": "listDeadlines",
         "method": "GET",
-        "path": "/api/deadlines"
+        "path": "/cadence/api/deadlines"
       },
       "outputSchema": {
         "type": "object",
@@ -677,40 +608,7 @@
           }
         }
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.entityType": {
-          "kind": "enum",
-          "labels": {
-            "c_corp": "C corp",
-            "individual": "Individual",
-            "partnership": "Partnership",
-            "s_corp": "S corp",
-            "sole_prop": "Sole prop"
-          }
-        },
-        "data.assigneeId": {
-          "kind": "id",
-          "entity": "assignee"
-        },
-        "data.filingDeadline": {
-          "kind": "date",
-          "format": "iso"
-        },
-        "data.status": {
-          "kind": "enum",
-          "labels": {
-            "complete": "Complete",
-            "missing_docs": "Missing docs"
-          }
-        },
-        "data.assignee.id": {
-          "kind": "id"
-        }
-      },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_listDemoChips",
@@ -724,7 +622,7 @@
         "kind": "openapi",
         "operationId": "listDemoChips",
         "method": "GET",
-        "path": "/api/demo/chips"
+        "path": "/cadence/api/demo/chips"
       },
       "outputSchema": {
         "type": "object",
@@ -757,7 +655,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_resetDemo",
@@ -771,7 +669,7 @@
         "kind": "openapi",
         "operationId": "resetDemo",
         "method": "POST",
-        "path": "/api/demo/reset"
+        "path": "/cadence/api/demo/reset"
       },
       "outputSchema": {
         "type": "object",
@@ -819,7 +717,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_sendClientMessage",
@@ -858,7 +756,7 @@
         "kind": "openapi",
         "operationId": "sendClientMessage",
         "method": "POST",
-        "path": "/api/clients/{id}/messages"
+        "path": "/cadence/api/clients/{id}/messages"
       },
       "outputSchema": {
         "type": "object",
@@ -894,7 +792,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_setDocumentStatus",
@@ -947,7 +845,7 @@
         "kind": "openapi",
         "operationId": "setDocumentStatus",
         "method": "POST",
-        "path": "/api/clients/{id}/documents/{docId}/status"
+        "path": "/cadence/api/clients/{id}/documents/{docId}/status"
       },
       "outputSchema": {
         "type": "object",
@@ -997,7 +895,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     },
     {
       "name": "host_simulateClientUpload",
@@ -1045,7 +943,7 @@
         "kind": "openapi",
         "operationId": "simulateClientUpload",
         "method": "POST",
-        "path": "/api/demo/simulate/upload"
+        "path": "/cadence/api/demo/simulate/upload"
       },
       "outputSchema": {
         "type": "object",
@@ -1129,7 +1027,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:41d8566da3857a4ce17ad6fc404d7510b7b1409af0f1740beb041d32aa7de98c"
     }
   ]
 }

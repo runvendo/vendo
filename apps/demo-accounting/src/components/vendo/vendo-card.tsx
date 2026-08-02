@@ -1,6 +1,7 @@
 "use client";
 
 import { VendoSlot } from "@vendoai/ui/chrome";
+import { withBasePath } from "@/lib/base-path";
 import { VendoRoot } from "./VendoRoot";
 import { cadencePinnedDashboard } from "./pinned-dashboard";
 
@@ -12,7 +13,7 @@ export function VendoCard() {
             (a pinned vendo-genui/v2 dashboard). The host <a> stays the pin
             error fallback (06-apps §8). */}
         <VendoSlot id="home-dashboard" pin={{ payload: cadencePinnedDashboard }}>
-          <a className="block rounded-xl border border-dashed border-line p-6 text-sm text-ink-soft" href="/assistant">
+          <a className="block rounded-xl border border-dashed border-line p-6 text-sm text-ink-soft" href={withBasePath("/assistant")}>
             Design a view with Vendo
           </a>
         </VendoSlot>

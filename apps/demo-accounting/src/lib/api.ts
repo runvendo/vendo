@@ -2,6 +2,7 @@
 // `{ data }` envelope (see src/server/http.ts); the fetcher unwraps it so SWR
 // hooks work directly with domain shapes.
 
+import { withBasePath } from "@/lib/base-path"
 import type { ClientSummary, DeadlineEntry } from "@/server/clients"
 import type { DashboardMetrics } from "@/server/documents"
 import type { ActivityEvent, DocumentRequest, Message } from "@/server/types"
@@ -16,8 +17,11 @@ export class ApiError extends Error {
   }
 }
 
+/** `url` is the bare API path (`/api/dashboard`), which is also its SWR key —
+ * so keys and `mutate()` calls stay written in the API's own vocabulary. The
+ * mount point is added here, at the one place the request is actually made. */
 export async function fetcher<T>(url: string): Promise<T> {
-  const res = await fetch(url)
+  const res = await fetch(withBasePath(url))
   const json = (await res.json().catch(() => null)) as
     | { data?: T; error?: { message?: string } }
     | null

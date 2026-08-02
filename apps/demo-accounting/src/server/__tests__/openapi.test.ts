@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import spec from "../../../openapi.json"
+import tools from "../../../.vendo/tools.json"
+import { BASE_PATH } from "@/lib/base-path"
 
 const APP_DIR = join(__dirname, "..", "..", "app")
 
@@ -52,6 +54,38 @@ describe("openapi.json <-> route handlers", () => {
     for (const method of Object.keys(item)) {
       expect(source).toMatch(new RegExp(`export async function ${method.toUpperCase()}\\b`))
     }
+  })
+
+  /**
+   * THE MOUNT POINT HAS TO REACH THE AGENT'S TOOL CALLS.
+   *
+   * Cadence is served in place at demos.vendo.run/cadence, so the endpoints
+   * really live at `<origin>/cadence/api/…`. Next rewrites the app's own
+   * requests; it does not know the agent exists. The prefix travels
+   * `openapi.json` servers → `vendo sync` → `.vendo/tools.json` `binding.path`,
+   * and NOTHING a human can see depends on it: get it wrong and every page
+   * renders perfectly while every number the agent quotes is a 404. That is why
+   * this is asserted rather than eyeballed.
+   */
+  it("declares the mount point as its server", () => {
+    expect(spec.servers).toEqual([{ url: BASE_PATH }])
+  })
+
+  it("carries the mount point into every synced tool binding", () => {
+    const bindings = tools.tools.map(tool => tool.binding)
+    expect(bindings.length).toBeGreaterThan(0)
+    for (const binding of bindings) {
+      expect(binding.path.startsWith(`${BASE_PATH}/`), `${binding.method} ${binding.path}`).toBe(true)
+    }
+  })
+
+  /** Also catches a STALE tools.json — a spec edit that never got synced. */
+  it("synced one tool binding per documented operation", () => {
+    const documented = paths.flatMap(([path, item]) =>
+      Object.keys(item).map(method => `${method.toUpperCase()} ${BASE_PATH}${path}`),
+    )
+    const synced = tools.tools.map(tool => `${tool.binding.method} ${tool.binding.path}`)
+    expect(synced.sort()).toEqual(documented.sort())
   })
 
   it("gives every operation a unique operationId", () => {

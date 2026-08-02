@@ -1,3 +1,4 @@
+import { withBasePath } from "@/lib/base-path"
 import { SESSION_COOKIE } from "@/server/session"
 
 /** Sign out: drop the session cookie and land back on the login form. */
@@ -6,7 +7,7 @@ export function GET(request: Request): Response {
   return new Response(null, {
     status: 303,
     headers: {
-      location: "/login",
+      location: withBasePath("/login"),
       "set-cookie": `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`,
       "cache-control": "no-store",
     },

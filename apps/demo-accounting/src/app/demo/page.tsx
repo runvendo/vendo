@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardHeader } from "@/components/ui/card"
 import { PageHeader } from "@/components/ui/page-header"
 import { Reveal } from "@/components/ui/reveal"
+import { withBasePath } from "@/lib/base-path"
 import { fetcher, type ClientSummary, type DocumentRequest } from "@/lib/api"
 import { cn } from "@/lib/cn"
 
@@ -24,7 +25,7 @@ interface ResetMetrics {
 }
 
 async function post(url: string, body?: unknown): Promise<{ ok: boolean; json: unknown }> {
-  const res = await fetch(url, {
+  const res = await fetch(withBasePath(url), {
     method: "POST",
     ...(body !== undefined
       ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }

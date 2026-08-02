@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { withBasePath } from "@/lib/base-path"
 
 /** The signed-in user's "try this" chip prompts (demo-hygiene). Rides the
  * thread's string-suggestion tier — pill chips below the scenario cards.
@@ -9,7 +10,7 @@ export function useTryThisChips(): string[] {
   const [chips, setChips] = useState<string[]>([])
   useEffect(() => {
     let cancelled = false
-    void fetch("/api/demo/chips")
+    void fetch(withBasePath("/api/demo/chips"))
       .then(response => (response.ok ? response.json() : null))
       .then((body: { data?: { chips?: { prompt: string }[] } } | null) => {
         const prompts = (body?.data?.chips ?? []).map(chip => chip.prompt)

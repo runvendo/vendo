@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useVendoOverlay } from "@vendoai/ui";
 import { VendoOverlay, VendoPalette, VendoThread, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
+import { withBasePath } from "@/lib/base-path";
 import { CadenceMark } from "@/components/brand";
 import { cadenceScenarios } from "@/vendo/scenarios";
 import { useTryThisChips } from "./use-try-this-chips";
@@ -24,9 +25,9 @@ function CadenceThread(props: VendoThreadProps) {
 
 async function resetDemo(): Promise<void> {
   try {
-    await fetch("/api/demo/reset", { method: "POST" });
+    await fetch(withBasePath("/api/demo/reset"), { method: "POST" });
   } finally {
-    window.location.href = "/";
+    window.location.href = withBasePath("/");
   }
 }
 

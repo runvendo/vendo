@@ -8,6 +8,7 @@ import { Card, CardHeader } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ErrorState } from "@/components/ui/error-state"
 import { Skeleton } from "@/components/ui/skeleton"
+import { withBasePath } from "@/lib/base-path"
 import { fetcher, type Message } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { relativeTime } from "@/lib/format"
@@ -62,7 +63,7 @@ export function MessageThread({ clientId, contactName }: { clientId: string; con
     setSending(true)
     setSendError(null)
     try {
-      const res = await fetch(`/api/clients/${clientId}/messages`, {
+      const res = await fetch(withBasePath(`/api/clients/${clientId}/messages`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body }),

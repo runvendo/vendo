@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { withBasePath } from "@/lib/base-path"
 import { cn } from "@/lib/cn"
 import { logoUrl } from "@/lib/logos"
 
@@ -86,7 +87,7 @@ export function ClientMark({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={domain.startsWith("/") ? domain : logoUrl(domain, 128)}
+        src={domain.startsWith("/") ? withBasePath(domain) : logoUrl(domain, 128)}
         alt=""
         onError={() => setErrored(true)}
         loading="lazy"

@@ -55,7 +55,7 @@ async function createStack(): Promise<Stack> {
   const guard = createGuard({ store })
   const actions = createActions({
     tools: await cadenceTools(),
-    baseUrl: app!.baseUrl,
+    baseUrl: app!.origin,
     // The drill's point: away identity is a REAL Supabase user JWT minted
     // with the project's own secret. Unknown subjects are declined via
     // claims → null.
@@ -152,9 +152,12 @@ describe("Cadence away drill (ENG-260)", () => {
     })
     expect(anonymous.status).toBe(401)
 
-    const page = await appFetch(`${app!.baseUrl}/`, { redirect: "manual" })
+    // `baseUrl` IS the app root (origin + mount point) — a trailing slash on
+    // top of it is a different URL, and Next answers it with its own 308 to the
+    // canonical path instead of the login bounce this asserts.
+    const page = await appFetch(app!.baseUrl, { redirect: "manual" })
     expect([302, 303, 307, 308]).toContain(page.status)
-    expect(page.headers.get("location")).toContain("/login")
+    expect(page.headers.get("location")).toContain("/cadence/login")
   })
 
   it("executes an automation as the granting user with no live session", { timeout: 120_000 }, async () => {

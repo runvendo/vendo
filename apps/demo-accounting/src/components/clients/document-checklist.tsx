@@ -9,6 +9,7 @@ import { Card, CardHeader } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ErrorState } from "@/components/ui/error-state"
 import { Skeleton } from "@/components/ui/skeleton"
+import { withBasePath } from "@/lib/base-path"
 import { fetcher, type DocumentRequest } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { relativeTime } from "@/lib/format"
@@ -167,7 +168,7 @@ export function DocumentChecklist({ clientId }: { clientId: string }) {
     setPendingIds(prev => new Set(prev).add(docId))
     setActionError(null)
     try {
-      const res = await fetch(`/api/clients/${clientId}/documents/${docId}/status`, {
+      const res = await fetch(withBasePath(`/api/clients/${clientId}/documents/${docId}/status`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reason ? { action, reason } : { action }),

@@ -5,12 +5,18 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { createServer } from "node:net"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { BASE_PATH } from "../lib/base-path"
 
 export const appDir = fileURLToPath(new URL("../..", import.meta.url))
 export const BOOT_MS = 240_000
 
 export interface CadenceApp {
+  /** The app's own root — the origin plus the mount point Cadence is served
+   *  under. What a visitor types, and what every page/API fetch hangs off. */
   baseUrl: string
+  /** The bare origin. The WIRE base: `binding.path` in tools.json already
+   *  carries the mount point, so joining it onto `baseUrl` would double it. */
+  origin: string
   stop(): Promise<void>
 }
 
@@ -52,11 +58,12 @@ export async function bootCadence(
   env: Record<string, string> = {},
 ): Promise<CadenceApp> {
   const port = await freePort()
-  const baseUrl = `http://127.0.0.1:${port}`
+  const origin = `http://127.0.0.1:${port}`
+  const baseUrl = `${origin}${BASE_PATH}`
   let serverOutput = ""
   const childEnv = {
     ...process.env,
-    VENDO_BASE_URL: baseUrl,
+    VENDO_BASE_URL: origin,
     NEXT_TELEMETRY_DISABLED: "1",
     CADENCE_DIST_DIR: distDir,
     ...env,
@@ -89,6 +96,7 @@ export async function bootCadence(
 
   return {
     baseUrl,
+    origin,
     async stop() {
       if (child.exitCode !== null) return
       child.kill("SIGTERM")

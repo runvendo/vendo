@@ -1,5 +1,6 @@
 import { resolveCadenceSession, sessionCookie } from "@/server/session"
 import { cadenceDemoEmail, cadenceDemoUsers, supabaseAnonKey, supabaseUrl } from "@/server/users"
+import { withBasePath } from "@/lib/base-path"
 import { cadencePublicUrl, publicOrigin, safeReturnTo } from "@/vendo/auth"
 
 export const runtime = "nodejs"
@@ -50,7 +51,7 @@ function loginPage(request: Request, message?: string, status = 401): Response {
     <h1>Welcome back</h1>
     <p>Sign in to Cadence to keep your clients on schedule.</p>
     ${message ? `<div class="error" role="alert">${escapeHtml(message)}</div>` : ""}
-    <form method="post" action="/login">
+    <form method="post" action="${withBasePath("/login")}">
       <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
       <label>Email<input name="email" type="email" autocomplete="username" value="${escapeHtml(cadenceDemoEmail())}" required></label>
       <label>Password<input name="password" type="password" autocomplete="current-password" required autofocus></label>
@@ -83,8 +84,10 @@ export async function GET(request: Request): Promise<Response> {
       // Relative, same-origin redirect: returnTo is a safeReturnTo path, so the
       // browser resolves it against its own origin. Deriving an absolute origin
       // here can drift from the client's origin (e.g. 127.0.0.1 vs localhost in
-      // dev), which would drop the just-set host-only session cookie.
-      headers: { location: returnTo, "cache-control": "no-store" },
+      // dev) — and behind the edge that serves this demo in place it would name
+      // the Railway container, which would drop the just-set host-only session
+      // cookie or strand the visitor on a hostname they never typed.
+      headers: { location: withBasePath(returnTo), "cache-control": "no-store" },
     })
   }
   return loginPage(request)
@@ -98,7 +101,7 @@ export async function POST(request: Request): Promise<Response> {
   const returnTo = safeReturnTo(form.get("returnTo"), publicOrigin(request))
   const errorPage = (message: string, status?: number) =>
     loginPage(
-      new Request(cadencePublicUrl(request, `/login?returnTo=${encodeURIComponent(returnTo)}`)),
+      new Request(cadencePublicUrl(request, withBasePath(`/login?returnTo=${encodeURIComponent(returnTo)}`))),
       message,
       status,
     )
@@ -139,7 +142,7 @@ export async function POST(request: Request): Promise<Response> {
     headers: {
       // Relative, same-origin redirect so the browser keeps the origin it
       // signed in on and sends the host-only session cookie set just below.
-      location: returnTo,
+      location: withBasePath(returnTo),
       "set-cookie": sessionCookie(session.access_token, session.expires_in ?? 3600),
       "cache-control": "no-store",
     },
