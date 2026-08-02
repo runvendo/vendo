@@ -1,7 +1,7 @@
 import { encode, getToken } from "next-auth/jwt"
 import { NextRequest } from "next/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { proxy } from "../../proxy"
+import { config, proxy } from "../../proxy"
 import { isAutologinSession, mintAutologinSession, sessionCookieName } from "../autologin"
 
 afterEach(() => vi.unstubAllEnvs())
@@ -18,6 +18,33 @@ function stubDemoDeployment(): void {
   vi.stubEnv("DEMO_AUTOLOGIN", "1")
   vi.stubEnv("VENDO_BASE_URL", "http://localhost:3000")
 }
+
+/**
+ * The redirect target as path+query, asserted to stay on the request's OWN
+ * origin and under the mount point.
+ *
+ * Maple is served in place at demos.vendo.run/maple, so a bounce to a path
+ * missing the `/maple` prefix lands on nothing. The origin cannot be fixed here
+ * — Next's proxy runtime rejects a relative Location and emits absolute ones
+ * itself — so it is rewritten at the edge; what this pins is that the proxy
+ * never *introduces* a foreign origin of its own.
+ */
+function locationOf(response: Response, request: NextRequest): string {
+  const location = new URL(response.headers.get("location")!)
+  expect(location.origin).toBe(request.nextUrl.origin)
+  expect(location.pathname, "every redirect stays under the mount point").toMatch(/^\/maple(?:\/|$)/u)
+  return `${location.pathname}${location.search}`
+}
+
+describe("proxy matcher", () => {
+  /** Next prefixes every matcher with the mount point, so the catch-all becomes
+   *  `/maple/((?!…).*)` and does not match the bare `/maple` a visitor types.
+   *  Dropping the explicit "/" leaves the home page as the one page the gate
+   *  never sees — and it renders a signed-out visitor a signed-in page. */
+  it("covers the bare mount root, not just paths under it", () => {
+    expect(config.matcher).toContain("/")
+  })
+})
 
 describe("auto-login session minting", () => {
   it("round-trips the proxy's unchanged getToken read path, claim included", async () => {
@@ -90,18 +117,21 @@ describe("proxy auto-login behavior", () => {
     stubDemoDeployment()
     // /logout clears the cookie and 303s to /login — with the flag that
     // continuation must never show a login form.
-    const response = await proxy(requestFor("/login"))
+    const request = requestFor("/login")
+    const response = await proxy(request)
     expect(response.status).toBe(307)
-    expect(new URL(response.headers.get("location")!).pathname).toBe("/")
+    expect(locationOf(response, request)).toBe("/maple/")
     expect(response.headers.get("set-cookie")).toContain("authjs.session-token=")
   })
 
   it("/login honors a same-origin returnTo and collapses foreign ones", async () => {
     stubDemoDeployment()
-    const same = await proxy(requestFor("/login?returnTo=%2Faccounts%3Ftab%3Dsavings"))
-    expect(new URL(same.headers.get("location")!).pathname).toBe("/accounts")
-    const foreign = await proxy(requestFor(`/login?returnTo=${encodeURIComponent("https://evil.example/phish")}`))
-    expect(new URL(foreign.headers.get("location")!).pathname).toBe("/")
+    const sameRequest = requestFor("/login?returnTo=%2Faccounts%3Ftab%3Dsavings")
+    const same = await proxy(sameRequest)
+    expect(locationOf(same, sameRequest)).toBe("/maple/accounts?tab=savings")
+    const foreignRequest = requestFor(`/login?returnTo=${encodeURIComponent("https://evil.example/phish")}`)
+    const foreign = await proxy(foreignRequest)
+    expect(locationOf(foreign, foreignRequest)).toBe("/maple/")
   })
 
   it("without the flag, /login still renders the form (passes through untouched)", async () => {
@@ -120,7 +150,7 @@ describe("proxy auto-login behavior", () => {
     const response = await proxy(spoofed)
     // Normal unauthenticated flow: bounce to /login, nothing minted.
     expect(response.status).toBe(307)
-    expect(new URL(response.headers.get("location")!).pathname).toBe("/login")
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/maple/login")
     expect(response.headers.get("set-cookie")).toBeNull()
   })
 
@@ -139,7 +169,7 @@ describe("proxy auto-login behavior", () => {
     })
     const response = await proxy(loopback)
     expect(response.status).toBe(307)
-    expect(new URL(response.headers.get("location")!).pathname).toBe("/login")
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/maple/login")
     expect(response.headers.get("set-cookie")).toBeNull()
   })
 

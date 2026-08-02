@@ -2,6 +2,7 @@
 
 import { useCallback, type ReactNode } from "react";
 import { VendoRoot as UmbrellaVendoRoot, type ToolMetaMap } from "@vendoai/vendo/react";
+import { withBasePath } from "@/lib/base-path";
 import { mapleRegistry } from "@/vendo/registry";
 import { mapleTheme } from "@/vendo/theme";
 import { mapleRealtimeVoiceDriver } from "./voice-realtime";
@@ -30,7 +31,7 @@ export function VendoRoot({
   // app row server-side; the home-hero VendoSlot self-discovers it on its
   // own poll (useSlotApp), so the pinned view lands on Home within seconds.
   const onPin = useCallback((app: { appId: string; payload: unknown }) => {
-    void fetch("/api/demo/pin", {
+    void fetch(withBasePath("/api/demo/pin"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ appId: app.appId, slot: "home-hero" }),
@@ -38,6 +39,9 @@ export function VendoRoot({
   }, []);
   return (
     <UmbrellaVendoRoot
+      // The Vendo door under the mount point. The provider's default is the
+      // bare `/api/vendo`, which 404s once the app is served at a subpath.
+      baseUrl={withBasePath("/api/vendo")}
       components={mapleRegistry}
       theme={mapleTheme}
       voice={{ driver: mapleRealtimeVoiceDriver }}

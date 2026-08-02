@@ -1,5 +1,6 @@
 import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
+import { withBasePath } from "@/lib/base-path";
 import { mapleDemoEmail, mapleDemoUsers } from "@/server/users";
 import {
   maplePublicUrl,
@@ -53,7 +54,7 @@ function loginPage(request: Request, message?: string): Response {
     <h1>Welcome back</h1>
     <p>Sign in to Maple to continue your secure connection.</p>
     ${message ? `<div class="error" role="alert">${escapeHtml(message)}</div>` : ""}
-    <form method="post" action="/login">
+    <form method="post" action="${withBasePath("/login")}">
       <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
       <label>Email<input name="email" type="email" autocomplete="username" value="${escapeHtml(mapleDemoEmail())}" required></label>
       <label>Password<input name="password" type="password" autocomplete="current-password" required autofocus></label>
@@ -83,7 +84,12 @@ export async function GET(request: Request): Promise<Response> {
     const returnTo = safeReturnTo(url.searchParams.get("returnTo"), publicOrigin(request));
     return new Response(null, {
       status: 303,
-      headers: { location: maplePublicUrl(request, returnTo).toString(), "cache-control": "no-store" },
+      // Path-only: `maplePublicUrl` resolves against VENDO_BASE_URL, which is
+      // the container's own origin — behind the edge that serves this demo in
+      // place it would strand the visitor on a Railway hostname. A relative
+      // Location leaves the browser on the origin it used (RFC 9110 §10.2.2),
+      // and a route handler — unlike the proxy — may emit one.
+      headers: { location: withBasePath(returnTo), "cache-control": "no-store" },
     });
   }
   return loginPage(request);
@@ -101,12 +107,12 @@ export async function POST(request: Request): Promise<Response> {
     await signIn("credentials", {
       email: form.get("email") ?? "",
       password: form.get("password") ?? "",
-      redirectTo: returnTo,
+      redirectTo: withBasePath(returnTo),
     });
   } catch (error) {
     if (error instanceof AuthError) {
       return loginPage(
-        new Request(maplePublicUrl(request, `/login?returnTo=${encodeURIComponent(returnTo)}`)),
+        new Request(maplePublicUrl(request, withBasePath(`/login?returnTo=${encodeURIComponent(returnTo)}`))),
         "Email or password is incorrect.",
       );
     }
@@ -115,6 +121,6 @@ export async function POST(request: Request): Promise<Response> {
   // signIn always redirects on success; this is a defensive fallback.
   return new Response(null, {
     status: 303,
-    headers: { location: maplePublicUrl(request, returnTo).toString(), "cache-control": "no-store" },
+    headers: { location: withBasePath(returnTo), "cache-control": "no-store" },
   });
 }

@@ -16,6 +16,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { BASE_PATH } from "@/lib/base-path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
 import { createActions } from "@vendoai/actions";
@@ -31,7 +32,12 @@ const BOOT_MS = 240_000;
 
 let child: ChildProcessWithoutNullStreams | undefined;
 let serverOutput = "";
+/** The app's own root — the origin plus the mount point Maple is served under.
+ *  What a visitor types, and what every page/API fetch hangs off. */
 let baseUrl = "";
+/** The bare origin. The WIRE base: `binding.path` in tools.json already carries
+ *  the mount point, so joining it onto `baseUrl` would double it. */
+let origin = "";
 
 async function freePort(): Promise<number> {
   const server = createServer();
@@ -101,7 +107,7 @@ async function createStack(): Promise<Stack> {
   const guard = createGuard({ store });
   const actions = createActions({
     tools: await mapleTools(),
-    baseUrl,
+    baseUrl: origin,
     // The drill's point: away identity is a REAL Auth.js session minted with
     // the host's own secret. Unknown subjects are declined via claims → null.
     actAs: authJsPreset({
@@ -179,11 +185,12 @@ async function enableAndApprove(stack: Stack, subject: string, appId: string): P
 
 beforeAll(async () => {
   const port = await freePort();
-  baseUrl = `http://127.0.0.1:${port}`;
+  origin = `http://127.0.0.1:${port}`;
+  baseUrl = `${origin}${BASE_PATH}`;
   const env = {
     ...process.env,
     AUTH_SECRET,
-    VENDO_BASE_URL: baseUrl,
+    VENDO_BASE_URL: origin,
     NEXT_TELEMETRY_DISABLED: "1",
     MAPLE_DIST_DIR: ".next/away-drill",
   };
@@ -218,9 +225,12 @@ describe("Maple away drill (ENG-260)", () => {
     });
     expect(anonymous.status).toBe(401);
 
-    const page = await appFetch(`${baseUrl}/`, { redirect: "manual" });
+    // `baseUrl` IS the app root (origin + mount point) — a trailing slash on top
+    // of it is a different URL, and Next answers it with its own 308 to the
+    // canonical path instead of the login bounce this asserts.
+    const page = await appFetch(baseUrl, { redirect: "manual" });
     expect([302, 303, 307, 308]).toContain(page.status);
-    expect(page.headers.get("location")).toContain("/login");
+    expect(page.headers.get("location")).toContain("/maple/login");
   });
 
   it("executes an automation as the granting user with no live session", { timeout: 120_000 }, async () => {

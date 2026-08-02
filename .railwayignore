@@ -1,0 +1,19 @@
+# WHAT `railway up` MUST NOT SHIP.
+#
+# Both demo services build from the monorepo root (their Dockerfile does
+# `COPY . .`, then `pnpm install --frozen-lockfile`, then `turbo run build
+# --filter=<app>`), so the upload is the whole tree. Untrimmed that is ~50MB of
+# documentation, evidence media and eval corpora the build never reads — and a
+# payload that size is what trips Railway's BadRecordMac upload failure.
+#
+# Only NON-package content is listed. Every workspace package's manifest has to
+# survive this file or `--frozen-lockfile` fails on a missing workspace member,
+# so heavy directories INSIDE a package (its docs/) are dropped rather than the
+# package itself. `public/` is never touched: those files are served.
+docs/
+docs-site/
+assets/
+flow-demo.webm
+apps/*/docs/
+packages/*/docs/
+corpus/harness/src/knowledge-eval/fixtures/

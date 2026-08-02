@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { withBasePath } from "@/lib/base-path"
 import { RotateCcw } from "lucide-react"
 
 /** Wipes Vendo's client-side fire-once flags (greeting, whisper) so a reset
@@ -28,10 +29,10 @@ export function ResetDemoButton() {
     if (!window.confirm("Reset the demo? This clears conversations, generated apps, and pinned views.")) return
     setBusy(true)
     try {
-      await fetch("/api/demo/reset", { method: "POST" })
+      await fetch(withBasePath("/api/demo/reset"), { method: "POST" })
     } finally {
       clearVendoLocalState()
-      window.location.href = "/"
+      window.location.href = withBasePath("/")
     }
   }
   return (

@@ -3,6 +3,7 @@ import { ChevronsUpDown, LogOut, UserRound } from "lucide-react"
 import { Dropdown, DropdownTrigger, DropdownContent, DropdownItem, DropdownLabel, DropdownSeparator } from "@/components/ui/dropdown"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/toast"
+import { withBasePath } from "@/lib/base-path"
 import { useProfile } from "@/lib/hooks"
 
 export function AccountSwitcher() {
@@ -13,9 +14,9 @@ export function AccountSwitcher() {
   // then land on /login (pages 401/redirect there without a session anyway).
   const signout = async () => {
     try {
-      await fetch("/logout", { method: "POST" })
+      await fetch(withBasePath("/logout"), { method: "POST" })
     } finally {
-      window.location.href = "/login"
+      window.location.href = withBasePath("/login")
     }
   }
 

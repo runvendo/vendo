@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
+import { BASE_PATH } from "./src/lib/base-path";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Served in place at demos.vendo.run/maple — see ./src/lib/base-path.
+  basePath: BASE_PATH,
   // The apps engine syntax-checks generated islands with esbuild (native
   // binary) — keep it out of the Turbopack server bundle. PGlite's Emscripten
   // module breaks under Turbopack's production chunking ("f.instantiateWasm

@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { withBasePath } from "@/lib/base-path";
 import { authenticateMapleUser, authSecret, isSecureDeployment } from "@/server/users";
 
 /**
@@ -19,7 +20,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
   // public origin) so session reads and away minting agree on it.
   useSecureCookies: isSecureDeployment(),
   session: { strategy: "jwt" },
-  pages: { signIn: "/login" },
+  // `basePath` deliberately stays the DEFAULT "/api/auth" even though Maple is
+  // now served under a mount point: Next strips the basePath from `request.url`
+  // before a route handler sees it (probed on the real server — the handler is
+  // handed `/api/auth/session`, not `/maple/api/auth/session`), so a prefixed
+  // value matches nothing and every Auth.js route answers 400.
+  //
+  // `signIn` is the opposite case: it is a BROWSER path, emitted verbatim as a
+  // Location, and Next does not add the prefix back on the way out. Same reason
+  // `signIn({ redirectTo })` in app/login/route.ts carries it.
+  pages: { signIn: withBasePath("/login") },
   providers: [
     Credentials({
       credentials: { email: {}, password: {} },

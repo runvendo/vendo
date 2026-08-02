@@ -20,7 +20,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/api/auth/{nextauth}",
+        "path": "/maple/api/auth/{nextauth}",
         "argsIn": "body"
       },
       "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
@@ -44,7 +44,7 @@
       "binding": {
         "kind": "route",
         "method": "GET",
-        "path": "/api/auth/{nextauth}",
+        "path": "/maple/api/auth/{nextauth}",
         "argsIn": "query"
       },
       "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
@@ -94,9 +94,9 @@
         "kind": "openapi",
         "operationId": "createOrder",
         "method": "POST",
-        "path": "/api/orders"
+        "path": "/maple/api/orders"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_demo_chips_list",
@@ -110,7 +110,7 @@
       "binding": {
         "kind": "route",
         "method": "GET",
-        "path": "/api/demo/chips",
+        "path": "/maple/api/demo/chips",
         "argsIn": "query"
       },
       "srcHash": "sha256:7945bac1c3e89bd8cc8a281d7959247c373c4ed4ec84d8d3df83425f91ce0e57"
@@ -130,7 +130,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/api/demo/pin",
+        "path": "/maple/api/demo/pin",
         "argsIn": "body"
       },
       "note": "input schema partially interpreted; permissive where unknown (appId: unsupported type (unknown); slot: unsupported type (unknown))",
@@ -148,7 +148,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/api/demo/reset",
+        "path": "/maple/api/demo/reset",
         "argsIn": "body"
       },
       "srcHash": "sha256:3f7f5ad1b2866abc1333c37150ad0798424ca4708b223c4e700ef0f9cf05cf0e"
@@ -173,9 +173,9 @@
         "kind": "openapi",
         "operationId": "getAccount",
         "method": "GET",
-        "path": "/api/accounts/{id}"
+        "path": "/maple/api/accounts/{id}"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_getBudgets",
@@ -189,22 +189,9 @@
         "kind": "openapi",
         "operationId": "getBudgets",
         "method": "GET",
-        "path": "/api/insights/budgets"
+        "path": "/maple/api/insights/budgets"
       },
-      "semantics": {
-        "data.category": {
-          "kind": "enum",
-          "labels": {
-            "coffee": "Coffee",
-            "dining": "Dining",
-            "groceries": "Groceries",
-            "shopping": "Shopping",
-            "subscriptions": "Subscriptions",
-            "transport": "Transport"
-          }
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_getCashflowInsights",
@@ -218,9 +205,9 @@
         "kind": "openapi",
         "operationId": "getCashflowInsights",
         "method": "GET",
-        "path": "/api/insights/cashflow"
+        "path": "/maple/api/insights/cashflow"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_getProfile",
@@ -234,9 +221,9 @@
         "kind": "openapi",
         "operationId": "getProfile",
         "method": "GET",
-        "path": "/api/profile"
+        "path": "/maple/api/profile"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_getRecurringInsights",
@@ -250,29 +237,9 @@
         "kind": "openapi",
         "operationId": "getRecurringInsights",
         "method": "GET",
-        "path": "/api/insights/recurring"
+        "path": "/maple/api/insights/recurring"
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.amount": {
-          "kind": "money",
-          "unit": "cents"
-        },
-        "data.category": {
-          "kind": "enum",
-          "labels": {
-            "housing": "Housing",
-            "subscriptions": "Subscriptions"
-          }
-        },
-        "data.nextDate": {
-          "kind": "date",
-          "format": "iso"
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_getSpendingInsights",
@@ -286,7 +253,7 @@
         "kind": "openapi",
         "operationId": "getSpendingInsights",
         "method": "GET",
-        "path": "/api/insights/spending"
+        "path": "/maple/api/insights/spending"
       },
       "outputSchema": {
         "type": "object",
@@ -329,25 +296,7 @@
           "data"
         ]
       },
-      "semantics": {
-        "data.category": {
-          "kind": "enum",
-          "labels": {
-            "coffee": "Coffee",
-            "dining": "Dining",
-            "groceries": "Groceries",
-            "housing": "Housing",
-            "shopping": "Shopping",
-            "subscriptions": "Subscriptions",
-            "transport": "Transport"
-          }
-        },
-        "data.amount": {
-          "kind": "money",
-          "unit": "cents"
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_getTransaction",
@@ -368,9 +317,9 @@
         "kind": "openapi",
         "operationId": "getTransaction",
         "method": "GET",
-        "path": "/api/transactions/{id}"
+        "path": "/maple/api/transactions/{id}"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_listAccounts",
@@ -384,27 +333,9 @@
         "kind": "openapi",
         "operationId": "listAccounts",
         "method": "GET",
-        "path": "/api/accounts"
+        "path": "/maple/api/accounts"
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.kind": {
-          "kind": "enum",
-          "labels": {
-            "checking": "Checking",
-            "credit": "Credit",
-            "investing": "Investing",
-            "savings": "Savings"
-          }
-        },
-        "data.balance": {
-          "kind": "money",
-          "unit": "cents"
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_listAccountTransactions",
@@ -426,9 +357,9 @@
         "kind": "openapi",
         "operationId": "listAccountTransactions",
         "method": "GET",
-        "path": "/api/accounts/{id}/transactions"
+        "path": "/maple/api/accounts/{id}/transactions"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_listCards",
@@ -442,29 +373,9 @@
         "kind": "openapi",
         "operationId": "listCards",
         "method": "GET",
-        "path": "/api/cards"
+        "path": "/maple/api/cards"
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.accountId": {
-          "kind": "id",
-          "entity": "account"
-        },
-        "data.type": {
-          "kind": "enum",
-          "labels": {
-            "physical": "Physical",
-            "virtual": "Virtual"
-          }
-        },
-        "data.spendLimit": {
-          "kind": "money",
-          "unit": "cents"
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_listCardTransactions",
@@ -486,9 +397,9 @@
         "kind": "openapi",
         "operationId": "listCardTransactions",
         "method": "GET",
-        "path": "/api/cards/{id}/transactions"
+        "path": "/maple/api/cards/{id}/transactions"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_listGoals",
@@ -502,14 +413,9 @@
         "kind": "openapi",
         "operationId": "listGoals",
         "method": "GET",
-        "path": "/api/goals"
+        "path": "/maple/api/goals"
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_listNotifications",
@@ -523,27 +429,9 @@
         "kind": "openapi",
         "operationId": "listNotifications",
         "method": "GET",
-        "path": "/api/notifications"
+        "path": "/maple/api/notifications"
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.kind": {
-          "kind": "enum",
-          "labels": {
-            "alert": "Alert",
-            "card": "Card",
-            "deposit": "Deposit",
-            "security": "Security"
-          }
-        },
-        "data.at": {
-          "kind": "date",
-          "format": "iso"
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_listPayees",
@@ -557,21 +445,9 @@
         "kind": "openapi",
         "operationId": "listPayees",
         "method": "GET",
-        "path": "/api/payees"
+        "path": "/maple/api/payees"
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.kind": {
-          "kind": "enum",
-          "labels": {
-            "biller": "Biller",
-            "person": "Person"
-          }
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_listScheduledPayments",
@@ -585,26 +461,9 @@
         "kind": "openapi",
         "operationId": "listScheduledPayments",
         "method": "GET",
-        "path": "/api/payments/scheduled"
+        "path": "/maple/api/payments/scheduled"
       },
-      "semantics": {
-        "data.id": {
-          "kind": "id"
-        },
-        "data.payeeId": {
-          "kind": "id",
-          "entity": "payee"
-        },
-        "data.amount": {
-          "kind": "money",
-          "unit": "cents"
-        },
-        "data.nextDate": {
-          "kind": "date",
-          "format": "iso"
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_listTransactions",
@@ -660,63 +519,9 @@
         "kind": "openapi",
         "operationId": "listTransactions",
         "method": "GET",
-        "path": "/api/transactions"
+        "path": "/maple/api/transactions"
       },
-      "semantics": {
-        "data.data.id": {
-          "kind": "id"
-        },
-        "data.data.statusTimeline.state": {
-          "kind": "enum",
-          "labels": {
-            "Authorized": "Authorized",
-            "Posted": "Posted"
-          }
-        },
-        "data.data.statusTimeline.at": {
-          "kind": "date",
-          "format": "iso"
-        },
-        "data.data.accountId": {
-          "kind": "id",
-          "entity": "account"
-        },
-        "data.data.cardId": {
-          "kind": "id",
-          "entity": "card"
-        },
-        "data.data.amount": {
-          "kind": "money",
-          "unit": "cents"
-        },
-        "data.data.timestamp": {
-          "kind": "date",
-          "format": "iso"
-        },
-        "data.data.category": {
-          "kind": "enum",
-          "labels": {
-            "coffee": "Coffee",
-            "dining": "Dining",
-            "groceries": "Groceries",
-            "shopping": "Shopping",
-            "subscriptions": "Subscriptions",
-            "transport": "Transport"
-          }
-        },
-        "data.data.status": {
-          "kind": "enum",
-          "labels": {
-            "authorized": "Authorized",
-            "posted": "Posted"
-          }
-        },
-        "data.data.recurringId": {
-          "kind": "id",
-          "entity": "recurring"
-        }
-      },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_transferMoney",
@@ -748,9 +553,9 @@
         "kind": "openapi",
         "operationId": "transferMoney",
         "method": "POST",
-        "path": "/api/transfers"
+        "path": "/maple/api/transfers"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
     },
     {
       "name": "host_voice_create",
@@ -764,7 +569,7 @@
       "binding": {
         "kind": "route",
         "method": "POST",
-        "path": "/api/voice",
+        "path": "/maple/api/voice",
         "argsIn": "body"
       },
       "srcHash": "sha256:3aaabc0c7dcfc4f4b4c835307f88a4c6660a2ce5ff3665dd457b1d701b55dfeb"

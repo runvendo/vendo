@@ -1,5 +1,5 @@
 import { signOut } from "@/auth";
-import { maplePublicUrl } from "@/vendo/auth";
+import { withBasePath } from "@/lib/base-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +14,6 @@ export async function POST(request: Request): Promise<Response> {
   await signOut({ redirect: false });
   return new Response(null, {
     status: 303,
-    headers: { location: maplePublicUrl(request, "/login").toString(), "cache-control": "no-store" },
+    headers: { location: withBasePath("/login"), "cache-control": "no-store" },
   });
 }

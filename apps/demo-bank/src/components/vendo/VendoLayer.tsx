@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { withBasePath } from "@/lib/base-path";
 import { useRouter } from "next/navigation";
 import { useVendoOverlay } from "@vendoai/ui";
 import { VendoOverlay, VendoPalette, VendoThread, type VendoCommand, type VendoThreadProps } from "@vendoai/ui/chrome";
@@ -25,9 +26,9 @@ function MapleThread(props: VendoThreadProps) {
 
 async function resetDemo(): Promise<void> {
   try {
-    await fetch("/api/demo/reset", { method: "POST" });
+    await fetch(withBasePath("/api/demo/reset"), { method: "POST" });
   } finally {
-    window.location.href = "/";
+    window.location.href = withBasePath("/");
   }
 }
 
