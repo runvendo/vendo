@@ -17,6 +17,12 @@
  *  then launch `next dev -p <that exact port>` with `VENDO_BASE_URL` already
  *  set to the same port. No manual step, no drift, by construction.
  *
+ *  This auto-sync only kicks in when `VENDO_BASE_URL` isn't already
+ *  operator-set. We first load the demo's own `.env*` files the way Next does,
+ *  so a value set in the shell or in `.env`/`.env.local` (e.g. the Tailscale
+ *  funnel origin the demo-bank README pins for HTTPS iteration) is detected and
+ *  passed through to the child untouched — never clobbered with localhost.
+ *
  *  Both demos' `dev` script invokes this from their own directory:
  *    "dev": "node ../../scripts/dev-with-port-fallback.mjs"
  *  The child inherits this cwd, so `next dev` resolves the right app. */
@@ -48,6 +54,36 @@ async function firstFreePort() {
   return null;
 }
 
+/** Loads the demo's own `.env*` files into `process.env` exactly the way Next
+ *  does at dev boot, so a `VENDO_BASE_URL` in `.env`/`.env.local` is visible
+ *  here (the parent process would not otherwise read them) and can be honored as
+ *  operator-set. `@next/env` is a transitive dep of `next`, so resolve it from
+ *  the demo's deps and fall back to resolving it relative to the `next` package.
+ *  Any failure is swallowed — we then simply derive localhost as before. */
+function loadDemoEnv() {
+  try {
+    const require = createRequire(`${process.cwd()}/package.json`);
+    let nextEnvPath;
+    try {
+      nextEnvPath = require.resolve("@next/env");
+    } catch {
+      nextEnvPath = createRequire(require.resolve("next/package.json")).resolve(
+        "@next/env",
+      );
+    }
+    require(nextEnvPath).loadEnvConfig(process.cwd(), true);
+  } catch {
+    // Swallow — fall through to deriving http://localhost:<port> below.
+  }
+}
+
+loadDemoEnv();
+// `VENDO_BASE_URL` set in the shell or any loaded `.env*` file is operator-set:
+// pass it through untouched rather than syncing it to the bound port.
+const operatorBaseUrl = process.env.VENDO_BASE_URL;
+const operatorSet =
+  typeof operatorBaseUrl === "string" && operatorBaseUrl.length > 0;
+
 const port = await firstFreePort();
 if (port === null) {
   console.error(
@@ -61,12 +97,19 @@ if (port === null) {
 const baseUrl = `http://localhost:${port}`;
 if (port !== START_PORT) {
   console.log(
-    `[dev] port ${START_PORT} busy, using ${port} — VENDO_BASE_URL synced `
-      + `automatically to ${baseUrl}`,
+    operatorSet
+      ? `[dev] port ${START_PORT} busy, using ${port} — VENDO_BASE_URL left as `
+          + `operator-set ${operatorBaseUrl} (not synced)`
+      : `[dev] port ${START_PORT} busy, using ${port} — VENDO_BASE_URL synced `
+          + `automatically to ${baseUrl}`,
   );
 }
 
-const childEnv = { ...process.env, VENDO_BASE_URL: baseUrl };
+// Only sync the port-matched origin when the operator hasn't pinned one; an
+// operator-set value already lives in `process.env` and is inherited as-is.
+const childEnv = operatorSet
+  ? { ...process.env }
+  : { ...process.env, VENDO_BASE_URL: baseUrl };
 
 // Spawn Next's CLI entry directly through node (resolved from the demo's own
 // dependencies) so launching does not depend on PATH or a shell; fall back to
