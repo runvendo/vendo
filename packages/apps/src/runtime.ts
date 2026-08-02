@@ -2308,15 +2308,26 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           const existing = (await runtime.list(ctx))
             .find((app) => app.pins?.some((pin) => pin.slot === input.slot));
           if (existing !== undefined) {
+            // The gesture still means "show the remix in THIS slot": re-assert
+            // the placement idempotently, so a fork whose placement moved (or
+            // a pre-split fork that never had one) mounts again instead of
+            // turning the tap into a silent no-op. Location state, not a
+            // content edit — written like a host placement, no version.
+            const placed = existing.placements?.includes(input.slot) === true
+              ? existing
+              : classifyLegacyPlacements(await updateAppDocument(existing.id, (doc) => ({
+                ...doc,
+                placements: [...new Set([...(doc.placements ?? []), input.slot])],
+              })), config.pinBaselines);
             // The deterministic fork this result describes was recorded when
             // the app was minted — intents[0] of the pin's replay trail.
             const recorded = (await history.pinIntents(existing.id, input.slot))[0];
             return {
-              app: existing,
+              app: placed,
               version: {
                 at: recorded?.at ?? new Date().toISOString(),
                 intent: recorded?.intent ?? `Remix the host component "${input.slot}"`,
-                rung: rungFor(existing),
+                rung: rungFor(placed),
               },
               slot: input.slot,
               componentName: pinComponentName(input.slot),

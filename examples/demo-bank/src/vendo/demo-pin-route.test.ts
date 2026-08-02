@@ -59,4 +59,21 @@ describe("POST /api/demo/pin", () => {
     await post("app_1")
     expect(rows.get("app_1")!.data.doc.placements).toEqual(["home-hero"])
   })
+
+  it("clears a pre-split fake-hash pin row when the slot moves, so the old app cannot keep claiming it", async () => {
+    seed("app_old", { pins: [{ slot: "home-hero", base: "sha256:fake-content-hash" }] })
+    seed("app_new")
+    await post("app_new")
+    expect(rows.get("app_old")!.data.doc.pins).toBeUndefined()
+    expect(rows.get("app_old")!.data.doc.placements).toEqual([])
+    expect(rows.get("app_new")!.data.doc.placements).toEqual(["home-hero"])
+  })
+
+  it("normalizes a legacy row it re-places: the fake-hash pin is replaced by the placement", async () => {
+    seed("app_1", { pins: [{ slot: "home-hero", base: "sha256:fake-content-hash" }] })
+    await post("app_1")
+    const stored = rows.get("app_1")!.data.doc
+    expect(stored.pins).toBeUndefined()
+    expect(stored.placements).toEqual(["home-hero"])
+  })
 })

@@ -270,6 +270,23 @@ describe("06-apps §8 — fork idempotency (appId-less dedupe)", () => {
     expect(listed.filter(({ pins }) => pins?.some((pin) => pin.slot === SLOT))).toHaveLength(1);
   });
 
+  it("re-asserts the placement on the dedupe hit, so a pre-split fork mounts again", async () => {
+    const store = memoryStore();
+    // A gesture fork stored BEFORE the pins/placements split: real provenance
+    // pin, no placement — slot discovery would never mount it, and without
+    // the re-assert the gesture would return it as a permanent no-op.
+    const app = { ...seedDoc("app_presplit"), pins: [{ slot: SLOT, base: "sha256:maple-base" }] };
+    await seedAppRow(store, app, ctx.principal.subject);
+    const runtime = runtimeWith(store);
+
+    const result = await runtime.pins.fork({ slot: SLOT }, ctx);
+    expect(result.app.id).toBe("app_presplit");
+    expect(result.app.placements).toEqual([SLOT]);
+    // Persisted, not just returned: discovery now finds it.
+    const listed = await runtime.list(ctx);
+    expect(listed.find(({ id }) => id === "app_presplit")?.placements).toEqual([SLOT]);
+  });
+
   it("drops a riding instruction on the dedupe hit — no edit, no model call", async () => {
     const store = memoryStore();
     // No model configured: an edit attempt on the dedupe path would surface

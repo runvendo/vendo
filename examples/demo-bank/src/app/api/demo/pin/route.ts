@@ -68,21 +68,33 @@ export async function POST(request: Request) {
   const row = appRecord(await apps.get(appId));
   if (row === null || row.data.subject !== user.subject) return notFound("App not found.");
 
+  // A pre-split row recorded the slot as a fake-hash `pins` entry, which the
+  // runtime classifies back into a placement on read — so clearing the slot
+  // must strip BOTH shapes until stored rows are normalized. The demo slots
+  // are never captured baselines, so a pin naming one is always the legacy
+  // shape, never real fork provenance.
+  const withoutSlot = (doc: AppDocument): AppDocument => {
+    const cleared: AppDocument = {
+      ...doc,
+      placements: (doc.placements ?? []).filter((name) => name !== slot),
+      pins: (doc.pins ?? []).filter((pin) => pin.slot !== slot),
+    };
+    if (cleared.pins?.length === 0) delete cleared.pins;
+    return cleared;
+  };
+
   // Latest placement wins per slot (useSlotApp takes the newest placed app);
   // clear the slot from any OTHER app this user placed earlier so the swap is
   // clean.
   for (const other of await listSubjectApps(user.subject)) {
-    if (other.id === appId || !other.data.doc.placements?.includes(slot)) continue;
-    await apps.put({
-      id: other.id,
-      data: {
-        ...other.data,
-        doc: { ...other.data.doc, placements: other.data.doc.placements.filter((name) => name !== slot) },
-      },
-    });
+    const doc = other.data.doc;
+    if (other.id === appId
+      || (!doc.placements?.includes(slot) && !doc.pins?.some((pin) => pin.slot === slot))) continue;
+    await apps.put({ id: other.id, data: { ...other.data, doc: withoutSlot(doc) } });
   }
 
-  const placements = [...(row.data.doc.placements ?? []).filter((name) => name !== slot), slot];
-  await apps.put({ id: appId, data: { ...row.data, doc: { ...row.data.doc, placements } } });
+  const cleared = withoutSlot(row.data.doc);
+  const doc = { ...cleared, placements: [...(cleared.placements ?? []), slot] };
+  await apps.put({ id: appId, data: { ...row.data, doc } });
   return ok({ pinned: true, appId, slot });
 }
