@@ -196,15 +196,17 @@ describe("rehearsal venue at the guard choke point", () => {
     expect(read?.outcome).toBe("ok");
   });
 
-  it("a full-length rehearsal (62 reads) never trips the call-rate breaker on itself", async () => {
+  it("a full-length rehearsal (30 reads) never trips the call-rate breaker on itself", async () => {
     const guard = createGuard({ store: createMemoryStore(), policy: demoPolicy });
     const tools = new FixtureTools();
     const bound = guard.bind(tools);
-    for (let index = 0; index < 62; index += 1) {
+    // One read per firing at the automations cap (REHEARSAL_MAX_FIRINGS) —
+    // the guard never imports that constant, so this mirrors it deliberately.
+    for (let index = 0; index < 30; index += 1) {
       const outcome = await bound.execute(call("host_read", { q: index }, `call_${index}`), rehearsalCtx);
       expect(outcome).toMatchObject({ status: "ok" });
     }
-    expect(tools.executions).toHaveLength(62);
+    expect(tools.executions).toHaveLength(30);
   });
 
   it("rehearsal reads never spend the subject's window: a chat read right after still runs", async () => {

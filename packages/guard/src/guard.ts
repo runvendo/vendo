@@ -407,22 +407,18 @@ class GuardImplementation implements VendoGuard {
           return outcome;
         }
 
-        // Rehearsal venue (07-automations rehearse()): a write/destructive
-        // call NEVER executes — it resolves, right here at the choke point, to
-        // the structured simulated card carrying the fully resolved arguments,
-        // and is audited under the rehearsal venue like any other call. Reads
-        // fall through to the ordinary decision + execution path below (they
-        // ride the live interactive session; #checkWithMetadata converts any
-        // would-ask into an honest block so rehearsal never parks approvals).
+        // Rehearsal venue: a write/destructive call NEVER executes — it resolves
+        // at this choke point to the simulated card carrying its resolved args,
+        // audited like any other call. Reads fall through and execute for real
+        // (#checkWithMetadata blocks would-asks, so rehearsal never parks).
         let rehearsalResolved: ToolDescriptor | undefined;
         if (ctx.venue === "rehearsal") {
           const effective = await this.#effectiveDescriptor(call, descriptor, ctx);
           if (effective.risk !== "read") {
-            // The write never executes — but resolve what the enabled
-            // automation's policy decision WOULD be so the simulated card can
-            // say "would ask / would be blocked" instead of a rosy "would have
-            // done this". Side-effect-free (no execute, no park, no grant
-            // spend); mirrors dryRun's grantsMissing/wouldAsk shape.
+            // Resolve what the ENABLED automation's decision would be, so the
+            // card can say "would ask / would be blocked" rather than a rosy
+            // "would have done this". Side-effect-free (no execute, no park, no
+            // grant spend); mirrors dryRun's grantsMissing/wouldAsk shape.
             const verdict = await this.#rehearsalWriteVerdict(call, effective, ctx);
             const output: RehearsalSimulation = {
               rehearsalSimulated: true,
@@ -566,7 +562,7 @@ class GuardImplementation implements VendoGuard {
   ): Promise<CompletedDecision> {
     const effectiveDescriptor = resolved ?? await this.#effectiveDescriptor(call, descriptor, ctx);
     // Rehearsal reads never CHARGE the shared per-subject window — a full
-    // 62-firing replay arrives back-to-back in one request and would trip the
+    // 30-firing replay arrives back-to-back in one request and would trip the
     // breaker mid-rehearsal and throttle the user's concurrent live reads.
     // Peek-only keeps the verdict honest (a window genuinely tripped by live
     // traffic still blocks the rehearsal row) without spending slots.
@@ -729,7 +725,7 @@ class GuardImplementation implements VendoGuard {
    *  verdict, +1 for the call this check itself represents, but never touches
    *  `#callWindows` — a preview answers truthfully without spending the window
    *  slot the real check still owes, and a rehearsal read never spends one
-   *  at all (its volume is bounded by the 62-firing cap instead). */
+   *  at all (its volume is bounded by the 30-firing cap instead). */
   #peekCallsTripped(subject: string): boolean {
     const cutoff = Date.now() - 60_000;
     const active = (this.#callWindows.get(subject) ?? []).filter(
@@ -766,13 +762,8 @@ class GuardImplementation implements VendoGuard {
     ctx: RunContext,
     preview = false,
   ): Promise<DecisionMetadata> {
-    // `preview` (rehearsal write verdict): resolve what the decision WOULD be
-    // without side effects — never CONSUME a single-use approval replay, so a
-    // preview can't spend authority the caller only meant to look at. Every
-    // other step below (matching grant, rules, code, judge, default) is already
-    // read-only, so skipping consumption makes the whole pass side-effect-free.
-    // An exact approved replay answers a critical ask (05 §2 stays otherwise:
-    // grants/rules/judge never suppress critical).
+    // `preview` never CONSUMES the single-use approval replay (the one side
+    // effect here), which is also all that answers a critical ask (05 §2).
     let consumedReplay = false;
     if (descriptor.critical === true) {
       consumedReplay = preview ? false : await this.#consumeApprovedCall(call, descriptor, ctx);
@@ -861,19 +852,9 @@ class GuardImplementation implements VendoGuard {
     return withInvalidated({ decision: { action: "run", decidedBy: "default" } });
   }
 
-  /** The rehearsal simulated card's honest verdict for a write/destructive call
-   *  (07-automations rehearse()): what the enabled automation's policy decision
-   *  WOULD be. Resolved under the AWAY/AUTOMATION context the enabled automation
-   *  actually runs in (venue "automation", presence "away") — NOT the rehearsal/
-   *  present context — so #matchingGrant honors only automation-source, app-bound
-   *  grants and rule matching uses the automation venue, exactly as live. Runs
-   *  through the ordinary pipeline in preview mode so it neither executes, parks
-   *  an approval, nor spends a grant, then applies the 05 §6 away downgrade a
-   *  direct #pipeline call bypasses (a non-grant away "run" has no captured
-   *  authority, so live it would park/ask). Mirrors dryRun's wouldAsk/
-   *  grantsMissing: a resolved "ask" means the call would still need an approval
-   *  (missing standing grant, or a critical/policy ask); a resolved "block" means
-   *  a policy rule would stop it outright even after enable. */
+  /** What the ENABLED automation's policy decision would be for a write, for the
+   *  rehearsal simulated card: resolved in the away/automation context it really
+   *  runs in, in preview mode, so it neither executes, parks, nor spends a grant. */
   async #rehearsalWriteVerdict(
     call: ToolCall,
     descriptor: ToolDescriptor,

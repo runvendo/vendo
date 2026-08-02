@@ -2093,6 +2093,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     store,
     runner: agent.asRunner(),
+    // rehearse() summarizes a replayed read's money from these; the registry
+    // strips semantics off descriptors(), so this seam is its only path in.
+    semantics: hostSemanticsProvider,
     ...(hostedStoreComposed ? { localTriggerKinds: new Set<"schedule" | "external">() } : {}),
   });
   automationsForArming = automations;

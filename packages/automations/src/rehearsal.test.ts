@@ -15,7 +15,7 @@ import {
 } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
 import { describe, expect, it } from "vitest";
-import { createAutomations } from "./index.js";
+import { createAutomations, type AutomationsConfig } from "./index.js";
 
 /**
  * rehearse() — the trailing-window replay of a schedule trigger through the
@@ -135,12 +135,16 @@ const engine = (
   store: StoreAdapter,
   tools: ToolRegistry,
   guard: Guard = new GuardDouble(),
+  /** The merged `.vendo` semantics view the umbrella passes in (value or
+   *  provider form) — what rehearse() summarizes money with. */
+  semantics?: AutomationsConfig["semantics"],
 ) => createAutomations({
   apps: { call: async () => ({ status: "ok", output: {} }) } as never,
   tools,
   guard,
   store,
   now: () => NOW,
+  ...(semantics === undefined ? {} : { semantics }),
 });
 
 describe("rehearse() fire-time enumeration", () => {
@@ -211,7 +215,8 @@ describe("rehearse() fire-time enumeration", () => {
     const automations = engine(store, guardBoundRegistry([balanceTool]));
     const report = await automations.rehearse("app_hourly", ctx(), 7);
     expect(report.truncated).toBe(true);
-    expect(report.firings).toHaveLength(62);
+    // 168 hourly firings in the 7-day window, capped to the most recent 30.
+    expect(report.firings).toHaveLength(30);
     // The MOST RECENT firings are kept.
     expect(report.firings.at(-1)?.scheduledFor).toBe("2026-07-12T12:00:00.000Z");
   });
@@ -229,18 +234,22 @@ describe("rehearse() fire-time enumeration", () => {
     const automations = engine(store, guardBoundRegistry([transactionsTool]));
     const cron = await automations.rehearse("app_hourly_windowed", ctx(), 7);
     expect(cron.truncated).toBe(true);
-    expect(cron.firings[0]?.scheduledFor).toBe("2026-07-09T23:00:00.000Z");
+    // Most recent 30 of 168: the last is 12:00 Jul 12, so the first kept is
+    // 29 hours earlier.
+    expect(cron.firings[0]?.scheduledFor).toBe("2026-07-11T07:00:00.000Z");
     // One schedule interval, not the full 7-day report window.
     expect(cron.firings[0]?.steps[0]?.window).toEqual({
-      from: "2026-07-09T22:00:00.000Z",
-      to: "2026-07-09T23:00:00.000Z",
+      from: "2026-07-11T06:00:00.000Z",
+      to: "2026-07-11T07:00:00.000Z",
     });
     const every = await automations.rehearse("app_every_dense", ctx(), 7);
     expect(every.truncated).toBe(true);
-    expect(every.firings[0]?.scheduledFor).toBe("2026-07-09T22:00:00.000Z");
+    // `every` anchors at the window END, so its most recent firing is 11:00
+    // (one interval before `to`) and the 30th back is 06:00 Jul 11.
+    expect(every.firings[0]?.scheduledFor).toBe("2026-07-11T06:00:00.000Z");
     expect(every.firings[0]?.steps[0]?.window).toEqual({
-      from: "2026-07-09T21:00:00.000Z",
-      to: "2026-07-09T22:00:00.000Z",
+      from: "2026-07-11T05:00:00.000Z",
+      to: "2026-07-11T06:00:00.000Z",
     });
   });
 });
@@ -366,15 +375,17 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       status: "ok",
       output: [{ name: "Inbox", count: 120 }, { name: "Archive", count: 43 }],
     }));
-    const step = (await engine(store, tools).rehearse("app_count", ctx())).firings[0]?.steps[0];
-    // The one shared numeric field is `count` — NOT a money name, so no headline
-    // (previously this rendered as $1.20 / $0.43).
+    const semantics = { host_listAccounts: { count: { kind: "plain" } } } as const;
+    const step = (await engine(store, tools, new GuardDouble(), semantics)
+      .rehearse("app_count", ctx())).firings[0]?.steps[0];
+    // The one shared numeric field is `count`, which the host's sync classified
+    // as anything but money — so no headline (this once rendered $1.20/$0.43).
     expect(step?.result).toBeUndefined();
     // The raw data still reaches the client through the preview, untouched.
     expect(step?.preview).toContain("count");
   });
 
-  it("still sums a genuinely-money shared field (amount) into the headline", async () => {
+  it("sums the field the host's semantics call money, ignoring the other shared numeric", async () => {
     const store = memoryStoreAdapter();
     const doc = app("app_amount", {
       on: { kind: "schedule", cron: "0 8 * * *" },
@@ -385,14 +396,160 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       status: "ok",
       output: [{ name: "Dining", amount: 5_000, count: 3 }, { name: "Transit", amount: 2_500, count: 9 }],
     }));
-    const step = (await engine(store, tools).rehearse("app_amount", ctx())).firings[0]?.steps[0];
-    // Two shared numerics (amount, count) but only `amount` is a money name, so
+    const semantics = { host_listAccounts: { amount: { kind: "money", unit: "cents" } } } as const;
+    const step = (await engine(store, tools, new GuardDouble(), semantics)
+      .rehearse("app_amount", ctx())).firings[0]?.steps[0];
+    // Two shared numerics (amount, count); only `amount` is declared money, so
     // it's the unambiguous headline field — count is ignored, not summed.
     expect(step?.result?.totalCents).toBe(7_500);
     expect(step?.result?.breakdown).toEqual([
       { label: "Dining", cents: 5_000 },
       { label: "Transit", cents: 2_500 },
     ]);
+  });
+
+  it("scales a money.dollars field into the headline's minor units", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, app("app_dollars", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "rows", tool: "host_listAccounts" }] },
+    }));
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: [{ name: "Dining", amount: 50.25 }, { name: "Transit", amount: 25 }],
+    }));
+    const semantics = { host_listAccounts: { amount: { kind: "money", unit: "dollars" } } } as const;
+    const step = (await engine(store, tools, new GuardDouble(), semantics)
+      .rehearse("app_dollars", ctx())).firings[0]?.steps[0];
+    // `result` is minor units by contract, so dollars scale here — without the
+    // synced unit this read would have rendered $0.50 instead of $50.25.
+    expect(step?.result?.totalCents).toBe(7_525);
+    expect(step?.result?.breakdown).toEqual([
+      { label: "Dining", cents: 5_025 },
+      { label: "Transit", cents: 2_500 },
+    ]);
+  });
+
+  it("takes the money field from semantics alone — a name no allowlist would guess, and no guess without one", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, app("app_declared", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "rows", tool: "host_listAccounts" }] },
+    }));
+    // `total` here is a COUNT that a money-name allowlist would have summed;
+    // `notional` is the real money field, and no name list would ever guess it.
+    const read = () => ({
+      status: "ok" as const,
+      output: [{ name: "Alpha", total: 3, notional: 120_000 }, { name: "Beta", total: 9, notional: 80_000 }],
+    });
+    const semantics = { host_listAccounts: { notional: { kind: "money", unit: "cents" } } } as const;
+    const declared = (await engine(store, guardBoundRegistry([balanceTool], read), new GuardDouble(), semantics)
+      .rehearse("app_declared", ctx())).firings[0]?.steps[0];
+    expect(declared?.result?.totalCents).toBe(200_000);
+    // The SAME read with no synced semantics summarizes nothing at all: two
+    // shared numerics and no authority on which is money, so the row carries a
+    // preview and no total. It never falls back to summing `total`.
+    const unsynced = (await engine(store, guardBoundRegistry([balanceTool], read))
+      .rehearse("app_declared", ctx())).firings[0]?.steps[0];
+    expect(unsynced?.result).toBeUndefined();
+    expect(unsynced?.preview).toContain("notional");
+  });
+
+  it("labels a breakdown with the enum's display labels, not the raw tokens", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, app("app_enum", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "rows", tool: "host_listAccounts" }] },
+    }));
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: { data: [{ category: "past_due", amount: 4_000 }, { category: "on_time", amount: 6_000 }] },
+    }));
+    // Semantics are keyed by COLLAPSED dot path, so the wrapper key counts:
+    // `data.amount`, not `amount` (core semantics.ts drops array indices).
+    const semantics = {
+      host_listAccounts: {
+        "data.amount": { kind: "money", unit: "cents" },
+        "data.category": { kind: "enum", labels: { past_due: "Past due", on_time: "On time" } },
+      },
+    } as const;
+    const step = (await engine(store, tools, new GuardDouble(), semantics)
+      .rehearse("app_enum", ctx())).firings[0]?.steps[0];
+    expect(step?.result?.breakdown).toEqual([
+      { label: "Past due", cents: 4_000 },
+      { label: "On time", cents: 6_000 },
+    ]);
+  });
+
+  it("humanizes an enum value minted since the last sync, rather than showing the raw token", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, app("app_new_enum", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "rows", tool: "host_listAccounts" }] },
+    }));
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: [{ category: "past_due", amount: 4_000 }, { category: "in_review", amount: 6_000 }],
+    }));
+    // `in_review` post-dates the sync that wrote these labels, so it is absent
+    // from the map — it humanizes through core's own humanizeEnumValue, the
+    // same function that produced "Past due", instead of leaking the token.
+    const semantics = {
+      host_listAccounts: {
+        amount: { kind: "money", unit: "cents" },
+        category: { kind: "enum", labels: { past_due: "Past due" } },
+      },
+    } as const;
+    const step = (await engine(store, tools, new GuardDouble(), semantics)
+      .rehearse("app_new_enum", ctx())).firings[0]?.steps[0];
+    expect(step?.result?.breakdown).toEqual([
+      { label: "Past due", cents: 4_000 },
+      { label: "In review", cents: 6_000 },
+    ]);
+  });
+
+  it("resolves the provider form of semantics per rehearsal", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, app("app_provider", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "rows", tool: "host_listAccounts" }] },
+    }));
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: [{ name: "Alpha", notional: 1_500 }],
+    }));
+    let reads = 0;
+    // The thunk form is how the umbrella passes a cloud-owned overrides.json
+    // without a compose-time fetch: called during the replay, never earlier.
+    const automations = engine(store, tools, new GuardDouble(), () => {
+      reads += 1;
+      return { host_listAccounts: { notional: { kind: "money", unit: "cents" } } };
+    });
+    expect(reads).toBe(0);
+    const step = (await automations.rehearse("app_provider", ctx())).firings[0]?.steps[0];
+    expect(reads).toBe(1);
+    expect(step?.result?.totalCents).toBe(1_500);
+  });
+
+  it("shows no headline for a money field the host's sync left unclassified", async () => {
+    const store = memoryStoreAdapter();
+    await seedApp(store, app("app_goals", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: { kind: "steps", steps: [{ id: "rows", tool: "host_listAccounts" }] },
+    }));
+    const tools = guardBoundRegistry([balanceTool], () => ({
+      status: "ok",
+      output: [{ name: "Japan trip", saved: 312_000 }, { name: "New MacBook", saved: 90_000 }],
+    }));
+    // demo-bank's `Goal.saved` IS real cents, but core's MONEY_NAME regex does
+    // not match it, so sync emits no semantic and rehearsal stays silent rather
+    // than guessing. The honest cost of dropping the name fallback: the fix is
+    // a `saved` entry in overrides.json, which corrects generation too.
+    const semantics = { host_listAccounts: { id: { kind: "id" } } } as const;
+    const step = (await engine(store, tools, new GuardDouble(), semantics)
+      .rehearse("app_goals", ctx())).firings[0]?.steps[0];
+    expect(step?.result).toBeUndefined();
+    expect(step?.preview).toContain("saved");
   });
 
   it("summarizes a list read into a headline total + per-item breakdown (shared numeric field only)", async () => {
@@ -410,12 +567,13 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
         { id: "acc_credit", name: "Maple Credit", balance: -128_840 },
       ],
     }));
-    const report = await engine(store, tools).rehearse("app_headline", ctx());
+    const semantics = { host_listAccounts: { balance: { kind: "money", unit: "cents" } } } as const;
+    const report = await engine(store, tools, new GuardDouble(), semantics).rehearse("app_headline", ctx());
     const step = report.firings[0]?.steps[0];
     expect(step?.status).toBe("ok");
-    // Total sums the ONE numeric field every element shares (balance); apy is
-    // absent on Maple Credit, so it never enters the sum — and labels come from
-    // the shared `name` field, never a hardcoded per-tool key.
+    // Total sums the one DECLARED money field (balance); apy is absent on Maple
+    // Credit so it never shares, and labels come from the shared `name` field,
+    // never a hardcoded per-tool key.
     expect(step?.result?.totalCents).toBe(941_220 + 2_814_135 - 128_840);
     expect(step?.result?.breakdown).toEqual([
       { label: "Maple Checking", cents: 941_220 },
@@ -435,15 +593,19 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       status: "ok",
       output: { data: [{ category: "dining", amount: 58_720 }, { category: "transport", amount: 44_140 }] },
     }));
-    const step = (await engine(store, tools).rehearse("app_spending", ctx())).firings[0]?.steps[0];
+    // Wrapper key included, since semantics are keyed by collapsed dot path.
+    const semantics = { host_listAccounts: { "data.amount": { kind: "money", unit: "cents" } } } as const;
+    const step = (await engine(store, tools, new GuardDouble(), semantics)
+      .rehearse("app_spending", ctx())).firings[0]?.steps[0];
     expect(step?.result?.totalCents).toBe(58_720 + 44_140);
+    // No enum semantic on `data.category`, so labels stay the raw values.
     expect(step?.result?.breakdown).toEqual([
       { label: "dining", cents: 58_720 },
       { label: "transport", cents: 44_140 },
     ]);
   });
 
-  it("omits the headline when the read has no single unambiguous numeric field, but still previews it", async () => {
+  it("omits the headline when TWO declared money fields make the total ambiguous, but still previews it", async () => {
     const store = memoryStoreAdapter();
     const doc = app("app_ambiguous", {
       on: { kind: "schedule", cron: "0 8 * * *" },
@@ -454,7 +616,16 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
       status: "ok",
       output: [{ name: "A", debit: 100, credit: 5 }, { name: "B", debit: 200, credit: 7 }],
     }));
-    const step = (await engine(store, tools).rehearse("app_ambiguous", ctx())).firings[0]?.steps[0];
+    // Both shared numerics are declared money, so there is no ONE field to sum
+    // — ambiguity withholds the headline just as an unclassified tool does.
+    const semantics = {
+      host_listAccounts: {
+        debit: { kind: "money", unit: "cents" },
+        credit: { kind: "money", unit: "cents" },
+      },
+    } as const;
+    const step = (await engine(store, tools, new GuardDouble(), semantics)
+      .rehearse("app_ambiguous", ctx())).firings[0]?.steps[0];
     expect(step?.result).toBeUndefined();
     // The resolved output still reaches the client through `preview` — only the
     // one-number headline is withheld, never invented.

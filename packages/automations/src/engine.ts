@@ -3,8 +3,11 @@ import {
   approvalRequestSchema,
   appDocumentSchema,
   descriptorHash,
+  humanizeEnumValue,
+  isPlainObject,
   isRehearsalSimulation,
   permissionGrantSchema,
+  semanticAtPointer,
   triggerSchema,
   webhookSubject,
   type AppDocument,
@@ -12,13 +15,13 @@ import {
   type AuditEvent,
   type Json,
   type PermissionGrant,
-  type Principal,
   type RunContext,
   type RunId,
   type Step,
   type ToolCall,
   type ToolDescriptor,
   type ToolOutcome,
+  type ToolSemantics,
   type Trigger,
   type TriggerSource,
   type VendoRecord,
@@ -51,9 +54,6 @@ const DELIVERIES = "automations:deliveries";
 const WEBHOOK_MAX_BYTES = 1024 * 1024;
 const RESUME_MAX_BYTES = 512 * 1024;
 const FOREACH_MAX_ITEMS = 1000;
-/** rehearse() — the trailing window it replays, in days. Selectable at the
- *  call site (07-automations §1 amendment): exactly 7 or 30, defaulting to 30
- *  when omitted. */
 const REHEARSAL_WINDOW_DAYS = [7, 30] as const;
 const REHEARSAL_DEFAULT_WINDOW_DAYS = 30;
 /** Resolve a requested window to a valid day count, defaulting to 30. */
@@ -61,31 +61,14 @@ const resolveRehearsalWindowDays = (windowDays?: 7 | 30): 7 | 30 =>
   windowDays !== undefined && REHEARSAL_WINDOW_DAYS.includes(windowDays)
     ? windowDays
     : REHEARSAL_DEFAULT_WINDOW_DAYS;
-/** rehearse() keeps at most this many (most recent) firings — covers schedules
- *  up to ~8 firings/day over the full window; denser schedules (e.g. hourly)
- *  report `truncated: true`. */
-const REHEARSAL_MAX_FIRINGS = 62;
-/** Enumeration backstop: covers a minute-granularity cron across the window.
- *  Measured cost of the forward `cron.nextRun()` walk over a 30-day window
- *  (croner, this machine): daily `0 8 * * *` 31 calls ≈ 2.5ms, weekly 5 calls
- *  ≈ 0.4ms, hourly `0 * * * *` 721 calls ≈ 66ms — all negligible, and daily/
- *  weekly is what rehearsal targets (REHEARSAL_MAX_FIRINGS ≈ 8/day). The only
- *  slow case is a pathological every-minute `* * * * *` schedule: ~43.2k calls
- *  ≈ 3.9s of synchronous enumeration to find the most-recent 62 firings. Left
- *  as-is deliberately: that cadence is unusual for a user-facing scheduled
- *  automation, it reports `truncated: true`, rehearse() is now throttled by
- *  REHEARSAL_COOLDOWN_MS so it can't be hammered, and this cap bounds the
- *  absolute worst case. Worth knowing, not worth a backward-enumeration
- *  rewrite. */
+
+const REHEARSAL_MAX_FIRINGS = 30;
+/** Backstop on the forward `cron.nextRun()` walk: negligible for the daily/
+ *  weekly crons rehearsal targets, ~3.9s worst case for `* * * * *`. */
 const REHEARSAL_MAX_ITERATIONS = 50_000;
 const REHEARSAL_PREVIEW_CHARS = 240;
-/** Server-side throttle on rehearse() itself. Each rehearsal replays up to
- *  REHEARSAL_MAX_FIRINGS × steps REAL host reads, so a burst of clicks (a
- *  double-click, a second tab, a reload that resets the UI's in-flight
- *  disable) could fan out to hundreds of upstream calls. This collapses
- *  repeats to at most one replay per app-per-caller every few seconds. Kept
- *  short: a deliberate re-run (including the 7d/30d toggle) after reading the
- *  report clears it, while quick-succession repeats are rejected outright. */
+/** Each rehearsal replays up to REHEARSAL_MAX_FIRINGS × steps real host reads,
+ *  so collapse burst repeats to one replay per app-per-caller. */
 const REHEARSAL_COOLDOWN_MS = 3_000;
 
 const appRowSchema = z.object({
@@ -396,61 +379,65 @@ const validateForEachItems = (step: Step, value: Json): Json[] => {
   return value;
 };
 
-/** rehearse() — the schedule's would-have-fired instants inside [from, to],
- *  oldest first. Cron enumerates with croner in UTC (same engine as the tick);
- *  `every` has no enable cursor on a disabled automation, so its cadence is
- *  anchored at the window end (the most recent firing lands one interval ago);
- *  `at` contributes its single instant when it falls inside the window. Keeps
- *  the MOST RECENT `REHEARSAL_MAX_FIRINGS` and reports truncation, along with
- *  `preceding` — the discarded fire time immediately before the first kept
- *  firing, so the first kept firing's window stays one schedule interval. */
+/** Fire times oldest first, with `preceding`*/ 
+type RehearsalFireTimes = { times: Date[]; truncated: boolean; preceding?: Date };
+
+/** Forward croner walk (UTC, the same engine as the tick)*/
+const cronFireTimes = (expression: string, from: Date, to: Date): RehearsalFireTimes => {
+  const cron = new Cron(expression, { timezone: "UTC", paused: true });
+  const times: Date[] = [];
+  let preceding: Date | undefined;
+  let cursor = from;
+  let iterations = 0;
+  while (iterations < REHEARSAL_MAX_ITERATIONS) {
+    iterations += 1;
+    const next = cron.nextRun(cursor);
+    if (next === null || next.getTime() > to.getTime()) break;
+    times.push(next);
+    if (times.length > REHEARSAL_MAX_FIRINGS) preceding = times.shift() as Date;
+    cursor = next;
+  }
+  return {
+    times,
+    truncated: preceding !== undefined || iterations >= REHEARSAL_MAX_ITERATIONS,
+    ...(preceding === undefined ? {} : { preceding }),
+  };
+};
+
+/** A disabled automation has no enable cursor, so `every` is anchored at the
+ *  window END and walked backward — which also stops the walk at the cap. */
+const everyFireTimes = (every: string, from: Date, to: Date): RehearsalFireTimes => {
+  const interval = durationMs(every);
+  if (interval === null) {
+    throw new Error(`rehearsal: schedule.every "${every}" is not a valid duration (validateTrigger should have rejected it)`);
+  }
+  const recentFirst: Date[] = [];
+  for (let at = to.getTime() - interval; at >= from.getTime(); at -= interval) {
+    if (recentFirst.length === REHEARSAL_MAX_FIRINGS) {
+      return { times: recentFirst.reverse(), truncated: true, preceding: new Date(at) };
+    }
+    recentFirst.push(new Date(at));
+  }
+  return { times: recentFirst.reverse(), truncated: false };
+};
+
+/** A one-shot `at` contributes its single instant, and only inside the window. */
+const atFireTimes = (at: string, from: Date, to: Date): RehearsalFireTimes => {
+  const instant = Date.parse(at);
+  const inWindow = instant >= from.getTime() && instant <= to.getTime();
+  return { times: inWindow ? [new Date(instant)] : [], truncated: false };
+};
+
+/** The schedule's would-have-fired instants inside [from, to], by trigger kind. */
 const rehearsalFireTimes = (
   source: Extract<TriggerSource, { kind: "schedule" }>,
   from: Date,
   to: Date,
-): { times: Date[]; truncated: boolean; preceding?: Date } => {
-  const times: Date[] = [];
-  let truncated = false;
-  let preceding: Date | undefined;
-  if (source.cron !== undefined) {
-    const cron = new Cron(source.cron, { timezone: "UTC", paused: true });
-    let cursor = from;
-    let iterations = 0;
-    while (iterations < REHEARSAL_MAX_ITERATIONS) {
-      iterations += 1;
-      const next = cron.nextRun(cursor);
-      if (next === null || next.getTime() > to.getTime()) break;
-      times.push(next);
-      if (times.length > REHEARSAL_MAX_FIRINGS) {
-        preceding = times.shift() as Date;
-        truncated = true;
-      }
-      cursor = next;
-    }
-    if (iterations >= REHEARSAL_MAX_ITERATIONS) truncated = true;
-  } else if (source.every !== undefined) {
-    const interval = durationMs(source.every);
-    // validateTrigger rejects a malformed `every` at creation, so a null here
-    // means that gate was bypassed somewhere. Fail loudly rather than casting
-    // null to a number and letting NaN cursor math silently misbehave.
-    if (interval === null) {
-      throw new Error(`rehearsal: schedule.every "${source.every}" is not a valid duration (validateTrigger should have rejected it)`);
-    }
-    const recentFirst: Date[] = [];
-    for (let at = to.getTime() - interval; at >= from.getTime(); at -= interval) {
-      if (recentFirst.length === REHEARSAL_MAX_FIRINGS) {
-        truncated = true;
-        preceding = new Date(at);
-        break;
-      }
-      recentFirst.push(new Date(at));
-    }
-    times.push(...recentFirst.reverse());
-  } else if (source.at !== undefined) {
-    const at = Date.parse(source.at);
-    if (at >= from.getTime() && at <= to.getTime()) times.push(new Date(at));
-  }
-  return { times, truncated, ...(preceding === undefined ? {} : { preceding }) };
+): RehearsalFireTimes => {
+  if (source.cron !== undefined) return cronFireTimes(source.cron, from, to);
+  if (source.every !== undefined) return everyFireTimes(source.every, from, to);
+  if (source.at !== undefined) return atFireTimes(source.at, from, to);
+  return { times: [], truncated: false };
 };
 
 /** Whether a tool's input schema declares string `from`/`to` params rehearse()
@@ -466,72 +453,93 @@ const rehearsalPreview = (output: Json): string => {
   return text.length > REHEARSAL_PREVIEW_CHARS ? `${text.slice(0, REHEARSAL_PREVIEW_CHARS - 1)}…` : text;
 };
 
-/** Fields tried, in order, for a breakdown row's label — the first that is a
- *  non-empty string on EVERY element wins. */
 const REHEARSAL_LABEL_FIELDS = ["name", "label", "title", "category", "merchant", "description", "id"];
 
-/** Conventionally-money field names (lower-cased) a list read's headline may
- *  sum as minor units. Restricting to this allowlist — rather than "whichever
- *  numeric field the rows happen to share" — is what stops a plain count (or
- *  any other non-money number) rendering as a dollar amount. Covers the fields
- *  the seeded demo tools mark as `cents` via `x-vendo-formats` (amount,
- *  balance, netWorth, saved, spent, target, limit, in, out — see
- *  apps/demo-bank & apps/demo-accounting `openapi.json`; that hint is doc-only
- *  and never reaches the runtime descriptor, so the name allowlist stands in
- *  for it) plus the common cents-suffix and money synonyms. */
-const REHEARSAL_MONEY_FIELDS = new Set([
-  "amount", "amountcents", "totalcents", "cents", "total", "subtotal",
-  "balance", "networth", "saved", "spent", "target", "limit",
-  "price", "cost", "fee", "credit", "debit", "in", "out",
-]);
+/** RFC 6901 token escaping, the encode half of what semanticAtPointer decodes. */
+const encodePointerToken = (token: string): string => token.replaceAll("~", "~0").replaceAll("/", "~1");
 
-const isJsonObject = (value: Json): value is Record<string, Json> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-/** The homogeneous object list a resolved read summarizes over: the output
- *  itself when it is an array of objects, or the sole array-valued property of
- *  a wrapper object (`{ data: [...] }`). Undefined for any other shape. */
-const rehearsalObjectList = (output: Json): Array<Record<string, Json>> | undefined => {
+const rehearsalObjectList = (output: Json): { list: Array<Record<string, Json>>; pointer: string } | undefined => {
   let candidate: Json = output;
-  if (isJsonObject(candidate)) {
-    const arrays = Object.values(candidate).filter((value): value is Json[] => Array.isArray(value));
+  let pointer = "";
+  if (isPlainObject(candidate)) {
+    const arrays = Object.entries(candidate).filter((entry): entry is [string, Json[]] => Array.isArray(entry[1]));
     if (arrays.length !== 1) return undefined;
-    candidate = arrays[0]!;
+    const [key, list] = arrays[0]!;
+    pointer = `/${encodePointerToken(key)}`;
+    candidate = list;
   }
-  if (!Array.isArray(candidate) || candidate.length === 0 || !candidate.every(isJsonObject)) return undefined;
-  return candidate as Array<Record<string, Json>>;
+  if (!Array.isArray(candidate) || candidate.length === 0 || !candidate.every(isPlainObject)) return undefined;
+  return { list: candidate as Array<Record<string, Json>>, pointer };
 };
 
-/** A shape-driven numeric summary of a real read for the timeline headline:
- *  the output's homogeneous object list summed over the ONE conventionally-money
- *  numeric field every element shares (integer minor units — this codebase's
- *  cents convention; see REHEARSAL_MONEY_FIELDS). Undefined when there is no
- *  such list, no shared money-named numeric field, or several (ambiguous), so
- *  the row shows no number rather than an invented one. Keys off a MONEY-name
- *  allowlist rather than a per-tool field name, so a non-money number (e.g. a
- *  plain `count`) never renders as a dollar amount while it stays
- *  host-agnostic. */
-const rehearsalResult = (output: Json): RehearsalStep["result"] => {
-  const list = rehearsalObjectList(output);
-  if (list === undefined) return undefined;
+/** The keys EVERY element carries as a finite number — the only candidates a
+ *  headline can sum. A field missing from one row (an `apy` only some accounts
+ *  have) is not shared and never enters a total. */
+const sharedNumericFields = (list: Array<Record<string, Json>>): string[] => {
   let shared: string[] | undefined;
   for (const row of list) {
     const numeric = Object.keys(row).filter((key) => typeof row[key] === "number" && Number.isFinite(row[key]));
     shared = shared === undefined ? numeric : shared.filter((key) => numeric.includes(key));
-    if (shared.length === 0) return undefined;
+    if (shared.length === 0) break;
   }
-  // Only a conventionally-money field is summed as cents: a shared numeric
-  // field with a non-money name (a count, an APY, an id) yields no headline.
-  const money = (shared ?? []).filter((key) => REHEARSAL_MONEY_FIELDS.has(key.toLowerCase()));
+  return shared ?? [];
+};
+
+/** The one field the host's synced semantics declare money, plus the factor that
+ *  puts it in minor units. Undefined when none is declared or several are. */
+const rehearsalMoneyField = (
+  fields: string[],
+  pointer: string,
+  semantics: ToolSemantics,
+): { field: string; scale: number } | undefined => {
+  // `/0/` is any array index — semanticAtPointer collapses it out, so every
+  // element resolves to the one key the file is written under.
+  const money = fields.filter((key) =>
+    semanticAtPointer(semantics, `${pointer}/0/${encodePointerToken(key)}`)?.kind === "money");
   if (money.length !== 1) return undefined;
   const field = money[0]!;
-  const labelField = REHEARSAL_LABEL_FIELDS.find((key) =>
+  const semantic = semanticAtPointer(semantics, `${pointer}/0/${encodePointerToken(field)}`);
+  return { field, scale: semantic?.kind === "money" && semantic.unit === "dollars" ? 100 : 1 };
+};
+
+/** Names each breakdown row from the first REHEARSAL_LABEL_FIELDS entry every
+ *  element carries as a string, humanized for enums; "Item N" when none does. */
+const rehearsalRowLabel = (
+  list: Array<Record<string, Json>>,
+  pointer: string,
+  semantics: ToolSemantics,
+): ((row: Record<string, Json>, index: number) => string) => {
+  const field = REHEARSAL_LABEL_FIELDS.find((key) =>
     list.every((row) => typeof row[key] === "string" && (row[key] as string).length > 0));
+  if (field === undefined) return (_row, index) => `Item ${index + 1}`;
+  const semantic = semanticAtPointer(semantics, `${pointer}/0/${encodePointerToken(field)}`);
+  const labels = semantic?.kind === "enum" ? semantic.labels : undefined;
+  return (row) => {
+    const raw = String(row[field]);
+    // A value minted since the last sync is absent from the labels map, so it
+    // humanizes through the SAME function that built those labels rather than
+    // falling back to the raw token.
+    return labels === undefined ? raw : labels[raw] ?? humanizeEnumValue(raw);
+  };
+};
+
+
+const rehearsalResult = (output: Json, semantics?: ToolSemantics): RehearsalStep["result"] => {
+  // No synced semantics for this tool ⇒ nothing can be declared money ⇒ no
+  // headline, so the whole summary is skipped rather than walked to the same
+  // conclusion.
+  if (semantics === undefined) return undefined;
+  const found = rehearsalObjectList(output);
+  if (found === undefined) return undefined;
+  const { list, pointer } = found;
+  const money = rehearsalMoneyField(sharedNumericFields(list), pointer, semantics);
+  if (money === undefined) return undefined;
+  const label = rehearsalRowLabel(list, pointer, semantics);
   let totalCents = 0;
   const breakdown = list.map((row, index) => {
-    const cents = Math.round(row[field] as number);
+    const cents = Math.round((row[money.field] as number) * money.scale);
     totalCents += cents;
-    return { label: labelField !== undefined ? String(row[labelField]) : `Item ${index + 1}`, cents };
+    return { label: label(row, index), cents };
   });
   return { totalCents, ...(breakdown.length > 1 ? { breakdown } : {}) };
 };
@@ -543,8 +551,6 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const active = new Set<string>();
   const resuming = new Set<string>();
   const inFlightDeliveries = new Set<string>();
-  // rehearse() cooldown (in-memory, consistent with the guard's call-window
-  // breaker): last replay start per `${subject}:${appId}`, in `now()` ms.
   const rehearseCooldowns = new Map<string, number>();
   const abortControllers = new Map<string, AbortController>();
   // Minted on first claim, not at construction: Workers forbids generating
@@ -1647,33 +1653,22 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return plan;
   };
 
-  /** One rehearsed firing: the steps executor's semantics (if / forEach /
-   *  JSONata args over the firing's event and real upstream outputs), executed
-   *  through the guard-bound registry under the `rehearsal` venue — reads run
-   *  for real, writes resolve to the guard's simulated card. Nothing persists
-   *  to run history and no approvals can park (the guard blocks would-asks). */
   const rehearseFiring = async (
     steps: Step[],
     byName: Map<string, ToolDescriptor>,
+    hostSemantics: Readonly<Record<string, ToolSemantics>> | undefined,
     base: { caller: RunContext; appId: string },
     windowFrom: Date,
     firedAt: Date,
   ): Promise<RehearsalFiring> => {
     const event: Json = { scheduledFor: firedAt.toISOString(), firedAt: firedAt.toISOString() };
-    // Rehearsal reads RIDE THE LIVE INTERACTIVE SESSION: the caller's session
-    // id and request headers carry over so present-venue host reads
-    // authenticate exactly as chat reads do (04 §4 header forwarding).
     const rehearsalCtx: RunContext = {
       principal: base.caller.principal,
       venue: "rehearsal",
       presence: "present",
       sessionId: base.caller.sessionId,
       appId: base.appId,
-      // AUDIT-SCOPED ONLY: rehearsal persists nothing to run history (by
-      // design — see rehearse()), so this run id lives exclusively inside the
-      // audit events emitted under the rehearsal venue. It will NEVER match a
-      // row in the runs store; do not join an audit entry on this id against
-      // the runs table expecting to find one.
+      // AUDIT-SCOPED ONLY: rehearsal persists nothing to run history 
       trigger: { runId: id("run_rehearsal_") as RunId, kind: "schedule" },
       ...(base.caller.requestHeaders === undefined ? {} : { requestHeaders: base.caller.requestHeaders }),
     };
@@ -1727,9 +1722,6 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           if (isRehearsalSimulation(outcome.output)) {
             row.status = "simulated";
             simulatedActions += 1;
-            // Lift the guard's honest would-be-live verdict onto the row so the
-            // timeline can say "would ask / would be blocked" rather than a
-            // rosy plain simulated card.
             const sim = outcome.output;
             if (sim.wouldAsk === true) row.wouldAsk = true;
             if (sim.grantsMissing !== undefined && sim.grantsMissing.length > 0) {
@@ -1739,7 +1731,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           } else {
             row.preview = rehearsalPreview(outcome.output);
             if (descriptor.risk === "read") {
-              const result = rehearsalResult(outcome.output);
+              const result = rehearsalResult(outcome.output, hostSemantics?.[step.tool]);
               if (result !== undefined) row.result = result;
               if (bounded) {
                 row.window = { from: String(args["from"]), to: String(args["to"]) };
@@ -1775,11 +1767,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const found = await ownedApp(appId, ctx.principal.subject);
     if (found.row.doc.trigger === undefined) throw new VendoError("validation", "app has no trigger");
     const trigger = validateTrigger(found.row.doc.trigger);
-    if (trigger.on.kind !== "schedule") {
-      throw new VendoError("validation", "rehearsal supports schedule triggers only");
-    }
-    if (trigger.run.kind !== "steps") {
-      throw new VendoError("validation", "rehearsal supports steps automations only");
+ 
+    if (trigger.on.kind !== "schedule" || trigger.run.kind !== "steps") {
+      throw new VendoError("validation", trigger.on.kind !== "schedule"
+        ? "rehearsal supports schedule triggers only"
+        : "rehearsal supports steps automations only");
     }
     const byName = await descriptors();
     for (const step of trigger.run.steps) {
@@ -1788,13 +1780,8 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }
     }
     const resolvedWindowDays = resolveRehearsalWindowDays(windowDays);
-    // Server-side throttle (07-automations): reject a repeat replay of the same
-    // app+window by the same caller inside the cooldown, so rapid clicks / a
-    // second tab / a reload can't fan out to hundreds of real host reads. The
-    // UI's in-flight button disable is client-only and resets on reload — this
-    // is the real backstop. Keyed by window (7 vs 30) so a legitimate 7d/30d
-    // toggle isn't rejected while repeated same-window Rehearse clicks are.
-    // Prune stale entries opportunistically to bound memory.
+    // Server-side throttle (07-automations): reject a repeat replay of the same 
+    // app+window by the same caller inside the cooldown
     const cooldownKey = `${ctx.principal.subject}:${appId}:${resolvedWindowDays}`;
     const nowMs = now().getTime();
     for (const [key, at] of rehearseCooldowns) {
@@ -1813,6 +1800,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const from = new Date(to.getTime() - resolvedWindowDays * 86_400_000);
     const { times, truncated, preceding } = rehearsalFireTimes(trigger.on, from, to);
     const base = { caller: ctx, appId };
+    // Resolved ONCE per report, not per firing: the provider form re-reads
+    // .vendo off disk (the apps runtime's per-generation contract), and every
+    // firing in one replay should summarize under the same semantics anyway.
+    const hostSemantics = typeof config.semantics === "function" ? config.semantics() : config.semantics;
     const firings: RehearsalFiring[] = [];
     for (let index = 0; index < times.length; index += 1) {
       const firedAt = times[index] as Date;
@@ -1820,7 +1811,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       // firing the cap discarded (`preceding`); only when no earlier fire time
       // exists does the first firing fall back to the report window's start.
       const windowFrom = index > 0 ? times[index - 1] as Date : preceding ?? from;
-      firings.push(await rehearseFiring(trigger.run.steps, byName, base, windowFrom, firedAt));
+      firings.push(await rehearseFiring(trigger.run.steps, byName, hostSemantics, base, windowFrom, firedAt));
     }
     return {
       appId,

@@ -19,6 +19,7 @@ import type {
   StoreAdapter,
   ToolOutcome,
   ToolRegistry,
+  ToolSemantics,
   TriggerSource,
 } from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -34,6 +35,9 @@ export interface AutomationsConfig {
   store: StoreAdapter;
   /** Absent → agentic runs unavailable, steps still work. */
   runner?: AgentRunner;
+  /** W3 — the merged `.vendo` field semantics, rehearse()'s ONLY money source:
+   *  no synced semantic, no `result` headline. Provider form re-reads per call. */
+  semantics?: Readonly<Record<string, ToolSemantics>> | (() => Readonly<Record<string, ToolSemantics>> | undefined);
   /** Testability. */
   now?: () => Date;
   /** Max automations a single tick executes concurrently (default 4). A small pool keeps
@@ -91,13 +95,15 @@ export interface RehearsalStep {
   /** Truncated JSON preview of a real read's output. */
   preview?: string;
   /** A numeric summary of a real read's resolved output, for the timeline's
-   *  single-line headline. `totalCents` sums the one numeric field every
-   *  element of the output's homogeneous list shares (integer minor units —
-   *  this codebase's cents convention); `breakdown` is the per-item split for
-   *  the expandable detail. Derived SHAPE-first from the FULL output (before
-   *  `preview` truncation), never a per-tool field name, so it stays
-   *  host-agnostic; absent when the output has no single unambiguous numeric
-   *  field to sum, so the row shows no number rather than an invented one. */
+   *  single-line headline. `totalCents` sums the one MONEY field every element
+   *  of the output's homogeneous list shares, always in integer minor units (a
+   *  `money.dollars` field is scaled on the way in); `breakdown` is the
+   *  per-item split for the expandable detail. Derived SHAPE-first from the
+   *  FULL output (before `preview` truncation); the money field is named by the
+   *  host's synced `semantics` and nothing else, so this stays host-agnostic.
+   *  Absent when the output has no single unambiguous money field — including
+   *  every tool the host has not synced semantics for — so the row shows no
+   *  number rather than an invented one. */
   result?: { totalCents: number; breakdown?: Array<{ label: string; cents: number }> };
   /** The date bounds the call carried (pinned to the firing's window when the
    *  tool accepts `from`/`to` and the step left them unset). */
