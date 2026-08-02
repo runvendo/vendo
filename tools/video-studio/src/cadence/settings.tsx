@@ -6,7 +6,7 @@ import {CAD, CAD_FONT, RADIUS, SHADOW} from './tokens';
 /**
  * Cadence's real settings page, replicated markup-for-markup.
  *
- * Source of truth: `apps/demo-accounting/src/app/settings/page.tsx` plus the
+ * Source of truth: `examples/demo-accounting/src/app/settings/page.tsx` plus the
  * primitives it composes — `src/components/ui/card.tsx`,
  * `src/components/ui/page-header.tsx` — and the `@theme` tokens in
  * `src/app/globals.css`. Every class in the host is quoted in the comment

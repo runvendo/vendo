@@ -203,7 +203,7 @@ function methodHandlerBody(module: FileModule, ts: typeof TS, method: HttpMethod
  * *what* is being read, only how it's typed or guarded: `await`, redundant
  * parens, `as`/`satisfies` casts, non-null assertions, and a trailing
  * `.catch(...)` fallback (demo-bank's own handlers read
- * `(await req.json().catch(() => ({}))) as T` — apps/demo-bank's orders
+ * `(await req.json().catch(() => ({}))) as T` — examples/demo-bank's orders
  * route). Peeling `.catch`'s receiver, not its whole call, is what lets the
  * loop reach the underlying `.json()` call under any combination of the above. */
 function unwrapJsonCandidate(ts: typeof TS, node: TS.Node): TS.Node {

@@ -21,8 +21,8 @@ import {
 import { scriptedLanguageModel, type ScriptedModelCall } from "./testing/scripted-model.js";
 import type { HostToolInfo } from "./generation/engine.js";
 
-// The two hosts' real mutating surfaces, verbatim from apps/demo-bank and
-// apps/demo-accounting `.vendo/tools.json`.
+// The two hosts' real mutating surfaces, verbatim from examples/demo-bank and
+// examples/demo-accounting `.vendo/tools.json`.
 const tools: HostToolInfo[] = [
   {
     name: "host_listTransactions",

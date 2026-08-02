@@ -845,7 +845,7 @@ function noApprovalsClient(client: VendoClient): VendoClient {
   return { ...client, approvals: { ...client.approvals, pending: async () => [] } };
 }
 
-/** Reproduces apps/demo-bank/src/app/vendo/page.tsx: VendoThread and VendoStage
+/** Reproduces examples/demo-bank/src/app/vendo/page.tsx: VendoThread and VendoStage
  *  mount as siblings under one bounded, scrollable flex column (Maple's /vendo
  *  tab) — the composition where the docs/verification/simplify-v2-wave2
  *  browser smoke found the voice widget could crowd out the in-conversation

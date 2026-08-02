@@ -210,7 +210,7 @@ jobs:
       # app itself through `next dev`.
       - run: pnpm turbo run build --filter=demo-accounting^...
       - run: supabase start
-        working-directory: apps/demo-accounting
+        working-directory: examples/demo-accounting
       - run: pnpm --filter demo-accounting test
 
   # Supply-chain gate: fails on high/critical advisories in the PRODUCTION

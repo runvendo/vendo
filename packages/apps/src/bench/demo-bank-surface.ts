@@ -1,7 +1,7 @@
 /**
  * The demo-bank (Maple) host surface for live harnesses: catalog + tools from
- * apps/demo-bank/.vendo, plus hand-written shape cards mirroring
- * apps/demo-bank/src/server/types.ts — what runtime shape-sampling would
+ * examples/demo-bank/.vendo, plus hand-written shape cards mirroring
+ * examples/demo-bank/src/server/types.ts — what runtime shape-sampling would
  * derive from live responses. Shared by the live measurement harnesses
  * (engine.speed.test.ts, engine.pipeline.live.test.ts) so their deps match
  * what a real demo-bank create sees; never part of the test gate.
@@ -16,7 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../../..");
 
 export const loadDemoBankCatalog = (): NormalizedCatalog => {
-  const raw = JSON.parse(readFileSync(resolve(repoRoot, "apps/demo-bank/.vendo/catalog.json"), "utf8")) as {
+  const raw = JSON.parse(readFileSync(resolve(repoRoot, "examples/demo-bank/.vendo/catalog.json"), "utf8")) as {
     entries: Array<{ name: string; description: string; propsSchema: unknown; examples?: string[] }>;
   };
   return raw.entries.map((e) => ({
@@ -28,7 +28,7 @@ export const loadDemoBankCatalog = (): NormalizedCatalog => {
 };
 
 export const loadDemoBankTools = (): HostToolInfo[] => {
-  const raw = JSON.parse(readFileSync(resolve(repoRoot, "apps/demo-bank/.vendo/tools.json"), "utf8")) as {
+  const raw = JSON.parse(readFileSync(resolve(repoRoot, "examples/demo-bank/.vendo/tools.json"), "utf8")) as {
     tools: Array<{ name: string; description: string; risk: string; inputSchema?: Record<string, unknown> }>;
   };
   return raw.tools

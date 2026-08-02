@@ -78,9 +78,9 @@ export {
 } from "./ship-diff.js";
 // The opt-in per-stage diagnostics event already surfaced through
 // GenerationDependencies.onPipeline — exported as a type so onPipeline
-// consumers (apps/genui-bench runner tap) can name what they accumulate.
+// consumers (tools/genui-bench runner tap) can name what they accumulate.
 export type { PipelineEvent } from "./pipeline.js";
-// The bench host surface (apps/genui-bench): the demo-bank catalog/tool/shape
+// The bench host surface (tools/genui-bench): the demo-bank catalog/tool/shape
 // loaders the live harnesses already share, exported because the exports map
 // closes deep imports. Data-only helpers — no engine behavior rides on them.
 // HostToolInfo is the tool slice those loaders (and GenerationDependencies)

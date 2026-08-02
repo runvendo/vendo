@@ -37,8 +37,9 @@ anywhere else are not quality numbers.
 
 ## Relationship to genui-bench
 
-`runvendo/genui-bench` is the **lab**: product-independent research — wire-format wars,
-pipeline prototypes, competitor comparisons (CopilotKit/thesys/Tambo). This directory is
-the **scoreboard**: it measures the real product and cannot leave this repo without
-drifting into measuring a copy. Format-level ideas graduate from the lab; only this
-scoreboard decides if they shipped well.
+`tools/genui-bench` is the **lab**: the interactive side-by-side playground — competitor
+comparisons (CopilotKit/thesys/Tambo), model A/Bs, pipeline experiments — running on the
+real in-repo renderer and engine. (It superseded the external `runvendo/genui-bench`
+research repo, now archived.) This directory is the **scoreboard**: frozen sets and
+official scores. Ideas graduate from the lab; only this scoreboard decides if they
+shipped well.

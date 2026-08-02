@@ -1,7 +1,7 @@
 /**
  * W4 pipeline live harness — measures the reliability pipeline on the real
  * create path against the demo-bank host surface (catalog + tools +
- * hand-written shape cards mirroring apps/demo-bank/src/server/types.ts).
+ * hand-written shape cards mirroring examples/demo-bank/src/server/types.ts).
  *
  * NOT part of the gate: guarded by PIPE_MODE so `pnpm test` never runs it
  * (no keys, no cost).
@@ -55,7 +55,7 @@ const PROMPTS = [
 ];
 
 const loadCatalog = (): NormalizedCatalog => {
-  const raw = JSON.parse(readFileSync(resolve(repoRoot, "apps/demo-bank/.vendo/catalog.json"), "utf8")) as {
+  const raw = JSON.parse(readFileSync(resolve(repoRoot, "examples/demo-bank/.vendo/catalog.json"), "utf8")) as {
     entries: Array<{ name: string; description: string; propsSchema: unknown; examples?: string[] }>;
   };
   return raw.entries.map((e) => ({
@@ -67,7 +67,7 @@ const loadCatalog = (): NormalizedCatalog => {
 };
 
 const loadTools = (): HostToolInfo[] => {
-  const raw = JSON.parse(readFileSync(resolve(repoRoot, "apps/demo-bank/.vendo/tools.json"), "utf8")) as {
+  const raw = JSON.parse(readFileSync(resolve(repoRoot, "examples/demo-bank/.vendo/tools.json"), "utf8")) as {
     tools: Array<{ name: string; description: string; risk: string; inputSchema?: Record<string, unknown> }>;
   };
   return raw.tools
@@ -80,7 +80,7 @@ const loadTools = (): HostToolInfo[] => {
     }));
 };
 
-// Shape cards mirroring apps/demo-bank/src/server/types.ts — what runtime
+// Shape cards mirroring examples/demo-bank/src/server/types.ts — what runtime
 // shape-sampling would derive from live responses.
 const str: ShapeType = { kind: "string" };
 const num: ShapeType = { kind: "number" };

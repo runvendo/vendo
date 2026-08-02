@@ -39,13 +39,13 @@ docs/verification/**/*.mp4
 docs/verification/**/*.mov
 
 # Generated prospect demos — NEVER committed. `demo:create` clones outside the
-# repo by default, but an explicit `--target-dir apps` run must not be one
+# repo by default, but an explicit `--target-dir examples` run must not be one
 # `git add -A` away from publishing a prospect's brand in the OSS repo. Only
-# the three real apps are tracked.
-apps/demo-*
-!apps/demo-bank/
-!apps/demo-accounting/
-!apps/demo-template/
+# the three real example apps are tracked.
+examples/demo-*
+!examples/demo-bank/
+!examples/demo-accounting/
+!examples/demo-template/
 
 # Factory lane scratch at the repo ROOT — a lane's working notes, contract,
 # park file and report are its own, never the repo's. Four of these had already
@@ -61,10 +61,9 @@ apps/demo-*
 /LANE-REPORT.md
 
 # Vendo demo runtime state (PGlite) — never committed.
-apps/*/.vendo/data/
-apps/*/.vendo/data-*/
-fixtures/*/.vendo/data/
 examples/*/.vendo/data/
+examples/*/.vendo/data-*/
+fixtures/*/.vendo/data/
 
 # wave-6 orchestration lane briefs/signals (never committed)
 .lanes/
@@ -84,7 +83,7 @@ coverage/
 .env
 .env.local
 .env.*.local
-apps/*/.env.local
+examples/*/.env.local
 
 # speed lane raw samples (aggregated into README table)
 docs/verification/vendo-v2-speed/samples.ndjson

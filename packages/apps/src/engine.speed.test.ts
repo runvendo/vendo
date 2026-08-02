@@ -35,7 +35,7 @@ const PROMPT = process.env.SPEED_PROMPT
   ?? "Build me a net-worth dashboard with my total balance, a balance-over-time chart, and my recent transactions.";
 
 const loadCatalog = (): NormalizedCatalog => {
-  const raw = JSON.parse(readFileSync(resolve(repoRoot, "apps/demo-bank/.vendo/catalog.json"), "utf8")) as {
+  const raw = JSON.parse(readFileSync(resolve(repoRoot, "examples/demo-bank/.vendo/catalog.json"), "utf8")) as {
     entries: Array<{ name: string; description: string; propsSchema: unknown; examples?: string[] }>;
   };
   return raw.entries.map((e) => ({

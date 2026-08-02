@@ -183,7 +183,7 @@ the docs' copy-paste prompt alone (agent-install DX design 2026-07-19
 
 1. Copies the fixture source (`invoify` — external pinned corpus repo,
    cloned through the normal manifest-pin machinery — plus `express-host`,
-   `apps/demo-bank`, `apps/demo-accounting`) to a clean directory under
+   `examples/demo-bank`, `examples/demo-accounting`) to a clean directory under
    `corpus/.repos/.install-eval/` with the Vendo footprint stripped: no
    `.vendo/`, no vendoai/@vendoai dependency or override, no lockfile, no
    CLAUDE.md/AGENTS.md/.claude (a clean host repo carries none of that), then

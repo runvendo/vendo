@@ -216,7 +216,7 @@ test("generated MCP Apps shim carries the Maple theme through the generated-comp
   });
 
   const mapleTheme = JSON.parse(await readFile(
-    new URL("../../../apps/demo-bank/.vendo/theme.json", import.meta.url),
+    new URL("../../../examples/demo-bank/.vendo/theme.json", import.meta.url),
     "utf8",
   )) as VendoTheme;
   await loadShim(page, themeProofTree as unknown as UIPayload, mapleTheme);

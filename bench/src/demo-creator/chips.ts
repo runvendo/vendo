@@ -132,7 +132,7 @@ export type ChipModelFn = (prompt: string) => Promise<string>;
  * reason as the judge's: only the commands that need a model pay for it.
  *
  * OPERATOR-side credential, deliberately NOT the Vendo ladder. The demo this
- * generates rides VENDO_API_KEY (see apps/demo-template's Cloud posture), but
+ * generates rides VENDO_API_KEY (see examples/demo-template's Cloud posture), but
  * the creator harness itself is Anthropic-bound end to end — the fidelity
  * judge takes the same rung and the build agents shell out to the `claude`
  * CLI — so a chips stage that quietly fell back to the Cloud gateway would

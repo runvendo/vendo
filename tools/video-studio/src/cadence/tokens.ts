@@ -2,8 +2,8 @@
  * Cadence's real design tokens.
  *
  * Copied verbatim from the host's own stylesheet —
- * apps/demo-accounting/src/app/globals.css (the "Porcelain Ledger" @theme
- * blocks) and apps/demo-accounting/.vendo/theme.json. Nothing here is
+ * examples/demo-accounting/src/app/globals.css (the "Porcelain Ledger" @theme
+ * blocks) and examples/demo-accounting/.vendo/theme.json. Nothing here is
  * eyeballed. Cadence is a Tailwind v4 CSS-first app with no config file, so
  * these custom properties ARE the design system; the studio cannot run its
  * PostCSS pipeline, so it reads the same values as constants.
@@ -78,7 +78,7 @@ export const CAD_SCALE = 1.62;
 
 export const cad = (px: number): number => Math.round(px * CAD_SCALE);
 
-/** Real nav, in the host's own order — apps/demo-accounting/src/components/shell/sidebar.tsx */
+/** Real nav, in the host's own order — examples/demo-accounting/src/components/shell/sidebar.tsx */
 export const CAD_NAV: Array<{group?: string; items: string[]}> = [
   {items: ['Dashboard', 'Ask Cadence']},
   {group: 'Workspace', items: ['Clients', 'Work', 'Calendar', 'Inbox']},
