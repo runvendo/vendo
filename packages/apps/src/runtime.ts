@@ -2392,7 +2392,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           // latch is cosmetic). A riding instruction is dropped — the tap
           // that created the fork already carries it, and replaying it here
           // would apply the same edit twice.
-          const existing = (await runtime.list(ctx)).find(carriesSlotPin);
+          // The OLDEST matching row, so every dedupe path (this pre-check and
+          // the post-persist re-check below) converges on the same winner.
+          const existing = (await runtime.list(ctx)).filter(carriesSlotPin).at(-1);
           if (existing !== undefined) return dedupedResult(existing);
           // The empty-slot Remix gesture: mint the minimal base document the
           // fork lands in, so the fork itself is an ordinary recorded edit

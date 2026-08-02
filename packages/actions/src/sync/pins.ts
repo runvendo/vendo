@@ -18,6 +18,7 @@ import {
 } from "./common.js";
 
 const MAX_SUB_SOURCE_DEPTH = 2;
+const MAX_SCAN_FILES = 5_000;
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/u;
 const ROOT_FILE = /^(?:src\/)?(?:app\/layout|app\/root|pages\/_app)\.(?:[cm]?[jt]sx?)$/u;
 const BLESSED_JAIL_MODULES = new Set([
@@ -478,7 +479,7 @@ export async function capturePins(
 ): Promise<PinCaptureResult> {
   const result: PinCaptureResult = { captured: [], drifted: [], pruned: [], errors: [], warnings: [] };
   const realRoot = await fs.realpath(root);
-  const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath));
+  const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath), MAX_SCAN_FILES);
   let stylesPromise: Promise<CapturedPinStyle[]> | undefined;
   const remixableDir = path.join(out, "remixable");
 
@@ -558,8 +559,12 @@ export async function capturePins(
   // A baseline whose slot matches no discovered wrapper is a forkable zombie —
   // delete it. A run with wrapper errors prunes nothing: an unresolvable
   // wrapper's slot is unknowable, and deleting its baseline would turn a loud
-  // failure into silent data loss.
-  if (result.errors.length === 0) {
+  // failure into silent data loss. A DEGRADED scan prunes nothing either — a
+  // missing host compiler parses every file to zero sites without one error,
+  // and a walk that hit its file cap may simply never have seen the wrapper.
+  const scanTrusted = parseModuleSource("", "compiler-probe.tsx") !== null
+    && files.length < MAX_SCAN_FILES;
+  if (scanTrusted && result.errors.length === 0) {
     const entries = await fs.readdir(remixableDir).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return [];
       throw error;
