@@ -38,7 +38,7 @@ describe("wrapper pin capture", () => {
       import { Remixable } from "../vendo/remixable";
       import { Card } from "../components/Card";
       export default function Page() {
-        return <Remixable><Card title="Live" /></Remixable>;
+        return <Remixable>{/* a comment renders nothing */}<Card title="Live" /></Remixable>;
       }
     `);
     await write(root, "src/components/Card.tsx", `
@@ -110,6 +110,37 @@ describe("wrapper pin capture", () => {
     // two wrappers of the same component are one capture, many mount points.
     expect(result.captured).toEqual(["Card"]);
     expect(await fs.readdir(path.join(root, ".vendo/remixable"))).toEqual(["Card.json"]);
+  });
+
+  it("registers an aliased wrapper import and errors when two components share an exported name", async () => {
+    const root = await temporaryRoot();
+    await write(root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }");
+    await write(root, "src/components/other/Card.tsx", "export function Card() { return <div>other card</div>; }");
+    await write(root, "src/app/page.tsx", `
+      import { Remixable as Remix } from "../vendo/remixable";
+      import { Card } from "../components/Card";
+      export default function Page() {
+        return <Remix><Card /></Remix>;
+      }
+    `);
+    await write(root, "src/app/other/page.tsx", `
+      import { Remixable } from "../../vendo/remixable";
+      import { Card } from "../../components/other/Card";
+      export default function Other() {
+        return <Remixable><Card /></Remixable>;
+      }
+    `);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    // The aliased wrapper import still registers its site, and the ambiguous
+    // slot fails loudly instead of silently dropping one component's baseline.
+    expect(result.captured).toEqual([]);
+    expect(result.errors).toEqual([
+      expect.stringMatching(/two different components both export "Card".*rename one export/u),
+    ]);
+    expect(result.errors[0]).toContain("src/components/Card.tsx");
+    expect(result.errors[0]).toContain("src/components/other/Card.tsx");
   });
 
   it("writes review: true into the baseline from <Remixable review>", async () => {

@@ -72,9 +72,29 @@ function tagText(ts: typeof TS, tagName: TS.JsxTagNameExpression, sf: TS.SourceF
   return ts.isIdentifier(tagName) ? tagName.text : tagName.getText(sf);
 }
 
-function isRemixableTag(ts: typeof TS, tagName: TS.JsxTagNameExpression, sf: TS.SourceFile): boolean {
+/** Local names bound to a `Remixable` import, so aliased imports
+ *  (`import { Remixable as Remix }`) still register (same posture as
+ *  catalog-scan's VendoRoot detection). */
+function remixableNames(ts: typeof TS, sf: TS.SourceFile): Set<string> {
+  const names = new Set(["Remixable"]);
+  for (const statement of sf.statements) {
+    if (!ts.isImportDeclaration(statement) || statement.importClause?.namedBindings === undefined
+      || !ts.isNamedImports(statement.importClause.namedBindings)) continue;
+    for (const element of statement.importClause.namedBindings.elements) {
+      if ((element.propertyName?.text ?? element.name.text) === "Remixable") names.add(element.name.text);
+    }
+  }
+  return names;
+}
+
+function isRemixableTag(
+  ts: typeof TS,
+  tagName: TS.JsxTagNameExpression,
+  sf: TS.SourceFile,
+  names: ReadonlySet<string>,
+): boolean {
   const text = tagText(ts, tagName, sf);
-  return text.slice(text.lastIndexOf(".") + 1) === "Remixable";
+  return names.has(text) || text.slice(text.lastIndexOf(".") + 1) === "Remixable";
 }
 
 function reviewFlag(ts: typeof TS, attributes: TS.JsxAttributes): boolean {
@@ -123,14 +143,19 @@ function wrapperSites(
   const parsed = parseModuleSource(source, file);
   if (!parsed) return { sites, errors };
   const { ts, sf } = parsed;
+  const names = remixableNames(ts, sf);
   visitNodes(ts, sf, (node) => {
-    if (ts.isJsxSelfClosingElement(node) && isRemixableTag(ts, node.tagName, sf)) {
+    if (ts.isJsxSelfClosingElement(node) && isRemixableTag(ts, node.tagName, sf, names)) {
       errors.push(`${relativeFile}:${lineOf(sf, node)} — <Remixable /> wraps nothing; put exactly one component element inside it`);
       return;
     }
-    if (!ts.isJsxElement(node) || !isRemixableTag(ts, node.openingElement.tagName, sf)) return;
+    if (!ts.isJsxElement(node) || !isRemixableTag(ts, node.openingElement.tagName, sf, names)) return;
     const line = lineOf(sf, node);
-    const children = node.children.filter((child) => !(ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces));
+    // Whitespace and comment-only expression containers ({/* … */}) render
+    // nothing and do not count against the single-child rule.
+    const children = node.children.filter((child) =>
+      !(ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces)
+      && !(ts.isJsxExpression(child) && child.expression === undefined));
     const [child] = children;
     if (children.length !== 1 || child === undefined
       || !(ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child))) {
@@ -355,8 +380,9 @@ async function resolveSite(
   realRoot: string,
   errors: string[],
 ): Promise<ResolvedSite | null> {
-  const relativeFile = portablePath(realRoot, site.file);
-  const at = `${relativeFile}:${site.line}`;
+  // Walked files are labeled relative to the given root, not its realpath —
+  // on a symlinked project directory the realpath-relative form is garbled.
+  const at = `${portablePath(root, site.file)}:${site.line}`;
   const reference = await importReferenceFor(source, site.childTag);
   if (!reference) {
     errors.push(`${at} — <Remixable> wraps <${site.childTag}>, which is not statically imported; extract it into its own module, import it, and wrap the imported component`);
@@ -402,7 +428,7 @@ export async function capturePins(
   const bySlot = new Map<string, ResolvedSite[]>();
   for (const file of files) {
     const source = await fs.readFile(file, "utf8");
-    const { sites, errors } = wrapperSites(source, file, portablePath(realRoot, file));
+    const { sites, errors } = wrapperSites(source, file, portablePath(root, file));
     result.errors.push(...errors);
     for (const site of sites) {
       const resolved = await resolveSite(site, source, root, realRoot, result.errors);
@@ -415,25 +441,29 @@ export async function capturePins(
 
   for (const [slot, sites] of [...bySlot.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     const [primary] = sites as [ResolvedSite, ...ResolvedSite[]];
+    // Two wrappers of the SAME component are one capture, many mount points
+    // (legal). Two DIFFERENT components sharing an exported name would leave
+    // one of them silently baseline-less, so ambiguity fails loudly instead.
     const conflicting = sites.filter((site) => site.realFile !== primary.realFile);
     if (conflicting.length > 0) {
-      result.warnings.push(`remixable slot ${slot} is wrapped around two different components; kept ${portablePath(realRoot, primary.realFile)} and ignored ${conflicting.map((site) => `${portablePath(realRoot, site.file)}:${site.line}`).join(", ")}`);
+      const modules = [...new Set(sites.map((site) => portablePath(realRoot, site.realFile)))];
+      result.errors.push(`${portablePath(root, primary.file)}:${primary.line} — two different components both export "${slot}" (${modules.join(", ")}); rename one export so each remixable slot names one component`);
+      continue;
     }
     if (ignoreSlots.has(slot)) continue;
-    const kept = sites.filter((site) => site.realFile === primary.realFile);
-    const review = kept.some((site) => site.review);
-    if (review && kept.some((site) => !site.review)) {
+    const review = sites.some((site) => site.review);
+    if (review && sites.some((site) => !site.review)) {
       result.warnings.push(`remixable component ${slot} is wrapped both with and without review; capturing review: true`);
     }
     const baselineFile = path.resolve(remixableDir, `${slot}.json`);
     if (!isInside(remixableDir, baselineFile)) {
-      result.errors.push(`${portablePath(realRoot, primary.file)}:${primary.line} — remixable component name ${slot} is not a safe baseline filename; rename the component`);
+      result.errors.push(`${portablePath(root, primary.file)}:${primary.line} — remixable component name ${slot} is not a safe baseline filename; rename the component`);
       continue;
     }
     if (!review) {
       const signals = [...new Set([
         ...plumbingSignals(primary.source, primary.realFile),
-        ...kept.flatMap((site) => site.functionProps).map((name) => `receives the function-typed prop ${name}`),
+        ...sites.flatMap((site) => site.functionProps).map((name) => `receives the function-typed prop ${name}`),
       ])];
       if (signals.length > 0) {
         result.warnings.push(`remixable component ${slot} reaches into host plumbing (${signals.join("; ")}) — plumbing does not cross the fork boundary; consider <Remixable review> so approved remixes run natively in the page`);
@@ -468,6 +498,7 @@ export async function capturePins(
   }
   result.captured.sort();
   result.drifted.sort();
-  result.errors.sort();
+  // Errors keep walk order: file order, then source position within a file
+  // (a lexicographic sort would put page.tsx:10 before page.tsx:4).
   return result;
 }
