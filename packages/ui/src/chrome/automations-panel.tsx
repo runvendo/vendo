@@ -199,8 +199,11 @@ function RehearsalTimeline({
             + (simulated > 0 ? ` · ${simulated} simulated action${simulated === 1 ? "" : "s"} — nothing was executed` : " · nothing was executed")
             + (report.truncated === true ? " · showing the most recent firings" : "")}
       </div>
+      {/* Fixed height (not maxHeight): the firings box holds its size whatever
+          the count, so flipping 7d/30d only scrolls its inner content instead
+          of resizing the panel and reflowing every card below it. */}
       {newestFirst.length > 0 ? (
-        <div className="fl-act-body" style={{ maxHeight: 320, overflowY: "auto" }}>
+        <div className="fl-act-body" style={{ height: 320, overflowY: "auto" }}>
           {newestFirst.map(firing => {
             const key = firing.scheduledFor;
             const headline = firingHeadline(firing);
@@ -226,18 +229,24 @@ function RehearsalTimeline({
                         <Money cents={headline.totalCents} />
                       </strong>
                     ) : null}
-                    {hasDetail ? (
-                      <button
-                        type="button"
-                        aria-expanded={opened}
-                        aria-label={`${opened ? "Hide" : "Show"} details for the ${formatAuditTime(key)} firing`}
-                        onClick={() => setOpen(current => ({ ...current, [key]: !(current[key] ?? false) }))}
-                        style={{ border: "none", background: "none", color: "var(--vendo-fg-muted)", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: "0 2px" }}
-                      >
-                        {opened ? "▾" : "▸"}
-                      </button>
-                    ) : null}
                   </span>
+                  {/* The disclosure sits OUTSIDE .fl-act-sub: that class truncates its
+                      text with overflow:hidden + max-width:55%, which in a narrow host
+                      column clipped this control out of its box entirely — rendered but
+                      not hit-testable, so a real click landed on nothing and the row
+                      never expanded. As a row-level flex item (flex-shrink:0) it stays
+                      visible and clickable at any width; the text still ellipsises. */}
+                  {hasDetail ? (
+                    <button
+                      type="button"
+                      aria-expanded={opened}
+                      aria-label={`${opened ? "Hide" : "Show"} details for the ${formatAuditTime(key)} firing`}
+                      onClick={() => setOpen(current => ({ ...current, [key]: !(current[key] ?? false) }))}
+                      style={{ border: "none", background: "none", color: "var(--vendo-fg-muted)", cursor: "pointer", flexShrink: 0, fontSize: 11, lineHeight: 1, padding: "0 2px" }}
+                    >
+                      {opened ? "▾" : "▸"}
+                    </button>
+                  ) : null}
                 </div>
                 {opened ? (
                   <div>
@@ -477,7 +486,7 @@ export function AutomationsPanel() {
 
   return (
     <ChromeRoot>
-      <section aria-labelledby="vendo-automations-heading" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <section className="fl-auto-scroll" aria-labelledby="vendo-automations-heading" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <h2 id="vendo-automations-heading" className="fl-auto-title" style={{ margin: 0 }}>Automations</h2>
         {error ? <div role="alert" className="fl-error">{error}</div> : null}
         {automations.automations.length === 0 ? <p className="fl-auto-sub" style={{ margin: 0 }}>No automations yet.</p> : null}

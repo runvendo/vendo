@@ -1344,6 +1344,17 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .fl-page-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .fl-page-pane[hidden] { display: none; }
+/* The Automations panel owns its own scroll region — same shape as .fl-msglist.
+   .fl-page-pane bounds height (flex:1; min-height:0) but its own overflow is
+   visible, so under an overflow:hidden host a tall panel (expanded rehearsal /
+   standing-access lists) spilled below the fold with no scrollbar and no way to
+   reach the cards beneath. flex:1; min-height:0; overflow-y:auto gives it a
+   bounded, scrollable box; in an unbounded host the height resolves to content
+   and nothing scrolls, exactly as before. */
+.fl-auto-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+/* Children must never compress — without this a bounded box crushes the cards to
+   fit instead of overflowing into the scroll (mirrors .fl-msglist > *). */
+.fl-auto-scroll > * { flex-shrink: 0; }
 .fl-slot-empty { border: 1.5px dashed var(--vendo-border-strong); border-radius: var(--vendo-radius-lg);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
   padding: 24px; cursor: pointer; background: var(--vendo-glass-strong); color: var(--vendo-fg-muted);
