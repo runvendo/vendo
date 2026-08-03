@@ -195,19 +195,25 @@ for (const backend of backends()) {
       const opts = { idleMs: 30_000, now: base + 60_000 };
       await registerEphemeralSubject(made.store, "sess_erase_fail", base);
       const db = dbFor(made.store);
-      const original = db.query.bind(db);
+      // The cascade runs inside db.withTransaction (atomic erase), so the
+      // failure injects at that seam: the cascade's own query throws on the
+      // marker statement, everything else passes through.
+      const original = db.withTransaction.bind(db);
       let failed = false;
-      db.query = async (text, params) => {
-        if (text.includes("DELETE FROM vendo_threads") && params?.[0] === "sess_erase_fail") {
-          failed = true;
-          throw new Error("transient erase failure");
-        }
-        return original(text, params);
-      };
+      db.withTransaction = (work) =>
+        original((query) =>
+          work(async (text, params) => {
+            if (text.includes("DELETE FROM vendo_threads") && params?.[0] === "sess_erase_fail") {
+              failed = true;
+              throw new Error("transient erase failure");
+            }
+            return query(text, params);
+          }),
+        );
       try {
         await expect(sweepEphemeralSubjects(made.store, opts)).rejects.toThrow("transient erase failure");
       } finally {
-        db.query = original;
+        db.withTransaction = original;
       }
       expect(failed).toBe(true);
       // The subject is registered again and still sweep-eligible.

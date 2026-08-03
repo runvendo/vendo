@@ -239,4 +239,80 @@ for (const backend of backends()) {
       expect(await store.records("vendo_threads").get("thr_erase_by_app")).not.toBeNull();
     });
   });
+
+  describe(`${backend.name} 02-store §5 — the cascade is atomic`, () => {
+    let made: MadeBackend;
+
+    beforeAll(async () => {
+      made = await backend.make();
+      await made.store.ensureSchema();
+    });
+    afterAll(async () => { if (made) await made.cleanup(); });
+
+    it("a mid-cascade failure rolls the whole erase back — nothing is deleted", async () => {
+      const store = made.store;
+      const subject = "user_erase_atomic";
+
+      // Seed the subject across EARLY cascade tables — the ones the old
+      // non-transactional cascade had already destroyed by the time a late
+      // leg threw (the 2026-07-27 field failure).
+      const doc = appFixture("app_erase_atomic");
+      await store.records("vendo_apps").put({ id: doc.id, data: { subject, enabled: true, doc } });
+      await store.records(`app:${doc.id}:notes`).put({ id: "note_atomic", data: { body: "mine" } });
+      await store.blobs(`app:${doc.id}:files`).put("report.txt", new Uint8Array([1, 2, 3]));
+      await store.records("vendo_threads").put({ id: "thr_atomic", data: { subject, messages: [] } });
+      const event = auditFixture("aud_atomic", { principal: { kind: "user", subject } });
+      await store.records("vendo_audit").put({ id: event.id, data: event });
+
+      // Break the LAST legs the way production broke: the knowledge tables
+      // vanish mid-cascade (renamed, not dropped, so they can be restored).
+      await made.sql("ALTER TABLE vendo_knowledge_chunks RENAME TO vendo_knowledge_chunks_hidden");
+      try {
+        await expect(eraseStore(store).bySubject(subject)).rejects.toThrow();
+
+        // The failed cascade deleted NOTHING: every early-table row survives,
+        // so a retry (after the schema is healed) starts from a clean state
+        // instead of a half-erased subject with no report of what was lost.
+        expect(await store.records("vendo_apps").get(doc.id)).not.toBeNull();
+        expect(await store.records(`app:${doc.id}:notes`).get("note_atomic")).not.toBeNull();
+        expect(await store.blobs(`app:${doc.id}:files`).get("report.txt")).not.toBeNull();
+        expect(await store.records("vendo_threads").get("thr_atomic")).not.toBeNull();
+        expect(await store.records("vendo_audit").get(event.id)).not.toBeNull();
+      } finally {
+        await made.sql("ALTER TABLE vendo_knowledge_chunks_hidden RENAME TO vendo_knowledge_chunks");
+      }
+
+      // With the schema healed, the SAME erase call succeeds cleanly.
+      const report = await eraseStore(store).bySubject(subject);
+      expect(report.vendo_apps).toBe(1);
+      expect(report.vendo_records).toBe(1);
+      expect(report.vendo_blobs).toBe(1);
+      expect(report.vendo_threads).toBe(1);
+      expect(report.vendo_audit).toBe(1);
+      expect(await store.records("vendo_apps").get(doc.id)).toBeNull();
+    });
+
+    it("byApp is atomic the same way", async () => {
+      const store = made.store;
+      const doc = appFixture("app_erase_atomic_byapp");
+      await store.records("vendo_apps").put({
+        id: doc.id,
+        data: { subject: "user_atomic_byapp", enabled: true, doc },
+      });
+      await store.records(`app:${doc.id}:notes`).put({ id: "note_byapp", data: { body: "mine" } });
+
+      await made.sql("ALTER TABLE vendo_knowledge_docs RENAME TO vendo_knowledge_docs_hidden");
+      try {
+        await expect(eraseStore(store).byApp(doc.id)).rejects.toThrow();
+        expect(await store.records("vendo_apps").get(doc.id)).not.toBeNull();
+        expect(await store.records(`app:${doc.id}:notes`).get("note_byapp")).not.toBeNull();
+      } finally {
+        await made.sql("ALTER TABLE vendo_knowledge_docs_hidden RENAME TO vendo_knowledge_docs");
+      }
+
+      const report = await eraseStore(store).byApp(doc.id);
+      expect(report.vendo_apps).toBe(1);
+      expect(report.vendo_records).toBe(1);
+    });
+  });
 }

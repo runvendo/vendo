@@ -31,6 +31,13 @@ export interface Db {
       the advisory lock, and pulling `pg` into the shared modules would drag
       it into every entry's bundle graph. */
   withSchemaLock<T>(work: (query: Query) => Promise<T>): Promise<T>;
+  /** One transaction: every statement `work` issues through the handed query
+      commits together or not at all. Exists for the erase cascade (02-store
+      §5) — its sequential DELETEs used to run bare, so a mid-cascade failure
+      left a subject HALF-erased with no report of what was destroyed;
+      rollback turns that into a clean retry. On the handle for the same
+      bundle-graph reason as withSchemaLock. */
+  withTransaction<T>(work: (query: Query) => Promise<T>): Promise<T>;
 }
 
 const ADVISORY_LOCK_KEY = 7_461_001;
@@ -61,6 +68,37 @@ export function createPostgresDb(url: string): Db {
     },
     withSchemaLock(work) {
       return withAdvisoryLock(url, ADVISORY_LOCK_KEY, work);
+    },
+    // A dedicated Client, not the Pool: Pool.query has no statement affinity,
+    // and BEGIN/COMMIT must see one connection (same pattern as the schema
+    // lock's session-scoped client).
+    async withTransaction(work) {
+      if (closed) throw new Error("[vendo] store is closed");
+      const client = new Client({ connectionString: url });
+      await client.connect();
+      const query: Query = async (text, params = []) => {
+        const result = await client.query(text, params);
+        return { rows: result.rows as Record<string, unknown>[] };
+      };
+      try {
+        await query("BEGIN");
+        try {
+          const result = await work(query);
+          await query("COMMIT");
+          return result;
+        } catch (error) {
+          // Best-effort: if the connection itself died, the server aborts
+          // the transaction anyway — surface the original error.
+          try {
+            await query("ROLLBACK");
+          } catch {
+            /* noop */
+          }
+          throw error;
+        }
+      } finally {
+        await client.end();
+      }
     },
   };
 }
