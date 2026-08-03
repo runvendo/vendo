@@ -61,15 +61,29 @@ minimumReleaseAgeExclude:
 # pnpm 11 no longer reads the `pnpm` field in package.json; overrides live here.
 overrides:
   "@types/react": "^19.2.0"
-  # Security floors (2026-07-21 advisories): fast-uri GHSA-v2hh-gcrm-f6hx,
-  # sharp/libvips GHSA-f88m-g3jw-g9cj — both reach us only via examples/demos.
-  # fast-uri floor raised 3.1.4 -> 4.1.2 for the 2026-08-03 host-confusion
-  # advisory GHSA-7p8r-x3mc-p8w7 (>=4.0.0 <4.1.2). This entry was already an
-  # unbounded global floor, so every consumer (ajv, ajv-formats) was resolving
-  # to the same 4.1.1 anyway — raising the floor moves that single version to
-  # the patched one rather than widening the override's reach.
-  "fast-uri": ">=4.1.2"
+  # Security floor (2026-07-21 advisory): sharp/libvips GHSA-f88m-g3jw-g9cj.
+  # This one really does reach us only via examples/demos.
   "sharp": ">=0.35.0"
+  # fast-uri: floor 3.1.4 (GHSA-v2hh-gcrm-f6hx, 2026-07-21) raised to 4.1.2 for
+  # the 2026-08-03 host-confusion advisory GHSA-7p8r-x3mc-p8w7 (>=4.0.0 <4.1.2).
+  #
+  # This is NOT examples-only, as this block used to claim. `pnpm why --prod`
+  # puts it in the published trees of @vendoai/{vendo,mcp,engine,apps,harnesses}:
+  # vendo depends on ajv and ajv-formats directly, mcp on
+  # @modelcontextprotocol/sdk>ajv, and engine/apps/harnesses on
+  # @anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>ajv. Not exploitable
+  # today — ajv resolves $ref/$id in schemas we author, not attacker-supplied
+  # ones, and nothing authorizes off the parsed authority — but an advisory that
+  # ships in the tarballs should not be filed under "demos only".
+  #
+  # Bounded to <5. ajv declares `fast-uri: ^3.0.1`, so this floor is already
+  # outside its consumer's declared range: the unbounded ">=3.1.4" is exactly
+  # what walked the tree across a major, months ago, with nobody deciding to.
+  # 4.x has been in the lockfile and green since July so this does not revert
+  # it, but the next major must not arrive the same silent way. Every other
+  # security floor added on 2026-08-03 is bounded; this is the last one that
+  # was not. Drop the bound only after checking what ajv actually supports.
+  "fast-uri": ">=4.1.2 <5"
   # 2026-07-23 advisories: Auth.js fail-open + email-normalizer criticals
   # (via demo-bank), Next.js App Router middleware-bypass + DoS highs
   # (examples/demos/fixtures).
@@ -81,22 +95,31 @@ overrides:
   "postcss@<8.5.18": ">=8.5.18"
   # 2026-08-03 advisory: brace-expansion DoS via unbounded intermediate arrays
   # bypassing the CVE-2026-14257 mitigation, GHSA-rgw5-rvv9-x895 (<1.1.18 and
-  # >=4.0.0 <5.0.9). Reaches the prod graph only transitively, through every
-  # minimatch line at once: e2b>glob>minimatch@10 (demo-bank's sandbox),
-  # mastra>archiver>readdir-glob>minimatch@9, mastra>serve-handler>minimatch@3.
+  # >=4.0.0 <5.0.9). Reaches the prod graph only transitively:
+  # e2b>glob@11>minimatch@10 (demo-bank's sandbox) and
+  # mastra>archiver>readdir-glob>minimatch@10 are both the 5.x line;
+  # mastra>serve-handler>minimatch@3 is the 1.x line. minimatch@9 is NOT on
+  # either of those paths — its only consumer in the tree is test-exclude
+  # (@vitest/coverage-v8), which is why `pnpm audit --prod` never flagged the
+  # 2.x copy. The 2.x floor below is dev-tooling hygiene, not a prod fix.
   #
   # Floored PER MAJOR LINE, not globally, because brace-expansion 5.x is
   # ESM-first and swapping it under minimatch@3 breaks that CJS consumer at
   # runtime (`expand is not a function`). The 1.x/2.x floors are the upstream
   # backports, which stay plain-CJS. These also close the older
   # GHSA-mh99-v99m-4gvg (>=1.1.17 / >=2.1.3 / >=5.0.8), whose ignore entry is
-  # deleted above — 2.x is pinned solely to satisfy that older advisory, since
-  # the tree's 2.1.2 predates its backport.
+  # deleted above.
   # Both sides of each pair are bounded on purpose: an unbounded ">=1.1.18"
   # right-hand side resolves to the newest brace-expansion overall (5.x), which
   # is precisely the cross-major swap that breaks minimatch@3 — verified.
+  #
+  # The 2.x floor is 2.1.4, not GHSA-mh99's 2.1.3: rgw5's own 2.x patch is
+  # 2.1.4 (vulnerable range >=2.0.0 <2.1.4), so a 2.1.3 floor would still admit
+  # a version vulnerable to the advisory this block is named for. Resolution is
+  # unchanged — ">=2.1.3 <3" already picked 2.1.4 — this just stops the floor
+  # from permitting a hole it silently allowed.
   "brace-expansion@<1.1.18": ">=1.1.18 <2"
-  "brace-expansion@>=2 <2.1.3": ">=2.1.3 <3"
+  "brace-expansion@>=2 <2.1.4": ">=2.1.4 <3"
   "brace-expansion@>=4 <5.0.9": ">=5.0.9 <6"
   # 2026-08-03 advisory: undici cross-user information disclosure + parse-time
   # crash via degenerate private cache directives, GHSA-4cwx-7wf7-3272
@@ -106,8 +129,14 @@ overrides:
   "undici@>=7 <7.29.0": ">=7.29.0 <8"
   # 2026-08-03 advisory: ip-address parses leading-zero octets as decimal while
   # resolvers read them as octal, giving an SSRF / trust-boundary bypass,
-  # GHSA-mwp4-54f8-5fhr (<=10.3.0). Reaches prod only through
-  # mastra>@modelcontextprotocol/sdk>express-rate-limit. Left side scoped to the
+  # GHSA-mwp4-54f8-5fhr (<=10.3.0). Arrives via
+  # @modelcontextprotocol/sdk>express-rate-limit — which is not only mastra's:
+  # `pnpm why --prod` puts it in the published @vendoai/{mcp,engine,apps,
+  # harnesses,vendo} trees too. Not exploitable today (the consumer is
+  # express-rate-limit's IPv4 key generator, so the worst case is bucket
+  # confusion from a spoofed X-Forwarded-For, not an authz decision), but
+  # ip-address is the library an SSRF allowlist would be built on, so a
+  # known-bad copy should not ride along in the tarballs. Left side scoped to the
   # 10.x line that is actually installed rather than the advisory's open-ended
   # "<=10.3.0", so a hypothetical 9.x consumer is not dragged across a major.
   "ip-address@>=10 <10.3.1": ">=10.3.1 <11"
