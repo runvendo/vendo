@@ -267,7 +267,7 @@ describe("parseExpression totality", () => {
       "{".repeat(200_000),
       "\\".repeat(999),
       '"' + "\\".repeat(999),
-      " ￿\uD800",
+      "\0￿\uD800",
       "{ a: [ } ]",
       "state.",
       "|",

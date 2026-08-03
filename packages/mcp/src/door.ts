@@ -944,7 +944,7 @@ function projectAppsOpenOutput(
   return projected;
 }
 function replayKey(tool: string, args: Record<string, unknown>): string {
-  return `${tool} ${canonicalJson(args)}`;
+  return `${tool}\0${canonicalJson(args)}`;
 }
 
 /** Stable JSON with lexicographically-sorted object keys, so two structurally
@@ -1072,8 +1072,8 @@ async function readHostIdentity(): Promise<HostIdentity> {
       identityFallbackWarned = true;
       console.warn(
         `[vendo] mcp door: could not read a product name from ${path ?? "the host package"} (${reason}); `
-        + "the server card and the connect page will say \"vendo\". Pass `mcp: { productName }` "
-        + "or run the door from the host's package root.",
+        + "the server card and the connect page will say \"vendo\". Set `name` in the host's "
+        + "package.json or run the door from the host's package root.",
       );
     }
     return fallback;
