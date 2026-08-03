@@ -330,7 +330,7 @@ describe("extractGraphql — SDL sources", () => {
     const result = await extractGraphql(root);
     const updated = result.tools.find((tool) => binding(tool).operation === "pollUpdated")!;
     expect(updated.disabled).toBe(true);
-    expect(updated.risk).toBe("destructive");
+    expect(updated.risk).toBe("ungraded");
     expect(updated.note).toContain("subscriptions");
     expect(binding(updated).type).toBe("mutation");
     expect(result.warnings.some((warning) => warning.includes("pollUpdated"))).toBe(true);
@@ -570,7 +570,7 @@ export class TagsResolver {
     const { tools } = await extractGraphql(root);
     const changed = tools.find((tool) => binding(tool).operation === "invoiceChanged")!;
     expect(changed.disabled).toBe(true);
-    expect(changed.risk).toBe("destructive");
+    expect(changed.risk).toBe("ungraded");
     expect(changed.note).toContain("subscriptions");
   });
 

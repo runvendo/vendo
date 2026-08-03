@@ -535,7 +535,10 @@ class GuardImplementation implements VendoGuard {
     }
 
     if (draft.action === "run") {
-      const write = effectiveDescriptor.risk === "write" || effectiveDescriptor.risk === "destructive";
+      // `ungraded` spends the write budget too: the budget exists to bound how
+      // much a single run can change, and a tool nobody has graded is exactly
+      // the one we cannot say is harmless.
+      const write = effectiveDescriptor.risk !== "read";
       const runKey = ctx.trigger?.runId ?? ctx.sessionId;
       const writes = this.#writeCounts.get(runKey)?.count ?? 0;
       const writesTripped = write && writes >= this.#maxWritesPerRun;

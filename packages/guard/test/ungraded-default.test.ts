@@ -56,6 +56,48 @@ describe("ungraded asks by default (D3)", () => {
     });
   });
 
+  it("makes every preset treat ungraded exactly as it treats destructive", async () => {
+    // The inversion this pins: with `ungraded` falling through to the guard's
+    // ask-default, `readonly` — the one posture that BLOCKS a known write —
+    // would have offered an approve button for a tool nobody has graded.
+    const cases = [
+      { preset: "cautious", expected: "ask" },
+      { preset: "readonly", expected: "block" },
+      { preset: "autopilot", expected: "run" },
+    ] as const;
+    for (const { preset, expected } of cases) {
+      const guard = createGuard({ store: createMemoryStore(), policy: preset });
+      const ungraded = descriptor("ungraded");
+      const destructive = descriptor("destructive");
+      const verdict = await guard.check(call(ungraded.name), ungraded, context());
+      expect(verdict, `${preset} on ungraded`).toMatchObject({ action: expected, decidedBy: "rule" });
+      // Stated as the rule it comes from: same posture as destructive, always.
+      expect((await guard.check(call(destructive.name), destructive, context())).action)
+        .toBe(verdict.action);
+    }
+  });
+
+  it("spends the per-run write budget — an ungraded call is not a free call", async () => {
+    const guard = createGuard({
+      store: createMemoryStore(),
+      // A host that opted into running ungraded still gets the budget.
+      policy: { rules: [{ match: { risk: "ungraded" }, action: "run" }] },
+      breakers: { maxWritesPerRun: 1, maxCallsPerMinute: 100 },
+    });
+    const ungraded = descriptor("ungraded");
+    const read = descriptor("read");
+    const run = context({ trigger: { runId: "run_budget", kind: "schedule" } });
+
+    // Reads are free, as always.
+    await expect(guard.check(call(read.name, {}, "r1"), read, run)).resolves.toMatchObject({ action: "run" });
+    await expect(guard.check(call(ungraded.name, {}, "u1"), ungraded, run)).resolves.toMatchObject({ action: "run" });
+    // The budget is spent: the second ungraded call trips the breaker.
+    await expect(guard.check(call(ungraded.name, {}, "u2"), ungraded, run)).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "breaker",
+    });
+  });
+
   it("keeps a standing grant working for an ungraded tool the user already approved", async () => {
     const store = createMemoryStore();
     const d = descriptor("ungraded", { name: "host_pay_invoice" });

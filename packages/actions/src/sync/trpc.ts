@@ -354,7 +354,10 @@ export async function extractTrpc(root: string): Promise<TrpcExtractResult> {
           name,
           description: `tRPC procedure ${procedure} could not be classified`,
           inputSchema: { type: "object", properties: {} },
-          risk: "destructive",
+          // D2 — nothing spoke, so nothing is graded. `disabled` keeps it out of the
+          // agent's hands; `ungraded` keeps it counted in doctor's tally and asking
+          // rather than running if a human ever re-enables it.
+          risk: "ungraded",
           disabled: true,
           note: `${reason}; enable only after review; overrides.json can flip disabled/risk`,
           binding: bindingFor(procedure, "mutation", mount.mount, transformer),

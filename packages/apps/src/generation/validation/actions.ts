@@ -19,7 +19,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  *  (cancel/clear/close) are deliberately excluded. */
 export const SUBMIT_LABEL = /\b(submit|save|create|add|send|remind|reminder|transfer|pay|confirm|update|delete|remove|apply|schedule|book|post|approve|generate|register|enroll|invite|assign)\b/i;
 
-export const isMutatingRisk = (risk: string | undefined): boolean => risk === "write" || risk === "destructive";
+/** Might this call change something? `ungraded` counts: the fabricated-arg
+ *  checks below exist to stop a generated surface from inventing inputs to a
+ *  state-changing tool, and "nobody has graded it" is not a reason to skip
+ *  them — it is the reason to run them. */
+export const isMutatingRisk = (risk: string | undefined): boolean =>
+  risk !== undefined && risk !== "read";
 
 export const hasPayload = (payload: unknown): boolean =>
   isRecord(payload) ? Object.keys(payload).length > 0 : payload !== undefined && payload !== null;

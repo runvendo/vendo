@@ -220,7 +220,7 @@ describe("extractTrpc", () => {
     const result = await extractTrpc(root);
     const watch = result.tools.find((tool) => (tool.binding as TrpcBinding).procedure === "polls.watch")!;
     expect(watch.disabled).toBe(true);
-    expect(watch.risk).toBe("destructive");
+    expect(watch.risk).toBe("ungraded");
     expect(watch.note).toContain("subscriptions");
     expect(result.warnings.some((warning) => warning.includes("polls.watch"))).toBe(true);
   });

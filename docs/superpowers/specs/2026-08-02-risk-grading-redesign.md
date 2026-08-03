@@ -59,8 +59,15 @@ No code path may conclude anything from a tool's *name*. Delete:
 
 ### D4 — Not-knowing must be felt
 
-- `vendo status` and `vendo doctor` report the count plainly:
-  `catalog: 34/61 tools ungraded — run \`vendo sync\` with a model key to grade`.
+- `vendo doctor` reports the count plainly:
+  `catalog: 34/61 tools ungraded — run \`vendo sync\` with a model key to grade`
+  (error code `E-TOOLS-003`, anchored on the verify page).
+
+  **Amended at build time (2026-08-02):** this bullet originally said "`vendo
+  status` and `vendo doctor`". There is no `vendo status` command — the CLI is
+  `try / init / login / doctor / sync / eject / knowledge / mcp / cloud /
+  config` — so doctor is the whole status surface, and no command was invented
+  to match the prose.
 - `vendo init` unchanged in shape (one consent question, judge on the ladder);
   when the judge is skipped, init says what the consequence is: ungraded
   mutations will ask until the catalog is graded.
@@ -99,7 +106,8 @@ exception to the no-suffixes law, and this is the same shape: read old, write ne
    returns nothing.
 2. A synced catalog with no judge run: every non-protocol-graded tool is
    `ungraded`; calling any ungraded tool parks with `decidedBy: "default"` ask;
-   `vendo status` reports the ungraded count.
+   `vendo doctor` reports the ungraded count (amended from `vendo status`,
+   which does not exist — see D4).
 3. `payInvoice` (POST, no judge): `ungraded` → asks. After the judge runs:
    `write` + `confirmEach` → still asks, every call, grants never consulted.
 4. A GET route with no read-shaped anything and no judge: `ungraded` (not `read`).

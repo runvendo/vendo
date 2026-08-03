@@ -557,7 +557,7 @@ describe("pages route verb evidence", () => {
     expect(tools).toEqual([expect.objectContaining({
       name: "host_opaque_unclassified",
       disabled: true,
-      risk: "destructive",
+      risk: "ungraded",
       binding: expect.objectContaining({ method: "POST", path: "/api/opaque" }),
     })]);
     expect(warnings).toEqual([expect.stringContaining("/api/opaque")]);
@@ -567,7 +567,7 @@ describe("pages route verb evidence", () => {
         name: "host_opaque_unclassified",
         description: "Route /api/opaque could not be classified",
         inputSchema: { type: "object", properties: {} },
-        risk: "destructive",
+        risk: "ungraded",
         disabled: true,
         note: "pages handler has no supported HTTP method evidence; enable only after review; overrides.json can flip disabled/risk",
         binding: { kind: "route", method: "POST", path: "/api/opaque", argsIn: "body" },

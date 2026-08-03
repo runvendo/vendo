@@ -57,7 +57,7 @@ describe("vendoSync host fixture", () => {
     expect(toolsFile.tools.some((tool) => String(tool.binding?.path).startsWith("/api/vendo"))).toBe(false);
     expect(byName.get("host_export_data_unclassified")).toMatchObject({
       disabled: true,
-      risk: "destructive",
+      risk: "ungraded",
       binding: { kind: "route", method: "POST", path: "/api/export-data", argsIn: "body" },
     });
     expect(byName.get("host_export_data_unclassified")?.note).toContain("enable only after review");

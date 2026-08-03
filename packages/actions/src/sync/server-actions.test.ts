@@ -312,7 +312,7 @@ describe("extractServerActions", () => {
     const { byKey } = await extractFixture();
     const wrapped = byKey.get("src/actions/misc.ts#wrapped")!;
     expect(wrapped.disabled).toBe(true);
-    expect(wrapped.risk).toBe("destructive");
+    expect(wrapped.risk).toBe("ungraded");
     expect(wrapped.note).toMatch(/overrides\.json/);
   });
 
