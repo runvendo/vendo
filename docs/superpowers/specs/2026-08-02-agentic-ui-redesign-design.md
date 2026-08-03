@@ -166,6 +166,34 @@ Open detail from this round: where automations live in the center (the
 sidebar library was rejected; candidates: a quiet "running for you" line
 under the app shelf, or conversation-only).
 
+### 11. The design language: neutral (pick S1)
+
+ChatGPT/Codex is the taste reference for STYLE ONLY — the structure stays
+ours (a literal Codex clone was rejected as "too much"). The default chrome
+adopts the neutral language:
+
+- Pure grayscale; ONE black accent. No frosted glass, no tints.
+- Borders at ~5% alpha — felt, not seen; hairline dividers.
+- Big soft radii (composer ~26px, cards ~18px, rows ~10px).
+- System type at calm weights (460–550); display greeting ~30px/500;
+  secondary text in muted grays, never smaller than legible.
+- Shadow ONLY where it carries meaning (the composer card, hover-lift on
+  tiles); everything else is flat.
+- Airy: sidebar rows ~14.5px with comfortable padding; generous column
+  margins; the centered column caps at ~660px.
+
+Final center structure as styled (the stripped skeleton): sidebar = New
+chat · Needs-you (only while non-empty, numbered badge) · chats grouped by
+recency (running rows pulse) · user row. Main = greeting, two personalized
+suggestion ROWS (noticings with icons — never generic chips), the live app
+shelf (HB), the composer card. Rejected in this round: S2 warm-serif
+(Anthropic register), S3 crisp-editorial (Linear register), and the
+Codex-literal chrome (search/bell, Scheduled nav, mode chip, account
+selector — parked as structure candidates, not styled in).
+
+Hosts still re-theme everything via the existing VendoTheme tokens; S1 is
+the out-of-the-box feel, not a mandate.
+
 ## What this is NOT
 
 No new surfaces (no inbox, no notification center), no auto-folding panel,
