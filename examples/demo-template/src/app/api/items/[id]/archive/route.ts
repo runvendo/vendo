@@ -1,8 +1,8 @@
 // EXAMPLE MUTATION — the "real action with consent" beat acts through this.
-// `vendo sync .` derives this tool's risk from the method + operationId
-// ("archive" is a destructive word → destructive), so the agent only reaches
-// it after the visitor approves the consent card. policy.json asks on both
-// write and destructive, so a renamed mutation stays consent-gated.
+// `vendo sync .` never grades from names: a plain POST carries no protocol
+// fact, so this tool stays ungraded (which ASKS) until the AI judge grades it
+// `write` in judgments.json. policy.json asks on both write and destructive,
+// so the agent only reaches it after the visitor approves the consent card.
 import { archiveItem, ItemError } from "@/server/items"
 import { ok, notFound } from "@/server/http"
 

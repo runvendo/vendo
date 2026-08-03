@@ -10,3 +10,12 @@ This directory follows the frozen host-side contract in 09-vendo.md:
 - data/ is local store state and is gitignored.
 
 Run vendo sync after changing the host API.
+
+## Why overrides.json regrades audience to end-user
+
+The AI judge graded the firm-data tools `audience: operator`, which fail-closes
+them to disabled. That grade conflated firm staff with product operator:
+Cadence's end users ARE firm staff (it is an accounting product FOR accounting
+firms), so the human layer re-grades those nine tools `end-user` and wakes
+them (`disabled: false` — the audience fail-close is applied at the judgment
+layer, before overrides). Risk and confirmEach grades are untouched.
