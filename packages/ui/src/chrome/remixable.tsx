@@ -266,7 +266,12 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
                 type="button"
                 onClick={() => {
                   onMenuToggle(false);
-                  const opened = openVendoConversation({ prompt: `Update my ${slot} remix: `, send: false });
+                  // The app id rides IN the prefill text: the agent's app tools
+                  // are appId-keyed and no list tool exists, so a bare "my X
+                  // remix" prompt dead-ends in "which app?" (W1e E2E finding).
+                  // The grounding-chip channel died with the final shape; the
+                  // visible, user-editable prompt is the honest carrier.
+                  const opened = openVendoConversation({ prompt: `Update my ${slot} remix (app ${appId}): `, send: false });
                   if (!opened && developmentMode()) {
                     console.warn(`[vendo] Remixable "${slot}": "Open in panel" opens the conversation surface — mount a VendoOverlay for it to land in.`);
                   }
