@@ -98,7 +98,10 @@ export interface WireDeps {
     present(ctx: RunContext): Promise<ToolOutcome>;
     actAs(): Promise<ToolOutcome>;
   };
-  mcp: boolean;
+  /** The mcp block's /status posture (connections-posture pattern): false
+      when the door is closed, "local" when it serves its own OAuth surface,
+      "broker" when an external authorization server fronts it. */
+  mcp: "local" | "broker" | false;
   door?: McpDoor;
   /** True only in a development composition — gates the local injection seams. */
   development: boolean;
