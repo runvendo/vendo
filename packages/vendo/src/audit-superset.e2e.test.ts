@@ -122,10 +122,22 @@ const transcript = async (vendo: Vendo): Promise<UIMessage[]> => {
  * mid-turn. Polled because the interactive `call()` blocks INSIDE the turn: the
  * approval only exists once the guard has parked it, which happens while this
  * request is still in flight.
+ *
+ * `turnFinished` is the stop condition, NOT a wall clock. This poll used to give
+ * up after 10s — a second, invisible speed limit inside a test whose own budget
+ * is 30s. Under full-suite contention the file takes ~62s and the turn is still
+ * legitimately in flight at 10s, so the poll rejected, the approval was never
+ * decided, the turn never returned, and the run reported an unhandled rejection
+ * plus a generic 30s timeout — none of which named the real cause. The turn
+ * cannot complete until the approval is decided, so "the turn finished and
+ * nothing was parked" is the only honest failure here; vitest's testTimeout stays
+ * the single hang-detector.
  */
-async function tapApprovalWhenItAppears(vendo: Vendo): Promise<string> {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
+async function tapApprovalWhenItAppears(
+  vendo: Vendo,
+  turnFinished: () => boolean,
+): Promise<string> {
+  while (!turnFinished()) {
     const listed = await vendo.handler(
       new Request("https://host.test/api/vendo/approvals", {
         headers: { "content-type": "application/json" },
@@ -148,7 +160,7 @@ async function tapApprovalWhenItAppears(vendo: Vendo): Promise<string> {
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error("no approval was ever parked for the write tool");
+  throw new Error("the turn finished and no approval was ever parked for the write tool");
 }
 
 interface TurnResult {
@@ -214,19 +226,31 @@ async function runTheTurn(): Promise<TurnResult> {
   vendo.actions.add(hostTools());
 
   // The turn and the tap race on purpose — that IS the interactive approval.
-  const tap = tapApprovalWhenItAppears(vendo);
-  const turn = await vendo.handler(
-    new Request("https://host.test/api/vendo/threads", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        threadId: THREAD,
-        message: { id: "m1", role: "user", parts: [{ type: "text", text: "pay Acme and check my reports" }] },
-      }),
+  // Awaited together so neither side's rejection can float: the tap used to be
+  // started bare, and when it gave up first its throw became an unhandled
+  // rejection that vitest reported instead of the actual failure.
+  let turnFinished = false;
+  const tap = tapApprovalWhenItAppears(vendo, () => turnFinished);
+  const [turn] = await Promise.all([
+    (async () => {
+      const response = await vendo.handler(
+        new Request("https://host.test/api/vendo/threads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            threadId: THREAD,
+            message: { id: "m1", role: "user", parts: [{ type: "text", text: "pay Acme and check my reports" }] },
+          }),
+        }),
+      );
+      await response.text();
+      return response;
+    })().finally(() => {
+      turnFinished = true;
     }),
-  );
+    tap,
+  ]);
   expect(turn.status).toBe(200);
-  await turn.text();
   const approvalId = await tap;
 
   return { vendo, store, results, approvalId };

@@ -9,6 +9,12 @@ dist
 .next/
 *.log
 
+# Next rewrites this on every dev/build boot to point at whichever distDir ran
+# last, so a tracked copy is dirty after every test run — over a hundred stashes
+# in this repo's history are named for exactly that churn. Every other Next app
+# here already leaves it untracked; fixtures/host-app was the lone exception.
+next-env.d.ts
+
 # misc
 corpus/.repos/
 

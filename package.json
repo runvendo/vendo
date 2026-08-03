@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.10.0",
   "scripts": {
     "build": "turbo run build",
-    "test": "turbo run test",
+    "test": "turbo run test --continue --concurrency=4",
     "conformance": "turbo run conformance --filter=@vendoai/core --filter=@vendoai/store --filter=@vendoai/agent",
     "typecheck": "turbo run typecheck",
     "lint": "node scripts/dependency-guard.mjs && node scripts/portability-gate.mjs && turbo run lint",

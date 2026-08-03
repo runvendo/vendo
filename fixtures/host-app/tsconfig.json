@@ -50,7 +50,9 @@
     ".next/integration-browser/dev/dev/types/**/*.ts",
     ".next/integration-browser/types/**/*.ts",
     ".next/actions-e2e/dev/types/**/*.ts",
-    ".next/actions-e2e/dev/dev/types/**/*.ts"
+    ".next/actions-e2e/dev/dev/types/**/*.ts",
+    ".next/app/types/**/*.ts",
+    ".next/app/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -49,3 +49,31 @@ generated UI in a sandboxed, brand-native surface.
   PR. Tests and typecheck alone don't count.
 - `pnpm build && pnpm test && pnpm typecheck && pnpm lint` must be green
   before any PR.
+
+## Tests
+
+- A harness that mocks the counterparty proves nothing. When a feature spans
+  a producer and a consumer, test the SEAM: write through the real write path
+  and read back through the real read path, with no stub on either side. The
+  host-component previews shipped four times with a green suite and a dead
+  feature because the producer and the consumer each mocked the other, so
+  they could never disagree. Anything this repo emits for `vendo-web` to read
+  (`.vendo/components/`, `vendo_*` collections, blob namespaces) is one of
+  those seams, and the console's copy of the schema is a mirror — see the
+  testing section of `vendo-web/AGENTS.md` for the full lesson.
+- Two suites must not share a directory that either of them deletes.
+  `next build` wipes its whole `distDir`, so a fixture dev server's dist dir
+  is a SIBLING of the build's, never a child. Nesting them took out all 36
+  `automations-e2e` tests on every full-suite run while each suite passed
+  alone, and which suite lost varied by scheduling — which read as flake.
+- A poll inside a test must not have a wall-clock budget tighter than the
+  test's own timeout. The test timeout is the hang-detector; a tighter inner
+  budget is a second, invisible speed limit that reports a product bug when
+  the machine is merely busy.
+- `pnpm test` runs turbo with `--continue` and `--concurrency=4`, the same
+  bound CI has used since #340. `--continue` so one red package never hides
+  every other package's result; the bound because unbounded parallelism runs
+  ~27 vitest workers at once on a 12-core laptop (load average ~150) and the
+  full-stack suites in `packages/vendo` then miss their 30s budget on work
+  that takes 5s alone. A timeout is a hang-detector; do not raise one to buy
+  headroom the machine never had.
