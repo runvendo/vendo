@@ -864,14 +864,9 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
     // The HOST-driven sweep (hosted-store one-pager): list stale candidates,
     // claim each (the wire claim repeats the idleness predicate — a re-touch
     // defeats it, same serialization as sweepEphemeralSubjects), and finish
-    // every claimed subject through the erase cascade.
-    //
-    // Claim stays BEFORE erase: it is the single-winner election AND the
-    // re-check that a subject touched since the stale scan is spared. Erasing
-    // first would race a visitor who came back mid-sweep and delete a live
-    // session's data. The cost is that a claim commits by deleting the
-    // registry row, so a failed erase would leave the subject's rows
-    // unreachable by every later stale scan — compensated below.
+    // every claimed subject through the erase cascade. A claim COMMITS by
+    // deleting the registry row, so a failed erase would leave the subject's
+    // rows unreachable by every later stale scan — compensated below.
     async sweep(idleMs, now) {
       if (doorsMissing) return [];
       const evicted: string[] = [];

@@ -106,9 +106,7 @@ export const systemRoutes: RouteEntry[] = [
     // broker calls this same surface. The legs settle independently so one
     // failing can never suppress the others; any failure still answers 500 so
     // a retrying cron comes back (all three are idempotent within their
-    // windows). `sweep()` is the REQUEST's one pass — if the amortized
-    // pre-routing leg already ran it, this awaits that same pass rather than
-    // scanning the registry twice, and inherits its failure.
+    // windows).
     const [runs, schedules, sessions] = await Promise.allSettled([
       deps.automations.tick(),
       deps.apps.schedules.tick(),

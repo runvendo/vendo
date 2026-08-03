@@ -438,14 +438,19 @@ describe("hosted store: the authenticated tick drives the session sweep", () => 
     const first = await h.vendo.handler(listThreads());
     expect(first.status).toBe(200);
     const staleSubject = (h.wireCalls("/sessions/register")[0]!.json as { subject: string }).subject;
-
-    // Past the TTL, but nowhere near a sweep interval: no request-driven sweep.
-    h.setNow(5_000);
     expect(h.wireCalls("/sessions/stale")).toHaveLength(0);
 
-    const ticked = await tick(h.vendo);
-    expect(ticked.status).toBe(200);
-    expect(h.wireCalls("/sessions/stale")[0]!.json).toEqual({ idleMs: 1_000, now: 5_000 });
+    // Inside the TTL: the tick lists candidates and finds nothing to claim.
+    h.setNow(500);
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect(h.wireCalls("/sessions/stale")).toHaveLength(1);
+    expect(h.wireCalls("/sessions/claim")).toHaveLength(0);
+    expect(h.console_.eraseCalls).toEqual([]);
+
+    // Past it, still nowhere near a sweep interval: only the forced pass runs.
+    h.setNow(5_000);
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect(h.wireCalls("/sessions/stale").at(-1)!.json).toEqual({ idleMs: 1_000, now: 5_000 });
     expect(h.wireCalls("/sessions/claim")[0]!.json).toEqual({
       subject: staleSubject,
       idleMs: 1_000,
@@ -453,6 +458,17 @@ describe("hosted store: the authenticated tick drives the session sweep", () => 
     });
     expect(h.console_.eraseCalls).toEqual([{ subject: staleSubject }]);
     expect(h.console_.sessions.has(staleSubject)).toBe(false);
+
+    // A second tick at the same clock adds nothing — the claim leg is a
+    // single-winner election on the console.
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect(h.console_.eraseCalls).toHaveLength(1);
+
+    // …and an unauthenticated one drives no sweep at all.
+    const scans = h.wireCalls("/sessions/stale").length;
+    expect((await tick(h.vendo, "Bearer wrong")).status).toBe(401);
+    expect(h.wireCalls("/sessions/stale")).toHaveLength(scans);
+    expect(h.console_.eraseCalls).toHaveLength(1);
   });
 
   it("runs the registry scan ONCE per tick when the amortized leg also fires", async () => {
@@ -505,37 +521,6 @@ describe("hosted store: the authenticated tick drives the session sweep", () => 
       .toEqual([expect.stringContaining("sessions:")]);
   });
 
-  it("is idempotent across a second tick and never sweeps a live session", async () => {
-    vi.stubEnv("VENDO_TICK_SECRET", TICK_SECRET);
-    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 10 ** 9 });
-    h.setNow(0);
-    expect((await h.vendo.handler(listThreads())).status).toBe(200);
-
-    // Inside the TTL: the tick lists candidates and finds nothing to claim.
-    h.setNow(500);
-    expect((await tick(h.vendo)).status).toBe(200);
-    expect(h.wireCalls("/sessions/stale")).toHaveLength(1);
-    expect(h.wireCalls("/sessions/claim")).toHaveLength(0);
-    expect(h.console_.eraseCalls).toEqual([]);
-
-    // Past it: one erase, and a second tick at the same clock adds nothing —
-    // the claim leg is a single-winner election on the console.
-    h.setNow(5_000);
-    expect((await tick(h.vendo)).status).toBe(200);
-    expect((await tick(h.vendo)).status).toBe(200);
-    expect(h.console_.eraseCalls).toHaveLength(1);
-  });
-
-  it("still refuses an unauthenticated tick", async () => {
-    vi.stubEnv("VENDO_TICK_SECRET", TICK_SECRET);
-    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 10 ** 9 });
-    h.setNow(0);
-    expect((await h.vendo.handler(listThreads())).status).toBe(200);
-    h.setNow(5_000);
-    expect((await tick(h.vendo, "Bearer wrong")).status).toBe(401);
-    expect(h.wireCalls("/sessions/stale")).toHaveLength(0);
-    expect(h.console_.eraseCalls).toEqual([]);
-  });
 });
 
 // Checker round 1, finding 2. A hosted claim COMMITS by deleting the registry

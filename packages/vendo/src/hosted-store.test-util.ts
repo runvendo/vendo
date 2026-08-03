@@ -131,10 +131,8 @@ export function fakeConsole() {
         const cutoff = now - idleMs;
         switch (rest[1]) {
           case "register": {
-            // Mirrors the console's clamp: touch never moves a subject's
-            // stamp BACKWARD (vendo-web session-registry.ts bumps under
-            // `last_seen < seenAt`). The sweep's erase-failure compensation
-            // writes a backdated stamp and leans on exactly this.
+            // Mirrors the console's clamp (vendo-web session-registry.ts):
+            // touch never moves a subject's stamp BACKWARD.
             const subject = body.subject as string;
             sessions.set(subject, Math.max(sessions.get(subject) ?? now, now));
             return json({ ok: true });
