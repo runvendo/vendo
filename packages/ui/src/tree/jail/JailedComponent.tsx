@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { islandToolFallbackManifest, islandVendoActionNames, type Json, type ToolOutcome } from "@vendoai/core";
+import {
+  islandToolFallbackManifest,
+  islandVendoActionNames,
+  JAIL_PACKAGE_CDN_ORIGIN,
+  type Json,
+  type ToolOutcome,
+} from "@vendoai/core";
 import { useVendoIntl } from "../../context.js";
 import { ContainedNotice } from "../notice.js";
 import { FormingSkeleton } from "../forming-skeleton.js";
@@ -29,7 +35,14 @@ const MAX_JAIL_HEIGHT = 8_192;
  * `'unsafe-eval'` is deliberate: evaluation is the jail's job. What the jail
  * forbids is NETWORK — and `script-src` is the only directive that governs the
  * one channel `connect-src` misses, a SCRIPT the realm loads and runs. Its
- * source list is empty, so that channel is shut.
+ * source list is empty by default, so that channel is shut.
+ *
+ * `loadsPackages` is the PREVIEW VENUE, and it is the only thing that ever puts
+ * a network source in this policy: with it, `script-src` gains the one pinned
+ * CDN origin plus `data:` (the import map's React shims — inline code, no
+ * network, and no more than `'unsafe-eval'` already grants). Without it the
+ * policy below names no source at all, which is what a remix fork rendering in
+ * a customer's own page gets.
  *
  * `'unsafe-inline'` rather than a nonce, and that is the security property, not
  * a relaxation. A nonce is worthless against code running INSIDE the document
@@ -45,13 +58,14 @@ const MAX_JAIL_HEIGHT = 8_192;
  * entirely ours, generated source arrives over postMessage rather than in the
  * HTML, so there is no injection here for a nonce to stop, and the realm may
  * already evaluate anything it composes.) With no nonce, the SOURCE LIST
- * governs, and it is empty. `blob:` and `data:` stay out of it for the same
- * reason: both are transports that reach the loader.
+ * governs, and outside the preview venue it is empty. `blob:` stays out of it
+ * either way: it is a module transport that reached the loader.
  */
-function buildJailSrcdoc(): string {
+function buildJailSrcdoc(loadsPackages: boolean): string {
+  const scriptSources = loadsPackages ? ` ${JAIL_PACKAGE_CDN_ORIGIN} data:` : "";
   const csp = [
     "default-src 'none'",
-    "script-src 'unsafe-inline' 'unsafe-eval'",
+    `script-src 'unsafe-inline' 'unsafe-eval'${scriptSources}`,
     "style-src 'unsafe-inline'",
     "img-src data:",
     "font-src data:",
@@ -59,6 +73,12 @@ function buildJailSrcdoc(): string {
   ].join("; ");
   const head = [
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
+    // An opaque origin is NOT a private one: browser-verified, a subresource
+    // request out of this srcdoc otherwise carries the EMBEDDER's URL as its
+    // `Referer` under the default policy — which for a console preview is the
+    // page naming the project. The CDN is told a package name and a version,
+    // and nothing else.
+    "<meta name=\"referrer\" content=\"no-referrer\">",
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
     "<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent;height:100%}iframe{display:block;width:100%;height:100%;border:0;background:transparent}</style>",
   ].join("");
@@ -138,6 +158,19 @@ export interface JailFurnishing {
   subSources?: Record<string, JailSubSource>;
   sampleProps?: Record<string, unknown>;
   styles?: JailStyle[];
+  /**
+   * PREVIEW VENUE ONLY, and the whole venue gate: import specifier ->
+   * `<name>@<exact version>[/subpath]` the jail may load from
+   * `JAIL_PACKAGE_CDN_ORIGIN`, so a captured component importing `recharts`
+   * draws instead of being skipped.
+   *
+   * A preview surface is the only producer. `attachPinFurnishings` (the
+   * production path for a remix fork) copies a fixed field list that does not
+   * include this one, and `stripServerAuthoritativeFields` deletes it off any
+   * stored or imported tree that claims it — so a customer's end users never
+   * depend on a CDN's availability and that CDN never sees their traffic.
+   */
+  packages?: Record<string, string>;
 }
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*$/;
@@ -176,7 +209,13 @@ export function JailedComponent({
 }: JailedComponentProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string>();
-  const srcDoc = useMemo(buildJailSrcdoc, []);
+  /** Pinned packages the jail could not fetch. A terminal, factual condition —
+   *  never swallowed by `streaming`, which is what turned the last runtime skew
+   *  into an eternal skeleton. */
+  const [unavailable, setUnavailable] = useState<string[]>();
+  const packages = furnishing?.packages;
+  const loadsPackages = packages !== undefined && Object.keys(packages).length > 0;
+  const srcDoc = useMemo(() => buildJailSrcdoc(loadsPackages), [loadsPackages]);
   // Read from context rather than a prop: every caller already renders inside
   // the provider, and the currency is not a per-island decision.
   const intl = useVendoIntl();
@@ -207,6 +246,7 @@ export function JailedComponent({
 
   useEffect(() => {
     setError(undefined);
+    setUnavailable(undefined);
   }, [furnishing, name, source]);
 
   useEffect(() => {
@@ -221,6 +261,7 @@ export function JailedComponent({
         ...(furnishing?.sourceImports === undefined ? {} : { sourceImports: furnishing.sourceImports }),
         ...(furnishing?.subSources === undefined ? {} : { subSources: furnishing.subSources }),
         ...(furnishing?.styles === undefined ? {} : { styles: furnishing.styles }),
+        ...(packages === undefined ? {} : { packages }),
         ...(themeVars === undefined ? {} : { themeVars }),
         intl,
       }, "*");
@@ -311,6 +352,8 @@ export function JailedComponent({
               error: toolError instanceof Error ? toolError.message : String(toolError),
             }, "*");
           });
+      } else if (message.kind === "packages-unavailable" && Array.isArray(message.packages)) {
+        setUnavailable(message.packages.filter((value): value is string => typeof value === "string"));
       } else if (message.kind === "error") {
         setError(typeof message.message === "string" ? message.message : "generated component failed");
       } else if (message.kind === "empty") {
@@ -327,7 +370,19 @@ export function JailedComponent({
       window.removeEventListener("message", handleMessage);
       iframe.removeEventListener("load", sendRender);
     };
-  }, [allowedActions, effectiveProps, furnishing, intl, manifest, onAction, onStateSet, source, themeVars]);
+  }, [allowedActions, effectiveProps, furnishing, intl, manifest, onAction, onStateSet, packages, source, themeVars]);
+
+  // A package that will not load is not a transient: the CDN is down, the
+  // version is gone, or the package was never public. Say so at every stage of
+  // the stream — a preview renders `streaming` forever, so deferring this note
+  // would leave the same never-resolving shimmer it exists to replace.
+  if (unavailable !== undefined && unavailable.length > 0) {
+    return (
+      <ContainedNotice label="Preview unavailable">
+        {`${name}: could not load ${unavailable.join(", ")}`}
+      </ContainedNotice>
+    );
+  }
 
   if (error) {
     // Mid-stream, a crash is not a verdict: the island's source may still be

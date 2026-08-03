@@ -10,7 +10,13 @@ import {
   type HostComponentSampleGap,
   type HostComponentSkip,
 } from "../formats.js";
-import { captureClosure, defaultExportOf, overBudgetWarning, portablePath } from "./capture.js";
+import {
+  captureClosure,
+  defaultExportOf,
+  overBudgetWarning,
+  portablePath,
+  previewBlockingSpecifiers,
+} from "./capture.js";
 import { generateSampleProps } from "./sample-props.js";
 import type { HostComponentSite } from "./catalog-scan.js";
 import { isInside } from "./common.js";
@@ -268,6 +274,7 @@ export async function captureHostComponents(options: {
             ...(options.budgetBytes === undefined ? {} : { budgetBytes: options.budgetBytes }),
             warnings: result.warnings,
           });
+          const blocking = walked.ok ? previewBlockingSpecifiers(walked.closure) : [];
           if (!walked.ok) {
             result.warnings.push(overBudgetWarning(label, walked.overBudget));
             result.skipped.push(site.name);
@@ -282,17 +289,23 @@ export async function captureHostComponents(options: {
                 largest: walked.overBudget.largest,
               },
             };
-          } else if (walked.closure.unsupported.length > 0) {
+          } else if (blocking.length > 0) {
             // The closure would LOAD as a crash. A named "cannot preview" tile
             // beats a red error box mislabeled as a generated-component
-            // failure, which is what shipping this capture would produce.
+            // failure, which is what shipping this capture would produce. A
+            // package the preview CAN fetch from the pinned CDN is not blocking
+            // — one it cannot says so in its own clause.
+            const named = blocking.map((value) => {
+              const why = walked.closure.unloadablePackages[value];
+              return why === undefined ? `"${value}"` : `"${value}" (${why})`;
+            });
             record = skip({
               reason: "unsupported-imports",
-              detail: `It imports ${walked.closure.unsupported.map((value) => `"${value}"`).join(", ")}, which the sandboxed preview cannot load.`,
-              specifiers: walked.closure.unsupported,
+              detail: `It imports ${named.join(", ")}, which the sandboxed preview cannot load.`,
+              specifiers: blocking,
             });
           } else {
-            const { sourceImports, subSources, bytes, requires } = walked.closure;
+            const { sourceImports, subSources, bytes, requires, packages } = walked.closure;
             const modules: Record<string, string> = {};
             for (const [id, sub] of Object.entries(subSources)) {
               modules[id] = addModule(corpus, {
@@ -314,6 +327,7 @@ export async function captureHostComponents(options: {
               ...(styles.length === 0 ? {} : { styles: styleRefs() }),
               bytes,
               ...(requires.length === 0 ? {} : { requires }),
+              ...(Object.keys(packages).length === 0 ? {} : { packages }),
               ...("gap" in sample
                 ? { noSampleProps: sample.gap }
                 : { sampleProps: sample.props, sampleOrigin: sample.origin }),

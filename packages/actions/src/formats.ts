@@ -648,13 +648,28 @@ export interface CapturedHostComponent {
   /** Total captured bytes (entry + closure), for budget accounting. */
   bytes?: number;
   /**
-   * Bundled packages this capture needs at render time (clsx / tailwind-merge /
-   * zod). A consumer whose jail runtime predates them MUST show an honest
-   * "preview unavailable — runtime too old" tile: without this field the
-   * require throws, a `streaming` surface swallows it into a shimmer skeleton,
-   * and the component is indistinguishable from one still loading.
+   * Every package this capture needs at render time — the ones the jail bundles
+   * (clsx / tailwind-merge / zod) and the ones a preview fetches from the pinned
+   * CDN (`packages` below). A consumer that cannot supply one MUST show an
+   * honest "preview unavailable" tile: without this field the require throws, a
+   * `streaming` surface swallows it into a shimmer skeleton, and the component
+   * is indistinguishable from one still loading. Consumers predating CDN
+   * loading find the CDN packages unsatisfied here and degrade honestly —
+   * which is exactly why the CDN pins live in a separate field.
    */
   requires?: string[];
+  /**
+   * PREVIEW VENUE ONLY. Import specifier -> `<name>@<exact installed
+   * version>[/subpath]`, for every package a preview may load from
+   * `JAIL_PACKAGE_CDN_ORIGIN`. Never a range and never a tag: the version is
+   * the one the host has installed, and one that cannot be resolved exactly
+   * makes the component an honest skip instead.
+   *
+   * A remix fork rendering in a customer's own page must never reach a CDN, so
+   * nothing on the production path ever copies this into a furnishing (see
+   * `attachPinFurnishings`, and the strip in `stripServerAuthoritativeFields`).
+   */
+  packages?: Record<string, string>;
   /**
    * The rehearsal seed a preview renders with, parsed from the registration's
    * own first usable `examples` string.
@@ -704,6 +719,7 @@ export const capturedHostComponentSchema = z.object({
   styles: z.array(z.object({ path: z.string(), ref: z.string().regex(/^[0-9a-f]{64}$/u) })).optional(),
   bytes: z.number().optional(),
   requires: z.array(z.string()).optional(),
+  packages: z.record(z.string()).optional(),
   sampleProps: z.record(z.unknown()).optional(),
   sampleOrigin: z.enum(["declared", "generated"]).optional(),
   noSampleProps: z.object({

@@ -1048,6 +1048,29 @@ function TreeThemeBoundary({ children }: { children: ReactNode }) {
   return <div className="tree-theme-boundary" style={themeCssVariables(theme) as CSSProperties}>{children}</div>;
 }
 
+/**
+ * The CDN-package venue, driven by a payload the SPEC injects (`addInitScript`)
+ * rather than one written here.
+ *
+ * That is deliberate: the spec inflates the REAL bytes `vendo sync` captured for
+ * a host component out of `examples/demo-bank/.vendo/`, so nothing about the
+ * consumer is mocked — the harness supplies no package the capture did not ask
+ * for, which is exactly how the previous lane's harness reported four working
+ * components while the browser drew one.
+ */
+function InjectedTreeScenario() {
+  const surface = useMemo(() => {
+    const payload = (globalThis as { __VENDO_HARNESS_PAYLOAD__?: UIPayload }).__VENDO_HARNESS_PAYLOAD__;
+    return payload === undefined ? undefined : { kind: "tree" as const, payload };
+  }, []);
+  if (surface === undefined) return <p role="alert">No injected payload.</p>;
+  return (
+    <TreeThemeBoundary>
+      <AppFrame surface={surface} data={{}} onAction={async () => ({ status: "ok", output: [] })} />
+    </TreeThemeBoundary>
+  );
+}
+
 function TreeScenario({ jail = false }: { jail?: boolean }) {
   const [action, setAction] = useState<{ nodeId: string; action: string; payload?: Json }>();
   const onAction = async (request: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome> => {
@@ -1938,6 +1961,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
+    case "/tree-injected": return { title: "Injected payload (captured host component)", content: <InjectedTreeScenario /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
     case "/tree-review": return { title: "Review-kind standing (pending / rejected)", content: <ReviewStandingScenario /> };
     case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };

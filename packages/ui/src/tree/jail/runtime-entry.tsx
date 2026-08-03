@@ -1,5 +1,6 @@
 import * as React from "react";
 import { createRoot, type Root } from "react-dom/client";
+import * as reactDom from "react-dom";
 import { createPortal, flushSync } from "react-dom";
 import { jsx, jsxs, Fragment } from "react/jsx-runtime";
 import { transform } from "sucrase";
@@ -12,7 +13,7 @@ import { transform } from "sucrase";
 import { clsx } from "clsx";
 import * as tailwindMerge from "tailwind-merge";
 import { zodShim } from "./zod-shim.js";
-import { ISLAND_AMBIENT_NAMES, type IslandResolvableModule } from "@vendoai/core";
+import { ISLAND_AMBIENT_NAMES, jailPackageUrl, type IslandResolvableModule } from "@vendoai/core";
 import { normalizeViewportBlockCss } from "./viewport-css.js";
 import {
   Accordion, Badge, BarChart, Button, Callout, CardList, Checkbox, DataTable,
@@ -33,6 +34,11 @@ declare global {
   var __VENDO_JAIL_REACT_DOM__: { createPortal: typeof createPortal; flushSync: typeof flushSync };
   // eslint-disable-next-line no-var
   var __VENDO_JAIL_JSX__: { jsx: typeof jsx; jsxs: typeof jsxs; Fragment: typeof Fragment };
+  /** The whole react-dom namespace, published only when a preview installs the
+   *  CDN import map: a fetched package's `react-dom` import must resolve to
+   *  THIS realm's copy, not to a second one from the CDN. */
+  // eslint-disable-next-line no-var
+  var __VENDO_JAIL_REACT_DOM_ALL__: typeof reactDom;
 }
 
 globalThis.__VENDO_JAIL_REACT__ = React;
@@ -256,11 +262,112 @@ const JAIL_MODULES: Record<IslandResolvableModule, unknown> = {
   zod: zodShim,
 };
 
+/**
+ * PREVIEW VENUE ONLY — packages fetched from the one pinned CDN origin, keyed by
+ * the import specifier the captured source uses. Empty in every other venue: a
+ * host only sends `packages` for a console preview, and without them the jail's
+ * CSP names no network source at all.
+ */
+const cdnPackages = new Map<string, unknown>();
+
+const EXPORTABLE_NAME = /^[A-Za-z_$][\w$]*$/u;
+// A destructuring re-export cannot bind a reserved word, and a module namespace
+// object always carries `default`.
+const RESERVED_NAME = /^(?:default|class|function|const|let|var|new|delete|typeof|instanceof|in|of|if|else|return|this|null|true|false|import|export|void|do|while|for|switch|case|break|continue|catch|try|finally|throw|with|super|extends|yield|await|enum|static|implements|interface|package|private|protected|public)$/u;
+
+/**
+ * A `data:` module that re-exports one of this realm's own globals.
+ *
+ * This is what keeps the CDN's React out of the jail. A CDN package fetched
+ * with `?external=react,react-dom` imports bare `react`, and the import map
+ * points that at the instance already bundled here. Browser-measured, the
+ * alternative — letting the CDN serve a second React — renders nothing and
+ * throws `Cannot read properties of null (reading 'useContext')`, because a
+ * component's hooks resolve against a dispatcher its own copy never set.
+ *
+ * `data:` is inline code, so it opens no network channel and grants nothing
+ * `'unsafe-eval'` does not already grant; `blob:` stays banned.
+ */
+function globalModuleUrl(globalName: string, target: object): string {
+  const names = Object.keys(target).filter((name) => EXPORTABLE_NAME.test(name) && !RESERVED_NAME.test(name));
+  const body = `const M = globalThis.${globalName};\n`
+    + "export default M.default === undefined ? M : M.default;\n"
+    + (names.length > 0 ? `export const { ${names.join(", ")} } = M;\n` : "");
+  return `data:text/javascript,${encodeURIComponent(body)}`;
+}
+
+let importMapInstalled = false;
+
+/** Installed once, and only when a preview actually asks for packages: an import
+ *  map must precede the realm's first module load, and the jail loads no modules
+ *  of its own. */
+function installPackageImportMap(): void {
+  if (importMapInstalled) return;
+  importMapInstalled = true;
+  globalThis.__VENDO_JAIL_REACT_DOM_ALL__ = reactDom;
+  // No nonce to carry: the jail's `script-src` names `'unsafe-inline'` instead
+  // (a nonce is readable off the DOM by the very code this realm sandboxes, so
+  // it made the source list moot — see JailedComponent), and an import map is
+  // inline script, which that permits.
+  const element = document.createElement("script");
+  element.type = "importmap";
+  element.textContent = JSON.stringify({
+    imports: {
+      react: globalModuleUrl("__VENDO_JAIL_REACT__", React),
+      "react-dom": globalModuleUrl("__VENDO_JAIL_REACT_DOM_ALL__", reactDom),
+      "react-dom/client": `data:text/javascript,${encodeURIComponent(
+        "const createRoot = globalThis.__VENDO_JAIL_CREATE_ROOT__;\nexport { createRoot };\nexport default { createRoot };\n",
+      )}`,
+      "react/jsx-runtime": `data:text/javascript,${encodeURIComponent(
+        "const R = globalThis.__VENDO_JAIL_REACT__;\nexport const Fragment = R.Fragment;\nexport const jsx = (type, props, key) => R.createElement(type, key === undefined ? props : Object.assign({}, props, { key }));\nexport const jsxs = jsx;\nexport const jsxDEV = jsx;\n",
+      )}`,
+    },
+  });
+  document.head.appendChild(element);
+}
+
+/**
+ * Fetch every pinned package a PREVIEW asked for, and answer with the pins that
+ * would not load — CDN unreachable, 404, private, or a pin that is not an exact
+ * version. The caller reports those instead of rendering: a require that throws
+ * inside a `streaming` surface is an eternal skeleton, which is the failure this
+ * whole path exists to avoid.
+ */
+async function resolvePackages(raw: unknown): Promise<string[]> {
+  const pins = stringRecord(raw);
+  const wanted = Object.entries(pins).filter(([specifier]) => !cdnPackages.has(specifier));
+  if (wanted.length === 0) return [];
+  installPackageImportMap();
+  const unavailable: string[] = [];
+  await Promise.all(wanted.map(async ([specifier, pin]) => {
+    const url = jailPackageUrl(pin);
+    if (url === null) {
+      unavailable.push(pin);
+      return;
+    }
+    try {
+      const namespace = await import(/* @vite-ignore */ url) as Record<string, unknown>;
+      // `__esModule` for sucrase's default-import interop, exactly as for the
+      // bundled packages above.
+      cdnPackages.set(specifier, {
+        __esModule: true,
+        ...namespace,
+        default: namespace.default ?? namespace,
+      });
+    } catch {
+      unavailable.push(pin);
+    }
+  }));
+  return unavailable.sort();
+}
+
 function jailRequire(specifier: string): unknown {
-  if (!Object.prototype.hasOwnProperty.call(JAIL_MODULES, specifier)) {
-    throw new Error(`module "${specifier}" is not available in the Vendo jail`);
+  if (Object.prototype.hasOwnProperty.call(JAIL_MODULES, specifier)) {
+    return (JAIL_MODULES as Record<string, unknown>)[specifier];
   }
-  return (JAIL_MODULES as Record<string, unknown>)[specifier];
+  const fromCdn = cdnPackages.get(specifier);
+  if (fromCdn !== undefined) return fromCdn;
+  throw new Error(`module "${specifier}" is not available in the Vendo jail`);
 }
 
 // A module's own top-level `const Badge = …` must win over the ambient
@@ -545,13 +652,20 @@ window.addEventListener("message", (event) => {
     // the host's currency. Re-install it here, before anything renders.
     setKitIntl(message.intl as Partial<KitIntl> | undefined);
     applyHostStyles(message.styles);
-    void renderComponent(
-      message.source,
-      (message.props ?? {}) as Record<string, unknown>,
-      message.sourceImports,
-      message.subSources,
-    )
-      .then((result) => {
+    // Packages first: `require` is synchronous, so anything a captured module
+    // imports has to be in hand before a line of it evaluates.
+    void resolvePackages(message.packages)
+      .then(async (unavailable) => {
+        if (unavailable.length > 0) {
+          post({ kind: "packages-unavailable", packages: unavailable });
+          return;
+        }
+        const result = await renderComponent(
+          message.source as string,
+          (message.props ?? {}) as Record<string, unknown>,
+          message.sourceImports,
+          message.subSources,
+        );
         if (result === "ready") post({ kind: "ready" });
         else if (result === "empty") post({ kind: "empty" });
       })

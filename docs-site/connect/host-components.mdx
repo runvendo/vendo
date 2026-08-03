@@ -122,18 +122,13 @@ The walk follows your imports to **closure** — no depth limit — and stops at
 two lines:
 
 - **Package boundary.** Anything resolving into `node_modules` is never
-  captured. It is not your code, and the sandbox supplies the React kit plus the
-  three bundled packages below.
+  captured. It is not your code. Sync records what version of it you have
+  installed instead (see below), and the sandbox supplies the React kit plus
+  three bundled packages.
 - **Byte budget.** 256 KB of source per component.
 
-<Warning>
-**A component whose closure imports a package the sandbox does not carry cannot
-be previewed.** The package boundary is not only a privacy rule, it is a
-functional limit: the sandbox has no network, so a package is reachable only if
-Vendo bundled it.
-
-Three are bundled, because they blocked almost everything and are all tiny and
-universal:
+Three packages are bundled into the sandbox itself, because they blocked almost
+everything and are all tiny and universal:
 
 | bundled | what you get |
 | --- | --- |
@@ -145,10 +140,48 @@ That covers the two patterns that blocked real components: a `lib/cn.ts` built
 on `clsx` + `tailwind-merge` (the shadcn default), and a `props:` schema
 declared next to the component in the registry module.
 
-Anything else — `recharts`, a date library, your design-system package — still
-cannot load. Sync **refuses the capture** and names the specifiers rather than
-shipping something that would crash on render.
-</Warning>
+### Other packages: loaded from one pinned CDN, in previews only
+
+A component that imports `recharts`, a date library, or a charting kit used to
+be refused outright. It now previews: sync records the **exact version you have
+installed** for each package import, and the console's preview sandbox fetches
+those from one pinned origin — `https://esm.sh` — as ES modules.
+
+```json
+"requires": ["clsx", "recharts", "tailwind-merge", "zod"],
+"packages": { "recharts": "recharts@3.9.2" }
+```
+
+Four things are worth knowing, because they are guarantees, not details:
+
+- **Previews only.** The same sandbox renders an approved remix fork inside your
+  own product, in front of your own users. CDN loading is gated to the preview
+  surface and cannot reach that path: the pins live on a field only a preview
+  populates, and the runtime strips it off any stored app document that claims
+  it. Your users never depend on a CDN's uptime, and that CDN never sees their
+  traffic. In a preview-free install nothing about the sandbox changes — its
+  policy still denies the network entirely.
+- **Exact versions, never a range.** The version is read from the package you
+  actually have installed, so a preview draws what your product draws. A version
+  sync cannot resolve exactly is not guessed at — the component is skipped and
+  says so.
+- **Your React, not the CDN's.** Packages are fetched with React left external
+  and resolved to the sandbox's own copy. Two React copies is a broken render,
+  never a subtly different one.
+- **Nothing of yours is sent.** The request is a package name and a version on a
+  public registry mirror. No project identifier, no source, no credentials.
+
+Two kinds of package still cannot preview, and sync says which:
+
+| what | why |
+| --- | --- |
+| `@acme/design-system` marked `private`, or a workspace/`link:` package | it is on no public registry, so no CDN can serve it |
+| a package that is not installed | there is no exact version to pin, and a guess would 404 at render |
+
+If a package cannot be fetched at render time — the CDN is unreachable, or the
+version has been unpublished — the preview shows one calm line naming what it
+could not load (`Can't preview — could not load recharts@3.9.2`). It never shows
+a broken chart and never sits on a loading shimmer.
 
 <Note>
 **The bundled `zod` is a shim, not zod.** It resolves the declaration surface
@@ -172,7 +205,7 @@ the console can explain the gap instead of showing an unlabeled block:
 
 | `skipped.reason` | Meaning |
 | --- | --- |
-| `unsupported-imports` | Its closure imports specifiers the sandbox cannot resolve (a package, a component-local stylesheet) |
+| `unsupported-imports` | Its closure imports specifiers the sandbox cannot resolve (an unpublished package, a component-local stylesheet); the record names each one with the reason |
 | `too-large` | Its closure is over the 256 KB budget; the record names the biggest module |
 | `no-default-export` | Registered as a module's default export, but the module has none |
 | `default-export-conflict` | The module default-exports something else, so the registered binding cannot become the default |
@@ -477,9 +510,11 @@ look and feel:
   a helper four files down is captured like one file down. Imports it cannot
   resolve or refuses (out-of-root, or through a symlink escape) are dropped
   with a named warning. Package imports never enter the jail: they are not
-  your code, and the jail can only load the three it bundles (see the warning
-  under [What sync captures](#what-sync-captures) — a wrapped component whose
-  closure reaches any other package cannot render a fork). A closure over
+  your code, and a **fork** can only use the three packages the jail bundles.
+  CDN package loading is a preview-surface capability and deliberately does not
+  apply here — a fork renders in your own page, in front of your own users, and
+  must never depend on a third party being up. A wrapped component whose closure
+  reaches any other package cannot render a fork. A closure over
   256 KB is not captured at all; sync warns, names the module that blew the
   budget, and leaves the previous baseline exactly as it was.
 - **Root-level stylesheets.** Sync snapshots direct `.css` imports from your

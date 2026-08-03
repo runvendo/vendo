@@ -65,6 +65,13 @@ async function capture(root: string, budgetBytes?: number) {
   };
 }
 
+/** An installed package, as node resolution finds it: a manifest under
+ *  `node_modules`. The capture reads its `version`, which is what makes a pin
+ *  exact rather than a guess at a range. */
+async function installPackage(root: string, name: string, manifest: Record<string, unknown>): Promise<void> {
+  await write(root, `node_modules/${name}/package.json`, JSON.stringify({ name, ...manifest }));
+}
+
 async function record(root: string, name: string) {
   return capturedHostComponentSchema.parse(JSON.parse(
     await fs.readFile(path.join(root, ".vendo/components", `${name}.json`), "utf8"),
@@ -147,15 +154,76 @@ describe("registered host component capture", () => {
     );
 
     const { result } = await capture(root);
-    // Shipping this capture would put `require("recharts")` in front of the
-    // jail loader, which throws and error-boxes as a GENERATED-component
-    // failure — strictly worse than the placeholder it replaces.
+    // Nothing is installed in this fixture, so there is no exact version to pin
+    // and the CDN is not offered a guess. Shipping the capture anyway would put
+    // `require("recharts")` in front of the jail loader, which throws and
+    // error-boxes as a GENERATED-component failure — strictly worse than the
+    // placeholder it replaces.
     expect(result.captured).toEqual([]);
     expect(result.skipped).toEqual(["Packaged"]);
     const stored = await record(root, "Packaged");
     expect(stored.skipped?.reason).toBe("unsupported-imports");
     expect(stored.skipped?.specifiers).toEqual(["recharts"]);
+    expect(stored.skipped?.detail).toContain("not installed");
     expect(stored.entry).toBeUndefined();
+    expect(stored.packages).toBeUndefined();
+  });
+
+  it("captures a component importing a public package, pinned to the version the host installed", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `import { Chart } from "recharts";\nimport { format } from "date-fns/format";\n`
+      + `export function Packaged() { return <Chart label={format(0)} />; }\n`,
+      "Packaged: { component: Packaged }",
+    );
+    await installPackage(root, "recharts", { version: "3.9.2" });
+    await installPackage(root, "date-fns", { version: "4.1.0" });
+
+    const { result } = await capture(root);
+    expect(result.captured).toEqual(["Packaged"]);
+    const stored = await record(root, "Packaged");
+    expect(stored.skipped).toBeUndefined();
+    // The version comes from the INSTALLED manifest, never from the range in
+    // package.json — a preview renders what the host's product renders.
+    expect(stored.packages).toEqual({ recharts: "recharts@3.9.2", "date-fns/format": "date-fns@4.1.0/format" });
+    // And both are named in `requires`, so a consumer that cannot fetch them
+    // shows an honest tile instead of a never-resolving skeleton.
+    expect(stored.requires).toContain("recharts");
+    expect(stored.requires).toContain("date-fns/format");
+  });
+
+  it("still skips a package that is on no public registry, and says which and why", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `import { Panel } from "@acme/design-system";\nexport function Internal() { return <Panel />; }\n`,
+      "Internal: { component: Internal }",
+    );
+    await installPackage(root, "@acme/design-system", { version: "1.0.0", private: true });
+
+    const { result } = await capture(root);
+    expect(result.skipped).toEqual(["Internal"]);
+    const stored = await record(root, "Internal");
+    expect(stored.skipped?.reason).toBe("unsupported-imports");
+    expect(stored.skipped?.detail).toContain("@acme/design-system is marked private");
+    expect(stored.packages).toBeUndefined();
+  });
+
+  it("treats a workspace package as internal, not as something a CDN could serve", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `import { Panel } from "@acme/ui";\nexport function Linked() { return <Panel />; }\n`,
+      "Linked: { component: Linked }",
+    );
+    await write(root, "packages/ui/package.json", JSON.stringify({ name: "@acme/ui", version: "0.1.0" }));
+    await fs.mkdir(path.join(root, "node_modules/@acme"), { recursive: true });
+    await fs.symlink(path.join(root, "packages/ui"), path.join(root, "node_modules/@acme/ui"), "dir");
+
+    const { result } = await capture(root);
+    expect(result.skipped).toEqual(["Linked"]);
+    expect((await record(root, "Linked")).skipped?.detail).toContain("@acme/ui is a workspace package");
   });
 
   it("keeps a component whose only package imports are ones the jail resolves", async () => {

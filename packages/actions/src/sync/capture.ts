@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { isIslandResolvableSpecifier, JAIL_BUNDLED_PACKAGES } from "@vendoai/core";
+import { isIslandResolvableSpecifier, isPinnedJailPackage, JAIL_BUNDLED_PACKAGES } from "@vendoai/core";
 import type { CapturedPinSubSource } from "../formats.js";
 import {
   isInside,
@@ -51,15 +51,97 @@ export interface CapturedClosure {
    */
   unsupported: string[];
   /**
-   * Bundled packages (core's JAIL_BUNDLED_PACKAGES) this closure needs at
-   * render time. Recorded so a CONSUMER can detect version skew instead of
-   * failing silently: a jail runtime older than the bundling commit throws
-   * `module "zod" is not available`, and a surface that renders previews as
-   * `streaming` turns that throw into a shimmer skeleton forever — no frame,
-   * no error, indistinguishable from "still loading". A capture that states
-   * what it needs lets the consumer say so honestly.
+   * Every PACKAGE this closure needs at render time — the ones the jail runtime
+   * bundles (core's JAIL_BUNDLED_PACKAGES) and the ones a preview venue can
+   * fetch from the pinned CDN alike.
+   *
+   * Recorded so a CONSUMER can detect skew instead of failing silently: a jail
+   * runtime that cannot supply one throws `module "recharts" is not available`,
+   * and a surface that renders previews as `streaming` turns that throw into a
+   * shimmer skeleton forever — no frame, no error, indistinguishable from
+   * "still loading". A consumer that predates CDN loading sees `recharts` here,
+   * finds it unsatisfied, and says so honestly instead of spinning.
    */
   requires: string[];
+  /**
+   * PREVIEW VENUE ONLY. Import specifier -> `<name>@<exact installed version>`
+   * plus any subpath, for every package import a preview can resolve from the
+   * pinned CDN (core's `JAIL_PACKAGE_CDN_ORIGIN`).
+   *
+   * Deliberately reported ALONGSIDE `unsupported` rather than removed from it:
+   * the walk states facts, and the two venues that read a closure answer them
+   * differently. A `<Remixable>` pin baseline renders in a customer's own page,
+   * where no CDN may be reached, so `unsupported` stays exactly as it always
+   * was for that caller; a console preview subtracts these (see
+   * {@link previewBlockingSpecifiers}).
+   */
+  packages: Record<string, string>;
+  /**
+   * Package imports that are NOT offered to the CDN, with the clause that says
+   * why — a workspace link or a `private: true` package is not on any public
+   * registry, and a version we cannot resolve exactly must never be guessed.
+   * The preview says this instead of shipping a URL that 404s.
+   */
+  unloadablePackages: Record<string, string>;
+}
+
+/** The specifiers that block a PREVIEW render: everything the jail cannot
+ *  resolve, minus the packages a preview venue fetches from the pinned CDN. */
+export const previewBlockingSpecifiers = (closure: CapturedClosure): string[] =>
+  closure.unsupported.filter((specifier) => closure.packages[specifier] === undefined);
+
+/** `@scope/name/sub/path` -> `{ name: "@scope/name", subpath: "/sub/path" }`. */
+function splitPackageSpecifier(specifier: string): { name: string; subpath: string } | null {
+  const parts = specifier.split("/");
+  const segments = specifier.startsWith("@") ? 2 : 1;
+  if (parts.length < segments || parts.some((part) => part === "" || part === "." || part === "..")) return null;
+  return { name: parts.slice(0, segments).join("/"), subpath: parts.slice(segments).map((part) => `/${part}`).join("") };
+}
+
+/** The installed package's manifest, found the way Node finds it: the nearest
+ *  `node_modules/<name>` walking up from the importer. */
+async function installedManifest(importer: string, name: string): Promise<{ file: string; json: Record<string, unknown> } | null> {
+  let directory = path.dirname(path.resolve(importer));
+  for (;;) {
+    const file = path.join(directory, "node_modules", name, "package.json");
+    try {
+      const real = await fs.realpath(file);
+      return { file: real, json: JSON.parse(await fs.readFile(real, "utf8")) as Record<string, unknown> };
+    } catch {
+      const parent = path.dirname(directory);
+      if (parent === directory) return null;
+      directory = parent;
+    }
+  }
+}
+
+/**
+ * The exact pin for one package import, or the reason there isn't one.
+ *
+ * The version comes from the manifest of the package the host actually has
+ * INSTALLED — the same file Node reads to run their app, so a preview renders
+ * the version their product renders. A lockfile would answer the same question
+ * one step further from the truth (and in four incompatible formats).
+ */
+async function pinnedPackage(
+  importer: string,
+  specifier: string,
+): Promise<{ pin: string } | { why: string }> {
+  const split = splitPackageSpecifier(specifier);
+  if (split === null) return { why: "it is not a resolvable package name" };
+  const manifest = await installedManifest(importer, split.name);
+  if (manifest === null) return { why: `${split.name} is not installed, so its exact version cannot be resolved` };
+  // A registry install always lives UNDER a node_modules directory. A workspace
+  // package or a `link:` dependency realpaths to plain source, which means it is
+  // internal to the host and on no public registry.
+  if (!manifest.file.split(path.sep).includes("node_modules")) {
+    return { why: `${split.name} is a workspace package, so it is not on a public registry` };
+  }
+  if (manifest.json.private === true) return { why: `${split.name} is marked private, so it is not published` };
+  const { version } = manifest.json;
+  if (typeof version !== "string") return { why: `${split.name} declares no version, so it cannot be pinned` };
+  const pin = `${split.name}@${version}${split.subpath}`;
+  return isPinnedJailPackage(pin) ? { pin } : { why: `${split.name}@${version} is not an exact published version` };
 }
 
 export interface ClosureOverBudget {
@@ -166,6 +248,8 @@ export async function captureClosure(options: {
   const missed: string[] = [];
   const unsupported = new Set<string>();
   const requires = new Set<string>();
+  const packages: Record<string, string> = {};
+  const unloadablePackages: Record<string, string> = {};
   const BUNDLED: ReadonlySet<string> = new Set(JAIL_BUNDLED_PACKAGES);
   const sourceImports: Record<string, string> = {};
   const captured = new Map<string, CapturedPinSubSource>();
@@ -199,9 +283,16 @@ export async function captureClosure(options: {
         drop("component stylesheet imports are not captured; use an app-root stylesheet");
         continue;
       }
-      // Package boundary: not the host's code, so not the host's capture.
+      // Package boundary: not the host's code, so not the host's capture. Its
+      // exact installed version is recorded instead, so a PREVIEW venue can
+      // fetch it from the pinned CDN; the specifier still counts as unsupported
+      // for callers whose venue has no network at all (pin baselines).
       if (await isPackageSpecifier(task.file, specifier, root)) {
         unsupported.add(specifier);
+        requires.add(specifier);
+        const pinned = await pinnedPackage(task.file, specifier);
+        if ("pin" in pinned) packages[specifier] = pinned.pin;
+        else unloadablePackages[specifier] = pinned.why;
         continue;
       }
       const resolved = await resolveImportSource(task.file, specifier, root);
@@ -250,6 +341,8 @@ export async function captureClosure(options: {
       bytes,
       unsupported: [...unsupported].sort(),
       requires: [...requires].sort(),
+      packages: sorted(Object.entries(packages)),
+      unloadablePackages: sorted(Object.entries(unloadablePackages)),
     },
   };
 }

@@ -1,13 +1,43 @@
 {
   "name": "MapleSparkline",
-  "hash": "sha256:2b4683921fd5612f220c2c236fa76f7a6346abc9c32c9d067f1545bc1626125d",
-  "capturedAt": "2026-08-03T09:42:04.718Z",
+  "hash": "sha256:c86d9ee30fef9f8f55429c24f7e50cc30e8780baad3e81b924bd858cbd1e86d9",
+  "capturedAt": "2026-08-03T18:04:19.506Z",
   "module": "src/vendo/registry.tsx",
-  "skipped": {
-    "reason": "unsupported-imports",
-    "detail": "It imports \"recharts\", which the sandboxed preview cannot load.",
-    "specifiers": [
-      "recharts"
-    ]
-  }
+  "export": "MapleSparkline",
+  "entry": "fbab51e4a08afa45c381b8c6f51043dad807afb1e110cdba174aac89b9500dfd",
+  "modules": {
+    "src/components/charts/colors.ts": "86c8b59ecc843e1d4549847b254c7647d568a4a8fe96f0d7048dad184ecd72ab",
+    "src/components/charts/donut.tsx": "499fc969edce5dee3823d9d27b914ed39cabb90845b726478a24b59ada47d145",
+    "src/components/charts/sparkline.tsx": "cc54de23a27983e3151af583ff56024abe452f5727f9d21aea17bbe82885c8b4",
+    "src/components/home/net-worth-view.tsx": "916e8299b3392bb0ad4d71dcced4c89db2b20f956c16027dc10cbcaf155ea8ca",
+    "src/lib/cn.ts": "cb1fc8ff065b296f8985b56657d20e4af384d6f055eb7d806b4a60ef2ece0070",
+    "src/lib/money.ts": "89b51d531949c80222381da8513022e39ec74d60bcece08eef69885e6db1d4c3"
+  },
+  "styles": [
+    {
+      "path": "src/app/globals.css",
+      "ref": "9283964eac86c1f84276b7f21e362a195256a1d1e8f8e8929a4e875487bd9fb4"
+    }
+  ],
+  "bytes": 20093,
+  "requires": [
+    "clsx",
+    "recharts",
+    "tailwind-merge",
+    "zod"
+  ],
+  "packages": {
+    "recharts": "recharts@3.9.2"
+  },
+  "sampleProps": {
+    "data": [
+      1280,
+      1315,
+      1298,
+      1360,
+      1412
+    ],
+    "height": 32
+  },
+  "sampleOrigin": "declared"
 }

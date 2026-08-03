@@ -226,7 +226,26 @@ export const stripServerAuthoritativeFields = <T extends object>(payload: T): T 
   delete (payload as { inClient?: unknown }).inClient;
   delete (payload as { pinDrift?: unknown }).pinDrift;
   delete (payload as { dataUnavailable?: unknown }).dataUnavailable;
+  stripFurnishingPackages(payload);
   return payload;
+};
+
+/**
+ * CDN package loading is a PREVIEW-VENUE capability, and this is the wall that
+ * keeps it there. `attachPinFurnishings` below copies a fixed field list that
+ * has never included `packages`, so the runtime cannot produce one; this strip
+ * covers the other direction — a model-written or imported `.vendoapp` tree
+ * CLAIMING it. Without it, a stored document could make a customer's own page
+ * fetch scripts from a third party on their end users' behalf.
+ */
+const stripFurnishingPackages = (payload: object): void => {
+  const { furnishings } = payload as { furnishings?: unknown };
+  if (typeof furnishings !== "object" || furnishings === null) return;
+  for (const furnishing of Object.values(furnishings as Record<string, unknown>)) {
+    if (typeof furnishing === "object" && furnishing !== null) {
+      delete (furnishing as { packages?: unknown }).packages;
+    }
+  }
 };
 
 /** 06-apps §8 — jail furnishing for forked pins rides inside the tagged tree
