@@ -6,21 +6,26 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 
 ## Composition configuration
 
-Every key is optional (`oauth` becomes required when `mcp` is enabled). A
-bare `createVendo()` boots with an env-resolved model, anonymous ephemeral
-sessions, and default persistence.
+Every key is optional (`oauth` becomes required when `mcp` is enabled), but
+the config object itself is not: `createVendo({})` boots with an env-resolved
+model, anonymous ephemeral sessions, and default persistence;
+`createVendo()` is a type error.
 
 | Option | Behavior |
 | --- | --- |
 | `model` | **Deprecated alias of `models.agent`** (still functional). AI SDK `LanguageModel` used by the agent and default app generation. Optional: an explicitly passed model always wins (BYO-LLM); when absent, the composition resolves a real key from the environment — provider keys via the [dev-mode ladder](/connect/dev-mode), then `VENDO_API_KEY` for Vendo Cloud managed inference — and fails honestly with instructions when none exists |
 | `paint` | **Deprecated:** the `model` half is superseded by `models.paint`; `disabled` remains the single-lane switch for app generation |
-| `models` | per-slot model block: `{ agent?, paint?, judge? }`, each a model-name string (resolved through the credential ladder — passed verbatim to the resolved provider, pinnable via `VENDO_MODEL` / `VENDO_MODEL_PAINT` / `VENDO_MODEL_JUDGE`) or an explicit AI SDK `LanguageModel` object (wins as-is). `agent` supersedes `model`; `paint` supersedes `paint.model`; `judge` only feeds a judge you wired from `vendoModel("vendo-judge")` — no judge runs by default |
+| `models` | per-slot model block: `{ agent?, paint?, judge?, knowledgeVerifier? }`, each a model-name string (resolved through the credential ladder — passed verbatim to the resolved provider, pinnable via `VENDO_MODEL` / `VENDO_MODEL_PAINT` / `VENDO_MODEL_JUDGE` / `VENDO_MODEL_KNOWLEDGE_VERIFIER`) or an explicit AI SDK `LanguageModel` object (wins as-is). `agent` supersedes `model`; `paint` supersedes `paint.model`; `judge` only feeds a judge you wired from `vendoModel("vendo-judge")` — no judge runs by default; `knowledgeVerifier` is its own slot so pinning the model that grades answers never repoints the one that gates them |
 | `auth` | one host-identity preset filling `principal`, `actAs`, and `oauth` from a single config key; mutually exclusive with all three — see [actAs presets](/connect/act-as-presets) |
 | `principal` | escape hatch: resolves the host request to a principal; `null` creates an ephemeral session. Mutually exclusive with `auth` |
 | `catalog` | `ComponentCatalog` or the name-keyed `ComponentRegistry` of host components exposed to the generation prompt; merged with any `.vendo/catalog.json` written by `vendo sync`, with explicit entries winning by name — see [Host components](/connect/host-components) |
+| `theme` | `VendoTheme` that wins over `.vendo/theme.json`. Resolved once at compose (it feeds app generation and the system-prompt summary), so unlike `brief` and `designRules` it is not re-read live |
+| `brief` | product-brief prose that wins over `.vendo/brief.md`; a blank string falls through to the file |
 | `store` | defaults to PGlite at `.vendo/data`; with `VENDO_API_KEY` set and no `store` passed, the Cloud hosted store fills the slot instead — see [Persistence](/deploy/persistence) |
 | `sandbox` | unlocks machine-backed apps (layers 2 and 3); with no adapter passed, `E2B_API_KEY` (with the `e2b` package installed) or `VENDO_API_KEY` fills the slot, and with none of the three, apps stay tree-only |
+| `knowledge` | a `KnowledgeAdapter` for the product knowledge base. Set, it composes the `vendo_knowledge_search` agent tool; unset, that tool does not exist |
 | `connectors` | adds external connector tool registries |
+| `connectorApps` | toolkit scope for the connector Vendo composes automatically from `VENDO_API_KEY` — discovery index, executable tools, and connect catalog all bound to this set. Ignored when `connectors` or `connections` is passed explicitly (scope those adapters directly) |
 | `connections` | explicit connections adapter for the connected-accounts surface; always wins over the composed defaults |
 | `actAs` | escape hatch: supplies scoped auth material for away host API execution. Mutually exclusive with `auth` — see [actAs presets](/connect/act-as-presets) |
 | `serverActions` | the server-action registration map emitted by the generated wiring file, keyed `"<module>#<exportName>"`; server-action tools dispatch in-process through it, and a missing key fails closed at execution |
@@ -28,13 +33,16 @@ sessions, and default persistence.
 | `judge` | contextual guard judge |
 | `secrets` | defaults to environment-backed secret lookup |
 | `telemetry` | wires build and development telemetry |
-| `development` | development-only source capture; `NODE_ENV=development` enables it with cwd `.vendo` defaults, an object supplies `{ root?, out? }` for adapters whose process cwd differs, `false` disables the environment default |
+| `development` | boolean. Opens the development-only injection seams (`/dev/inclient-approval`, the review queue). `NODE_ENV=development` enables them; `false` disables that default |
+| `profileDir` | the project root the `.vendo/` profile is read under — tools, overrides, `theme.json`, `brief.md`, `catalog.json`, the per-generation `design-rules.md` read, and the remix pin baselines all resolve against it. Unset, they resolve against the process cwd |
+| `fetch` | the `fetch` route and OpenAPI tool bindings execute through, threaded verbatim into the actions registry. An explicitly passed function always wins; unset keeps the platform `fetch` |
+| `profile` | the same `.vendo/` pieces as in-memory compose-time inputs, for venues with no filesystem: `{ tools?, overrides?, theme?, brief?, catalog?, policy?, designRules? }`. Precedence is per piece and independent: `profile.<piece>` → the `profileDir` file → the cwd default. `tools`/`overrides` are validated by the actions registry, which loads lazily — a malformed piece throws `validation` on the first actions use, not at `createVendo`. `apps.designRules` wins over `profile.designRules`, and the top-level `policy` wins over `profile.policy` |
 | `mcp` | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; `true` for defaults, or an object carrying `{ baseUrl?, remoteAs?, federation? }` when door-specific settings need to flow through the umbrella (see [Configure the door through the umbrella](/capabilities/mcp#configure-the-door-through-the-umbrella)); off by default |
 | `oauth` | escape hatch: `HostOAuthAdapter` used by the door for session lookup and principal resolution; required when `mcp` is enabled and `auth` supplies no oauth half. Mutually exclusive with `auth`. The door renders consent when the adapter uses `session`, or hands off the whole page when it supplies `authorize` instead — see [MCP door](/capabilities/mcp) |
-| `agent` | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSteps` (see [Agent context](#agent-context)) |
+| `agent` | chat context controls: `instructions`, `toolOutputCap`, `maxOutputTokens`, `historyWindow`, `maxInitialTools`, `loadout`, `maxSearchExpansions`, `maxSteps` (see [Agent context](#agent-context)) |
 | `sessions` | ephemeral (anonymous) session lifecycle: `ttlMs` idle timeout before a session is swept (default 30 minutes; `0` disables eviction) and `sweepIntervalMs` sweep cadence (default 60 seconds) |
 | `approvals` | approval lifecycle knobs: `parkedCallTtlMs` is the idle timeout for a guarded call parked from a [BYO agent loop](/existing-agents) (default 60 min; `0` disables expiry). Past it, the sweep denies the approval and `<VendoApprovalEmbed>` reads "expired". Vendo-thread approvals are untouched |
-| `apps` | apps-block options: `experimentalMachines` opts the project into layer-2 box machines, `experimentalServedApps` into layer-3 served apps (both off by default; served apps require machines), `designRules` sets host design rules programmatically, and `pipeline` enables the opt-in generation-pipeline flags (`exemplarContract`, `structuredRepair`, `regionParallel`, `endPass`, and `rebind` — the data-sighted verify's strict rebind arm, requires `endPass`) — see [Generated UI](/concepts/generated-ui) |
+| `apps` | apps-block options: `experimentalMachines` opts the project into layer-2 box machines, `experimentalServedApps` into layer-3 served apps (both off by default; served apps require machines), `designRules` sets host design rules programmatically, `review.reviewer(ctx)` is the host's reviewer assertion for review-kind remixes (unset, nobody reviews across an owner boundary), and `pipeline` tunes generation: `structuredRepair` and `smokeRender` are **on by default** and take `false` to disable; `exemplarContract`, `regionParallel`, `endPass`, and `rebind` (requires `endPass`) are opt-in while they are measured — see [Generated UI](/concepts/generated-ui) |
 | `tours` | [tour mode](/capabilities/tours): an ordered list of `{ prompt, respond }` entries replayed in front of the live agent for demos and onboarding. An entry fires only on a close variant of its own frozen prompt and only once per thread; everything else — including a follow-up about what a tour just put on screen — reaches the live agent untouched. Plain config, identical with and without `VENDO_API_KEY` |
 
 Named presets: `"cautious"` lets reads run and asks before writes or
@@ -57,19 +65,23 @@ fields are optional.
 
 ```ts
 createVendo({
-  model,
   principal,
   agent: {
+    instructions: "Answer in the product's voice; never invent account numbers.",
     toolOutputCap: 32_000, // char cap per tool result before it reaches the model; 0 disables
     maxOutputTokens: 4_000, // upper bound on tokens the model may emit per turn
     historyWindow: 20,      // last N whole messages re-sent per turn; omit to send the full thread
     maxInitialTools: 128,   // cap on host tools shown to the model at turn start; the rest stay discoverable via search
     loadout: ["issues_list", "issues_create"], // explicit initial host tools; overrides the default policy
+    maxSearchExpansions: 3, // lazy connector toolkits one tool search may expand
     maxSteps: 20,           // max agent steps per turn before Vendo stops the loop
   },
 });
 ```
 
+- `instructions` is the host's voice and standing guidance, appended to the
+  agent's system prompt every turn: tone, formatting, what to emphasize.
+  Policy belongs in guard directions, not here.
 - `toolOutputCap` caps a single tool result before it reaches the model, so a
   runaway host response can't blow the context window. Defaults to `32000`
   characters. Pass `0` to disable the cap. Persistence and the streamed
@@ -95,6 +107,11 @@ createVendo({
   Anything omitted from the list is still discoverable via
   `vendo_tools_search`. Every tool, initial or searched-in, still
   executes through the same guard binding.
+- `maxSearchExpansions` bounds how many lazy connector toolkits one
+  `vendo_tools_search` query may expand from the discovery index. Defaults to
+  `3`. Lower it to keep a broad intent from fanning out schema loads; `0`
+  disables index-driven expansion entirely (already-loaded tools stay
+  searchable).
 - `maxSteps` caps how many agent steps (model call + tool round-trip) run in
   a single turn. Defaults to `20`. When the cap is hit, Vendo stops the loop
   and emits a step-limit notice on the stream so the client can render a
@@ -111,17 +128,24 @@ a consistent, resumable state. No configuration is required.
 
 ## Base path
 
-The wire mounts under one base path, default `/api/vendo`. Configure
-`createVendoClient({ baseUrl })` when mounting elsewhere. Layer-3 served-app
-UI is not proxied through this base.
+The server's base path is the fixed constant `/api/vendo`. It is not
+configurable: the handler answers only paths under it and returns `not-found`
+for anything else, so mount the route there. `createVendoClient({ baseUrl })`
+configures the *client* side — point it at a full origin when the browser
+talks to a Vendo deployment on another host. Layer-3 served-app UI is not
+proxied through this base.
 
 ## Identity
 
 Every wire request resolves a principal: through an `auth` preset's request
 resolver, or a hand-wired `principal(req)`. With neither key, every session
 is anonymous. The returned `Principal.subject` scopes threads, apps,
-approvals, grants, activity, and runs. Ephemeral principals never write to
-disk.
+approvals, grants, activity, and runs.
+
+Ephemeral (anonymous) principals are not in-memory: their session and
+everything they create are ordinary rows in the store, so they survive a
+restart. What makes them ephemeral is the idle-TTL sweep, which erases the
+session's rows once `sessions.ttlMs` elapses without a request.
 
 `principal(req)` must return `kind: "user"` (or `null`). Returning
 `kind: "org"` or a subject that starts with `vendo:` is rejected at the
@@ -137,7 +161,11 @@ approvals, connected accounts, and history stay put.
 
 Cookie-authenticated state-changing requests require
 `Content-Type: application/json`. The exhaustive exceptions are binary
-`/apps/import`, signed `/webhooks/:source`, and bearer-authenticated `/tick`.
+`/apps/import`, signed `/webhooks/:source`, bearer-authenticated `/tick`, and
+the bearer-authenticated `/box/*` callback surface. None of the four carries
+ambient credentials, and each validates its own content type instead:
+`/apps/import` demands `application/octet-stream` (or
+`application/vnd.vendo.app`), so a cross-origin form POST cannot slip through.
 
 ## Error envelope
 

@@ -12,18 +12,22 @@ stream over SSE.
 | --- | --- | --- |
 | `/threads` | POST | `{ threadId?, message }` → AI SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id: <thr_…>` (the effective requested or server-minted id) so hosts can persist the identity of a default thread without a follow-up round trip |
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
+| `/threads/:id/heartbeat` | POST | `{}`. Beaten by the client while a turn streams so the server can idle-abort the turn on a runtime that never surfaces a disconnect |
 | `/approvals` | GET | pending `ApprovalRequest[]` |
+| `/approvals/:id` | GET | one `ApprovalRequest` |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}`. Batch-capable, and a multi-id batch is atomic: every id lands or none does (members already decided the same way are skipped; an opposite prior decision conflicts the whole batch). Denying an automation's standing-grant ask also disarms that automation inside the same decision |
 | `/grants` · `/grants/:id` | GET · DELETE | grants · revoke |
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
 | `/apps/:id` | GET · DELETE | app · delete |
-| `/apps/:id/open` | GET | `OpenSurface`; with `?pending=1` a not-yet-servable app answers `{ kind: "pending" }` (HTTP 200) instead of a 404, the build-window poll `<VendoAppEmbed>` uses |
+| `/apps/:id/open` | GET | `OpenSurface`; with `?pending=1` a not-yet-servable app answers `{ kind: "pending" }` (HTTP 200) instead of a 404, the build-window poll `<VendoAppEmbed>` uses. A build that terminally failed — or a record owned by someone else — answers `{ kind: "failed", reason, retryable? }` at 200 so the poll resolves instead of spinning |
 | `/apps/:id/ship-diff` | GET | `ShipDiff`, the reviewable code diff against the last approved baseline, hash-pinned to the current version. Owner-scoped. See [In-client venue](/concepts/in-client-venue). |
 | `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls) |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
 | `/apps/:id/history` | GET · POST | versions · `{ op: "undo" }` |
 | `/apps/:id/export` | GET | `.vendoapp` bytes |
-| `/apps/import` | POST | bytes → `AppDocument` (fresh id minted) |
+| `/apps/import` | POST | bytes → `AppDocument` (fresh id minted). Requires `Content-Type: application/octet-stream` (or `application/vnd.vendo.app`) — it is exempt from the JSON CSRF floor, so a non-safelisted media type is what forces a cross-origin preflight |
+| `/apps/:id/fn/:name` | POST | proxies one `fn:` call into the app's machine and relays its status, body, and `content-type`. No cookies or authorization cross the skin; a call that outruns the budget answers `504` while the box keeps working |
+| `/apps/:id/machine/ping` | POST | → `{ state: "awake" \| "woke" }`. Re-arms the machine's idle timer for an embedded served app; `"woke"` tells the embed its URL is stale — re-open |
 | `/apps/:id/fork` | POST | → `AppDocument` |
 | `/apps/:id/pin-drift` | GET | `PinDrift[]`, pins whose captured baseline no longer matches |
 | `/apps/:id/rebase-pin` | POST | `{ slot }` → `PinRebaseResult`, re-fork from the new baseline and replay recorded intents, all-or-nothing |
@@ -38,21 +42,51 @@ stream over SSE.
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain), verified as described below |
 | `/activity` | GET | `AuditEvent[]`, self-scoped with `guard.audit.query({ principal })` |
 | `/connections` | GET | connected accounts owned by the caller |
+| `/connections/catalog` | GET | the connectors this deployment advertises: `{ toolkit, connector, label? }[]`. What the connect dock resolves when the host passes no explicit `connectors` prop |
 | `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }`; refused for ephemeral and synthetic (`webhook:` / `vendo:`) subjects |
 | `/connections/:id?connector=` | GET · DELETE | status (poll while connecting) · disconnect through the broker |
 | `/orgs` · `/orgs/:id` and every other `/orgs/*` path | any | always `cloud-required` (`402`); organizations are a [Vendo Cloud](/deploy/vendo-cloud) capability, not an OSS wire route |
 | `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open, `blocks.sandbox` reporting the execution venue (`"e2b"`, `"cloud"`, `"custom"`, or `false` when none is wired), and `blocks.connections` reporting the connected-accounts broker posture (`"byo"`, `"cloud"`, or `false`) |
-| `/sync/impact` | POST | dev-only. `{ tools: string[] }` → per-tool reference counts across enabled apps, enabled automations, and active standing grants. Accepts up to 200 tool names per call and returns `404` in production |
+| `/sync/impact` | POST | dev-only. `{ tools: string[] }` → `{ impact }`, per-tool reference counts across enabled apps, enabled automations, and active standing grants. Accepts up to 200 tool names per call. In production it answers `blocked` (`403`), not `404` — the route is mounted everywhere and refuses on `NODE_ENV` |
 
 ## Development routes
 
-These routes are only mounted in development compositions. Production
-deployments return `404` for each of them. They require a host-resolved
-principal; anonymous callers receive `401`.
+These routes answer only in a development composition
+(`createVendo({ development })`, which `NODE_ENV=development` enables), and
+only for a host-resolved principal — an anonymous session is not a host trust
+decision, even locally. `/dev/inclient-approval` says so out loud (`401`); the
+review routes mask instead, answering an empty queue or `not-found` so no
+caller can probe another subject's pending work.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/dev/inclient-approval` | POST | `{ appId }` → `{}`. Pins the app's *current* `versionHash` as an in-client approval for the resolved principal. The Cloud console mints approvals in production; this route is the documented stand-in for local demos. See [In-client venue and approvals](/concepts/in-client-venue). |
+| `/dev/inclient-approval` | POST | `{ appId, approvedBy? }` → `{}`. Pins the app's *current* `versionHash` as an in-client approval for the resolved principal. Production returns `404`. The Cloud console mints approvals in production; this route is the documented stand-in for local demos. See [In-client venue and approvals](/concepts/in-client-venue). |
+| `/apps/review-queue` | GET | review-kind versions awaiting a reviewer, with requester, slot, version hash, submission time, resubmission count, and the ship-diff payload. Outside a development composition — or for an anonymous caller — it answers an empty array, never an error. Without `createVendo({ apps: { review: { reviewer } } })` a caller sees only their own submissions |
+| `/apps/:id/reject-review` | POST | `{ note }` → the rejection. The note is required (the user's panel renders it) and the work is not deleted; a new version supersedes the rejection. Takes the same reviewer assertion; every other caller gets the `not-found` an unowned app answers |
+
+### Doctor probes
+
+`vendo doctor` drives a handful of synthetic routes against the running dev
+server. Every path under `/doctor/` returns `404` in production, with one
+deliberate exception: `/doctor/base-url` reports a static composition fact
+(is `VENDO_BASE_URL` set?) and answers in every environment, because
+production is exactly where that answer matters.
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/doctor/base-url` | GET | `{ ok: true }`, or `409` with `base-url-not-set-in-production` |
+| `/doctor/machines` | GET | which apps carry a machine, whether a schedule caller is configured, and each schedule's last-fired state |
+| `/doctor/present` · `/doctor/present/echo` | POST · GET | mint and echo the present-mode credential round trip; the echo reports booleans only, never credential values |
+| `/doctor/act-as` · `/doctor/act-as/echo` | POST · GET | mint `actAs` material and check the host's own principal resolver accepts it |
+
+## Box callbacks
+
+An app machine calls back into the host through `/box/*`, authenticated with
+`Authorization: Bearer $VENDO_APP_TOKEN` — the per-app token minted at
+provision. No cookie, no host principal: this surface is called from inside
+the box, in any language. The routes and their bodies are documented with the
+rest of the machine contract in
+[the app machine environment](/reference/environment-variables#app-machine-environment).
 
 ## MCP door
 
@@ -110,7 +144,9 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`; see
 [Troubleshooting](/deploy/troubleshooting#error-codes) for the code-to-status
 map.
 
-Cookie-authenticated mutations require `Content-Type: application/json`.
-Binary app import, signed webhooks, and bearer-authenticated tick are the only
-exceptions. MCP door paths sit outside both rules; they speak MCP and OAuth
-response shapes, not the wire envelope.
+Cookie-authenticated mutations require `Content-Type: application/json`. The
+exceptions are exactly four: binary `/apps/import`, signed `/webhooks/:source`,
+bearer-authenticated `/tick`, and the bearer-authenticated `/box/*` callback
+surface. None of them carries ambient credentials, and each validates its own
+content type instead. MCP door paths sit outside both rules; they speak MCP
+and OAuth response shapes, not the wire envelope.

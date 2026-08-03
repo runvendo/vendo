@@ -1,48 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import type { CreateVendoConfig } from "./server.js";
+import { CONFIG_KEYS } from "./handler-options.docs-check.js";
 
 /**
  * Docs-rot gate (same pattern as doctor-codes.docs.test.ts): the composition
  * configuration table on handler-options.mdx must list exactly the top-level
- * keys of CreateVendoConfig. The key list below is pinned to the interface at
- * compile time in both directions, so the table can neither document a key
- * that does not exist nor silently miss a new one.
+ * keys of CreateVendoConfig.
+ *
+ * The list lives in `handler-options.docs-check.ts`, which IS typechecked
+ * (tsconfig.docs-check.json), so it can neither name a key that does not exist
+ * nor miss a new one. This test is the other half: the page's rows are exactly
+ * that list.
  */
-
-const CONFIG_KEYS = [
-  "model",
-  "paint",
-  "models",
-  "auth",
-  "principal",
-  "catalog",
-  "store",
-  "sandbox",
-  "connectors",
-  "connections",
-  "actAs",
-  "serverActions",
-  "policy",
-  "judge",
-  "secrets",
-  "telemetry",
-  "development",
-  "mcp",
-  "oauth",
-  "agent",
-  "sessions",
-  "approvals",
-  "apps",
-  "tours",
-] as const;
-
-// Every listed key exists on the interface…
-const _listedKeysExist: ReadonlyArray<keyof CreateVendoConfig> = CONFIG_KEYS;
-void _listedKeysExist;
-// …and every interface key is listed (Exclude resolves to never or this fails).
-type AssertNever<T extends never> = T;
-type _NoMissingKeys = AssertNever<Exclude<keyof CreateVendoConfig, (typeof CONFIG_KEYS)[number]>>;
 
 const OPTIONS_PAGE = new URL("../../../docs-site/reference/handler-options.mdx", import.meta.url);
 
