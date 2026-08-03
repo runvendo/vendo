@@ -200,6 +200,16 @@ selector — parked as structure candidates, not styled in).
 Hosts still re-theme everything via the existing VendoTheme tokens; S1 is
 the out-of-the-box feel, not a mandate.
 
+**S1 is a RECIPE over host tokens, not a palette (2026-08-03).** The
+default look derives from the host's VendoTheme exactly as the chrome
+already does — background, surface, text, accent, fonts, radius all flow
+from host tokens; S1 defines the RELATIONSHIPS (border alpha ~5% of
+foreground, the radius scale, muted-text mixing, shadow only on floating
+elements, spacing rhythm). A warm-branded host renders warm S1; Maple
+renders neutral S1. Dark mode: DEFERRED — the derived-scheme machinery
+(ENG-226) stands; exact dark default values are picked during the build,
+not as a design decision now.
+
 **Scope confirmed (2026-08-03): the S1 pass applies to EVERY surface** —
 the overlay panel, thread (bubbles/beats/app cards), approval and grant
 cards, toasts, waiting strip, launcher pill, share dialog — one re-token
