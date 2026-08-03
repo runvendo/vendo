@@ -6,6 +6,12 @@ description: "Server-side reference for @vendoai/vendo: the createVendo composit
 
 Import the default composition from `@vendoai/vendo/server`.
 
+One import splits across two entries: `createVendo` and most of its option
+types live at `@vendoai/vendo/server`, but `HostOAuthAdapter` — the type you
+need to write the `oauth` adapter `mcp` requires — is exported from the
+**root** `@vendoai/vendo`, along with `ToolRegistry`. Importing it from
+`/server` is a type error.
+
 ```ts
 import type { Principal, ActAs, ComponentCatalog, ComponentRegistry, SecretsProvider, Json, RunId } from "@vendoai/core";
 import type { LanguageModel } from "ai";                      // peerDependency (00 conventions)

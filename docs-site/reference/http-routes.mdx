@@ -39,7 +39,7 @@ stream over SSE.
 | `/runs` · `/runs/:id` | GET | run records |
 | `/runs/:id/stop` | POST | `{}` |
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>`) |
-| `/webhooks/:source` | POST | trigger ingress (Composio, host, plain), verified as described below |
+| `/webhooks/:source` | POST | trigger ingress (Composio, host, plain), verified as described below. Matched by raw prefix, so a source may carry slashes (`/webhooks/composio/gmail`) |
 | `/activity` | GET | `AuditEvent[]`, self-scoped with `guard.audit.query({ principal })` |
 | `/connections` | GET | connected accounts owned by the caller |
 | `/connections/catalog` | GET | the connectors this deployment advertises: `{ toolkit, connector, label? }[]`. What the connect dock resolves when the host passes no explicit `connectors` prop |

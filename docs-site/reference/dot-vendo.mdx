@@ -30,10 +30,14 @@ re-judge the AI layer without ever clobbering a decision a person made.
 | `theme.extracted.json` | init / sync | `vendo/theme-extracted@1` — what the deterministic scan produced last time. It is the merge base that lets sync tell "you edited this slot" from "the app's brand moved"; commit it beside `theme.json` |
 | `knowledge.json` | `vendo knowledge add` / human | the registered knowledge sources (globs, kind, visibility, name) |
 | `knowledge-manifest.json` | `vendo knowledge sync` | sha256 hashes of every synced document. Regenerable — safe to gitignore; deleting it re-syncs everything |
-| `data/` | store | PGlite files (gitignored; init writes the ignore) |
+| `data/` | store | PGlite files |
+| `data/.gitignore` | init | `*` plus an exception for itself — this is how `data/` stays out of git. Doctor warns (`E-CFG-002`) when it is missing |
 | `data/misses.jsonl` | runtime | one `vendo/capability-miss@1` event per line ([Telemetry](/deploy/telemetry#capability-misses)) |
+| `data/judge/` | sync (AI pass) | raw judge output kept for inspection when a stage had to be repaired |
+| `data/extract/` | init / sync | raw extraction-stage artifacts, same purpose |
 
-`data/` is runtime state, not configuration. Do not commit it.
+`data/` is runtime state and debugging residue, not configuration. Do not
+commit it — the `.gitignore` init writes there is what keeps it out.
 
 Five of these files are also **cloud-resolvable** surfaces:
 `design-rules.md`, `brief.md`, `theme.json`, `policy.json`, and
