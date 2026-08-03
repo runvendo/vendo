@@ -1,7 +1,7 @@
 {
   "name": "CadenceDocProgress",
-  "hash": "sha256:347874693ad99020eac70906f9e9c764846e96e61537025e51b9f621b74c36ae",
-  "capturedAt": "2026-08-03T12:35:02.767Z",
+  "hash": "sha256:6a8cafcd58717a498871a751dccabde26cfd8f209244fcfa68f2b999a2c1395d",
+  "capturedAt": "2026-08-03T16:11:39.226Z",
   "module": "src/vendo/registry.tsx",
   "export": "CadenceDocProgress",
   "entry": "b59524b68c0b6085d3cd73ebda12e018566bbbc58ac9644740b6725580ac5410",
@@ -18,9 +18,14 @@
     }
   ],
   "bytes": 8347,
+  "requires": [
+    "clsx",
+    "tailwind-merge",
+    "zod"
+  ],
   "sampleProps": {
     "max": 228,
-    "value": 554008
+    "value": 9
   },
   "sampleOrigin": "generated"
 }

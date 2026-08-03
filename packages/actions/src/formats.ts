@@ -632,6 +632,14 @@ export interface CapturedHostComponent {
   /** Total captured bytes (entry + closure), for budget accounting. */
   bytes?: number;
   /**
+   * Bundled packages this capture needs at render time (clsx / tailwind-merge /
+   * zod). A consumer whose jail runtime predates them MUST show an honest
+   * "preview unavailable — runtime too old" tile: without this field the
+   * require throws, a `streaming` surface swallows it into a shimmer skeleton,
+   * and the component is indistinguishable from one still loading.
+   */
+  requires?: string[];
+  /**
    * The rehearsal seed a preview renders with, parsed from the registration's
    * own first usable `examples` string.
    *
@@ -679,6 +687,7 @@ export const capturedHostComponentSchema = z.object({
   modules: z.record(z.string().regex(/^[0-9a-f]{64}$/u)).optional(),
   styles: z.array(z.object({ path: z.string(), ref: z.string().regex(/^[0-9a-f]{64}$/u) })).optional(),
   bytes: z.number().optional(),
+  requires: z.array(z.string()).optional(),
   sampleProps: z.record(z.unknown()).optional(),
   sampleOrigin: z.enum(["declared", "generated"]).optional(),
   noSampleProps: z.object({

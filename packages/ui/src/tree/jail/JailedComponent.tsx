@@ -327,6 +327,13 @@ export function JailedComponent({
     // rewritten (or restructured to use the host registry properly) before the
     // final payload ships. Hold the silhouette; the note is for final payloads.
     if (streaming === true) {
+      // But NEVER swallow it entirely. A surface that renders previews with
+      // `streaming` permanently (no stream to finish) turns every crash into a
+      // shimmer skeleton that is indistinguishable from "still loading" — a
+      // real captured component failed this way on a stale jail runtime and
+      // took a browser investigation to find, because nothing anywhere said so.
+      // eslint-disable-next-line no-console
+      console.warn(`[vendo] "${name}" failed inside the jail and is showing a loading silhouette because the payload is mid-stream: ${error}`);
       return <FormingSkeleton name={name} />;
     }
     return <ContainedNotice label="Generated component error">{`${name}: ${error}`}</ContainedNotice>;

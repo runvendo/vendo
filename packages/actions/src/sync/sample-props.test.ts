@@ -108,6 +108,18 @@ describe("generated preview props", () => {
     })).toEqual({});
   });
 
+  it("keeps an obviously-paired current/ceiling coherent", () => {
+    // A progress bar seeded `value: 554008, max: 228` is typed-correct and
+    // visibly broken — worse in a preview than no seed at all.
+    const props = generateSampleProps("DocProgress", {
+      type: "object",
+      properties: { value: { type: "number" }, max: { type: "number" } },
+      required: ["value", "max"],
+    })!;
+    expect(props.value as number).toBeLessThanOrEqual(props.max as number);
+    expect(props.value as number).toBeGreaterThan(0);
+  });
+
   it("returns null for the permissive placeholder and for a recursive schema", () => {
     expect(generateSampleProps("Unknown", {})).toBeNull();
     expect(generateSampleProps("Unknown", undefined)).toBeNull();

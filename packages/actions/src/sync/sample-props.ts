@@ -73,7 +73,7 @@ function numberFor(key: string, seed: number, schema: JsonSchema): number {
   const integer = schema.type === "integer";
   // Money is the most common numeric prop in a host registry and reads wrong at
   // single digits; counts read wrong in the thousands.
-  const base = /(cents|amount|balance|total|price|value|revenue)/i.test(key) ? 10_000 + (seed % 990_000)
+  const base = /(cents|amount|balance|price|revenue|salary|cost)/i.test(key) ? 10_000 + (seed % 990_000)
     : /(count|qty|quantity|size|height|width|index|page|days?)/i.test(key) ? 1 + (seed % 48)
       : /(percent|rate|ratio)/i.test(key) ? seed % 100
         : 1 + (seed % 1_000);
@@ -84,6 +84,28 @@ function numberFor(key: string, seed: number, schema: JsonSchema): number {
   else if (min !== undefined && value < min) value = min + (seed % 100);
   else if (max !== undefined && value > max) value = max - (seed % 10) < (min ?? Number.NEGATIVE_INFINITY) ? max : max - (seed % 10);
   return integer ? Math.round(value) : value;
+}
+
+/** Names that mean "the ceiling" and names that mean "where we are now". */
+const CEILING = /^(?:max|maximum|total|limit|capacity|goal|target|denominator)$/i;
+const CURRENT = /^(?:value|current|count|used|completed|done|progress|numerator)$/i;
+
+/**
+ * Keep obviously-paired numbers in a sane relationship. Each value is generated
+ * independently from its own path, so a progress bar could come out as
+ * `value: 554008, max: 228` — typed-correct and visibly broken, which in a
+ * preview is worse than no seed at all. Only reorders what is already there;
+ * invents nothing.
+ */
+function coherePairs(value: Record<string, unknown>): void {
+  const ceiling = Object.keys(value).find((key) => CEILING.test(key));
+  const current = Object.keys(value).find((key) => CURRENT.test(key));
+  if (ceiling === undefined || current === undefined) return;
+  const high = value[ceiling];
+  const low = value[current];
+  if (typeof high !== "number" || typeof low !== "number" || low <= high) return;
+  value[ceiling] = high > low ? high : low;
+  value[current] = Math.max(1, Math.round(low % Math.max(2, high)));
 }
 
 function generate(schema: JsonSchema, key: string, name: string, path: string, depth: number): Generated {
@@ -159,6 +181,7 @@ function generate(schema: JsonSchema, key: string, name: string, path: string, d
     // property failed to synthesize. Both fall to the honest rung-3 label.
     // A component that genuinely declares NO props is different: `{}` is the
     // correct seed and it will draw.
+    coherePairs(value);
     const expectedData = Object.keys(properties).length > 0
       || (typeof schema.additionalProperties === "object" && schema.additionalProperties !== null);
     if (expectedData && Object.keys(value).length === 0) return FAILED;

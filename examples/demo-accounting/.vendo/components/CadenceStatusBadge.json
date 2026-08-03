@@ -1,7 +1,7 @@
 {
   "name": "CadenceStatusBadge",
-  "hash": "sha256:40b0fcbeb90dd66b0697a3f166cd95c561b4507dfc0a9e48ae0c979366852118",
-  "capturedAt": "2026-08-03T12:35:02.786Z",
+  "hash": "sha256:fab7c1a57ae6ba46cba65d349333f92933048f982c43d0f4ef57efc676593c64",
+  "capturedAt": "2026-08-03T16:09:34.511Z",
   "module": "src/vendo/registry.tsx",
   "export": "CadenceStatusBadge",
   "entry": "b59524b68c0b6085d3cd73ebda12e018566bbbc58ac9644740b6725580ac5410",
@@ -18,6 +18,11 @@
     }
   ],
   "bytes": 8347,
+  "requires": [
+    "clsx",
+    "tailwind-merge",
+    "zod"
+  ],
   "sampleProps": {
     "text": "Needs review",
     "variant": "review",

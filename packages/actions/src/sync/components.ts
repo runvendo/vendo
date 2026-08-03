@@ -292,7 +292,7 @@ export async function captureHostComponents(options: {
               specifiers: walked.closure.unsupported,
             });
           } else {
-            const { sourceImports, subSources, bytes } = walked.closure;
+            const { sourceImports, subSources, bytes, requires } = walked.closure;
             const modules: Record<string, string> = {};
             for (const [id, sub] of Object.entries(subSources)) {
               modules[id] = addModule(corpus, {
@@ -313,6 +313,7 @@ export async function captureHostComponents(options: {
               ...(Object.keys(modules).length === 0 ? {} : { modules }),
               ...(styles.length === 0 ? {} : { styles: styleRefs() }),
               bytes,
+              ...(requires.length === 0 ? {} : { requires }),
               ...("gap" in sample
                 ? { noSampleProps: sample.gap }
                 : { sampleProps: sample.props, sampleOrigin: sample.origin }),

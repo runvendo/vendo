@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { isIslandResolvableSpecifier } from "@vendoai/core";
+import { isIslandResolvableSpecifier, JAIL_BUNDLED_PACKAGES } from "@vendoai/core";
 import type { CapturedPinSubSource } from "../formats.js";
 import {
   isInside,
@@ -50,6 +50,16 @@ export interface CapturedClosure {
    * how a grey placeholder becomes a mislabeled crash.
    */
   unsupported: string[];
+  /**
+   * Bundled packages (core's JAIL_BUNDLED_PACKAGES) this closure needs at
+   * render time. Recorded so a CONSUMER can detect version skew instead of
+   * failing silently: a jail runtime older than the bundling commit throws
+   * `module "zod" is not available`, and a surface that renders previews as
+   * `streaming` turns that throw into a shimmer skeleton forever — no frame,
+   * no error, indistinguishable from "still loading". A capture that states
+   * what it needs lets the consumer say so honestly.
+   */
+  requires: string[];
 }
 
 export interface ClosureOverBudget {
@@ -155,6 +165,8 @@ export async function captureClosure(options: {
   const budgetBytes = options.budgetBytes ?? DEFAULT_CAPTURE_BUDGET_BYTES;
   const missed: string[] = [];
   const unsupported = new Set<string>();
+  const requires = new Set<string>();
+  const BUNDLED: ReadonlySet<string> = new Set(JAIL_BUNDLED_PACKAGES);
   const sourceImports: Record<string, string> = {};
   const captured = new Map<string, CapturedPinSubSource>();
   const sizes = new Map<string, number>();
@@ -172,7 +184,10 @@ export async function captureClosure(options: {
     for (const specifier of importSpecifiers(task.source, task.file)) {
       // Resolvable inside the jail without capture: react, the kit names, and
       // the packages the jail runtime bundles (core's JAIL_BUNDLED_PACKAGES).
-      if (isIslandResolvableSpecifier(specifier)) continue;
+      if (isIslandResolvableSpecifier(specifier)) {
+        if (BUNDLED.has(specifier)) requires.add(specifier);
+        continue;
+      }
       const importer = task.id ?? primaryId;
       // Every path below leaves the specifier out of the import table, which
       // means the jail will ask for it and throw. Record it once, here.
@@ -234,6 +249,7 @@ export async function captureClosure(options: {
       }])),
       bytes,
       unsupported: [...unsupported].sort(),
+      requires: [...requires].sort(),
     },
   };
 }
