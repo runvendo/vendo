@@ -61,7 +61,10 @@ const doc = (slot: string, overrides: Partial<AppDocument> = {}): AppDocument =>
   ...overrides,
 });
 
-const setup = () => {
+/** Round-2 hardening: reviewing takes the composition's explicit assertion —
+ *  these tests assert it for exactly the host_reviewer subject. `setup({})`
+ *  (no hook) is the unconfigured composition. */
+const setup = (review: { reviewer?(ctx: RunContext): boolean } = { reviewer: (ctx) => ctx.principal.subject === "host_reviewer" }) => {
   const store = memoryStore();
   const guard = guardFixture();
   const runtime = createApps({
@@ -71,6 +74,7 @@ const setup = () => {
     catalog: [],
     pinBaselines: [reviewedBaseline, instantBaseline],
     model: scriptedLanguageModel('<Edit><SetName name="Edited name"/></Edit>'),
+    review,
   });
   return { store, guard, runtime };
 };
@@ -125,7 +129,7 @@ describe("approval swaps the served version", () => {
     await seedAppRow(store, v1, owner.principal.subject);
     const v1Hash = appVersionHash(v1);
 
-    await runtime.inClient.approve({ appId: v1.id, approvedBy: "host-console" }, owner);
+    await runtime.inClient.approve({ appId: v1.id, approvedBy: "host-console" }, reviewer);
     const approved = await runtime.open(v1.id, owner);
     if (approved.kind !== "tree") throw new Error("expected tree surface");
     expect((approved.payload as { inClient?: unknown }).inClient).toMatchObject({
@@ -154,7 +158,7 @@ describe("approval swaps the served version", () => {
     expect(during.components).toEqual(v1.components);
 
     // Approving the new version swaps it in, rider gone.
-    await runtime.inClient.approve({ appId: v1.id, approvedBy: "host-console" }, owner);
+    await runtime.inClient.approve({ appId: v1.id, approvedBy: "host-console" }, reviewer);
     const swapped = await runtime.open(v1.id, owner);
     if (swapped.kind !== "tree") throw new Error("expected tree surface");
     expect((swapped.payload as { inClient?: { versionHash?: string; review?: unknown } }).inClient).toMatchObject({
@@ -239,7 +243,7 @@ describe("rejection", () => {
 
     const reviewed = doc("transfer-panel");
     await seedAppRow(store, reviewed, owner.principal.subject);
-    await runtime.inClient.approve({ appId: reviewed.id, approvedBy: "host-console" }, owner);
+    await runtime.inClient.approve({ appId: reviewed.id, approvedBy: "host-console" }, reviewer);
     await expect(runtime.review.reject({ appId: reviewed.id, note: "too late" }, reviewer))
       .rejects.toMatchObject({ code: "conflict" });
 
@@ -256,12 +260,28 @@ describe("rejection", () => {
       .rejects.toMatchObject({ code: "conflict" });
   });
 
+  it("two concurrent rejections of the same version converge on ONE note", async () => {
+    const { store, runtime } = setup();
+    const app = doc("transfer-panel");
+    await seedAppRow(store, app, owner.principal.subject);
+    // Both racers can pass the duplicate check before either writes; the
+    // version-keyed idempotent id makes them land on the SAME row.
+    const results = await Promise.allSettled([
+      runtime.review.reject({ appId: app.id, note: "First racer." }, reviewer),
+      runtime.review.reject({ appId: app.id, note: "Second racer." }, reviewer),
+    ]);
+    expect(results.some((result) => result.status === "fulfilled")).toBe(true);
+    const rows = (await store.records("vendo_remix_rejections").list({ refs: { appId: app.id } })).records;
+    expect(rows).toHaveLength(1);
+    expect(await runtime.review.queue(reviewer)).toEqual([]);
+  });
+
   it("records the note, surfaces it to the user, drops the version from the queue, and audits under the owner", async () => {
     const { store, guard, runtime } = setup();
     const app = doc("transfer-panel");
     await seedAppRow(store, app, owner.principal.subject);
 
-    expect(await runtime.review.queue()).toHaveLength(1);
+    expect(await runtime.review.queue(reviewer)).toHaveLength(1);
 
     const rejection = await runtime.review.reject(
       { appId: app.id, note: "Keep the original balance label." },
@@ -275,7 +295,7 @@ describe("rejection", () => {
     });
 
     // The queue drops it; the work is NOT deleted.
-    expect(await runtime.review.queue()).toEqual([]);
+    expect(await runtime.review.queue(reviewer)).toEqual([]);
     expect(await runtime.get(app.id, owner)).not.toBeNull();
 
     // The note rides the venue state the user's panel reads.
@@ -306,12 +326,12 @@ describe("rejection", () => {
     const app = doc("transfer-panel");
     await seedAppRow(store, app, owner.principal.subject);
     await runtime.review.reject({ appId: app.id, note: "Not like this." }, reviewer);
-    expect(await runtime.review.queue()).toEqual([]);
+    expect(await runtime.review.queue(reviewer)).toEqual([]);
 
     const edited = await runtime.edit(app.id, "Rename it", owner);
     expect(edited.failure).toBeUndefined();
 
-    const queue = await runtime.review.queue();
+    const queue = await runtime.review.queue(reviewer);
     expect(queue).toHaveLength(1);
     expect(queue[0]).toMatchObject({
       appId: app.id,
@@ -340,7 +360,7 @@ describe("review queue", () => {
     const app = doc("transfer-panel");
     await seedAppRow(store, app, owner.principal.subject);
 
-    const queue = await runtime.review.queue();
+    const queue = await runtime.review.queue(reviewer);
     expect(queue).toHaveLength(1);
     expect(queue[0]).toMatchObject({
       appId: app.id,
@@ -362,12 +382,64 @@ describe("review queue", () => {
     const { store, runtime } = setup();
     const instant = doc("hero-card");
     await seedAppRow(store, instant, owner.principal.subject);
-    expect(await runtime.review.queue()).toEqual([]);
+    expect(await runtime.review.queue(reviewer)).toEqual([]);
 
     const reviewed = doc("transfer-panel");
     await seedAppRow(store, reviewed, owner.principal.subject);
-    expect(await runtime.review.queue()).toHaveLength(1);
-    await runtime.inClient.approve({ appId: reviewed.id, approvedBy: "host-console" }, owner);
-    expect(await runtime.review.queue()).toEqual([]);
+    expect(await runtime.review.queue(reviewer)).toHaveLength(1);
+    await runtime.inClient.approve({ appId: reviewed.id, approvedBy: "host-console" }, reviewer);
+    expect(await runtime.review.queue(reviewer)).toEqual([]);
+  });
+});
+
+describe("the reviewer assertion (round-2 hardening)", () => {
+  it("scopes the queue: the asserted reviewer reads everything, anyone else only their own submissions", async () => {
+    const { store, runtime } = setup();
+    const app = doc("transfer-panel");
+    await seedAppRow(store, app, owner.principal.subject);
+    expect(await runtime.review.queue(reviewer)).toHaveLength(1);
+    expect(await runtime.review.queue(owner)).toHaveLength(1);
+    expect(await runtime.review.queue(context("user_bob"))).toEqual([]);
+  });
+
+  it("without the hook the queue serves only the caller's own items and reject refuses, naming the hook", async () => {
+    const { store, runtime } = setup({});
+    const app = doc("transfer-panel");
+    await seedAppRow(store, app, owner.principal.subject);
+    expect(await runtime.review.queue(owner)).toHaveLength(1);
+    expect(await runtime.review.queue(reviewer)).toEqual([]);
+    await expect(runtime.review.reject({ appId: app.id, note: "no" }, reviewer))
+      .rejects.toMatchObject({ code: "blocked", message: expect.stringContaining("apps.review.reviewer") });
+  });
+
+  it("masks a non-reviewer's reject as not-found even with the hook set", async () => {
+    const { store, runtime } = setup();
+    const app = doc("transfer-panel");
+    await seedAppRow(store, app, owner.principal.subject);
+    await expect(runtime.review.reject({ appId: app.id, note: "no" }, owner))
+      .rejects.toMatchObject({ code: "not-found" });
+  });
+
+  it("a review-kind remix is never approved by its own user; an asserted reviewer approves across the owner boundary", async () => {
+    const { store, runtime } = setup();
+    const app = doc("transfer-panel");
+    await seedAppRow(store, app, owner.principal.subject);
+    await expect(runtime.inClient.approve({ appId: app.id, approvedBy: "self" }, owner))
+      .rejects.toMatchObject({ code: "blocked", message: expect.stringContaining("apps.review.reviewer") });
+    // A non-reviewer, non-owner caller learns nothing.
+    await expect(runtime.inClient.approve({ appId: app.id, approvedBy: "bob" }, context("user_bob")))
+      .rejects.toMatchObject({ code: "not-found" });
+    const approval = await runtime.inClient.approve({ appId: app.id, approvedBy: "host-console" }, reviewer);
+    expect(approval.versionHash).toBe(appVersionHash(app));
+  });
+
+  it("keeps owner self-approval for instant-kind apps, owner-scoped as before (regression)", async () => {
+    const { store, runtime } = setup({});
+    const app = doc("hero-card");
+    await seedAppRow(store, app, owner.principal.subject);
+    const approval = await runtime.inClient.approve({ appId: app.id, approvedBy: "local-dev" }, owner);
+    expect(approval.versionHash).toBe(appVersionHash(app));
+    await expect(runtime.inClient.approve({ appId: app.id, approvedBy: "bob" }, context("user_bob")))
+      .rejects.toMatchObject({ code: "not-found" });
   });
 });

@@ -66,7 +66,11 @@ export const devRoutes: RouteEntry[] = [
   // records (demos and dev; Cloud's review console mints these in
   // production). Development compositions only: production handlers fall
   // through to the ordinary 404, so no production surface can self-approve
-  // an app into the host page.
+  // an app into the host page. For a REVIEW-KIND remix the runtime refuses
+  // the app's own user even here (round-2 hardening): approval IS the
+  // review, so it takes the composition's reviewer assertion
+  // (apps.review.reviewer) — which also lets an asserted reviewer approve
+  // across the owner boundary.
   route("POST", "/dev/inclient-approval", async ({ request, deps, context }) => {
     if (!deps.development) return undefined;
     const body = await requestJson(request);

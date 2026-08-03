@@ -470,7 +470,8 @@ import type {
   ActAs, ActionsRegistry, AppsRuntime, AutomationsEngine, CatalogFile,
   ComponentCatalog, ComponentRegistry, Connector, ExtractedTool,
   HostOAuthAdapter, Json, Judge, KnowledgeAdapter, OverridesFile, PolicyConfig,
-  PolicyFile, Principal, RunId, SandboxAdapter, SecretsProvider, ToolRegistry,
+  PolicyFile, Principal, RunContext, RunId, SandboxAdapter, SecretsProvider,
+  ToolRegistry,
   VendoAgent, VendoGuard, VendoStore, VendoTheme,
 } from "@vendoai/vendo";
 import type {
@@ -543,6 +544,9 @@ export interface CreateVendoConfig {
       rebind?: boolean;
     };
     designRules?: string;
+    review?: {                // review-kind remixes: who may review (queue/reject/approve)
+      reviewer?(ctx: RunContext): boolean | Promise<boolean>;
+    };
   };
   tours?: readonly TourEntry[];
 }

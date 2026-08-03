@@ -129,8 +129,21 @@ function remixStatus(review: boolean, surface: OpenSurface | undefined): string 
   if (surface?.kind === "failed") return surface.reason;
   if (surface?.kind !== "tree") return "Waiting for review";
   const venue = (surface.payload as { inClient?: InClientVenue }).inClient;
-  if (venue?.granted === true) return `Approved by ${venue.approvedBy} — runs in the page`;
-  if (venue?.granted === false) return "Changed since approval — sandboxed until re-approved";
+  if (venue?.granted === true) {
+    // An older approved version can be serving while the CURRENT one awaits
+    // review (the `review` rider) — the status reports BOTH, or it would hide
+    // the pending state and the reviewer's note behind "Approved".
+    const serving = `Approved by ${venue.approvedBy} — runs in the page`;
+    if (venue.review?.status === "pending") return `${serving}; your latest edit is waiting for review`;
+    if (venue.review?.status === "rejected") return `${serving}; your latest edit was rejected — "${venue.review.note}"`;
+    return serving;
+  }
+  if (venue?.granted === false && venue.reason === "pending-review" && venue.review.status === "rejected") {
+    return `Rejected — "${venue.review.note}". Edit the remix to resubmit it for review.`;
+  }
+  if (venue?.granted === false && venue.reason === "version-changed") {
+    return "Changed since approval — sandboxed until re-approved";
+  }
   return "Waiting for review";
 }
 
@@ -203,13 +216,23 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
       .finally(() => setReverting(false));
   };
 
+  // The founder's binding rule (2026-08-02): until a reviewer approves, the
+  // ORIGINAL host component stays rendered, untouched. A pending or rejected
+  // review-kind remix mounts NOTHING here — no AppFrame, no notice in the
+  // page; its status lives in the panel and the ✦ popover. The venue verdict
+  // is server-authoritative ("pending-review" ships no executable source);
+  // the wrapper's own `review` flag covers a payload that carries no venue.
+  const venue = surface?.kind === "tree" ? (surface.payload as { inClient?: InClientVenue }).inClient : undefined;
+  const underReview = venue?.granted !== true
+    && (review || (venue !== undefined && !venue.granted && venue.reason === "pending-review"));
+
   // Until the fork's surface arrives (or if it never does), the original child
   // is the honest content — the wrapper never trades working host markup for
   // a skeleton, and a crashing fork drops back to it (PinMount).
   const Original = () => <>{original}</>;
   return (
     <>
-      {staged?.kind === "tree" ? (
+      {staged?.kind === "tree" && !underReview ? (
         <ChromeRoot automaticPolicyNotice={false}>
           <FluidReveal stateKey={`fork:${appId}`} initialExit={original}>
             <PinMount slot={slot} fallback={Original}>

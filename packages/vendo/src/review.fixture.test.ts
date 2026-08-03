@@ -106,6 +106,8 @@ export default function Page() {
     cleanups.push(async () => store.close());
     await store.ensureSchema();
     process.chdir(root);
+    const user = "user_ada";
+    const reviewer = "host_reviewer";
     const vendo = createVendo({
       model: scriptedModel([
         '<Edit><SetName name="Transfer remix v2"/></Edit>',
@@ -119,9 +121,10 @@ export default function Page() {
       },
       store,
       development: true,
+      // Round-2 hardening: reviewing takes the composition's explicit
+      // assertion — even a dev composition never infers it from a principal.
+      apps: { review: { reviewer: (ctx) => ctx.principal.subject === reviewer } },
     });
-    const user = "user_ada";
-    const reviewer = "host_reviewer";
 
     // 1. The user's Remix gesture forks the review-kind slot.
     const forkResponse = await vendo.handler(request("POST", "/apps/fork-pin", { as: user, body: { slot: "TransferPanel" } }));
@@ -144,7 +147,7 @@ export default function Page() {
     expect(pending.payload.components).toBeUndefined();
     expect(pending.payload.furnishings).toBeUndefined();
 
-    // 3. The review queue: the host reviewer sees the submission with the
+    // 3. The review queue: the ASSERTED reviewer sees the submission with the
     // ship-diff; an anonymous caller gets nothing (masked).
     const queueResponse = await vendo.handler(request("GET", "/apps/review-queue", { as: reviewer }));
     expect(queueResponse.status).toBe(200);
@@ -162,6 +165,29 @@ export default function Page() {
     const masked = await vendo.handler(request("GET", "/apps/review-queue"));
     expect(masked.status).toBe(200);
     expect(await masked.json()).toEqual([]);
+    // A host-resolved NON-reviewer sees only their own submissions — the
+    // owner their own item, anyone else nothing (never another user's fork
+    // source) — and their reject is masked like any unowned app.
+    const ownItems = await (await vendo.handler(request("GET", "/apps/review-queue", { as: user }))).json();
+    expect(ownItems).toHaveLength(1);
+    expect(ownItems[0]).toMatchObject({ appId, requester: user });
+    expect(await (await vendo.handler(request("GET", "/apps/review-queue", { as: "user_bob" }))).json()).toEqual([]);
+    expect((await vendo.handler(request("POST", `/apps/${appId}/reject-review`, { as: "user_bob", body: { note: "nope" } }))).status).toBe(404);
+    // WITHOUT the reviewer assertion a dev composition serves no cross-owner
+    // review capability at all: own items only, and reject refuses loudly,
+    // naming the hook to set.
+    const unasserted = createVendo({
+      principal: async (req): Promise<Principal | null> => {
+        const subject = req.headers.get(USER_HEADER);
+        return subject === null ? null : { kind: "user", subject };
+      },
+      store,
+      development: true,
+    });
+    expect(await (await unasserted.handler(request("GET", "/apps/review-queue", { as: reviewer }))).json()).toEqual([]);
+    const unassertedReject = await unasserted.handler(request("POST", `/apps/${appId}/reject-review`, { as: reviewer, body: { note: "nope" } }));
+    expect(unassertedReject.status).toBe(403);
+    expect(((await unassertedReject.json()) as { error: { message: string } }).error.message).toContain("apps.review.reviewer");
     // The seam carries the in-client approval seam's FULL scoping: outside a
     // development composition it is masked for EVERY caller — production
     // reviews ride Cloud's console or the self-hoster's own admin route over
@@ -214,9 +240,16 @@ export default function Page() {
     expect(resubmitted[0]).toMatchObject({ appId, versionHash: v2Hash, resubmissions: 1 });
 
     // 6. Approval grants the native venue for exactly that hash — the fork
-    // now ships, in place, as real code.
-    const approved = await vendo.handler(request("POST", "/dev/inclient-approval", {
+    // now ships, in place, as real code. Never from the remixing user
+    // themselves though, even on this dev seam: approval IS the review.
+    const selfApproved = await vendo.handler(request("POST", "/dev/inclient-approval", {
       as: user,
+      body: { appId, approvedBy: "host-security-review" },
+    }));
+    expect(selfApproved.status).toBe(403);
+    expect(((await selfApproved.json()) as { error: { message: string } }).error.message).toContain("apps.review.reviewer");
+    const approved = await vendo.handler(request("POST", "/dev/inclient-approval", {
+      as: reviewer,
       body: { appId, approvedBy: "host-security-review" },
     }));
     expect(approved.status).toBe(200);
@@ -246,7 +279,7 @@ export default function Page() {
     expect(pendingAgain[0]).toMatchObject({ appId, versionHash: v3Hash, resubmissions: 1 });
 
     // 8. Approving the new version swaps it in.
-    await vendo.handler(request("POST", "/dev/inclient-approval", { as: user, body: { appId, approvedBy: "host-security-review" } }));
+    await vendo.handler(request("POST", "/dev/inclient-approval", { as: reviewer, body: { appId, approvedBy: "host-security-review" } }));
     const swapped = await (await vendo.handler(request("GET", `/apps/${appId}/open`, { as: user }))).json();
     expect(swapped.payload.inClient).toMatchObject({ granted: true, versionHash: v3Hash });
     expect(swapped.payload.inClient.review).toBeUndefined();

@@ -187,6 +187,15 @@ export interface AppsConfig {
    *  per create/edit (engine.ts GenerationDependencies). */
   designRules?: string | (() => string | undefined);
   pinBaselines?: PinBaseline[];
+  /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
+   *  assertion for the review-kind lifecycle. Reviewing crosses owner
+   *  boundaries, so it is never inferred from a principal alone: `reviewer`
+   *  answers whether THIS caller may read the full queue, reject, and approve
+   *  review-kind remixes. Unset, the queue serves only the caller's own
+   *  submissions and reject/approve-as-reviewer refuse, naming this hook. */
+  review?: {
+    reviewer?(ctx: RunContext): boolean | Promise<boolean>;
+  };
   /** ADAPTER RULE — the share/publish seam (see cloud.ts): the umbrella wires
    * the Cloud console client when VENDO_API_KEY fills the unset slot; this
    * block never reads the environment. Unset → share/publish fail with
@@ -560,13 +569,18 @@ export interface AppsRuntime {
    * its own user until a host reviewer approves; the approved version then
    * mounts natively in place, riding the §9 hash-pin machinery. These two
    * methods are the reviewer's side and cross owner boundaries BY DESIGN
-   * (the reviewer is not the remixing user): like `history()`, they carry no
-   * owner scoping of their own — the wire layer enforces its host-admin
-   * principal scoping before exposing them.
+   * (the reviewer is not the remixing user), so both are gated on the host's
+   * reviewer assertion ({@link AppsConfig.review} `reviewer`): this is the
+   * production path — a self-hoster mounts their own admin-authenticated
+   * route over it (Cloud's console is the hosted equivalent). Without the
+   * hook, `queue` serves only the caller's own submissions and `reject`
+   * refuses, naming the hook.
    */
   review: {
-    /** Every review-kind version awaiting review, oldest submission first. */
-    queue(): Promise<ReviewQueueEntry[]>;
+    /** Every review-kind version awaiting review, oldest submission first —
+     *  the full queue for an asserted reviewer, the caller's own items
+     *  otherwise. */
+    queue(ctx: RunContext): Promise<ReviewQueueEntry[]>;
     /** Reject the app's CURRENT version with a note the user's panel surfaces.
      *  The work is not deleted; a new version supersedes the rejection. */
     reject(input: { appId: AppId; note: string }, ctx: RunContext): Promise<RemixRejection>;
@@ -1121,6 +1135,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     approvals: inClientApprovals,
     history,
   });
+  // Round-2 hardening (2026-08-02) — reviewing is a HOST trust decision, so
+  // it only ever comes from the composition's explicit assertion; no hook
+  // means no caller is a reviewer, ever.
+  const reviewerAsserted = async (ctx: RunContext): Promise<boolean> =>
+    config.review?.reviewer !== undefined && await config.review.reviewer(ctx) === true;
   // execution-v2 Lane D — fn: refs on a machine-bearing app resolve over the
   // v2 box door (the same wake Lane C's wire proxy rides); the wrap leaves
   // every other ref on the existing caller. Queries hit this at open(),
@@ -2291,7 +2310,28 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         return inClientApprovals.verdictFor(app);
       },
       async approve(input, ctx) {
-        const app = await requireOwned(input.appId, ctx.principal.subject);
+        // Round-2 hardening (2026-08-02) — a review-kind approval IS the
+        // review, so it never comes from the remixing user themselves: the
+        // owner is refused unless the host's reviewer assertion
+        // (apps.review.reviewer) covers them, and an asserted reviewer may
+        // approve across the owner boundary (that is the reviewer's job).
+        // Instant-kind keeps the plain owner scoping unchanged.
+        const record = await apps.get(input.appId);
+        if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
+        const row = rowFromRecord(record);
+        const app = classifyLegacyPlacements(row.doc, config.pinBaselines);
+        const isOwner = row.subject === ctx.principal.subject;
+        if (review.isReviewKind(app)) {
+          if (!await reviewerAsserted(ctx)) {
+            if (isOwner) {
+              throw new VendoError("blocked", "a review-kind remix cannot be approved by its own user — set apps.review.reviewer(ctx) in your composition to assert who reviews");
+            }
+            // Masked like every unowned app read.
+            throw new VendoError("not-found", `app not found: ${input.appId}`);
+          }
+        } else if (!isOwner) {
+          throw new VendoError("not-found", `app not found: ${input.appId}`);
+        }
         const approval = await inClientApprovals.record({
           appId: app.id,
           versionHash: appVersionHash(app),
@@ -2307,12 +2347,25 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     review: {
-      async queue() {
-        return review.queue();
+      async queue(ctx) {
+        const entries = await review.queue();
+        if (await reviewerAsserted(ctx)) return entries;
+        // No reviewer assertion → a caller sees only their own submissions;
+        // nobody reads another user's pending fork source through this door.
+        return entries.filter((entry) => entry.requester === ctx.principal.subject);
       },
       async reject(input, ctx) {
+        // Rejecting is reviewer-only, and reviewing is a HOST trust decision:
+        // it requires the composition's explicit assertion, in every venue.
+        if (config.review?.reviewer === undefined) {
+          throw new VendoError("blocked", "rejecting a remix review requires the host's reviewer assertion — set apps.review.reviewer(ctx) in your composition");
+        }
+        if (!await reviewerAsserted(ctx)) {
+          // Masked like every unowned app read: a non-reviewer learns nothing.
+          throw new VendoError("not-found", `app not found: ${input.appId}`);
+        }
         // Reviewer-side, cross-subject by design: the app is looked up
-        // WITHOUT owner scoping (the wire's host-admin gate stands in front).
+        // WITHOUT owner scoping (the reviewer assertion above stands in front).
         const record = await apps.get(input.appId);
         if (record === null) throw new VendoError("not-found", `app not found: ${input.appId}`);
         const row = rowFromRecord(record);

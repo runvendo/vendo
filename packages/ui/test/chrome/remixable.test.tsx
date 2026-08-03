@@ -201,13 +201,77 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     expect(within(menu).getByRole("status").textContent).toBe("Sandboxed — only you see this");
   });
 
-  it("the ✦ popover renders whatever venue state the open payload reports for a review-kind remix", async () => {
+  // Round-2 finding 1 (the founder's binding rule): until a reviewer
+  // approves, the ORIGINAL host component stays rendered, untouched — this
+  // test previously asserted the jailed fork mount for a pending review-kind
+  // remix, which was the WRONG behavior.
+  it("keeps the ORIGINAL rendered for a review-kind remix awaiting review — no fork mount, status in the ✦ popover only", async () => {
     mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
     fireEvent.click(forkPill());
-    await waitFor(() => expect(forkIframe()).toBeTruthy());
-    // No venue on the payload → the pending state, exactly as reported.
+    await waitFor(() => expect(managePill()).toBeTruthy());
+    // Wait past the fork surface actually arriving: STILL the original.
+    await waitFor(() => expect(wire.requests.some(r => r.method === "GET" && /\/apps\/.+\/open/.test(r.path))).toBe(true));
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(screen.getByText("Blue Bottle")).toBeTruthy();
+    expect(forkIframe()).toBeNull();
+    // The pending state lives in the panel/popover ONLY — never as an
+    // in-page notice replacing the host component.
+    expect(screen.queryByText(/sent for review/i)).toBeNull();
     fireEvent.click(managePill());
     expect(screen.getByRole("status").textContent).toBe("Waiting for review");
+  });
+
+  it("keeps the ORIGINAL rendered for a REJECTED review-kind remix, with the note in the ✦ popover", async () => {
+    const forked = await client.apps.forkPin({ slot: SLOT, props: {} });
+    const stored = wire.state.apps.find(app => app.id === forked.app.id)!;
+    (stored.tree as unknown as { inClient: unknown }).inClient = {
+      granted: false,
+      versionHash: "sha256:v1",
+      reason: "pending-review",
+      review: { status: "rejected", versionHash: "sha256:v1", note: "Keep the table layout.", by: "host-admin", at: "2026-08-02T00:00:00.000Z" },
+    };
+    mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
+    await waitFor(() => expect(managePill()).toBeTruthy());
+    fireEvent.click(managePill());
+    await waitFor(() => expect(screen.getByRole("status").textContent)
+      .toBe('Rejected — "Keep the table layout.". Edit the remix to resubmit it for review.'));
+    expect(screen.getByText("Blue Bottle")).toBeTruthy();
+    expect(forkIframe()).toBeNull();
+    expect(screen.queryByText(/remix rejected/i)).toBeNull();
+  });
+
+  it("reports BOTH states when an older approved version serves while the current one is pending review", async () => {
+    const forked = await client.apps.forkPin({ slot: SLOT, props: {} });
+    const stored = wire.state.apps.find(app => app.id === forked.app.id)!;
+    (stored.tree as unknown as { inClient: unknown }).inClient = {
+      granted: true,
+      versionHash: "sha256:v1",
+      approvedBy: "host-admin",
+      at: "2026-08-02T00:00:00.000Z",
+      review: { status: "pending", versionHash: "sha256:v2" },
+    };
+    mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
+    await waitFor(() => expect(managePill()).toBeTruthy());
+    fireEvent.click(managePill());
+    await waitFor(() => expect(screen.getByRole("status").textContent)
+      .toBe("Approved by host-admin — runs in the page; your latest edit is waiting for review"));
+  });
+
+  it("reports BOTH states when an older approved version serves and the current one was rejected", async () => {
+    const forked = await client.apps.forkPin({ slot: SLOT, props: {} });
+    const stored = wire.state.apps.find(app => app.id === forked.app.id)!;
+    (stored.tree as unknown as { inClient: unknown }).inClient = {
+      granted: true,
+      versionHash: "sha256:v1",
+      approvedBy: "host-admin",
+      at: "2026-08-02T00:00:00.000Z",
+      review: { status: "rejected", versionHash: "sha256:v2", note: "Too wide.", by: "host-admin", at: "2026-08-02T01:00:00.000Z" },
+    };
+    mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
+    await waitFor(() => expect(managePill()).toBeTruthy());
+    fireEvent.click(managePill());
+    await waitFor(() => expect(screen.getByRole("status").textContent)
+      .toBe('Approved by host-admin — runs in the page; your latest edit was rejected — "Too wide."'));
   });
 
   it("the ✦ popover surfaces a server-granted venue verdict verbatim", async () => {

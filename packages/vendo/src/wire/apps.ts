@@ -93,18 +93,24 @@ export const appRoutes: RouteEntry[] = [
   // version hash, submission time, resubmission count and the ship-diff
   // payload. It crosses owner boundaries, so it carries the FULL scoping of
   // the in-client approval seam (wire/misc.ts): a development composition AND
-  // a host-resolved principal — reviewing is a HOST trust decision, and in
-  // production no OSS wire surface may expose one subject's pending fork
-  // source to another. Any other caller gets an EMPTY queue — masked, never
-  // a probe. Production reviews ride Cloud's console, or the self-hoster's
-  // own admin-authenticated route over the runtime surface (apps.review).
+  // a host-resolved principal — reviewing is a HOST trust decision, and no
+  // wire surface may expose one subject's pending fork source to another.
+  // Even in dev the cross-owner read requires the composition's reviewer
+  // assertion (apps.review.reviewer, enforced by the runtime); without it a
+  // caller sees only their own submissions, and any other caller gets an
+  // EMPTY queue — masked, never a probe. Production reviews ride Cloud's
+  // console, or the self-hoster's own admin-authenticated route over the
+  // runtime surface (apps.review).
   // Like fork-pin above, this entry must stay ahead of the "/apps/:appId/*"
   // catch-all, whose rest pattern would otherwise capture
   // appId="review-queue".
   route("GET", "/apps/review-queue", async ({ deps, context }) => {
     const ctx = await context("app");
     if (!deps.development || ctx.principal.ephemeral === true) return json([]);
-    return json(await deps.apps.review.queue());
+    // Round-2 hardening: the runtime scopes the answer — the FULL queue only
+    // under the host's reviewer assertion (apps.review.reviewer); any other
+    // host-resolved caller sees just their own submissions.
+    return json(await deps.apps.review.queue(ctx));
   }),
   route("POST", "/apps/import", async ({ request, deps, context }) => {
     // The CSRF floor exempts import (binary body), so it must instead require
@@ -229,9 +235,10 @@ export const appRoutes: RouteEntry[] = [
     // user's panel surfaces) and the work is not deleted — a new version
     // supersedes the rejection. Reviewer-side and cross-subject by design,
     // so it carries the review queue's full scoping (development composition
-    // + host-resolved principal, the in-client approval seam's bar) instead
-    // of owner scoping; any other caller gets the same not-found an unowned
-    // app answers (masked).
+    // + host-resolved principal + the composition's reviewer assertion,
+    // enforced by the runtime: without apps.review.reviewer the reject
+    // refuses, naming the hook) instead of owner scoping; any other caller
+    // gets the same not-found an unowned app answers (masked).
     if (request.method === "POST" && operation === "reject-review" && segments.length === 3) {
       if (!deps.development || ctx.principal.ephemeral === true) {
         throw new VendoError("not-found", `app not found: ${appId}`);

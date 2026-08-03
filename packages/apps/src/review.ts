@@ -2,6 +2,7 @@ import {
   VendoError,
   appIdSchema,
   isoDateTimeSchema,
+  sha256Hex,
   type AppDocument,
   type AppId,
   type IsoDateTime,
@@ -246,8 +247,12 @@ export const createReviewLifecycle = (deps: ReviewLifecycleDeps): ReviewLifecycl
         by,
         at: new Date().toISOString(),
       });
+      // The id is deterministic per (app, version), so the duplicate check
+      // above being check-then-write racy cannot double-record: concurrent
+      // rejections of the same version upsert the SAME row and converge on
+      // one note.
       await rejections.put({
-        id: `remrej_${globalThis.crypto.randomUUID()}`,
+        id: `remrej_${sha256Hex(`${rejection.appId}:${versionHash}`)}`,
         data: rejection,
         refs: { appId: rejection.appId },
       });

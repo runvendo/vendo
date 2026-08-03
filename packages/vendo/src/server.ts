@@ -458,6 +458,19 @@ export interface CreateVendoConfig {
   apps?: {
     experimentalServedApps?: boolean;
     experimentalMachines?: boolean;
+    /** Remix review (round-2 hardening 2026-08-02) — the host's reviewer
+        assertion for the review-kind remix lifecycle: whether THIS caller may
+        read the full review queue, reject, and approve review-kind remixes.
+        Reviewing crosses owner boundaries, so it is never inferred from a
+        principal alone. Unset, the dev review-queue route serves only the
+        caller's own submissions, reject refuses naming this hook, and a user
+        can never approve their own review-kind remix. The same gate rides the
+        runtime surface (`vendo.apps.review` / `vendo.apps.inClient.approve`)
+        — the production path a self-hoster mounts an admin-authenticated
+        route over; Cloud's console is the hosted equivalent. */
+    review?: {
+      reviewer?(ctx: RunContext): boolean | Promise<boolean>;
+    };
     /** Generation-pipeline flags (exemplarContract, structuredRepair,
         regionParallel, endPass) — opt-in while the A/B is measured; threaded
         verbatim to the apps engine. */
@@ -1777,6 +1790,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // that runs generated web apps is a deliberate per-project decision).
     ...(config.apps?.experimentalServedApps === undefined ? {} : { experimentalServedApps: config.apps.experimentalServedApps }),
     ...(config.apps?.experimentalMachines === undefined ? {} : { experimentalMachines: config.apps.experimentalMachines }),
+    // Round-2 hardening — the host's reviewer assertion for the review-kind
+    // remix lifecycle, threaded verbatim (see the CreateVendoConfig comment).
+    ...(config.apps?.review === undefined ? {} : { review: config.apps.review }),
     // Wave 9 — a ladder-authored automation is armed through the automations
     // engine's own enable(), so the 07 §3 grant-capture flow runs at creation
     // and the missing standing-grant approvals surface on the edit result.
