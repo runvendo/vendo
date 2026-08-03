@@ -94,12 +94,16 @@ Breakers can turn a run decision into an ask at any point.
 
 Loadout selection is deterministic:
 
-- If you pass an explicit `agent.loadout` list, the agent loads exactly those
-  tool names (missing names are dropped).
-- Else, if the enabled host surface fits `agent.maxInitialTools` (default
-  `128`), every enabled host tool is loaded.
-- Else, the agent picks a read-first bounded default: safest risk first, then
-  name. The remainder stay searchable.
+- An explicit `agent.loadout` list wins: exactly those tool names, uncapped
+  (missing names are dropped).
+- Otherwise the default is a connection-scoped seed — your host tools plus
+  the toolkits this principal has actually connected — capped at
+  `agent.maxInitialTools` (default `128`), never an alphabetical slice.
+- If the seed cannot be resolved, the agent degrades to the whole enabled
+  host surface when it fits the cap, else to a read-first bounded default:
+  safest risk first, then name. The remainder stay searchable.
+
+Vendo's own `vendo_*` tools are always active and never count against the cap.
 
 `vendo_tools_search` ranks candidates from the enabled, post-override
 descriptor set: name-token matches beat name substrings, name matches beat

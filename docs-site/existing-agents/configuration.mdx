@@ -49,7 +49,7 @@ explicit provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 - No `VENDO_API_KEY` yet? `npx vendo login` mints a free metered dev key
   straight into `.env.local`.
 - If your loop's model has no key on this machine, either set one or point
-  your `model` at `devModel()` from `@vendoai/vendo/server` to ride the
+  your `model` at `vendoModel()` from `@vendoai/vendo/server` to ride the
   same ladder.
 
 The done-criterion for an install is a REAL chat turn that renders a Vendo
@@ -58,9 +58,7 @@ tool output — `vendo doctor` cannot check your loop's model.
 ## Next.js notes
 
 - The wire route needs no `runtime` or `dynamic` exports: Node is the
-  default runtime and route handlers are dynamic by default. On a Next 16
-  app with `cacheComponents: true`, an `export const dynamic` line is a
-  build error.
+  default runtime and route handlers are dynamic by default.
 - `serverExternalPackages: ["esbuild", "@electric-sql/pglite"]` keeps
   Vendo's native and wasm dependencies out of the bundler.
 

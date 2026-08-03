@@ -123,8 +123,8 @@ up whichever your app uses:
 
 ```json
 {
-  "name": "host_polls_delete",
-  "description": "polls.delete",
+  "name": "host_delete_poll",
+  "description": "GraphQL mutation deletePoll",
   "inputSchema": {
     "type": "object",
     "properties": { "id": { "type": "string" } },
@@ -133,16 +133,19 @@ up whichever your app uses:
   "risk": "destructive",
   "binding": {
     "kind": "graphql",
-    "operation": "delete",
+    "operation": "deletePoll",
     "type": "mutation",
     "endpoint": "/graphql",
-    "document": "mutation delete($id: ID!) { delete(id: $id) { __typename } }"
+    "document": "mutation deletePoll($id: ID!) { deletePoll(id: $id) { __typename } }"
   }
 }
 ```
 
-Each binding records the operation name, its `query` or `mutation` type, the
-endpoint, and a full executable `document`. The document declares variables
+GraphQL has no namespace dot path, so the tool name is `host_` plus the
+word-split schema field name alone — colliding names fall back to
+`host_<name>_<type>`. The description is always
+`GraphQL <type> <operation>`. Each binding records the operation name, its
+`query` or `mutation` type, the endpoint, and a full executable `document`. The document declares variables
 for every argument, marks optional or defaulted arguments as nullable so the
 agent can omit them, and uses a depth-limited default selection set with a
 `{ __typename }` floor. At runtime Vendo POSTs

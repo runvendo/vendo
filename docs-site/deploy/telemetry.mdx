@@ -31,14 +31,20 @@ ever sent, and it is scrubbed first: file paths, email addresses, and
 secret-shaped strings are replaced with fixed tokens, then the result is
 capped at 200 characters.
 
-Disable telemetry with any of these controls — each applies to both lanes, so
-an opted-out user with a cloud key sends nothing:
+Disable this stream with any of these controls — each applies to both lanes,
+so an opted-out user with a cloud key sends nothing:
 
-- `VENDO_TELEMETRY_DISABLED=1`
+- `VENDO_TELEMETRY_DISABLED=1` (or `true`)
+- `DO_NOT_TRACK=1` (or `true`)
+- `CI` set to anything other than `""`, `"0"`, or `"false"`
 - `"optedOut": true` in `~/.vendo/telemetry.json`
-- `DO_NOT_TRACK=1`
-- `CI`
-- `NODE_ENV=production`
+
+`NODE_ENV` is a separate, narrower gate. It applies only to the dev-server
+runtime collector, which fires solely when `NODE_ENV` is `development` or
+`test` — an unset or unrecognized value is treated as production and
+collects nothing. It does **not** gate the CLI and build collector, which is
+what `vendo init`, `sync`, and `doctor` report through; use the four controls
+above for that.
 
 The stored id is a random UUID and is not derived from a machine, account,
 project, or host app. Deleting the file rotates it.
