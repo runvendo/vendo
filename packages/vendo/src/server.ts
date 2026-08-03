@@ -319,9 +319,9 @@ export interface CreateVendoConfig {
   development?: boolean;
   /** Unified try surface — the project root the `.vendo/` profile is read
       under: the actions files (tools.json/overrides.json, read by the actions
-      registry this composition builds with `dir`), theme.json, brief.md, catalog.json, the
-      per-generation design-rules.md read, and the remixable pin baselines
-      all resolve against it. Unset keeps today's
+      registry this composition builds with `dir`), theme.json, brief.md,
+      catalog.json, the per-generation design-rules.md read, and the remixable
+      pin baselines all resolve against it. Unset keeps today's
       behavior (the process cwd), so `npx vendo try` can mount a real
       composition over a profile living in a temp directory without chdir. */
   profileDir?: string;
