@@ -7,13 +7,19 @@ description: "Reference for every HTTP route Vendo mounts under the base path, i
 The default base is `/api/vendo`. Bodies use core types encoded as JSON and
 conversation turns stream over SSE.
 
-Most routes resolve a principal through `principal(req)`, but not all of them:
-the machine surfaces authenticate differently and never call the resolver.
-`/tick` takes a bearer secret, `/webhooks/*` a signature, `/box/*` a per-app
-token, and the `/doctor/*` probes are gated on being a development
-composition rather than on identity — `/doctor/base-url` in particular answers
-unauthenticated in every environment, by design (it reveals only whether
-`VENDO_BASE_URL` is set).
+Most routes resolve a principal through `principal(req)`. Exactly three
+surfaces never call it, because each authenticates its own way: `/tick` by a
+bearer secret, `/webhooks/*` by a signature, and `/box/*` by a per-app token.
+
+The `/doctor/*` probes are a different case again — they *do* resolve a
+principal (`/doctor/act-as/echo` calls the resolver directly; `/doctor/present`
+reaches it through ordinary context resolution). What keeps them off a
+production deployment is `NODE_ENV`, not identity: everything under `/doctor/`
+answers `404` when `NODE_ENV` is `production`, and `development: true` does
+not bring it back — that flag governs `/dev/*`, not these. The lone exception
+is `/doctor/base-url`, registered ahead of that gate, which answers
+unauthenticated in every environment by design: it reveals only whether
+`VENDO_BASE_URL` is set.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
@@ -74,10 +80,12 @@ caller can probe another subject's pending work.
 ### Doctor probes
 
 `vendo doctor` drives a handful of synthetic routes against the running dev
-server. Every path under `/doctor/` returns `404` in production, with one
-deliberate exception: `/doctor/base-url` reports a static composition fact
-(is `VENDO_BASE_URL` set?) and answers in every environment, because
-production is exactly where that answer matters.
+server. These are gated on `NODE_ENV`, not on the `development` flag the
+`/dev/*` routes above use: every path under `/doctor/` returns `404` when
+`NODE_ENV` is `production`. The one deliberate exception is
+`/doctor/base-url`, which reports a static composition fact (is
+`VENDO_BASE_URL` set?) and answers in every environment, because production is
+exactly where that answer matters.
 
 | Route | Method | Purpose |
 | --- | --- | --- |
@@ -106,10 +114,10 @@ Bodies follow the MCP transport spec, not the wire's JSON envelope.
 | `/api/vendo/mcp` | POST · GET · DELETE | MCP Streamable HTTP transport |
 | `/api/vendo/mcp/authorize` | GET · POST | OAuth authorization endpoint; POST receives the door-owned consent form submission |
 | `/api/vendo/mcp/token` | POST | OAuth token endpoint (form-encoded) |
-| `/api/vendo/mcp/revoke` | POST | RFC 7009 token revocation (form-encoded). A revocation that lands — including one naming a token that no longer exists — answers an empty `200`, per the spec. Malformed calls do not: a non-form content type, a missing `token` or `client_id`, an unresolvable `client_id`, or a token issued to a different client each answer `400` with an OAuth `{ error, error_description }` body |
+| `/api/vendo/mcp/revoke` | POST | RFC 7009 token revocation (form-encoded). A revocation that lands — including one naming a token that no longer exists — answers an empty `200`, per the spec. Five paths answer `400` with an OAuth `{ error, error_description }` body instead: a non-form content type, a missing `token` or `client_id`, an unresolvable `client_id`, a token issued to a different client, and — the one that is not the caller's fault — a store whose records do not support atomic claims, which fails `server_error` no matter how well-formed the request was |
 | `/api/vendo/mcp/register` | POST | OAuth dynamic client registration (JSON body) |
 | `/api/vendo/mcp/federate` | GET | signed login handshake for an external authorization server; only mounted when `federation` is configured |
-| `/api/vendo/mcp/connect` | GET | the door's one page for **people**, not clients: an HTML setup page naming the product and the door's public MCP URL, for pasting into an MCP client. Unauthenticated by design — no session, no token, and nothing on it that the public server card does not already carry. Styled with the door's `theme` when one is configured, and titled with `productName` when set, else the host identity's name. Any method other than GET is `404` |
+| `/api/vendo/mcp/connect` | GET | the door's one page for **people**, not clients: an HTML setup page naming the product and the door's public MCP URL, for pasting into an MCP client. Unauthenticated by design — no session, no token, and nothing on it that the public server card does not already carry. Titled with the host identity's name, and styled with the door's theme when the composition resolves one. Any method other than GET is `404` |
 | `/.well-known/oauth-protected-resource/api/vendo/mcp` | GET | RFC 9728 protected-resource metadata |
 | `/.well-known/oauth-authorization-server/api/vendo/mcp` | GET | RFC 8414 authorization-server metadata |
 | `/.well-known/mcp/server-card.json` · `/.well-known/mcp-server-card` | GET | server card describing the door |
