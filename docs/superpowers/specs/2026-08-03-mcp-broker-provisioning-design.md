@@ -47,10 +47,18 @@ host persists secret via the secrets seam; door flips to remoteAs+federation
 - The console→broker channel is the broker's existing admin API; the console
   is its only caller (the broker already authenticates provision calls by
   introspecting a `vnd_` key against the console — that seam is built).
-- Idempotent: "ensure" returns the existing tenant (no secret) when one
-  exists; the secret is returned only at first provision and on rotate.
-  The host persists it (encrypted store via the secrets seam) so ordinary
-  boots make one cheap ensure call and get no secret material back.
+- Idempotent: "ensure" returns the existing tenant when one exists.
+- **Amendment (plan-time simplification):** the federation secret is
+  returned on EVERY ensure call, not only the first. Rationale: the host
+  has nowhere durable to persist it — the hosted store structurally
+  excludes secrets, and serverless hosts have no disk — and the keyed
+  console channel already serves secret material (`cloudSecrets` GET does
+  exactly this today), so returning it per-ensure adds zero new exposure:
+  anyone holding the org key could fetch it anyway. This also makes
+  rotation instant: rotate invalidates the old secret and the host's next
+  ensure (boot, redeploy, or a future re-ensure-on-401) picks up the new
+  one — no "pending pickup" state machine. Broker stores it encrypted at
+  rest exactly as today; decrypt happens only inside the ensure path.
 
 ## Components
 
