@@ -1,0 +1,47 @@
+[
+  {
+    "step": "a1",
+    "verdict": "PASS",
+    "note": "✦ fork mounted sandboxed IN PLACE (iframe at the wrapper boundary); server recorded pin {slot: NetWorthView, base: sha256:52ce29c1d02…} on app_6445bef6-54c6-4bef-a894-d6c636b74380"
+  },
+  {
+    "step": "a2",
+    "verdict": "PASS",
+    "note": "panel edit landed: the fork's stored component source now carries \"Net worth (remixed)\" and the jailed fork re-rendered (screenshot)"
+  },
+  {
+    "step": "a3",
+    "verdict": "PASS",
+    "note": "revert deleted the fork app; the host's original renders again (no jail frame)"
+  },
+  {
+    "step": "a4",
+    "verdict": "PASS",
+    "note": "second ✦ remix forked again after the revert (fresh jailed mount in place)"
+  },
+  {
+    "step": "b1",
+    "verdict": "PASS",
+    "note": "review-kind remix reports “Sent for review” in the ✦ popover; the original stays in the page; nothing jailed"
+  },
+  {
+    "step": "b2",
+    "verdict": "PASS",
+    "note": "approved through the REAL wire seam (GET /apps/review-queue → POST /dev/inclient-approval)"
+  },
+  {
+    "step": "b3",
+    "verdict": "PASS",
+    "note": "approved fork mounts NATIVE in place — real DOM (5 action buttons), no iframe; popover: “Approved by host-reviewer (dev seam) — runs in the page”"
+  },
+  {
+    "step": "c1",
+    "verdict": "PASS",
+    "note": "reviewer's note is in the ✦ panel (“Rejected by vendo-demo — \"Keep the Maple icon tint — resubmit with brand colors.\". Edit the remix to resubmit it.”); the original still renders, nothing mounted"
+  },
+  {
+    "step": "d",
+    "verdict": "PASS",
+    "note": "placement written (app app_777e390c-6321-4c37-b076-6d494c18e288 → placements [\"home-hero\"], no fabricated home-hero pin); no drift warning anywhere"
+  }
+]
