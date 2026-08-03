@@ -694,6 +694,49 @@ describe("rehearse() executes steps under the rehearsal venue", () => {
     expect(late[0]?.steps[0]).toMatchObject({ status: "skipped" });
   });
 
+  it("reports a forEach that matched nothing as a skipped step, not as an absent one", async () => {
+    const store = memoryStoreAdapter();
+    const doc = app("app_fanout", {
+      on: { kind: "schedule", cron: "0 8 * * *" },
+      run: {
+        kind: "steps",
+        steps: [
+          { id: "accounts", tool: "host_listAccounts" },
+          {
+            id: "alert",
+            tool: "host_sendEmail",
+            // No account is overdrawn in the read's output, so this matches
+            // zero items on every firing.
+            forEach: "[steps.accounts.accounts[balance < 0]]",
+            args: { body: "'Overdrawn: ' & item.id" },
+          },
+        ],
+      },
+    });
+    await seedApp(store, doc);
+    const tools = guardBoundRegistry(
+      [balanceTool, emailTool],
+      () => ({ status: "ok", output: { accounts: [{ id: "acc_1", balance: 1500 }] } }),
+    );
+    const automations = engine(store, tools);
+    const report = await automations.rehearse("app_fanout", ctx(), 7);
+    expect(report.firings.length).toBeGreaterThan(0);
+    for (const firing of report.firings) {
+      // The read still ran, so the firing fired — but the fan-out step must
+      // still appear, or the report shows fewer steps than the automation has.
+      expect(firing.status).toBe("fired");
+      expect(firing.simulatedActions).toBe(0);
+      expect(firing.steps).toHaveLength(2);
+      expect(firing.steps[1]).toMatchObject({
+        id: "alert",
+        tool: "host_sendEmail",
+        status: "skipped",
+        detail: "forEach matched 0 items",
+      });
+    }
+    expect(tools.calls.some(({ call }) => call.tool === "host_sendEmail")).toBe(false);
+  });
+
   it("persists nothing to run history and requires no grants", async () => {
     const store = memoryStoreAdapter();
     const doc = app("app_daily", {

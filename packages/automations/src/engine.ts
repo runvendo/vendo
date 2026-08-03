@@ -1733,6 +1733,16 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }
       const descriptor = byName.get(step.tool) as ToolDescriptor;
       const iterations: Array<{ item?: Json }> = items === undefined ? [{}] : items.map((item) => ({ item }));
+      // A forEach that matched nothing has no iteration to report, and dropping
+      // the step silently contradicts the step count the surface shows above
+      // the firing — the reader is left to guess whether it ran. Mirror the
+      // false-`if` row so every step is accounted for, and set the output the
+      // tail assignment below would have set (an empty list, not undefined).
+      if (iterations.length === 0) {
+        rows.push({ id: step.id, tool: step.tool, status: "skipped", detail: "forEach matched 0 items" });
+        outputs[step.id] = [];
+        continue;
+      }
       const iterationOutputs: Json[] = [];
       for (const iteration of iterations) {
         let args: Record<string, Json>;

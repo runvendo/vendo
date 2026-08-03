@@ -129,10 +129,18 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   // Blue Bottle Coffee — the demo hero: 3 of 6 received.
   doc("doc_rivera_prior_return", "cl_rivera", "Prior-year return", "verified",
     { name: "bluebottle-2024-return.pdf", daysAgo: 21 })
+  // These two are the ONLY pending uploads the "Verify pending uploads"
+  // automation acts on, and rehearsal replays that schedule over the trailing
+  // 30 days with each firing's checklist projected back (../asof). An upload
+  // dated inside the last week therefore reads as `missing` at every replayed
+  // Tuesday and the automation rehearses to nothing at all. Staggered well
+  // behind the weekly cadence so the replay ramps 0 -> 1 -> 1 -> 2 cards
+  // instead: the checklist visibly fills up across the month.
+  // Keep act_006 / act_004 in the activity feed below dated to match.
   doc("doc_rivera_bank", "cl_rivera", "Bank statements (2025)", "received",
-    { name: "boa-business-statements-jan-jun.pdf", daysAgo: 3 })
+    { name: "boa-business-statements-jan-jun.pdf", daysAgo: 10 })
   doc("doc_rivera_payroll", "cl_rivera", "Payroll summary", "needs_review",
-    { name: "gusto-payroll-summary-2025.pdf", daysAgo: 2 })
+    { name: "gusto-payroll-summary-2025.pdf", daysAgo: 24 })
   doc("doc_rivera_w2", "cl_rivera", "W-2", "missing")
   doc("doc_rivera_1099", "cl_rivera", "1099-NEC", "missing")
   doc("doc_rivera_receipts", "cl_rivera", "Receipts", "missing")
@@ -372,13 +380,13 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
       at: iso(daysAgo(anchor, 1, 16, 8)) },
     { id: "act_004", type: "upload_received", clientId: "cl_rivera",
       summary: "Marisol Rivera uploaded Payroll summary (gusto-payroll-summary-2025.pdf)",
-      at: iso(daysAgo(anchor, 2, 10, 24)) },
+      at: iso(daysAgo(anchor, 24, 10, 24)) },
     { id: "act_005", type: "upload_received", clientId: "cl_harborview",
       summary: "Dana Kowalski uploaded Receipts (equipment-receipts-2025.pdf)",
       at: iso(daysAgo(anchor, 2, 10, 24)) },
     { id: "act_006", type: "upload_received", clientId: "cl_rivera",
       summary: "Marisol Rivera uploaded Bank statements (boa-business-statements-jan-jun.pdf)",
-      at: iso(daysAgo(anchor, 3, 14, 41)) },
+      at: iso(daysAgo(anchor, 10, 14, 41)) },
     { id: "act_007", type: "document_verified", clientId: "cl_kim",
       summary: "Prior-year return verified for Compass",
       at: iso(daysAgo(anchor, 4, 9, 30)) },
