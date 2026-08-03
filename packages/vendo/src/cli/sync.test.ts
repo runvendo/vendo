@@ -20,6 +20,7 @@ const report = (
   pins: { captured: [], drifted: [] },
   remixableErrors: [],
   catalog: { discovered: 2, registered: 1 },
+  components: { captured: [], drifted: [] },
   warnings: [],
 });
 
@@ -345,6 +346,7 @@ describe("vendo sync", () => {
       notes: ["judgment: skipped — this run cannot ask (pass `--ai` to judge non-interactively, `--no-ai` to say so explicitly)"],
       theme: null,
       baselines: null,
+      components: null,
     });
   });
 

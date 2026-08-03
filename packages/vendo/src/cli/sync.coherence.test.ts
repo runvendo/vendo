@@ -22,6 +22,7 @@ const REPORT = {
   pins: { captured: [], drifted: [] },
   remixableErrors: [],
   catalog: { discovered: 0, registered: 0 },
+  components: { captured: [], drifted: [] },
   warnings: [],
 };
 

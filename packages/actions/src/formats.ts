@@ -549,6 +549,91 @@ export const capturedPinBaselineSchema = z.object({
   styles: z.array(capturedPinStyleSchema).optional(),
 }).passthrough() satisfies z.ZodType<CapturedPinBaseline>;
 
+/**
+ * One captured module, content-addressed by the sha-256 hex of its canonical
+ * JSON. Written to `.vendo/components/modules/<hex>.json` and pushed to the
+ * Cloud blob namespace under the same key, so ten components importing one
+ * `format-currency.ts` store ONE copy and reference it ten times. A captured
+ * stylesheet is the same shape with no imports.
+ */
+export interface CapturedModule {
+  source: string;
+  /** Import specifier -> captured module id (root-relative posix path). */
+  imports?: Record<string, string>;
+}
+
+export const capturedModuleSchema = z.object({
+  source: z.string(),
+  imports: z.record(z.string()).optional(),
+}).passthrough() satisfies z.ZodType<CapturedModule>;
+
+/** Why a registered component has no captured source. */
+export interface HostComponentSkip {
+  reason: "too-large";
+  /** Bytes the closure needed. */
+  bytes: number;
+  budgetBytes: number;
+  /** The single largest module in the closure — what to shrink. */
+  largest: string;
+}
+
+/**
+ * One registered host component, captured by sync so the console can render it
+ * for real instead of a labeled placeholder (`.vendo/components/<Name>.json`).
+ * Holds no source: every byte lives in a content-addressed `CapturedModule`, so
+ * the record stays small enough that listing the collection IS the hash
+ * manifest a push compares against.
+ */
+export interface CapturedHostComponent {
+  /** The name the host registered — the name generated trees reference. */
+  name: string;
+  /** Content hash of the whole capture (refs + structure), `sha256:<hex>`. */
+  hash: string;
+  capturedAt: string;
+  /** Root-relative posix path of the module that declares the component. */
+  module: string;
+  /** The binding inside `module` to render. "default" means render the module
+   *  as-is; anything else is a local (possibly unexported) declaration, and
+   *  `hostComponentEntrySource` turns it into the jail's default export. */
+  export?: string;
+  /** Content address of the entry module. Absent when `skipped` is set. */
+  entry?: string;
+  /** Captured module id -> content address, for the whole import closure. */
+  modules?: Record<string, string>;
+  /** App-root stylesheets, shared by every component in the project. */
+  styles?: Array<{ path: string; ref: string }>;
+  /** Total captured bytes (entry + closure), for budget accounting. */
+  bytes?: number;
+  skipped?: HostComponentSkip;
+}
+
+export const capturedHostComponentSchema = z.object({
+  name: z.string().min(1),
+  hash: z.string().startsWith("sha256:"),
+  capturedAt: z.string(),
+  module: z.string().min(1),
+  export: z.string().min(1).optional(),
+  entry: z.string().regex(/^[0-9a-f]{64}$/u).optional(),
+  modules: z.record(z.string().regex(/^[0-9a-f]{64}$/u)).optional(),
+  styles: z.array(z.object({ path: z.string(), ref: z.string().regex(/^[0-9a-f]{64}$/u) })).optional(),
+  bytes: z.number().optional(),
+  skipped: z.object({
+    reason: z.literal("too-large"),
+    bytes: z.number(),
+    budgetBytes: z.number(),
+    largest: z.string(),
+  }).passthrough().optional(),
+}).passthrough() satisfies z.ZodType<CapturedHostComponent>;
+
+/** The jail renders a module's DEFAULT export, but a host registers whatever
+ *  binding it likes — including a component its module never exports. Capture
+ *  records the binding; this turns the stored module into a renderable entry.
+ *  Capture guarantees the append is legal (a module that already
+ *  default-exports something else is skipped with a warning instead). */
+export function hostComponentEntrySource(source: string, exportName = "default"): string {
+  return exportName === "default" ? source : `${source}\nexport { ${exportName} as default };\n`;
+}
+
 /** 04-actions §1 */
 export interface BreakingChange {
   tool: string;
@@ -563,4 +648,7 @@ export interface SyncReport {
    *  `<Remixable>` wrapper names their slot anymore. */
   pins: { captured: string[]; drifted: string[]; pruned?: string[] };
   catalog: { discovered: number; registered: number };
+  /** Registered host components whose source sync captured, so the console can
+   *  render them for real. `skipped` = over the per-component byte budget. */
+  components: { captured: string[]; drifted: string[]; pruned?: string[]; skipped?: string[] };
 }

@@ -17,6 +17,7 @@ import { bindingIdentity, clearAliasCache, withUniqueNames, writeIfChanged, type
 import { compilerFloorWarning } from "./compiler-gate.js";
 import { scanComponentCatalog } from "./catalog-scan.js";
 import { writeCatalog } from "./catalog.js";
+import { captureHostComponents } from "./components.js";
 import { runExtractors } from "./extractors.js";
 import { capturePins } from "./pins.js";
 
@@ -276,6 +277,17 @@ export async function vendoSync(options: {
   await writeCatalog(out, catalogScan.entries);
   const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []));
   warnings.push(...pins.warnings);
+  // The host's OWN registered components, captured for real so the console's
+  // gallery renders them instead of a grey labeled block. Shares the pin walk's
+  // app-root stylesheets — one project, one set of root CSS.
+  const components = await captureHostComponents({
+    root,
+    out,
+    sites: catalogScan.sites,
+    styles: pins.styles,
+    degraded: catalogScan.degraded,
+  });
+  warnings.push(...components.warnings);
   // One report-level warning when any loader rejected a too-old host compiler
   // (the per-extractor "skipped" lines say what degraded; this says why).
   const floorWarning = compilerFloorWarning();
@@ -289,6 +301,12 @@ export async function vendoSync(options: {
     },
     remixableErrors: pins.errors,
     catalog: { discovered: catalogScan.discovered, registered: catalogScan.registered },
+    components: {
+      captured: components.captured,
+      drifted: components.drifted,
+      ...(components.pruned.length === 0 ? {} : { pruned: components.pruned }),
+      ...(components.skipped.length === 0 ? {} : { skipped: components.skipped }),
+    },
     warnings,
   };
   if (options.strict && report.breaking.length > 0) {

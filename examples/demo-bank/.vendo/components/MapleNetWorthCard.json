@@ -1,0 +1,14 @@
+{
+  "name": "MapleNetWorthCard",
+  "hash": "sha256:271ccd0c8b28c66e4708982925b42f7f73b505cf7c9e3c7adbda3c0497c12cfa",
+  "capturedAt": "2026-08-03T03:49:34.886Z",
+  "module": "src/components/home/net-worth-view.tsx",
+  "entry": "916e8299b3392bb0ad4d71dcced4c89db2b20f956c16027dc10cbcaf155ea8ca",
+  "styles": [
+    {
+      "path": "src/app/globals.css",
+      "ref": "9283964eac86c1f84276b7f21e362a195256a1d1e8f8e8929a4e875487bd9fb4"
+    }
+  ],
+  "bytes": 10697
+}

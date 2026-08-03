@@ -1,0 +1,6 @@
+{
+  "source": "import { cn } from \"../../lib/cn\"\n\nexport type BadgeVariant = \"missing\" | \"overdue\" | \"review\" | \"verified\" | \"neutral\"\n\n/** Single source of truth for status tinting; reused by icon chips etc. */\nexport const BADGE_VARIANTS: Record<BadgeVariant, string> = {\n  missing: \"bg-status-missing-bg text-status-missing\",\n  overdue: \"bg-status-overdue-bg text-status-overdue\",\n  review: \"bg-status-review-bg text-status-review\",\n  verified: \"bg-status-verified-bg text-status-verified\",\n  neutral: \"border border-line bg-surface text-ink-soft\",\n}\n\nexport function Badge({\n  variant = \"neutral\",\n  dot = false,\n  className,\n  children,\n}: {\n  variant?: BadgeVariant\n  dot?: boolean\n  className?: string\n  children: React.ReactNode\n}) {\n  return (\n    <span\n      className={cn(\n        \"inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap\",\n        BADGE_VARIANTS[variant],\n        className,\n      )}\n    >\n      {dot && <span className=\"h-1.5 w-1.5 rounded-full bg-current\" aria-hidden />}\n      {children}\n    </span>\n  )\n}\n",
+  "imports": {
+    "../../lib/cn": "src/lib/cn.ts"
+  }
+}

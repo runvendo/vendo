@@ -300,6 +300,14 @@ async function importBases(importer: string, specifier: string, root: string): P
   return bases;
 }
 
+/** True when a specifier names a PACKAGE rather than the host's own source:
+ *  nothing relative to resolve and no tsconfig path alias that maps it. Source
+ *  capture stops at that boundary — a node_modules module is never the host's
+ *  code — and stays silent about it, so only genuinely broken host imports warn. */
+export async function isPackageSpecifier(importer: string, specifier: string, root: string): Promise<boolean> {
+  return (await importBases(importer, specifier, root)).length === 0;
+}
+
 async function resolveImportedSource(
   importer: string,
   specifier: string,

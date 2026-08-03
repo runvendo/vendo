@@ -1,0 +1,14 @@
+{
+  "name": "CadenceMissingDocsHero",
+  "hash": "sha256:344b33f67a64ee6376fc770797fd074c93355b1b15aff9fd839e6c19a24b2a1c",
+  "capturedAt": "2026-08-03T03:59:37.628Z",
+  "module": "src/components/dashboard/missing-docs-hero.tsx",
+  "entry": "a6d0b8b85f8328c4eb183fa656da9ce14f87781b18c95b2b03c633969120b283",
+  "styles": [
+    {
+      "path": "src/app/globals.css",
+      "ref": "f3285cc25a13458b7761b9d2cc9488a4cf4d28a8bf476e55a25288f629f76e2f"
+    }
+  ],
+  "bytes": 3469
+}

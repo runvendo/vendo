@@ -103,6 +103,63 @@ No seam authors catalog copy today. Edit a scanned entry's `description` and
 `examples` directly in `.vendo/catalog.json`: a rescan preserves that copy on
 a still-scanned entry, keeping unchanged reruns byte-identical.
 
+### What sync captures
+
+`catalog.json` records what your components are CALLED. Sync also captures
+what they ARE, into `.vendo/components/`, so surfaces outside your app — the
+Vendo Cloud console's Apps gallery above all — can render your real component
+instead of a grey labeled placeholder where it sits.
+
+Per registered component, sync writes `.vendo/components/<Name>.json`: the
+module that declares it, the binding to render, a content hash, and
+references. It holds no source. Every byte lives beside it in
+`.vendo/components/modules/<hex>.json` as `{ source, imports? }`, keyed by the
+sha-256 of its own content, so a `format-currency.ts` that ten components
+import is stored once and referenced ten times. Both are deterministic and
+byte-stable; commit them.
+
+The walk follows your imports to **closure** — no depth limit — and stops at
+two lines:
+
+- **Package boundary.** Anything resolving into `node_modules` is never
+  captured. It is not your code, and the jail supplies the React kit.
+- **Byte budget.** 256 KB of source per component. Over it, that component is
+  not captured; sync prints one warning naming the module that blew the
+  budget, the record records why, and the console shows a "too large to
+  preview" tile instead of a broken render. Nothing else in the project is
+  affected.
+
+Captures for components you no longer register are deleted on the next
+successful sync, and a shared module is deleted only once nothing references
+it. A degraded scan (no TypeScript compiler, no `tsconfig.json`) prunes
+nothing.
+
+### What crosses the wire
+
+With a Vendo Cloud key set, sync offers to push this corpus so the console can
+render your components. What goes: **the source of every component you
+register, the source of every module in its import closure, and your app-root
+stylesheets.** What never goes: package code, anything outside your project
+root, environment variables, and data.
+
+Because this widens what leaves your machine from "the components you wrapped
+in `<Remixable>`" to "every component you register", sync asks **once per
+project** and commits the answer to `.vendo/cloud.json`:
+
+```json
+{ "pushComponents": true }
+```
+
+Afterwards it is silent. In CI, pass `--push-components` or
+`--no-push-components`; a non-interactive run with no saved answer and no flag
+pushes nothing and says so. A keyless or bring-your-own install never asks and
+never makes a request — the corpus stays on disk.
+
+The push is cheap by construction. Component records carry references, not
+source, so listing them IS the hash manifest; module bodies are
+content-addressed blobs, so one keys-only call answers "which of these do you
+already have?". An unchanged second sync makes two calls and uploads nothing.
+
 ## Remix: fork a wrapped component
 
 Remix always means fork. A remix starts from your real component, copied
@@ -294,11 +351,14 @@ wired to server state.
 Sync captures enough of the surrounding host to render a fork with its real
 look and feel:
 
-- **Source imports, two hops deep.** Sync follows local JavaScript and
-  TypeScript imports from the captured component for two hops and captures
-  each resolved file. Imports it cannot resolve, refuses (out-of-root or
-  through a symlink escape), or that go beyond two hops are dropped with a
-  named warning. Package imports never enter the jail.
+- **Source imports, to closure.** Sync follows local JavaScript and
+  TypeScript imports from the captured component until it runs out of them —
+  a helper four files down is captured like one file down. Imports it cannot
+  resolve or refuses (out-of-root, or through a symlink escape) are dropped
+  with a named warning. Package imports never enter the jail and are not
+  warned about: they are not your code. A closure over 256 KB is not captured
+  at all; sync warns, names the module that blew the budget, and leaves the
+  previous baseline exactly as it was.
 - **Root-level stylesheets.** Sync snapshots direct `.css` imports from your
   canonical app root (`app/layout.*`, `app/root.*`, `pages/_app.*`, or their
   `src/` variants) and applies them inside the jailed document only. Sync

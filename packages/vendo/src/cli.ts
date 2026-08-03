@@ -48,6 +48,8 @@ Options:
   --review                   Sync only: show the queued + new loosenings and confirm before writing
   --full                     Sync only: judge the whole catalog instead of only what moved
   --theme-refresh            Sync only: take the theme scan's values even for slots you hand-edited
+  --push-components          Sync only: send registered host-component source to Vendo Cloud without asking (CI)
+  --no-push-components       Sync only: keep registered host-component source on this machine
   --no-ai                    Init/sync: force the AI judgment pass off
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
@@ -88,6 +90,7 @@ const DOCTOR_VALUE_OPTIONS = ["--url"];
 const SYNC_FLAGS = new Set([
   "--strict", "--json", "--report", "--review", "--full", "--yes",
   "--theme-refresh", "--ai", "--no-ai", "--no-watermark",
+  "--push-components", "--no-push-components",
 ]);
 const SYNC_VALUE_OPTIONS = ["--url", "--key", "--api-url", "--engine"];
 const LOGIN_VALUE_OPTIONS = ["--api-url", "--wait"];
@@ -316,6 +319,9 @@ export async function main(argv: string[]): Promise<number> {
     if (args.includes("--ai") && syncNoAi) {
       problems.push("--ai and --no-ai answer the same question — pass one or the other");
     }
+    if (args.includes("--push-components") && args.includes("--no-push-components")) {
+      problems.push("--push-components and --no-push-components answer the same question — pass one or the other");
+    }
     if (problems.length > 0) {
       console.error(`vendo sync: ${problems.join("; ")}\n\n${HELP}`);
       return 1;
@@ -333,6 +339,8 @@ export async function main(argv: string[]): Promise<number> {
       yes: args.includes("--yes"),
       themeRefresh: args.includes("--theme-refresh"),
       ...(args.includes("--ai") ? { ai: true } : syncNoAi ? { ai: false } : {}),
+      ...(args.includes("--push-components") ? { pushComponents: true }
+        : args.includes("--no-push-components") ? { pushComponents: false } : {}),
       ...(engine === undefined ? {} : { engine }),
     });
   }
