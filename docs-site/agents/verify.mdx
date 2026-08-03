@@ -148,6 +148,24 @@ provider; a host that renders them without it gets runtime errors.
 **Fix:** Wrap the client app in `<VendoRoot>`. Ignore this warning if the
 host drives a fully custom surface without `@vendoai/ui`.
 
+### E-WIRE-009 {#E-WIRE-009}
+
+**Symptom:** The host has `"use server"` actions, but doctor found them missing
+from `app/api/vendo/[...vendo]/vendo-actions.ts`, or found a `route.ts` that
+never passes `serverActions` to `createVendo`. Everything else can be green:
+the failure only shows up when a user's turn calls one of those tools, and it
+fails closed — no work performed, no error the user can act on.
+
+**Cause:** `vendo init` generates the registration map and the route the first
+time it runs, and it only ever *creates* — a file you already have is never
+rewritten. Actions added after that first run therefore do not register
+themselves.
+
+**Fix:** Run `npx vendo init` again. It prints the exact paste for each file it
+will not touch — the `import { serverActions } from "./vendo-actions";` line
+plus `serverActions,` inside `createVendo({ … })`, and the diff for the
+registration map. Apply them and re-run doctor.
+
 ### E-CFG-001 {#E-CFG-001}
 
 **Symptom:** A required `.vendo/` file is missing; the message names it, one

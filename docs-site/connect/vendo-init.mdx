@@ -60,8 +60,11 @@ printed as an exact paste.
 
 When the scan detects Next.js server actions, init also generates a
 `vendo-actions.ts` registration map beside the route and wires it into
-`createVendo({ serverActions })`. It regenerates deterministically, so
-re-running init on an unchanged surface leaves an empty diff. See
+`createVendo({ serverActions })` — the first time, on the run that creates
+those files. After that they are yours: init never rewrites a file you already
+have, so a surface that moves later comes back as a printed diff plus the
+`serverActions` line to add, and `vendo doctor` fails E-WIRE-009 until you
+apply them. See
 [Tools from your API](/connect/api-tools#next-js-server-actions) for the
 runtime rules.
 

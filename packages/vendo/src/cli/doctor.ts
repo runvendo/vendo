@@ -20,6 +20,7 @@ import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
+import { wiringServerActions } from "./init-scaffolds.js";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
@@ -208,8 +209,40 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
       join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"),
     ];
-    if ((await Promise.all(routeCandidates.map(exists))).some(Boolean)) pass("wiring/next-route", "catch-all handler is wired");
+    const routePath = (await Promise.all(
+      routeCandidates.map(async (candidate) => (await exists(candidate)) ? candidate : null),
+    )).find((candidate) => candidate !== null) ?? null;
+    if (routePath !== null) pass("wiring/next-route", "catch-all handler is wired");
     else fail("wiring/next-route", "E-WIRE-003", "missing app/api/vendo/[...vendo]/route.ts");
+
+    // Server actions (ENG-248): init only ever CREATES, so a route or a
+    // registration map that predates the host's `"use server"` surface stays
+    // exactly as the developer left it — and every server-action tool then
+    // fails closed at execution time with nothing else red. Doctor is where
+    // that shows up. Silent when the host has no server actions at all.
+    if (routePath !== null) {
+      const registrations = await wiringServerActions(root);
+      if (registrations.length > 0) {
+        const mapPath = join(dirname(routePath), "vendo-actions.ts");
+        const map = await readOptional(mapPath);
+        const missing = map === null
+          ? registrations.map((registration) => `${registration.module}#${registration.exportName}`)
+          : registrations
+              .map((registration) => `${registration.module}#${registration.exportName}`)
+              .filter((key) => !map.includes(JSON.stringify(key)));
+        const routeSource = await readFile(routePath, "utf8").catch(() => "");
+        const unwired = !/(^|[\s{,])serverActions\b/.test(routeSource);
+        if (missing.length === 0 && !unwired) {
+          pass("wiring/server-actions", `${registrations.length} server action${registrations.length === 1 ? " is" : "s are"} registered and wired`);
+        } else {
+          fail("wiring/server-actions", "E-WIRE-009",
+            `server actions fail closed — ${[
+              ...(missing.length > 0 ? [`${relative(root, mapPath)} is ${map === null ? "missing" : `missing ${missing.join(", ")}`}`] : []),
+              ...(unwired ? [`${relative(root, routePath)} does not pass serverActions to createVendo`] : []),
+            ].join("; ")}. Re-run \`npx vendo init\`: it prints the exact paste for each (it never rewrites a file you already have).`);
+        }
+      }
+    }
 
     // The mount may live in ANY layout, not just the root one (i18n/route-group
     // hosts mount in e.g. app/[locale]/layout.tsx — the literal root-layout

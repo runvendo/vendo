@@ -61,11 +61,14 @@ import {
  *   → key (env stated, else the cloud starter offer) → done summary (files
  *   changed, the mount paste, next steps).
  *
- * INIT NEVER WRITES TO USER-AUTHORED FILES (locked DX law). Everything above
- * is a NEW Vendo-owned file, or package.json — Vendo-owned config. Mounting
- * the visible surface in the host's own layout is the developer's paste, so
- * the run ends with one unmissable block naming the file and the exact lines
- * (mountStep below), and `vendo doctor` fails until it lands (E-WIRE-004).
+ * INIT ONLY EVER CREATES FILES IN YOUR SOURCE TREE (locked DX law). Everything
+ * above is a NEW Vendo-owned file, or package.json — Vendo-owned config. A file
+ * that already exists is never rewritten, however stale: mounting the visible
+ * surface in the host's own layout, wiring `serverActions` into a route that
+ * predates the host's actions, refreshing a stale registration map — each one
+ * is the developer's paste, so the run ends with one unmissable block naming
+ * the file and the exact lines (the `ManualEdit`s below), and `vendo doctor`
+ * fails until they land (E-WIRE-004, E-WIRE-009).
  *
  * Removed by design: the interview, per-diff y/N approvals, the lib/ai.ts
  * scaffold (createVendo's `model` is optional now), remix offers, the
@@ -118,16 +121,17 @@ export interface RiskRecommendation {
   recommendation: string;
 }
 
-/** The one step init cannot take for you. Init never writes to user-authored
-    files, so mounting the visible surface in the host's own client root is the
-    developer's paste — structured so the terminal block, the `manualSteps`
-    lines, and the `--agent` plan all carry the SAME file and lines. */
-export interface MountStep {
-  /** The user-authored file the paste goes in, relative to the init root. */
+/** A step init cannot take for you. Init only ever CREATES files in your source
+    tree, so every change to a file that already exists — the visible-surface
+    mount, the server-action wiring — is the developer's paste, structured so
+    the terminal block, the `manualSteps` lines, and the `--agent` plan all
+    carry the SAME file and lines. */
+export interface ManualEdit {
+  /** The file the paste goes in, relative to the init root. */
   file: string;
-  /** The exact lines to paste, in order. */
+  /** The exact lines to paste (or the diff to apply), in order. */
   lines: string[];
-  /** Why skipping it leaves Vendo wired but invisible. */
+  /** What skipping it costs. */
   why: string;
 }
 
@@ -142,7 +146,12 @@ export interface InitPlan {
   /** The mount paste as data (absent when a surface is already mounted, and
       on Express/custom hosts, whose two wiring lines have no single file to
       name — they ride `manualSteps`). */
-  mount?: MountStep;
+  mount?: ManualEdit;
+  /** Changes init found for files that already exist and it therefore will not
+      write: an existing route.ts missing its `serverActions` wiring, a
+      registration map that has fallen behind the host's `"use server"`
+      surface. Absent when there are none. */
+  edits?: ManualEdit[];
   /** --agent only: deterministic extraction results, so an agent can act on
       real tool names instead of re-deriving them. */
   extraction?: { tools: ExtractedTool[]; warnings: string[] };
@@ -362,40 +371,29 @@ function diff(path: string, before: string | null, after: string): string {
 }
 
 /**
- * Wire the server-action registration map into an EXISTING generated route
- * (ENG-248 idempotency fix): a host that adds `"use server"` actions AFTER the
- * initial init gets vendo-actions.ts generated, but its route.ts still calls
- * `createVendo` without `serverActions` — so every server-action call fails
- * closed at runtime. Best-effort: rewrites only the recognized
- * `createVendo({ ... })` shape; returns null when already wired or the shape is
- * unrecognized (never corrupts a hand-customized route). Idempotent: a route
- * that already imports and passes serverActions yields null.
+ * The server-action wiring an EXISTING route is missing (ENG-248): a host that
+ * adds `"use server"` actions AFTER the initial init gets vendo-actions.ts
+ * generated, but its route.ts still calls `createVendo` without
+ * `serverActions` — so every server-action call fails closed at runtime. Init
+ * does not own a file it did not create, so this returns the developer's paste
+ * rather than a rewrite. Null when there is nothing to say: the route already
+ * passes a map (including one sourced from somewhere else — a local map, an
+ * aliased import — which our import would only shadow), or the composition is
+ * unrecognized and no honest two-line paste exists for it.
  */
-function wireRouteServerActions(source: string): string | null {
-  const importsMap = /from\s+["']\.\/vendo-actions["']/.test(source);
+function routeServerActionsEdit(source: string, file: string): ManualEdit | null {
   const call = source.match(/createVendo\(\s*\{/);
-  if (!call) return null; // unrecognized composition — leave it untouched
-  const callIndex = source.indexOf(call[0]);
-  const passesActions = /(^|[\s{,])serverActions\b/.test(source.slice(callIndex));
-  // Already wired, or hand-customized: a route that passes serverActions
-  // sourced from anywhere other than ./vendo-actions (a local map, an aliased
-  // import) would get a conflicting duplicate binding from our import — leave
-  // it untouched either way.
-  if (passesActions) return null;
-
-  let next = source;
-  if (!importsMap) {
-    const importLine = `import { serverActions } from "./vendo-actions";`;
-    const serverImport = next.match(/^.*from\s+["']@vendoai\/vendo\/server["'];?[^\n]*$/m);
-    if (serverImport) {
-      const at = next.indexOf(serverImport[0]) + serverImport[0].length;
-      next = `${next.slice(0, at)}\n${importLine}${next.slice(at)}`;
-    } else {
-      next = `${importLine}\n${next}`;
-    }
-  }
-  next = next.replace(/createVendo\(\s*\{/, (match) => `${match}\n  serverActions,`);
-  return next === source ? null : next;
+  if (!call) return null;
+  if (/(^|[\s{,])serverActions\b/.test(source.slice(source.indexOf(call[0])))) return null;
+  const importsMap = /from\s+["']\.\/vendo-actions["']/.test(source);
+  return {
+    file,
+    lines: [
+      ...(importsMap ? [] : [`import { serverActions } from "./vendo-actions";`]),
+      `… then add inside createVendo({ … }): serverActions,`,
+    ],
+    why: "createVendo dispatches server-action tools through that map — without it every one of them fails closed at execution time (no work performed).",
+  };
 }
 
 /** The auto-installed hooks carry `--no-ai` explicitly so they can never
@@ -516,7 +514,7 @@ async function setupSkillSource(): Promise<string | null> {
     RSC-serialization crash the wrapper exists to avoid). Null on Express and
     custom hosts: their wiring has no single host file to name, so it stays in
     the printed lines below. */
-async function mountStep(root: string, layout: LayoutWiring, withRegistry: boolean): Promise<MountStep | null> {
+async function mountStep(root: string, layout: LayoutWiring, withRegistry: boolean): Promise<ManualEdit | null> {
   if (layout.kind === "already" || layout.kind === "express" || layout.kind === "custom") return null;
   if (layout.kind === "overlay-missing") {
     return {
@@ -562,8 +560,8 @@ async function mountStep(root: string, layout: LayoutWiring, withRegistry: boole
   };
 }
 
-/** The mount step as the compact printed/plan lines. */
-function mountLines(step: MountStep): string[] {
+/** A manual edit as the compact printed/plan lines. */
+function editLines(step: ManualEdit): string[] {
   return [`In ${step.file}:`, ...step.lines.map((line) => `  ${line}`), `  (${step.why})`];
 }
 
@@ -590,7 +588,7 @@ async function manualWiringLines(root: string, layout: LayoutWiring, withRegistr
     ];
   }
   const step = await mountStep(root, layout, withRegistry);
-  return step === null ? [] : mountLines(step);
+  return step === null ? [] : editLines(step);
 }
 
 /** The repo-specific agent tail (agent-install-dx): a non-interactive
@@ -610,6 +608,8 @@ async function agentTailLines(args: {
   /** No model credential resolved this run — the tail points the agent at
       the auth.md key flow (Agent Install DX, Layer 2). */
   cloudKeyMissing: boolean;
+  /** Files that already existed, so init printed the change instead. */
+  edits: ManualEdit[];
 }): Promise<string[]> {
   const lines: string[] = [];
   // Auth is a tail fact only when a composition was created this run — a
@@ -638,6 +638,9 @@ async function agentTailLines(args: {
   } else if (args.layout.kind === "manual") {
     const entry = relative(args.root, (await clientRoot(args.root)).file);
     lines.push(`edit ${entry} — wrap the app in the <VendoRoot> lines above (it mounts <VendoOverlay />, the visible surface; without it users see nothing)`);
+  }
+  for (const edit of args.edits) {
+    lines.push(`edit ${edit.file} — apply the change printed above yourself (it already exists, so init did not write it)`);
   }
   if (await readOptional(join(args.root, ".vendo", "brief.md")) === BRIEF_PLACEHOLDER) {
     lines.push(`edit ${join(".vendo", "brief.md")} — replace the placeholder with what this product does and for whom`);
@@ -711,7 +714,9 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   manualSteps: string[];
   /** The mount paste as data; null when a surface is already mounted or the
       host is Express/custom (their lines ride `manualSteps`). */
-  mount: MountStep | null;
+  mount: ManualEdit | null;
+  /** Changes to files that already exist, which init therefore leaves alone. */
+  edits: ManualEdit[];
   authAdvice: string | null;
   /** What the fresh composition wired (agent-tail fact); null when no
       composition was created this run OR it stayed anonymous. */
@@ -731,6 +736,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
   const detected = options.framework ?? await detectFramework(root);
   const framework: "next" | "express" | "custom" = detected === "unknown" ? "custom" : detected;
   const changes: PlannedChange[] = [];
+  const edits: ManualEdit[] = [];
   let authAdvice: string | null = null;
   let authWired: AuthMatch | null = null;
   let compositionPath: string | null = null;
@@ -832,14 +838,21 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       registryPath = path;
     }
     withRegistry = registryBefore !== null || registryPlanned;
-    // The registration map regenerates whenever the detected "use server"
-    // surface changes; an existing map is kept compiling (emptied, never
-    // deleted) when the last action disappears.
+    // The registration map is generated once, when the host's first
+    // "use server" action appears. A map that has since fallen behind the
+    // detected surface is NOT rewritten — it lives in the host's app dir, and
+    // init only ever creates — so the refresh rides out as a diff to apply.
     if (registrations.length > 0 || actionsBefore !== null) {
+      const path = relative(root, actionsModule);
       const actionsAfter = serverActionsModuleSource(root, dirname(actionsModule), registrations);
-      if (actionsAfter !== actionsBefore) {
-        const path = relative(root, actionsModule);
-        changes.push({ absolute: actionsModule, path, before: actionsBefore, after: actionsAfter, diff: diff(path, actionsBefore, actionsAfter) });
+      if (actionsBefore === null) {
+        changes.push({ absolute: actionsModule, path, before: null, after: actionsAfter, diff: diff(path, null, actionsAfter) });
+      } else if (actionsAfter !== actionsBefore) {
+        edits.push({
+          file: path,
+          lines: diff(path, actionsBefore, actionsAfter).split("\n"),
+          why: `The "use server" surface moved since this map was generated — an action missing from it fails closed at execution time (no work performed).`,
+        });
       }
     }
     if (routeBefore === null) {
@@ -854,13 +867,10 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       compositionPath = path;
     } else if (registrations.length > 0) {
       // The route already exists but server actions appeared since it was
-      // generated: wire the registration map into the existing createVendo so
-      // server-action execution doesn't fail closed (ENG-248 idempotency fix).
-      const wiredRoute = wireRouteServerActions(routeBefore);
-      if (wiredRoute !== null) {
-        const path = relative(root, route);
-        changes.push({ absolute: route, path, before: routeBefore, after: wiredRoute, diff: diff(path, routeBefore, wiredRoute) });
-      }
+      // generated: name the wiring the existing createVendo is missing, so
+      // server-action execution stops failing closed (ENG-248).
+      const edit = routeServerActionsEdit(routeBefore, relative(root, route));
+      if (edit !== null) edits.push(edit);
     }
 
     // Visible surface (0.4.1 E2E cert B3): the client mount wrapper next to
@@ -932,9 +942,13 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     ".vendo/data/.gitignore",
   ];
   const mount = await mountStep(root, layout, withRegistry);
-  const manualSteps = await manualWiringLines(root, layout, withRegistry);
+  const manualSteps = [
+    ...await manualWiringLines(root, layout, withRegistry),
+    ...edits.flatMap(editLines),
+  ];
   return {
     changes,
+    edits,
     manualSteps,
     mount,
     authAdvice,
@@ -949,6 +963,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
       codeChanges: changes.map(({ path, diff: rendered }) => ({ path, diff: rendered })),
       manualSteps,
       ...(mount === null ? {} : { mount }),
+      ...(edits.length === 0 ? {} : { edits }),
     },
   };
 }
@@ -1050,7 +1065,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     ? undefined
     : (options.selectAuth ?? (pretty === null ? plainSelect : pretty.select));
   const detectStarted = Date.now();
-  const { plan, changes, manualSteps, mount, authAdvice, authWired, compositionPath, registryPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
+  const { plan, changes, edits, manualSteps, mount, authAdvice, authWired, compositionPath, registryPath, layout } = await buildPlan(options, confirmAuth, selectAuth);
   const detectMs = Date.now() - detectStarted;
   let telemetry = telemetryFor(options, output, root);
   await telemetry.track("init_started", { framework: plan.framework });
@@ -1378,24 +1393,29 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.error(`warning: installed ai@${aiVersion} is unsupported — Vendo supports ai@6; downgrade (npm install ai@^6 @ai-sdk/anthropic@^3 @ai-sdk/react@^3) or track github.com/runvendo/vendo/issues/478`);
     }
 
-    // Done — the mount paste (the one step init cannot take: it never writes
-    // to user-authored files), then their own dev server. The mount gets its
-    // own framed block because skipping it is the whole failure mode — a
-    // green install nobody can see.
-    if (mount !== null) {
+    // Done — the pastes init cannot take (it only ever CREATES files in your
+    // source tree), then their own dev server. They get their own framed block
+    // because skipping them is the whole failure mode: a green install nobody
+    // can see, or server-action tools that silently fail closed.
+    const handSteps = [...(mount === null ? [] : [mount]), ...edits];
+    if (handSteps.length > 0) {
       const rule = "─".repeat(64);
       output.log(`\n${rule}`);
-      output.log("ONE STEP LEFT — paste this yourself (init never edits your files)");
-      output.log(`\n  File: ${mount.file}`);
-      for (const line of mount.lines) output.log(`    ${line}`);
-      output.log(`\n  ${mount.why}`);
+      output.log(handSteps.length === 1
+        ? "ONE STEP LEFT — paste this yourself (init never edits your files)"
+        : `${handSteps.length} STEPS LEFT — paste these yourself (init never edits your files)`);
+      for (const step of handSteps) {
+        output.log(`\n  File: ${step.file}`);
+        for (const line of step.lines) output.log(`    ${line}`);
+        output.log(`\n  ${step.why}`);
+      }
       output.log("  Then confirm it landed: npx vendo doctor");
       output.log(rule);
     }
     // Express and custom hosts have no single host file to name, so their
     // wiring keeps the compact list; the block above already said everything
     // a Next host needs, and nothing is printed twice.
-    if (mount === null && manualSteps.length > 0) {
+    if (handSteps.length === 0 && manualSteps.length > 0) {
       output.log("\nLast steps are yours:");
       for (const line of manualSteps) output.log(`  ${line}`);
     }
@@ -1424,7 +1444,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // never reaches here (its read-only JSON plan returned above).
     if (options.yes === true || !interactive) {
       output.log("\nAgent tail:");
-      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, layout, cloudKeyMissing: credential.rung === "none" });
+      const tail = await agentTailLines({ root, framework: plan.framework, registryPath, compositionPath, authWired, layout, edits, cloudKeyMissing: credential.rung === "none" });
       for (const line of tail) output.log(`  ${line}`);
     } else {
       // Star ask (agent-install-dx §CLI-5): the interactive success screen

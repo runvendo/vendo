@@ -931,7 +931,7 @@ describe("vendo init (zero-question)", () => {
     expect(manifest.scripts.dev).toBe("next dev");
   });
 
-  it("generates the server-action registration map and wires an existing route (ENG-248)", async () => {
+  it("generates the server-action registration map and the wired route on a fresh install (ENG-248)", async () => {
     const root = await fixture();
     await mkdir(join(root, "app", "actions"), { recursive: true });
     await writeFile(join(root, "app", "actions", "invoices.ts"),
@@ -944,16 +944,65 @@ describe("vendo init (zero-question)", () => {
     const route = await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
     expect(route).toContain('import { serverActions } from "./vendo-actions";');
     expect(route).toContain("serverActions,");
+  });
 
-    // A route generated BEFORE actions existed gets rewired on the next init.
-    const bare = await fixture();
-    expect(await run(bare, output())).toBe(0);
-    await mkdir(join(bare, "app", "actions"), { recursive: true });
-    await writeFile(join(bare, "app", "actions", "later.ts"),
+  it("never regenerates an existing route.ts or vendo-actions.ts — it prints the paste instead", async () => {
+    const routeDir = join("app", "api", "vendo", "[...vendo]");
+    const root = await fixture();
+    expect(await run(root, output())).toBe(0);
+    const routePath = join(root, routeDir, "route.ts");
+    const routeBefore = await readFile(routePath, "utf8");
+
+    // Actions appear AFTER the route was generated: the wiring the route now
+    // needs is the developer's paste, and the route on disk does not move.
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "later.ts"),
       '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
-    expect(await run(bare, output())).toBe(0);
-    const rewired = await readFile(join(bare, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8");
-    expect(rewired).toContain("serverActions,");
+    const second = output();
+    expect(await run(root, second)).toBe(0);
+    expect(await readFile(routePath, "utf8")).toBe(routeBefore);
+    const secondLogs = second.logs.join("\n");
+    expect(secondLogs).toContain(`File: ${join(routeDir, "route.ts")}`);
+    expect(secondLogs).toContain('import { serverActions } from "./vendo-actions";');
+    expect(secondLogs).toContain("… then add inside createVendo({ … }): serverActions,");
+
+    // The map that run CREATED now exists, so a surface change afterwards is a
+    // printed diff — the file stays byte-identical.
+    const mapPath = join(root, routeDir, "vendo-actions.ts");
+    const mapBefore = await readFile(mapPath, "utf8");
+    expect(mapBefore).toContain("later");
+    await writeFile(join(root, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function renamed() {\n  return 1;\n}\n');
+    const third = output();
+    expect(await run(root, third)).toBe(0);
+    expect(await readFile(mapPath, "utf8")).toBe(mapBefore);
+    expect(await readFile(routePath, "utf8")).toBe(routeBefore);
+    const thirdLogs = third.logs.join("\n");
+    // The outstanding layout mount, the route wiring, and the stale map.
+    expect(thirdLogs).toContain("3 STEPS LEFT — paste these yourself (init never edits your files)");
+    expect(thirdLogs).toContain(`File: ${join(routeDir, "vendo-actions.ts")}`);
+    expect(thirdLogs).toContain(`+++ b/${join(routeDir, "vendo-actions.ts")}`);
+    expect(thirdLogs).toContain("+  \"app/actions/later.ts#renamed\": action0,");
+  });
+
+  it("carries the pastes it will not write into the --agent plan", async () => {
+    const routeDir = join("app", "api", "vendo", "[...vendo]");
+    const root = await fixture();
+    expect(await run(root, output())).toBe(0);
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
+    const sink = output();
+    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
+    const plan = JSON.parse(sink.logs.join("\n")) as {
+      edits?: Array<{ file: string; lines: string[]; why: string }>;
+      manualSteps: string[];
+    };
+    expect(plan.edits).toHaveLength(1);
+    expect(plan.edits?.[0]?.file).toBe(join(routeDir, "route.ts"));
+    expect(plan.edits?.[0]?.lines).toContain('import { serverActions } from "./vendo-actions";');
+    expect(plan.edits?.[0]?.why).toContain("fails closed");
+    expect(plan.manualSteps.join("\n")).toContain(`In ${join(routeDir, "route.ts")}:`);
   });
 
   it("leaves a hand-customized route that passes its own serverActions untouched (no conflicting import)", async () => {

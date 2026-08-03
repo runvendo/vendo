@@ -1311,6 +1311,45 @@ describe("vendo doctor error codes + fix_refs", () => {
     expect(errors).toContain("<VendoOverlay />");
   });
 
+  // Server actions fail closed and nothing else goes red (ENG-248): init only
+  // ever CREATES, so a route or a map that predates the host's "use server"
+  // surface stays as the developer left it, and doctor is where that surfaces.
+  it("fails E-WIRE-009 when detected server actions are neither registered nor wired", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
+      'import { createVendo } from "@vendoai/vendo/server";\nconst vendo = createVendo({});\nexport const { GET } = vendo;\n');
+    const { exit, report } = await jsonChecks({
+      targetDir: root,
+      fetchImpl: successfulProbeFetch(),
+    });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "wiring/server-actions");
+    expect(check).toMatchObject({ status: "broken", error_code: "E-WIRE-009" });
+    expect(check?.message).toContain("vendo-actions.ts is missing");
+    expect(check?.message).toContain("does not pass serverActions");
+  });
+
+  it("passes wiring/server-actions once the map registers the action and the route passes it", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"),
+      'export const serverActions = {\n  "app/actions/later.ts#later": async () => 1,\n};\n');
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
+      'import { createVendo } from "@vendoai/vendo/server";\nimport { serverActions } from "./vendo-actions";\nconst vendo = createVendo({ serverActions });\nexport const { GET } = vendo;\n');
+    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    expect(report.checks.find((entry) => entry.id === "wiring/server-actions")).toMatchObject({ status: "ok" });
+  });
+
+  it("says nothing about server actions in a host that has none", async () => {
+    const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
+    expect(report.checks.some((entry) => entry.id === "wiring/server-actions")).toBe(false);
+  });
+
   // The generated wrapper carries <VendoRoot> AND <VendoOverlay /> markers
   // itself — it must NOT satisfy the client/surface gates while no layout
   // mounts it, or doctor-green-but-invisible comes right back.
