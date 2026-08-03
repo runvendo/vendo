@@ -196,11 +196,43 @@ export interface DemoFolderConfig extends DemoConfig {
 /**
  * The beat arc every generated demo must cover. Contract: variety is
  * required, so the keys are pinned rather than left to an agent's taste —
- * a demo missing the automation or connect-account beat is a demo that
- * never shows those capabilities to the prospect.
+ * a demo missing the connect-account beat is a demo that never shows that
+ * capability to the prospect.
+ *
+ * There is no "automation" beat, deliberately. It asked for a recurring job
+ * ("every Monday, …") that nothing registers: the demo host hands the agent its
+ * own API tools, and the apps runtime's escalation to a scheduled automation is
+ * best-effort with a silent fallback, so the pill's promise died quietly. Three
+ * probes on the live host — the beat verbatim, an explicit "recurring scheduled
+ * job", and an app prompt containing "cron"/"Recurring"/"scheduled" — each left
+ * `GET /automations` empty, and two of the three ended with the agent telling the
+ * prospect it has no scheduler. The arc asks only for capabilities the demo can
+ * actually show, and {@link beatSetProblems} now REJECTS a recurring pill instead
+ * of requiring one.
  */
-export const requiredBeatKeys = ["generate-ui", "take-action", "automation", "connect-account", "save-app"] as const;
+export const requiredBeatKeys = ["generate-ui", "take-action", "connect-account", "save-app"] as const;
 export type RequiredBeatKey = (typeof requiredBeatKeys)[number];
+
+/**
+ * Recurrence in a beat's visible text. Deliberately generous: a false positive
+ * costs one rewording, while a false negative ships a pill promising work the
+ * demo never does.
+ */
+const recurrencePatterns = [
+  // "every" alone means nothing here: "show me every shipment" is a one-off
+  // view. It has to be every <time>.
+  /\bevery (mon|tues|wednes|thurs|fri|satur|sun)day\b/,
+  /\bevery (day|week|month|morning|hour|quarter|time)\b/,
+  /\beach (day|week|month|morning|quarter)\b/,
+  /\b(daily|weekly|monthly|hourly|quarterly|recurring|automatically|automate[sd]?|schedule[sd]?|ongoing)\b/,
+  /\bwhenever\b/,
+  /\bfrom now on\b/,
+];
+
+export function readsAsRecurring(beat: DemoBeat): boolean {
+  const text = `${beat.chip} ${beat.prompt}`.toLowerCase();
+  return recurrencePatterns.some((pattern) => pattern.test(text));
+}
 
 /** The one placement validator: the brief stage parses the model's reply with
  * it, and {@link parseDemoFolderConfig} parses what landed on disk. Two copies
@@ -256,7 +288,9 @@ export function parseDemoStrings(input: unknown): DemoStrings | undefined {
 /**
  * Every structural rule the SHIPPED beat set must satisfy, in one place:
  *
- *  - all five kinds present (the arc the contract requires);
+ *  - every kind present (the arc the contract requires);
+ *  - no pill PROMISES recurring work — nothing registers a recurring job, so
+ *    "every Monday, …" is a promise the demo cannot keep;
  *  - the two beats the smoke turn and the prospect's first click depend on carry
  *    their expectation flags;
  *  - keys are UNIQUE — merging copied authored beats verbatim, so a beats agent
@@ -275,6 +309,9 @@ export function beatSetProblems(beats: readonly DemoBeat[]): string[] {
   const byKey = new Map(beats.map((beat) => [beat.key, beat]));
   const missing = requiredBeatKeys.filter((key) => !byKey.has(key));
   if (missing.length > 0) problems.push(`missing beat(s): ${missing.join(", ")}`);
+  for (const recurring of beats.filter(readsAsRecurring)) {
+    problems.push(`beat "${recurring.key}" promises recurring work, which nothing in the demo registers — rewrite it as a one-off the agent performs on the spot`);
+  }
   const duplicates = [...new Set(beats.map((beat) => beat.key).filter((key, index, keys) => keys.indexOf(key) !== index))];
   if (duplicates.length > 0) problems.push(`duplicate beat key(s): ${duplicates.join(", ")}`);
   if (beats.length > maxChips) problems.push(`too many beats: ${beats.length} (the chip strip shows at most ${maxChips})`);

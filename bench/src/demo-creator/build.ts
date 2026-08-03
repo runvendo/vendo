@@ -23,6 +23,7 @@ import {
 } from "./chips.js";
 import {
   beatSetProblems,
+  readsAsRecurring,
   demoPaths,
   parseDemoFolderConfig,
   requiredBeatKeys,
@@ -209,12 +210,13 @@ CHIP MATERIAL from BRIEF.md: ${brief.chipMaterial.join(" · ")}
 THE DOMAIN (another agent is writing server/ from the same brief, concurrently):
 ${entities}
 
-YOUR TASK — demo.config.json, exactly these five beats, in this order, with these keys:
+YOUR TASK — demo.config.json, exactly these four beats, in this order, with these keys:
 1. "generate-ui" (must set \`expectsView: true\`): an IMPERATIVE prompt that renders a view over the seeded data — "Build me a ... showing ... and ...". Never a question: a question gets a prose answer, no view, and the beat fails verification.
 2. "take-action" (must set \`expectsApproval: true\`): the consented mutation, naming ONE of the sample records above verbatim so the agent acts immediately instead of asking a clarifying question. Never invent a record name — only the ones listed above are seeded.
-3. "automation": a recurring version of the work ("every Monday, ...").
-4. "connect-account": pulls in an outside account (Gmail, Google Calendar or Slack — the only connectors this host offers).
-5. "save-app": saves the generated view as a reusable app.
+3. "connect-account": pulls in an outside account (Gmail, Google Calendar or Slack — the only connectors this host offers).
+4. "save-app": saves the generated view as a reusable app.
+
+NEVER write a beat that promises RECURRING or SCHEDULED work — no "every Monday", "weekly", "automatically", "from now on", "whenever". Nothing in the demo registers a recurring job, so such a pill promises the prospect something the agent cannot do, and the build rejects it. Every beat is a one-off the agent performs on the spot.
 
 Each beat is { key, prompt, chip } plus the expectation flags above and nothing else — the schema is strict and a stray field fails the build. \`chip\` is a 2-5 word sentence-case label in ${prospect}'s vocabulary; \`prompt\` is the full sentence typed into the composer.
 
@@ -295,29 +297,6 @@ function subjectTokens(tools: readonly ExtractedTool[]): Set<string> {
   return subjects;
 }
 
-/**
- * Words that make a prompt RECURRING. The automation beat's whole point is that
- * it sets something up rather than doing it once, and a derived pill knows
- * nothing about beat kinds — so a pill without one of these cannot stand in for
- * it. Deliberately generous: a false "this is recurring" only costs the wording
- * we already had, while a false negative sends the beat to the repair agent,
- * which is the honest path.
- */
-const recurrencePatterns = [
-  // "every" alone means nothing here: "show me every shipment" is a one-off
-  // view. It has to be every <time>.
-  /\bevery (mon|tues|wednes|thurs|fri|satur|sun)day\b/,
-  /\bevery (day|week|month|morning|hour|quarter|time)\b/,
-  /\beach (day|week|month|morning|quarter)\b/,
-  /\b(daily|weekly|monthly|hourly|quarterly|recurring|automatically|automate[sd]?|schedule[sd]?|ongoing)\b/,
-  /\bwhenever\b/,
-  /\bfrom now on\b/,
-];
-
-function readsAsRecurring(beat: DemoBeat): boolean {
-  const text = `${beat.chip} ${beat.prompt}`.toLowerCase();
-  return recurrencePatterns.some((pattern) => pattern.test(text));
-}
 
 /**
  * Rewrites each ungrounded beat's visible text with a derived pill, keeping its
@@ -346,8 +325,9 @@ export function regroundBeats(
   const taken = new Set<DemoBeat>();
   const result = beats.map((beat) => {
     if (!ungrounded.has(beat.key)) return beat;
-    const pill = spare.find((candidate) => !taken.has(candidate)
-      && (beat.key !== "automation" || readsAsRecurring(candidate)));
+    // A derived pill must not reintroduce a recurring promise — beatSetProblems
+    // rejects one, so a recurring candidate can never be a stand-in.
+    const pill = spare.find((candidate) => !taken.has(candidate) && !readsAsRecurring(candidate));
     if (pill === undefined) {
       stillUngrounded.push(beat.key);
       return beat;
@@ -620,7 +600,7 @@ ${sharedRules(args.prospect, args.brief)}
 
 What is wrong: ${problems.join("; ")}
 
-The five beats every demo must carry, by key and in this order: ${requiredBeatKeys.join(", ")} — "generate-ui" sets \`expectsView: true\` (an imperative view-rendering prompt, never a question), "take-action" sets \`expectsApproval: true\` (a consented mutation naming one seeded sample record verbatim), "automation" makes it recurring, "connect-account" pulls in Gmail / Google Calendar / Slack, "save-app" saves the generated view as a reusable app.
+The beats every demo must carry, by key and in this order: ${requiredBeatKeys.join(", ")} — "generate-ui" sets \`expectsView: true\` (an imperative view-rendering prompt, never a question), "take-action" sets \`expectsApproval: true\` (a consented mutation naming one seeded sample record verbatim), "connect-account" pulls in Gmail / Google Calendar / Slack, "save-app" saves the generated view as a reusable app. No beat may promise RECURRING or SCHEDULED work ("every Monday", "weekly", "automatically") — nothing registers a recurring job, so the build rejects such a pill.
 
 Keep every beat already present exactly as it is — the pills that are there survived grounding against tools.json, which lists what this demo's agent can actually do. READ tools.json and write the missing beats over capabilities it names; a beat over a capability the demo lacks refuses in front of the prospect.
 
