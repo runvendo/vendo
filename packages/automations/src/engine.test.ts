@@ -73,6 +73,9 @@ const seedApp = async (
 
 class GuardDouble implements Guard {
   readonly audit: AuditEvent[] = [];
+  /** The optional spend seam (05 §2 amendment), scripted. Left unset by default
+   *  so every existing case still exercises the pre-seam fallback path. */
+  spendApproval?: (id: ApprovalId) => Promise<"spent" | "already-spent" | "taken-back">;
   private readonly callbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
 
   async check(): Promise<{ action: "run"; decidedBy: "default" }> {
@@ -461,6 +464,73 @@ describe("grant sets: one set per enable, dedupe against pending, list projectio
     const again = await engine.enable(weekly.id, ctx());
     expect(again.missing).toHaveLength(0);
     expect(again.grantSetId).toBeUndefined();
+  });
+
+  /**
+   * Checker round 5, finding 2 — arming a standing grant SPENDS the approval it
+   * rode in on, so it has to contend with `approvals.revoke` on the same
+   * one-time transition. The engine asks the guard for that spend and grants
+   * only on "spent"; the two orderings of the race itself are pinned against the
+   * real receipt in `packages/guard/test/ungraded-default.test.ts`.
+   */
+  it("arms nothing when the person took the yes back before the callback could spend it", async () => {
+    const engine = makeEngine();
+    guard.spendApproval = async () => "taken-back";
+    const { missing } = await engine.enable(weekly.id, ctx());
+
+    guard.decide(missing[0]!.id, true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+  });
+
+  it("arms nothing when someone else already spent the yes", async () => {
+    const engine = makeEngine();
+    guard.spendApproval = async () => "already-spent";
+    const { missing } = await engine.enable(weekly.id, ctx());
+
+    guard.decide(missing[0]!.id, true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+  });
+
+  it("arms exactly one grant per won spend, and leaves the approval row to the guard", async () => {
+    const engine = makeEngine();
+    guard.spendApproval = async () => "spent";
+    const { missing } = await engine.enable(weekly.id, ctx());
+
+    guard.decide(missing[0]!.id, true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(1);
+    // The guard owns the row now: the engine no longer writes `consumedAt`
+    // itself (which is what used to erase a concurrent take-back).
+    expect((await store.records("vendo_approvals").get(missing[0]!.id))?.data)
+      .not.toHaveProperty("consumedAt");
+  });
+
+  it("fallback for a Guard predating the seam: a taken-back yes arms nothing and keeps its marker", async () => {
+    // No `spendApproval` on this double, so the engine takes the old write-back
+    // path. It cannot linearize without a receipt, but it must still refuse the
+    // take-back it can see — and must not strip `voidedAt`/`deniedBy` off the
+    // row (the parse used to drop both).
+    const engine = makeEngine();
+    const { missing } = await engine.enable(weekly.id, ctx());
+    const takenBack = missing[0]!.id;
+    const row = (await store.records("vendo_approvals").get(takenBack))?.data as Record<string, unknown>;
+    await store.records("vendo_approvals").put({
+      id: takenBack,
+      data: { ...row, status: "approved", decidedAt: NOW.toISOString(), voidedAt: NOW.toISOString() },
+    });
+
+    guard.decide(takenBack, true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    expect((await store.records("vendo_approvals").get(takenBack))?.data).toMatchObject({
+      voidedAt: NOW.toISOString(),
+    });
   });
 });
 

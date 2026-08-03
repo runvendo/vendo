@@ -400,6 +400,41 @@ class GuardImplementation implements VendoGuard {
     }
   }
 
+  /**
+   * Spends an approval's single use for a caller that will NOT replay its call:
+   * the automations engine turns one yes into the app-bound standing grant its
+   * consent moment asked for (07 §3) instead of re-dispatching it. That spend
+   * claims the very same `consumed:<id>` transition a replay and a take-back
+   * claim, so a revoke landing at the same instant can never lose to a grant
+   * mint. Owner-scoped, and unknown/foreign/undecided ids all read as
+   * `already-spent` — this is a subscriber's fast path, not a place to learn
+   * whether someone else's approval exists.
+   */
+  async spendApproval(
+    id: ApprovalId,
+    principal: Principal,
+  ): Promise<"spent" | "already-spent" | "taken-back"> {
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const record = await store.get(id);
+    if (record === null) return "already-spent";
+    const data = approvalData(record);
+    if (data.request.ctx.principal.subject !== principal.subject) return "already-spent";
+    if (data.status !== "approved" || data.consumedAt !== undefined) return "already-spent";
+    if (data.voidedAt !== undefined) return "taken-back";
+    if (!(await this.#claimApprovalTransition("consumed", id, principal.subject, "replay"))) {
+      return (await this.#consumedTransitionClaimant(id)) === "void" ? "taken-back" : "already-spent";
+    }
+    // Same re-read law as the replay path: the claim is the gate, a gone row was
+    // erased and is never re-created, and a void that beat the claim wins.
+    const current = await store.get(id);
+    if (current === null) return "already-spent";
+    const fresh = approvalData(current);
+    if (fresh.voidedAt !== undefined) return "taken-back";
+    const spent: ApprovalRecordData = { ...fresh, consumedAt: now() };
+    await store.put({ id, data: spent, refs: approvalRefs(spent) });
+    return "spent";
+  }
+
   /** Spec 2026-07-20 (#5): the TTL backstop over the general approvals
    *  collection. Chat approvals are abandoned on the next thread turn and BYO
    *  parked calls have their own sweep, but away/automation/app approvals — and
@@ -924,7 +959,12 @@ class GuardImplementation implements VendoGuard {
   }
 
   /** Which claimant holds an approval's `consumed` transition. Read only by a
-   *  LOSER, to tell "the yes was spent" from "it was already taken back". */
+   *  LOSER, to tell "the yes was spent" from "it was already taken back".
+   *
+   *  MIXED-VERSION WINDOW: receipts written before claimants existed carry none,
+   *  and read as `undefined` here — which the void path treats as "spent". That
+   *  is the fail-closed reading and the true one: the older build claimed this
+   *  receipt only from the replay path. */
   async #consumedTransitionClaimant(approvalId: string): Promise<"replay" | "void" | undefined> {
     const receipt = await this.#store.records(APPROVAL_CLAIMS_COLLECTION).get(`consumed:${approvalId}`);
     const claimant = (receipt?.data as { claimant?: unknown } | undefined)?.claimant;
@@ -938,8 +978,8 @@ class GuardImplementation implements VendoGuard {
    * had already read and erase the void marker while the tool ran anyway.
    *
    * - `voided` — this call took it back; the caller records it.
-   * - `already-void` — another void got there first: idempotent, and nothing to
-   *   say twice.
+   * - `already-void` — the take-back had already landed: idempotent, and nothing
+   *   to say twice.
    * - `spent` — a replay won the transition, so the call it authorized is
    *   running or ran. The take-back came too late and must never read as
    *   success.
@@ -955,13 +995,28 @@ class GuardImplementation implements VendoGuard {
       data.request.ctx.principal.subject,
       "void",
     );
+    // The receipt is durable BEFORE the row write, so losing it to another VOID
+    // does not prove the marker landed: a take-back whose put failed leaves the
+    // receipt claimed and the row still standing. Re-assert it here — otherwise
+    // the retry would report success while a human denial kept blocking.
     if (!claimed) {
-      return (await this.#consumedTransitionClaimant(id)) === "void" ? "already-void" : "spent";
+      if ((await this.#consumedTransitionClaimant(id)) !== "void") return "spent";
+      const held = await store.get(id);
+      if (held === null) return "already-void";
+      const priorAttempt = approvalData(held);
+      if (priorAttempt.voidedAt !== undefined) return "already-void";
+      const asserted: ApprovalRecordData = { ...priorAttempt, voidedAt: now() };
+      await store.put({ id, data: asserted, refs: approvalRefs(asserted) });
+      return "voided";
     }
     // Re-read AFTER winning: the caller's copy may predate a decide landing on
-    // the same row, and the receipt — not that copy — is the gate.
+    // the same row, and the receipt — not that copy — is the gate. A row that is
+    // GONE was erased (02-store §5) or dropped by anon-adoption while this was
+    // in flight; re-putting it would resurrect erased data, so there is nothing
+    // left to void.
     const current = await store.get(id);
-    const fresh = current === null ? data : approvalData(current);
+    if (current === null) return "already-void";
+    const fresh = approvalData(current);
     const voided: ApprovalRecordData = { ...fresh, voidedAt: fresh.voidedAt ?? now() };
     await store.put({ id, data: voided, refs: approvalRefs(voided) });
     return "voided";
@@ -1091,7 +1146,13 @@ class GuardImplementation implements VendoGuard {
       // the listed copy back would erase whatever else moved on it (a void
       // that beat the claim is the case that matters — it must not be lost).
       const current = await store.get(record.id);
-      const fresh = current === null ? data : approvalData(current);
+      // GONE, not unchanged. Subject erasure (02-store §5) and anonymous-subject
+      // adoption both DELETE approval rows, so a replay that fell back to its
+      // listed copy here would re-create an erased subject's approval AND run
+      // the tool as them. No row, no authority: the receipt is already spent,
+      // which is the fail-closed direction.
+      if (current === null) continue;
+      const fresh = approvalData(current);
       if (fresh.voidedAt !== undefined) continue;
       // Observability marker on the row itself; the receipt is the source of
       // truth, so a crash between the two writes fails closed (the approval
@@ -1413,6 +1474,18 @@ class GuardImplementation implements VendoGuard {
         if (member.grantId !== undefined) {
           await this.#store.records(GRANTS_COLLECTION).delete(member.grantId);
         }
+        // Restore only a row nothing else has acted on. In the ms between this
+        // member's commit and a LATER member's store failure, a concurrent
+        // replay can spend it and a take-back can void it — and both of those
+        // transitions are single-use, so re-opening the ask would advertise a
+        // decision no one can make again and erase the marker of what did
+        // happen. A gone row was erased (02-store §5) and must never be
+        // re-created here. Both cases leave the member decided, which its own
+        // audit line already says; the retry then reads it as decided.
+        const current = await store.get(member.id);
+        if (current === null) continue;
+        const live = approvalData(current);
+        if (live.consumedAt !== undefined || live.voidedAt !== undefined) continue;
         await store.put({ id: member.id, data: member.prior, refs: approvalRefs(member.prior) });
         const requestCtx = member.prior.request.ctx;
         try {

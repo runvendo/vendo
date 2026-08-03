@@ -55,13 +55,18 @@ const appRowSchema = z.object({
   doc: appDocumentSchema,
 });
 
+/** The guard's approval row as this engine reads it. `passthrough`, because the
+ *  guard owns this shape and keeps adding to it (`deniedBy`, `voidedAt`): a
+ *  stripping parse would silently drop those on the write-back below, erasing
+ *  who said no and whether it was taken back. */
 const approvalRowSchema = z.object({
   request: approvalRequestSchema,
   status: z.enum(["pending", "approved", "denied"]),
   sessionId: z.string().optional(),
   decidedAt: z.string().optional(),
   consumedAt: z.string().optional(),
-});
+  voidedAt: z.string().optional(),
+}).passthrough();
 
 const captureSchema = z.object({
   appId: z.string(),
@@ -801,12 +806,28 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     });
   };
 
-  const markConsumed = async (record: VendoRecord): Promise<void> => {
+  /**
+   * Spends the approval this consent moment rode in on — through the guard when
+   * it offers the seam, so the spend contends with a concurrent
+   * `approvals.revoke` on the one transition instead of racing beside it. False
+   * means DO NOT grant: the person took the yes back, or someone else already
+   * spent it.
+   *
+   * The fallback (a Guard predating the seam) marks the row the old way. It
+   * cannot linearize — there is no receipt to claim — so it at least refuses on a
+   * take-back it can see, and writes the row back whole.
+   */
+  const spendApproval = async (record: VendoRecord): Promise<boolean> => {
     const data = approvalRowSchema.parse(record.data);
+    if (config.guard.spendApproval !== undefined) {
+      return await config.guard.spendApproval(record.id, data.request.ctx.principal) === "spent";
+    }
+    if (data.voidedAt !== undefined) return false;
     await config.store.records(APPROVALS).put({
       id: record.id,
       data: { ...data, consumedAt: iso() },
     });
+    return true;
   };
 
   const resumeRun = async (approvalId: string, approved: boolean): Promise<void> => {
@@ -905,7 +926,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       let step: Step;
       let outcome: ToolOutcome;
       try {
-        await mintGrant(approvalData.request);
+        // A yes taken back inside the resume window arms nothing. The replay
+        // below refuses on the same marker (the guard's approved replay checks
+        // it), so the run lands as a fresh ask instead of a standing grant.
+        if (approvalData.voidedAt === undefined) await mintGrant(approvalData.request);
         trigger = validateTrigger(appFound.row.doc.trigger);
         if (trigger.run.kind !== "steps") throw new VendoError("validation", "parked agentic run is invalid");
         const parkedStep = trigger.run.steps[state.stepIndex];
@@ -997,8 +1021,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       const approval = await config.store.records(APPROVALS).get(approvalId);
       if (approved && approval !== null) {
         const data = approvalRowSchema.parse(approval.data);
-        await mintGrant(data.request);
-        await markConsumed(approval);
+        // Spend before granting: a yes the person took back at this instant
+        // must arm nothing, and only one of the two can win the transition.
+        if (await spendApproval(approval)) await mintGrant(data.request);
       }
       await config.store.records(CAPTURES).delete(approvalId);
       if (!approved) {
@@ -1036,8 +1061,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       // AgentRunReport has no continuation token in v0. Approval arms the
       // app-bound authority for the next agentic firing instead of replaying
       // and duplicating the completed prefix of an agent run.
-      await mintGrant(data.request);
-      await markConsumed(approval);
+      if (await spendApproval(approval)) await mintGrant(data.request);
     }
   };
 

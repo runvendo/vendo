@@ -390,12 +390,13 @@ describe("a void and a replay can never both win", () => {
 
   type Interleave =
     | { op: "list"; collection: string; query: RecordQuery }
-    | { op: "put"; collection: string; record: { id: string; data: unknown } };
+    | { op: "put"; collection: string; record: { id: string; data: unknown } }
+    | { op: "claim"; collection: string; record: { id: string; data: unknown } };
 
-  /** Runs `hook` just AFTER each read and just BEFORE each write, so a test can
-   *  land a second operation in the window where the first is holding a copy it
-   *  has not written back yet — the only way to reproduce the orderings by
-   *  hand. */
+  /** Runs `hook` just AFTER each read and each won transition claim, and just
+   *  BEFORE each write — so a test can land a second operation in the window
+   *  where the first is holding a copy it has not written back yet, which is the
+   *  only way to reproduce the orderings by hand. */
   function interleavedStore(
     base: StoreAdapter,
     hook: (event: Interleave) => Promise<void>,
@@ -404,6 +405,7 @@ describe("a void and a replay can never both win", () => {
       ...base,
       records(collection) {
         const records = base.records(collection);
+        const atomic = records.atomic;
         return {
           ...records,
           async list(query = {}) {
@@ -413,6 +415,37 @@ describe("a void and a replay can never both win", () => {
           },
           async put(input) {
             await hook({ op: "put", collection, record: input });
+            return records.put(input);
+          },
+          ...(atomic === undefined ? {} : {
+            atomic: {
+              ...atomic,
+              async insertIfAbsent(input) {
+                const receipt = await atomic.insertIfAbsent(input);
+                await hook({ op: "claim", collection, record: input });
+                return receipt;
+              },
+            },
+          }),
+        };
+      },
+    };
+  }
+
+  /** Wraps the store so ONE write fails — a store dying between two writes that
+   *  the protocol assumes both land. `onPut` may also land other work first. */
+  function faultyStore(
+    base: StoreAdapter,
+    onPut: (collection: string, id: string) => Promise<boolean> | boolean,
+  ): StoreAdapter {
+    return {
+      ...base,
+      records(collection) {
+        const records = base.records(collection);
+        return {
+          ...records,
+          async put(input) {
+            if (await onPut(collection, input.id)) throw new Error("the store went away");
             return records.put(input);
           },
         };
@@ -532,5 +565,145 @@ describe("a void and a replay can never both win", () => {
     expect(events.filter((event) =>
       (event.detail as { approvalRevoked?: string } | undefined)?.approvalRevoked === parked.approvalId,
     )).toHaveLength(1);
+  });
+
+  /**
+   * Checker round 5, finding 1 — the row can also be GONE. Subject erasure
+   * (02-store §5) and anonymous-subject adoption DELETE approval rows, so a
+   * replay that treated a missing row as "unchanged" would re-create an erased
+   * subject's approval and run the tool as them.
+   */
+  it("never resurrects an approval erased mid-replay — no row, no run", async () => {
+    const gate = once();
+    const base = createMemoryStore();
+    const store = interleavedStore(
+      base,
+      // The moment the replay has WON the transition, before it re-reads.
+      gate.hook((event) => event.op === "claim" && event.record.id.startsWith("consumed:")),
+    );
+    const guard = createGuard({ store });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    // The subject exercises their right to erasure in that window.
+    gate.arm(async () => {
+      await base.records("vendo_approvals").delete(parked.approvalId);
+    });
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "pending-approval" });
+    expect(tools.executions).toHaveLength(0);
+    expect(await base.records("vendo_approvals").get(parked.approvalId)).toBeNull();
+  });
+
+  /**
+   * Checker round 5, finding 3 — the receipt is durable BEFORE the row write, so
+   * a take-back whose put failed leaves the receipt claimed and the row still
+   * standing. The retry has to finish the job, not report it as already done.
+   */
+  it("re-asserts a take-back whose row write failed instead of calling it already done", async () => {
+    let breakNextApprovalPut = false;
+    const store = faultyStore(createMemoryStore(), (collection) => {
+      if (collection !== "vendo_approvals" || !breakNextApprovalPut) return false;
+      breakNextApprovalPut = false;
+      return true;
+    });
+    const guard = createGuard({ store });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: false }, alice);
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "blocked" });
+
+    breakNextApprovalPut = true;
+    await expect(guard.approvals.revoke(parked.approvalId, alice)).rejects.toThrow("the store went away");
+    // The receipt landed, the marker did not: the retry must actually void it,
+    // or the person's undo silently does nothing while the no keeps blocking.
+    await guard.approvals.revoke(parked.approvalId, alice);
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "pending-approval" });
+  });
+
+  /**
+   * Checker round 5, finding 4 — a batch's compensation restores each applied
+   * member to its pre-decision state, which is right unless a concurrent actor
+   * has since SPENT or voided that member: those transitions are single-use, so
+   * re-opening the ask would advertise a decision nobody can make again.
+   */
+  it("does not re-open a batch member a concurrent spend already consumed", async () => {
+    const base = createMemoryStore();
+    let guard = createGuard({ store: base });
+    let secondId: string | undefined;
+    let firstId: string | undefined;
+    const store = faultyStore(base, async (collection, id) => {
+      if (collection !== "vendo_approvals" || id !== secondId) return false;
+      // The set's first member is committed; something spends it right as the
+      // second member's write dies.
+      await guard.spendApproval!(firstId!, alice);
+      return true;
+    });
+    guard = createGuard({ store });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const one = await bound.execute(call(ungraded.name, { invoiceId: "inv_1" }, "call_one"), context());
+    const two = await bound.execute(call(ungraded.name, { invoiceId: "inv_2" }, "call_two"), context());
+    if (one.status !== "pending-approval" || two.status !== "pending-approval") {
+      throw new Error("expected two parks");
+    }
+    // The batch commits in sorted id order, so the LAST id is the one that dies.
+    [firstId, secondId] = [one.approvalId, two.approvalId].sort();
+
+    await expect(guard.approvals.decide([one.approvalId, two.approvalId], { approve: true }, alice))
+      .rejects.toThrow("the store went away");
+
+    // The spent member keeps its marker and its decided status; the untouched
+    // member is back to pending, exactly as all-or-none intends.
+    expect((await base.records("vendo_approvals").get(firstId!))?.data).toMatchObject({
+      status: "approved",
+      consumedAt: expect.any(String),
+    });
+    expect((await base.records("vendo_approvals").get(secondId!))?.data).toMatchObject({
+      status: "pending",
+    });
+  });
+
+  /**
+   * Checker round 5, finding 2 (the guard half) — the automations engine spends a
+   * yes by arming the standing grant it asked for instead of replaying a call, so
+   * that spend contends on the same transition as `approvals.revoke`.
+   */
+  it("spends a yes for a grant-arming caller, and a take-back after it comes too late", async () => {
+    const guard = createGuard({ store: createMemoryStore() });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    // Owner-scoped, and single-use like every other spend of the same yes.
+    expect(await guard.spendApproval!(parked.approvalId, bob)).toBe("already-spent");
+    expect(await guard.spendApproval!(parked.approvalId, alice)).toBe("spent");
+    expect(await guard.spendApproval!(parked.approvalId, alice)).toBe("already-spent");
+    await expect(guard.approvals.revoke(parked.approvalId, alice)).rejects.toMatchObject({
+      code: "conflict",
+    });
+  });
+
+  it("refuses to spend a yes the person took back first — the grant is never armed", async () => {
+    const guard = createGuard({ store: createMemoryStore() });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+    await guard.approvals.revoke(parked.approvalId, alice);
+
+    expect(await guard.spendApproval!(parked.approvalId, alice)).toBe("taken-back");
+    // …and the replay is refused on the same marker.
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "pending-approval" });
+    expect(tools.executions).toHaveLength(0);
   });
 });
