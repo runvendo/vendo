@@ -101,7 +101,7 @@ export default function Page() {
       // Edit 1: fork the pin (copies captured source verbatim, records the pin).
       '<Edit><ForkPin slot="MapleNetWorthCard" into="root"/></Edit>',
       // Edit 2: change the fork — the reviewable delta the ship-diff must show.
-      `<Edit><Island name="${componentName}">${remixedSource}</Island></Edit>`,
+      `<Edit><EditPin name="${componentName}"/><Island name="${componentName}">${remixedSource}</Island></Edit>`,
       // Edit 3: any content change after approval — must invalidate the pin.
       '<Edit><SetName name="Net worth (renamed)"/></Edit>',
     ]);

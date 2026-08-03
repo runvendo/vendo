@@ -69,9 +69,9 @@ const seedForkedHistory = async (
   await seedAppRow(store, app, ctx.principal.subject);
   const responses = [
     forkOps,
-    `<Edit><Island name="${COMPONENT}">${OLD_SOURCE.replace("$1.2M", "$1.2M in green")}</Island></Edit>`,
+    `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${OLD_SOURCE.replace("$1.2M", "$1.2M in green")}</Island></Edit>`,
     ...extraPinnedEdits.map((marker) =>
-      `<Edit><Island name="${COMPONENT}">${OLD_SOURCE.replace("$1.2M", marker)}</Island></Edit>`),
+      `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${OLD_SOURCE.replace("$1.2M", marker)}</Island></Edit>`),
     '<Edit><SetName name="Maple overview (renamed)"/></Edit>',
   ];
   const runtime = createApps({
@@ -170,11 +170,11 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     const runtime = rebasedRuntime(store, [
       (call) => {
         prompts.push(promptText(call));
-        return `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`;
+        return `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`;
       },
       (call) => {
         prompts.push(promptText(call));
-        return `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE.replace("in green", "underlined")}</Island></Edit>`;
+        return `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${REPLAYED_SOURCE.replace("in green", "underlined")}</Island></Edit>`;
       },
     ]);
     const before = await runtime.get(appId, ctx);
@@ -315,7 +315,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);
     const runtime = rebasedRuntime(store, [
-      `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
+      `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
     ]);
     await runtime.inClient.approve({ appId, approvedBy: "host-review" }, ctx);
     await expect(runtime.inClient.verdict(appId, ctx)).resolves.toMatchObject({ granted: true });
@@ -334,7 +334,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);
     const runtime = rebasedRuntime(store, [
-      `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
+      `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
     ]);
     const before = await runtime.get(appId, ctx);
     const result = await runtime.pins.rebase({ appId, slot: SLOT }, ctx);
@@ -356,7 +356,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     const appId = await seedForkedHistory(store, ["$1.2M underlined"]);
     const broken = '<Edit><Set id="missing" x={1}/></Edit>';
     const runtime = rebasedRuntime(store, [
-      `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
+      `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
       broken,
       broken,
     ]);
@@ -394,7 +394,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
       refs: { slot: SLOT },
     });
     const runtime = rebasedRuntime(store, [
-      `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
+      `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
       JSON.stringify({ rung: 2, files: [{ path: "/app/index.js", content: "export {}" }] }),
     ]);
     const before = await runtime.get(appId, ctx);
@@ -473,7 +473,7 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
       tools,
       catalog: [],
       model: scriptedLanguageModel(
-        `<Edit><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
+        `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${REPLAYED_SOURCE}</Island></Edit>`,
       ),
       pinBaselines: [baseline(NEW_SOURCE, "sha256:maple-new")],
     });

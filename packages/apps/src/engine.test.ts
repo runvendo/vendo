@@ -636,7 +636,7 @@ describe("generation engine through createApps", () => {
         expect(prompt).not.toContain("$1.2M");
         return `<Edit><ForkPin slot="${slot}" into="root"/></Edit>`;
       },
-      `<Edit><Island name="${componentName}">${source.replace("$1.2M", "$1.4M")}</Island></Edit>`,
+      `<Edit><EditPin name="${componentName}"/><Island name="${componentName}">${source.replace("$1.2M", "$1.4M")}</Island></Edit>`,
       // Props-only edit to the pinned node: no source change, no base change —
       // the SUBTREE comparison alone must mark the slot touched (Devin, PR #375:
       // the v1-gated pinnedSubtree made this dead for current apps).

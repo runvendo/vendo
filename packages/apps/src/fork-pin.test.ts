@@ -139,7 +139,7 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     const runtime = runtimeWith(store, {
       model: scriptedLanguageModel((call) => {
         calls.push(call);
-        return `<Edit><Island name="${COMPONENT}">${SOURCE.replace("$1.2M", "$1.2M in blue")}</Island></Edit>`;
+        return `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${SOURCE.replace("$1.2M", "$1.2M in blue")}</Island></Edit>`;
       }),
     });
 
@@ -231,7 +231,7 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
     await seedAppRow(store, app, ctx.principal.subject);
     const forkRuntime = runtimeWith(store, {
       model: scriptedLanguageModel(
-        `<Edit><Island name="${COMPONENT}">${SOURCE.replace("$1.2M", "$1.2M in blue")}</Island></Edit>`,
+        `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${SOURCE.replace("$1.2M", "$1.2M in blue")}</Island></Edit>`,
       ),
     });
     const forked = await forkRuntime.pins.fork(
@@ -247,7 +247,7 @@ describe("06-apps §8 — gesture-owned deterministic fork (pins.fork)", () => {
       pinBaselines: [{ ...baseline, source: NEW_SOURCE, hash: "sha256:maple-new" }],
       model: scriptedLanguageModel((call) => {
         replayed.push(promptText(call));
-        return `<Edit><Island name="${COMPONENT}">${NEW_SOURCE.replace("$1.2M", "$1.2M in blue")}</Island></Edit>`;
+        return `<Edit><EditPin name="${COMPONENT}"/><Island name="${COMPONENT}">${NEW_SOURCE.replace("$1.2M", "$1.2M in blue")}</Island></Edit>`;
       }),
     });
     await expect(rebaseRuntime.pins.drift(app.id, ctx)).resolves.toEqual([

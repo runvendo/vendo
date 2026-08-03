@@ -103,7 +103,7 @@ export default function Page() {
     // ONE host process lifetime: fork the pin (gesture, no model) and edit the fork.
     const vendo = createVendo({
       model: scriptedModel([
-        `<Edit><Island name="${componentName}">${remixedSource}</Island></Edit>`,
+        `<Edit><EditPin name="${componentName}"/><Island name="${componentName}">${remixedSource}</Island></Edit>`,
       ]),
       principal: async () => principal,
       store,
@@ -155,7 +155,7 @@ export default function Page() {
     const redeployed = createVendo({
       model: scriptedModel([
         // The rebase replays the ONE recorded pin intent through the model.
-        `<Edit><Island name="${componentName}">${newBaseline.source.replace("$1.2M", "$1.2M — remixed")}</Island></Edit>`,
+        `<Edit><EditPin name="${componentName}"/><Island name="${componentName}">${newBaseline.source.replace("$1.2M", "$1.2M — remixed")}</Island></Edit>`,
       ]),
       principal: async () => principal,
       store,

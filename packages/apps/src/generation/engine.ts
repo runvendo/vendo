@@ -21,6 +21,7 @@ import {
   type Tree,
   type VendoTheme,
   type WireCompileResult,
+  type WirePatchResult,
 } from "@vendoai/core";
 import type { LanguageModel, ModelMessage } from "ai";
 import { modelCallParams } from "../model-params.js";
@@ -622,6 +623,45 @@ export const applyPinFork = (
   return [];
 };
 
+/**
+ * Remix final shape (2026-08-02) — an edit must never land inside a pinned
+ * fork. A pin's component source is the user's copy of the HOST's component,
+ * and the ship-diff review reads it as "what the user changed about that
+ * component" — meaningful only while that source changes exclusively on
+ * instructions about the component itself. The rule is structural, not prompt
+ * guidance: a patch may change a pinned component's source only alongside an
+ * explicit <EditPin name="..."/> target declaration; content the instruction
+ * wants NEAR the fork lands as a sibling node/island; removal never rides an
+ * edit at all (revert is a runtime gesture, like the fork). A violating patch
+ * is rejected whole with the issues below, so the repair loop gets a chance.
+ */
+const pinEditIssues = (
+  patched: Pick<WirePatchResult, "components" | "extensionOps">,
+  baseComponents: Record<string, string>,
+  pinnedNames: ReadonlySet<string>,
+): string[] => {
+  const issues: string[] = [];
+  const targeted = new Set<string>();
+  for (const { op, props } of patched.extensionOps) {
+    if (op !== "EditPin") continue;
+    if (typeof props.name !== "string" || !pinnedNames.has(props.name)) {
+      issues.push(`<EditPin name="${String(props.name ?? "")}"/> does not name a pinned component; it declares an edit to an existing forked component only`);
+      continue;
+    }
+    targeted.add(props.name);
+  }
+  for (const name of pinnedNames) {
+    const next = patched.components[name];
+    if (next === baseComponents[name]) continue;
+    if (next === undefined) {
+      issues.push(`pinned component "${name}" is the user's fork of a host component and cannot be removed by an edit`);
+    } else if (!targeted.has(name)) {
+      issues.push(`the patch changed pinned component "${name}" without targeting it: that source is the user's fork of the host's component and may change only when the instruction is about that component itself — when it is, declare <EditPin name="${name}"/> alongside the <Island>; otherwise leave the fork's source untouched and add the new content as a SIBLING (<Insert> next to the pinned node, with a NEW <Island> under a different name for custom source)`);
+    }
+  }
+  return issues;
+};
+
 const editTree = async (
   input: GenerationEditInput,
   deps: GenerationDependencies,
@@ -630,6 +670,7 @@ const editTree = async (
     return { kind: "failure", issues: ["tree edits require a vendo-genui/v2 app"] };
   }
   const hostComponents = deps.catalog.map(({ name }) => name);
+  const pinnedNames = new Set((input.app.pins ?? []).map((pin) => pinComponentName(pin.slot)));
   const base = {
     tree: input.app.tree as unknown as Tree,
     components: input.app.components ?? {},
@@ -648,11 +689,12 @@ const editTree = async (
       const patched = compileWirePatch(extractEdit(output.text), base, {
         hostComponents,
         ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
-        extensionOps: ["ForkPin", "SetDescription"],
+        extensionOps: ["ForkPin", "SetDescription", "EditPin"],
       });
       const patchIssues = [
         ...(patched.complete ? [] : ["wire did not parse to a complete <Edit> document"]),
         ...patched.issues.map(({ code, message }) => `wire ${code}: ${message}`),
+        ...pinEditIssues(patched, base.components, pinnedNames),
       ];
       if (patchIssues.length === 0) {
         const app: AppDocument = {
@@ -665,7 +707,6 @@ const editTree = async (
         // captured host source on the furnishing trust path: their real
         // imports resolve through the captured tables, so they are neither
         // stripped nor scanned — and get NO ambient-tools manifest.
-        const pinnedNames = new Set((input.app.pins ?? []).map((pin) => pinComponentName(pin.slot)));
         const isPinned = ([componentName]: [string, string]) => pinnedNames.has(componentName);
         const splitIslands = (all: Record<string, string>) => ({
           pinned: Object.fromEntries(Object.entries(all).filter(isPinned)),
@@ -690,8 +731,10 @@ const editTree = async (
           app.componentTools = structuredClone(prepared.componentTools);
         }
         const extensionIssues: string[] = [];
-        const changed = patched.appliedOps > 0 || patched.extensionOps.length > 0;
+        // <EditPin> is a declaration, not a change: alone it edits nothing.
+        const changed = patched.appliedOps > 0 || patched.extensionOps.some(({ op }) => op !== "EditPin");
         for (const extension of patched.extensionOps) {
+          if (extension.op === "EditPin") continue; // validated in pinEditIssues
           if (extension.op === "SetDescription") {
             if (typeof extension.props.text !== "string") {
               extensionIssues.push("<SetDescription> needs a string text attribute");
