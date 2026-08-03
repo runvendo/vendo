@@ -11,7 +11,7 @@ opts in explicitly — see `examples/demo-bank/src/vendo/server.ts`).
 The jailed fork rides a `sandbox="allow-scripts"` iframe (opaque origin), so
 the driver can't read inside it: in-jail facts are asserted at the DOM
 boundary (the iframe element), server-side over the wire (the fork's stored
-document), and visually via the screenshots below. Machine-written verdicts:
+document), and visually via the screenshots below. Machine-written verdicts live in
 `results.json`.
 
 **Review seam note:** the checklist offers "console screen if reachable
