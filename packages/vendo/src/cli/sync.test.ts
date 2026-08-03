@@ -222,6 +222,19 @@ describe("vendo sync", () => {
     expect(errors.join("\n")).toContain("extract it into a component and wrap that");
   });
 
+  it("keeps wrapper errors at exit two under --strict as well", async () => {
+    const failed = {
+      ...report(),
+      remixableErrors: [
+        "src/app/page.tsx:4 — <Remixable> must wrap exactly one component element; extract it into a component and wrap that",
+      ],
+    };
+    // Exit 2 in ANY mode: --strict adds nothing here because the failure is
+    // already hard — a wrapper the host marked remixable that cannot capture
+    // means the remix silently would not exist.
+    expect(await runSync({ targetDir: ".", strict: true, output: captureOutput().output, sync: async () => failed })).toBe(2);
+  });
+
   it("prints one line per pruned stale baseline", async () => {
     const messages = captureOutput();
     const pruned = {
