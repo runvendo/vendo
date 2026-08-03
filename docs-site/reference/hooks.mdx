@@ -71,10 +71,11 @@ are the same value.
 
 **There is no generic `execute` callback.** Hooks that write name their
 verbs: `decide`, `revoke`, `disconnect`, `enable`, `disable`, `create`,
-`remove`, `fork`, `exportApp`, `importApp`, `edit`. Each returns a promise
-and refreshes the collection when it resolves — the hook's `isLoading` still
-tracks only the first read, so drive mutation-pending UI from your own
-`await` instead.
+`remove`, `fork`, `importApp`, `edit`, `dryRun`, `stopRun`. Each returns a
+promise, and the ones that change the collection refresh it when they
+resolve. `exportApp` is the exception — it is a pure read and refreshes
+nothing. Either way the hook's `isLoading` still tracks only the first read,
+so drive mutation-pending UI from your own `await`.
 
 ## Polling
 
@@ -103,8 +104,10 @@ tab is hidden — a hidden tab keeps fetching on the cadence you set, so pick a
 number you are willing to pay for in the background, or call `refresh()` from
 your own trigger instead.
 
-`useApp` and `useVendoStatus` take no options and never poll; call
-`refresh()` (or remount) when you need a newer read. `useSlotApp` is the
+`useApp` and `useVendoStatus` take no options and never poll. `useApp` still
+returns `refresh()`, so you can re-read it on demand; `useVendoStatus` returns
+only `{ posture, connected }` — it reads once per mount, and remounting is the
+only way to re-read it. `useSlotApp` is the
 opposite: it polls every 5 seconds by default, because a placement made in
 the conversation surface has to appear in the slot on its own. Pass
 `{ pollMs }` to change the cadence, or `{ enabled: false }` to stand the
@@ -160,8 +163,12 @@ const {
   setMessages,
   regenerate,
   clearError,
-} = useVendoThread(threadId);
+} = useVendoThread(selectedThreadId);
 ```
+
+The argument is named `selectedThreadId` above on purpose: the hook also
+*returns* `threadId`, so destructuring into that name while passing it in is a
+use-before-declaration error.
 
 `setMessages` is what an edit-last affordance is built on: drop the last user
 turn (and anything after) from the transcript, then refill your input from

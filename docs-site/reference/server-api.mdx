@@ -12,8 +12,9 @@ Type imports come from the umbrella, not the block packages. The root
 same type from `@vendoai/core` or `@vendoai/apps` is a `TS2307` under pnpm's
 strict linking, because those are not your dependencies.
 
-Two entries, and the split matters: `createVendo` and its config-shaped types
-live at `@vendoai/vendo/server`, while everything else — including
+Two entries, and the split matters: `createVendo` lives at
+`@vendoai/vendo/server` along with a handful of types shaped specifically for
+its config, while the bulk of the types — including
 `HostOAuthAdapter`, the type you need to write the `oauth` adapter `mcp`
 requires — is on the **root** `@vendoai/vendo`.
 

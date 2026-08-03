@@ -6,7 +6,8 @@ description: "Reference for the vendo bin commands: init, login for a Vendo Clou
 
 The umbrella owns the `vendo` bin. `init`, `login`, and `doctor` get you
 installed and verified; `sync`, `eject`, `knowledge`, `mcp`, `cloud`, and
-`config` are the work after.
+`config` are the work after. `vendo --version` prints the CLI version and
+`vendo --help` the command list.
 
 ## `vendo init [dir]`
 
@@ -237,8 +238,10 @@ Options:
 - `--json`: print exactly one machine-readable object on stdout with
   `{ vendo, version, wired, exit, checks, liveTurn, cloud, summary }`
   and suppress every other line. `wired` is true when no static or HTTP
-  check failed; `exit` reflects the process exit code, which additionally
-  requires `liveTurn.ok`. A `--json` run **never starts the dev server**,
+  check failed, and `exit` is simply `wired ? 0 : 1` — the two never diverge.
+  A failed live turn is itself a counted check, so it lands in `wired` like
+  any other failure rather than being a separate gate. A `--json` run
+  **never starts the dev server**,
   even with `--yes` — start it yourself before an agent or CI run, or the
   live checks report against nothing listening.
 
@@ -507,8 +510,9 @@ npx vendo knowledge sync
 Verbs:
 
 - `add <glob>`: register a local source (markdown or JSON files) in
-  `.vendo/knowledge.json`. `add notion` / `add gdocs` register a hosted
-  source instead.
+  `.vendo/knowledge.json`. `add notion` and `add gdocs` write nothing — they
+  print the console URL where those cloud-managed sources are connected, and
+  exit 0.
 - `list`: show configured sources and their synced document counts.
 - `remove <name>`: drop a source entry; its documents leave the engine on the
   next sync.
@@ -639,6 +643,8 @@ build sync to Vendo Cloud automatically and run on Vendo's schedulers — see
 Global options:
 
 - `--api-url <url>` overrides `VENDO_CLOUD_URL` (default `https://console.vendo.run`).
+- `--json` is advertised but currently inert: read subcommands already print
+  JSON, and the flag changes nothing.
 
 `members` and `invite` take `--org <id>`; `keys` and `usage` take
 `--project <id>`. Either can be omitted when there is exactly one candidate —

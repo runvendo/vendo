@@ -4,17 +4,24 @@ sidebarTitle: "HTTP routes"
 description: "Reference for every HTTP route Vendo mounts under the base path, including methods, body shapes, responses, and streaming for the wire."
 ---
 
-The default base is `/api/vendo`. Every request passes through
-`principal(req)`. Bodies use core types encoded as JSON and conversation turns
-stream over SSE.
+The default base is `/api/vendo`. Bodies use core types encoded as JSON and
+conversation turns stream over SSE.
+
+Most routes resolve a principal through `principal(req)`, but not all of them:
+the machine surfaces authenticate differently and never call the resolver.
+`/tick` takes a bearer secret, `/webhooks/*` a signature, `/box/*` a per-app
+token, and the `/doctor/*` probes are gated on being a development
+composition rather than on identity — `/doctor/base-url` in particular answers
+unauthenticated in every environment, by design (it reveals only whether
+`VENDO_BASE_URL` is set).
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
 | `/threads` | POST | `{ threadId?, message }` → AI SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id: <thr_…>` (the effective requested or server-minted id) so hosts can persist the identity of a default thread without a follow-up round trip |
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
-| `/threads/:id/heartbeat` | POST | `{}`. Beaten by the client while a turn streams so the server can idle-abort the turn on a runtime that never surfaces a disconnect |
+| `/threads/:id/heartbeat` | POST | `{ active: boolean }`. Beaten by the client while a turn streams so the server can idle-abort the turn on a runtime that never surfaces a disconnect. Only the caller's own in-flight turns answer `true`; unknown and foreign ids answer `false` rather than revealing anything |
 | `/approvals` | GET | pending `ApprovalRequest[]` |
-| `/approvals/:id` | GET | one `ApprovalRequest` |
+| `/approvals/:id` | GET | one parked [BYO](/existing-agents) call's state, as a tagged envelope: `{state:"pending", request}` · `{state:"executed", outcome}` · `{state:"declined"}` · `{state:"expired"}`. Owner-scoped; unknown and foreign ids both answer `not-found`, on purpose |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}`. Batch-capable, and a multi-id batch is atomic: every id lands or none does (members already decided the same way are skipped; an opposite prior decision conflicts the whole batch). Denying an automation's standing-grant ask also disarms that automation inside the same decision |
 | `/grants` · `/grants/:id` | GET · DELETE | grants · revoke |
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
@@ -31,7 +38,7 @@ stream over SSE.
 | `/apps/:id/fork` | POST | → `AppDocument` |
 | `/apps/:id/pin-drift` | GET | `PinDrift[]`, pins whose captured baseline no longer matches |
 | `/apps/:id/rebase-pin` | POST | `{ slot }` → `PinRebaseResult`, re-fork from the new baseline and replay recorded intents, all-or-nothing |
-| `/apps/fork-pin` | POST | `{ slot, instruction? }` → `PinForkResult`, the Remix gesture on an empty slot: deterministic engine fork of the captured slot into a freshly minted app (no model call); an optional instruction then rides the ordinary edit path scoped to the fork |
+| `/apps/fork-pin` | POST | `{ slot, instruction?, props? }` → `PinForkResult`, the Remix gesture on an empty slot (`props` is the wrapper's serializable live props at fork time, stored on the fork as its dashboard seed): deterministic engine fork of the captured slot into a freshly minted app (no model call); an optional instruction then rides the ordinary edit path scoped to the fork |
 | `/apps/:id/fork-pin` | POST | `{ slot, instruction? }` → `PinForkResult`, the same gesture fork landing in an existing app |
 | `/automations` | GET | list; each entry optionally carries `pendingGrants` (count of still-undecided standing-grant asks) and `grantSetId` — projected from the store so a reload still shows "waiting on N permissions" |
 | `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing, grantSetId? }` · `{}`; `grantSetId` names the ONE grant set the `missing` asks belong to (present exactly when `missing` is non-empty) — decide every member in one `POST /approvals/decide { ids }` and the whole set lands all-or-none |
@@ -39,10 +46,10 @@ stream over SSE.
 | `/runs` · `/runs/:id` | GET | run records |
 | `/runs/:id/stop` | POST | `{}` |
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>`) |
-| `/webhooks/:source` | POST | trigger ingress (Composio, host, plain), verified as described below. Matched by raw prefix, so a source may carry slashes (`/webhooks/composio/gmail`) |
+| `/webhooks/:source` | POST | trigger ingress (Composio, host, plain), verified as described below. `source` is the **last** path segment and must equal the trigger's `connector` exactly. The mount is a raw prefix, so a deeper path still resolves — but only by its tail: `/webhooks/composio/gmail` ingests as source `gmail`, and a trigger registered as `composio/gmail` never fires. Keep sources to a single segment |
 | `/activity` | GET | `AuditEvent[]`, self-scoped with `guard.audit.query({ principal })` |
 | `/connections` | GET | connected accounts owned by the caller |
-| `/connections/catalog` | GET | the connectors this deployment advertises: `{ toolkit, connector, label? }[]`. What the connect dock resolves when the host passes no explicit `connectors` prop |
+| `/connections/catalog` | GET | `{ available: { toolkit, connector, label?, description? }[] }` — the connectors this deployment advertises, wrapped in an envelope, not a bare array. What the connect dock resolves when the host passes no explicit `connectors` prop. An adapter that predates the catalog capability advertises `[]` rather than failing |
 | `/connections/initiate` | POST | `{ toolkit, connector?, callbackUrl? }` → `{ id, connector, redirectUrl }`; refused for ephemeral and synthetic (`webhook:` / `vendo:`) subjects |
 | `/connections/:id?connector=` | GET · DELETE | status (poll while connecting) · disconnect through the broker |
 | `/orgs` · `/orgs/:id` and every other `/orgs/*` path | any | always `cloud-required` (`402`); organizations are a [Vendo Cloud](/deploy/vendo-cloud) capability, not an OSS wire route |
@@ -60,7 +67,7 @@ caller can probe another subject's pending work.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/dev/inclient-approval` | POST | `{ appId, approvedBy? }` → `{}`. Pins the app's *current* `versionHash` as an in-client approval for the resolved principal. Production returns `404`. The Cloud console mints approvals in production; this route is the documented stand-in for local demos. See [In-client venue and approvals](/concepts/in-client-venue). |
+| `/dev/inclient-approval` | POST | `{ appId, approvedBy? }` → the minted `InClientApproval` record. Pins the app's *current* `versionHash` as an in-client approval for the resolved principal; `approvedBy` defaults to `"local-dev"`. Production returns `404`. The Cloud console mints approvals in production; this route is the documented stand-in for local demos. See [In-client venue and approvals](/concepts/in-client-venue). |
 | `/apps/review-queue` | GET | review-kind versions awaiting a reviewer, with requester, slot, version hash, submission time, resubmission count, and the ship-diff payload. Outside a development composition — or for an anonymous caller — it answers an empty array, never an error. Without `createVendo({ apps: { review: { reviewer } } })` a caller sees only their own submissions |
 | `/apps/:id/reject-review` | POST | `{ note }` → the rejection. The note is required (the user's panel renders it) and the work is not deleted; a new version supersedes the rejection. Takes the same reviewer assertion; every other caller gets the `not-found` an unowned app answers |
 
@@ -127,8 +134,7 @@ own signed headers. Self-minted sources use HMAC-SHA256 over
 The accepted clock window is five minutes. Delivery ids are deduplicated.
 
 A verification failure returns 401, resolves no principal, starts no run, and
-writes one audit event. The secret never appears in a URL. No wire route is
-unauthenticated.
+writes one audit event. The secret never appears in a URL.
 
 ## Organization context
 
@@ -147,6 +153,10 @@ map.
 Cookie-authenticated mutations require `Content-Type: application/json`. The
 exceptions are exactly four: binary `/apps/import`, signed `/webhooks/:source`,
 bearer-authenticated `/tick`, and the bearer-authenticated `/box/*` callback
-surface. None of them carries ambient credentials, and each validates its own
-content type instead. MCP door paths sit outside both rules; they speak MCP
-and OAuth response shapes, not the wire envelope.
+surface. None of them carries ambient credentials, which is why the gate can
+be skipped — each instead proves itself the way its own surface does:
+`/apps/import` by demanding a non-safelisted media type, `/box/*` by
+validating `application/json` on its JSON routes, `/webhooks/*` by signature,
+and `/tick` by its bearer secret alone (it checks no content type). MCP door
+paths sit outside both rules; they speak MCP and OAuth response shapes, not
+the wire envelope.
