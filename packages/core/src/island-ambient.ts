@@ -81,15 +81,15 @@ export const ISLAND_STRIPPED_SPECIFIERS = [
 ] as const;
 
 /**
- * Everything the jail runtime can answer a `require()` for: the stripped
- * specifiers (mapped onto the ambient scope) PLUS the third-party packages the
- * runtime bundles.
+ * Everything the jail runtime can resolve when jailed code imports it: the
+ * stripped specifiers (mapped onto the ambient scope) PLUS the third-party
+ * packages the runtime bundles.
  *
  * This is the set a PRODUCER must check — the generation engine's import gate,
  * and `vendo sync`'s host-component capture. `ISLAND_STRIPPED_SPECIFIERS` is
  * NOT that set: stripping is about deleting an import whose name the ambient
- * scope provides, and a bundled package's import must survive so the compiled
- * `require("clsx")` reaches the module table.
+ * scope provides, and a bundled package's import must survive so its compiled
+ * module request for "clsx" reaches the module table.
  */
 export const ISLAND_RESOLVABLE_SPECIFIERS = [
   ...ISLAND_STRIPPED_SPECIFIERS,

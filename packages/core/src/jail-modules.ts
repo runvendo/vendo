@@ -28,8 +28,8 @@ export type JailModule = (typeof JAIL_ALLOWED_MODULES)[number];
  * Kept separate from `ISLAND_STRIPPED_SPECIFIERS` because the two lists mean
  * different things and one list cannot serve both: a STRIPPED specifier has its
  * import statement deleted because the ambient scope already provides the name;
- * a BUNDLED package must keep its import statement so the compiled
- * `require("clsx")` reaches the jail's module table. Stripping one of these
+ * a BUNDLED package must keep its import statement so its compiled module
+ * request for "clsx" reaches the jail's module table. Stripping one of these
  * would delete the binding and leave a ReferenceError.
  *
  * The three here are the ones that block real host components from previewing at
