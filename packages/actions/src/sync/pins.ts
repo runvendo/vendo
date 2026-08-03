@@ -159,16 +159,19 @@ function wrapperSites(
   source: string,
   file: string,
   relativeFile: string,
-): { sites: WrapperSite[]; errors: string[] } {
+): { sites: WrapperSite[]; errors: string[]; degraded: boolean } {
   const sites: WrapperSite[] = [];
   const errors: string[] = [];
   // The token's absence is a cheap skip that avoids parsing every walked module.
-  if (!source.includes("Remixable")) return { sites, errors };
+  if (!source.includes("Remixable")) return { sites, errors, degraded: false };
   const parsed = parseModuleSource(source, file);
-  if (!parsed) return { sites, errors };
+  if (!parsed) return { sites, errors, degraded: true };
   const { ts, sf } = parsed;
+  // A file that mentions Remixable but did not parse cleanly may hold sites
+  // the recovered tree dropped — the scan cannot vouch for completeness.
+  const degraded = ((sf as { parseDiagnostics?: unknown[] }).parseDiagnostics?.length ?? 0) > 0;
   const bindings = remixableBindings(ts, sf);
-  if (bindings.names.size === 0 && bindings.namespaces.size === 0) return { sites, errors };
+  if (bindings.names.size === 0 && bindings.namespaces.size === 0) return { sites, errors, degraded };
   visitNodes(ts, sf, (node) => {
     if (ts.isJsxSelfClosingElement(node) && isRemixableTag(ts, node.tagName, sf, bindings)) {
       errors.push(`${relativeFile}:${lineOf(sf, node)} — <Remixable /> wraps nothing; put exactly one component element inside it`);
@@ -200,7 +203,7 @@ function wrapperSites(
       functionProps: functionTypedProps(ts, child),
     });
   });
-  return { sites, errors };
+  return { sites, errors, degraded };
 }
 
 /** Reach into host plumbing inside the captured component's own module:
@@ -479,7 +482,14 @@ export async function capturePins(
 ): Promise<PinCaptureResult> {
   const result: PinCaptureResult = { captured: [], drifted: [], pruned: [], errors: [], warnings: [] };
   const realRoot = await fs.realpath(root);
-  const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath), MAX_SCAN_FILES);
+  let skippedDirs = 0;
+  const files = await walk(
+    root,
+    (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath),
+    MAX_SCAN_FILES,
+    () => { skippedDirs += 1; },
+  );
+  let parseDegraded = false;
   let stylesPromise: Promise<CapturedPinStyle[]> | undefined;
   const remixableDir = path.join(out, "remixable");
 
@@ -488,7 +498,8 @@ export async function capturePins(
   const bySlot = new Map<string, ResolvedSite[]>();
   for (const file of files) {
     const source = await fs.readFile(file, "utf8");
-    const { sites, errors } = wrapperSites(source, file, portablePath(root, file));
+    const { sites, errors, degraded } = wrapperSites(source, file, portablePath(root, file));
+    parseDegraded ||= degraded;
     result.errors.push(...errors);
     for (const site of sites) {
       const resolved = await resolveSite(site, source, root, realRoot, result.errors);
@@ -561,9 +572,13 @@ export async function capturePins(
   // wrapper's slot is unknowable, and deleting its baseline would turn a loud
   // failure into silent data loss. A DEGRADED scan prunes nothing either — a
   // missing host compiler parses every file to zero sites without one error,
-  // and a walk that hit its file cap may simply never have seen the wrapper.
+  // a walk that hit its file cap or skipped an unreadable directory may never
+  // have seen the wrapper, and a Remixable-mentioning file that parsed dirty
+  // may have dropped its sites from the recovered tree.
   const scanTrusted = parseModuleSource("", "compiler-probe.tsx") !== null
-    && files.length < MAX_SCAN_FILES;
+    && files.length < MAX_SCAN_FILES
+    && skippedDirs === 0
+    && !parseDegraded;
   if (scanTrusted && result.errors.length === 0) {
     const entries = await fs.readdir(remixableDir).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return [];

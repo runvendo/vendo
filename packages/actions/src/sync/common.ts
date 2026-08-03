@@ -44,6 +44,7 @@ export async function walk(
   root: string,
   keep: (relativePath: string) => boolean,
   maxFiles = 5_000,
+  onSkippedDir?: (directory: string) => void,
 ): Promise<string[]> {
   const files: string[] = [];
   async function visit(directory: string): Promise<void> {
@@ -51,6 +52,9 @@ export async function walk(
     try {
       entries = await fs.readdir(directory, { withFileTypes: true });
     } catch {
+      // Skipped silently for extraction (fail-soft), but a caller that must
+      // KNOW the scan saw everything (baseline pruning) hears about it.
+      onSkippedDir?.(directory);
       return;
     }
     for (const entry of entries) {

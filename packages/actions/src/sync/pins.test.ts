@@ -541,6 +541,42 @@ describe("stale baseline pruning", () => {
     await expect(baselineFor(root, "Card")).resolves.toMatchObject({ slot: "Card" });
   });
 
+  it("prunes nothing when the walk skipped an unreadable directory", async () => {
+    const root = await temporaryRoot();
+    await fs.mkdir(path.join(root, ".vendo/remixable"), { recursive: true });
+    await fs.writeFile(path.join(root, ".vendo/remixable/Card.json"), "{}\n", "utf8");
+    // The wrapper could live anywhere inside this directory — an unreadable
+    // subtree means "no wrapper found" proves nothing.
+    await fs.mkdir(path.join(root, "src/hidden"), { recursive: true });
+    await fs.chmod(path.join(root, "src/hidden"), 0o000);
+    try {
+      const result = await capturePins(root, path.join(root, ".vendo"));
+      expect(result.errors).toEqual([]);
+      expect(result.pruned).toEqual([]);
+      await expect(fs.access(path.join(root, ".vendo/remixable/Card.json"))).resolves.toBeUndefined();
+    } finally {
+      await fs.chmod(path.join(root, "src/hidden"), 0o755);
+    }
+  });
+
+  it("prunes nothing when a Remixable-mentioning file did not parse cleanly", async () => {
+    const root = await temporaryRoot();
+    await fs.mkdir(path.join(root, ".vendo/remixable"), { recursive: true });
+    await fs.writeFile(path.join(root, ".vendo/remixable/Card.json"), "{}\n", "utf8");
+    // Syntax damage can drop wrapper sites from the recovered parse tree
+    // without a single scan error, so a dirty parse forfeits pruning.
+    await write(root, "src/app/page.tsx", `
+      import { Remixable } from "${UI_CHROME}";
+      import { Card } from "../components/Card";
+      export default function Page() { return <Remixable><Card /></Remixable>;
+    `);
+
+    const result = await capturePins(root, path.join(root, ".vendo"));
+
+    expect(result.pruned).toEqual([]);
+    await expect(fs.access(path.join(root, ".vendo/remixable/Card.json"))).resolves.toBeUndefined();
+  });
+
   it("keeps a baseline the sync config ignores", async () => {
     const root = await temporaryRoot();
     await fs.mkdir(path.join(root, ".vendo/remixable"), { recursive: true });
