@@ -12,6 +12,7 @@ import { ErrorState } from "@/components/ui/error-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { VendoRoot } from "@/components/vendo/VendoRoot"
 import { fetcher, type DeadlineEntry } from "@/lib/api"
+import { BASE_PATH, withBasePath } from "@/lib/base-path"
 import { cn } from "@/lib/cn"
 import { entityLabel } from "@/lib/format"
 import { DeadlineListView } from "./deadline-list-view"
@@ -77,9 +78,13 @@ export function DeadlineList({ className }: { className?: string }) {
       <VendoRoot director={false}>
         <Remixable review>
           <DeadlineListView
+            // hrefs carry the base path: a fork never receives onNavigate
+            // (functions do not cross), so its anchors must resolve on their
+            // own under /cadence. The host callback strips the prefix back
+            // off for the router (which re-adds it).
             rows={entries.map(entry => ({
               id: entry.id,
-              href: `/clients/${entry.id}`,
+              href: withBasePath(`/clients/${entry.id}`),
               businessName: entry.businessName,
               entityLabel: entityLabel(entry.entityType),
               status: entry.status,
@@ -88,8 +93,10 @@ export function DeadlineList({ className }: { className?: string }) {
               filingDeadline: entry.filingDeadline,
               logoSrc: clientLogoSrc(entry.id),
             }))}
-            calendarHref="/calendar"
-            onNavigate={href => router.push(href)}
+            calendarHref={withBasePath("/calendar")}
+            onNavigate={href =>
+              router.push(href.startsWith(BASE_PATH) ? href.slice(BASE_PATH.length) || "/" : href)
+            }
           />
         </Remixable>
       </VendoRoot>
