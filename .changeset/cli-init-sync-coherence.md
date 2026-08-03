@@ -26,9 +26,11 @@ wrote yourself.
 **Sync re-extracts your theme.** `.vendo/theme.json` was init-only, so a
 rebrand never reached the agent. Sync now re-runs the deterministic scan and
 reconciles it, using a sibling merge base, `.vendo/theme.extracted.json` (what
-the scan produced last time — commit it alongside `theme.json`). Machine-read
-slots follow your CSS; slots you hand-edited are left alone and reported, with
-`--theme-refresh` to take the app's values anyway.
+the scan produced last time — commit it alongside `theme.json`). A slot is
+machine-owned only with recorded proof, so anything you hand-edited — or that
+predates the base — is left alone and reported with both values; derived slots
+like `accentText` follow their source rather than the app's. `--theme-refresh`
+takes your app's values anyway.
 
 **Pin baselines reach Vendo Cloud.** With a key set, a normal sync (no
 `--report` needed) reconciles `.vendo/remixable/` with the `vendo_pin_baselines`

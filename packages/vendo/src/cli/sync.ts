@@ -144,16 +144,20 @@ async function reconcileTheme(
   // stays put, so the warning repeats every sync instead of quietly baking the
   // stale value in as the new truth.
   if (merge.pinned.length === 0) await writeBase(vendoDir, baseFrom(summary));
+  // One line, and every claim in it is literally true: "re-read" names ONLY
+  // the slots just written to theme.json, and a pinned slot shows BOTH values
+  // so nobody can read it as "your accent now tracks your CSS" — the earlier
+  // `accent → #b91c1c` phrasing read exactly like that assignment.
+  const parts: string[] = [];
   if (merge.updated.length > 0) {
-    note(`theme: ${merge.updated.length} slot${merge.updated.length === 1 ? "" : "s"} re-read from your app (${merge.updated.join(", ")}) → .vendo/theme.json`);
+    parts.push(`${merge.updated.length} slot${merge.updated.length === 1 ? "" : "s"} re-read from your app (${merge.updated.join(", ")}) → .vendo/theme.json`);
   }
   if (merge.pinned.length > 0) {
-    const detail = merge.pinned
-      .map((slot) => `${slot} → ${String(summary.slots[slot as keyof typeof summary.slots])}`)
-      .join(", ");
-    note(`theme: your brand changed but these slots are pinned to your edits (${detail}) — \`vendo sync --theme-refresh\` takes the app's values`);
+    const detail = merge.pinned.map((entry) => `${entry.slot} — yours ${entry.mine} vs your app's ${entry.theirs}`).join("; ");
+    parts.push(`${merge.pinned.length} pinned by you, unchanged (${detail}) — \`vendo sync --theme-refresh\` takes your app's values`);
   }
-  return { updated: merge.updated, pinned: merge.pinned };
+  if (parts.length > 0) note(`theme: ${parts.join(" · ")}`);
+  return { updated: merge.updated, pinned: merge.pinned.map((entry) => entry.slot) };
 }
 
 /** 04-actions §1 / 09-vendo §5 — fail-soft extraction, strict CI gate. */

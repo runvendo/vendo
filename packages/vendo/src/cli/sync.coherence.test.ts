@@ -215,7 +215,7 @@ describe("the theme re-scan (decision 3)", () => {
     expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
     expect((await read(dir)).colors.accent).toBe("#ff0000");
     const logs = messages.logs.join("\n");
-    expect(logs).toContain("pinned to your edits (accent → #0f766e)");
+    expect(logs).toContain("1 pinned by you, unchanged (accent — yours #ff0000 vs your app's #0f766e)");
     expect(logs).toContain("--theme-refresh");
     // The base does NOT advance while a disagreement is unresolved, so the
     // warning repeats instead of quietly becoming the new truth.
@@ -241,7 +241,7 @@ describe("the theme re-scan (decision 3)", () => {
     const messages = captureOutput();
     expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
     expect((await read(dir)).colors.accent).toBe("#7c3bed");
-    expect(messages.logs.join("\n")).toContain("pinned to your edits (accent → #0f766e)");
+    expect(messages.logs.join("\n")).toContain("1 pinned by you, unchanged (accent — yours #7c3bed vs your app's #0f766e)");
   });
 
   // BLOCKER 2 (review): the neutral defaults are ordinary Tailwind palette
@@ -254,7 +254,7 @@ describe("the theme re-scan (decision 3)", () => {
     expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
     expect((await read(dir)).colors.accent).toBe("#2563eb");
     const logs = messages.logs.join("\n");
-    expect(logs).toContain("pinned to your edits (accent → #0f766e)");
+    expect(logs).toContain("1 pinned by you, unchanged (accent — yours #2563eb vs your app's #0f766e)");
     expect(logs).not.toContain("re-read from your app");
     // And no base was written, so the warning repeats rather than baking in.
     await expect(readFile(join(dir, ".vendo", "theme.extracted.json"), "utf8")).rejects.toThrow();
@@ -268,7 +268,7 @@ describe("the theme re-scan (decision 3)", () => {
     const messages = captureOutput();
     expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
     expect((await read(dir)).colors.background).toBe("#101010");
-    expect(messages.logs.join("\n")).toContain("pinned to your edits (background → #ffffff)");
+    expect(messages.logs.join("\n")).toContain("1 pinned by you, unchanged (background — yours #101010 vs your app's #ffffff)");
   });
 
   // BLOCKER 1 (review): .vendo/ is committed and predev runs sync, so a base
@@ -302,6 +302,61 @@ describe("the theme re-scan (decision 3)", () => {
     expect(messages.logs.join("\n")).not.toContain("theme:");
     expect(JSON.parse(await readFile(join(dir, ".vendo", "theme.extracted.json"), "utf8")))
       .toMatchObject({ slots: { accent: "#7c3bed" } });
+  });
+
+  // Review round 2: the summary line must be literally true. It named slots
+  // whose BASE moved as "re-read from your app", so a user with a pinned
+  // accent was told their accent now tracks their CSS. It did not.
+  it("names exactly the slots written, and reports the pinned ones separately", async () => {
+    const dir = await themedHost("#0f766e");
+    // background is hand-edited (pinned); accent is machine-owned (written).
+    const start = themeJson("#7c3bed");
+    await writeTheme(dir, { ...start, colors: { ...start.colors, background: "#101010" } });
+    await writeBase(dir, { accent: "#7c3bed", accentText: "#ffffff", background: "#ffffff", radius: "8px" });
+    const messages = captureOutput();
+    expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false, json: true })).toBe(0);
+    const line = (JSON.parse(messages.logs[0]!) as { notes: string[] }).notes.find((n) => n.startsWith("theme:"))!;
+
+    // Written: accent only — and the pinned slot is NOT in the re-read list.
+    expect(line).toContain("1 slot re-read from your app (accent) → .vendo/theme.json");
+    expect(line).not.toContain("re-read from your app (accent, background)");
+    // Pinned: named separately, with BOTH values so it cannot read as "border
+    // now tracks your CSS".
+    expect(line).toContain("1 pinned by you, unchanged (background — yours #101010 vs your app's #ffffff)");
+
+    const after = await read(dir);
+    expect(after.colors.accent).toBe("#0f766e"); // written, as reported
+    expect(after.colors.background).toBe("#101010"); // pinned, as reported
+    expect(JSON.parse(messages.logs[0]!).theme).toEqual({ updated: ["accent"], pinned: ["background"] });
+  });
+
+  // The defect underneath the wrong label: a DERIVED slot followed the app's
+  // source while the source itself stayed pinned, so the human's dark accent
+  // got black text written on it.
+  it("holds a derived slot when the slot it derives from is pinned", async () => {
+    // The app's accent is light, so its contrast text is black — but the human
+    // pinned a DARK accent, whose contrast text must stay white.
+    const dir = await themedHost("#fde047");
+    await writeTheme(dir, themeJson("#2563eb"));
+    await writeBase(dir, { accent: "#7c3bed", accentText: "#ffffff", background: "#ffffff", radius: "8px" });
+    const messages = captureOutput();
+    expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
+    const after = await read(dir);
+    expect(after.colors.accent).toBe("#2563eb");
+    expect(after.colors.accentText).toBe("#ffffff"); // NOT #000000 on dark blue
+    expect(messages.logs.join("\n")).not.toContain("accentText");
+  });
+
+  it("a derived slot DOES follow its source when the source is machine-owned", async () => {
+    const dir = await themedHost("#fde047");
+    await writeTheme(dir, themeJson("#7c3bed"));
+    await writeBase(dir, { accent: "#7c3bed", accentText: "#ffffff", background: "#ffffff", radius: "8px" });
+    const messages = captureOutput();
+    expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
+    const after = await read(dir);
+    expect(after.colors.accent).toBe("#fde047");
+    expect(after.colors.accentText).toBe("#000000"); // correct contrast on yellow
+    expect(messages.logs.join("\n")).toContain("2 slots re-read from your app (accent, accentText)");
   });
 
   it("reports both halves in --json", async () => {

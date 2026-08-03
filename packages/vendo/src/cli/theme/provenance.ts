@@ -46,7 +46,9 @@ export interface ExtractedThemeBase {
   slots: Partial<Record<keyof ThemeSlotValues, string>>;
 }
 
-/** Where each slot lives inside the frozen VendoTheme shape. */
+/** Where each slot lives inside the frozen VendoTheme shape. Key ORDER is
+    load-bearing, mirroring DEFAULT_THEME_SLOTS: every DERIVED_FROM source must
+    precede its dependent so the merge knows the source's fate first. */
 const SLOT_PATHS: ReadonlyArray<[keyof ThemeSlotValues, readonly string[]]> = [
   ["accent", ["colors", "accent"]],
   ["accentText", ["colors", "accentText"]],
@@ -139,16 +141,25 @@ export async function readBase(vendoDir: string): Promise<ExtractedThemeBase | n
   }
 }
 
+/** Slots the extractor DERIVES from another slot rather than reading: the
+    accent's contrast text, and the heading stack that inherits the body's.
+    A derived slot may only move when its source moves — otherwise a pinned
+    accent keeps the human's colour while its contrast text follows the app's,
+    which is how `#2563eb` ended up with `#000000` on it. */
+const DERIVED_FROM: ReadonlyArray<[keyof ThemeSlotValues, keyof ThemeSlotValues]> = [
+  ["accentText", "accent"],
+  ["headingFamily", "fontFamily"],
+];
+
 export interface ThemeMerge {
   /** The theme document to write; null when nothing changed. */
   theme: unknown | null;
-  /** Slots this sync updated to the new extraction. */
+  /** Slots this sync actually wrote into `theme.json` — never a slot that was
+      merely reconsidered, because the summary line names these to the user. */
   updated: string[];
-  /** Slots the extraction disagrees with but a human owns — left alone. */
-  pinned: string[];
-  /** True when `theme.json` and the new extraction already agree everywhere
-      the scan has evidence: safe to (re)write the base with no questions. */
-  clean: boolean;
+  /** Slots the extraction disagrees with but a human owns, carrying BOTH
+      values so the report can show the choice instead of implying one. */
+  pinned: Array<{ slot: string; mine: string; theirs: string }>;
 }
 
 /**
@@ -165,7 +176,8 @@ export function mergeExtraction(args: {
   const defaulted = new Set(summary.defaulted);
   const next = structuredClone(args.theme) as Record<string, unknown>;
   const updated: string[] = [];
-  const pinned: string[] = [];
+  const pinned: ThemeMerge["pinned"] = [];
+  const held = new Set<string>();
   let radiusWas: string | undefined;
 
   for (const [slot, path] of SLOT_PATHS) {
@@ -173,13 +185,21 @@ export function mergeExtraction(args: {
     const extracted = String(summary.slots[slot]);
     const current = readPath(args.theme, path);
     if (current === undefined || sameValue(current, extracted)) continue;
+    // A derived slot is only as movable as the slot it derives from. Its
+    // extracted value was computed from the app's source slot, so applying it
+    // over a PINNED source produces an incoherent pair (the human's accent
+    // with the app's contrast text). Held silently: nothing was mis-written,
+    // and the pinned source is already named in the report.
+    const source = DERIVED_FROM.find(([derived]) => derived === slot)?.[1];
+    if (source !== undefined && held.has(source)) continue;
     // Machine-owned ONLY with recorded proof. No base entry means no evidence
     // about who chose the value on disk, so it is the human's — never guessed
     // from "it looks like our default".
     const recorded = base?.slots[slot];
     const machineOwned = recorded !== undefined && sameValue(current, recorded);
     if (!machineOwned && args.force !== true) {
-      pinned.push(slot);
+      pinned.push({ slot, mine: current, theirs: extracted });
+      held.add(slot);
       continue;
     }
     if (slot === "radius") radiusWas = current;
@@ -206,10 +226,5 @@ export function mergeExtraction(args: {
     }
   }
 
-  return {
-    theme: updated.length === 0 ? null : next,
-    updated,
-    pinned,
-    clean: updated.length === 0 && pinned.length === 0,
-  };
+  return { theme: updated.length === 0 ? null : next, updated, pinned };
 }

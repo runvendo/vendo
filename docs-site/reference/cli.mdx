@@ -295,8 +295,8 @@ still holds exactly that value. Everything else is yours:
 
 - recorded, and `theme.json` still equals it → machine-extracted; sync takes
   the new value
-- recorded, and `theme.json` differs → you edited it; pinned, and reported as
-  `theme: your brand changed but these slots are pinned to your edits (…)`
+- recorded, and `theme.json` differs → you edited it; pinned, and reported
+  with both values so the choice is visible
 - **not recorded at all** — no base file yet, or a token init never saw →
   pinned. There is no evidence about who chose the value on disk, and Vendo
   will not guess from "it looks like one of our defaults" (the neutral
@@ -304,8 +304,25 @@ still holds exactly that value. Everything else is yours:
   guessing would silently overwrite a real brand choice).
 
 Values are compared by meaning, not bytes: `#FFFFFF` and `#ffffff` are the
-same color. `radius.small`/`radius.large` follow a `radius` update only while
-they still hold the values init derived from `radius.medium`.
+same color.
+
+**Derived slots follow their source.** `accentText` is the accent's contrast
+color, `headingFamily` inherits `fontFamily`, and `radius.small`/`radius.large`
+scale from `radius.medium`. A derived slot moves only when its source moves —
+so a pinned accent keeps its own contrast text rather than getting the one
+computed for your app's accent (which is how a hand-picked dark blue would end
+up with black text on it). `radius.small`/`radius.large` additionally hold if
+you tuned them away from the derived values.
+
+The summary line names exactly what happened, and only that: the "re-read"
+list is the set of slots actually written to `theme.json`, and pinned slots are
+reported separately with both values.
+
+```
+theme: 1 slot re-read from your app (accent) → .vendo/theme.json · 1 pinned by you, unchanged (border — yours #111111 vs your app's #e2e8f0) — `vendo sync --theme-refresh` takes your app's values
+```
+
+`--json` mirrors it as `theme: { updated, pinned }`, both lists of slot names.
 
 The base only advances on an unambiguous run — one with no pinned slots. So an
 install from before the base existed touches nothing and warns with the diff on
@@ -412,7 +429,7 @@ tools: +0 -0 ~1
 pins: 1 captured, 0 drifted
 pruned: LegacyHeroCard — stale baseline deleted (no <Remixable> wrapper names this slot anymore)
 catalog.json: 2 discovered, 2 registered
-theme: 2 slots re-read from your app (accent, border) → .vendo/theme.json
+theme: 2 slots re-read from your app (accent, accentText) → .vendo/theme.json
 baselines → Vendo Cloud: 1 pushed, 1 pruned (component source crosses the wire so the console can review forks)
 breaking: host_listAccounts input-narrowed
 impact: host_listAccounts breaks 1 automation, 1 grant
