@@ -318,6 +318,67 @@ const deriveFixes = (
 
 const fixKey = (index: number): string => `fix_${index}`;
 
+const INTERPOLATED_QUERY_REF = /\{([A-Za-z_][A-Za-z0-9_]*)(\.[A-Za-z0-9_]+)*\}/gu;
+
+const interpolatedPath = (match: string): string =>
+  `/${match.slice(1, -1).split(".").join("/")}`;
+
+/** Models naturally write `Text text="Total: {metric.total}"`. The wire has
+ * no string interpolation, so split only that safe Text case into literal
+ * and bound Text nodes before spending a model repair round. */
+const spliceInterpolatedText = (
+  compiled: WireCompileResult,
+): { patched: { tree: Tree; components: Record<string, string>; name?: string }; count: number } | null => {
+  const queryNames = new Set((compiled.tree.queries ?? []).map((query) => query.name));
+  if (queryNames.size === 0) return null;
+  const tree = structuredClone(compiled.tree);
+  let count = 0;
+  for (const node of [...tree.nodes]) {
+    if (node.component !== "Text" || typeof node.props?.["text"] !== "string") continue;
+    const text = node.props["text"];
+    const parts: TreeNode[] = [];
+    let lastIndex = 0;
+    for (const match of text.matchAll(INTERPOLATED_QUERY_REF)) {
+      const raw = match[0];
+      const index = match.index ?? 0;
+      const query = raw.slice(1, -1).split(".")[0];
+      if (query === undefined || !queryNames.has(query)) continue;
+      const literal = text.slice(lastIndex, index);
+      if (literal.length > 0) {
+        parts.push({ id: `${node.id}-text-${parts.length + 1}`, component: "Text", source: "prewired", props: { text: literal } });
+      }
+      parts.push({
+        id: `${node.id}-text-${parts.length + 1}`,
+        component: "Text",
+        source: "prewired",
+        props: { text: { $path: interpolatedPath(raw) } },
+      });
+      lastIndex = index + raw.length;
+    }
+    if (parts.length === 0) continue;
+    const tail = text.slice(lastIndex);
+    if (tail.length > 0) {
+      parts.push({ id: `${node.id}-text-${parts.length + 1}`, component: "Text", source: "prewired", props: { text: tail } });
+    }
+    if (!parts.some((part) => isPathBinding(part.props?.["text"]))) continue;
+    node.component = "Row";
+    node.source = "prewired";
+    node.props = {};
+    node.children = parts.map((part) => part.id);
+    tree.nodes.push(...parts);
+    count += 1;
+  }
+  if (count === 0) return null;
+  return {
+    patched: {
+      tree,
+      components: structuredClone(compiled.components),
+      ...(compiled.name === undefined ? {} : { name: compiled.name }),
+    },
+    count,
+  };
+};
+
 // ---------------------------------------------------------------------------
 // Rebind fix space — consumed by the data-sighted verify (stages/verify.ts).
 // Re-gate 2026-07-26: wrong-data-binding is the top model-error class in
@@ -940,6 +1001,16 @@ export const structuredRepair = async (
     // is derived (the envelope object's only array), not chosen. A doc whose
     // only fault was the envelope validates here, so the live failure never
     // reaches a full-lane regeneration.
+    const interpolated = spliceInterpolatedText(current);
+    if (interpolated !== null) {
+      const rewritten = recompile(interpolated.patched, context);
+      const validated = await context.validate(rewritten);
+      if (validated.document !== undefined) {
+        return finish({ document: validated.document, rounds: round, issues, noValidFixCount, wrapperRebinds });
+      }
+      issues = [...new Set([...issues, ...validated.issues])];
+      current = rewritten;
+    }
     const rebinds = wrapperArrayRebinds(current, deps);
     if (rebinds.length > 0) {
       const rebound = recompile(spliceWrapperRebinds(current, rebinds), context);
