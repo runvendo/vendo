@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ActAs, PermissionGrant, Principal } from "@vendoai/core";
 import { memoryStoreAdapter } from "@vendoai/core/conformance";
+import { extractServerActions } from "@vendoai/actions/sync";
 import type { VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1347,6 +1348,66 @@ describe("vendo doctor error codes + fix_refs", () => {
 
   it("says nothing about server actions in a host that has none", async () => {
     const { report } = await jsonChecks({ targetDir: await healthy(), fetchImpl: successfulProbeFetch() });
+    expect(report.checks.some((entry) => entry.id === "wiring/server-actions")).toBe(false);
+  });
+
+  // Regression (review B1): the import line is NOT wiring — the call is. This
+  // is where a half-applied paste lands, so a check that greps the whole file
+  // goes green on precisely the state it exists to catch. Init and doctor read
+  // it through the same helper so they cannot disagree.
+  it("fails E-WIRE-009 when the route imports the map but never passes it to createVendo", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "vendo-actions.ts"),
+      'export const serverActions = {\n  "app/actions/later.ts#later": async () => 1,\n};\n');
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
+      'import { createVendo } from "@vendoai/vendo/server";\nimport { serverActions } from "./vendo-actions";\nconst vendo = createVendo({});\nexport const { GET } = vendo;\n');
+    const { exit, report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    expect(exit).toBe(1);
+    const check = report.checks.find((entry) => entry.id === "wiring/server-actions");
+    expect(check).toMatchObject({ status: "broken", error_code: "E-WIRE-009" });
+    expect(check?.message).toContain("does not pass serverActions inside createVendo");
+    // The map itself is complete — do not accuse it.
+    expect(check?.message).not.toContain("does not register");
+  });
+
+  // Regression (review 3): a route that composes its own map is a shape init
+  // deliberately leaves alone ("leaves a hand-customized route ... untouched"),
+  // so doctor must not report the generated map it never wanted as missing.
+  it("stays silent when the route passes a map it composes itself", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
+      'import { createVendo } from "@vendoai/vendo/server";\nconst serverActions = { later: async () => 1 };\nconst vendo = createVendo({ serverActions });\nexport const { GET } = vendo;\n');
+    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    expect(report.checks.some((entry) => entry.id === "wiring/server-actions")).toBe(false);
+  });
+
+  // Regression (review 4): a tool a human disabled is one the runtime never
+  // dispatches — hard-failing on its registration demands work that buys
+  // nothing. The rest of doctor honors overrides; this check does too.
+  it("stays silent about an action disabled in .vendo/overrides.json", async () => {
+    const root = await healthy();
+    await mkdir(join(root, "app", "actions"), { recursive: true });
+    await writeFile(join(root, "app", "actions", "later.ts"),
+      '"use server";\n\nexport async function later() {\n  return 1;\n}\n');
+    // Nothing registered, nothing wired — the state that fails without overrides.
+    await writeFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
+      'import { createVendo } from "@vendoai/vendo/server";\nconst vendo = createVendo({});\nexport const { GET } = vendo;\n');
+    const broken = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
+    expect(broken.report.checks.find((entry) => entry.id === "wiring/server-actions")?.status).toBe("broken");
+
+    const { tools } = await extractServerActions(root);
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
+      format: "vendo/overrides@3",
+      tools: Object.fromEntries(tools.map((tool) => [tool.name, { disabled: true }])),
+      remix: { ignoreSlots: [] },
+    }));
+    const { report } = await jsonChecks({ targetDir: root, fetchImpl: successfulProbeFetch() });
     expect(report.checks.some((entry) => entry.id === "wiring/server-actions")).toBe(false);
   });
 

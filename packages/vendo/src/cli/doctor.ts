@@ -20,7 +20,7 @@ import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
-import { wiringServerActions } from "./init-scaffolds.js";
+import { importsGeneratedMap, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
@@ -219,26 +219,36 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     // registration map that predates the host's `"use server"` surface stays
     // exactly as the developer left it — and every server-action tool then
     // fails closed at execution time with nothing else red. Doctor is where
-    // that shows up. Silent when the host has no server actions at all.
-    if (routePath !== null) {
-      const registrations = await wiringServerActions(root);
-      if (registrations.length > 0) {
+    // that shows up. Every judgment below is the SAME one init makes, from the
+    // same shared helpers: the two must never disagree about whether a host is
+    // wired, or one of them is lying. Silent when the host has no live server
+    // actions at all.
+    const registrations = routePath === null ? [] : await requiredServerActions(root);
+    if (routePath !== null && registrations.length > 0) {
+      const routeSource = await readFile(routePath, "utf8").catch(() => "");
+      const wiring = serverActionsWiring(routeSource);
+      if (wiring === "unknown") {
+        // No recognizable createVendo({ … }) — the same shape init declines to
+        // name a paste for. Nothing honest to grade.
+      } else if (wiring === "wired" && !importsGeneratedMap(routeSource)) {
+        // The route passes a map it composes itself (a local object, an aliased
+        // import). Init leaves that alone by design, and there is no generated
+        // map to grade against — so doctor says nothing rather than guessing.
+      } else {
         const mapPath = join(dirname(routePath), "vendo-actions.ts");
         const map = await readOptional(mapPath);
-        const missing = map === null
-          ? registrations.map((registration) => `${registration.module}#${registration.exportName}`)
-          : registrations
-              .map((registration) => `${registration.module}#${registration.exportName}`)
-              .filter((key) => !map.includes(JSON.stringify(key)));
-        const routeSource = await readFile(routePath, "utf8").catch(() => "");
-        const unwired = !/(^|[\s{,])serverActions\b/.test(routeSource);
-        if (missing.length === 0 && !unwired) {
+        const missing = map === null ? registrations : missingRegistrations(map, registrations);
+        if (wiring === "wired" && missing.length === 0) {
           pass("wiring/server-actions", `${registrations.length} server action${registrations.length === 1 ? " is" : "s are"} registered and wired`);
         } else {
           fail("wiring/server-actions", "E-WIRE-009",
             `server actions fail closed — ${[
-              ...(missing.length > 0 ? [`${relative(root, mapPath)} is ${map === null ? "missing" : `missing ${missing.join(", ")}`}`] : []),
-              ...(unwired ? [`${relative(root, routePath)} does not pass serverActions to createVendo`] : []),
+              ...(missing.length === 0 ? [] : [map === null
+                ? `${relative(root, mapPath)} is missing`
+                : `${relative(root, mapPath)} does not register ${missing.map(registrationKey).join(", ")}`]),
+              // Scoped to the call on purpose: an import line alone is not
+              // wiring, and it is exactly where a half-applied paste lands.
+              ...(wiring === "unwired" ? [`${relative(root, routePath)} does not pass serverActions inside createVendo({ … })`] : []),
             ].join("; ")}. Re-run \`npx vendo init\`: it prints the exact paste for each (it never rewrites a file you already have).`);
         }
       }

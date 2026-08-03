@@ -350,11 +350,17 @@ dispatch calls through the map at runtime.
 
 Init writes those two files exactly once — on the run that creates them. From
 then on they are yours to edit, and init never rewrites a file that already
-exists: when the detected surface moves, a later `vendo init` prints the
-deterministic diff for the map (and the `serverActions` line for a route that
-predates your actions) for you to apply, and `vendo doctor` fails
-[E-WIRE-009](/agents/verify#E-WIRE-009) until you do. Re-running init on an
-unchanged surface prints nothing.
+exists. An existing map is compared only by the keys it registers, so your
+formatting, your comments, your aliases and your own extra entries all survive:
+when an action is missing, a later `vendo init` prints just the entries to add
+(plus the `serverActions` line for a route that predates your actions), and
+`vendo doctor` fails [E-WIRE-009](/agents/verify#E-WIRE-009) until you apply
+them. Re-running init on an unchanged surface prints nothing.
+
+Actions disabled in `.vendo/overrides.json` are left out of all of this — the
+runtime never dispatches them, so neither init nor doctor asks you to register
+them. A route that passes a `serverActions` map it composes itself is left
+alone entirely, and no generated map is created for it.
 
 When the map lacks an entry for an action, or the registered value is not a
 function, execution fails closed with a clear `not-implemented` error and no

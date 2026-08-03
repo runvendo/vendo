@@ -19,12 +19,16 @@ import { ensureProviderDeps, ensureZodFloor, type InstallRunner } from "./provid
 import {
   customServerSource,
   expressServerSource,
+  importsGeneratedMap,
+  missingRegistrationLines,
+  missingRegistrations,
   registrySource,
+  requiredServerActions,
   routeSource,
   serverActionsModuleSource,
+  serverActionsWiring,
   VENDO_ENV_EXAMPLE,
   vendoRootWrapperSource,
-  wiringServerActions,
 } from "./init-scaffolds.js";
 import { createPrettyOutput, plainSelect, usePrettyOutput, type PrettyOutput, type SelectOption } from "./pretty.js";
 import { contrastingText } from "./theme/color.js";
@@ -62,8 +66,11 @@ import {
  *   changed, the mount paste, next steps).
  *
  * INIT ONLY EVER CREATES FILES IN YOUR SOURCE TREE (locked DX law). Everything
- * above is a NEW Vendo-owned file, or package.json — Vendo-owned config. A file
- * that already exists is never rewritten, however stale: mounting the visible
+ * above is a NEW Vendo-owned file, or Vendo-owned config: `package.json`'s two
+ * sync hooks, and one idempotent append of `VENDO_BASE_URL` to `.env.example`
+ * (the only pre-existing host-authored file init still writes, and it appends
+ * — it never rewrites a line). A source file that already exists is never
+ * written at all, however stale: mounting the visible
  * surface in the host's own layout, wiring `serverActions` into a route that
  * predates the host's actions, refreshing a stale registration map — each one
  * is the developer's paste, so the run ends with one unmissable block naming
@@ -382,14 +389,11 @@ function diff(path: string, before: string | null, after: string): string {
  * unrecognized and no honest two-line paste exists for it.
  */
 function routeServerActionsEdit(source: string, file: string): ManualEdit | null {
-  const call = source.match(/createVendo\(\s*\{/);
-  if (!call) return null;
-  if (/(^|[\s{,])serverActions\b/.test(source.slice(source.indexOf(call[0])))) return null;
-  const importsMap = /from\s+["']\.\/vendo-actions["']/.test(source);
+  if (serverActionsWiring(source) !== "unwired") return null;
   return {
     file,
     lines: [
-      ...(importsMap ? [] : [`import { serverActions } from "./vendo-actions";`]),
+      ...(importsGeneratedMap(source) ? [] : [`import { serverActions } from "./vendo-actions";`]),
       `… then add inside createVendo({ … }): serverActions,`,
     ],
     why: "createVendo dispatches server-action tools through that map — without it every one of them fails closed at execution time (no work performed).",
@@ -822,7 +826,7 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     const actionsModule = join(app, "api", "vendo", "[...vendo]", "vendo-actions.ts");
     const routeBefore = await readOptional(route);
     const actionsBefore = await readOptional(actionsModule);
-    const registrations = await wiringServerActions(root);
+    const registrations = await requiredServerActions(root);
     // The shared registry mirrors the app dir (src/app → src/vendo): generated
     // only while absent and only when the route uses it — a fresh scaffold, or
     // a route that already imports vendo/registry. A hand-wired route that
@@ -839,20 +843,33 @@ async function buildPlan(options: InitOptions, confirmAuth?: ConfirmAuth, select
     }
     withRegistry = registryBefore !== null || registryPlanned;
     // The registration map is generated once, when the host's first
-    // "use server" action appears. A map that has since fallen behind the
-    // detected surface is NOT rewritten — it lives in the host's app dir, and
-    // init only ever creates — so the refresh rides out as a diff to apply.
-    if (registrations.length > 0 || actionsBefore !== null) {
+    // "use server" action appears. After that it is the developer's file and is
+    // never rewritten — so an existing one is compared by the KEYS it registers,
+    // not byte-for-byte. Byte-comparing would demand a paste for their own
+    // formatting, their own extra entries, and even a reworded comment in a
+    // Vendo release, forever, on a surface that never moved.
+    // …and the map exists only for a route that will CONSUME it: the one being
+    // created now, one that already imports ./vendo-actions, or one init is
+    // about to hand the import paste to. A route composing its own map never
+    // grows an orphan — the same rule the registry above follows, and the same
+    // shape doctor stays silent about.
+    const mapConsumed = routeBefore === null
+      || importsGeneratedMap(routeBefore)
+      || serverActionsWiring(routeBefore) === "unwired";
+    if (registrations.length > 0 && mapConsumed) {
       const path = relative(root, actionsModule);
-      const actionsAfter = serverActionsModuleSource(root, dirname(actionsModule), registrations);
       if (actionsBefore === null) {
+        const actionsAfter = serverActionsModuleSource(root, dirname(actionsModule), registrations);
         changes.push({ absolute: actionsModule, path, before: null, after: actionsAfter, diff: diff(path, null, actionsAfter) });
-      } else if (actionsAfter !== actionsBefore) {
-        edits.push({
-          file: path,
-          lines: diff(path, actionsBefore, actionsAfter).split("\n"),
-          why: `The "use server" surface moved since this map was generated — an action missing from it fails closed at execution time (no work performed).`,
-        });
+      } else {
+        const missing = missingRegistrations(actionsBefore, registrations);
+        if (missing.length > 0) {
+          edits.push({
+            file: path,
+            lines: missingRegistrationLines(root, dirname(actionsModule), actionsBefore, missing),
+            why: `${missing.length} action${missing.length === 1 ? "" : "s"} the host exposes ${missing.length === 1 ? "is" : "are"} not registered here — ${missing.length === 1 ? "it fails" : "each one fails"} closed at execution time (no work performed). The rest of the file is yours; nothing else needs to change.`,
+          });
+        }
       }
     }
     if (routeBefore === null) {
