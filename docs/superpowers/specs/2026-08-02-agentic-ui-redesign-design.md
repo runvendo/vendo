@@ -200,6 +200,28 @@ selector — parked as structure candidates, not styled in).
 Hosts still re-theme everything via the existing VendoTheme tokens; S1 is
 the out-of-the-box feel, not a mandate.
 
+### 12. The center is a PAGE inside the host's app — and mobile (pick P1)
+
+Standing law from this round: **we never bring an app shell of our own.**
+The center is a page the host routes to; the host's chrome (its header, its
+navigation, its identity, its logged-in user) surrounds us everywhere.
+Consequences:
+
+- The center's sidebar drops the brand row and the user row — it is an
+  in-page rail (New chat · Apps · Automations · Needs-you · chats), not an
+  app frame.
+- **Mobile = P1, one self-contained page under the host's tab/menu item:**
+  a compact in-page header (Assistant title · chats · apps · automations ·
+  new), a slide-in sheet for conversation history, stacked home content,
+  composer pinned low. The host mounts one thing; coherence stays ours.
+- The P2 pieces (chat surface, app shelf, automations list as separate
+  exports) remain available for hosts that compose their own navigation —
+  the adapter philosophy applied to UI. The overlay (P3) stays the floor
+  every host gets with zero routing work.
+- Rejected as the default: our own bottom tab bar (double chrome inside an
+  app that has one), our own hamburger-with-brand app header, and
+  center-less mobile.
+
 ## What this is NOT
 
 No new surfaces (no inbox, no notification center), no auto-folding panel,
