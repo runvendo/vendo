@@ -1,14 +1,5 @@
 # Vendo quickstart
 
-## See it before you install
-
-To see your product's agent before installing anything, run `npx vendo try`
-from your app's repo: a read-only pass extracts tools and theme, a live local
-demo opens in seconds, and the AI engine ladder deepens it in the background.
-Nothing is written to your repo and no key is required; with zero keys the
-surfaces serve against scripted data. (`vendo try` replaces the retired
-`vendo playground`.)
-
 ## Install and init
 
 ```bash
@@ -38,7 +29,8 @@ Enter keeps the extracted one.
 Loosenings are the one decision that has no unattended default: risk is never
 lowered without a human, so they are held as pending and printed with the
 command to review them (`vendo sync --review`), never silently applied. Init
-writes the whole server side and mounts the visible surface for you:
+writes the whole server side and prints the one paste that makes the agent
+visible:
 
 - the catch-all route `app/api/vendo/[...vendo]/route.ts` holding the entire
   `createVendo` composition (on Express or any other Web-standard runtime,
@@ -56,18 +48,15 @@ writes the whole server side and mounts the visible surface for you:
 - two `package.json` script hooks (`predev: vendo sync --no-ai`,
   `prebuild: vendo sync --strict --no-ai`)
 - your tools and brand theme extracted into `.vendo/` (`tools.json`,
-  `overrides.json`, `policy.json`, `brief.md`, `theme.json`) plus
-  `.env.example`
+  `overrides.json`, `policy.json`, `brief.md`, `theme.json`,
+  `theme.extracted.json`) plus `.env.example`
 
-The layout edit is the one place init touches code you wrote. It is
-idempotent (skipped when a Vendo surface is already mounted), bounded (one
-import line plus the `{children}` wrap), and shows up as a reviewable diff
-like everything else. When the layout can't be edited unambiguously, init
-degrades to printing the paste lines instead — see
+The mount paste is idempotent (init prints nothing when a Vendo surface is
+already mounted) and bounded: one import line plus the `{children}` wrap. See
 [the client mount](#vendovendo-roottsx--the-client-mount).
 
-Then start your dev server — the agent is live in your app — and run
-`npx vendo doctor` to verify everything with one real model turn.
+Then land the paste, start your dev server, and run `npx vendo doctor` to
+verify everything with one real model turn.
 
 ## Non-interactive runs (agents)
 
@@ -76,7 +65,7 @@ on a prompt: `--auth <preset>` (authJs, clerk, supabase, auth0, jwt, none)
 answers the auth confirm and picker, `--framework <next|express|custom>`
 overrides detection (`custom` is the runtime-neutral scaffold for Cloudflare
 Workers, Bun, Deno, Hono, and Lambda adapters), `--cloud-key <key>` or `--byo`
-answers the Cloud offer, `--ai-polish` grants consent for the AI pass (tool
+answers the Cloud offer, `--ai` grants consent for the AI pass (tool
 judgment and theme-slot filling, one consent for both), and `--theme
 slot=value` (repeatable) overrides a theme slot value directly. When a
 decision has no flag and no detected default — an undetectable framework — a
@@ -247,12 +236,12 @@ TypeScript's widened JSON-module string literals.
 `<VendoClientRoot>` is a context provider and renders nothing by itself,
 which is why the generated wrapper mounts `<VendoOverlay />` inside it. Swap
 that for `<VendoThread />`, `<VendoPage />`, `<VendoPalette />`, or the
-headless hooks from `@vendoai/ui` — they all speak to the same wire. The
-shipped surfaces live in `@vendoai/ui/chrome`, re-exported from
-`@vendoai/vendo/react`.
+headless hooks — they all speak to the same wire. Those all live in
+`@vendoai/ui/chrome` and need `@vendoai/ui` as a direct dependency;
+`@vendoai/vendo/react` re-exports `<VendoOverlay />` and the hooks, not the
+other surfaces.
 
-When init cannot edit your layout safely (no single unambiguous `{children}`),
-it prints the paste that remains instead:
+The paste init prints:
 
 ```tsx
 // app/layout.tsx
@@ -358,29 +347,8 @@ never stopping to wait. Judgments live in their own file, so
 `overrides.json` keeps meaning only "what a person decided" and a re-sync can
 never clobber either.
 
-Without `--ai-polish` the whole pass is skipped silently in non-interactive
-runs, since consent cannot be assumed; re-run `vendo init` any time to add it.
-
-### Bring your own coding agent
-
-The extraction contract is portable: any coding agent already living in your
-repo (Claude Code, Cursor, Codex) can do the reading instead. `npx vendo init
---agent` emits an `aiPolish` object in its read-only plan: the composed
-`instructions`, the exact draft `draftSchema`, and the apply command. Let your
-agent read the codebase against the instructions and write the draft JSON to a
-file, then apply it:
-
-```bash
-npx vendo extract --apply draft.json
-```
-
-The apply step is non-interactive safe and runs the same deterministic guards
-as the built-in pass, so delegation never becomes a second, weaker path into
-`.vendo/`. It writes the same artifacts, re-syncs, and prints the same
-summary. An unusable draft (unreadable file, schema mismatch) exits non-zero
-with the reason; guard refusals (unknown tool names, risk downgrades,
-unreasoned wakes) are printed per entry while the rest of the draft applies.
-`--force` replaces a hand-edited brief, exactly like `vendo init --force`.
+Without `--ai` the whole pass is skipped silently in non-interactive runs,
+since consent cannot be assumed; re-run `vendo init` any time to add it.
 
 ## First turn
 
@@ -601,16 +569,8 @@ the installed version as a query param, so an agent's remediation loop is:
 doctor → read `fix_ref` → fix → repeat.
 
 `sync` extracts the host API and remix baselines. In strict mode, breaking
-extraction changes exit with code 2.
-
-`sync` also fills per-tool field `semantics` inside `.vendo/tools.json`
-(cents money, ISO/epoch dates, enum vocabularies with display labels, ids,
-percents), inferred ONCE by sampling each zero-input read tool through the
-dev server. Inferred entries never churn on re-sync, and `overrides.json`
-`tools[name].semantics` wins over everything. Generation treats it as fact:
-annotated response shapes and correct money/date formatting by default. A tool
-your API does not describe carries an empty description — write one in
-`overrides.json`.
+extraction changes exit with code 2. A tool your API does not describe carries
+an empty description — write one in `overrides.json`.
 
 To make the deployed door discoverable through the official registry, follow
 [Publish to the MCP registry](publish-mcp-registry.md).

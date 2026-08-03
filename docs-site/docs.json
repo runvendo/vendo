@@ -48,7 +48,6 @@
         "group": "Start here",
         "pages": [
           "index",
-          "try",
           "concepts/architecture",
           "concepts/tools-and-safety"
         ]
@@ -146,6 +145,11 @@
   "redirects": [
     {
       "source": "/quickstart-node",
+      "destination": "/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/try",
       "destination": "/quickstart",
       "permanent": true
     },

@@ -43,13 +43,17 @@ the wiring was never pasted.
 
 ```tsx
 import { VendoRoot } from "@vendoai/vendo/react";
+import type { VendoTheme } from "@vendoai/vendo";
 import { registry } from "<path-to>/vendo/registry";
 import theme from "<path-to>/.vendo/theme.json";
 
-root.render(<VendoRoot components={registry} theme={theme}><App /></VendoRoot>);
+root.render(
+  <VendoRoot components={registry} theme={theme as VendoTheme}><App /></VendoRoot>,
+);
 ```
 
-`vendo init` prints these exact lines with resolved paths for your repo.
+`vendo init` prints this wrap with resolved paths for your repo. The cast
+narrows TypeScript's widened JSON-module string literals.
 
 ### E-WIRE-003 {#E-WIRE-003}
 
@@ -103,9 +107,13 @@ and a user opening the app still sees nothing — `<VendoRoot>` is a context
 provider that renders no UI of its own.
 
 **Cause:** Doctor scanned the repo's source files and found none that mounts a
-visible surface: `<VendoOverlay />`, `<VendoThread />`, a BYO embed
-(`<VendoToolResult>`, `<VendoAppEmbed>`, `<VendoApprovalEmbed>`), or a
-surface-driving hook (`useVendoOverlay`, `useVendoThread`, `useSlotApp`).
+visible surface. The full marker list: `<VendoOverlay`, `<VendoThread`,
+`<VendoTrigger`, `<VendoPalette`, `<VendoSlot`, the BYO embeds
+(`<VendoToolResult`, `<VendoAppEmbed`, `<VendoApprovalEmbed`), and the
+surface-driving hooks (`useVendoOverlay(`, `useVendoThread(`, `useSlotApp(`).
+`<VendoPage` is not on it: a host whose only surface is `<VendoPage />` fails
+this check even though the page renders — mount one of the markers above
+alongside it, or treat the failure as known.
 
 **Fix:** Run `npx vendo init`: it generates `vendo/vendo-root.tsx`, which
 mounts `<VendoOverlay />` (the launcher pill + panel) inside the provider, and
@@ -307,7 +315,9 @@ the mount is wrong, or the base URL points at the wrong app.
 
 **Fix:** Confirm the Vendo handler is mounted at the probed base (Next:
 `app/api/vendo/[...vendo]/route.ts`; Express: `app.use("/api/vendo",
-mountVendo())`) and that `--url`/`VENDO_URL` points at it.
+mountVendo())`, where `mountVendo` is the adapter init generated into your own
+`vendo/server.ts` — no package exports it) and that `--url`/`VENDO_URL` points
+at it.
 
 ### E-LIVE-002 {#E-LIVE-002}
 
