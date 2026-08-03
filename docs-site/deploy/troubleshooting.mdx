@@ -83,10 +83,12 @@ Every non-2xx response uses `{ "error": { "code", "message" } }`.
 - `POST /doctor/act-as` verifies that `createVendo({ actAs })` mints auth
   material the host principal resolver accepts. Doctor warns (does not
   fail) when `actAs` is not configured.
-- `GET /doctor/machines` reports the sandbox and scheduler wiring.
+- `GET /doctor/machines` reports the scheduler wiring and machine state: which
+  apps carry a machine, whether a `/tick` caller secret is configured, and
+  each schedule's last-fired state.
 
-The probes report booleans only — no credential values are printed or
-persisted, and the synthetic `/doctor/*` routes return 404 in production.
+No credential values are printed or persisted by any probe, and the synthetic
+`/doctor/*` routes return 404 in production.
 
 `GET /doctor/base-url` is the one exception to that 404, and doctor does not
 call it: it exists for a deployed production server to answer. It reports the

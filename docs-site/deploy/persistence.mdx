@@ -77,9 +77,10 @@ Encryption covers exactly one column, `vendo_secrets.ciphertext`. Everything
 else stays host-queryable plaintext by design.
 
 What actually gates it is the store's own `allowUnencryptedSecrets` option:
-with no encryption key and no explicit opt-in to plaintext, every secret read
-*and* write throws. `createStore({})` by hand therefore refuses secrets even
-in development.
+with no encryption key and no explicit opt-in to plaintext, reading or writing
+a secret value throws. `createStore({})` by hand therefore refuses secrets
+even in development. Deleting and listing secrets keep working without a key —
+neither touches ciphertext.
 
 The default composition — no `store` passed to `createVendo` — supplies that
 opt-in for you from the environment. Set a 32-byte base64 key at
@@ -89,8 +90,8 @@ it, the composition passes `allowUnencryptedSecrets` when `NODE_ENV` is not
 
 - In dev, secrets are written **unencrypted** under the gitignored data dir,
   and the first plaintext write logs a warning.
-- In production, secret reads and writes **throw**. Set the key before you
-  deploy anything that stores a secret.
+- In production, reading or writing a secret value **throws**. Set the key
+  before you deploy anything that stores a secret.
 
 An explicitly configured store always wins. If you pass
 `store: createStore({ encryption: { key } })` to `createVendo`, the

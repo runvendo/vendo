@@ -126,8 +126,9 @@ Layer 3 works on both venues: BYO e2b (`E2B_API_KEY` or an explicit
 single-label hostname on the existing `*.vendo.run` certificate:
 `https://<id-suffix>-m.vendo.run`, where `<id-suffix>` is the machine id
 minus its two-character prefix. The console mints that canonical-port URL;
-for any other port the SDK rewrites the host client-side, inserting the port
-before the suffix as `<id-suffix>-<port>-m.vendo.run`.
+for any other port the SDK rewrites the host string SDK-side, in your Node
+process, inserting the port before the suffix as
+`<id-suffix>-<port>-m.vendo.run`.
 
 ### Graduation rollback
 
