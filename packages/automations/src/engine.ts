@@ -33,6 +33,7 @@ import type {
   AutomationsConfig,
   AutomationsEngine,
   RehearsalFiring,
+  RehearsalOutlook,
   RehearsalStep,
   RunPlan,
   RunRecord,
@@ -1338,7 +1339,40 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     await writeApp(found.record, found.row);
   };
 
+  /** Resolved with the SAME predicates rehearse() applies (the supported-shape
+   *  check below mirrors its two guards; acceptsDateBounds is literally the
+   *  function it calls), so the outlook can never promise what the report
+   *  would not show. An unknown or `fn:` tool counts as neither read nor
+   *  action: rehearsal skips app functions outright. */
+  const rehearsalOutlook = (
+    doc: AppDocument,
+    byName: Map<string, ToolDescriptor>,
+  ): RehearsalOutlook => {
+    const trigger = doc.trigger;
+    const supported = trigger !== undefined
+      && trigger.on.kind === "schedule"
+      && trigger.run.kind === "steps";
+    const steps = trigger !== undefined && trigger.run.kind === "steps" ? trigger.run.steps : [];
+    let actingSteps = 0;
+    let readSteps = 0;
+    let historicalReads = 0;
+    for (const step of steps) {
+      if (step.tool.startsWith("fn:")) continue;
+      const descriptor = byName.get(step.tool);
+      if (descriptor === undefined) continue;
+      if (descriptor.risk === "write" || descriptor.risk === "destructive") {
+        actingSteps += 1;
+        continue;
+      }
+      if (descriptor.risk !== "read") continue;
+      readSteps += 1;
+      if (acceptsDateBounds(descriptor)) historicalReads += 1;
+    }
+    return { supported, actingSteps, readSteps, historicalReads };
+  };
+
   const list: AutomationsEngine["list"] = async (ctx) => {
+    const byName = await descriptors();
     const records = await allRecords(config.store.records(APPS), { refs: { subject: ctx.principal.subject } });
     // Pending-captures projection: an enabled row with outstanding standing-grant
     // asks is NOT plain enabled — surfaces render "waiting on N permissions"
@@ -1357,6 +1391,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         return {
           app: row.doc,
           enabled: row.enabled,
+          rehearsal: rehearsalOutlook(row.doc, byName),
           ...(pending === undefined ? {} : {
             pendingGrants: pending.pendingGrants,
             ...(pending.grantSetId === undefined ? {} : { grantSetId: pending.grantSetId }),

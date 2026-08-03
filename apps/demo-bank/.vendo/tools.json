@@ -96,7 +96,7 @@
         "method": "POST",
         "path": "/api/orders"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_demo_chips_list",
@@ -175,7 +175,7 @@
         "method": "GET",
         "path": "/api/accounts/{id}"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_getBudgets",
@@ -204,7 +204,7 @@
           }
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_getCashflowInsights",
@@ -220,7 +220,7 @@
         "method": "GET",
         "path": "/api/insights/cashflow"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_getProfile",
@@ -236,7 +236,7 @@
         "method": "GET",
         "path": "/api/profile"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_getRecurringInsights",
@@ -272,7 +272,7 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_getSpendingInsights",
@@ -347,7 +347,7 @@
           "unit": "cents"
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_getTransaction",
@@ -370,7 +370,7 @@
         "method": "GET",
         "path": "/api/transactions/{id}"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_listAccounts",
@@ -404,17 +404,25 @@
           "unit": "cents"
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_listAccountTransactions",
-      "description": "List recent transactions for one account.",
+      "description": "List recent transactions for one account. Pass `from`/`to` to bound the ledger by transaction time; every transaction carries an immutable timestamp, so this window is exact.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "description": "Account id"
+          },
+          "from": {
+            "type": "string",
+            "description": "Only transactions at or after this ISO 8601 instant."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only transactions at or before this ISO 8601 instant."
           }
         },
         "required": [
@@ -428,7 +436,7 @@
         "method": "GET",
         "path": "/api/accounts/{id}/transactions"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_listCards",
@@ -464,17 +472,25 @@
           "unit": "cents"
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_listCardTransactions",
-      "description": "List recent transactions charged to one card.",
+      "description": "List recent transactions charged to one card. Pass `from`/`to` to bound the ledger by transaction time; every transaction carries an immutable timestamp, so this window is exact.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "description": "Card id"
+          },
+          "from": {
+            "type": "string",
+            "description": "Only transactions at or after this ISO 8601 instant."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only transactions at or before this ISO 8601 instant."
           }
         },
         "required": [
@@ -488,7 +504,7 @@
         "method": "GET",
         "path": "/api/cards/{id}/transactions"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_listGoals",
@@ -509,7 +525,7 @@
           "kind": "id"
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_listNotifications",
@@ -543,7 +559,7 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_listPayees",
@@ -571,7 +587,7 @@
           }
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_listScheduledPayments",
@@ -604,7 +620,7 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_listTransactions",
@@ -716,7 +732,7 @@
           "entity": "recurring"
         }
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_transferMoney",
@@ -750,7 +766,7 @@
         "method": "POST",
         "path": "/api/transfers"
       },
-      "srcHash": "sha256:c07f4634f7804ef4ab933f0c77f21c8167c756f70858eba171ba9b6347111f17"
+      "srcHash": "sha256:81836e6465515528e99dd14a8eba3ccc23e21999ba5145df3fd079924597186c"
     },
     {
       "name": "host_voice_create",

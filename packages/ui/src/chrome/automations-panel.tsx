@@ -4,7 +4,7 @@ import { APPROVALS_DECIDED_EVENT } from "../client-impl.js";
 import { useVendoContext, useVendoTheme } from "../context.js";
 import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
-import type { RehearsalFiring, RehearsalReport, RehearsalStep, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
+import type { RehearsalFiring, RehearsalOutlook, RehearsalReport, RehearsalStep, RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 import { formatAuditTime } from "./activity-semantics.js";
 import { automationFlow } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
@@ -168,6 +168,23 @@ function RehearsalStepRow({ step }: { step: RehearsalStep }) {
       ) : null}
     </>
   );
+}
+
+/** Says what a rehearsal will be worth BEFORE it costs a round of real host
+ *  reads. The acting-step count is the load-bearing half: a read-only
+ *  automation replays fine and tells the user nothing they did not already
+ *  know, which reads as the feature being thin rather than the automation
+ *  being inert. The history half only qualifies how varied the timeline is. */
+function rehearseHint(outlook: RehearsalOutlook | undefined): string | undefined {
+  if (outlook === undefined) return undefined;
+  if (outlook.actingSteps === 0) {
+    return "Nothing to rehearse — this automation only reads, so there is no action to preview or approve.";
+  }
+  const actions = `${outlook.actingSteps} action${outlook.actingSteps === 1 ? "" : "s"} to preview`;
+  if (outlook.readSteps === 0) return actions;
+  return outlook.historicalReads === outlook.readSteps
+    ? `${actions} · every firing replays its own window`
+    : `${actions} · ${outlook.readSteps - outlook.historicalReads} of ${outlook.readSteps} reads answer with today's data, so those firings repeat`;
 }
 
 /** The rehearsal timeline: one line per firing over the trailing window
@@ -549,6 +566,7 @@ export function AutomationsPanel() {
         {automations.automations.map(entry => {
           const appId = entry.app.id;
           const appRuns = runs[appId];
+          const outlook = entry.rehearsal;
           const flow = automationFlow(entry.app.trigger);
           // The set-card rows come from the persisted pending queue; the count
           // prefers the engine's own projection (they agree modulo poll skew).
@@ -712,15 +730,33 @@ export function AutomationsPanel() {
                   const plan = await automations.dryRun(appId);
                   setPlans(current => ({ ...current, [appId]: plan }));
                 })}>Dry run</button>
-                <button
-                  className="fl-btn"
-                  type="button"
-                  disabled={busy[`rehearse-${appId}`]}
-                  onClick={() => void during(`rehearse-${appId}`, async () => {
-                    const report = await automations.rehearse(appId);
-                    setRehearsals(current => ({ ...current, [appId]: report }));
-                  })}
-                >{busy[`rehearse-${appId}`] ? "Rehearsing…" : "Rehearse"}</button>
+                {/* The outlook is resolved server-side with rehearse()'s own
+                    predicates. Unsupported shapes (agentic runs, non-schedule
+                    triggers) drop the control entirely rather than offering an
+                    action that only errors. No acting step DISABLES it: the
+                    replay would spend a full round of real host reads to
+                    report that there is nothing to consent to, and a control
+                    that looks spent-but-clickable invites exactly that. The
+                    title says why, on the wrapper — a disabled button does not
+                    surface its own tooltip. Absent outlook (older server) =
+                    unknown, so offer it exactly as before. */}
+                {outlook === undefined || outlook.supported ? (
+                  <span
+                    title={rehearseHint(outlook)}
+                    className={outlook?.actingSteps === 0 ? "fl-btn-wrap-disabled" : undefined}
+                    style={{ display: "inline-flex" }}
+                  >
+                    <button
+                      className="fl-btn"
+                      type="button"
+                      disabled={busy[`rehearse-${appId}`] || outlook?.actingSteps === 0}
+                      onClick={() => void during(`rehearse-${appId}`, async () => {
+                        const report = await automations.rehearse(appId);
+                        setRehearsals(current => ({ ...current, [appId]: report }));
+                      })}
+                    >{busy[`rehearse-${appId}`] ? "Rehearsing…" : "Rehearse"}</button>
+                  </span>
+                ) : null}
                 <button
                   className="fl-btn"
                   type="button"

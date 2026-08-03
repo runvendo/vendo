@@ -238,6 +238,23 @@ export interface RehearsalReport {
   truncated?: boolean;
 }
 
+/** 07-automations §1 — what a rehearsal of this automation could show, resolved
+ *  server-side from the trigger and the bound descriptors with rehearse()'s own
+ *  predicates. Additive: absent from an older server, so treat undefined as
+ *  "unknown" and keep today's always-offer behaviour. */
+export interface RehearsalOutlook {
+  /** rehearse() takes schedule triggers driving `steps` runs and nothing else. */
+  supported: boolean;
+  /** Steps bound to a write/destructive tool — the ones that produce simulated
+   *  cards. Zero means a rehearsal has nothing to consent to. Steps, not
+   *  actions: a forEach fans one step out over however many items it reads. */
+  actingSteps: number;
+  readSteps: number;
+  /** Reads whose window rehearse() will pin; short of readSteps, some firings
+   *  repeat today's data instead of replaying different history. */
+  historicalReads: number;
+}
+
 /** 07-automations §1 — one entry of `GET /automations`. `pendingGrants` /
  *  `grantSetId` (additive) project the app's still-undecided standing-grant
  *  asks so panels can render "waiting on N permissions" reload-safely. */
@@ -246,6 +263,7 @@ export interface AutomationEntry {
   enabled: boolean;
   pendingGrants?: number;
   grantSetId?: string;
+  rehearsal?: RehearsalOutlook;
 }
 
 /** 07-automations §1 — what `POST /automations/:id/enable` returns.

@@ -28,10 +28,12 @@
     "/api/accounts/{id}/transactions": {
       "get": {
         "operationId": "listAccountTransactions",
-        "summary": "List recent transactions for one account.",
+        "summary": "List recent transactions for one account. Pass `from`/`to` to bound the ledger by transaction time; every transaction carries an immutable timestamp, so this window is exact.",
         "x-vendo-formats": { "amount": "cents" },
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Account id" }
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Account id" },
+          { "name": "from", "in": "query", "schema": { "type": "string" }, "description": "Only transactions at or after this ISO 8601 instant." },
+          { "name": "to", "in": "query", "schema": { "type": "string" }, "description": "Only transactions at or before this ISO 8601 instant." }
         ],
         "responses": { "200": { "description": "Transactions" } }
       }
@@ -78,10 +80,12 @@
     "/api/cards/{id}/transactions": {
       "get": {
         "operationId": "listCardTransactions",
-        "summary": "List recent transactions charged to one card.",
+        "summary": "List recent transactions charged to one card. Pass `from`/`to` to bound the ledger by transaction time; every transaction carries an immutable timestamp, so this window is exact.",
         "x-vendo-formats": { "amount": "cents" },
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Card id" }
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Card id" },
+          { "name": "from", "in": "query", "schema": { "type": "string" }, "description": "Only transactions at or after this ISO 8601 instant." },
+          { "name": "to", "in": "query", "schema": { "type": "string" }, "description": "Only transactions at or before this ISO 8601 instant." }
         ],
         "responses": { "200": { "description": "Transactions" } }
       }

@@ -75,6 +75,35 @@ export interface RunRecord {
   error?: { code: string; message: string };
 }
 
+/** What a rehearsal of this automation could actually show, resolved from the
+ *  trigger plus the bound descriptors — using the SAME predicates rehearse()
+ *  itself applies, so a surface can never advertise a preview the report will
+ *  not contain.
+ *
+ *  It exists because the two useful facts are knowable WITHOUT replaying
+ *  anything, and replaying to discover them is the expensive way round: a
+ *  read-only automation costs a full round of real host reads to tell you
+ *  there was nothing to consent to. */
+export interface RehearsalOutlook {
+  /** rehearse() takes schedule triggers driving a `steps` run model, and
+   *  nothing else — an agentic run is rejected outright, so offering the
+   *  action at all is a mistake when this is false. */
+  supported: boolean;
+  /** Steps bound to a write/destructive tool: the ones that resolve to
+   *  simulated cards. ZERO is the load-bearing case — reads execute and
+   *  preview, but there is no action to approve, so the report tells the user
+   *  little that the automation's own description did not.
+   *
+   *  Steps, not actions: a `forEach` fans one step out over as many items as
+   *  the read returns, and that count is only knowable by running it. */
+  actingSteps: number;
+  readSteps: number;
+  /** Reads whose window rehearse() will pin (`acceptsDateBounds`). Short of
+   *  readSteps, some firings re-read today's data and repeat each other
+   *  rather than replaying genuinely different history. */
+  historicalReads: number;
+}
+
 /** 07 §5 */
 export interface RunPlan {
   steps: Array<{ id: string; tool: string; wouldAsk: boolean }>;
@@ -162,7 +191,13 @@ export interface AutomationsEngine {
    *  07 §1 amendment parked) project the app's still-undecided standing-grant
    *  asks, so surfaces can show "waiting on N permissions" after a reload
    *  instead of trusting an enable() result held in memory. */
-  list(ctx: RunContext): Promise<Array<{ app: AppDocument; enabled: boolean; pendingGrants?: number; grantSetId?: string }>>;
+  list(ctx: RunContext): Promise<Array<{
+    app: AppDocument;
+    enabled: boolean;
+    pendingGrants?: number;
+    grantSetId?: string;
+    rehearsal?: RehearsalOutlook;
+  }>>;
 
   // trigger ingestion — three kinds
   /** Schedules: call on a timer or from a serverless cron. */

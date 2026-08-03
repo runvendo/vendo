@@ -668,8 +668,19 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
   background: var(--vendo-surface); color: var(--vendo-fg); cursor: pointer;
   box-shadow: 0 1px 1.5px color-mix(in srgb, var(--vendo-fg) 5%, transparent);
   transition: background .13s, border-color .13s, transform .05s, box-shadow .13s; }
-.fl-btn:hover { background: var(--vendo-accent-soft); border-color: var(--vendo-border-strong); }
-.fl-btn:active { transform: translateY(.5px); box-shadow: none; }
+.fl-btn:hover:not(:disabled) { background: var(--vendo-accent-soft); border-color: var(--vendo-border-strong); }
+.fl-btn:active:not(:disabled) { transform: translateY(.5px); box-shadow: none; }
+/* A disabled button used to be indistinguishable from a live one — same fill,
+   same hover lift, same pointer — so "unavailable" read as "nothing happened
+   when I clicked". Muted, flat, and not-allowed on hover, theme vars only so
+   it holds in light and dark. The wrapper carries the same cursor because a
+   disabled control swallows pointer events in some engines. */
+.fl-btn:disabled { color: var(--vendo-fg-muted); border-color: var(--vendo-border);
+  background: color-mix(in srgb, var(--vendo-fg) 4%, var(--vendo-surface));
+  box-shadow: none; cursor: not-allowed; }
+.fl-btn:disabled:hover { background: color-mix(in srgb, var(--vendo-fg) 4%, var(--vendo-surface));
+  border-color: var(--vendo-border); }
+.fl-btn-wrap-disabled { cursor: not-allowed; }
 .fl-btn-primary { background: var(--vendo-accent); color: var(--vendo-accent-fg); border-color: transparent;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 22%, transparent), inset 0 1px 0 rgba(255,255,255,.16); }
 .fl-btn-primary:hover { opacity: .92; background: var(--vendo-accent); border-color: transparent; }
