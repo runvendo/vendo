@@ -50,18 +50,34 @@ async function healthy(): Promise<string> {
 }
 
 /** A live wire whose /status reports the given mcp posture, with the door's
- *  discovery documents and the doctor probes all answering. */
-function probeFetch(mcp: unknown): typeof fetch {
+ *  discovery documents and the doctor probes all answering. `selection` is
+ *  what /doctor/mcp reports (defaults to the posture); `null` models an older
+ *  wire without the route (404). */
+function probeFetch(mcp: unknown, selection: unknown = mcp): typeof fetch {
   return vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.endsWith("/api/vendo/status")) {
       return Response.json({ posture: "unconfigured", version: CLI_VERSION, blocks: { store: true, sandbox: "cloud", mcp } });
     }
+    if (url.endsWith("/doctor/mcp")) {
+      return selection === null
+        ? Response.json({ error: { message: "unknown Vendo route" } }, { status: 404 })
+        : Response.json({ selection });
+    }
     if (url.endsWith("/doctor/present")) return Response.json({ ok: true });
     if (url.endsWith("/doctor/act-as")) return Response.json({ ok: true });
     if (url.endsWith("/doctor/machines")) return Response.json({ scheduleCallerConfigured: false, machines: [] });
-    if (url.includes("/.well-known/oauth-protected-resource/")) return Response.json({ resource: "mcp" });
-    if (url.includes("/.well-known/oauth-authorization-server/")) return Response.json({ issuer: "auth" });
+    if (url.includes("/.well-known/oauth-protected-resource/")) {
+      return Response.json(mcp === "broker"
+        ? { resource: "mcp", authorization_servers: ["https://maple.mcp.vendo.run"] }
+        : { resource: "mcp", authorization_servers: ["mcp"] });
+    }
+    if (url.includes("/.well-known/oauth-authorization-server/")) {
+      // Remote-AS posture: the real door deliberately 404s its own
+      // authorization-server metadata (door.ts remoteAs guard) — a 200 here
+      // would be an impossible response for a broker-fronted door.
+      return mcp === "broker" ? new Response("not found", { status: 404 }) : Response.json({ issuer: "auth" });
+    }
     if (url.endsWith("/.well-known/mcp/server-card.json")) {
       return Response.json({ name: "maple", transports: [{ type: "streamable-http", url: "http://localhost:3000/api/vendo/mcp" }] });
     }
@@ -86,6 +102,7 @@ const ensured = {
 async function brokerDoctor(options: {
   env: Record<string, string | undefined>;
   mcp?: unknown;
+  selection?: unknown;
   cloudOk?: boolean;
   ensureTenant?: Parameters<typeof runDoctor>[0]["ensureTenant"];
 }): Promise<{ exit: number; logs: string[]; errors: string[] }> {
@@ -95,7 +112,7 @@ async function brokerDoctor(options: {
     targetDir: root,
     env: options.env,
     interactive: false,
-    fetchImpl: probeFetch(options.mcp ?? "local"),
+    fetchImpl: probeFetch(options.mcp ?? "local", options.selection === undefined ? options.mcp ?? "local" : options.selection),
     output: messages.sink,
     telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     liveTurn: async () => ({
@@ -137,11 +154,14 @@ describe("doctor: the hosted MCP broker seam", () => {
 
   it("key + mcp + public base URL → resolves and prints the tenant the door composes against", async () => {
     const ensureTenant = vi.fn(async () => ensured);
-    const { logs } = await brokerDoctor({
+    const { exit, logs } = await brokerDoctor({
       env: { VENDO_API_KEY: "vnd_" + "a".repeat(40), VENDO_BASE_URL: "https://app.maplebank.com" },
       mcp: "broker",
       ensureTenant,
     });
+    // A healthy broker-fronted door is WIRED: its deliberate 404 on the local
+    // authorization-server metadata must not read as broken (E-MCP-002).
+    expect(exit).toBe(0);
     expect(ensureTenant).toHaveBeenCalledTimes(1);
     expect(ensureTenant).toHaveBeenCalledWith({
       baseUrl: "https://app.maplebank.com",
@@ -161,6 +181,35 @@ describe("doctor: the hosted MCP broker seam", () => {
     expect(errors.join("\n")).not.toContain("console unreachable");
   });
 
+  it("an explicit mcp.remoteAs composition → doctor never POSTs ensure (explicit-adapter precedence)", async () => {
+    // /status reports explicit remoteAs as the same "broker" posture as the
+    // Cloud-managed default; only /doctor/mcp carries the distinction. An
+    // ensure here could provision or repoint an unrelated Cloud tenant.
+    const ensureTenant = vi.fn(async () => ensured);
+    const { exit, logs } = await brokerDoctor({
+      env: { VENDO_API_KEY: "vnd_" + "a".repeat(40), VENDO_BASE_URL: "https://app.maplebank.com" },
+      mcp: "broker",
+      selection: "explicit",
+      ensureTenant,
+    });
+    expect(ensureTenant).not.toHaveBeenCalled();
+    expect(logs.some((entry) => entry.includes("explicit"))).toBe(true);
+    expect(exit).toBe(0);
+  });
+
+  it("a wire without /doctor/mcp (older wire) → conservative: no ensure, an explanatory note", async () => {
+    const ensureTenant = vi.fn(async () => ensured);
+    const { exit, logs } = await brokerDoctor({
+      env: { VENDO_API_KEY: "vnd_" + "a".repeat(40), VENDO_BASE_URL: "https://app.maplebank.com" },
+      mcp: "broker",
+      selection: null,
+      ensureTenant,
+    });
+    expect(ensureTenant).not.toHaveBeenCalled();
+    expect(logs.some((entry) => entry.includes("hosted MCP broker"))).toBe(true);
+    expect(exit).toBe(0);
+  });
+
   it("no usable key → no broker line at all", async () => {
     const ensureTenant = vi.fn(async () => ensured);
     const { logs } = await brokerDoctor({
@@ -172,14 +221,18 @@ describe("doctor: the hosted MCP broker seam", () => {
     expect(ensureTenant).not.toHaveBeenCalled();
   });
 
-  it("the new /status postures still count as an open door — the E-MCP discovery checks run", async () => {
+  it("the new /status postures still count as an open door — the E-MCP discovery checks run and pass", async () => {
     for (const mcp of ["local", "broker"]) {
-      const { logs } = await brokerDoctor({
+      const { exit, logs } = await brokerDoctor({
         env: { VENDO_API_KEY: "vnd_" + "a".repeat(40), VENDO_BASE_URL: "https://app.maplebank.com" },
         mcp,
         ensureTenant: vi.fn(async () => ensured),
       });
       expect(logs.some((entry) => entry.includes("MCP protected-resource metadata resolves")), mcp).toBe(true);
+      // Each posture is probed for what its door actually exposes: the local
+      // door serves its own AS metadata; the broker-fronted door 404s it and
+      // instead names the external AS in the protected-resource document.
+      expect(exit, mcp).toBe(0);
     }
   });
 

@@ -36,12 +36,24 @@ export function publicBaseUrl(baseUrl: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
-  // URL keeps IPv6 hostnames bracketed ("[::1]").
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (host === "localhost" || host === "::1" || host.endsWith(".local")) return undefined;
-  if (isPrivateIpv4(host)) return undefined;
+  if (isPrivateHost(normalizeHost(hostname))) return undefined;
   return baseUrl;
 }
+
+/** Canonicalize the spellings URL leaves alone so the checks below see one
+    form per host: brackets off IPv6 ("[::1]"), one trailing root-label dot
+    off an FQDN ("localhost."), and an IPv4-mapped IPv6 address — which URL
+    serializes as hex groups ("::ffff:7f00:1") — back to its dotted quad. */
+const normalizeHost = (hostname: string): string => {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase().replace(/\.$/, "");
+  const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
+  if (mapped === null) return host;
+  const [high, low] = [parseInt(mapped[1]!, 16), parseInt(mapped[2]!, 16)];
+  return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+};
+
+const isPrivateHost = (host: string): boolean =>
+  host === "localhost" || host === "::1" || host.endsWith(".local") || isPrivateIpv4(host);
 
 const isPrivateIpv4 = (host: string): boolean => {
   const octets = host.split(".");

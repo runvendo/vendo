@@ -2878,6 +2878,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // through a deps getter, so the ensure-failure degrade below reports what
   // actually composed.
   let mcpPosture: "local" | "broker" | false = false;
+  // The seam's selection, kept beside the posture for the dev-only
+  // /doctor/mcp probe (wire/doctor.ts): the posture collapses explicit
+  // `mcp.remoteAs` and the Cloud-managed broker into "broker", and doctor
+  // needs the distinction to never ensure a tenant for an explicit AS.
+  let mcpSelection: "off" | "explicit" | "broker" | "local" = "off";
   if (mcpOptions !== undefined) {
     if (oauthSeam === undefined) {
       throw new VendoError(
@@ -2953,6 +2958,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // are frozen in the provisioning plan.
     const mcpCloud = cloudKeyOptions();
     const selection = selectMcpBroker(mcpOptions, mcpCloud, doorBaseUrl, MCP_MOUNT);
+    mcpSelection = selection.mode;
     if (selection.mode === "broker" && mcpCloud !== undefined) {
       mcpPosture = "broker";
       // Boot-once, awaited: the first door construction rides the ready latch
@@ -3067,6 +3073,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     model: inference.agent.venue,
     doctor,
     get mcp() { return mcpPosture; },
+    mcpSelection,
     development,
     sessions: {
       ttlMs: sessionsConfig.ttlMs,

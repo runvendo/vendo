@@ -57,6 +57,17 @@ describe("selectMcpBroker (pure)", () => {
       "https://172.16.0.1",
       "https://172.31.255.255",
       "not a url",
+      // Canonical alternate spellings of the same private/loopback hosts: a
+      // trailing-dot FQDN and IPv4-mapped IPv6 (URL serializes the mapped
+      // form as hex groups, e.g. [::ffff:7f00:1]) still name the same
+      // unreachable machine — the frozen rule covers the HOST, not the bytes.
+      "https://localhost.",
+      "https://foo.local.",
+      "https://[::ffff:127.0.0.1]",
+      "https://[::ffff:10.0.0.1]",
+      "https://[::ffff:192.168.1.2]",
+      "https://[::ffff:172.16.1.2]",
+      "https://[::ffff:a00:1]",
     ]) {
       expect(selectMcpBroker({}, cloud, baseUrl, MOUNT), String(baseUrl)).toEqual({ mode: "local" });
     }
@@ -66,6 +77,11 @@ describe("selectMcpBroker (pure)", () => {
     expect(publicBaseUrl("https://172.32.0.1")).toBe("https://172.32.0.1");
     expect(publicBaseUrl("https://app.maplebank.com")).toBe("https://app.maplebank.com");
     expect(publicBaseUrl("https://mylocal.example.com")).toBe("https://mylocal.example.com");
+    // The normalizations must not over-reach: a trailing-dot PUBLIC FQDN, an
+    // IPv4-mapped PUBLIC address, and a plain public IPv6 all stay public.
+    expect(publicBaseUrl("https://app.maplebank.com.")).toBe("https://app.maplebank.com.");
+    expect(publicBaseUrl("https://[::ffff:8.8.8.8]")).toBe("https://[::ffff:8.8.8.8]");
+    expect(publicBaseUrl("https://[2606:4700::1111]")).toBe("https://[2606:4700::1111]");
   });
 });
 
@@ -235,6 +251,36 @@ describe("the broker arm: key + public VENDO_BASE_URL ensures a tenant and wires
     expect(brokerWarns).toHaveLength(1);
     expect(String(brokerWarns[0]![0])).toContain("local");
     expect(requests).toHaveLength(1);
+  });
+});
+
+describe("the dev-only /doctor/mcp probe reports the seam's selection", () => {
+  // /status collapses explicit-remoteAs and the Cloud-managed broker into one
+  // "broker" posture (the frozen shape); doctor needs the distinction to keep
+  // the explicit-wins precedence — it must never ensure a tenant for an
+  // explicitly configured AS. The probe carries the seam's own selection.
+  const selectionOf = async (vendo: Vendo): Promise<unknown> => {
+    const response = await vendo.handler(root("/api/vendo/doctor/mcp"));
+    expect(response.status).toBe(200);
+    return (await response.json() as { selection: unknown }).selection;
+  };
+
+  it("broker arm → \"broker\"", async () => {
+    const { vendo } = await composeVendo({});
+    expect(await selectionOf(vendo)).toBe("broker");
+  });
+
+  it("explicit mcp.remoteAs → \"explicit\", though /status says \"broker\" for both", async () => {
+    const { vendo } = await composeVendo({
+      mcp: { remoteAs: { issuer: "https://own-as.example.com", audience: "https://app.maplebank.com/api/vendo/mcp" } },
+    });
+    expect(await statusMcp(vendo)).toBe("broker");
+    expect(await selectionOf(vendo)).toBe("explicit");
+  });
+
+  it("localhost skip → \"local\"", async () => {
+    const { vendo } = await composeVendo({ baseUrl: "http://localhost:3000" });
+    expect(await selectionOf(vendo)).toBe("local");
   });
 });
 
