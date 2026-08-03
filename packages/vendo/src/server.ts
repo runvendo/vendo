@@ -885,6 +885,16 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
             // cutoff so the very next sweep re-claims it instead of waiting
             // out another TTL. Best-effort: if the console is down for this
             // too, the erase failure is the one worth reporting.
+            //
+            // RELIES ON a console guarantee: register/touch never moves a
+            // subject's touched_at BACKWARD (vendo-web
+            // apps/console/lib/core/session-registry.ts, `touch` bumps under
+            // `last_seen < seenAt`). Without that clamp this backdated write
+            // would overwrite the fresh stamp of a visitor who returned
+            // between the claim and here, and the next sweep would erase a
+            // LIVE session. The client cannot enforce it — only the registry
+            // can compare-and-set atomically. Pinned by "a fresh touch from a
+            // returning visitor survives the compensation" below.
             await store.sessions.register(subject, now - idleMs - 1).catch(() => undefined);
             throw error;
           }

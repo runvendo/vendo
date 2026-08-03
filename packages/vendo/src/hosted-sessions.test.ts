@@ -585,4 +585,52 @@ describe("hosted store: a failed erase after a claim does not strand the subject
     expect(h.console_.eraseCalls).toContainEqual({ subject });
     expect(h.console_.sessions.has(subject)).toBe(false);
   });
+
+  // Checker round 2. The compensation writes a BACKDATED stamp, so it is only
+  // safe because the console's register/touch never moves a subject's stamp
+  // backward (vendo-web session-registry.ts bumps under `last_seen < seenAt`;
+  // the fake console mirrors that clamp). This pins the client's half of that
+  // contract: the sweep may write the backdated stamp unconditionally, and a
+  // visitor who returned mid-sweep must still come out alive.
+  it("keeps a returning visitor's fresh touch when the compensation lands after it", async () => {
+    let subject = "";
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 100 }, (inner) =>
+      async (input, init) => {
+        const request = new Request(input, init);
+        if (!new URL(request.url).pathname.endsWith("/erase")) return inner(input, init);
+        // The race: the claim already deleted the row, the visitor comes back
+        // and re-registers at the current clock, and only THEN does the erase
+        // fail and the compensation write its backdated stamp.
+        await inner(new Request("https://cloud-sessions.test/api/v1/store/sessions/register", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: "Bearer vnd_hosted_key" },
+          body: JSON.stringify({ subject, now: 5_000 }),
+        }));
+        return Response.json(
+          { error: { code: "unavailable", message: "erase cascade blip" } },
+          { status: 503 },
+        );
+      });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    h.setNow(0);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    subject = (h.wireCalls("/sessions/register")[0]!.json as { subject: string }).subject;
+
+    h.setNow(5_000);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    expect(h.wireCalls("/sessions/claim")).toHaveLength(1);
+
+    // The visitor's fresh stamp won: the backdated compensation did not
+    // regress it, so the session is live, not one cutoff away from erasure.
+    expect(h.console_.sessions.get(subject)).toBe(5_000);
+
+    // Proof it matters: a sweep inside the TTL of that fresh touch leaves the
+    // subject alone. Without the clamp the compensation would have stamped it
+    // at 3_999 and this pass would erase a session in use.
+    h.setNow(5_500);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    expect(h.console_.eraseCalls).toEqual([]);
+    expect(h.console_.sessions.has(subject)).toBe(true);
+  });
 });
