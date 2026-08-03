@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Principal } from "@vendoai/core";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type CreateVendoConfig, type Vendo } from "./server.js";
 
 // Minimal streaming model: one text turn per call, never exhausts. Enough to
@@ -31,7 +31,10 @@ const chatModel = (): LanguageModel => ({
 } as unknown as LanguageModel);
 
 const cleanups: Array<() => Promise<void>> = [];
-afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+});
 
 const hostPrincipal: Principal = { kind: "user", subject: "user_host" };
 
@@ -168,4 +171,27 @@ describe("ephemeral session lifecycle through the umbrella (02-store §4, kill-l
     expect(await count("vendo_records")).toBe(0);
     expect(await count("vendo_apps")).toBe(0);
   }, 60_000);
+
+  // Cloud-audit fix 1's other half: the tick leg is HOSTED-only. A local
+  // composition already has both working cadences (the unref'd interval timer
+  // and the amortized on-request sweep in its long-lived process), so the tick
+  // must not quietly grow a third one behind its back.
+  it("does not drive the sweep from /tick on a non-hosted composition", async () => {
+    vi.stubEnv("VENDO_TICK_SECRET", "tick-secret-for-local-sessions");
+    // A sweep interval longer than the test pins the amortized sweep shut, so
+    // the surviving row can only mean the tick left the sweep alone.
+    const { vendo, setNow, count } = await harness({ ttlMs: 1_000, sweepIntervalMs: 10 ** 9 });
+    setNow(0);
+    await drain(await vendo.handler(chat()));
+    expect(await count("vendo_sessions")).toBe(1);
+
+    setNow(5_000);
+    const ticked = await vendo.handler(new Request("https://host.test/api/vendo/tick", {
+      method: "POST",
+      headers: { authorization: "Bearer tick-secret-for-local-sessions" },
+    }));
+    expect(ticked.status).toBe(200);
+    expect(await count("vendo_sessions")).toBe(1);
+    expect(await count("vendo_threads")).toBe(1);
+  });
 });

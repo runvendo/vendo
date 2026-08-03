@@ -2254,6 +2254,9 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     sessionStore: sessionOps,
     sweep: runSweep,
     sweepEnabled,
+    // Serverless hosts (the hosted store's typical deployment) fire no
+    // interval timer, so the authenticated tick carries the sweep for them.
+    sweepOnTick: sweepEnabled && hostedStoreComposed,
     ...(door === undefined ? {} : { door }),
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL

@@ -94,6 +94,12 @@ export interface WireDeps {
     adopt(from: string, to: string): Promise<SubjectMergeReport | null>;
   };
   sweep: () => Promise<void>;
+  /** True when the composed store carries the HOSTED session doors — the
+      authenticated /tick then drives `sweep` too. A serverless deployment
+      never fires the composition's interval timer, so the tick is the only
+      cadence its idle hosted sessions have. Safe against a timer that DOES
+      fire: the hosted claim leg is a single-winner election server-side. */
+  sweepOnTick: boolean;
 }
 
 /** The per-request view a route handler receives: the raw request, its parsed

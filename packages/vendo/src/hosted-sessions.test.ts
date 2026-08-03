@@ -327,7 +327,7 @@ describe("hosted store: console without session doors (vendo-web@7cd0a02)", () =
     return { hits, wrap };
   };
 
-  it("keeps serving anonymous traffic: registration disables once, with ONE warn naming the removal", async () => {
+  it("keeps serving anonymous traffic: registration disables once, with ONE warn naming the bare 404", async () => {
     const doors = withoutDoors();
     const h = harness({ ttlMs: 3_600_000, sweepIntervalMs: 1_000 }, doors.wrap);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -344,7 +344,7 @@ describe("hosted store: console without session doors (vendo-web@7cd0a02)", () =
     const doorWarns = warn.mock.calls.filter(([message]) =>
       typeof message === "string" && message.includes("session doors"));
     expect(doorWarns).toHaveLength(1);
-    expect(doorWarns[0]![0]).toContain("vendo-web@7cd0a02");
+    expect(doorWarns[0]![0]).toContain("bare 404");
     // The warn names every capability the process is giving up.
     expect(doorWarns[0]![0]).toContain("registration");
     expect(doorWarns[0]![0]).toContain("merge");
@@ -411,5 +411,78 @@ describe("hosted store: console without session doors (vendo-web@7cd0a02)", () =
     expect(doors.hits).not.toContain("adopt");
     expect(h.wireCalls("/records/vendo_audit/put").filter((request) =>
       JSON.stringify(request.json).includes("anon-merge"))).toHaveLength(0);
+  });
+});
+
+// Cloud-audit fix 1. Both existing sweep cadences are unreachable on a
+// serverless host: the interval timer is illegal/never fires, and the
+// amortized on-request sweep is gated by a per-PROCESS `lastSweepAt` that a
+// per-request process re-seeds every invocation. The authenticated tick is the
+// one cadence a serverless deployment does have.
+describe("hosted store: the authenticated tick drives the session sweep", () => {
+  const TICK_SECRET = "tick-secret-for-hosted-sessions";
+
+  const tick = (vendo: Vendo, authorization = `Bearer ${TICK_SECRET}`): Promise<Response> =>
+    vendo.handler(new Request("https://host.test/api/vendo/tick", {
+      method: "POST",
+      headers: { authorization },
+    }));
+
+  it("runs stale → claim → erase on tick, with the amortized on-request sweep throttled out", async () => {
+    vi.stubEnv("VENDO_TICK_SECRET", TICK_SECRET);
+    // A sweep interval far longer than the whole test pins maybeSweep shut, so
+    // every wire call below is attributable to the TICK leg alone.
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 10 ** 9 });
+    h.setNow(0);
+    const first = await h.vendo.handler(listThreads());
+    expect(first.status).toBe(200);
+    const staleSubject = (h.wireCalls("/sessions/register")[0]!.json as { subject: string }).subject;
+
+    // Past the TTL, but nowhere near a sweep interval: no request-driven sweep.
+    h.setNow(5_000);
+    expect(h.wireCalls("/sessions/stale")).toHaveLength(0);
+
+    const ticked = await tick(h.vendo);
+    expect(ticked.status).toBe(200);
+    expect(h.wireCalls("/sessions/stale")[0]!.json).toEqual({ idleMs: 1_000, now: 5_000 });
+    expect(h.wireCalls("/sessions/claim")[0]!.json).toEqual({
+      subject: staleSubject,
+      idleMs: 1_000,
+      now: 5_000,
+    });
+    expect(h.console_.eraseCalls).toEqual([{ subject: staleSubject }]);
+    expect(h.console_.sessions.has(staleSubject)).toBe(false);
+  });
+
+  it("is idempotent across a second tick and never sweeps a live session", async () => {
+    vi.stubEnv("VENDO_TICK_SECRET", TICK_SECRET);
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 10 ** 9 });
+    h.setNow(0);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+
+    // Inside the TTL: the tick lists candidates and finds nothing to claim.
+    h.setNow(500);
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect(h.wireCalls("/sessions/stale")).toHaveLength(1);
+    expect(h.wireCalls("/sessions/claim")).toHaveLength(0);
+    expect(h.console_.eraseCalls).toEqual([]);
+
+    // Past it: one erase, and a second tick at the same clock adds nothing —
+    // the claim leg is a single-winner election on the console.
+    h.setNow(5_000);
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect(h.console_.eraseCalls).toHaveLength(1);
+  });
+
+  it("still refuses an unauthenticated tick", async () => {
+    vi.stubEnv("VENDO_TICK_SECRET", TICK_SECRET);
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 10 ** 9 });
+    h.setNow(0);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    h.setNow(5_000);
+    expect((await tick(h.vendo, "Bearer wrong")).status).toBe(401);
+    expect(h.wireCalls("/sessions/stale")).toHaveLength(0);
+    expect(h.console_.eraseCalls).toEqual([]);
   });
 });
