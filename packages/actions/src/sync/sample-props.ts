@@ -152,6 +152,16 @@ function generate(schema: JsonSchema, key: string, name: string, path: string, d
       }
       value[propertyKey] = generated.value;
     }
+    // An EMPTY object where the schema expected data is the same blank-render
+    // trap as an empty array: `if (!rows?.length) return null` draws nothing and
+    // the surface spins. That happens two ways — a `z.record()` (no declared
+    // properties, an open value schema) and an all-optional object whose every
+    // property failed to synthesize. Both fall to the honest rung-3 label.
+    // A component that genuinely declares NO props is different: `{}` is the
+    // correct seed and it will draw.
+    const expectedData = Object.keys(properties).length > 0
+      || (typeof schema.additionalProperties === "object" && schema.additionalProperties !== null);
+    if (expectedData && Object.keys(value).length === 0) return FAILED;
     return { ok: true, value };
   }
 

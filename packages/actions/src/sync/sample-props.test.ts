@@ -81,6 +81,33 @@ describe("generated preview props", () => {
     })).toBeNull();
   });
 
+  it("refuses an empty object where the schema expected data", () => {
+    // Same blank-render trap as an unknown array element type: `{}` is
+    // typed-correct but the component draws nothing, so the honest rung-3 label
+    // beats a seed that guarantees a blank tile.
+    // z.record(...) — no declared properties, an open value schema.
+    expect(generateSampleProps("Record", {
+      type: "object",
+      properties: { rows: { type: "object", additionalProperties: { type: "string" } } },
+      required: ["rows"],
+    })).toBeNull();
+    // An all-optional object whose every property is unsynthesizable.
+    expect(generateSampleProps("AllOptionalBad", {
+      type: "object",
+      properties: { a: { type: "array" }, b: { type: "array" } },
+    })).toBeNull();
+  });
+
+  it("still seeds a component that genuinely declares no props", () => {
+    // Distinct from the case above: nothing was expected, so `{}` is correct
+    // and the component will draw.
+    expect(generateSampleProps("NoProps", {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    })).toEqual({});
+  });
+
   it("returns null for the permissive placeholder and for a recursive schema", () => {
     expect(generateSampleProps("Unknown", {})).toBeNull();
     expect(generateSampleProps("Unknown", undefined)).toBeNull();

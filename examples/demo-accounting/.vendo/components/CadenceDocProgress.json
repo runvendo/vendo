@@ -1,10 +1,10 @@
 {
   "name": "CadenceDocProgress",
-  "hash": "sha256:6622f886c9806ec652932e7a352af04c3fb7e9d8c33409252855ade0fc7833d3",
-  "capturedAt": "2026-08-03T09:42:02.706Z",
+  "hash": "sha256:347874693ad99020eac70906f9e9c764846e96e61537025e51b9f621b74c36ae",
+  "capturedAt": "2026-08-03T12:35:02.767Z",
   "module": "src/vendo/registry.tsx",
   "export": "CadenceDocProgress",
-  "entry": "ae15222bf3f4139346b68cae01d1c2f3c8b3bb42a75a8f4c9b250bc89c59773c",
+  "entry": "b59524b68c0b6085d3cd73ebda12e018566bbbc58ac9644740b6725580ac5410",
   "modules": {
     "src/components/dashboard/missing-docs-hero.tsx": "a6d0b8b85f8328c4eb183fa656da9ce14f87781b18c95b2b03c633969120b283",
     "src/components/ui/badge.tsx": "396370e01c9cd9262236adbe9f965e13eabced741013e9644e619f8877ee295d",
@@ -17,10 +17,10 @@
       "ref": "f3285cc25a13458b7761b9d2cc9488a4cf4d28a8bf476e55a25288f629f76e2f"
     }
   ],
-  "bytes": 7772,
+  "bytes": 8347,
   "sampleProps": {
-    "value": 7,
-    "max": 10
+    "max": 228,
+    "value": 554008
   },
-  "sampleOrigin": "declared"
+  "sampleOrigin": "generated"
 }

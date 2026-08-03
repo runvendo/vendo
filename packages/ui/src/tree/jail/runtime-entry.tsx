@@ -236,11 +236,16 @@ const JAIL_MODULES: Record<IslandResolvableModule, unknown> = {
   "@vendoai/vendo": KIT_MODULE_EXPORTS,
   "@vendo/kit": KIT_MODULE_EXPORTS,
   "vendo/kit": KIT_MODULE_EXPORTS,
-  // Bundled packages. Both shapes are provided — the named export AND `default`
-  // — because host code reaches for either (`import { clsx }`, `import clsx`,
-  // `import { twMerge }`, `import { z } from "zod"`).
-  clsx: { clsx, default: clsx },
-  "tailwind-merge": { ...tailwindMerge, default: tailwindMerge },
+  // Bundled packages. `__esModule: true` is REQUIRED on every entry: without it
+  // sucrase's `_interopRequireDefault` wraps the entry a second time, so
+  // `import clsx from "clsx"` binds `{ clsx, default }` instead of the function
+  // and calling it throws. Default import is the common style for clsx, so
+  // omitting this breaks essentially every real host — permitted, but not
+  // usable. Both the named and default shapes are provided for each.
+  clsx: { __esModule: true, clsx, default: clsx },
+  "tailwind-merge": { __esModule: true, ...tailwindMerge, default: tailwindMerge },
+  // The shim IS the `z` namespace (see zod-shim.ts), which is what makes
+  // `import * as z from "zod"` — Zod 4's documented style — resolve.
   zod: zodShim,
 };
 

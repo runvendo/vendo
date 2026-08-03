@@ -35,8 +35,24 @@
  *  one thing a shim must never fake. */
 const PARSERS = new Set(["parse", "safeParse", "parseAsync", "safeParseAsync"]);
 
+/**
+ * The shim's own refusal, with its OWN type. Deliberately not a `ZodError`: if
+ * a refusal were catchable as a validation error, a component's `catch (e) { if
+ * (e instanceof z.ZodError) … }` would swallow it and report "invalid input"
+ * when the truth is "this preview cannot validate at all".
+ */
+export class JailZodShimError extends Error {
+  override readonly name = "JailZodShimError";
+}
+
+/** Stand-in for zod's own error type. Nothing ever throws it — the shim does
+ *  not validate — so `instanceof` is always false, which is the honest answer. */
+class ZodError extends Error {
+  override readonly name = "ZodError";
+}
+
 const refuse = (method: string): never => {
-  throw new Error(
+  throw new JailZodShimError(
     `zod's ${method}() is not available in the Vendo preview sandbox: it ships a small zod-shaped shim for DECLARING prop schemas, not a validator. `
     + "This component validates at render time, which the shim cannot emulate honestly.",
   );
@@ -64,20 +80,29 @@ const node = (): unknown => new Proxy(function chain() {} as object, {
 });
 
 /**
- * The `z` namespace. A Proxy rather than an enumerated list of builders so a
- * registry using a zod constructor we did not think of still loads instead of
- * crashing on an undefined — the failure mode a shim must avoid, since the
- * whole point is letting the component render.
+ * THE MODULE ITSELF is the `z` namespace, so every import style sucrase can
+ * emit resolves against it:
+ *
+ *   import { z } from "zod"      -> module.z      (Zod 3's documented style)
+ *   import * as z from "zod"     -> the module    (Zod 4's documented style)
+ *   import z from "zod"          -> module.default
+ *
+ * `__esModule: true` is load-bearing: without it sucrase's
+ * `_interopRequireDefault` wraps the entry a second time, so `default` becomes
+ * the whole module object and `z.object(...)` calls a non-function. That is the
+ * permitted-but-not-usable failure this table exists to prevent, and it is why
+ * the tests below assert every style rather than one.
  */
-const z: unknown = new Proxy({}, {
+export const zodShim: Record<string, unknown> = new Proxy({}, {
   get(_target, property) {
     if (typeof property === "symbol") return undefined;
     const key = String(property);
+    if (key === "__esModule") return true;
+    // The namespace and the default export are the module itself.
+    if (key === "z" || key === "default") return zodShim;
+    if (key === "ZodError") return ZodError;
     if (PARSERS.has(key)) return () => refuse(key);
     return node();
   },
   has: () => true,
-});
-
-/** Shaped like the zod module: the `z` namespace, its aliases, and `default`. */
-export const zodShim: Record<string, unknown> = { z, default: z, ZodError: Error };
+}) as Record<string, unknown>;
