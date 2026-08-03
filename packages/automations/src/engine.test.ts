@@ -677,6 +677,72 @@ describe("steps execution, parking, and resumption", () => {
     expect(await store.records("automations:parked").get("apr_park")).toBeNull();
   });
 
+  /**
+   * Checker round 6, finding 1 — the resume path reads the approval, then arms a
+   * standing grant from it. A take-back landing in that window used to arm the
+   * grant anyway: the replay refused, but `#matchingGrant` accepted the brand new
+   * grant and the tool ran on the next fire. The replay is the spend, so the
+   * grant is armed only after that spend won.
+   */
+  it("arms nothing when a take-back lands between the resume read and the grant", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    let attempt = 0;
+    const tools = registry([writeTool], async (call, runCtx) => {
+      const currentAttempt = attempt++;
+      const request = {
+        id: `apr_window_${currentAttempt}`,
+        call: structuredClone(call),
+        descriptor: writeTool,
+        inputPreview: "write",
+        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
+        createdAt: NOW.toISOString(),
+      };
+      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
+      if (currentAttempt === 1) {
+        // The person hits "take that back" while the resume is in flight: the
+        // guard voids the row and REFUSES the replay, which is all the engine
+        // ever gets to see.
+        const held = (await store.records("vendo_approvals").get("apr_window_0"))?.data as object;
+        await store.records("vendo_approvals").put({
+          id: "apr_window_0",
+          data: { ...held, voidedAt: NOW.toISOString() },
+        });
+      }
+      return { status: "pending-approval", approvalId: request.id };
+    });
+    const doc = app("app_resume_window", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [{ id: "needs", tool: writeTool.name }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", {}, ctx().principal);
+    await store.records("vendo_approvals").put({
+      id: "apr_window_0",
+      data: {
+        ...((await store.records("vendo_approvals").get("apr_window_0"))?.data as object),
+        status: "approved",
+        decidedAt: NOW.toISOString(),
+      },
+    });
+
+    guard.decide("apr_window_0", true);
+    await flush();
+
+    // No standing grant from a yes that was taken back…
+    expect((await store.records("vendo_grants").list()).records).toHaveLength(0);
+    // …the run says what happened (it is asking again, on the new approval)…
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "pending-approval",
+      steps: [{ id: "needs", outcome: "pending-approval", detail: "apr_window_1" }],
+    });
+    // …and the take-back marker is intact.
+    expect((await store.records("vendo_approvals").get("apr_window_0"))?.data).toMatchObject({
+      voidedAt: NOW.toISOString(),
+    });
+  });
+
   it("turns a denied parked call into a blocked hard failure and tick sweeps decided rows", async () => {
     const store = memoryStoreWithoutAtomic();
     const guard = new GuardDouble();

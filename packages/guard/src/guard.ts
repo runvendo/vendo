@@ -41,7 +41,19 @@ const APPROVALS_COLLECTION = "vendo_approvals";
  *  `consumed:<id>` rows in a guard-owned generic collection, written only via
  *  the store's atomic `insertIfAbsent` (02-store §4) so exactly one caller —
  *  across processes — wins each transition. Rows carry `refs.subject`, so the
- *  02-store §5 erase cascade collects them with the rest of the subject's data. */
+ *  02-store §5 erase cascade collects them with the rest of the subject's data.
+ *
+ *  KNOWN LIMIT — the receipt is the only atomic thing in the protocol. The
+ *  `vendo_approvals` row itself has no CAS: the routed store exposes
+ *  `RecordStore.atomic` (01-core §12) for `vendo_threads`, `vendo_apps` and
+ *  generic rows only, so every marker written onto an approval — `consumedAt`,
+ *  `voidedAt`, a decided status — is a `get` followed by a `put`, and something
+ *  else can move the row in between. The receipt is what makes that survivable:
+ *  the winner of a transition is decided BEFORE any row write, so the worst a
+ *  lost race can do is leave a marker stale or (if an erase lands inside the
+ *  window) let a re-put resurrect a row nobody can act on — the transition it
+ *  would need is already spent, so no call ever executes off it. Closing the
+ *  window properly needs guarded writes on `vendo_approvals`; not chased here. */
 const APPROVAL_CLAIMS_COLLECTION = "guard:approval-claims";
 const AUDIT_COLLECTION = "vendo_audit";
 const JUDGE_TIMEOUT_MS = 15_000;

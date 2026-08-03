@@ -73,6 +73,17 @@ contends on that same transition and answers `spent` / `already-spent` /
 `taken-back`. Custom Guards are unaffected — callers feature-detect it, exactly
 like `abandonApprovals`.
 
+Two known limits, both written down at the code that carries them. The receipt
+is the only atomic step: an approval ROW has no guarded write (the store offers
+`atomic` for threads, apps and generic rows only), so every marker on it is a
+read followed by a write and something can move the row in between. Because the
+transition winner is settled before any row write, the worst that costs you is a
+stale marker — never an execution, since the transition a call would need is
+already spent. And a custom `Guard` that does not implement the optional
+`spendApproval` puts the automations grant mint back on that read-then-write
+footing, where a revoke landing in the window can lose to the mint; the guard
+that ships here has the seam.
+
 One consequence worth knowing: `descriptorHash` follows the field rename, so
 approvals and grants persisted before the upgrade no longer match their tool's
 new hash. They lapse into a re-ask, which is the fail-closed direction.

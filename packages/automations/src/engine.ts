@@ -783,7 +783,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     return ids.filter((value): value is RunId => value !== undefined);
   };
 
-  const mintGrant = async (request: ApprovalRequest): Promise<void> => {
+  const mintGrant = async (request: ApprovalRequest): Promise<string> => {
     const grant: PermissionGrant = {
       id: id("grt_"),
       subject: request.ctx.principal.subject,
@@ -804,6 +804,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         ...(grant.appId === undefined ? {} : { app_id: grant.appId }),
       },
     });
+    return grant.id;
   };
 
   /**
@@ -813,9 +814,14 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
    * means DO NOT grant: the person took the yes back, or someone else already
    * spent it.
    *
-   * The fallback (a Guard predating the seam) marks the row the old way. It
-   * cannot linearize — there is no receipt to claim — so it at least refuses on a
-   * take-back it can see, and writes the row back whole.
+   * KNOWN LIMIT — the fallback cannot linearize. A custom Guard that does not
+   * offer `spendApproval` exposes no way to claim the approval's one-time
+   * transition, so this path is back to reading the row and writing it: it
+   * refuses a take-back it can see and writes the row back whole (no stripped
+   * `deniedBy`/`voidedAt`), but a revoke landing inside that window can still
+   * lose to the grant mint. Every Guard in this repo — the only one hosts get
+   * unless they write their own — has the seam, and a host that replaces the
+   * guard wholesale already owns its own consent bookkeeping. Not chased.
    */
   const spendApproval = async (record: VendoRecord): Promise<boolean> => {
     const data = approvalRowSchema.parse(record.data);
@@ -926,16 +932,26 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       let step: Step;
       let outcome: ToolOutcome;
       try {
-        // A yes taken back inside the resume window arms nothing. The replay
-        // below refuses on the same marker (the guard's approved replay checks
-        // it), so the run lands as a fresh ask instead of a standing grant.
-        if (approvalData.voidedAt === undefined) await mintGrant(approvalData.request);
         trigger = validateTrigger(appFound.row.doc.trigger);
         if (trigger.run.kind !== "steps") throw new VendoError("validation", "parked agentic run is invalid");
         const parkedStep = trigger.run.steps[state.stepIndex];
         if (parkedStep === undefined) throw new VendoError("validation", "parked step is missing");
         step = parkedStep;
+        // This path cannot call `spendApproval`: the REPLAY below is the spend,
+        // on the same `consumed:<id>` transition, and one approval cannot be
+        // spent twice (a pre-spend makes the guard refuse its own replay and the
+        // step re-parks forever — verified against the confirmEach resume case).
+        // The grant must also exist BEFORE the dispatch: an away call acts as the
+        // user only through captured authority (05 §6). So the grant is minted
+        // first and TAKEN BACK when the replay did not win — the receipt is the
+        // arbiter, which is the only thing that can tell "the person revoked it
+        // mid-resume" from "we read the row a moment too early". A yes taken back
+        // leaves no standing authority behind, wherever in the window it landed.
+        const armed = await mintGrant(approvalData.request);
         outcome = await executeCall(run.appId, step, state.call, ctx);
+        if (outcome.status === "pending-approval" || outcome.status === "blocked") {
+          await config.store.records(GRANTS).delete(armed);
+        }
       } catch (error) {
         await terminal(run, ctx, "error", `stopped at resume: ${message(error)}`, {
           code: "validation",
