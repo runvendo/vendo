@@ -35,6 +35,12 @@ export const vendo = createVendo({
   // fast model on BYO — so the demo runs the fast two-lane path with no
   // hardcoded model names (speed-core lane; BYO rule).
   auth: mapleAuth,
+  // The remix review seam (/apps/review-queue, /apps/:id/reject-review, and
+  // the /dev/inclient-approval door) rides the development composition only.
+  // `next start` runs production NODE_ENV, so a local session that drives a
+  // real review (the W1e E2E) opts in explicitly; unset, the environment
+  // default stands and no deployed surface composes the seam.
+  ...(process.env.MAPLE_DEV_SEAMS === "1" ? { development: true } : {}),
   // The shared registry (01 §14): the server reads only the data fields;
   // <VendoRoot> takes the same object and reads only component references.
   catalog: mapleRegistry,
