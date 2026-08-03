@@ -1,16 +1,13 @@
 {
   "name": "MapleSpendingDonut",
-  "hash": "sha256:3e00d6ae63e97558a696c627278366965b99fae620285b2e912f14c3c02c5b86",
-  "capturedAt": "2026-08-03T04:23:55.825Z",
+  "hash": "sha256:65da5b48fd30fb447529cbb2dd8c14ebaa02a194b9ee6a971b6df54b5632270a",
+  "capturedAt": "2026-08-03T09:42:04.792Z",
   "module": "src/vendo/registry.tsx",
   "skipped": {
     "reason": "unsupported-imports",
-    "detail": "It imports \"clsx\", \"recharts\", \"tailwind-merge\", \"zod\", which the sandboxed preview cannot load.",
+    "detail": "It imports \"recharts\", which the sandboxed preview cannot load.",
     "specifiers": [
-      "clsx",
-      "recharts",
-      "tailwind-merge",
-      "zod"
+      "recharts"
     ]
   }
 }

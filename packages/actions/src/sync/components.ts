@@ -6,9 +6,12 @@ import {
   type CapturedHostComponent,
   type CapturedModule,
   type CapturedPinStyle,
+  type CatalogEntry,
+  type HostComponentSampleGap,
   type HostComponentSkip,
 } from "../formats.js";
 import { captureClosure, defaultExportOf, overBudgetWarning, portablePath } from "./capture.js";
+import { generateSampleProps } from "./sample-props.js";
 import type { HostComponentSite } from "./catalog-scan.js";
 import { isInside } from "./common.js";
 
@@ -43,6 +46,9 @@ export interface HostComponentCaptureResult {
   /** Registered components left uncaptured this run (over budget, or with a
    *  module the entry rule cannot turn into a default export). */
   skipped: string[];
+  /** Captured, but with neither usable `examples` nor a representable props
+   *  schema — so a preview can only show a labeled placeholder. */
+  withoutSamples: string[];
   warnings: string[];
 }
 
@@ -65,6 +71,71 @@ function entryExport(
       reason: "default-export-conflict",
       detail: `Its module already default-exports something else (${declared.name ?? "an anonymous value"}), so ${binding} cannot be given the default export the jail renders. Export ${binding} from its own module and register that.`,
     },
+  };
+}
+
+/** The first declared example that parses to a JSON object of props. A
+ *  malformed or non-object entry is stepped over rather than failing the
+ *  component. */
+function declaredSample(examples: readonly string[] | undefined): Record<string, unknown> | null {
+  for (const example of examples ?? []) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(example) as unknown;
+    } catch {
+      continue;
+    }
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
+/**
+ * The preview seed, resolved down a three-rung ladder:
+ *
+ *  1. The host's own `examples` — always preferred. A human's example reads
+ *     better than anything synthesized, and it is real product data.
+ *  2. Generated from the DECLARED `props:` schema. Most hosts never write
+ *     examples but nearly all declare props, and sync already interprets those
+ *     into JSON Schema for `catalog.json` — so a preview draws for essentially
+ *     every registered component instead of only the documented few.
+ *  3. Neither → an honest `noSampleProps` label, never a silent blank.
+ *
+ * The origin travels with the props (never INSIDE them — see the record field)
+ * so a surface can say "generated sample data" rather than implying it is real.
+ */
+function sampleFrom(
+  name: string,
+  entry: Pick<CatalogEntry, "examples" | "propsSchema"> | undefined,
+): { props: Record<string, unknown>; origin: "declared" | "generated" } | { gap: HostComponentSampleGap } {
+  const declared = declaredSample(entry?.examples);
+  if (declared !== null) return { props: declared, origin: "declared" };
+
+  const generated = generateSampleProps(name, entry?.propsSchema);
+  if (generated !== null) return { props: generated, origin: "generated" };
+
+  const hasSchema = entry?.propsSchema !== undefined && Object.keys(entry.propsSchema).length > 0;
+  const hasExamples = (entry?.examples ?? []).length > 0;
+  if (hasSchema) {
+    return {
+      gap: {
+        reason: "unrepresentable-props",
+        detail: "Its declared props schema could not be turned into sample values, so a preview has no data to draw it with. Add an `examples` entry to its registration.",
+      },
+    };
+  }
+  return {
+    gap: hasExamples
+      ? {
+        reason: "unreadable-examples",
+        detail: "None of its declared examples parse as a JSON object of props, and it declares no props schema to generate from.",
+      }
+      : {
+        reason: "no-examples",
+        detail: "It declares neither examples nor a props schema, so a preview has no data to draw it with.",
+      },
   };
 }
 
@@ -108,12 +179,18 @@ export async function captureHostComponents(options: {
   out: string;
   sites: readonly HostComponentSite[];
   styles: readonly CapturedPinStyle[];
+  /** The catalog sync just wrote — the source of the preview seed, via its
+   *  `examples` then its derived `propsSchema`. The MERGED file, not the raw
+   *  scan, so curated copy on a scanned entry counts exactly like a
+   *  registry-declared one. */
+  catalog?: readonly CatalogEntry[];
   /** A degraded catalog scan prunes nothing: it never saw the whole project. */
   degraded: boolean;
   budgetBytes?: number;
 }): Promise<HostComponentCaptureResult> {
   const { root, out, sites, styles, degraded } = options;
-  const result: HostComponentCaptureResult = { captured: [], drifted: [], pruned: [], skipped: [], warnings: [] };
+  const result: HostComponentCaptureResult = { captured: [], drifted: [], pruned: [], skipped: [], withoutSamples: [], warnings: [] };
+  const catalogByName = new Map((options.catalog ?? []).map((entry) => [entry.name, entry]));
   const dir = path.join(out, COMPONENTS_DIR);
   const modulesDir = path.join(dir, MODULES_DIR);
   const realRoot = await fs.realpath(root);
@@ -223,6 +300,8 @@ export async function captureHostComponents(options: {
                 ...(Object.keys(sub.imports).length === 0 ? {} : { imports: sub.imports }),
               });
             }
+            const sample = sampleFrom(site.name, catalogByName.get(site.name));
+            if ("gap" in sample) result.withoutSamples.push(site.name);
             record = {
               name: site.name,
               module,
@@ -234,6 +313,9 @@ export async function captureHostComponents(options: {
               ...(Object.keys(modules).length === 0 ? {} : { modules }),
               ...(styles.length === 0 ? {} : { styles: styleRefs() }),
               bytes,
+              ...("gap" in sample
+                ? { noSampleProps: sample.gap }
+                : { sampleProps: sample.props, sampleOrigin: sample.origin }),
             };
           }
         }
@@ -258,6 +340,7 @@ export async function captureHostComponents(options: {
   result.captured.sort();
   result.drifted.sort();
   result.skipped.sort();
+  result.withoutSamples.sort();
   return result;
 }
 

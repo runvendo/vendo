@@ -74,13 +74,15 @@
     "@ai-sdk/react": "3.0.30",
     "@tanstack/react-table": "^8.20.0",
     "@vendoai/core": "workspace:*",
+    "clsx": "2.1.1",
     "fluidkit": "^0.5.0",
     "motion": "^11.11.0",
     "react-markdown": "^9.0.1",
     "recharts": "^3.2.0",
     "remark-gfm": "^4.0.0",
     "sucrase": "^3.35.0",
-    "zod": "^3.25.76"
+    "tailwind-merge": "3.6.0",
+    "zod": "3.25.76"
   },
   "peerDependencies": {
     "ai": "^6.0.0",

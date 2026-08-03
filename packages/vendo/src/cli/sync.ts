@@ -214,6 +214,13 @@ async function sync(options: SyncOptions): Promise<number> {
       }
       output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
       output.log(`components: ${report.components.captured.length} captured, ${report.components.drifted.length} updated${report.components.skipped === undefined ? "" : `, ${report.components.skipped.length} skipped`}`);
+      if (report.components.withoutSamples !== undefined) {
+        // One line, not one warning per component: a preview with no seed is a
+        // labeled placeholder, not a failure — but it IS why a component looks
+        // blank in the console, so it must be visible and fixable from here.
+        const names = report.components.withoutSamples;
+        output.log(`components: ${names.join(", ")} ${names.length === 1 ? "declares" : "declare"} no examples, so the console can only show a labeled placeholder — add \`examples\` to ${names.length === 1 ? "its" : "their"} registration to preview ${names.length === 1 ? "it" : "them"}`);
+      }
       for (const name of report.components.pruned ?? []) {
         output.log(`pruned: ${name} — stale component capture deleted (your app no longer registers it)`);
       }

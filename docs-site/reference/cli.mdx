@@ -398,8 +398,11 @@ nothing and says so. Keyless and BYO installs never ask and never make a
 request.
 
 What crosses the wire: the source of every registered component, the source of
-every module in its import closure, and your app-root stylesheets. Package
-code never does — capture stops at `node_modules`.
+every module in its import closure, your app-root stylesheets, and the preview
+seed — your declared `examples`, or values deterministically generated from your
+declared `props:` schema when you have none (a preview has no data plane, so
+without a seed a data-guarded component draws nothing). Package code never does
+— capture stops at `node_modules`.
 
 The reconcile is manifest-driven. Component records hold references, not
 source, so listing them is itself the hash comparison; module bodies are

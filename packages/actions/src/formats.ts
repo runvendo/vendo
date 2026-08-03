@@ -631,7 +631,42 @@ export interface CapturedHostComponent {
   styles?: Array<{ path: string; ref: string }>;
   /** Total captured bytes (entry + closure), for budget accounting. */
   bytes?: number;
+  /**
+   * The rehearsal seed a preview renders with, parsed from the registration's
+   * own first usable `examples` string.
+   *
+   * Load-bearing, not a nicety. A registered component is written to render
+   * nothing until its data binds (`if (!series?.length) return null` — what the
+   * docs recommend and what every demo component does), and a preview has NO
+   * data plane: every query stubs to `[]`. Without a seed the module loads, the
+   * component correctly draws nothing, and the surface sits on a streaming
+   * silhouette forever. `JailFurnishing.sampleProps` is exactly this seam and
+   * pin baselines already carry it.
+   */
+  sampleProps?: Record<string, unknown>;
+  /**
+   * Which rung of the seed ladder produced `sampleProps`: the host's own
+   * declared `examples`, or values synthesized from its declared props schema.
+   *
+   * A SIBLING of `sampleProps`, deliberately not a key inside it — the jail
+   * spreads `sampleProps` straight onto the component's props, so an `origin`
+   * key in there would be passed to the component as a prop and could collide
+   * with a real one. Kept out here, a surface can still say "preview uses
+   * generated sample data" instead of implying the numbers are real.
+   */
+  sampleOrigin?: "declared" | "generated";
+  /** Present INSTEAD of `sampleProps`, so a surface can label the gap ("no
+   *  sample data") rather than spin. Absent whenever `sampleProps` is set. */
+  noSampleProps?: HostComponentSampleGap;
   skipped?: HostComponentSkip;
+}
+
+/** Why a captured component has no preview seed. Distinct from `skipped`: the
+ *  capture SUCCEEDED, there is just nothing to render it with. */
+export interface HostComponentSampleGap {
+  reason: "no-examples" | "unreadable-examples" | "unrepresentable-props";
+  /** One finished sentence, safe to render as-is. */
+  detail: string;
 }
 
 export const capturedHostComponentSchema = z.object({
@@ -644,6 +679,12 @@ export const capturedHostComponentSchema = z.object({
   modules: z.record(z.string().regex(/^[0-9a-f]{64}$/u)).optional(),
   styles: z.array(z.object({ path: z.string(), ref: z.string().regex(/^[0-9a-f]{64}$/u) })).optional(),
   bytes: z.number().optional(),
+  sampleProps: z.record(z.unknown()).optional(),
+  sampleOrigin: z.enum(["declared", "generated"]).optional(),
+  noSampleProps: z.object({
+    reason: z.enum(["no-examples", "unreadable-examples", "unrepresentable-props"]),
+    detail: z.string(),
+  }).passthrough().optional(),
   skipped: z.object({
     reason: z.enum(HOST_COMPONENT_SKIP_REASONS),
     detail: z.string(),
@@ -678,6 +719,14 @@ export interface SyncReport {
   pins: { captured: string[]; drifted: string[]; pruned?: string[] };
   catalog: { discovered: number; registered: number };
   /** Registered host components whose source sync captured, so the console can
-   *  render them for real. `skipped` = over the per-component byte budget. */
-  components: { captured: string[]; drifted: string[]; pruned?: string[]; skipped?: string[] };
+   *  render them for real. `skipped` = could not be captured at all;
+   *  `withoutSamples` = captured, but the registration declares no usable
+   *  `examples`, so a preview can only show a labeled placeholder. */
+  components: {
+    captured: string[];
+    drifted: string[];
+    pruned?: string[];
+    skipped?: string[];
+    withoutSamples?: string[];
+  };
 }

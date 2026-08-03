@@ -3,6 +3,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { createPortal, flushSync } from "react-dom";
 import { jsx, jsxs, Fragment } from "react/jsx-runtime";
 import { transform } from "sucrase";
+// The bundled third-party packages (core's JAIL_BUNDLED_PACKAGES). Imported
+// here — not lazily, not from a CDN — because the jail realm has NO network:
+// they must already be inside the runtime bundle to be requirable at all.
+// clsx + tailwind-merge are real (~8 KB together). zod is a SHIM: real zod cost
+// ~23 KB gzip in every host's production bundle, and measured against the real
+// captures nothing in the jail ever parses — see zod-shim.ts for the evidence.
+import { clsx } from "clsx";
+import * as tailwindMerge from "tailwind-merge";
+import { zodShim } from "./zod-shim.js";
 import { ISLAND_AMBIENT_NAMES, type IslandResolvableModule } from "@vendoai/core";
 import { normalizeViewportBlockCss } from "./viewport-css.js";
 import {
@@ -210,9 +219,10 @@ const KIT_MODULE_EXPORTS = {
  * carries no `blob:`/host sources as the second wall.
  *
  * Keyed by `IslandResolvableModule` (the shared allowlist in @vendoai/core —
- * react plus the kit-ish specifiers the engine strips) so this table, the
- * engine's strip pass, and the import gate cannot drift: a missing or extra
- * key is a compile error.
+ * react, the kit-ish specifiers the engine strips, and the bundled third-party
+ * packages) so this table, the engine's import gate, and `vendo sync`'s capture
+ * cannot drift: a missing or extra key is a compile error. That check is the
+ * reason a specifier can never be PERMITTED without also being PROVIDED here.
  */
 const JAIL_MODULES: Record<IslandResolvableModule, unknown> = {
   react: { ...React, default: React },
@@ -226,6 +236,12 @@ const JAIL_MODULES: Record<IslandResolvableModule, unknown> = {
   "@vendoai/vendo": KIT_MODULE_EXPORTS,
   "@vendo/kit": KIT_MODULE_EXPORTS,
   "vendo/kit": KIT_MODULE_EXPORTS,
+  // Bundled packages. Both shapes are provided — the named export AND `default`
+  // — because host code reaches for either (`import { clsx }`, `import clsx`,
+  // `import { twMerge }`, `import { z } from "zod"`).
+  clsx: { clsx, default: clsx },
+  "tailwind-merge": { ...tailwindMerge, default: tailwindMerge },
+  zod: zodShim,
 };
 
 function jailRequire(specifier: string): unknown {

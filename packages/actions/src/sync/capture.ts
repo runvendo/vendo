@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { isStrippedIslandSpecifier } from "@vendoai/core";
+import { isIslandResolvableSpecifier } from "@vendoai/core";
 import type { CapturedPinSubSource } from "../formats.js";
 import {
   isInside,
@@ -38,8 +38,8 @@ export interface CapturedClosure {
   bytes: number;
   /**
    * Specifiers the jail will ask for and cannot answer: every import the walk
-   * did NOT capture and `isStrippedIslandSpecifier` does not resolve — package
-   * imports, component-local stylesheets, unresolvable host paths.
+   * did NOT capture that is not `isIslandResolvableSpecifier` — unbundled
+   * package imports, component-local stylesheets, unresolvable host paths.
    *
    * This is the difference between a closure that renders and one that
    * error-boxes. The jail compiles with sucrase's `imports` transform, so every
@@ -170,8 +170,9 @@ export async function captureClosure(options: {
     const task = queue.shift()!;
     const imports = task.id === null ? sourceImports : captured.get(task.id)!.imports;
     for (const specifier of importSpecifiers(task.source, task.file)) {
-      // Resolvable inside the jail without capture (react, the kit names).
-      if (isStrippedIslandSpecifier(specifier)) continue;
+      // Resolvable inside the jail without capture: react, the kit names, and
+      // the packages the jail runtime bundles (core's JAIL_BUNDLED_PACKAGES).
+      if (isIslandResolvableSpecifier(specifier)) continue;
       const importer = task.id ?? primaryId;
       // Every path below leaves the specifier out of the import table, which
       // means the jail will ask for it and throw. Record it once, here.

@@ -10,7 +10,7 @@ import {
   RESERVED_COMPONENT_NAMES,
   WIRE_COMPONENT_NAMES,
   ISLAND_AMBIENT_KIT_NAMES,
-  ISLAND_STRIPPED_SPECIFIERS,
+  ISLAND_RESOLVABLE_SPECIFIERS,
   islandDerivedValueViolations,
   islandNetworkViolations,
   resolveIslandToolName,
@@ -72,7 +72,8 @@ const esbuildTransform = (async () => {
  *  side-effect `import "x"`, `export … from`), dynamic `import("x")`, and
  *  `require("x")`. The jail's sucrase loader rewrites all of these to its
  *  require table, so any specifier here that is not an island-resolvable
- *  module (`ISLAND_STRIPPED_SPECIFIERS`) cannot resolve at runtime. */
+ *  module (`ISLAND_RESOLVABLE_SPECIFIERS` — ambient names plus the packages the
+ *  jail bundles) cannot resolve at runtime. */
 const IMPORT_SPECIFIER =
   /(?:\bimport\b|\bexport\b)[^'"]*?\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
 
@@ -85,7 +86,7 @@ const islandImportSpecifiers = (source: string): string[] => {
   return specifiers;
 };
 
-const ISLAND_RESOLVABLE_MODULE_SET = new Set<string>(ISLAND_STRIPPED_SPECIFIERS);
+const ISLAND_RESOLVABLE_MODULE_SET = new Set<string>(ISLAND_RESOLVABLE_SPECIFIERS);
 
 // ---------------------------------------------------------------------------
 // Host-component-in-island teaching. Rematch gate 2026-07-25: 17+ Cadence and

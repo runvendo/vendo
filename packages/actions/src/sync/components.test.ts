@@ -28,8 +28,11 @@ async function write(root: string, relativePath: string, source: string): Promis
   await fs.writeFile(file, source, "utf8");
 }
 
-/** The host wiring the scan looks for: one exported registry object handed to
- *  `<VendoRoot components={…}>`. */
+/** The host wiring the scan looks for — the shared-registry pattern the docs
+ *  teach: ONE object, handed to `<VendoRoot components={…}>` for the component
+ *  references and to `createVendo({ catalog })` for the data fields
+ *  (description, props, examples). A real host always has both legs, and the
+ *  examples a preview seeds from ride the second one. */
 async function writeRoot(root: string, registryImport: string, entries: string): Promise<void> {
   await write(root, "src/vendo/registry.tsx", `${registryImport}\nexport const registry = { ${entries} };\n`);
   await write(root, "src/app/root.tsx", `
@@ -38,6 +41,11 @@ async function writeRoot(root: string, registryImport: string, entries: string):
     export default function Root({ children }: { children: unknown }) {
       return <VendoRoot components={registry}>{children}</VendoRoot>;
     }
+  `);
+  await write(root, "src/vendo/server.ts", `
+    import { registry } from "./registry";
+    declare function createVendo(config: unknown): unknown;
+    export const vendo = createVendo({ catalog: registry });
   `);
 }
 
@@ -50,6 +58,7 @@ async function capture(root: string, budgetBytes?: number) {
       out: path.join(root, ".vendo"),
       sites: scan.sites,
       styles: [],
+      catalog: scan.entries,
       degraded: scan.degraded,
       ...(budgetBytes === undefined ? {} : { budgetBytes }),
     }),
@@ -264,6 +273,162 @@ describe("registered host component capture", () => {
     const kept = await record(root, "Left");
     expect(await moduleRefs(root)).toEqual([`${kept.entry}.json`, ...Object.values(kept.modules ?? {}).map((ref) => `${ref}.json`)].sort());
     expect(await module_(root, Object.values(kept.modules ?? {})[0]!)).toEqual({ source: expect.stringContaining("money") });
+  });
+
+  it("seeds the preview from the registration's declared examples", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `export function Donut({ slices }: { slices: Array<{ label: string; amount: number }> }) {\n`
+      + `  if (!slices?.length) return null;\n`
+      + `  return <div>{slices.length}</div>;\n}\n`,
+      `Donut: { component: Donut, description: "Spending by category.",\n`
+      + `  examples: ['{"slices":[{"label":"Dining","amount":34218}],"size":200}'] }`,
+    );
+
+    const { result } = await capture(root);
+    expect(result.captured).toEqual(["Donut"]);
+    expect(result.withoutSamples).toEqual([]);
+
+    const stored = await record(root, "Donut");
+    // Without this the module loads, `slices` is undefined, the component
+    // correctly renders null, and the preview shows an eternal skeleton.
+    expect(stored.sampleProps).toEqual({ slices: [{ label: "Dining", amount: 34218 }], size: 200 });
+    expect(stored.noSampleProps).toBeUndefined();
+  });
+
+  it("rung 2: generates a seed from the declared props schema when no examples exist", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `export function Donut({ slices }: { slices: Array<{ label: string; amount: number }> }) {\n`
+      + `  if (!slices?.length) return null;\n`
+      + `  return <div>{slices.length}</div>;\n}\n`,
+      `Donut: { component: Donut, description: "No examples, but declared props.",\n`
+      + `  props: z.object({ slices: z.array(z.object({ label: z.string(), amount: z.number() })) }) }`,
+    );
+
+    const { result } = await capture(root);
+    expect(result.captured).toEqual(["Donut"]);
+    expect(result.withoutSamples).toEqual([]);
+
+    const stored = await record(root, "Donut");
+    expect(stored.sampleOrigin).toBe("generated");
+    expect(stored.noSampleProps).toBeUndefined();
+    // Typed-correct against the declaration, and non-empty so the component's
+    // `if (!slices?.length) return null` guard passes.
+    const slices = stored.sampleProps?.slices as Array<Record<string, unknown>>;
+    expect(slices.length).toBeGreaterThan(0);
+    expect(typeof slices[0]!.label).toBe("string");
+    expect(typeof slices[0]!.amount).toBe("number");
+  });
+
+  it("rung 1 beats rung 2: a declared example always wins over a generated one", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `export function Both({ label }: { label: string }) { return <div>{label}</div>; }\n`,
+      `Both: { component: Both, description: "Has both.",\n`
+      + `  props: z.object({ label: z.string() }),\n`
+      + `  examples: ['{"label":"Real product copy"}'] }`,
+    );
+
+    const stored = (await capture(root), await record(root, "Both"));
+    expect(stored.sampleOrigin).toBe("declared");
+    expect(stored.sampleProps).toEqual({ label: "Real product copy" });
+  });
+
+  it("rung 3: labels a component with neither examples nor declared props", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      "export function Bare(props: Record<string, unknown>) { return <div>{String(props.x)}</div>; }\n",
+      `Bare: { component: Bare, description: "Nothing declared." }`,
+    );
+
+    const { result } = await capture(root);
+    expect(result.captured).toEqual(["Bare"]);
+    // Captured fine — it just has nothing to render WITH, which the console
+    // must be able to distinguish from a capture failure.
+    expect(result.withoutSamples).toEqual(["Bare"]);
+
+    const stored = await record(root, "Bare");
+    expect(stored.entry).toBeDefined();
+    expect(stored.skipped).toBeUndefined();
+    expect(stored.sampleProps).toBeUndefined();
+    expect(stored.sampleOrigin).toBeUndefined();
+    expect(stored.noSampleProps?.reason).toBe("no-examples");
+  });
+
+  it("the generated seed is byte-stable: a second capture rewrites nothing", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `export function Stable({ rows }: { rows: number[] }) { return <div>{rows.length}</div>; }\n`,
+      `Stable: { component: Stable, description: "Generated seed.",\n`
+      + `  props: z.object({ rows: z.array(z.number()) }) }`,
+    );
+    await capture(root);
+    const first = await record(root, "Stable");
+
+    const second = await capture(root);
+    expect(second.result).toMatchObject({ captured: [], drifted: [] });
+    expect(await record(root, "Stable")).toEqual(first);
+  });
+
+  it("skips past an unusable example rather than failing the component", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      "export function Mixed() { return <div>mixed</div>; }\n",
+      `Mixed: { component: Mixed, description: "Bad then good.",\n`
+      + `  examples: ['not json', '[1,2,3]', '{"ok":true}'] }`,
+    );
+
+    const { result } = await capture(root);
+    expect(result.withoutSamples).toEqual([]);
+    // The first example that parses to a props OBJECT wins; a malformed string
+    // and a bare array are stepped over, not fatal.
+    expect((await record(root, "Mixed")).sampleProps).toEqual({ ok: true });
+  });
+
+  it("says so when no declared example is a usable props object", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      "export function AllBad() { return <div />; }\n",
+      `AllBad: { component: AllBad, description: "Nothing usable.", examples: ['[1,2]'] }`,
+    );
+
+    const { result } = await capture(root);
+    expect(result.withoutSamples).toEqual(["AllBad"]);
+    expect((await record(root, "AllBad")).noSampleProps?.reason).toBe("unreadable-examples");
+  });
+
+  it("survives the wire: the stored record round-trips as the JSON the console parses", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `export function Card({ valueCents }: { valueCents: number }) { return <div>{valueCents}</div>; }\n`,
+      `Card: { component: Card, description: "A card.",\n`
+      + `  examples: ['{"valueCents":5490715,"series":[1,2,3],"nested":{"a":[{"b":null}]}}'] }`,
+    );
+    await capture(root);
+
+    // The console reads these rows straight out of the store, so what must
+    // hold is that JSON.parse(JSON.stringify(record)) is still a valid record
+    // and the seed is still a plain object of JSON values — the shape
+    // `sampleProps: z.record(z.unknown())` and `JailFurnishing.sampleProps`
+    // both accept.
+    const stored = await record(root, "Card");
+    const overTheWire = capturedHostComponentSchema.parse(JSON.parse(JSON.stringify(stored)));
+    expect(overTheWire).toEqual(stored);
+    expect(overTheWire.sampleProps).toEqual({
+      valueCents: 5490715,
+      series: [1, 2, 3],
+      nested: { a: [{ b: null }] },
+    });
+    expect(Object.getPrototypeOf(overTheWire.sampleProps)).toBe(Object.prototype);
   });
 
   it("is idempotent: an unchanged project rewrites nothing", async () => {

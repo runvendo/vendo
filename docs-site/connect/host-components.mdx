@@ -122,22 +122,49 @@ The walk follows your imports to **closure** — no depth limit — and stops at
 two lines:
 
 - **Package boundary.** Anything resolving into `node_modules` is never
-  captured. It is not your code, and the preview sandbox supplies the React
-  kit.
+  captured. It is not your code, and the sandbox supplies the React kit plus the
+  three bundled packages below.
 - **Byte budget.** 256 KB of source per component.
 
 <Warning>
-**Today, a component that imports any package other than React cannot be
-previewed.** The package boundary is not only a privacy rule, it is a hard
-functional limit: the preview sandbox resolves React and the Vendo kit and
-nothing else, so a component whose closure reaches `recharts`, `zod`, `clsx`,
-or `tailwind-merge` has no way to load there. `import { z } from "zod"` in your
-registry module and a `lib/cn.ts` built on `clsx` + `tailwind-merge` — the
-shadcn default — are both enough.
+**A component whose closure imports a package the sandbox does not carry cannot
+be previewed.** The package boundary is not only a privacy rule, it is a
+functional limit: the sandbox has no network, so a package is reachable only if
+Vendo bundled it.
 
-Sync detects this and **refuses the capture**, naming the specifiers. It does
-not ship a capture that would load as a crash.
+Three are bundled, because they blocked almost everything and are all tiny and
+universal:
+
+| bundled | what you get |
+| --- | --- |
+| `clsx` | the real package (pinned `2.1.1`) |
+| `tailwind-merge` | the real package (pinned `3.6.0`) |
+| `zod` | a **zod-shaped shim** for declaring schemas — see below |
+
+That covers the two patterns that blocked real components: a `lib/cn.ts` built
+on `clsx` + `tailwind-merge` (the shadcn default), and a `props:` schema
+declared next to the component in the registry module.
+
+Anything else — `recharts`, a date library, your design-system package — still
+cannot load. Sync **refuses the capture** and names the specifiers rather than
+shipping something that would crash on render.
 </Warning>
+
+<Note>
+**The bundled `zod` is a shim, not zod.** It resolves the declaration surface
+(`z.object`, `z.string`, `z.enum`, `.optional()`, `.describe()`, and any builder
+chain) so your module loads, because that is all a registry's `props:` schema
+needs — nothing validates while a preview renders.
+
+It does **not** validate. `.parse()` / `.safeParse()` throw a named error inside
+the sandbox rather than returning a plausible wrong value. If one of your
+components validates at render time, its preview fails loudly and says why.
+
+`clsx` and `tailwind-merge` are the real packages because they do real work at
+render — a shim would silently change which classes win. Note that Vendo ships
+its own pinned copies, so a component on a different major of either could
+render slightly differently in a preview than in your app.
+</Note>
 
 Whenever a component cannot be captured, sync says so and the record on disk
 carries a machine-readable `skipped` reason plus a sentence you can read, so
@@ -158,13 +185,83 @@ you no longer register are deleted on the next successful sync, and a shared
 module is deleted only once nothing references it. A degraded scan (no
 TypeScript compiler, no `tsconfig.json`) prunes nothing.
 
+### Previews render with your declared `examples`
+
+A preview has **no data plane**. It is not connected to your API: every query
+resolves to an empty list. So a component written the way this page recommends —
+
+```tsx
+if (!series?.length) return null;
+```
+
+— correctly renders nothing there, and the surface would sit on a loading
+silhouette forever.
+
+Sync solves that with things you have already written. It resolves a preview
+seed down three rungs, in order, and stores it on the capture as `sampleProps`
+with a `sampleOrigin` saying which rung produced it.
+
+**Rung 1 — your `examples`.** Always preferred: a human's example is real
+product data and reads better than anything we could invent. The first
+`examples` string that parses to a JSON object wins.
+
+```ts
+MapleSpendingDonut: {
+  component: SpendingDonut,
+  description: "Category breakdown of spending.",
+  props: z.object({ /* … */ }),
+  // Teaches the model AND draws the preview.
+  examples: ['{"slices":[{"category":"dining","amount":34218}],"size":200}'],
+}
+```
+
+A malformed example, or one that is not a JSON object, is stepped over rather
+than failing the component.
+
+**Rung 2 — generated from your `props:` schema** (`sampleOrigin: "generated"`).
+Most registrations never declare examples but nearly all declare props, and
+sync already interprets that schema for `catalog.json`. Values are synthesized
+from it: typed-correct, respecting enums, `min`/`max`, string formats, array
+element types, and optionality. They are **plausible, not pretty** — the point
+is that your component draws instead of sitting blank.
+
+Generation is deterministic, seeded from the component's name and each property
+path, so the same schema always produces the same values. Your committed
+`.vendo/components/` never churns, and two components never get identical
+filler. A schema that cannot be represented — recursive, opaque, or one sync
+could not interpret in the first place — falls through to rung 3 rather than
+emitting something that would throw.
+
+<Note>Generated values are invented. Surfaces are told which rung produced a
+seed (`sampleOrigin`), so a preview can label itself as sample data rather than
+implying the numbers are real.</Note>
+
+**Rung 3 — an honest label.** With neither examples nor a representable props
+schema, the capture records `noSampleProps` with a reason
+(`no-examples`, `unreadable-examples`, `unrepresentable-props`) and sync says so
+in one line:
+
+```
+components: MetricCard declares no examples, so the console can only show a
+labeled placeholder — add `examples` to its registration to preview it
+```
+
+That component still captures and still renders in your product; it just
+previews as a labeled placeholder instead of a live one.
+
+Note that examples and generated values both travel with the capture, so
+**treat your examples as you would any other value that crosses the wire**: use
+realistic-looking but non-sensitive data.
+
 ### What crosses the wire
 
 With a Vendo Cloud key set, sync offers to push this corpus so the console can
 render your components. What goes: **the source of every component you
-register, the source of every module in its import closure, and your app-root
-stylesheets.** What never goes: package code, anything outside your project
-root, environment variables, and data.
+register, the source of every module in its import closure, your app-root
+stylesheets, and the `examples` you declared in the registration** (the preview
+seed — they are already static strings in your source). What never goes:
+package code, anything outside your project root, environment variables, and
+live data.
 
 Because this widens what leaves your machine from "the components you wrapped
 in `<Remixable>`" to "every component you register", sync asks **once per
@@ -380,11 +477,11 @@ look and feel:
   a helper four files down is captured like one file down. Imports it cannot
   resolve or refuses (out-of-root, or through a symlink escape) are dropped
   with a named warning. Package imports never enter the jail: they are not
-  your code, and the jail cannot load them (see the warning under
-  [What sync captures](#what-sync-captures) — a wrapped component whose
-  closure reaches a package cannot render a fork). A closure over 256 KB is
-  not captured at all; sync warns, names the module that blew the budget, and
-  leaves the previous baseline exactly as it was.
+  your code, and the jail can only load the three it bundles (see the warning
+  under [What sync captures](#what-sync-captures) — a wrapped component whose
+  closure reaches any other package cannot render a fork). A closure over
+  256 KB is not captured at all; sync warns, names the module that blew the
+  budget, and leaves the previous baseline exactly as it was.
 - **Root-level stylesheets.** Sync snapshots direct `.css` imports from your
   canonical app root (`app/layout.*`, `app/root.*`, `pages/_app.*`, or their
   `src/` variants) and applies them inside the jailed document only. Sync

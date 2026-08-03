@@ -274,7 +274,7 @@ export async function vendoSync(options: {
   await writeIfChanged(toolsPath, `${JSON.stringify(extracted, null, 2)}\n`);
   const catalogScan = await scanComponentCatalog(root);
   warnings.push(...catalogScan.warnings);
-  await writeCatalog(out, catalogScan.entries);
+  const catalog = await writeCatalog(out, catalogScan.entries);
   const pins = await capturePins(root, out, new Set(overrides?.remix?.ignoreSlots ?? []));
   warnings.push(...pins.warnings);
   // The host's OWN registered components, captured for real so the console's
@@ -285,6 +285,7 @@ export async function vendoSync(options: {
     out,
     sites: catalogScan.sites,
     styles: pins.styles,
+    catalog: catalog.entries,
     degraded: catalogScan.degraded,
   });
   warnings.push(...components.warnings);
@@ -306,6 +307,7 @@ export async function vendoSync(options: {
       drifted: components.drifted,
       ...(components.pruned.length === 0 ? {} : { pruned: components.pruned }),
       ...(components.skipped.length === 0 ? {} : { skipped: components.skipped }),
+      ...(components.withoutSamples.length === 0 ? {} : { withoutSamples: components.withoutSamples }),
     },
     warnings,
   };
