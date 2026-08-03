@@ -390,6 +390,27 @@ function providerHistory(messages: UIMessage[]): UIMessage[] {
   }));
 }
 
+/** self-serve P — a new turn never inherits the LAST turn's failure notice.
+ *  When the thread's final message is an assistant turn, the ai-SDK CONTINUES
+ *  it (handleUIMessageStreamFinish reuses its id and seeds the new turn's state
+ *  from its parts), so a retry after a failed turn would append the real answer
+ *  UNDER the stale "no model key" line and persist both — the flagship keyless
+ *  → `vendo login` → Retry flow, permanently wrong on every reload. Anything
+ *  the failed turn actually produced (partial text, tool beats) stays.
+ *
+ *  The emptied message is KEPT rather than dropped: persistence merges a turn
+ *  into the stored row by message id (mergeMessages in threads.ts) and can only
+ *  add or replace, never remove. A message dropped here would simply stay in
+ *  the store — the retry would look clean live and still reload with the stale
+ *  notice above the answer. Left in place, the continuation reuses its id and
+ *  the merge overwrites the stored copy with the real reply. */
+function clearFailedTurnRecord(messages: UIMessage[]): void {
+  const last = messages.at(-1);
+  if (last?.role !== "assistant") return;
+  const kept = last.parts.filter((part) => part.type !== "data-vendo-turn-error");
+  if (kept.length !== last.parts.length) last.parts = kept;
+}
+
 /** 03-agent §1 */
 
 /** The one gate raw errors pass on their way to the wire. Vendo's OWN errors
@@ -484,6 +505,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
         }
       }
       upsertMessage(thread.messages, input.message);
+      clearFailedTurnRecord(thread.messages);
       const system = await assembleSystemPrompt(
         config.guard,
         input.ctx,
@@ -492,9 +514,25 @@ export function createAgent(config: AgentConfig): VendoAgent {
         config.toolSearch !== undefined,
       );
 
+      // self-serve P: the writer, reachable from the stream's own onError below
+      // so a failure thrown BEFORE the model stream exists (tool building,
+      // descriptors, history conversion) is recorded in the turn too, instead
+      // of persisting the blank assistant reply this whole lane is about.
+      let turnWriter: UIMessageStreamWriter<UIMessage> | undefined;
+      // ONE notice per turn, from whichever path sees the failure first — a
+      // turn can only fail once. Needed because the stream's onError runs
+      // TWICE per error chunk: the SDK's finish pass re-feeds the gate its own
+      // `new Error(errorText)` while assembling the message to persist.
+      let turnErrorRecorded = false;
+      const recordTurnError = (message: string, write: (part: unknown) => void): void => {
+        if (turnErrorRecorded) return;
+        turnErrorRecorded = true;
+        write(toVendoWirePart({ type: "data-vendo-turn-error", message }));
+      };
       const stream = createUIMessageStream<UIMessage>({
         originalMessages: thread.messages,
         execute: async ({ writer }) => {
+          turnWriter = writer;
           // AGENT-3: a client that disconnected before the turn started gets no
           // provider call at all — the stream closes empty but well-formed.
           if (input.signal?.aborted) return;
@@ -611,21 +649,31 @@ export function createAgent(config: AgentConfig): VendoAgent {
             // never starts another step once the signal fires.
             abortSignal: input.signal,
           });
+          // self-serve P: the ai-SDK `error` chunk is TRANSIENT — it sets the
+          // client's `error` and belongs to no message, so a failed turn
+          // persisted (and reloaded) as a blank assistant reply. The gated
+          // string is written into the turn as well, so the thread keeps a
+          // record of why the answer never came.
+          //
+          // Tapped off the CHUNKS, never off `onError`: onError is the SDK's
+          // general error-TEXT formatter and also runs for the recoverable
+          // `tool-input-error` / `tool-output-error` chunks (a hallucinated
+          // tool name, args that miss the schema — the SDK feeds those back and
+          // the model retries and finishes). Hooking it stamped permanent
+          // failure notices onto turns that went on to answer fine.
           writer.merge(result.toUIMessageStream({
             originalMessages: thread.messages,
             // Raw provider/model error strings never reach the wire (they can
             // carry request internals); the error part is a fixed generic message.
-            onError: (error) => {
-              const message = wireErrorMessage(error);
-              // self-serve P: the ai-SDK error chunk is TRANSIENT — it sets the
-              // client's `error` and belongs to no message, so the failed turn
-              // persisted (and reloaded) as a blank assistant reply. Write the
-              // same gated string into the turn as well, so the thread keeps a
-              // record of why the answer never came.
-              writer.write(toVendoWirePart({ type: "data-vendo-turn-error", message }) as never);
-              return message;
+            onError: (error) => wireErrorMessage(error),
+          }).pipeThrough(new TransformStream({
+            transform(chunk, controller) {
+              if (chunk.type === "error") {
+                recordTurnError(chunk.errorText, (part) => controller.enqueue(part as never));
+              }
+              controller.enqueue(chunk);
             },
-          }));
+          })));
           // AGENT-7: exhausting the step cap is VISIBLE. A run that still wants
           // tool calls after its final permitted step ended because of the cap,
           // not because the model finished — stream a renderable notice.
@@ -646,7 +694,17 @@ export function createAgent(config: AgentConfig): VendoAgent {
         onFinish: async ({ messages }) => {
           await persistFinishedTurn(threads, thread, messages, input.ctx);
         },
-        onError: (error) => wireErrorMessage(error),
+        onError: (error) => {
+          const message = wireErrorMessage(error);
+          // The record for failures the tap above can never see: `execute`
+          // itself rejecting (tool building, descriptors, history conversion)
+          // — those never become a model-stream chunk. Tapped failures reach
+          // here too, one beat later; the once-guard keeps the first write.
+          // The SDK's writer swallows a write past close, so this is safe at
+          // any point in the turn's life.
+          recordTurnError(message, (part) => turnWriter?.write(part as never));
+          return message;
+        },
       });
       const response = createUIMessageStreamResponse({ stream });
       // ENG-211: a caller may begin without an id, in which case resolve()
