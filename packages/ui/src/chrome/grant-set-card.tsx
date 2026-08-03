@@ -13,6 +13,35 @@ import { ChromeRoot } from "./chrome-root.js";
  * deciding the guard approvals and resuming the parked turn.
  */
 
+/** The shield head both consent cards wear. ONE copy, because the grant-set ask
+    and the adoption ask have to read as the same kind of thing — they are. */
+export function ConsentShieldIcon() {
+  return (
+    <span className="fl-approval-ic" aria-hidden="true">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+      </svg>
+    </span>
+  );
+}
+
+/** One grant row's icon: the tool's own logo when the registry has one, the
+    generic wrench when it does not. Shared for the same reason. */
+export function GrantRowIcon({ logoUrl }: { logoUrl?: string }) {
+  return (
+    <span className="fl-grant-ic" aria-hidden="true">
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- chrome surface, plain img by design
+        <img src={logoUrl} alt="" width={14} height={14} style={{ display: "block", objectFit: "contain" }} />
+      ) : (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m21 2-9.6 9.6" /><circle cx="7.5" cy="15.5" r="5.5" /><path d="m21 2-1 1" /><path d="m15.5 7.5 3 3L22 7l-3-3" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
 export interface GrantSetPermission {
   /** The pending guard approval this row settles. */
   approvalId: string;
@@ -70,11 +99,7 @@ export function GrantSetCard({ name, permissions, state, onDecide }: GrantSetCar
         aria-label={`Standing access — ${name}`}
       >
         <div className="fl-approval-head">
-          <span className="fl-approval-ic" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
-            </svg>
-          </span>
+          <ConsentShieldIcon />
           <div className="fl-approval-heading">
             <div className="fl-approval-eyebrow">Standing access</div>
             <div className="fl-approval-title">{name} needs {permissionCount(permissions.length)}</div>
@@ -89,16 +114,7 @@ export function GrantSetCard({ name, permissions, state, onDecide }: GrantSetCar
             const description = (presentation.description ?? permission.description ?? "").trim();
             return (
               <li className="fl-grant" key={permission.approvalId}>
-                <span className="fl-grant-ic" aria-hidden="true">
-                  {presentation.logoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- chrome surface, plain img by design
-                    <img src={presentation.logoUrl} alt="" width={14} height={14} style={{ display: "block", objectFit: "contain" }} />
-                  ) : (
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="m21 2-9.6 9.6" /><circle cx="7.5" cy="15.5" r="5.5" /><path d="m21 2-1 1" /><path d="m15.5 7.5 3 3L22 7l-3-3" />
-                    </svg>
-                  )}
-                </span>
+                <GrantRowIcon {...(presentation.logoUrl === undefined ? {} : { logoUrl: presentation.logoUrl })} />
                 <span className="fl-grant-copy">
                   <b>{presentation.title}</b>
                   {description.length > 0 ? <span>{description}</span> : null}

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { applyThemeDraft, extractTheme, validateSlotValue, type ThemeSummary } from "./extract-theme.js";
 
 const cleanup: string[] = [];
-const appsDir = fileURLToPath(new URL("../../../../../apps/", import.meta.url));
+const examplesDir = fileURLToPath(new URL("../../../../../examples/", import.meta.url));
 
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })));
@@ -421,7 +421,7 @@ describe("extractTheme deterministic body-font-stack derivation (full source sta
 
 describe("extractTheme demo-app allowlist behavior (deterministic)", () => {
   it("Maple: exact reads claim only true conventional tokens — no wrong-brand exacts", async () => {
-    const result = await extractTheme(join(appsDir, "demo-bank"));
+    const result = await extractTheme(join(examplesDir, "demo-bank"));
     // Maple declares --color-border (allowlist) = #ECEBE8; its custom ink/bg
     // tokens are NOT claimed — they default without a model, visibly.
     expect(result.slots.border).toBe("#ecebe8");
@@ -430,7 +430,7 @@ describe("extractTheme demo-app allowlist behavior (deterministic)", () => {
   });
 
   it("Cadence: only the true conventional token is exact-claimed (--color-card), never --color-surface", async () => {
-    const result = await extractTheme(join(appsDir, "demo-accounting"));
+    const result = await extractTheme(join(examplesDir, "demo-accounting"));
     // Cadence's --color-card #ffffff IS the shadcn card convention — a
     // correct exact read. Its --color-surface is the PAGE background, and
     // "surface" is not a shadcn name, so no exact pass may claim it: the

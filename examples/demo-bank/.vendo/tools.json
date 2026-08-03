@@ -1,0 +1,595 @@
+{
+  "format": "vendo/tools@3",
+  "tools": [
+    {
+      "name": "host_auth_create",
+      "description": "POST /api/auth/{nextauth}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nextauth": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nextauth"
+        ],
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/maple/api/auth/{nextauth}",
+        "argsIn": "body"
+      },
+      "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
+    },
+    {
+      "name": "host_auth_get",
+      "description": "GET /api/auth/{nextauth}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nextauth": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nextauth"
+        ],
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/maple/api/auth/{nextauth}",
+        "argsIn": "query"
+      },
+      "srcHash": "sha256:48d5e41965cfc171bcd9bbae81d91a8994f7f1aa6ebab60dfba3bfa5bd7a86ec"
+    },
+    {
+      "name": "host_createOrder",
+      "description": "Place a delivery order on the user's account. This MOVES MONEY: it charges the user's card and appends a transaction.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "merchant": {
+                "type": "string",
+                "description": "Merchant name, e.g. DoorDash"
+              },
+              "amountCents": {
+                "type": "number",
+                "description": "Charge amount in cents, e.g. 3184"
+              },
+              "descriptor": {
+                "type": "string",
+                "description": "Card statement descriptor"
+              },
+              "items": {
+                "type": "string",
+                "description": "Human-readable order contents"
+              },
+              "hour": {
+                "type": "number",
+                "description": "Order hour (0-23, Pacific). Demo default is late-night."
+              },
+              "minute": {
+                "type": "number",
+                "description": "Order minute (0-59)"
+              }
+            }
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "createOrder",
+        "method": "POST",
+        "path": "/maple/api/orders"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_demo_chips_list",
+      "description": "GET /api/demo/chips",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/maple/api/demo/chips",
+        "argsIn": "query"
+      },
+      "srcHash": "sha256:7945bac1c3e89bd8cc8a281d7959247c373c4ed4ec84d8d3df83425f91ce0e57"
+    },
+    {
+      "name": "host_demo_pin_create",
+      "description": "POST /api/demo/pin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "appId": {},
+          "slot": {}
+        },
+        "additionalProperties": false
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/maple/api/demo/pin",
+        "argsIn": "body"
+      },
+      "note": "input schema partially interpreted; permissive where unknown (appId: unsupported type (unknown); slot: unsupported type (unknown))",
+      "srcHash": "sha256:2b2382a49fa37795b8d0c105ee6d8a1d8b6c58133d4de957e7fd858b034cb4f1"
+    },
+    {
+      "name": "host_demo_reset_create",
+      "description": "POST /api/demo/reset",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "destructive",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/maple/api/demo/reset",
+        "argsIn": "body"
+      },
+      "srcHash": "sha256:02d9438f66a05b4f5776fb8b727bc8aefdf7fac787f96d4a41afe60682a4dc1c"
+    },
+    {
+      "name": "host_getAccount",
+      "description": "Fetch one account by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id, e.g. acct_checking"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getAccount",
+        "method": "GET",
+        "path": "/maple/api/accounts/{id}"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_getBudgets",
+      "description": "Budgets with spend-to-date per category.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getBudgets",
+        "method": "GET",
+        "path": "/maple/api/insights/budgets"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_getCashflowInsights",
+      "description": "Cash inflow/outflow summary. Amounts are integer cents (e.g. 1284000 = $12,840.00): divide by 100 exactly once before displaying, including any totals you compute.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getCashflowInsights",
+        "method": "GET",
+        "path": "/maple/api/insights/cashflow"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_getProfile",
+      "description": "Fetch the signed-in user's profile.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getProfile",
+        "method": "GET",
+        "path": "/maple/api/profile"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_getRecurringInsights",
+      "description": "Detected recurring charges and subscriptions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getRecurringInsights",
+        "method": "GET",
+        "path": "/maple/api/insights/recurring"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_getSpendingInsights",
+      "description": "Spending by category for the current period. Amounts are integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once before displaying, including any totals you compute.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getSpendingInsights",
+        "method": "GET",
+        "path": "/maple/api/insights/spending"
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "The spending slices live under `data` — the array itself is `data`, never the response body.",
+        "properties": {
+          "data": {
+            "type": "array",
+            "description": "One slice per spending category, largest first.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "dining",
+                    "groceries",
+                    "coffee",
+                    "transport",
+                    "subscriptions",
+                    "shopping",
+                    "income",
+                    "transfer",
+                    "housing",
+                    "other"
+                  ]
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "Amount spent in integer cents."
+                }
+              },
+              "required": [
+                "category",
+                "amount"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_getTransaction",
+      "description": "Fetch one transaction by id, including its status timeline.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getTransaction",
+        "method": "GET",
+        "path": "/maple/api/transactions/{id}"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_listAccounts",
+      "description": "List the user's bank accounts with balances.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listAccounts",
+        "method": "GET",
+        "path": "/maple/api/accounts"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_listAccountTransactions",
+      "description": "List recent transactions for one account.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listAccountTransactions",
+        "method": "GET",
+        "path": "/maple/api/accounts/{id}/transactions"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_listCards",
+      "description": "List the user's physical and virtual cards.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listCards",
+        "method": "GET",
+        "path": "/maple/api/cards"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_listCardTransactions",
+      "description": "List recent transactions charged to one card.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Card id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listCardTransactions",
+        "method": "GET",
+        "path": "/maple/api/cards/{id}/transactions"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_listGoals",
+      "description": "List savings goals with progress.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listGoals",
+        "method": "GET",
+        "path": "/maple/api/goals"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_listNotifications",
+      "description": "List recent account notifications.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listNotifications",
+        "method": "GET",
+        "path": "/maple/api/notifications"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_listPayees",
+      "description": "List saved payees.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listPayees",
+        "method": "GET",
+        "path": "/maple/api/payees"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_listScheduledPayments",
+      "description": "List upcoming scheduled payments.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listScheduledPayments",
+        "method": "GET",
+        "path": "/maple/api/payments/scheduled"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_listTransactions",
+      "description": "Search and list transactions across all accounts, with filters, sorting and cursor pagination.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text match on merchant/descriptor"
+          },
+          "category": {
+            "type": "string",
+            "description": "Category, e.g. dining, groceries, coffee, transport, subscriptions"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending | authorized | posted"
+          },
+          "from": {
+            "type": "string",
+            "description": "ISO date lower bound"
+          },
+          "to": {
+            "type": "string",
+            "description": "ISO date upper bound"
+          },
+          "min": {
+            "type": "number",
+            "description": "Minimum absolute amount in cents"
+          },
+          "max": {
+            "type": "number",
+            "description": "Maximum absolute amount in cents"
+          },
+          "sort": {
+            "type": "string",
+            "description": "date_desc | date_asc | amount_desc | amount_asc"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listTransactions",
+        "method": "GET",
+        "path": "/maple/api/transactions"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_proof_list",
+      "description": "GET /api/proof",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/maple/api/proof",
+        "argsIn": "query"
+      },
+      "srcHash": "sha256:6685933bdad55139448519a474dd485b40e3d5aa1c4571a7343a020b9ed4ab85"
+    },
+    {
+      "name": "host_transferMoney",
+      "description": "Send money to a person from the user's checking account. This IRREVERSIBLY MOVES MONEY: it debits checking and appends a transfer. There is no undo.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Amount to send in cents (positive whole number), e.g. 50000 = $500.00"
+          },
+          "recipient_name": {
+            "type": "string",
+            "description": "Who the money goes to, e.g. Alex Rivera"
+          },
+          "memo": {
+            "type": "string",
+            "description": "Optional note shown on the transfer, e.g. June rent"
+          }
+        },
+        "required": [
+          "amount",
+          "recipient_name"
+        ]
+      },
+      "risk": "destructive",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "transferMoney",
+        "method": "POST",
+        "path": "/maple/api/transfers"
+      },
+      "srcHash": "sha256:08a7f7a6ad93e85a49032d398199e943a4964320a8a634a606e4203ddd85b64e"
+    },
+    {
+      "name": "host_voice_create",
+      "description": "POST /api/voice",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/maple/api/voice",
+        "argsIn": "body"
+      },
+      "srcHash": "sha256:3aaabc0c7dcfc4f4b4c835307f88a4c6660a2ce5ff3665dd457b1d701b55dfeb"
+    }
+  ]
+}

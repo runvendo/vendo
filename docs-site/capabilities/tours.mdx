@@ -1,0 +1,128 @@
+---
+title: "Tour mode"
+sidebarTitle: "Tour mode"
+description: "Deterministic scripted responses in front of the live agent — so a demo or an onboarding tour runs the same way every time, and everything you did not script still reaches the real agent."
+---
+
+Every company that adopts Vendo has to demo it: to its own executives, to a
+prospect, to a new user on day one. A live agent is the wrong thing to put in
+front of an audience — it is slow, it is different every time, and the one run
+that matters is the run where it improvises.
+
+Tour mode is the fix. You record the handful of answers the demo depends on,
+and Vendo replays them at a live turn's cadence. Everything else — every
+improvised question, every follow-up about what is on screen — reaches the real
+agent, untouched.
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+
+export const vendo = createVendo({
+  tours: [
+    {
+      prompt: "Which units are behind on rent?",
+      respond: "Five units are behind, $9,075 outstanding across three buildings.",
+    },
+  ],
+});
+```
+
+Ask that question and the answer streams back with no model call. Ask anything
+else and nothing changed.
+
+## Matching is strict, and once
+
+Two rules keep a tour from swallowing the demo it is supposed to carry.
+
+**An entry fires only on a close variant of its own frozen prompt.** Matching
+is a normalized similarity score, not keyword presence — so a typo, a dropped
+em dash, or a small word swap still lands the entry, while a *different* ask
+about the same subject does not:
+
+```
+"Which units are behind on rent?"                → the tour
+"which units are behnid on rent"                 → the tour   (typo)
+"show me a graph of tenants by rent owed"        → the agent  (a new ask)
+"make the late markers purple instead of red"    → the agent  (an edit)
+```
+
+That last pair is the whole reason the rule exists. Keyword matching cannot
+tell "ask for this" from "change the thing you just made", because both
+sentences are about rent being late — so it replays the recording on top of the
+app the audience just watched arrive.
+
+**An entry fires at most once per thread.** After it plays, the same sentence
+falls through to the live agent. This is what makes a follow-up an *edit* of
+what is on screen rather than a second copy of it. The state is derived from
+the thread's own transcript, so it survives the live turns in between.
+
+## What an entry can replay
+
+`respond` takes prose, a recorded app, or a sequence of both.
+
+```ts
+tours: [
+  // prose
+  { prompt: "How many units do I have?", respond: "142 across three buildings." },
+
+  // a recorded app, built on screen
+  {
+    prompt: ["Build me a late-rent dashboard", "Show me late rent"],
+    respond: [
+      { text: "Pulling your rent roll…" },
+      { app: lateRentApp, buildMs: 12_000 },
+    ],
+  },
+]
+```
+
+`prompt` takes an array when the same answer has more than one phrasing — the
+line you say out loud and the suggestion chip beside it are the usual two.
+
+An `app` part is a **real app**, not painted pixels: the document is imported
+as an owned copy for the signed-in user, so it opens, pins, survives a reload,
+and — the point — can be edited by the *next* turn, which is the live agent's.
+
+`buildMs` is how long the build takes (default 8 seconds). A real generation of
+a dashboard-sized app takes 30–60 seconds; raise `buildMs` toward that when the
+audience is meant to believe the app was generated in front of them.
+
+## Recording an app
+
+Build the app once through the real agent, then export it:
+
+```ts
+const bytes = await vendo.apps.exportApp(appId, ctx); // a .vendoapp zip
+```
+
+Its `app.json` is the document — drop it in your repo and import it:
+
+```ts
+import lateRentApp from "./tours/late-rent.json";
+```
+
+Any `id` in the document is ignored: each replay mints a fresh one, exactly as
+a real generation would.
+
+## Determinism
+
+A rehearsed demo has to run the same way twice, so every pause and every chunk
+boundary is drawn from a stream seeded by the entry's own prompt — uneven like
+a live provider, and the same unevenness on every run. Nothing in a tour calls
+`Math.random`.
+
+Pacing is measured against real turns rather than invented: a delta carries
+20–55 characters and lands 76–530ms after the last, with the odd burst and the
+odd stall. Marks are absolute offsets from the moment the turn opened, so a
+slow store spends its latency *inside* the budget instead of on top of it — the
+same tour reads the same way on a laptop and on a hosted deployment.
+
+## What tour mode is not
+
+- **Not a key-gated feature.** Tours are plain config with no Cloud dependency:
+  identical behavior with and without `VENDO_API_KEY`.
+- **Not a mock.** A tour turn streams the same wire parts a live turn streams,
+  persists into the same thread, and leaves a real app behind.
+- **Not a fallback.** If a replay cannot run, the turn fails loudly and names
+  the entry in the server log. A tour that silently degrades is one you find
+  out about on stage.

@@ -486,9 +486,15 @@ describe("pages route verb evidence", () => {
           binding: { kind: "route", method: "POST", path: "/api/raw", argsIn: "body" } },
         { name: "host_stripe_webhook_create", description: "POST /api/stripe/webhook", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "POST", path: "/api/stripe/webhook", argsIn: "body" } },
-        { name: "host_trpc_page_list", description: "GET /api/trpc-page", inputSchema: blankInput(), risk: "write",
+        // `risk: "destructive"` is the noun collision, not a judgement about
+        // this route: extraction matches core's verb vocabulary ANYWHERE in the
+        // name, and "page" is in it as the verb ("page someone"). Here it is the
+        // Next.js noun. Recorded rather than papered over — the subject of this
+        // test is verb inference for method-blind handlers, and a human loosens a
+        // bad extraction label through judgments.json.
+        { name: "host_trpc_page_list", description: "GET /api/trpc-page", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "GET", path: "/api/trpc-page", argsIn: "query" } },
-        { name: "host_trpc_page_create", description: "POST /api/trpc-page", inputSchema: blankInput(), risk: "write",
+        { name: "host_trpc_page_create", description: "POST /api/trpc-page", inputSchema: blankInput(), risk: "destructive",
           binding: { kind: "route", method: "POST", path: "/api/trpc-page", argsIn: "body" } },
         { name: "host_upload_create", description: "POST /api/upload", inputSchema: blankInput(), risk: "write",
           binding: { kind: "route", method: "POST", path: "/api/upload", argsIn: "body" } },

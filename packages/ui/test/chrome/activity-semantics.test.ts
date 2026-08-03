@@ -97,6 +97,23 @@ describe("eventOutcomeLabel", () => {
     expect(eventOutcomeLabel({ kind: "approval", outcome: undefined, detail: undefined }))
       .toEqual({ label: "Running", tone: "running" });
   });
+
+  it("D6 · a harness run row is written at turn END, so it never reads as in flight", () => {
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { harness: "vendo", usage: {} } }))
+      .toEqual({ label: "Succeeded", tone: "ok" });
+    expect(eventOutcomeLabel({
+      kind: "run",
+      outcome: undefined,
+      detail: { harness: "claude-code", error: { message: "boom" } },
+    })).toEqual({ label: "Failed", tone: "error" });
+  });
+
+  it("D6 · an automation-engine run row keeps its own older display, untouched", () => {
+    // Those rows carry `status` in detail, not `harness`. What they should read
+    // is a separate question and this fix deliberately does not answer it.
+    expect(eventOutcomeLabel({ kind: "run", outcome: undefined, detail: { status: "ok" } }))
+      .toEqual({ label: "Running", tone: "running" });
+  });
 });
 
 describe("describeActivity", () => {
@@ -122,7 +139,9 @@ describe("describeActivity", () => {
 
   it("gives every other audit kind a concrete phrase", () => {
     expect(describeActivity(event({ kind: "door-auth", tool: undefined })).action).toBe("Account connected");
-    expect(describeActivity(event({ kind: "run", tool: undefined })).action).toBe("Automation run");
+    // The fixture's venue is `chat`, so "Automation run" was this expectation
+    // pinning the bug, not describing the product.
+    expect(describeActivity(event({ kind: "run", tool: undefined })).action).toBe("Chat turn");
     expect(describeActivity(event({ kind: "policy-decision", tool: undefined })).action).toBe("Policy decision");
     expect(describeActivity(event({ kind: "app-lifecycle", tool: undefined })).action).toBe("App updated");
     expect(describeActivity(event({ kind: "share", tool: undefined })).action).toBe("App shared");
@@ -131,5 +150,29 @@ describe("describeActivity", () => {
 
   it("falls back to a readable phrase for a tool call with no tool id", () => {
     expect(describeActivity(event({ kind: "tool-call", tool: undefined })).action).toBe("Tool call");
+  });
+
+  it("D6 · names a run after the DOOR it arrived through, never 'Automation' for all four", () => {
+    // Measured: seven finished chat turns on a user's own activity rail, every
+    // one of them reading "Automation run", while not one automation had run.
+    for (const [venue, badge, action] of [
+      ["chat", "Chat", "Chat turn"],
+      ["app", "App", "App run"],
+      ["automation", "Automation", "Automation run"],
+      ["mcp", "Agent", "Connected agent run"],
+    ] as const) {
+      const described = describeActivity(event({ kind: "run", tool: undefined, venue }));
+      expect(described.kindLabel).toBe(badge);
+      expect(described.action).toBe(action);
+    }
+  });
+
+  it("D6 · a hired specialist gets its own sentence, not the thread's", () => {
+    const described = describeActivity(event({
+      kind: "run",
+      tool: undefined,
+      detail: { harness: "claude-code", subagent: { purpose: "build the app" } },
+    }));
+    expect(described.action).toBe("Specialist hired");
   });
 });

@@ -1,0 +1,9 @@
+[
+  {
+    "slot": "NetWorthView",
+    "component": "PinnedNetWorthView965099a8",
+    "baseHash": "sha256:52ce29c1d026e0a7679cb1ecac764ade84ee5d50b8af374580347db23a729592",
+    "baselineHash": "sha256:47f87b800f77ea5eab53ae5e4aa59395cab84bef9c1b255f9c19a1405bbb5fe8",
+    "reason": "baseline-changed"
+  }
+]

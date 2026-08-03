@@ -1,0 +1,25 @@
+[proof] public origin: https://defines-september-combine-fax.trycloudflare.com
+[vendo] `model` is deprecated: use the `models.default` seat — `models: { default: … }`. It still works for one more minor.
+[proof] host listening on :8790
+[proof] tunnel is reachable from the public internet
+
+[proof] A · the network policy, measured on a real box with no model in the way
+[proof] allowlist under test: ["api.anthropic.com","defines-september-combine-fax.trycloudflare.com"]
+[proof] curl results: {"allowlist":["api.anthropic.com","defines-september-combine-fax.trycloudflare.com"],"inference":"404","unlisted":"curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to example.com:443 \n000BLOCKED","door":"404"}
+PASS · A · the inference host (api.anthropic.com) is reachable from inside the box — curl → 404
+PASS · A · the door origin is reachable from inside the box — curl → 404
+PASS · A · an UNLISTED domain (example.com) is blocked at the provider network layer — curl → "curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to example.com:443 \n000BLOCKED"
+
+[proof] 1+2/3 · inference inside the box, and a tool call through the door
+[vendo] zero live host tools — every extracted tool is absent, disabled, or excluded, so the agent cannot act on this product's API. Review .vendo/tools.json, the judgments in .vendo/judgments.json, and the audience exclusions in .vendo/overrides.json, or re-run `vendo init` extraction. (Connector-only deployments can ignore this.)
+PASS · B · the harness handed the provider the MINIMUM allowlist, never undefined — ["api.anthropic.com","defines-september-combine-fax.trycloudflare.com"]
+PASS · 1 · the model thought inside the box — it answered at all, with the allowlist on — stream bytes: 875
+PASS · 2 · the box's tool call reached the host through the door — host executions: ["maple_invoices_list"]
+PASS · 2 · one audit row, carrying the TURN's venue and presence — {"venue":"chat","presence":"present","outcome":"ok"}
+PASS · 2 · the model answered with the HOST's data — stream mentions inv_9042: true
+
+[proof] 3/3 · the box authors an app, and it lands in the host's workspace
+PASS · 3 · the app the box built is readable through the host's workspace door — "<App name=\"Egress\">\n  <Heading text=\"EGRESS-OK\" />\n</App>\n"
+
+[proof] 9/9 checks passed
+proofexit=0

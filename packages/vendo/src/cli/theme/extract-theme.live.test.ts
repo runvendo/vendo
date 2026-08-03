@@ -30,11 +30,11 @@ import {
  */
 
 const live = typeof process.env["ANTHROPIC_API_KEY"] === "string" && process.env["ANTHROPIC_API_KEY"] !== "";
-const appsDir = fileURLToPath(new URL("../../../../../apps/", import.meta.url));
+const examplesDir = fileURLToPath(new URL("../../../../../examples/", import.meta.url));
 
 const harness = claudeCliHarness();
 // availability() only inspects env, not root — any root string is fine here.
-const cliAvailability = live ? await harness.availability({ root: appsDir, env: process.env }) : null;
+const cliAvailability = live ? await harness.availability({ root: examplesDir, env: process.env }) : null;
 if (live && cliAvailability === null) {
   // eslint-disable-next-line no-console
   console.log("[live] skipping: ANTHROPIC_API_KEY is set but no `claude` binary/login was found on PATH");
@@ -90,7 +90,7 @@ const EVIDENCE_PATHS: Record<string, string[]> = {
 
 describe.skipIf(!live || cliAvailability === null)("extractTheme live accuracy (both demo apps)", () => {
   it.each(Object.keys(TRUTH))("%s scores at least 6/7 with no silent misses", async (app) => {
-    const root = join(appsDir, app);
+    const root = join(examplesDir, app);
 
     // Step 1: the deterministic allowlist pass ONLY — no resolveModel. This is
     // the same exact pass runThemeStage's caller runs before deciding

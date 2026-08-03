@@ -103,17 +103,17 @@ anything the demo story depends on.
 
 ```sh
 pnpm --filter @vendoai/bench demo:capture -- demo-beats \
-  --host-config apps/demo-template --run-id my-demo --port 3100
+  --host-config examples/demo-template --run-id my-demo --port 3100
 ```
 
 `--host-config` takes the app directory of a template-derived demo
-(`apps/demo-template` or a per-prospect clone) instead of `--host` — the two
+(`examples/demo-template` or a per-prospect clone) instead of `--host` — the two
 are mutually exclusive, and there is no `both`. A relative path is anchored at
 the repo root. Everything else is derived from the directory by the template's
 conventions, so there are no route/thread flags:
 
 - The app must contain `demo.config.json` (validated with the app's own
-  schema, `apps/demo-template/src/lib/demo-config.ts`, imported by bench via
+  schema, `examples/demo-template/src/lib/demo-config.ts`, imported by bench via
   the `demo-template/demo-config` package export) and a `package.json` whose
   `name` is used to boot it through `pnpm --filter <name> dev`.
 - The panel route is always `/vendo` — fenced template plumbing that clones

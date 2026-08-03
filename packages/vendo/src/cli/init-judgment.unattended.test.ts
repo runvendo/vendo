@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * `--yes` promises every prompt is already answered. It kept that promise for
- * the consent question and broke it one step later: with `--ai-polish` granting
+ * the consent question and broke it one step later: with `--ai` granting
  * consent, an interactive run reached the aggregated loosening review and
  * BLOCKED on "Apply N loosenings…" the moment the judgment pass proposed waking
  * a disabled tool or lowering a risk grade. An unattended run has nobody to ask.
@@ -87,7 +87,7 @@ describe("the loosening review never blocks an unattended init", () => {
       output,
       env: {},
       yes: true,
-      consent: true,
+      ai: true,
       interactive: true,
       confirm,
     });
@@ -113,7 +113,7 @@ describe("the loosening review never blocks an unattended init", () => {
       output,
       env: {},
       yes: false,
-      consent: true,
+      ai: true,
       interactive: false,
       confirm: vi.fn(async () => true),
     });
@@ -133,7 +133,7 @@ describe("the loosening review never blocks an unattended init", () => {
       output,
       env: {},
       yes: false,
-      consent: true,
+      ai: true,
       interactive: true,
       confirm,
     });

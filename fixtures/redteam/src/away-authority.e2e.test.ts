@@ -73,7 +73,12 @@ describe("away runs hold only app-bound automation grants", () => {
       // The chat grant did NOT send anything away.
       expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0003")?.status).toBe("draft");
 
-      // Positive control: an app-bound automation grant DOES authorize the away send.
+      // Positive control: an app-bound automation grant DOES authorize an away
+      // WRITE. It cannot be `host_invoices_send` — THE LAW (design §12) refuses a
+      // destructive or external action unattended no matter which grant is held,
+      // so a send here would prove the run was stopped by the law rather than by
+      // the 05 §6 grant rule this suite is about. A non-destructive write
+      // (PATCH host_invoices_update) isolates the grant rule.
       const okAppId = "app_away_chatgrant_ok";
       await stack.putApp(
         ADA.subject,
@@ -81,19 +86,25 @@ describe("away runs hold only app-bound automation grants", () => {
           id: okAppId,
           trigger: {
             on: { kind: "host-event", event: "chatgrant.away.ok" },
-            run: { kind: "steps", steps: [{ id: "send", tool: "host_invoices_send", args: { id: "event.id" } }] },
+            run: {
+              kind: "steps",
+              steps: [{ id: "send", tool: "host_invoices_update", args: { id: "event.id", memo: "'away-ok'" } }],
+            },
           },
         }),
       );
       await enableAndApprove(stack, okAppId, ownerCtx(ADA.subject, okAppId));
       const [okRunId] = await stack.automations.emit("chatgrant.away.ok", { id: "inv_0006" }, ADA);
       expect((await waitForRun(stack, okRunId!, ownerCtx(ADA.subject, okAppId), "ok")).status).toBe("ok");
-      expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0006")?.status).toBe("open");
+      expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0006")?.memo).toBe("away-ok");
     } finally {
       await stack.close();
     }
   });
 
+  // Revocation is the subject here, so the run must be one an automation may
+  // legally complete unattended: THE LAW (design §12) would stop a send before
+  // revocation could be shown to matter. Hence the non-destructive write.
   it("parks once an app-bound grant is revoked", async () => {
     const stack = await createStack();
     try {
@@ -108,7 +119,7 @@ describe("away runs hold only app-bound automation grants", () => {
               kind: "steps",
               steps: [
                 { id: "list", tool: "host_invoices_list" },
-                { id: "send", tool: "host_invoices_send", args: { id: "event.id" } },
+                { id: "send", tool: "host_invoices_update", args: { id: "event.id", memo: "'revoke-leg'" } },
               ],
             },
           },
@@ -119,11 +130,11 @@ describe("away runs hold only app-bound automation grants", () => {
       // One away run succeeds with the freshly minted app-bound grants.
       const [firstRun] = await stack.automations.emit("revoke.away", { id: "inv_0003" }, ADA);
       expect((await waitForRun(stack, firstRun!, ownerCtx(ADA.subject, appId), "ok")).status).toBe("ok");
-      expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0003")?.status).toBe("open");
+      expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0003")?.memo).toBe("revoke-leg");
 
-      // Revoke the send grant; the next away run parks at the send step.
+      // Revoke the write grant; the next away run parks at that step.
       const sendGrant = (await stack.guard.grants.list(ADA)).find(
-        (grant) => grant.tool === "host_invoices_send" && grant.appId === appId,
+        (grant) => grant.tool === "host_invoices_update" && grant.appId === appId,
       );
       expect(sendGrant).toBeDefined();
       await stack.guard.grants.revoke(sendGrant!.id, ADA);
@@ -133,13 +144,13 @@ describe("away runs hold only app-bound automation grants", () => {
       expect(run?.status).toBe("pending-approval");
       const parkedSend = (await stack.guard.approvals.pending(ADA)).find(
         (entry) =>
-          entry.call.tool === "host_invoices_send"
+          entry.call.tool === "host_invoices_update"
           && entry.ctx.presence === "away"
           && entry.ctx.appId === appId,
       );
       expect(parkedSend).toBeDefined();
-      // inv_0006 was never sent by the revoked run.
-      expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0006")?.status).toBe("draft");
+      // inv_0006 was never touched by the revoked run.
+      expect((await fixtureInvoices()).find((invoice) => invoice.id === "inv_0006")?.memo).not.toBe("revoke-leg");
     } finally {
       await stack.close();
     }

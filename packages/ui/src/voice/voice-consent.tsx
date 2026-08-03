@@ -1,5 +1,5 @@
 import { isPlainObject as isRecord, type ApprovalRequest } from "@vendoai/core";
-import { humanizeToolName } from "../chrome/humanize.js";
+import { argProperties, argValue, humanizeToolName } from "../chrome/humanize.js";
 import { approvalTitle, type VoiceApprovalReceipt } from "./use-voice-approvals.js";
 
 export interface VoiceConsentProps {
@@ -109,7 +109,9 @@ function approvalFact(request: ApprovalRequest): string | undefined {
     for (const key of keys) {
       const value = args[key];
       if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        return `${humanizeToolName(key)}: ${String(value)}`;
+        // `amount` is tried FIRST, so this ONE fact is usually the money itself —
+        // it goes through the consent surfaces' shared value rule, never `String`.
+        return `${humanizeToolName(key)}: ${argValue(key, value, argProperties(request.descriptor.inputSchema))}`;
       }
     }
   }

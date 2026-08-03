@@ -254,14 +254,22 @@ describe("connected accounts over the wire", () => {
     const bobRead = await readSse(bobTurn);
     const connectParts = partsOfType(bobRead, "data-vendo-connect");
     expect(connectParts).toHaveLength(1);
-    expect(connectParts[0]?.data).toMatchObject({
-      toolCallId: "call_bob_send",
-      connector: "composio",
-      toolkit: "gmail",
-    });
-    const bobOutcome = bobRead.parts.find((part) => part.type === "tool-output-available") as
-      | { output?: { status?: string; connect?: { toolkit?: string } } }
-      | undefined;
+    // Build contract §1.5: tool calls are mirrored by the RUNTIME, on its own
+    // freshly-minted id — never the scripted model's own toolCallId ("call_bob_send"
+    // only ever reached the wire under `createAgent`'s direct ai-SDK pass-through).
+    // The card still carries a real correlation id; it just isn't this literal one.
+    const connectCard = connectParts[0]?.data as { toolCallId?: unknown; connector?: unknown; toolkit?: unknown };
+    expect(typeof connectCard.toolCallId).toBe("string");
+    expect(connectCard).toMatchObject({ connector: "composio", toolkit: "gmail" });
+    // §1.1's narrowing to ok/error/denied is what the MODEL reads. The screen
+    // reads the typed outcome off the native part — the shipped ConnectCard is
+    // rendered from `output.status === "connect-required"` and nothing else — so
+    // the wire has to carry it here exactly as the `createAgent` path does.
+    // Mirroring only the narrowed result left the user a silent dead end with no
+    // card to click (proven in a real browser by connections.spec.ts).
+    const bobOutcome = bobRead.parts.find(
+      (part) => part.type === "tool-output-available" && part.toolCallId === connectCard.toolCallId,
+    ) as { output?: { status?: string; connect?: { toolkit?: string } } } | undefined;
     expect(bobOutcome?.output?.status).toBe("connect-required");
     expect(bobOutcome?.output?.connect?.toolkit).toBe("gmail");
 
@@ -273,10 +281,9 @@ describe("connected accounts over the wire", () => {
     const adaRead = await readSse(adaTurn);
     expect(partsOfType(adaRead, "data-vendo-connect")).toHaveLength(0);
     const adaOutcome = adaRead.parts.find((part) => part.type === "tool-output-available") as
-      | { output?: { status?: string; output?: { messageId?: string } } }
+      | { output?: { messageId?: string } }
       | undefined;
-    expect(adaOutcome?.output?.status).toBe("ok");
-    expect(adaOutcome?.output?.output?.messageId).toBe(`msg_${ADA.subject}`);
+    expect(adaOutcome?.output?.messageId).toBe(`msg_${ADA.subject}`);
   });
 
   it("audits connector executions with the connector account identity (cross-cutting enrichment)", async () => {

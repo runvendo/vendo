@@ -1,13 +1,13 @@
 import type { Json, ToolOutcome, UIPayload } from "@vendoai/core";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useVendoContext } from "../context.js";
 import { useApp } from "../hooks/use-app.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { developmentMode } from "./dev-mode.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
+import { developmentMode } from "./dev-mode.js";
 import { openVendoConversation } from "./overlay-registry.js";
 import { openVendoPalette } from "./palette-hotkey.js";
 
@@ -41,9 +41,25 @@ function SlotGhost({ label, detail, loading = false }: { label: string; detail?:
   );
 }
 
+/** The terminal load failure. useApp already spent its retries, so this is a
+ *  dead end until the user asks again — and without a way to ask, the slot sat
+ *  on its skeleton until a page reload (Keystone graduates A5). */
+function SlotLoadFailed({ reason, onRetry }: { reason: Error; onRetry(): void }) {
+  return (
+    <div className="fl-slot-ghost">
+      <GhostSkeleton />
+      <span className="fl-slot-cta" role="alert">
+        <span className="fl-slot-cta-label">This view didn’t load</span>
+        <small>{reason.message}</small>
+        <button type="button" className="fl-invite-btn" onClick={onRetry}>Try again</button>
+      </span>
+    </div>
+  );
+}
+
 function MountedApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
-  const { surface, refresh } = useApp(appId);
+  const { surface, error, isLoading, refresh } = useApp(appId);
   // Wave 7 H2 — the served-surface keepalive: user activity pings the machine
   // (host-proxied) so an embedded served app doesn't idle out under the user;
   // a "woke" ping re-opens for the fresh machine URL.
@@ -51,7 +67,10 @@ function MountedApp({ appId }: { appId: string }) {
     () => ({ ping: () => client.apps.pingMachine(appId), reopen: refresh }),
     [appId, client, refresh],
   );
-  if (!surface) return <SlotGhost label="Loading app…" loading />;
+  if (!surface) {
+    if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
+    return <SlotGhost label="Loading app…" loading />;
+  }
   return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
@@ -71,7 +90,8 @@ export interface VendoSlotPin {
 
 /** 08-ui §4; 06-apps §8 — inline mount that never sacrifices host fallback content.
  *
- *  Three states:
+ *  A slot's one job is mounting brand-new generated apps (2026-08-02 final
+ *  shape — remix lives entirely on `<Remixable>` now). Three states:
  *  - empty: no `appId`, no `pin`, no `children` → the ghost with a REAL CTA button
  *    that opens the authoring surface (`onAuthor`, else the mounted ⌘K palette);
  *  - app: `appId` → the whole app document mounts (via the single-app transport);
@@ -82,7 +102,7 @@ export interface VendoSlotPin {
  *  the original `children` as the visible recovery path (06-apps §8). Without any
  *  of the three, the children render UNTOUCHED (no wrapper — hosts may inline
  *  slots anywhere). */
-export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, remixPrompt, discover = true, emptyState, children }: {
+export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, discover = true, emptyState, children }: {
   id: string;
   appId?: string;
   pin?: VendoSlotPin;
@@ -93,20 +113,6 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
    *  prop — for hosts that resolve the pin themselves (e.g. via useSlotApp
    *  for a layout decision) and must not start a second poll. */
   discover?: boolean;
-  /** Remix folds into Slot as a flag (ui-usage-dx §2): show the hover Remix
-   *  affordance on the slot's content. Gesture-owned forking (2026-07-21):
-   *  activating it on an EMPTY slot forks the captured component
-   *  DETERMINISTICALLY (the engine copies the trusted source and records the
-   *  pin — no model call, no model fork decision) and the fork mounts in
-   *  place; on a slot already holding an app it opens the overlay composer
-   *  prefilled so the instruction rides an ordinary edit. The slot id should
-   *  match a registered (remixable) host component so sync has captured its
-   *  source — init/doctor verify the flag against catalog registrations. */
-  remix?: boolean;
-  /** Override for the composer prefill when remixing a slot that already
-   *  holds an app; defaults to a prompt naming the slot's component. (The
-   *  empty-slot gesture itself never sends text to the model.) */
-  remixPrompt?: string;
   /** Empty-state invitation config (ui-lane-entry pick S-A×S-D). Every string
    *  is host-customizable with white-label defaults; suggestions are 3
    *  host-aware prompts (generic fallbacks otherwise) whose tap PREFILLS the
@@ -128,31 +134,11 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   };
   children?: ReactNode;
 }) {
-  const { client, components } = useVendoContext();
+  const { components } = useVendoContext();
   // Self-discovery (ui-usage-dx §2): with no explicit `appId`/`pin`, the slot
   // resolves its own pinned app — hosts never write the polling dance.
   const discovery = useSlotApp(id, { enabled: discover && appIdProp === undefined && pin === undefined });
   const appId = appIdProp ?? (pin === undefined ? discovery.appId : undefined);
-  const [remixBusy, setRemixBusy] = useState(false);
-  // Latch: a fork that RESOLVED but has not surfaced as `appId` yet. With
-  // discover={false} the parent manages appId on its own poll cadence, so the
-  // slot still looks empty after the fast wire fork returns — and the wire
-  // fork is not idempotent, so a second tap would mint a duplicate app.
-  const [forkPending, setForkPending] = useState(false);
-  useEffect(() => {
-    if (appId !== undefined) setForkPending(false);
-  }, [appId]);
-  const remixLatched = remixBusy || (forkPending && appId === undefined);
-
-  // Dev rail: the remix gesture forks the component captured under this slot's
-  // registered name — an unregistered name means there is nothing to fork.
-  // (The client can't see catalog `remixable` flags; init verifies those.)
-  useEffect(() => {
-    if (!remix || !developmentMode() || components[id] !== undefined) return;
-    console.warn(
-      `[vendo] VendoSlot "${id}" sets remix, but no host component is registered under that name — register it (marked remixable) so sync captures the source the Remix gesture forks.`,
-    );
-  }, [remix, id, components]);
 
   const author = () => {
     if (onAuthor) {
@@ -176,61 +162,8 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
     }
   };
 
-  // Gesture-owned forking (2026-07-21): the Remix gesture on an EMPTY slot
-  // executes the fork DETERMINISTICALLY through the wire (the engine copies
-  // the captured source and records the pin — no model call, and the model
-  // never decides to fork); the fork then mounts via slot discovery. On a
-  // slot already holding an app the fork exists, so the gesture opens the
-  // composer prefilled — the instruction rides an ordinary edit.
-  const startRemix = () => {
-    // A slot is FILLED when it holds an app OR a host-supplied pin (the pin
-    // branch mounts through AppFrame the same way) — either way the fork
-    // already exists, so the gesture opens the composer, never the wire fork.
-    if (appId !== undefined || pin !== undefined) {
-      const prompt = remixPrompt ?? `Update my ${id} remix: `;
-      const opened = openVendoConversation({ prompt, send: false });
-      if (!opened && developmentMode()) {
-        console.warn(`[vendo] VendoSlot "${id}": remix opens the conversation surface — mount a VendoOverlay for it to land in.`);
-      }
-      return;
-    }
-    if (remixLatched) return;
-    setRemixBusy(true);
-    client.apps.forkPin({ slot: id })
-      .then(() => {
-        setForkPending(true);
-        return discovery.refresh();
-      })
-      .catch((error: unknown) => {
-        if (developmentMode()) {
-          console.warn(`[vendo] VendoSlot "${id}": the remix fork failed — ${error instanceof Error ? error.message : String(error)}`);
-        }
-      })
-      .finally(() => setRemixBusy(false));
-  };
-
-  const remixButton = remix ? (
-    <button type="button" className="fl-slot-remix" aria-label={`Remix ${id} with Vendo`} aria-busy={remixLatched || undefined} disabled={remixLatched} onClick={startRemix}>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z" />
-      </svg>
-      {remixLatched ? "Remixing…" : "Remix"}
-    </button>
-  ) : null;
-
   if (!appId && !pin) {
-    if (children !== undefined) {
-      if (remixButton === null) return <>{children}</>;
-      // The affordance needs a positioned boundary over the host's own markup;
-      // the inline wrapper stays layout-neutral (the ChromeRoot child is an
-      // empty block carrying only the absolutely-positioned button).
-      return (
-        <div data-vendo-slot={id} style={{ position: "relative", height: "100%" }}>
-          <ChromeRoot automaticPolicyNotice={false}>{remixButton}</ChromeRoot>
-          {children}
-        </div>
-      );
-    }
+    if (children !== undefined) return <>{children}</>;
     // The invitation (pick S-A×S-D): accent-washed surface, real copy, up to
     // three concrete suggestion chips, and (layout "button") a primary CTA.
     // The skeleton stays behind at low opacity so it still reads as "a view
@@ -290,7 +223,6 @@ export function VendoSlot({ id, appId: appIdProp, pin, onAuthor, remix = false, 
   return (
     <ChromeRoot>
       <div className="fl-slot" data-vendo-slot={id}>
-        {remixButton}
         <div className="fl-slot-filled">
           <FluidReveal stateKey={appId ? `app:${appId}` : `pin:${id}`} initialExit={children}>
             <PinMount slot={id} fallback={Fallback}>{mounted}</PinMount>

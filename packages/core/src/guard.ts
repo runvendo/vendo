@@ -5,11 +5,13 @@ import { approvalRequestSchema, type ApprovalRequest } from "./grants.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolDescriptor } from "./tools.js";
 
-/** 01-core §6 */
+/** 01-core §6. `"org"` (build contract §9.10) is the org-admin policy layer's
+ *  strictness clamp: it appears on `ask` and `block` only, because org policy
+ *  TIGHTENS and never loosens — no run is ever decided BY it. */
 export type GuardDecision =
   | { action: "run"; decidedBy: "grant" | "rule" | "judge" | "default"; grantId?: GrantId }
-  | { action: "ask"; approval: ApprovalRequest; decidedBy: "critical" | "rule" | "judge" | "breaker" | "default" }
-  | { action: "block"; reason: string; decidedBy: "rule" | "judge" | "breaker" };
+  | { action: "ask"; approval: ApprovalRequest; decidedBy: "critical" | "rule" | "judge" | "breaker" | "default" | "org" }
+  | { action: "block"; reason: string; decidedBy: "rule" | "judge" | "breaker" | "org" };
 
 /** 01-core §6 */
 export const guardDecisionSchema = z.discriminatedUnion("action", [
@@ -21,12 +23,12 @@ export const guardDecisionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("ask"),
     approval: approvalRequestSchema,
-    decidedBy: z.enum(["critical", "rule", "judge", "breaker", "default"]),
+    decidedBy: z.enum(["critical", "rule", "judge", "breaker", "default", "org"]),
   }).passthrough(),
   z.object({
     action: z.literal("block"),
     reason: z.string(),
-    decidedBy: z.enum(["rule", "judge", "breaker"]),
+    decidedBy: z.enum(["rule", "judge", "breaker", "org"]),
   }).passthrough(),
 ]) satisfies z.ZodType<GuardDecision>;
 

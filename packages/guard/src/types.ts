@@ -161,6 +161,13 @@ export interface CreateGuardConfig {
    *  is already configured (opt-in). The umbrella backs it with the hosted
    *  config snapshot; this block never reads the key. Unset = no change. */
   policyCloudFallback?: () => string | undefined;
+  /** Build contract §9.10 — the org-admin policy layer, resolved per check from
+   *  the caller's asserted orgs (composition reads `/orgs/<orgId>/policy.json`
+   *  and unions the rules). Applied as a post-pipeline strictness clamp that can
+   *  only TIGHTEN a decision, so host policy always wins; unset = no org layer.
+   *  A resolver that throws applies no org rules and is audited — the guard
+   *  never guesses at an unreadable policy, and never loosens on one. */
+  orgPolicy?: (ctx: RunContext) => Promise<PolicyRule[]>;
   judge?: Judge;
   breakers?: {
     maxCallsPerMinute?: number;

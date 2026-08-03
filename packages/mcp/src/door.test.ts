@@ -4,6 +4,7 @@ import {
   type AuditEvent,
   type BlobStore,
   type Guard,
+  type Membership,
   type Principal,
   type RecordQuery,
   type RecordStore,
@@ -1131,6 +1132,58 @@ describe("createMcpDoor login federation", () => {
   });
 });
 
+/** F4 (wave-3 independent check) — build contract §9.1/§9.3. `can()` reads the
+ *  caller's orgs from the ctx and NEVER queries them, so a RunContext with no
+ *  `memberships` can never match an `org:`/`team:` grant: over a door without
+ *  this seam a team app shared with you is absent from list and not-found on
+ *  open. The wire, the harness and the automations engine all get the seam; this
+ *  is the fourth door. */
+describe("createMcpDoor asserts the caller's orgs (§9.1)", () => {
+  it("resolves the host's memberships onto every RunContext it mints", async () => {
+    const seen: Array<Parameters<AppsPort["list"]>[0]> = [];
+    const asked: Principal[] = [];
+    const harness = makeHarness({
+      memberships: async (principal) => {
+        asked.push(principal);
+        return [{ org: "maple", display: "Maple Bank", teams: ["support"] }];
+      },
+      apps: {
+        async list(ctx) { seen.push(ctx); return []; },
+        async open() { throw new Error("unused"); },
+        async call() { throw new Error("unused"); },
+      },
+    });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    await connected.client.callTool({ name: "host_lookup", arguments: { query: "x" } });
+    // The apps half of §9.3 goes through the door's own ride-along tool, which
+    // is the verb a shared team app would be missing from.
+    await connected.client.callTool({ name: "vendo_apps_list", arguments: {} });
+
+    // The seam is keyed on the Principal, exactly as §9.1 freezes it.
+    expect(asked[0]).toEqual({ kind: "user", subject: "user_1" });
+    // ...and the answer REACHES the ctx — the assertion that was missing, and
+    // the only thing `can()` ever reads.
+    expect(harness.executions[0]?.ctx.memberships)
+      .toEqual([{ org: "maple", display: "Maple Bank", teams: ["support"] }]);
+    expect(seen[0]?.memberships)
+      .toEqual([{ org: "maple", display: "Maple Bank", teams: ["support"] }]);
+  });
+
+  it("leaves memberships absent when the host asserts none — every unkeyed deployment", async () => {
+    const harness = makeHarness();
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    await connected.client.callTool({ name: "host_lookup", arguments: { query: "x" } });
+
+    expect(harness.executions[0]?.ctx).not.toHaveProperty("memberships");
+  });
+});
+
 describe("createMcpDoor MCP protocol", () => {
   it("uses the real SDK for descriptors and all in-band outcome mappings", async () => {
     let outcome: ToolOutcome = { status: "ok", output: { answer: 42 } };
@@ -1614,6 +1667,66 @@ describe("createMcpDoor MCP protocol", () => {
   });
 });
 
+/**
+ * `internal: true` is AUTHORITATIVE, whatever else the caller passed.
+ *
+ * `createMcpDoor` is public API and `internal` is documented as the way to ask
+ * for a turn-only door. It was first shipped read in ONE place — a constructor
+ * guard — while the runtime branched on "is there an oauth adapter", so
+ * `createMcpDoor({ internal: true, oauth })` served the WHOLE OUTSIDE DOOR:
+ * discovery 200, a client that actually completed dynamic registration, and a
+ * `www-authenticate` challenge naming the way in. The caller got the exact
+ * opposite of what they asked for. These pin the flag, with oauth present.
+ */
+describe("createMcpDoor internal: true is authoritative even when an oauth adapter is passed", () => {
+  const internalHarness = () => makeHarness({ internal: true, mount: "/api/vendo/mcp" });
+
+  it("serves NO discovery: an outside client cannot even learn the door is there", async () => {
+    const { door } = internalHarness();
+    for (const path of [
+      "https://product.example/.well-known/oauth-protected-resource/api/vendo/mcp",
+      "https://product.example/.well-known/oauth-authorization-server/api/vendo/mcp",
+      "https://product.example/.well-known/mcp/server-card.json",
+      "https://product.example/.well-known/mcp-server-card",
+    ]) {
+      const response = await door.handler(new Request(path));
+      expect(response.status, path).toBe(404);
+    }
+  });
+
+  it("registers NOBODY: the authorization server and the connect page are not there", async () => {
+    const { door } = internalHarness();
+    const registered = await door.handler(new Request(`${BASE}/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client_name: "outside", redirect_uris: [REDIRECT] }),
+    }));
+    // 201 here was the defect: a real client id was minted against a door that
+    // had been asked to serve nobody.
+    expect(registered.status).toBe(404);
+
+    for (const path of [`${BASE}/authorize?response_type=code&client_id=x`, `${BASE}/token`, `${BASE}/connect`]) {
+      const response = await door.handler(new Request(path, path.endsWith("/token") ? { method: "POST" } : {}));
+      expect(response.status, path).toBe(404);
+    }
+  });
+
+  it("refuses the mount FLAT: a 401 that names no resource metadata to register against", async () => {
+    const { door } = internalHarness();
+    const response = await door.handler(new Request(BASE, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-11-25",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    }));
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBeNull();
+  });
+});
+
 describe("createMcpDoor connect page", () => {
   const get = (door: McpDoor, path = `${BASE}/connect`) => door.handler(new Request(path));
 
@@ -1865,8 +1978,12 @@ interface HarnessOptions {
    * a test mint tokens for two different subjects against one door (FIX G). */
   authorizeSubject?: () => string;
   oauth?: HostOAuthAdapter;
+  /** 10-mcp §3b — ask for a door that serves ONLY live turns. */
+  internal?: boolean;
   /** Override the guard's audit sink (e.g. to simulate a failing store write). */
   report?: Guard["report"];
+  /** Build contract §9.1 — the host's org query, keyed on Principal. */
+  memberships?: (principal: Principal) => Promise<Membership[]>;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -1907,6 +2024,8 @@ function makeHarness(options: HarnessOptions = {}) {
     ...(options.remoteAs === undefined ? {} : { remoteAs: options.remoteAs }),
     ...(options.federation === undefined ? {} : { federation: options.federation }),
     ...(options.theme === undefined ? {} : { theme: options.theme }),
+    ...(options.memberships === undefined ? {} : { memberships: options.memberships }),
+    ...(options.internal === undefined ? {} : { internal: options.internal }),
     oauth: options.oauth ?? {
       async authorize(_req, ctx) {
         authorizeContexts.push(ctx);

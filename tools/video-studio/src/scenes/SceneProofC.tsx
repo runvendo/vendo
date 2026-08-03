@@ -5,7 +5,7 @@ import {Cursor} from '../template/Cursor';
 import {VendoStage} from '../template/VendoStage';
 import {SLOT} from '../template/WidgetFlight';
 import {Turn, viewTurn, weeklyUsagePayload} from './agent-surface';
-import {MissingDocsHero} from '../../../../apps/demo-accounting/src/components/dashboard/missing-docs-hero';
+import {MissingDocsHero} from '../../../../examples/demo-accounting/src/components/dashboard/missing-docs-hero';
 import {
   CAD,
   CAD_BRAND_FONT,
@@ -27,7 +27,7 @@ import {
 // violet dot wipes to the claim card.
 //
 // The dashboard is Cadence's own product surface: the real MissingDocsHero
-// component imported from apps/demo-accounting, and every colour, radius,
+// component imported from examples/demo-accounting, and every colour, radius,
 // shadow and nav label taken from ../cadence/tokens (which quotes the host's
 // globals.css verbatim). Nothing here is an invented UI language.
 

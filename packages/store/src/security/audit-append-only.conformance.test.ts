@@ -1,3 +1,4 @@
+import { storeFiles } from "../files-store.js";
 import { VendoError, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "../backends.test-util.js";
@@ -77,7 +78,7 @@ for (const backend of backends()) {
       const event = auditFixture("aud_append_erase", { principal: { kind: "user", subject } });
       await audit.put({ id: event.id, data: event });
 
-      const report = await eraseStore(made.store).bySubject(subject);
+      const report = await eraseStore(made.store, { files: storeFiles(made.store) }).bySubject(subject);
       expect(report.vendo_audit).toBe(1);
       expect(await audit.get(event.id)).toBeNull();
     });

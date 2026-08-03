@@ -20,8 +20,29 @@ import type { Db } from "./db-postgres.js";
     Bumping the version is load-bearing, not cosmetic (review fix F1): the DDL
     loop runs only while `version < SCHEMA_VERSION`, so appending the tables
     WITHOUT this bump would leave every existing v4 database on 4 forever and the
-    new tables would never be created. */
-export const SCHEMA_VERSION = 5;
+    new tables would never be created.
+
+    v6 (the embedded-agent build contract) is ONE bump carrying all four new
+    tables — wave-1 lanes B and D landed together, so a database moves to v6
+    once and gets the whole set:
+      · `vendo_workspace_files` / `vendo_workspace_history` (§3.3) — the agent's
+        filesystem as a façade over rows (documents are files, records stay
+        tables), with revision + append-only history behind undo.
+      · `vendo_thread_messages` (§6) — one row per transcript message, so a turn
+        writes O(messages) instead of rewriting the whole array. `vendo_threads`
+        LOSES `messages`; the v6 backfill splits every existing array into rows
+        before dropping the column.
+      · `vendo_effects` (§7) — the effect ledger that makes fail-and-re-run
+        correct, keyed per (run, turn, tool, input, ordinal) and subject-scoped
+        so it joins the erase cascade.
+    Same load-bearing bump as v5 — the DDL loop only runs while
+    version < SCHEMA_VERSION.
+
+    v7 (build contract §9.2, wave 3) adds `vendo_app_grants`: app → principal →
+    level, the ONLY multi-party rows Vendo stores. Memberships are asserted per
+    request by the host's own identity system and are never persisted (§9.1),
+    so this one table is the whole sharing model. Same load-bearing bump. */
+export const SCHEMA_VERSION = 7;
 
 /** 02-store §2 */
 export const DDL = [
@@ -45,11 +66,35 @@ export const DDL = [
     app_id text NOT NULL, subject text NOT NULL, data jsonb NOT NULL,
     updated_at timestamptz NOT NULL, PRIMARY KEY (app_id, subject)
   )`,
+  // v6 (build contract §6): the thread row is metadata only — `messages` moved
+  // to vendo_thread_messages, one row per message.
   `CREATE TABLE IF NOT EXISTS vendo_threads (
-    id text PRIMARY KEY, subject text NOT NULL, messages jsonb NOT NULL,
+    id text PRIMARY KEY, subject text NOT NULL,
     created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_threads_subject_idx ON vendo_threads (subject)",
+  // v6 (build contract §6): one row per UIMessage. `seq` is the ONLY ordering
+  // authority — approval flips rewrite older messages, so timestamps cannot
+  // order a transcript. `revision` is the per-row CAS counter for edits.
+  `CREATE TABLE IF NOT EXISTS vendo_thread_messages (
+    thread_id text NOT NULL, id text NOT NULL, seq integer NOT NULL,
+    message jsonb NOT NULL, revision integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (thread_id, id)
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_thread_messages_thread_seq_idx ON vendo_thread_messages (thread_id, seq)",
+  // v6 (build contract §7): the effect ledger. `key` is
+  // sha256(runId + tool + exactInputHash); a key that already succeeded
+  // returns its recorded outcome instead of executing a second time.
+  // `subject` arrives with the 2026-07-30 contract amendment: `outcome` holds
+  // real tool output, so the ledger has to be reachable by the erase cascade
+  // and travel with an anon→signed-in adoption.
+  `CREATE TABLE IF NOT EXISTS vendo_effects (
+    key text PRIMARY KEY, subject text NOT NULL, outcome jsonb NOT NULL,
+    at timestamptz NOT NULL DEFAULT now()
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_effects_subject_idx ON vendo_effects (subject)",
   `CREATE TABLE IF NOT EXISTS vendo_grants (
     id text PRIMARY KEY, subject text NOT NULL, tool text NOT NULL, descriptor_hash text NOT NULL,
     scope jsonb NOT NULL, duration text NOT NULL, context_key text, app_id text, source text NOT NULL,
@@ -110,6 +155,48 @@ export const DDL = [
     created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_knowledge_chunks_refs_idx ON vendo_knowledge_chunks USING GIN (refs jsonb_path_ops)",
+  // Build contract §3.3 (v6): the workspace. One row per file, keyed
+  // (path, owner). `owner` is a pure function of the path (§9.7): the subject
+  // for `/user/**`, the org id for `/orgs/<orgId>/**`. (`/host/**` is a
+  // per-turn projection the caller supplies, never rows.) Content is inline up
+  // to WORKSPACE_INLINE_MAX_BYTES; past it (or when the bytes are not text) the
+  // row carries a `blob_ref` into the files adapter instead. `revision` is the
+  // per-file counter the /orgs compare-and-swap arms (wave 3) — it shipped in
+  // v6 so the table never had to migrate for it.
+  `CREATE TABLE IF NOT EXISTS vendo_workspace_files (
+    path text NOT NULL, owner text NOT NULL, content text, blob_ref text,
+    bytes integer NOT NULL, revision integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (path, owner)
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_workspace_files_owner_idx ON vendo_workspace_files (owner)",
+  // Undo + provenance. One row per superseded revision, carrying the content
+  // that revision held and the consumer-voice `intent` of the write that
+  // replaced it ("made the chart blue"). Retention: WORKSPACE_HISTORY_LIMIT
+  // rows per path.
+  `CREATE TABLE IF NOT EXISTS vendo_workspace_history (
+    id text PRIMARY KEY, path text NOT NULL, owner text NOT NULL, revision integer NOT NULL,
+    content text, blob_ref text, intent text, at timestamptz NOT NULL DEFAULT now()
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_workspace_history_path_idx ON vendo_workspace_history (path, owner, revision DESC)",
+  // Build contract §9.2 (v7): app-access grants. `principal` is one string in
+  // the frozen encoding — `user:<subject>` · `team:<orgId>/<teamId>` ·
+  // `org:<orgId>` — matched against the memberships the host ASSERTS per
+  // request; nothing about the org chart is stored here. One row per
+  // (app, principal): re-granting updates `level` in place.
+  `CREATE TABLE IF NOT EXISTS vendo_app_grants (
+    id text PRIMARY KEY, app_id text NOT NULL, org_id text NOT NULL,
+    principal text NOT NULL, level text NOT NULL, created_by text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (app_id, principal)
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_app_grants_app_idx ON vendo_app_grants (app_id)",
+  // The other leg of §9.2's two queries: `apps.list` asks "which apps does THIS
+  // principal reach?" once per encoding the caller satisfies (user, each org,
+  // each team). Without this index every one of those is a seq scan of the whole
+  // grant table on the hot list path — the same order-of-magnitude regression
+  // the perf gate exists to catch.
+  "CREATE INDEX IF NOT EXISTS vendo_app_grants_principal_idx ON vendo_app_grants (principal)",
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2
@@ -172,6 +259,14 @@ const ADDITIVE_DDL = [
   // touched_at (sessions.ts); without this a busy anonymous host seq-scans
   // the registry on every sweep interval.
   "CREATE INDEX IF NOT EXISTS vendo_sessions_touched_idx ON vendo_sessions (touched_at)",
+  // vendo_effects.subject arrived after the table did, both inside the
+  // unreleased v6 train — so a development database created earlier in this
+  // wave already has the table WITHOUT the column, and the version gate above
+  // will never re-run its CREATE. The DEFAULT is what makes NOT NULL addable to
+  // those pre-amendment rows; it is deliberately an empty subject, since a
+  // receipt written before the column existed genuinely has no known owner, and
+  // every write path has supplied one since.
+  "ALTER TABLE vendo_effects ADD COLUMN IF NOT EXISTS subject text NOT NULL DEFAULT ''",
 ] as const;
 
 // v2 backfill (runs once, only when upgrading from a version < 2 — 02 §4 keys
@@ -202,6 +297,63 @@ const DATA_BACKFILL = [
      WHERE vendo_state.updated_at < EXCLUDED.updated_at`,
   "DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id ~ '^app_[^:]+:.'",
   "UPDATE vendo_state SET created_at = updated_at WHERE created_at IS NULL",
+] as const;
+
+// v6 backfill (build contract §6): split every existing vendo_threads.messages
+// array into one vendo_thread_messages row, then drop the column.
+//
+// Guarded on the COLUMN's existence, not just the version, because the two must
+// agree: a fresh database is created by the v6 DDL above and never had
+// `messages`, so a version gate alone would run this SQL against a column that
+// does not exist. The information_schema check makes the whole step idempotent
+// and safe to re-apply.
+//
+// `seq` comes from WITH ORDINALITY (1-based) shifted to 0-based, so the stored
+// array order — the only order a legacy row carries — becomes the ordering
+// authority.
+//
+// It never loses a message, and that takes real work rather than a comment. Two
+// ways a candidate id collides, both found in the wild by the verifier:
+//   1. a legacy array simply repeats an `id` (the client minted it, so nothing
+//      ever enforced uniqueness inside the array);
+//   2. a message with NO id derives `msg_<index>`, which can equal a real
+//      message's literal id (`msg_0`).
+// `ON CONFLICT DO NOTHING` silently dropped the loser in both cases. Instead a
+// window function numbers the candidates per (thread, id) in array order and
+// suffixes every duplicate after the first with its index — deterministic, so a
+// re-run produces the same ids, and lossless, so nobody's words disappear.
+const DATA_BACKFILL_V6 = [
+  `DO $$
+   BEGIN
+     IF EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'vendo_threads' AND column_name = 'messages'
+     ) THEN
+       INSERT INTO vendo_thread_messages (thread_id, id, seq, message, created_at, updated_at)
+       SELECT thread_id,
+              CASE WHEN dup = 1 THEN candidate_id
+                   ELSE candidate_id || '#' || seq::text END,
+              seq, message, created_at, updated_at
+       FROM (
+         SELECT t.id AS thread_id,
+                COALESCE(a.elem->>'id', 'msg_' || (a.ordinality - 1)::text) AS candidate_id,
+                (a.ordinality - 1)::integer AS seq,
+                a.elem AS message,
+                t.created_at, t.updated_at,
+                ROW_NUMBER() OVER (
+                  PARTITION BY t.id, COALESCE(a.elem->>'id', 'msg_' || (a.ordinality - 1)::text)
+                  ORDER BY a.ordinality
+                ) AS dup
+         FROM vendo_threads t
+         CROSS JOIN LATERAL jsonb_array_elements(t.messages) WITH ORDINALITY AS a(elem, ordinality)
+         WHERE jsonb_typeof(t.messages) = 'array'
+       ) numbered
+       ON CONFLICT (thread_id, id) DO NOTHING;
+
+       ALTER TABLE vendo_threads DROP COLUMN messages;
+     END IF;
+   END
+   $$`,
 ] as const;
 
 type Query = Db["query"];
@@ -236,6 +388,9 @@ async function migrate(query: Query): Promise<void> {
   if (version === undefined || version < 2) {
     for (const statement of DATA_BACKFILL) await query(statement);
   }
+  // The v6 split is guarded on the column itself (see DATA_BACKFILL_V6), so it
+  // is safe on every boot — including a fresh database, where it does nothing.
+  for (const statement of DATA_BACKFILL_V6) await query(statement);
   await query(
     `INSERT INTO vendo_meta (key, value) VALUES ('boot_id', $1::jsonb)
      ON CONFLICT (key) DO NOTHING`,

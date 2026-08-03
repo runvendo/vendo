@@ -9,28 +9,56 @@ import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createVendo } from "./server.js";
 
-const scriptedModel = (responses: string[]): LanguageModel => {
-  let call = 0;
-  const next = (): string => {
-    const response = responses[Math.min(call, responses.length - 1)];
-    call += 1;
-    if (response === undefined) throw new Error("scripted model exhausted");
-    return response;
-  };
+interface ModelCall {
+  prompt: Array<{ role: string; content: string | Array<{ type?: string; text?: string }> }>;
+}
+
+const promptText = (call: ModelCall): string => call.prompt
+  .map((message) => typeof message.content === "string"
+    ? message.content
+    : message.content.map((part) => part.text ?? "").join(""))
+  .join("\n");
+
+const APP_AS_IT_STANDS = "THE APP AS IT STANDS — the only true copy of it, and what an <Old> must quote:\n";
+
+/** The app exactly as the brain was shown it — the text every answer is built
+ *  from. */
+const printedApp = (prompt: string): string => {
+  const at = prompt.indexOf(APP_AS_IT_STANDS);
+  if (at === -1) return "";
+  return prompt.slice(at + APP_AS_IT_STANDS.length).split("\n\nTHEY ARE ASKING NOW:")[0] ?? "";
+};
+
+/**
+ * The brain, scripted. Only BRAIN turns are answered ("THEY ARE ASKING NOW:" is its
+ * marker) — the AI reviewer rides the same model and a reviewer that answers
+ * nothing reports no findings, which is what a fixture with nothing to say
+ * should do.
+ *
+ * The one answer it gives is the app as it stands with the remix note added to
+ * the pinned island's source, written WHOLE (a finished `<App>`, the tiny-ask
+ * answer) rather than as an old/new pair — so the same script is still correct
+ * on the rebase replay, where the island source is the host's NEW baseline.
+ */
+const remixNote = (prompt: string): string => prompt.includes("THEY ARE ASKING NOW:")
+  ? printedApp(prompt).replace("$1.2M", "$1.2M — remixed")
+  : "";
+
+const scriptedModel = (respond: (prompt: string) => string): LanguageModel => {
   return {
     specificationVersion: "v2",
     provider: "vendo-drift-fixture",
     modelId: "vendo-drift-fixture-v1",
     supportedUrls: {},
-    async doGenerate() {
+    async doGenerate(call: ModelCall) {
       return {
-        content: [{ type: "text" as const, text: next() }],
+        content: [{ type: "text" as const, text: respond(promptText(call)) }],
         finishReason: "stop" as const,
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
       };
     },
-    async doStream() {
-      const text = next();
+    async doStream(call: ModelCall) {
+      const text = respond(promptText(call));
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -74,28 +102,25 @@ describe.sequential("06-apps §8 — the drift→rebase journey through the real
     const root = await mkdtemp(join(tmpdir(), "vendo-drift-rebase-"));
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
     await mkdir(join(root, "src"), { recursive: true });
-    const slot = "net-worth-card";
+    const slot = "MapleNetWorthCard";
     const componentName = pinComponentName(slot);
     const hostSource = `export default function MapleNetWorthCard() {
   return <article><span>Net worth</span><strong>$1.2M</strong></article>;
 }\n`;
     const componentFile = join(root, "src", "MapleNetWorthCard.tsx");
     await writeFile(componentFile, hostSource);
-    await writeFile(join(root, "src", "host-catalog.tsx"), `
+    await writeFile(join(root, "src", "page.tsx"), `
+import { Remixable } from "@vendoai/ui/chrome";
 import MapleNetWorthCard from "./MapleNetWorthCard";
-export const hostCatalog = [{
-  name: "${slot}",
-  component: MapleNetWorthCard,
-  remixable: true,
-  exportable: true,
-}];
+export default function Page() {
+  return <Remixable><MapleNetWorthCard /></Remixable>;
+}
 `);
     const synced = await vendoSync({ root, out: join(root, ".vendo") });
     expect(synced.pins).toEqual({ captured: [slot], drifted: [] });
     const baselineFile = join(root, ".vendo", "remixable", `${slot}.json`);
     const oldHash = pinBaselineSchema.parse(JSON.parse(await readFile(baselineFile, "utf8"))).hash;
 
-    const remixedSource = hostSource.replace("$1.2M", "$1.2M — remixed");
     const store = createStore({ dataDir: join(root, ".data") });
     cleanups.push(async () => store.close());
     await store.ensureSchema();
@@ -104,12 +129,10 @@ export const hostCatalog = [{
 
     // ONE host process lifetime: fork the pin (gesture, no model) and edit the fork.
     const vendo = createVendo({
-      model: scriptedModel([
-        `<Edit><Island name="${componentName}">${remixedSource}</Island></Edit>`,
-      ]),
+      model: scriptedModel(remixNote),
       principal: async () => principal,
       store,
-      development: { root },
+      development: true,
     });
     const imported = await vendo.apps.importApp({
       format: VENDO_APP_FORMAT,
@@ -155,13 +178,12 @@ export const hostCatalog = [{
     // The host redeploys: a fresh composition loads the NEW baselines over the
     // SAME store. Drift must now be loud on every surface the app rides.
     const redeployed = createVendo({
-      model: scriptedModel([
-        // The rebase replays the ONE recorded pin intent through the model.
-        `<Edit><Island name="${componentName}">${newBaseline.source.replace("$1.2M", "$1.2M — remixed")}</Island></Edit>`,
-      ]),
+      // The rebase replays the ONE recorded pin intent through the same brain,
+      // which now sees the NEW baseline source under the pinned component.
+      model: scriptedModel(remixNote),
       principal: async () => principal,
       store,
-      development: { root },
+      development: true,
     });
     const expectedDrift = {
       slot,

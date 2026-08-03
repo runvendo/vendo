@@ -165,7 +165,11 @@ describe("runtime in-client surface", () => {
       tools,
       catalog: [],
       pinBaselines: [baseline],
-      model: scriptedLanguageModel('<Edit><SetName name="Edited name"/></Edit>'),
+      // A rename, in the brain's edit dialect: the app's name is printed on the
+      // opening <App> line, so quoting that line exactly is the whole edit.
+      model: scriptedLanguageModel(
+        '<Edit><Old><App name="In-client"></Old><New><App name="Edited name"></New></Edit>',
+      ),
     });
     return { store, guard, runtime };
   };

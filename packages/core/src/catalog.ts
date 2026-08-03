@@ -15,7 +15,6 @@ export interface RegisteredComponent {
   description: string;
   propsSchema?: StandardSchema;
   examples?: string[];
-  remixable?: boolean;
 }
 
 /** 01-core §14 */
@@ -33,7 +32,6 @@ export interface ComponentRegistryEntry {
   /** The ONE optional props schema — same StandardSchema, same derivation. */
   props?: StandardSchema;
   examples?: string[];
-  remixable?: boolean;
 }
 
 /** 01-core §14 — keys are component names (PascalCase). */

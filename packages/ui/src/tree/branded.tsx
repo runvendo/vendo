@@ -1,5 +1,7 @@
 import {
+  Children,
   useId,
+  useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PropsWithChildren,
@@ -537,10 +539,20 @@ export interface TabsProps {
   tabs?: TabItem[];
   items?: TabItem[];
   onChange?: PrimitiveAction;
+  /** One panel per tab, in tab order. Present when the tree nests each tab's
+   *  content under the bar (the plan skeleton does); a bar with no panels stays
+   *  the pure chrome + action surface stored apps were written against. */
+  children?: ReactNode;
 }
 
-/** Bound per-tab actions preserve selected-value payloads without event plumbing. */
-export function Tabs({ label = "Tabs", value, tabs, items, onChange }: TabsProps) {
+/** Bound per-tab actions preserve selected-value payloads without event plumbing.
+ *  With panels nested inside, the bar also owns which one shows: switching tabs
+ *  is view state, so it must never need a round trip. */
+export function Tabs({ label = "Tabs", value, tabs, items, onChange, children }: TabsProps) {
+  const panels = Children.toArray(children);
+  const selfManaged = panels.length > 0;
+  const [picked, setPicked] = useState<number | undefined>(undefined);
+  const panelIdBase = useId();
   const normalized = (tabs ?? items ?? []).map((item) => {
     if (typeof item !== "object" || item === null) {
       return { value: content(item), label: content(item), disabled: false, onSelect: undefined };
@@ -555,6 +567,9 @@ export function Tabs({ label = "Tabs", value, tabs, items, onChange }: TabsProps
   const selected = value === undefined || value === null
     ? normalized.find((item) => !item.disabled)?.value
     : content(value);
+  // Panels are positional, so a bar that owns them selects by index. With no
+  // panels nothing changes: `value` stays the only truth, as stored apps expect.
+  const activeIndex = picked ?? Math.max(0, normalized.findIndex((item) => item.value === selected));
   const focusTab = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     const offsets: Partial<Record<string, number>> = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 };
     const offset = offsets[event.key];
@@ -572,7 +587,7 @@ export function Tabs({ label = "Tabs", value, tabs, items, onChange }: TabsProps
         : (current + (offset ?? 0) + buttons.length) % buttons.length;
     buttons[target]?.focus();
   };
-  return (
+  const bar = (
     <div
       role="tablist"
       aria-label={label}
@@ -592,16 +607,21 @@ export function Tabs({ label = "Tabs", value, tabs, items, onChange }: TabsProps
       }}
     >
       {normalized.map((item, index) => {
-        const active = item.value === selected;
+        const active = selfManaged ? index === activeIndex : item.value === selected;
         return (
           <button
             key={`${item.value}-${index}`}
+            id={selfManaged ? `${panelIdBase}-tab-${index}` : undefined}
             type="button"
             role="tab"
             aria-selected={active}
+            aria-controls={selfManaged ? `${panelIdBase}-panel-${index}` : undefined}
             tabIndex={active ? 0 : -1}
             disabled={item.disabled}
-            onClick={() => run(item.onSelect ?? onChange)}
+            onClick={() => {
+              if (selfManaged) setPicked(index);
+              run(item.onSelect ?? onChange);
+            }}
             onKeyDown={focusTab}
             style={{
               ...font,
@@ -626,6 +646,19 @@ export function Tabs({ label = "Tabs", value, tabs, items, onChange }: TabsProps
           </button>
         );
       })}
+    </div>
+  );
+  if (!selfManaged) return bar;
+  return (
+    <div style={{ ...font, display: "flex", flexDirection: "column", gap: "var(--vendo-density-content-gap, 10px)" }}>
+      {bar}
+      <div
+        role="tabpanel"
+        id={`${panelIdBase}-panel-${activeIndex}`}
+        aria-labelledby={`${panelIdBase}-tab-${activeIndex}`}
+      >
+        {panels[activeIndex]}
+      </div>
     </div>
   );
 }

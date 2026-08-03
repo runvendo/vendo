@@ -334,7 +334,25 @@ export async function startBackends(): Promise<Backends> {
     const response = await vendo.handler(request);
     res.statusCode = response.status;
     response.headers.forEach((value, name) => res.setHeader(name, value));
-    res.end(Buffer.from(await response.arrayBuffer()));
+    if (response.body === null) {
+      res.end();
+      return;
+    }
+    // STREAM the body, never buffer it — the same way the node harness's bridge
+    // does (fixtures/integration/src/harness.ts). A real host framework hands the
+    // Response straight to the runtime, which streams it; `arrayBuffer()` here
+    // waits for the turn to END before sending a single byte. That is invisible
+    // for a turn that finishes on its own, and a deadlock for one that parks: the
+    // approval card cannot reach the browser, so the tap that would resume the
+    // turn can never happen, and the turn only ever times out.
+    res.flushHeaders();
+    const reader = response.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+    }
+    res.end();
   }
 
   let closed = false;

@@ -205,6 +205,9 @@ describe.skipIf(!LIVE)("e2bSandbox live", () => {
       store,
       sandbox: adapter,
       buildEnv: () => ({ PORT: "8080", HELLO: "wave7 survives the reap" }),
+      // The conformance app serves locally and calls nothing out, so deny-all
+      // is the honest policy. Required now: an omitted one meant the internet.
+      allowedDomains: () => [],
     });
     let seeded: SandboxMachine | undefined;
     let ref: string | undefined;

@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { Skeleton } from "./primitives.js";
 
-export type FormShape = "slab" | "tiles" | "rows" | "pill";
+export type FormShape = "slab" | "tiles" | "rows" | "pill" | "chart" | "control";
 
 /**
  * Pick A (ui-lane-renderer, 2026-07-19) — the tree streams before generated
@@ -10,6 +10,13 @@ export type FormShape = "slab" | "tiles" | "rows" | "pill";
  * historical 72px slab, so the fallback is never worse than before.
  */
 export function deriveFormShape(componentName: string): FormShape {
+  // A plot is the tallest thing in an app; a 72px slab that becomes a 180px
+  // chart is the layout jump the skeleton exists to prevent. Sparkline is
+  // deliberately excluded — it is an inline mark, not a plot.
+  if (/chart|graph|plot/i.test(componentName)) return "chart";
+  // A control is a small left-aligned thing; a full-width slab where a button
+  // lands reads as a broken section and then collapses when the real one lands.
+  if (/button|submit|cta/i.test(componentName)) return "control";
   if (/badge|pill|tags?|chips?/i.test(componentName)) return "pill";
   if (/list|table|rows?|feed|history|log/i.test(componentName)) return "rows";
   // stat(?!us) — "RenewalStats" forms tiles, but "StatusRow" must not.
@@ -42,6 +49,20 @@ export function FormingSkeleton({ name }: { name: string }) {
       </span>
     );
   }
+  if (shape === "chart") {
+    return (
+      <span data-form-shape="chart" style={{ display: "block", width: "100%" }} aria-hidden="true">
+        <Skeleton height={180} />
+      </span>
+    );
+  }
+  if (shape === "control") {
+    return (
+      <span data-form-shape="control" style={{ display: "block", width: "100%" }} aria-hidden="true">
+        <Skeleton width={148} height="var(--vendo-density-control-height, 38px)" />
+      </span>
+    );
+  }
   if (shape === "pill") {
     return (
       <span data-form-shape="pill" style={{ display: "flex", justifyContent: "flex-end", width: "100%" }} aria-hidden="true">
@@ -52,6 +73,21 @@ export function FormingSkeleton({ name }: { name: string }) {
   return (
     <span data-form-shape="slab" style={{ display: "block", width: "100%" }} aria-hidden="true">
       <Skeleton height="72px" />
+    </span>
+  );
+}
+
+/**
+ * One PLAN LEAF that has not been filled yet (generation pipeline rebuild,
+ * Task 5). A leaf is exactly one component, so a stat-shaped leaf is one tile —
+ * the three-tile band above is the silhouette of a whole forming REGION, and
+ * repeating it per leaf would show nine tiles for three stats.
+ */
+export function PendingLeaf({ name }: { name: string }) {
+  if (deriveFormShape(name) !== "tiles") return <FormingSkeleton name={name} />;
+  return (
+    <span data-form-shape="tile" style={{ display: "block", width: "100%" }} aria-hidden="true">
+      <Skeleton height={64} />
     </span>
   );
 }

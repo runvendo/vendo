@@ -1,0 +1,9 @@
+/* Maple's REAL stylesheet, compiled for this document only.
+   Importing examples/demo-bank's own globals.css (rather than restating its
+   tokens here) is what keeps the pane honest: brand tokens, Tailwind
+   preflight and every utility Maple's components use come from the file the
+   demo host itself ships, and a change there shows up in the pane on the next
+   reload. `@source` is required because Tailwind's automatic content
+   detection starts at this file's directory, which holds no components. */
+@import "../../../../../examples/demo-bank/src/app/globals.css";
+@source "../../../../../examples/demo-bank/src";

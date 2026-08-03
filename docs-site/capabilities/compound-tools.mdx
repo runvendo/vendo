@@ -53,19 +53,17 @@ rejected at load with a pointer here.
           {
             "id": "load",
             "tool": "host_invoices_get",
-            "args": { "id": "{{ args.invoiceId }}" }
+            "args": { "id": "args.invoiceId" }
           },
           {
             "id": "notify",
-            "if": "{{ load.status = 'overdue' }}",
+            "if": "steps.load.status = 'overdue'",
             "tool": "host_email_send",
             "args": {
-              "to": "{{ load.customerEmail }}",
-              "template": "invoice-reminder",
-              "vars": {
-                "invoiceId": "{{ load.id }}",
-                "amount": "{{ load.amount }}"
-              }
+              "to": "steps.load.customerEmail",
+              "template": "'invoice-reminder'",
+              "invoiceId": "steps.load.id",
+              "amount": "steps.load.amount"
             }
           }
         ]
@@ -76,20 +74,56 @@ rejected at load with a pointer here.
 ```
 
 A binding accepts 1–50 steps with unique `id` values. Each step targets one
-existing tool by name. `args`, `if`, and `forEach` are JSONata expressions
-evaluated against the root `args` and prior step results by id.
+existing tool by name.
+
+### Expressions
+
+`if`, `forEach`, and every value in `args` are **raw JSONata**, compiled
+verbatim. There is no template syntax: `{{ args.invoiceId }}` is a parse
+error, and a literal string has to be quoted inside the expression
+(`"'invoice-reminder'"`, as above).
+
+Every expression sees the same three bindings and nothing else:
+
+| Binding | What it holds |
+| --- | --- |
+| `args` | the compound's own call arguments |
+| `steps` | completed step outputs, keyed by step `id` — `steps.load.amount` |
+| `item` | the current `forEach` element; undefined outside a loop |
+
+`args` values are strings, one expression each — nest structure inside the
+target tool's schema, not inside the expression map.
 
 ### Steps
 
 Every step runs `if → forEach → args → invoke` in that order.
 
-- `if`: skip the step when the expression is falsy.
-- `forEach`: invoke the step once per item, up to 1000 items. The item is
-  available to `args` as the step's context. Non-array values fail loudly.
-- `args`: the JSON object passed to the target tool after evaluation.
+- `if`: skip the step when the expression is falsy. A skipped step writes no
+  `steps.<id>` key at all, so later steps must not assume one.
+- `forEach`: evaluated once, before iteration, with `item` undefined. It must
+  produce an array of at most 1000 items; anything else halts the walk. The
+  step then runs once per element with that element bound to `item`, and its
+  outputs collect as an array under `steps.<id>`.
+- `args`: evaluated per invocation and passed to the target tool.
 
-Prior step results are available by step `id`. Root inputs are available as
-`args`.
+The compound returns `{ steps: { … } }` — every completed step's output under
+its own id.
+
+```json
+"steps": [
+  { "id": "load", "tool": "host_customers_list" },
+  {
+    "id": "each",
+    "tool": "host_email_send",
+    "forEach": "steps.load.items",
+    "args": { "to": "item.email" }
+  }
+]
+```
+
+With `host_customers_list` returning
+`{ "items": [{ "email": "a@x" }, { "email": "b@x" }] }`, the walk sends twice
+and `steps.each` is the two-element array of send results.
 
 ### Risk
 
@@ -99,8 +133,15 @@ overrides apply. Under- or over-declaring risk quarantines the entry.
 ## Overrides
 
 The `tools` map of the same file applies to compounds by name, field by
-field, the same way it applies to extracted tools. Use it to tighten risk,
-mark a compound `critical`, or disable it without editing the compound entry.
+field, the same way it applies to extracted tools. Use it to mark a compound
+`critical`, or to disable it, without editing the compound entry.
+
+`risk` is the exception. Overrides merge *before* validation, and the rule
+above is equality, not a floor — so an override that changes a compound's
+risk in either direction quarantines it. Overriding a *step's* risk can
+quarantine the compound the same way, by moving the step maximum out from
+under the compound's declaration. To change a compound's risk, change the
+declaration and the steps together.
 
 ```json
 {

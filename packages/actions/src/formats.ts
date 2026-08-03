@@ -502,29 +502,18 @@ export interface CapturedPinBaseline {
   hash: string;                    // "sha256:..." of source
   exportable: boolean;
   capturedAt: string;              // IsoDateTime
+  /** True when the `<Remixable review>` wrapper marks this a reviewed-kind
+   *  component: remixes stay invisible until a host reviewer approves. */
+  review?: boolean;
   /** Import specifier -> captured module id for imports in the primary source. */
   sourceImports?: Record<string, string>;
   /** Source-owned modules reachable within two local-import hops. */
   subSources?: Record<string, CapturedPinSubSource>;
-  /** Static JSON-compatible props declared by the remixable registration. */
+  /** No longer written by sync (live props seed forks now); kept optional so
+   *  legacy baseline files stay valid. */
   sampleProps?: Record<string, unknown>;
   /** Direct CSS imports from canonical app root files, in deterministic order. */
   styles?: CapturedPinStyle[];
-}
-
-/** Machine-readable reason a remixable registration needs runtime capture. */
-export type UnresolvedPinReason =
-  | "inline-component"
-  | "component-not-imported"
-  | "import-not-found"
-  | "unsafe-source"
-  | "unsafe-slot";
-
-export interface UnresolvedPin {
-  slot: string;
-  component: string;
-  reason: UnresolvedPinReason;
-  hint: string;
 }
 
 export interface CapturedPinSubSource {
@@ -553,6 +542,7 @@ export const capturedPinBaselineSchema = z.object({
   hash: z.string().startsWith("sha256:"),
   exportable: z.boolean(),
   capturedAt: z.string(),
+  review: z.boolean().optional(),
   sourceImports: z.record(z.string()).optional(),
   subSources: z.record(capturedPinSubSourceSchema).optional(),
   sampleProps: z.record(z.unknown()).optional(),
@@ -569,6 +559,8 @@ export interface BreakingChange {
 export interface SyncReport {
   tools: { added: string[]; removed: string[]; changed: string[] };
   breaking: BreakingChange[];
-  pins: { captured: string[]; drifted: string[] };
+  /** `pruned` (absent when empty) — stale baselines deleted because no
+   *  `<Remixable>` wrapper names their slot anymore. */
+  pins: { captured: string[]; drifted: string[]; pruned?: string[] };
   catalog: { discovered: number; registered: number };
 }

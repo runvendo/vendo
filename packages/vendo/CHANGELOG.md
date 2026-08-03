@@ -1,5 +1,229 @@
 # @vendoai/vendo
 
+## 0.7.0
+
+### Minor Changes
+
+- 47c53e9: `vendo init` only ever creates files in your source tree.
+
+  **The last two rewrites are gone.** Init used to regenerate
+  `app/api/vendo/[...vendo]/vendo-actions.ts` whenever the detected `"use server"`
+  surface moved, and to wire `serverActions` into an existing
+  `app/api/vendo/[...vendo]/route.ts`. It still creates both — once, on the run
+  where they do not exist yet — but a file you already have is never written
+  again. When init finds a change it will not make, it prints it in the same
+  framed block as the layout mount (naming the file and the exact lines),
+  carries it in `--agent` as an `edits[]` array of `{file, lines, why}` alongside
+  `mount`, and lists it in `manualSteps` and the agent tail.
+
+  **The map is yours from creation on.** An existing registration map is compared
+  only by the keys it registers, never byte-for-byte, so your formatting, your
+  comments, your aliases and your own extra entries all survive — and a reworded
+  comment in a Vendo release can never nag every existing install. A missing
+  action prints just the entries to add, with aliases that continue your file's
+  own `actionN` numbering. A route that passes a `serverActions` map it composes
+  itself is left alone entirely, and no generated map is created beside it.
+
+  **`vendo doctor` catches what you skip.** New `E-WIRE-009`: the host has live
+  `"use server"` actions, but the registration map is missing entries or the route
+  never passes `serverActions` **inside** its `createVendo({ … })` call. Nothing
+  else went red for that before — the tools simply failed closed at execution
+  time. Init and doctor resolve the wiring, the required action set and the map's
+  completeness through the same shared helpers, so they cannot disagree; both
+  honor `.vendo/overrides.json` and judgments, because a disabled tool is one the
+  runtime never dispatches.
+
+  `package.json` hooks are unchanged: that is Vendo-owned config, not your source.
+
+- c0f43b1: `vendo init` never edits your source, and `vendo sync` owns the whole scan.
+
+  **Init stops rewriting `app/layout.tsx`.** The auto-wire that wrapped
+  `{children}` in `<VendoRoot>` is gone. Every file init writes is new and
+  Vendo-owned (plus its own `package.json` hooks); mounting the visible surface
+  is your paste, and the run ends with one framed block naming the exact file and
+  lines. It also rides `--agent` as a `mount` object and the head of
+  `manualSteps`, and `vendo doctor`'s `E-WIRE-004` now prints the same paste
+  instead of describing it.
+
+  **One AI rule, one flag pair, on both commands.** `--ai` forces the judgment
+  pass on and `--no-ai` forces it off, on `init` and `sync` alike. With neither
+  flag, an interactive run **asks every time** — no consent is persisted anywhere
+  — and a non-interactive run skips, so CI stays deterministic and never spends.
+  `--yes` and `--json` count as non-interactive; `--json` still emits exactly one
+  object and never prompts. `--ai-polish` and `--no-watermark` keep working. The
+  hooks init installs now carry the flag explicitly (`predev: vendo sync --no-ai`,
+  `prebuild: vendo sync --strict --no-ai`), and re-running init upgrades the
+  hookless entries an older init wrote without touching a `vendo sync` call you
+  wrote yourself.
+
+  **Sync re-extracts your theme.** `.vendo/theme.json` was init-only, so a
+  rebrand never reached the agent. Sync now re-runs the deterministic scan and
+  reconciles it, using a sibling merge base, `.vendo/theme.extracted.json` (what
+  the scan produced last time — commit it alongside `theme.json`). A slot is
+  machine-owned only with recorded proof, so anything you hand-edited — or that
+  predates the base — is left alone and reported with both values; derived slots
+  like `accentText` follow their source rather than the app's. `--theme-refresh`
+  takes your app's values anyway.
+
+  **Pin baselines reach Vendo Cloud.** With a key set, a normal sync (no
+  `--report` needed) reconciles `.vendo/remixable/` with the `vendo_pin_baselines`
+  collection the console's Remix reviews screen reads — pushing new and changed
+  slots, deleting slots pruned locally. The captured component **source** crosses
+  the wire, which is what makes a fork's diff reviewable. Keyless and BYO make no
+  request at all, and a Cloud failure is a warning, never a failed build.
+
+- 3cfde47: Seven self-serve fixes across the CLI: the install path stops lying, and the JS
+  scaffolds run.
+
+  **Plain-JavaScript hosts boot again.** The generated `vendo/server.mjs` carried
+  two pieces of TypeScript — `kind: "user" as const` in the principal line and a
+  `as Headers & { … }` cast around `getSetCookie` — so every Express, bare-Node
+  and `--framework custom` host on a JS codebase died with `SyntaxError:
+Unexpected identifier 'as'` on its first `node server.js`. Both expressions now
+  follow the host's language, and Node's own parser gates them in CI.
+
+  **`vendo doctor` names a stale install.** npm release-cooldown configs
+  (`min-release-age`) silently resolve an old `@vendoai/vendo`, and nothing ever
+  said so. Doctor now checks npm's `latest` and prints `warning: installed
+@vendoai/vendo X is behind latest Y` with the upgrade command. Fail-soft: an
+  offline, blocked or slow registry says nothing at all and never changes the
+  exit code.
+
+  **Two silent CI failures are loud.** `vendo mcp server-json` with missing flags
+  used to fall into a readline prompt even on a piped stdin — a script or agent
+  hung forever; it now exits 1 naming `--domain` and `--url`. `vendo sync
+--report` without a Cloud key used to complain and exit 0, so a reporting lane
+  stayed green while never reporting; it now exits 1.
+
+  **`vendo try` is unlisted.** The command still runs for anyone invoking it, but
+  help no longer advertises it (nor do the retired `playground`/`refine`
+  notices): the pre-install `npx vendo try` pitch it fronted resolves no npm
+  package.
+
+  **Init's ending puts the paste last.** The run's final line is the outstanding
+  paste, on interactive and non-interactive runs alike, instead of the star ask
+  or the agent tail; the "start your dev server — the agent is live in your app"
+  line is withheld while a paste is still pending (it contradicted the frame
+  right above it); and the keyless Cloud pitch is three lines, since `vendo
+login` narrates its own ceremony.
+
+  **Quieter dev-server logs.** The hosted-store automations notice is latched per
+  process — a Next dev server recomposes on nearly every request, and the
+  paragraph was landing in the host's log dozens of times per session.
+
+- 89b2455: Add tour mode: deterministic scripted responses in front of the live agent.
+
+  Every company that adopts Vendo has to demo it — to its own executives, to a
+  prospect, to a new user on day one — and a live agent is the wrong thing to put
+  in front of an audience. It is slow, it is different every time, and the one
+  run that matters is the run where it improvises. So every host builds the same
+  cache by hand, badly. This is that cache, supported.
+
+  `createVendo({ tours })` takes an ordered list of `{ prompt, respond }`
+  entries. `respond` is prose, a recorded app document, or a sequence of both,
+  replayed at a live turn's cadence. Everything a tour does not own — every
+  improvised question, every follow-up about what is on screen — reaches the real
+  agent untouched.
+
+  Two rules keep a tour from swallowing the demo it carries. An entry fires only
+  on a close variant of its own frozen prompt: matching is a normalized
+  similarity score over token sets and edit distance, not keyword presence, so a
+  typo still lands the entry while a different ask about the same subject does
+  not. And an entry fires at most once per thread, reconstructed from the
+  thread's own transcript rather than stored, so it survives the live turns in
+  between. Both rules exist because keyword matching cannot tell "ask for this"
+  from "change the thing you just made" — it replayed the recording on top of the
+  app the audience had just watched arrive, pin and all.
+
+  An app part is a real app: the recorded document is imported as an owned copy,
+  so it opens, pins, survives a reload, and can be edited by the next turn, which
+  is the live agent's. Pacing is measured against real turns and drawn from a
+  stream seeded by the entry's own prompt — uneven like a live provider, and the
+  same unevenness on every rehearsal. Nothing in a tour calls `Math.random`.
+
+  Plain OSS config with no Cloud dependency and no key-conditional branch: a tour
+  behaves identically with and without `VENDO_API_KEY`. A host that configures no
+  tours composes no seam at all.
+
+  `@vendoai/agent` gains the scripted-turn seam this rides on: an optional
+  `scripted` hook consulted after the thread resolves and before any model work.
+  It lives there because everything a scripted turn must share with a live one
+  lives there — the resolved thread, the persistence, the response contract — and
+  a seam in the wire route could only approximate all three. The umbrella owns
+  what a play is, because matching and replay need the apps runtime.
+
+### Patch Changes
+
+- e56ed30: Cloud-audit small fixes: five places where the runtime and what it claims had
+  drifted apart.
+
+  **The hosted session sweep now rides the authenticated tick.** Both existing
+  cadences are unreachable on a serverless host — the unref'd interval timer
+  never fires, and the amortized on-request sweep is gated by a per-process
+  `lastSweepAt` that a per-request process re-seeds every invocation. A
+  deployment on the hosted store leaked idle anonymous sessions forever.
+  `POST /api/vendo/tick` now runs the same sweep the other two cadences call
+  (hosted stores only; a local composition already has both). Two cadences
+  firing at once is safe — the claim leg is a single-winner election
+  server-side.
+
+  **`E2B_API_KEY` without the `e2b` package is now a loud misconfig.**
+  `createVendo` used to silently demote a half-configured BYO sandbox to Cloud,
+  or to the dark venue with no key at all, so the operator found out at the
+  first server-app build. It now throws with the exact fix. An explicitly
+  passed `sandbox:` adapter still wins before any env check.
+
+  **`fn:` steps deferred to Cloud now warn.** Enabling an automation whose
+  schedule or external trigger fires on Cloud, with `fn:` steps in it, warns
+  once naming the app: `fn:` runs in the app's own sandbox machine, which the
+  Cloud runner may not be able to wake or reach in v1. The docs claimed this
+  warning existed and described `fn:` as a callback into the host process —
+  both wrong, both fixed.
+
+  **Two honesty fixes to operator copy.** `vendo doctor` no longer offers a
+  "managed MCP broker" no code path wires from a key; it names the adapter slots
+  a key actually defaults. And the hosted-session-doors warning no longer blames
+  a vendo-web commit for a surface the console restored on 2026-07-20 — it
+  reports what the client observed (a bare 404) instead.
+
+- ed1940a: The theme extractor now resolves `next/font` CSS variables on hosts without a
+  resolvable `typescript`. The standard Next.js pattern — `--font-sans:
+var(--font-inter)` in CSS, `Inter({ variable: "--font-inter" })` in the root
+  layout — is read through a real TypeScript program, and `typescript` is an
+  optional resolution: a JS-only Next app, a strict pnpm tree, or an npx-run CLI
+  simply doesn't have one. When it was missing, every next/font derivation went
+  dark at once and `vendo init` fell all the way through to "No host evidence for
+  fontFamily — neutral defaults used" on an app whose font was sitting right
+  there in its layout.
+
+  Without a compiler the extractor now text-scans the layout's next/font and
+  geist loader calls for the family each CSS variable names. The scan reports
+  those fonts as un-applied, because text cannot prove a font reaches the markup:
+  every derivation that needs that proof still fails closed to the model pass,
+  and only var() resolution — where the host's own CSS is the authority on what
+  the body font is — gains an answer. `next/font/local` stays unresolvable by
+  design; its loader declares a variable but no family name.
+
+- Updated dependencies [e56ed30]
+- Updated dependencies [dd73974]
+- Updated dependencies [ea3cb0b]
+- Updated dependencies [37ec12a]
+- Updated dependencies [923cf59]
+- Updated dependencies [89b2455]
+- Updated dependencies [bcf8699]
+- Updated dependencies [8f5a7c0]
+  - @vendoai/automations@0.7.0
+  - @vendoai/ui@0.7.0
+  - @vendoai/telemetry@0.3.3
+  - @vendoai/agent@0.7.0
+  - @vendoai/core@0.7.0
+  - @vendoai/actions@0.7.0
+  - @vendoai/apps@0.7.0
+  - @vendoai/guard@0.7.0
+  - @vendoai/knowledge@0.7.0
+  - @vendoai/mcp@0.7.0
+  - @vendoai/store@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes

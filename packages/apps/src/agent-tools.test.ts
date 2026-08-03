@@ -1,10 +1,13 @@
 import {
   TOOL_NAME_PATTERN,
+  VENDO_APP_FORMAT,
+  VENDO_TOOL_TITLES,
   toolDescriptorSchema,
   type RunContext,
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
+import { agentToolDescriptors } from "./agent-tools.js";
 import { createApps } from "./index.js";
 import {
   bindTools,
@@ -13,6 +16,7 @@ import {
   seedAppRow,
   scriptedLanguageModel,
 } from "./testing/index.js";
+import { seedGrantRows, storeAccessFixture } from "./testing/app-access-fixture.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_tools" },
@@ -59,15 +63,23 @@ describe("apps agent tools", () => {
       });
       expect(() => JSON.stringify(descriptor.inputSchema)).not.toThrow();
     }
-    // Creating a document is a rung-1-only, jailed UI operation: it cannot
-    // reach host tools, a server machine, or the network.
+    // Creating OR editing a document is a rung-1-only, jailed UI operation: it
+    // cannot reach host tools, a server machine, or the network. Yousef's ruling
+    // (2026-07-28): an app edit does not need approval — rearranging your own
+    // view is not an act on the world, and history/undo are the safety net.
     expect(descriptors.map((descriptor) => descriptor.risk)).toEqual([
-      "read", "write", "write", "read", "read", "write", "write",
+      "read", "read", "write", "read", "read", "write", "write",
     ]);
     expect(descriptors.find(({ name }) => name === "vendo_apps_edit")?.description).toMatch(/retry.*same app/i);
   });
 
-  it("classifies only provable tree edits as read-class", async () => {
+  /**
+   * Yousef's ruling (2026-07-28), verbatim: "no an app edit does not need
+   * approval." So there is no contextual projection to make — the static
+   * descriptor stands for every app call, malformed args and foreign ids alike
+   * (ownership is enforced by the runtime, not by a consent prompt).
+   */
+  it("asks no approval for app self-mutation: no risk projection, on any shape of call", async () => {
     const store = memoryStore();
     const runtime = createApps({
       store,
@@ -77,93 +89,36 @@ describe("apps agent tools", () => {
       model: scriptedLanguageModel(generated),
     });
     const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
-    await seedAppRow(store, {
-      ...created,
-      id: "app_http",
-      ui: "http",
-      server: "fake:snap_http",
-    }, ctx.principal.subject);
-
-    await expect(runtime.agentToolRisk({
-      id: "call_tree_edit",
-      tool: "vendo_apps_edit",
-      args: { appId: created.id, instruction: "Make the heading blue" },
-    }, ctx)).resolves.toBe("read");
-    await expect(runtime.agentToolRisk({
-      id: "call_server_edit",
-      tool: "vendo_apps_edit",
-      args: { appId: created.id, instruction: "Persist this to the database" },
-    }, ctx)).resolves.toBe("write");
-    // ENG-349: a server keyword used as a visible-element label is still a tree edit,
-    // while the same word in an action context stays write-class.
-    await expect(runtime.agentToolRisk({
-      id: "call_labeled_edit",
-      tool: "vendo_apps_edit",
-      args: { appId: created.id, instruction: "Make the API status card blue" },
-    }, ctx)).resolves.toBe("read");
-    await expect(runtime.agentToolRisk({
-      id: "call_api_edit",
-      tool: "vendo_apps_edit",
-      args: { appId: created.id, instruction: "Call the api and store the results" },
-    }, ctx)).resolves.toBe("write");
-
-    await expect(runtime.agentToolRisk({
-      id: "call_missing_edit",
-      tool: "vendo_apps_edit",
-      args: { appId: "app_missing", instruction: "Make the heading blue" },
-    }, ctx)).resolves.toBe("write");
-    await expect(runtime.agentToolRisk({
-      id: "call_http_edit",
-      tool: "vendo_apps_edit",
-      args: { appId: "app_http", instruction: "Make the heading blue" },
-    }, ctx)).resolves.toBe("write");
-    await expect(runtime.agentToolRisk({
-      id: "call_bad_edit",
-      tool: "vendo_apps_edit",
-      args: { appId: created.id },
-    }, ctx)).resolves.toBe("write");
-    await expect(runtime.agentToolRisk({
-      id: "call_host",
-      tool: "host_accounts_update",
-      args: {},
-    }, ctx)).resolves.toBeUndefined();
-  });
-
-  it("keeps malformed and foreign edit calls write-class", async () => {
-    const store = memoryStore();
-    const runtime = createApps({
-      store,
-      guard: guardFixture(),
-      tools: hostTools,
-      catalog: [],
-      model: scriptedLanguageModel(generated),
-    });
-    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
-    await seedAppRow(store, {
-      ...created,
-      id: "app_foreign",
-    }, "user_other");
+    await seedAppRow(store, { ...created, id: "app_foreign" }, "user_other");
 
     for (const [id, args] of [
       ["call_null_edit", null],
       ["call_array_edit", []],
       ["call_primitive_edit", "invalid"],
+      ["call_real_edit", { appId: created.id, instruction: "Make the heading blue" }],
+      ["call_foreign_edit", { appId: "app_foreign", instruction: "Make the heading blue" }],
     ] as const) {
-      await expect(runtime.agentToolRisk({
-        id,
-        tool: "vendo_apps_edit",
-        args,
-      }, ctx)).resolves.toBe("write");
+      await expect(runtime.agentToolRisk({ id, tool: "vendo_apps_edit", args }, ctx))
+        .resolves.toBeUndefined();
     }
+    // Creating one is the same act, and equally unprompted.
     await expect(runtime.agentToolRisk({
-      id: "call_foreign_edit",
-      tool: "vendo_apps_edit",
-      args: { appId: "app_foreign", instruction: "Make the heading blue" },
-    }, ctx)).resolves.toBe("write");
+      id: "call_create",
+      tool: "vendo_apps_create",
+      args: { prompt: "Build a dashboard" },
+    }, ctx)).resolves.toBeUndefined();
+
+    // The ceremony still belongs on what an app DOES: writing and deleting the
+    // app's own stored rows stay write-class on their own descriptors, untouched.
+    const descriptors = await runtime.agentTools().descriptors();
+    expect(descriptors.find(({ name }) => name === "vendo_apps_data_put")?.risk).toBe("write");
+    expect(descriptors.find(({ name }) => name === "vendo_apps_data_delete")?.risk).toBe("write");
   });
 
   it("surfaces a structured retryable edit failure instead of implying the app changed", async () => {
-    const broken = '<Edit><Set id="missing" value={1}/></Edit>';
+    // An <Old> the printed app does not hold: the brain quoted text that is
+    // missing, which is an error and never a guess.
+    const broken = '<Edit><Old><Text text="missing card"/></Old><New><Text text="Renamed"/></New></Edit>';
     const runtime = createApps({
       store: memoryStore(),
       guard: guardFixture(),
@@ -352,5 +307,76 @@ describe("apps agent tools", () => {
       status: "error",
       error: { code: "not-found", message: `app not found: ${created.id}` },
     });
+  });
+});
+
+describe("§9.4 — a refused EDIT hands the model the fork offer, not the raw code", () => {
+  // The tool result was `{code:"forbidden", message:"editor access is required
+  // for app_7c2f…"}` — an app id and a level name, which the model then relays
+  // to a person. §9.4 invented `forbidden` for exactly this case BECAUSE it is
+  // answerable: the caller provably sees the app, so "you can't" comes with
+  // "…but here's what I can do".
+  const setup = async (): Promise<{ tools: ToolRegistry; appId: string }> => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+      appAccess: storeAccessFixture(store),
+    });
+    // Held by the org, with this caller a VIEWER — the one shape `forbidden`
+    // is ever thrown for.
+    await seedAppRow(store, { format: VENDO_APP_FORMAT, id: "app_teamdash", name: "Team dashboard" }, "acme");
+    await seedGrantRows(store, "app_teamdash", { [`user:${ctx.principal.subject}`]: "viewer" });
+    return { tools: runtime.agentTools(), appId: "app_teamdash" };
+  };
+
+  it("says what it can do instead, and names neither the app id nor the level", async () => {
+    const { tools, appId } = await setup();
+    const outcome = await tools.execute({
+      id: "call_denied",
+      tool: "vendo_apps_edit",
+      args: { appId, instruction: "add last quarter" },
+    }, { ...ctx, memberships: [{ org: "acme" }] });
+
+    expect(outcome.status).toBe("error");
+    const error = (outcome as { error: { code: string; message: string } }).error;
+    // The CODE is machine-facing and stays exactly as the contract froze it.
+    expect(error.code).toBe("forbidden");
+    // The MESSAGE is what reaches a person through the model.
+    expect(error.message).not.toContain(appId);
+    expect(error.message).not.toMatch(/editor|access is required/i);
+    expect(error.message).toMatch(/can’t change the team’s copy/i);
+    expect(error.message).toMatch(/own copy/i);
+  });
+
+  it("leaves every other refusal exactly as it was", async () => {
+    const { tools } = await setup();
+    const outcome = await tools.execute({
+      id: "call_missing",
+      tool: "vendo_apps_edit",
+      args: { appId: "app_absent", instruction: "anything" },
+    }, ctx);
+    expect(outcome).toEqual({
+      status: "error",
+      error: { code: "not-found", message: "app not found: app_absent" },
+    });
+  });
+});
+
+describe("§3 consumer voice — every apps tool carries a title", () => {
+  // Wave-1 live proof E1-5: `title: descriptor.title ?? descriptor.name` means a
+  // titleless tool hands the model its own identifier AS its human label, and
+  // the model then says `vendo_apps_edit` to a person. Four of Vendo's twelve
+  // projected tools had titles; these were the ones that did not.
+  it("titles each descriptor from the shared table, in the consumer voice", () => {
+    for (const descriptor of agentToolDescriptors) {
+      expect(descriptor.title, descriptor.name).toBe(VENDO_TOOL_TITLES[descriptor.name]);
+      expect(descriptor.title, descriptor.name).toBeTruthy();
+      // The title is what a person reads; it must not be the identifier again.
+      expect(descriptor.title, descriptor.name).not.toMatch(/vendo|_/i);
+    }
   });
 });

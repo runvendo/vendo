@@ -1,0 +1,15 @@
+{
+  "appId": "app_51f2824c-a1fc-41f3-93dc-71d3812dc1af",
+  "versionHash": "sha256:acf762425ff5eaa8329a75899d2a38ec8d63899a1719ff5e539dc1714d5c4aaa",
+  "pins": [
+    {
+      "slot": "MissingDocsHero",
+      "component": "PinnedMissingDocsHero9380a4f2",
+      "baseHash": "sha256:b129041125772145d059e2ef0703bbd3849428f928b08646bda806b43720ecda",
+      "baselineHash": "sha256:b129041125772145d059e2ef0703bbd3849428f928b08646bda806b43720ecda",
+      "drifted": false,
+      "diff": "--- a/MissingDocsHero/PinnedMissingDocsHero9380a4f2.tsx\n+++ b/MissingDocsHero/PinnedMissingDocsHero9380a4f2.tsx\n@@ -26,13 +26,37 @@\n   /** All active clients. */\n   clientCount: number\n   badgeLabel?: string\n+  /** Week-over-week change: positive means more clients missing docs than last week. */\n+  weekOverWeekDelta?: number\n }\n \n export function MissingDocsHero({\n   missingCount,\n   clientCount,\n   badgeLabel = \"Action needed\",\n+  weekOverWeekDelta,\n }: MissingDocsHeroProps) {\n+  // Derive the week-over-week label and color only when a delta is provided.\n+  const hasDelta = typeof weekOverWeekDelta === \"number\"\n+  const deltaAbs = hasDelta ? Math.abs(weekOverWeekDelta as number) : 0\n+  const deltaImproved = hasDelta && (weekOverWeekDelta as number) < 0\n+  const deltaWorse = hasDelta && (weekOverWeekDelta as number) > 0\n+  const deltaFlat = hasDelta && (weekOverWeekDelta as number) === 0\n+\n+  // Color: fewer missing docs (negative delta) is good — use ledger green.\n+  // More missing docs (positive delta) is a concern — use the danger tone.\n+  const deltaColor = deltaImproved\n+    ? LEDGER_GREEN\n+    : deltaWorse\n+    ? \"#b0473a\"\n+    : INK_FAINT\n+\n+  const deltaLabel = deltaFlat\n+    ? \"No change from last week\"\n+    : deltaImproved\n+    ? `${deltaAbs} fewer than last week`\n+    : `${deltaAbs} more than last week`\n+\n   return (\n     <article\n       style={{\n@@ -111,6 +135,18 @@\n       >\n         of {clientCount} active clients need chasing\n       </p>\n+      {hasDelta && (\n+        <p\n+          style={{\n+            margin: \"6px 0 0\",\n+            fontSize: 12,\n+            color: deltaColor,\n+            fontVariantNumeric: \"tabular-nums\",\n+          }}\n+        >\n+          {deltaLabel}\n+        </p>\n+      )}\n     </article>\n   )\n }\n"
+    }
+  ],
+  "generated": []
+}

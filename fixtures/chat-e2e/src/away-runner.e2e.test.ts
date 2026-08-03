@@ -16,8 +16,14 @@
  * enable-capture, covered by fixtures/automations-e2e; deciding a parked
  * approval here mints source "chat" by contract, which is deliberately
  * insufficient for away — that is the property this scenario verifies.)
+ *
+ * The grant ladder above runs on a NON-destructive write, because THE LAW
+ * (design §12) means a destructive-or-external tool never enters an away run at
+ * all — there is no park to reach. The law's own behaviour is the last scenario
+ * here: `host_invoices_send` in an away run is unprojected and refused.
  */
 import { afterEach, describe, expect, it } from "vitest";
+import { resolvedRisk, UNATTENDED_DESTRUCTIVE_REASON } from "@vendoai/core";
 import type { AgentRunReport, RunContext, ToolRegistry } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import {
@@ -34,8 +40,20 @@ import {
 
 const SUBJECT = "user_away";
 const APP_ID = "app_auto";
-const TOOL = "host_invoices_send";
-const send = descriptor({ name: TOOL, risk: "write" });
+
+/** The park/grant-authorization scenarios below need a tool an automation is
+ *  ALLOWED to run unattended, because their subject is the grant ladder, not the
+ *  law. THE LAW (design §12) is why this is an `update` and not a `send`: a
+ *  destructive-or-external tool is never projected into an away run at all, so
+ *  it can never reach the park path this exercises. `host_invoices_send` gets
+ *  its own scenario at the bottom of this file — that refusal is E2(e) coverage,
+ *  not a gap. */
+const TOOL = "host_invoices_update";
+const update = descriptor({ name: TOOL, risk: "write" });
+
+/** The external tool the law forbids unattended — `send` reaches a human. */
+const EXTERNAL_TOOL = "host_invoices_send";
+const send = descriptor({ name: EXTERNAL_TOOL, risk: "write" });
 
 let env: Env;
 afterEach(async () => {
@@ -65,13 +83,19 @@ describe("scenario 6: away runner park + resume (05 §6)", () => {
   it("parks an ungranted away write (fails soft), and only an automation-source app-bound grant authorizes the next away run", async () => {
     env = await createEnv();
 
+    // The scenario is only about the grant ladder if the tool is one an
+    // automation may legally run unattended. Pin that with the REAL resolution,
+    // so renaming this tool to something destructive fails here loudly instead
+    // of silently turning the scenario into a law test.
+    expect(resolvedRisk(update)).toBe("write");
+
     // --- Away run #1: ungranted write parks, fails soft ---------------------
-    const reg1 = new SpyRegistry([send], { [TOOL]: { sent: 1 } });
+    const reg1 = new SpyRegistry([update], { [TOOL]: { updated: 1 } });
     const report1 = await runAway(
       scriptedModel([toolCallTurn(TOOL, { invoiceId: "inv_1" }, "c1"), textTurn("Parked.", "t1")]),
       reg1,
       awayCtx("run_1"),
-      "Send invoice 1",
+      "Update invoice 1",
     );
     expect(["ok", "stopped"]).toContain(report1.status); // no throw — fails soft
     expect(report1.toolCalls).toEqual([
@@ -94,12 +118,12 @@ describe("scenario 6: away runner park + resume (05 §6)", () => {
     expect(chatGrant).toEqual([{ source: "chat", app_id: APP_ID }]);
 
     // --- Away run #2: the chat grant does NOT authorize away (05 §6) --------
-    const reg2 = new SpyRegistry([send], { [TOOL]: { sent: 2 } });
+    const reg2 = new SpyRegistry([update], { [TOOL]: { updated: 2 } });
     const report2 = await runAway(
       scriptedModel([toolCallTurn(TOOL, { invoiceId: "inv_2" }, "c2"), textTurn("Parked again.", "t2")]),
       reg2,
       awayCtx("run_2"),
-      "Send invoice 2",
+      "Update invoice 2",
     );
     expect(report2.toolCalls).toEqual([
       expect.objectContaining({ outcome: "pending-approval" }),
@@ -109,7 +133,7 @@ describe("scenario 6: away runner park + resume (05 §6)", () => {
     // --- Seed the automation-source app-bound grant enable-capture mints ----
     await seedGrant(env.store, {
       subject: SUBJECT,
-      descriptor: send,
+      descriptor: update,
       appId: APP_ID,
       source: "automation",
       scope: { kind: "tool" },
@@ -118,12 +142,12 @@ describe("scenario 6: away runner park + resume (05 §6)", () => {
 
     // --- Away run #3: now it runs without asking ----------------------------
     const pendingBefore = await env.count("vendo_approvals", "status = 'pending'");
-    const reg3 = new SpyRegistry([send], { [TOOL]: { sent: 3 } });
+    const reg3 = new SpyRegistry([update], { [TOOL]: { updated: 3 } });
     const report3 = await runAway(
-      scriptedModel([toolCallTurn(TOOL, { invoiceId: "inv_3" }, "c3"), textTurn("Sent.", "t3")]),
+      scriptedModel([toolCallTurn(TOOL, { invoiceId: "inv_3" }, "c3"), textTurn("Updated.", "t3")]),
       reg3,
       awayCtx("run_3"),
-      "Send invoice 3",
+      "Update invoice 3",
     );
     expect(report3.toolCalls).toEqual([expect.objectContaining({ outcome: "ok" })]);
     expect(reg3.count(TOOL)).toBe(1);
@@ -133,7 +157,11 @@ describe("scenario 6: away runner park + resume (05 §6)", () => {
 
   it("a chat grant with no appId does not authorize an away run either", async () => {
     env = await createEnv();
-    const toolB = descriptor({ name: "host_reports_email", risk: "write" });
+    // Also a non-destructive write, and for the same reason as `update` above:
+    // an unattended run never sees a destructive-or-external tool, so only a
+    // legally-projectable write can prove anything about the GRANT rule.
+    const toolB = descriptor({ name: "host_reports_write", risk: "write" });
+    expect(resolvedRisk(toolB)).toBe("write");
     // A present-chat standing grant, no appId — the ordinary chat grant shape.
     await seedGrant(env.store, {
       subject: SUBJECT,
@@ -145,14 +173,90 @@ describe("scenario 6: away runner park + resume (05 §6)", () => {
 
     const reg = new SpyRegistry([toolB], { [toolB.name]: { ok: true } });
     const report = await runAway(
-      scriptedModel([toolCallTurn(toolB.name, { to: "a@b.co" }, "cb"), textTurn("Parked.", "tb")]),
+      scriptedModel([toolCallTurn(toolB.name, { reportId: "rep_1" }, "cb"), textTurn("Parked.", "tb")]),
       reg,
       awayCtx("run_b"),
-      "Email the report",
+      "Write up the report",
     );
 
     expect(report.toolCalls).toEqual([expect.objectContaining({ outcome: "pending-approval" })]);
     expect(reg.count(toolB.name)).toBe(0);
     expect(await env.count("vendo_approvals", "status = 'pending'")).toBe(1);
+  });
+
+  /** THE LAW (design §12): destructive AND EXTERNAL actions are never
+   *  unattended. `host_invoices_send` sends invoices TO PEOPLE, so it resolves
+   *  destructive (declared `write`, but the second mechanical vote reads `send`
+   *  and disagreement resolves against the tool) and is refused in an away run.
+   *
+   *  This is the behaviour that replaced this file's old park expectation, and it
+   *  is the E2(e) property worth pinning: not with a limit, not with a
+   *  condition, not with the strongest grant that exists. */
+  it("refuses an external tool in an away run — never projected, never executed (THE LAW, §12)", async () => {
+    env = await createEnv();
+
+    // The declared label is the permissive one; the mechanical vote overrules it.
+    expect(send.risk).toBe("write");
+    expect(resolvedRisk(send)).toBe("destructive");
+
+    // The strongest authority that exists today: standing, app-bound, minted by
+    // automation enable-capture. The law must beat it.
+    await seedGrant(env.store, {
+      subject: SUBJECT,
+      descriptor: send,
+      appId: APP_ID,
+      source: "automation",
+      scope: { kind: "tool" },
+      duration: "standing",
+    });
+
+    const reg = new SpyRegistry([send], { [EXTERNAL_TOOL]: { sent: 1 } });
+
+    // 1. Not projected: the model in an away run is never even offered it.
+    const projected = await env
+      .bound(reg)
+      .descriptors({ venue: "automation", presence: "away" });
+    expect(projected.map((d) => d.name)).toEqual([]);
+
+    // 2. Refused at the guard if reached anyway (defence in depth), with the
+    //    law's own reason — the one a harness maps to `unattended-destructive`.
+    const outcome = await env.bound(reg).execute(
+      { id: "cx", tool: EXTERNAL_TOOL, args: { invoiceId: "inv_1" } },
+      awayCtx("run_law"),
+    );
+    expect(outcome).toEqual({ status: "blocked", reason: UNATTENDED_DESTRUCTIVE_REASON });
+
+    // 3. It never ran, and no approval was parked to make it look pending.
+    expect(reg.count(EXTERNAL_TOOL)).toBe(0);
+    expect(await env.count("vendo_approvals", "status = 'pending'")).toBe(0);
+
+    // 4. The refusal is on the record, so a run history can explain itself.
+    expect(
+      await env.count("vendo_audit", "event->>'tool' = $1 AND event->>'outcome' = 'blocked'", [
+        EXTERNAL_TOOL,
+      ]),
+    ).toBe(1);
+  });
+
+  it("still lets the SAME external tool run when a person is present — a normal confirm (§12)", async () => {
+    // The law withholds unattended irreversibility, not the capability. Without
+    // this, "refused in an away run" could be satisfied by a tool that is simply
+    // broken everywhere.
+    env = await createEnv();
+    await seedGrant(env.store, {
+      subject: SUBJECT,
+      descriptor: send,
+      scope: { kind: "tool" },
+      duration: "standing",
+    });
+    const reg = new SpyRegistry([send], { [EXTERNAL_TOOL]: { sent: 1 } });
+
+    const outcome = await env.bound(reg).execute(
+      { id: "cy", tool: EXTERNAL_TOOL, args: { invoiceId: "inv_1" } },
+      userCtx(SUBJECT, { venue: "chat", presence: "present" }),
+    );
+
+    expect(outcome.status).toBe("ok");
+    expect(reg.count(EXTERNAL_TOOL)).toBe(1);
   });
 });

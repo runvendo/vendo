@@ -121,11 +121,14 @@ served apps require machines. With the flags off, layer-3 generation, the
 surface flip, and opening a served app all refuse with a typed
 `not-implemented` error naming the flag.
 
-Layer 3 currently has one working venue: BYO e2b (`E2B_API_KEY` or an
-explicit `e2bSandbox`). On the Vendo Cloud hosted sandbox, the
-`*.m.vendo.run` ingress TLS certificate is not yet live, so served-app URLs
-fail the TLS handshake until it lands; layers 1 and 2 are unaffected on both
-venues.
+Layer 3 works on both venues: BYO e2b (`E2B_API_KEY` or an explicit
+`e2bSandbox`) and the Vendo Cloud hosted sandbox. Cloud ingress is a
+single-label hostname on the existing `*.vendo.run` certificate:
+`https://<id-suffix>-m.vendo.run`, where `<id-suffix>` is the machine id
+minus its two-character prefix. The console mints that canonical-port URL;
+for any other port the SDK rewrites the host string SDK-side, in your Node
+process, inserting the port before the suffix as
+`<id-suffix>-<port>-m.vendo.run`.
 
 ### Graduation rollback
 

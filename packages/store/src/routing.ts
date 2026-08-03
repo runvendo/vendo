@@ -2,6 +2,7 @@ import {
   VendoError,
   type AtomicRecordStore,
   type AuditEvent,
+  type Json,
   type PermissionGrant,
   type RecordQuery,
   type RecordStore,
@@ -19,18 +20,23 @@ import {
   putGrantRow,
   putRunRow,
   putStateRow,
+  duplicateThreadMessageId,
   putThreadRow,
+  replaceThreadMessages,
   runFromRow,
   stateRowFromRow,
+  THREAD_MESSAGES_AGGREGATE,
   threadFromRow,
 } from "./helpers/rows.js";
 import type { AppRow, ApprovalRow, RunRow, StateRow, ThreadRow } from "./helpers/types.js";
-import { cursorMs, decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
+import { cursorMs, decodeCursor, encodeCursor, iso, pageLimit, text } from "./helpers/utils.js";
 import {
   invalid,
   parseAppData,
+  parseAppGrantData,
   parseApprovalData,
   parseAuditEvent,
+  parseEffectData,
   parsePermissionGrant,
   parseRunData,
   parseThreadData,
@@ -50,6 +56,8 @@ export const RESERVED_COLLECTIONS = [
   "vendo_runs",
   "vendo_apps",
   "vendo_state",
+  "vendo_effects",
+  "vendo_app_grants",
 ] as const;
 
 export const DEDICATED_RECORD_COLLECTIONS = [
@@ -172,6 +180,48 @@ function appRecord(row: AppRow): VendoRecord {
     // Present when the row carries the write counter (01 §12: opaque token
     // when atomic is present) — Wave 7's lifecycle/schedule-claim arbitration.
     ...(row.revision === undefined ? {} : { revision: row.revision }),
+  };
+}
+
+function effectRecord(row: Record<string, unknown>): VendoRecord {
+  const subject = text(row["subject"]);
+  const at = iso(row["at"]);
+  return {
+    id: text(row["id"]),
+    data: { subject, outcome: row["outcome"] as Json, at },
+    refs: { subject },
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+/** The single vendo_effects write: insert-once, null when the key already exists. */
+async function insertEffect(
+  db: Db,
+  record: { id: string; data: unknown },
+): Promise<VendoRecord | null> {
+  const { subject, outcome } = parseEffectData(record.data, record.id);
+  const result = await db.query(
+    `INSERT INTO vendo_effects (key, subject, outcome) VALUES ($1, $2, $3::jsonb)
+     ON CONFLICT (key) DO NOTHING
+     RETURNING key AS id, subject, outcome, at`,
+    [record.id, subject, JSON.stringify(outcome)],
+  );
+  return result.rows[0] ? effectRecord(result.rows[0]) : null;
+}
+
+function appGrantRecord(row: Record<string, unknown>): VendoRecord {
+  const at = iso(row["created_at"]);
+  const appId = text(row["app_id"]);
+  const orgId = text(row["org_id"]);
+  const principal = text(row["principal"]);
+  const level = text(row["level"]);
+  return {
+    id: text(row["id"]),
+    data: { appId, orgId, principal, level, createdBy: text(row["created_by"]) },
+    refs: { app_id: appId, org_id: orgId, principal, level },
+    createdAt: at,
+    updatedAt: at,
   };
 }
 
@@ -334,13 +384,16 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
     case "vendo_threads":
       return {
         table: collection,
-        select: "SELECT * FROM vendo_threads",
-        // Listing derives only a title + timestamps; skip the (potentially large) messages
-        // column once a row carries a stored title. Legacy rows (title still NULL, written
-        // before the column existed) keep returning messages so the title stays derivable.
-        listSelect: `SELECT id, subject, title,
-           CASE WHEN title IS NULL THEN messages ELSE '[]'::jsonb END AS messages,
-           created_at, updated_at FROM vendo_threads`,
+        // v6 (build contract §6): the transcript lives in vendo_thread_messages
+        // now, so both reads reassemble it by seq. The door's record shape is
+        // unchanged — callers still get `data.messages`.
+        select: `SELECT t.*, ${THREAD_MESSAGES_AGGREGATE("t")} AS messages FROM vendo_threads t`,
+        // Listing derives only a title + timestamps; skip the (potentially large) transcript
+        // once a row carries a stored title. Rows with title still NULL keep returning
+        // messages so the title stays derivable.
+        listSelect: `SELECT t.id, t.subject, t.title,
+           CASE WHEN t.title IS NULL THEN ${THREAD_MESSAGES_AGGREGATE("t")} ELSE '[]'::jsonb END AS messages,
+           t.created_at, t.updated_at FROM vendo_threads t`,
         cursorColumn: "created_at",
         refs: { subject: "subject" },
         fromDb: (row) => threadRecord(threadFromRow(row)),
@@ -360,33 +413,50 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
           async insertIfAbsent(record) {
             requireRecordId(record.id);
             const data = parseThreadData(record.data, record.id);
+            // Same door guard as putThreadRow: a transcript that repeats a
+            // message id cannot be expressed by one ON CONFLICT statement, so
+            // refuse it with a typed error instead of a raw driver 21000.
+            const duplicate = duplicateThreadMessageId(data.messages);
+            if (duplicate !== undefined) {
+              invalid(`thread ${record.id} carries two messages with the id ${JSON.stringify(duplicate)}; message ids must be unique within a thread`);
+            }
             const now = new Date().toISOString();
             const result = await db.query(
-              `INSERT INTO vendo_threads (id, subject, messages, title, created_at, updated_at, revision)
-               VALUES ($1, $2, $3::jsonb, $4, $5, $5, 1)
+              `INSERT INTO vendo_threads (id, subject, title, created_at, updated_at, revision)
+               VALUES ($1, $2, $3, $4, $4, 1)
                ON CONFLICT (id) DO NOTHING
-               RETURNING id, subject, messages, title, created_at, updated_at, revision`,
-              [record.id, data.subject, JSON.stringify(data.messages), data.title ?? null, now],
+               RETURNING id, subject, title, created_at, updated_at, revision`,
+              [record.id, data.subject, data.title ?? null, now],
             );
-            return result.rows[0]
-              ? threadRecord(threadFromRow(result.rows[0] as Record<string, unknown>))
-              : null;
+            const row = result.rows[0];
+            if (row === undefined) return null;
+            await replaceThreadMessages(db, record.id, data.messages, now);
+            return threadRecord(threadFromRow({ ...row, messages: data.messages }));
           },
           async compareAndSwap(record, expectedRevision) {
             requireRecordId(record.id);
             requireRevision(expectedRevision);
             const data = parseThreadData(record.data, record.id);
+            // Same door guard as putThreadRow: a transcript that repeats a
+            // message id cannot be expressed by one ON CONFLICT statement, so
+            // refuse it with a typed error instead of a raw driver 21000.
+            const duplicate = duplicateThreadMessageId(data.messages);
+            if (duplicate !== undefined) {
+              invalid(`thread ${record.id} carries two messages with the id ${JSON.stringify(duplicate)}; message ids must be unique within a thread`);
+            }
             const now = new Date().toISOString();
             const result = await db.query(
               `UPDATE vendo_threads
-               SET messages = $3::jsonb, title = $4, updated_at = $5, revision = revision + 1
-               WHERE id = $1 AND subject = $2 AND revision = $6::bigint
-               RETURNING id, subject, messages, title, created_at, updated_at, revision`,
-              [record.id, data.subject, JSON.stringify(data.messages), data.title ?? null, now, expectedRevision],
+               SET title = $3, updated_at = $4, revision = revision + 1
+               WHERE id = $1 AND subject = $2 AND revision = $5::bigint
+               RETURNING id, subject, title, created_at, updated_at, revision`,
+              [record.id, data.subject, data.title ?? null, now, expectedRevision],
             );
-            return result.rows[0]
-              ? threadRecord(threadFromRow(result.rows[0] as Record<string, unknown>))
-              : null;
+            const row = result.rows[0];
+            if (row === undefined) return null;
+            // Only after the CAS won — a loser must not touch the transcript.
+            await replaceThreadMessages(db, record.id, data.messages, now);
+            return threadRecord(threadFromRow({ ...row, messages: data.messages }));
           },
         },
       };
@@ -457,6 +527,74 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
               ? appRecord(appFromRow(result.rows[0] as Record<string, unknown>))
               : null;
           },
+        },
+      };
+    case "vendo_effects":
+      return {
+        table: collection,
+        // Contract §7: the effect ledger, in ITS OWN table — subject-adoption
+        // (helpers/subjects.ts) and the erase cascade both address
+        // `vendo_effects` directly, so receipts routed to the generic table
+        // would be invisible to both (found by the wave-1 independent check).
+        // The PK is `key`, aliased so the door's generic id machinery works.
+        select: "SELECT * FROM (SELECT key AS id, subject, outcome, at FROM vendo_effects) e",
+        // Receipts are a ledger: never deleted through the door, erased only
+        // via the store erase API — same law as vendo_audit.
+        appendOnly: true,
+        cursorColumn: "at",
+        refs: { subject: "subject" },
+        fromDb: effectRecord,
+        async put(record) {
+          // Insert-once even on the plain door: a receipt that exists is the
+          // truth about what already executed; overwriting it is how a re-run
+          // double-sends. Losing the race returns the recorded row.
+          const inserted = await insertEffect(db, record);
+          if (inserted) return inserted;
+          const existing = await db.query(
+            "SELECT key AS id, subject, outcome, at FROM vendo_effects WHERE key = $1",
+            [record.id],
+          );
+          return effectRecord(existing.rows[0] as Record<string, unknown>);
+        },
+        atomic: {
+          async insertIfAbsent(record) {
+            requireRecordId(record.id);
+            return insertEffect(db, record);
+          },
+          async compareAndSwap() {
+            throw new VendoError(
+              "blocked",
+              "vendo_effects receipts are immutable once written; only insertIfAbsent is supported",
+            );
+          },
+        },
+      };
+    case "vendo_app_grants":
+      return {
+        table: collection,
+        // Contract §9.2: app → principal → level, in ITS OWN table — the erase
+        // cascade and the by-app cascade both address `vendo_app_grants`
+        // directly, so grants routed to the generic table would be invisible
+        // to both (the vendo_effects lesson).
+        select: "SELECT * FROM vendo_app_grants",
+        cursorColumn: "created_at",
+        refs: { app_id: "app_id", org_id: "org_id", principal: "principal", level: "level" },
+        fromDb: appGrantRecord,
+        async put(record) {
+          const data = parseAppGrantData(record.data, record.id);
+          // One row per (app, principal): re-granting UPDATES the level in
+          // place rather than accreting rows a max() would have to reconcile.
+          // The original id survives, so a revoke by id stays stable.
+          const result = await db.query(
+            `INSERT INTO vendo_app_grants (id, app_id, org_id, principal, level, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (app_id, principal)
+               DO UPDATE SET level = EXCLUDED.level, created_by = EXCLUDED.created_by,
+                             org_id = EXCLUDED.org_id
+             RETURNING *`,
+            [record.id, data.appId, data.orgId, data.principal, data.level, data.createdBy],
+          );
+          return appGrantRecord(result.rows[0] as Record<string, unknown>);
         },
       };
     case "vendo_state":

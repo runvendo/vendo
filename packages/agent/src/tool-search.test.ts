@@ -4,7 +4,7 @@ import { CAPABILITY_MISS_TOOL_NAME } from "./capability-miss.js";
 import { createAgent } from "./index.js";
 import {
   DEFAULT_MAX_INITIAL_TOOLS,
-  VENDO_TOOLS_SEARCH_TOOL_NAME,
+  FIND_TOOLS_TOOL_NAME,
   computeInitialLoadout,
   createToolSearchSession,
   type ToolSearchFn,
@@ -139,9 +139,26 @@ describe("activeToolNames — the persisted loaded set is re-checked against the
     });
     const active = session.activeToolNames();
     expect(active).not.toContain("host_b_write");
-    expect(active).toContain(VENDO_TOOLS_SEARCH_TOOL_NAME);
+    expect(active).toContain(FIND_TOOLS_TOOL_NAME);
     // vendo_* stays active regardless of the menu (unchanged exemption).
     expect(active).toContain("vendo_apps_open");
+  });
+
+  it("stays always-active under its contract name, which no longer starts with vendo_", () => {
+    // The rename to `find_tools` (design §4) walks past `isAlwaysActive`, which
+    // exempts tools by their `vendo_` prefix. The meta-tool is exempt because
+    // activeToolNames adds it explicitly, not because of its spelling — assert
+    // that, so a future refactor onto the prefix rule cannot silently make tool
+    // discovery vanish whenever a loadout menu is in play.
+    expect(FIND_TOOLS_TOOL_NAME).toBe("find_tools");
+    expect(FIND_TOOLS_TOOL_NAME.startsWith("vendo_")).toBe(false);
+    const session = createToolSearchSession({
+      config: { search, loadout: [] },
+      descriptors: surface,
+      loaded: new Set(),
+      menuNames: ["host_a_read"],
+    });
+    expect(session.activeToolNames()).toContain(FIND_TOOLS_TOOL_NAME);
   });
 
   it("keeps a loaded tool when no menu is defined this turn", () => {
@@ -154,10 +171,10 @@ describe("activeToolNames — the persisted loaded set is re-checked against the
   });
 });
 
-describe("vendo_tools_search meta-tool", () => {
+describe("find_tools meta-tool", () => {
   it("loads a previously-unavailable tool and executes it through the guard-bound registry", async () => {
     const model = scriptedModel([
-      toolCallTurn(VENDO_TOOLS_SEARCH_TOOL_NAME, { query: "export csv" }, "call_search"),
+      toolCallTurn(FIND_TOOLS_TOOL_NAME, { query: "export csv" }, "call_search"),
       toolCallTurn("host_export_csv", {}, "call_export"),
       textTurn("Exported.", "text_done"),
     ]);
@@ -174,7 +191,7 @@ describe("vendo_tools_search meta-tool", () => {
 
     expect(search).toHaveBeenCalledWith("export csv", undefined);
     // Gated at the start: the host tool is not offered until it is searched in.
-    expect(model.toolNamesPerCall[0]).toContain(VENDO_TOOLS_SEARCH_TOOL_NAME);
+    expect(model.toolNamesPerCall[0]).toContain(FIND_TOOLS_TOOL_NAME);
     expect(model.toolNamesPerCall[0]).not.toContain("host_export_csv");
     // After search, the very next step offers — and the model calls — the tool.
     expect(model.toolNamesPerCall[1]).toContain("host_export_csv");
@@ -185,7 +202,7 @@ describe("vendo_tools_search meta-tool", () => {
 
   it("still gates a searched-in WRITE tool through the guard (no unguarded path)", async () => {
     const model = scriptedModel([
-      toolCallTurn(VENDO_TOOLS_SEARCH_TOOL_NAME, { query: "export csv" }, "call_search"),
+      toolCallTurn(FIND_TOOLS_TOOL_NAME, { query: "export csv" }, "call_search"),
       toolCallTurn("host_export_csv", {}, "call_export"),
       textTurn("unreached", "text_unreached"),
     ]);
@@ -209,7 +226,7 @@ describe("vendo_tools_search meta-tool", () => {
 
   it("persists loaded tools across turns within a thread", async () => {
     const model = scriptedModel([
-      toolCallTurn(VENDO_TOOLS_SEARCH_TOOL_NAME, { query: "export csv" }, "call_search"),
+      toolCallTurn(FIND_TOOLS_TOOL_NAME, { query: "export csv" }, "call_search"),
       textTurn("Found it.", "text_first"),
       textTurn("Second turn.", "text_second"),
     ]);
@@ -249,14 +266,14 @@ describe("vendo_tools_search meta-tool", () => {
     await readSse(await agent.stream({ threadId: "thr_both", message: userMessage("u1", "hi"), ctx: ctx() }));
 
     // Both meta-tools stay offered even though host tools are gated by the loadout.
-    expect(model.toolNamesPerCall[0]).toContain(VENDO_TOOLS_SEARCH_TOOL_NAME);
+    expect(model.toolNamesPerCall[0]).toContain(FIND_TOOLS_TOOL_NAME);
     expect(model.toolNamesPerCall[0]).toContain(CAPABILITY_MISS_TOOL_NAME);
     expect(model.toolNamesPerCall[0]).not.toContain("host_export_csv");
   });
 
   it("clears a thread's loaded tools on session eviction so a reused id starts fresh (regression)", async () => {
     const model = scriptedModel([
-      toolCallTurn(VENDO_TOOLS_SEARCH_TOOL_NAME, { query: "export csv" }, "call_search"),
+      toolCallTurn(FIND_TOOLS_TOOL_NAME, { query: "export csv" }, "call_search"),
       textTurn("Found it.", "text_first"),
       textTurn("Fresh turn.", "text_second"),
     ]);
@@ -295,7 +312,7 @@ describe("vendo_tools_search meta-tool", () => {
       execute: async () => ({ refunded: true }),
     };
     const model = scriptedModel([
-      toolCallTurn(VENDO_TOOLS_SEARCH_TOOL_NAME, { query: "refund payout" }, "call_search"),
+      toolCallTurn(FIND_TOOLS_TOOL_NAME, { query: "refund payout" }, "call_search"),
       toolCallTurn("host_payouts_refund", {}, "call_refund"),
       textTurn("done", "text_done"),
     ]);
@@ -364,7 +381,7 @@ describe("discovery discipline (criterion 12) — the meta-tool no longer invite
     });
     const tools: Record<string, unknown> = {};
     session.attach(tools as never);
-    const description = (tools[VENDO_TOOLS_SEARCH_TOOL_NAME] as { description: string }).description;
+    const description = (tools[FIND_TOOLS_TOOL_NAME] as { description: string }).description;
     expect(description).not.toContain("safe and correct");
     // The new posture: search is a last resort, and unconnected services get a
     // connect card — the agent is never told to go call their tools.
@@ -386,7 +403,7 @@ describe("mid-turn materialization (lazily expanded search hits)", () => {
     });
     const tools: Record<string, unknown> = {};
     session.attach(tools as never);
-    const meta = tools[VENDO_TOOLS_SEARCH_TOOL_NAME] as { execute: (input: unknown, meta: { toolCallId: string }) => Promise<{ status: string; output: { loaded: string[] } }> };
+    const meta = tools[FIND_TOOLS_TOOL_NAME] as { execute: (input: unknown, meta: { toolCallId: string }) => Promise<{ status: string; output: { loaded: string[] } }> };
     const outcome = await meta.execute({ query: "email" }, { toolCallId: "t1" });
     expect(materialized).toEqual(["gmail_SEND"]);
     expect(outcome.output.loaded).toEqual(["gmail_SEND"]);

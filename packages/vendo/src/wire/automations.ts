@@ -19,6 +19,10 @@ export const automationRoutes: RouteEntry[] = [
       return json({});
     }
     if (segments[2] === "dry-run") return json(await deps.automations.dryRun(appId, ctx));
+    // Build contract §9.9 — take on a stopped automation. Editor gating and
+    // the CAS live in the engine; the door just carries the caller's context,
+    // because the grants minted here are the CALLER's own.
+    if (segments[2] === "adopt") return json(await deps.automations.adopt(appId, ctx));
     return undefined;
   }),
 ];

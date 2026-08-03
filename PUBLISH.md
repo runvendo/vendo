@@ -19,6 +19,28 @@ packages:
 Demos, fixtures, corpus tooling/hosts, the benchmark, and spikes remain
 `private: true`.
 
+### `@vendoai/harnesses` — first publish, blocked on one manual step
+
+`@vendoai/harnesses` joined the fixed group in wave 2 (`.changeset/config.json`),
+so changesets now versions it in lockstep with the rest. It has never been
+published: `npm view @vendoai/harnesses` is a 404. Because `release.yml`
+publishes **every** non-private `packages/*` workspace on a `v*` tag, the next
+tag will attempt its first publish automatically — and that publish will FAIL
+unless Step 4's trusted-publisher entry exists for it first. Trusted publishing
+can only be configured for a package that already exists on the registry, so
+the first `@vendoai/harnesses` publish has to come from Yousef's TTY (Step 1's
+command, scoped to the one package), after which the Step 4 entry can be added.
+
+Do this before tagging the wave-2 release:
+
+```bash
+NPM_CONFIG_MIN_RELEASE_AGE=0 pnpm --filter @vendoai/harnesses publish --access public --no-git-checks
+```
+
+Then add the trusted publisher at
+`https://www.npmjs.com/package/@vendoai/harnesses/access` with the same four
+settings Step 4 lists.
+
 ## Step 1 — publish from a TTY (launch day)
 
 From the repository root on merged `main`, clean worktree, after `pnpm build`:

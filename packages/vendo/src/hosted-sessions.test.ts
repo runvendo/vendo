@@ -327,7 +327,7 @@ describe("hosted store: console without session doors (vendo-web@7cd0a02)", () =
     return { hits, wrap };
   };
 
-  it("keeps serving anonymous traffic: registration disables once, with ONE warn naming the removal", async () => {
+  it("keeps serving anonymous traffic: registration disables once, with ONE warn naming the bare 404", async () => {
     const doors = withoutDoors();
     const h = harness({ ttlMs: 3_600_000, sweepIntervalMs: 1_000 }, doors.wrap);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -344,7 +344,7 @@ describe("hosted store: console without session doors (vendo-web@7cd0a02)", () =
     const doorWarns = warn.mock.calls.filter(([message]) =>
       typeof message === "string" && message.includes("session doors"));
     expect(doorWarns).toHaveLength(1);
-    expect(doorWarns[0]![0]).toContain("vendo-web@7cd0a02");
+    expect(doorWarns[0]![0]).toContain("bare 404");
     // The warn names every capability the process is giving up.
     expect(doorWarns[0]![0]).toContain("registration");
     expect(doorWarns[0]![0]).toContain("merge");
@@ -411,5 +411,211 @@ describe("hosted store: console without session doors (vendo-web@7cd0a02)", () =
     expect(doors.hits).not.toContain("adopt");
     expect(h.wireCalls("/records/vendo_audit/put").filter((request) =>
       JSON.stringify(request.json).includes("anon-merge"))).toHaveLength(0);
+  });
+});
+
+// Cloud-audit fix 1. Both existing sweep cadences are unreachable on a
+// serverless host: the interval timer is illegal/never fires, and the
+// amortized on-request sweep is gated by a per-PROCESS `lastSweepAt` that a
+// per-request process re-seeds every invocation. The authenticated tick is the
+// one cadence a serverless deployment does have.
+describe("hosted store: the authenticated tick drives the session sweep", () => {
+  const TICK_SECRET = "tick-secret-for-hosted-sessions";
+
+  const tick = (vendo: Vendo, authorization = `Bearer ${TICK_SECRET}`): Promise<Response> =>
+    vendo.handler(new Request("https://host.test/api/vendo/tick", {
+      method: "POST",
+      headers: { authorization },
+    }));
+
+  it("runs stale → claim → erase on tick when the interval gate would have skipped it", async () => {
+    vi.stubEnv("VENDO_TICK_SECRET", TICK_SECRET);
+    // The serverless shape: a process whose lastSweepAt was seeded THIS request,
+    // so the amortized pre-routing leg is throttled out and only the tick's
+    // forced pass can reclaim anything.
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 10 ** 9 });
+    h.setNow(0);
+    const first = await h.vendo.handler(listThreads());
+    expect(first.status).toBe(200);
+    const staleSubject = (h.wireCalls("/sessions/register")[0]!.json as { subject: string }).subject;
+    expect(h.wireCalls("/sessions/stale")).toHaveLength(0);
+
+    // Inside the TTL: the tick lists candidates and finds nothing to claim.
+    h.setNow(500);
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect(h.wireCalls("/sessions/stale")).toHaveLength(1);
+    expect(h.wireCalls("/sessions/claim")).toHaveLength(0);
+    expect(h.console_.eraseCalls).toEqual([]);
+
+    // Past it, still nowhere near a sweep interval: only the forced pass runs.
+    h.setNow(5_000);
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect(h.wireCalls("/sessions/stale").at(-1)!.json).toEqual({ idleMs: 1_000, now: 5_000 });
+    expect(h.wireCalls("/sessions/claim")[0]!.json).toEqual({
+      subject: staleSubject,
+      idleMs: 1_000,
+      now: 5_000,
+    });
+    expect(h.console_.eraseCalls).toEqual([{ subject: staleSubject }]);
+    expect(h.console_.sessions.has(staleSubject)).toBe(false);
+
+    // A second tick at the same clock adds nothing — the claim leg is a
+    // single-winner election on the console.
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect(h.console_.eraseCalls).toHaveLength(1);
+
+    // …and an unauthenticated one drives no sweep at all.
+    const scans = h.wireCalls("/sessions/stale").length;
+    expect((await tick(h.vendo, "Bearer wrong")).status).toBe(401);
+    expect(h.wireCalls("/sessions/stale")).toHaveLength(scans);
+    expect(h.console_.eraseCalls).toHaveLength(1);
+  });
+
+  it("runs the registry scan ONCE per tick when the amortized leg also fires", async () => {
+    vi.stubEnv("VENDO_TICK_SECRET", TICK_SECRET);
+    // The long-lived shape, with a realistic interval the tick's clock is well
+    // past: the pre-routing amortized sweep DOES fire on the tick request. The
+    // route must await that same pass, not open a second scan of the registry.
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 100 });
+    h.setNow(0);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+
+    h.setNow(5_000);
+    expect((await tick(h.vendo)).status).toBe(200);
+    expect(h.wireCalls("/sessions/stale")).toHaveLength(1);
+    expect(h.wireCalls("/sessions/claim")).toHaveLength(1);
+    expect(h.console_.eraseCalls).toHaveLength(1);
+  });
+
+  it("answers 500 when the amortized pass failed, instead of quietly re-running it", async () => {
+    vi.stubEnv("VENDO_TICK_SECRET", TICK_SECRET);
+    // The amortized leg is allowed to swallow a sweep failure — an innocent
+    // request must not 500 for it. A TICK is not innocent: a cron that gets 200
+    // after a failed sweep never comes back, so the failure has to ride out.
+    // The failure is ONE-SHOT on purpose: with two passes per tick the first
+    // would fail into the warn and the second would succeed, handing the cron
+    // a clean 200 for the sweep that did not happen.
+    let failStale = true;
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 100 }, (inner) =>
+      async (input, init) => {
+        const url = new URL(new Request(input, init).url);
+        if (failStale && url.pathname.endsWith("/sessions/stale")) {
+          failStale = false;
+          return Response.json(
+            { error: { code: "unavailable", message: "console blip" } },
+            { status: 503 },
+          );
+        }
+        return inner(input, init);
+      });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    h.setNow(0);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+
+    // Interval elapsed: the pre-routing pass runs, fails, and warns — and the
+    // tick inherits that same rejection instead of reporting a clean run.
+    h.setNow(5_000);
+    const ticked = await tick(h.vendo);
+    expect(ticked.status).toBe(500);
+    expect((await ticked.json() as { errors: string[] }).errors)
+      .toEqual([expect.stringContaining("sessions:")]);
+  });
+
+});
+
+// Checker round 1, finding 2. A hosted claim COMMITS by deleting the registry
+// row, so an erase that fails after it would leave the subject's rows
+// unreachable by every later stale scan — silently stranded on the console.
+describe("hosted store: a failed erase after a claim does not strand the subject", () => {
+  it("re-registers the claimed subject so the next sweep retries it", async () => {
+    let failErase = true;
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 100 }, (inner) =>
+      async (input, init) => {
+        const url = new URL(new Request(input, init).url);
+        if (failErase && url.pathname.endsWith("/erase")) {
+          return Response.json(
+            { error: { code: "unavailable", message: "erase cascade blip" } },
+            { status: 503 },
+          );
+        }
+        return inner(input, init);
+      });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    h.setNow(0);
+    const first = await h.vendo.handler(listThreads());
+    expect(first.status).toBe(200);
+    const subject = (h.wireCalls("/sessions/register")[0]!.json as { subject: string }).subject;
+
+    // Past the TTL: stale → claim → erase, and the erase fails.
+    h.setNow(5_000);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    expect(h.wireCalls("/sessions/claim")).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("session sweep failed"));
+
+    // The compensation: the registry row is BACK, stamped past the cutoff so
+    // the subject is stale again immediately rather than after another TTL.
+    expect(h.console_.sessions.has(subject)).toBe(true);
+    const registers = h.wireCalls("/sessions/register")
+      .map((request) => request.json as { subject: string; now: number })
+      .filter((body) => body.subject === subject);
+    expect(registers).toHaveLength(2);
+    expect(registers[1]!.now).toBeLessThan(5_000 - 1_000);
+
+    // Next sweep, console healthy: the subject is still reachable and erases.
+    failErase = false;
+    h.setNow(10_000);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    expect(h.wireCalls("/sessions/stale").at(-1)!.json).toEqual({ idleMs: 1_000, now: 10_000 });
+    expect(h.console_.eraseCalls).toContainEqual({ subject });
+    expect(h.console_.sessions.has(subject)).toBe(false);
+  });
+
+  // Checker round 2. The compensation writes a BACKDATED stamp, so it is only
+  // safe because the console's register/touch never moves a subject's stamp
+  // backward (vendo-web session-registry.ts bumps under `last_seen < seenAt`;
+  // the fake console mirrors that clamp). This pins the client's half of that
+  // contract: the sweep may write the backdated stamp unconditionally, and a
+  // visitor who returned mid-sweep must still come out alive.
+  it("keeps a returning visitor's fresh touch when the compensation lands after it", async () => {
+    let subject = "";
+    const h = harness({ ttlMs: 1_000, sweepIntervalMs: 100 }, (inner) =>
+      async (input, init) => {
+        const request = new Request(input, init);
+        if (!new URL(request.url).pathname.endsWith("/erase")) return inner(input, init);
+        // The race: the claim already deleted the row, the visitor comes back
+        // and re-registers at the current clock, and only THEN does the erase
+        // fail and the compensation write its backdated stamp.
+        await inner(new Request("https://cloud-sessions.test/api/v1/store/sessions/register", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: "Bearer vnd_hosted_key" },
+          body: JSON.stringify({ subject, now: 5_000 }),
+        }));
+        return Response.json(
+          { error: { code: "unavailable", message: "erase cascade blip" } },
+          { status: 503 },
+        );
+      });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    h.setNow(0);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    subject = (h.wireCalls("/sessions/register")[0]!.json as { subject: string }).subject;
+
+    h.setNow(5_000);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    expect(h.wireCalls("/sessions/claim")).toHaveLength(1);
+
+    // The visitor's fresh stamp won: the backdated compensation did not
+    // regress it, so the session is live, not one cutoff away from erasure.
+    expect(h.console_.sessions.get(subject)).toBe(5_000);
+
+    // Proof it matters: a sweep inside the TTL of that fresh touch leaves the
+    // subject alone. Without the clamp the compensation would have stamped it
+    // at 3_999 and this pass would erase a session in use.
+    h.setNow(5_500);
+    expect((await h.vendo.handler(listThreads())).status).toBe(200);
+    expect(h.console_.eraseCalls).toEqual([]);
+    expect(h.console_.sessions.has(subject)).toBe(true);
   });
 });

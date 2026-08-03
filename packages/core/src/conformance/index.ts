@@ -27,6 +27,8 @@ import {
 export { memoryStoreAdapter, type MemoryStoreAdapterOptions } from "./memory-store.js";
 export { memoryKnowledgeAdapter, type MemoryKnowledgeAdapterOptions } from "./memory-knowledge.js";
 export { knowledgeAdapterConformance, type KnowledgeConformanceOptions } from "./knowledge.js";
+export { appAccessConformance, type AppAccessConformanceOptions } from "./app-access.js";
+export { memoryAppAccess, type MemoryAppAccess } from "./memory-app-access.js";
 
 /**
  * One executable seam assertion. Cases throw on failure and can be mounted in any

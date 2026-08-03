@@ -6,7 +6,7 @@ import { useApprovals } from "../hooks/use-approvals.js";
 import { useAutomations } from "../hooks/use-automations.js";
 import type { RunPlan, RunRecord, RunStatus } from "../wire-types.js";
 import { formatAuditTime } from "./activity-semantics.js";
-import { automationFlow } from "./automation-card.js";
+import { automationFlow, sponsorLabel } from "./automation-card.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { GrantSetCard } from "./grant-set-card.js";
 
@@ -40,6 +40,28 @@ function runRollup(runs: RunRecord[]): string {
     .filter(status => counts.has(status))
     .map(status => `${counts.get(status)} ${RUN_STATUS_ROLLUP[status]}`)
     .join(" · ");
+}
+
+/**
+ * The consumer's half of a refusal (design §3, the consumer-voice law). Every
+ * sentence the wire throws is written for the HOST DEVELOPER — one names an
+ * environment variable, another carries an app id — and rendering
+ * `reason.message` put all of them in front of whoever was using the product.
+ * The developer sentence keeps its home (the server's own error, the browser
+ * console); the person reading this panel is told what it means for THEM. Same
+ * treatment the Share dialog (`refusalCopy`) and the apps page
+ * (`refusalSentence`) already carry.
+ *
+ * One sentence per code, not per verb: turning an automation on, dry-running
+ * it, reading its history and stopping a run all fail for the same few reasons,
+ * and the code is the part that differs.
+ */
+function refusalCopy(reason: unknown): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  if (code === "forbidden") return "You can see this automation, but not change it.";
+  if (code === "not-found") return "That automation isn’t available any more.";
+  if (code === "cloud-required") return "That isn’t turned on for this workspace yet.";
+  return "That didn’t go through — nothing changed. Try again in a moment.";
 }
 
 /** Lane pick 7-A — liveness. `every` durations the wire uses ("30m", "6h",
@@ -198,7 +220,7 @@ export function AutomationsPanel() {
     try {
       await action();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(refusalCopy(reason));
     } finally {
       setBusy(current => ({ ...current, [key]: false }));
     }
@@ -271,6 +293,7 @@ export function AutomationsPanel() {
           const appId = entry.app.id;
           const appRuns = runs[appId];
           const flow = automationFlow(entry.app.trigger);
+          const runsAs = sponsorLabel(entry.sponsor, entry.editors);
           // The set-card rows come from the persisted pending queue; the count
           // prefers the engine's own projection (they agree modulo poll skew).
           const pendingAsks = pendingByApp.get(appId) ?? [];
@@ -316,7 +339,18 @@ export function AutomationsPanel() {
                 <div>
                   <div className="fl-auto-title">{entry.app.name}</div>
                   <div className="fl-auto-sub">
-                    {runningRun ? (
+                    {/* §9.9 — `stopped` is the SERVER's word on the automation
+                        itself and it outranks any run row: the fire-time check
+                        stops a run before its first tool call, so a run left
+                        looking live cannot be allowed to report "running now"
+                        about something that will not run again until it is
+                        taken on. */}
+                    {entry.stopped !== undefined ? (
+                      <>
+                        <span className="fl-auto-live fl-auto-wait" aria-hidden="true" />
+                        Stopped
+                      </>
+                    ) : runningRun ? (
                       <>
                         <span className="fl-act-spin" aria-hidden="true" />
                         <span className="fl-auto-nextrun">running now{runningStep}</span>
@@ -341,6 +375,20 @@ export function AutomationsPanel() {
                       </>
                     )}
                   </div>
+                  {/* §9.9 — WHY it stopped, in the server's own consumer sentence
+                      (the same one the adoption card carries, so the list and the
+                      card never say two different things). The card in the app is
+                      where it gets taken on; this is how it gets found. */}
+                  {entry.stopped === undefined ? null : (
+                    <div className="fl-auto-sub fl-auto-stopped" style={{ display: "block" }} role="status">
+                      {entry.stopped.summary}
+                    </div>
+                  )}
+                  {/* §13 — an automation always runs as a named person, and its
+                      window says so. */}
+                  {runsAs === null
+                    ? null
+                    : <div className="fl-auto-sub" style={{ display: "block" }}>{runsAs}</div>}
                 </div>
                 <button
                   className="fl-auto-toggle"

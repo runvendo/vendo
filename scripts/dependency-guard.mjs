@@ -70,6 +70,12 @@ const LAYERS = {
   // core's KnowledgeAdapter contract; core-only, like the other engine blocks
   "@vendoai/knowledge": ["@vendoai/core"],
   "@vendoai/automations": ["@vendoai/core", "@vendoai/apps"],
+  // the harness runtime (build contract 2026-07-30 §2): the second multi-block
+  // package after the umbrella. It runs any Harness — building the Turn, mapping
+  // the guard's outcomes, mirroring onto today's wire, and emitting hot-path
+  // views — so it reaches core (the contract), agent (the vendo() loop), apps
+  // (the plan skeleton) and guard. It is NOT the umbrella: no store, no actions.
+  "@vendoai/harnesses": ["@vendoai/core", "@vendoai/agent", "@vendoai/apps", "@vendoai/guard"],
   // the canonical umbrella is the only package allowed to depend on every block
   "@vendoai/vendo": "*",
   // the unscoped compatibility package is a thin alias of the canonical umbrella

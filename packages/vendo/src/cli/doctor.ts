@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { stdin, stdout } from "node:process";
 import type { Telemetry } from "@vendoai/telemetry";
 import {
@@ -10,7 +10,7 @@ import {
   type CloudDoctorResult,
   type LiveTurnResult,
 } from "./doctor-live.js";
-import { installedAiVersion, installedZodVersion } from "./dep-versions.js";
+import { installedAiVersion, installedZodVersion, isOlderVersion, npmLatestVersion } from "./dep-versions.js";
 import { zodBelowAiSdkFloor, zodBumpInvocation } from "./provider-deps.js";
 import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
@@ -20,6 +20,7 @@ import { doctorFixRef, type DoctorErrorCode } from "./doctor-codes.js";
 import { EJECT_MANIFEST_FILE, type EjectedManifest } from "./eject.js";
 import { applyJudgment, judgmentsFileSchema, overridesFileSchema, toolsFileSchema, type ToolJudgment } from "@vendoai/actions";
 import { detectFramework, detectVendoWiring } from "./framework.js";
+import { importsGeneratedMap, missingRegistrations, registrationKey, requiredServerActions, serverActionsWiring } from "./init-scaffolds.js";
 import { CONFIG_SURFACES, OVERRIDES_ENABLEMENT_NOTE } from "../config-surface.js";
 import { walk } from "./theme/walk.js";
 import { remoteUrls, sameUrl, validateRegistryServer } from "./mcp/registry.js";
@@ -50,6 +51,9 @@ export interface DoctorOptions {
   cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   startDevServer?: (options: { root: string; statusUrl: string; env?: Record<string, string | undefined>; fetchImpl?: typeof fetch }) => Promise<{ ok: boolean; stop: () => void }>;
   e2bResolvable?: (root: string) => boolean;
+  /** The npm `latest` lookup behind the version-skew line — its own seam, not
+      fetchImpl, so a scripted wire probe never doubles as a registry answer. */
+  npmLatest?: () => Promise<string | null>;
 }
 
 type CheckStatus = "ok" | "broken" | "warning";
@@ -208,8 +212,50 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
       join(root, "app", "api", "vendo", "[...vendo]", "route.ts"),
       join(root, "src", "app", "api", "vendo", "[...vendo]", "route.ts"),
     ];
-    if ((await Promise.all(routeCandidates.map(exists))).some(Boolean)) pass("wiring/next-route", "catch-all handler is wired");
+    const routePath = (await Promise.all(
+      routeCandidates.map(async (candidate) => (await exists(candidate)) ? candidate : null),
+    )).find((candidate) => candidate !== null) ?? null;
+    if (routePath !== null) pass("wiring/next-route", "catch-all handler is wired");
     else fail("wiring/next-route", "E-WIRE-003", "missing app/api/vendo/[...vendo]/route.ts");
+
+    // Server actions (ENG-248): init only ever CREATES, so a route or a
+    // registration map that predates the host's `"use server"` surface stays
+    // exactly as the developer left it — and every server-action tool then
+    // fails closed at execution time with nothing else red. Doctor is where
+    // that shows up. Every judgment below is the SAME one init makes, from the
+    // same shared helpers: the two must never disagree about whether a host is
+    // wired, or one of them is lying. Silent when the host has no live server
+    // actions at all.
+    const registrations = routePath === null ? [] : await requiredServerActions(root);
+    if (routePath !== null && registrations.length > 0) {
+      const routeSource = await readFile(routePath, "utf8").catch(() => "");
+      const wiring = serverActionsWiring(routeSource);
+      if (wiring === "unknown") {
+        // No recognizable createVendo({ … }) — the same shape init declines to
+        // name a paste for. Nothing honest to grade.
+      } else if (wiring === "wired" && !importsGeneratedMap(routeSource)) {
+        // The route passes a map it composes itself (a local object, an aliased
+        // import). Init leaves that alone by design, and there is no generated
+        // map to grade against — so doctor says nothing rather than guessing.
+      } else {
+        const mapPath = join(dirname(routePath), "vendo-actions.ts");
+        const map = await readOptional(mapPath);
+        const missing = map === null ? registrations : missingRegistrations(map, registrations);
+        if (wiring === "wired" && missing.length === 0) {
+          pass("wiring/server-actions", `${registrations.length} server action${registrations.length === 1 ? " is" : "s are"} registered and wired`);
+        } else {
+          fail("wiring/server-actions", "E-WIRE-009",
+            `server actions fail closed — ${[
+              ...(missing.length === 0 ? [] : [map === null
+                ? `${relative(root, mapPath)} is missing`
+                : `${relative(root, mapPath)} does not register ${missing.map(registrationKey).join(", ")}`]),
+              // Scoped to the call on purpose: an import line alone is not
+              // wiring, and it is exactly where a half-applied paste lands.
+              ...(wiring === "unwired" ? [`${relative(root, routePath)} does not pass serverActions inside createVendo({ … })`] : []),
+            ].join("; ")}. Re-run \`npx vendo init\`: it prints the exact paste for each (it never rewrites a file you already have).`);
+        }
+      }
+    }
 
     // The mount may live in ANY layout, not just the root one (i18n/route-group
     // hosts mount in e.g. app/[locale]/layout.tsx — the literal root-layout
@@ -223,8 +269,26 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
         if (source.includes("<VendoRoot") || source.includes("<VendoProvider")) rootWired = true;
       }
     }
-    if (rootWired) pass("wiring/next-root", "<VendoRoot> wraps the app");
-    else fail("wiring/next-root", "E-WIRE-004", "no app layout mounts <VendoRoot> — wrap the app in the generated vendo/vendo-root.tsx wrapper (its export is also named VendoRoot), in the root layout or any layout that covers your pages");
+    if (rootWired) {
+      pass("wiring/next-root", "<VendoRoot> wraps the app");
+    } else {
+      // The exact paste, not a description of it: init never edits user source,
+      // so this is the one step a by-the-book install still owes, and doctor is
+      // where a missed paste surfaces. Name the file that exists.
+      const layoutPath = (await Promise.all(
+        [join(root, "app", "layout.tsx"), join(root, "src", "app", "layout.tsx")].map(
+          async (candidate) => (await exists(candidate)) ? candidate : null,
+        ),
+      )).find((candidate) => candidate !== null) ?? join(root, "app", "layout.tsx");
+      const file = relative(root, layoutPath);
+      const specifier = relative(dirname(layoutPath), join(dirname(dirname(layoutPath)), "vendo", "vendo-root"))
+        .split(sep).join("/");
+      fail("wiring/next-root", "E-WIRE-004",
+        `no app layout mounts <VendoRoot> — Vendo is wired but invisible. In ${file}, paste: `
+        + `import { VendoRoot } from "${specifier}";  … then wrap: <VendoRoot>{children}</VendoRoot>. `
+        + "(The generated vendo/vendo-root.tsx wrapper's export is also named VendoRoot and mounts <VendoOverlay />; "
+        + "any layout that covers your pages works. `vendo init` never edits your source, so this paste is always yours.)");
+    }
   }
 
   // Visible surface (0.4.1 E2E cert B3): <VendoRoot> is a context provider
@@ -262,6 +326,19 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     fail("deps/zod-floor", "E-DEP-003", `installed zod@${zodVersion} predates the zod/v3 + zod/v4 subpaths the AI SDK imports (needs >=3.25) — the app build fails inside ai@6; bump within zod 3: ${await zodBumpInvocation(root)}`);
   } else if (zodVersion !== null) {
     pass("deps/zod-floor", `installed zod@${zodVersion} exposes the AI SDK's zod/v3 + zod/v4 subpaths (>=3.25)`);
+  }
+
+  // Self-serve audit F1 — npm release-cooldown configs (`min-release-age`)
+  // resolve an old @vendoai/vendo silently, and Vendo ships often enough that
+  // those users stay permanently behind with nothing ever saying so. A hint,
+  // not a check: it has no fix_ref registry code and never changes the exit
+  // code, and an unreachable registry says nothing at all. Skipped outright
+  // under --json, so an agent run never pays for a lookup it cannot see.
+  if (!json) {
+    const latestPublished = await (options.npmLatest ?? (() => npmLatestVersion("@vendoai/vendo")))();
+    if (latestPublished !== null && isOlderVersion(CLI_VERSION, latestPublished)) {
+      output.error(`warning: installed @vendoai/vendo ${CLI_VERSION} is behind latest ${latestPublished} — npm install @vendoai/vendo@latest (release-cooldown npm configs like min-release-age resolve old versions silently)`);
+    }
   }
 
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
@@ -453,6 +530,8 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
             ...(keyPresent ? [] : ["E2B_API_KEY is not set"]),
             ...(installed ? [] : ["the e2b package does not resolve from this project"]),
           ].join(" and ");
+          // This reads doctor's OWN env and project root, not the server's, so
+          // a live e2b venue failing here means the two disagree.
           fail("live/venue", "E-LIVE-007", `the running wire selected the e2b execution venue but ${missing}; server-app builds will fail in an unusable sandbox. Fix: install the e2b package and set E2B_API_KEY, or remove E2B_API_KEY from the server env (with VENDO_API_KEY set, the managed Cloud sandbox takes over), then restart the dev server and re-run doctor`);
         }
       } else if (sandboxVenue === "cloud" || sandboxVenue === "custom") {

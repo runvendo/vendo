@@ -83,12 +83,30 @@ export interface AutomationCardProps {
   /** Standing-grant asks still undecided (grant sets): the state line reads
    *  "Enabled · waiting on N permissions" until the set is granted. */
   pendingGrants?: number;
+  /** §13 — the automation's sponsor: it always runs as a named person, and the
+   *  window says whose access that is. */
+  sponsor?: { subject: string; display?: string };
+  /** How many principals can reach the app, when that is knowable. */
+  editors?: number;
+}
+
+/** §13's window label — "runs with Dana's access", and the wider editor set
+ *  when one exists. The subject is the honest fallback: Vendo holds no
+ *  directory, so a display name for anyone but the caller would be invented. */
+export function sponsorLabel(
+  sponsor: { subject: string; display?: string } | undefined,
+  editors?: number,
+): string | null {
+  if (sponsor === undefined) return null;
+  const who = `Runs with ${sponsor.display ?? sponsor.subject}'s access`;
+  return editors !== undefined && editors > 1 ? `${who} · ${editors} people can edit` : who;
 }
 
 /** The read-only automation card (same chrome as the panel's list entry). */
-export function AutomationCard({ name, enabled, trigger, description, pendingGrants = 0 }: AutomationCardProps) {
+export function AutomationCard({ name, enabled, trigger, description, pendingGrants = 0, sponsor, editors }: AutomationCardProps) {
   const flow = automationFlow(trigger);
   const waiting = enabled && pendingGrants > 0;
+  const runsAs = sponsorLabel(sponsor, editors);
   return (
     <ChromeRoot>
       <article className="fl-automation" data-vendo-automation-card="" aria-label={`Automation — ${name}`}>
@@ -109,6 +127,9 @@ export function AutomationCard({ name, enabled, trigger, description, pendingGra
                 : "Disabled"}
             </div>
             {description ? <div className="fl-auto-sub" style={{ display: "block" }}>{description}</div> : null}
+            {runsAs === null
+              ? null
+              : <div className="fl-auto-sub" style={{ display: "block" }}>{runsAs}</div>}
           </div>
         </div>
         {flow ? (

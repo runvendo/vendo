@@ -63,12 +63,12 @@ describe("parseDemoCaptureArgs", () => {
   it("parses a demo-beats capture against a template-derived app directory", () => {
     expect(parseDemoCaptureArgs([
       "demo-beats",
-      "--host-config", "apps/demo-template",
+      "--host-config", "examples/demo-template",
       "--port", "3100",
       "--run-id", "task6-acceptance",
     ])).toEqual({
       beat: "demo-beats",
-      hostConfig: "apps/demo-template",
+      hostConfig: "examples/demo-template",
       port: 3100,
       timeoutMs: 180_000,
       runId: "task6-acceptance",
@@ -87,13 +87,13 @@ describe("parseDemoCaptureArgs", () => {
   it("rejects mixing --host with --host-config, including --host both", () => {
     expect(() => parseDemoCaptureArgs([
       "demo-beats",
-      "--host-config", "apps/demo-template",
+      "--host-config", "examples/demo-template",
       "--host", "maple",
     ])).toThrow("--host and --host-config are mutually exclusive");
 
     expect(() => parseDemoCaptureArgs([
       "demo-beats",
-      "--host-config", "apps/demo-template",
+      "--host-config", "examples/demo-template",
       "--host", "both",
     ])).toThrow("--host and --host-config are mutually exclusive");
   });
@@ -101,13 +101,13 @@ describe("parseDemoCaptureArgs", () => {
   it("rejects --host-config on every beat that is not demo-beats", () => {
     expect(() => parseDemoCaptureArgs([
       "streaming-first-paint",
-      "--host-config", "apps/demo-template",
+      "--host-config", "examples/demo-template",
     ])).toThrow("--host-config is only supported by the demo-beats beat");
 
     expect(() => parseDemoCaptureArgs([
       "corpus-montage",
       "--gallery-run", "corpus/.repos/.gallery/run-42",
-      "--host-config", "apps/demo-template",
+      "--host-config", "examples/demo-template",
     ])).toThrow("--host-config is only supported by the demo-beats beat");
   });
 

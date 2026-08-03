@@ -7,10 +7,13 @@ vi.mock("./cli/try.js", () => ({ runTry: vi.fn(async () => 0) }));
 const runTryMock = vi.mocked(runTry);
 
 describe("vendo try CLI wiring", () => {
-  it("lists try in --help", async () => {
+  // Unlisted, not retired (self-serve audit B1): help never names try — the
+  // pre-install `npx vendo try` pitch resolves no package — but every invocation
+  // below must keep working for the scripts and docs already using it.
+  it("is unlisted in --help", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     expect(await main(["--help"])).toBe(0);
-    expect(log.mock.calls.flat().join("\n")).toContain("try");
+    expect(log.mock.calls.flat().join("\n")).not.toMatch(/\btry\b/);
     log.mockRestore();
   });
 

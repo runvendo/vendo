@@ -42,19 +42,12 @@ The rules:
 - **`critical: true` on irreversible actions** (delete, send, cancel) so
   policy always asks before running them.
 
-The AI-polish pass drafts exactly this judgment. Do it yourself through the
-delegation contract: `npx vendo init --agent` prints a read-only JSON plan
-whose `aiPolish` object carries instructions, the draft schema, and the apply
-command. Read the codebase against the instructions, write the draft, then:
-
-```bash
-npx vendo extract --apply draft.json
-```
-
-The apply step runs deterministic guards: only extracted tool names are
-accepted, risk never goes down, waking a disabled tool requires reasoning, and
-existing human decisions in `overrides.json` and a hand-written `brief.md`
-always win. Guard refusals print per entry while the rest applies.
+Init's own judgment pass drafts exactly this, behind one consent question in
+an interactive run. Whatever it leaves wrong is yours to correct by hand in
+`.vendo/overrides.json`, which wins field by field and is never touched by
+sync. Deterministic guards apply either way: risk never goes down without a
+human, waking a disabled tool requires reasoning, and existing human decisions
+in `overrides.json` and a hand-written `brief.md` always win.
 
 ## The catalog contract (anti-prop-invention)
 
@@ -79,7 +72,7 @@ When you register a host component:
   requests."
 
 ```tsx
-import type { ComponentRegistry } from "@vendoai/core";
+import type { ComponentRegistry } from "@vendoai/vendo";
 import { z } from "zod";
 import { SpendingDonut } from "@/components/charts/spending-donut";
 

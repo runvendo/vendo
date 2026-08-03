@@ -14,6 +14,7 @@ import {
   type Json,
   type PermissionGrant,
 } from "@vendoai/core";
+import { isGrantPrincipal, type AccessLevel } from "./helpers/app-access.js";
 import type { AppRow, ApprovalRow, RunRow, ThreadRow } from "./helpers/types.js";
 
 export interface ApprovalData {
@@ -141,6 +142,53 @@ export function parseThreadData(value: unknown, id: string): ThreadData {
   const title = input["title"];
   if (title !== undefined && typeof title !== "string") invalid("thread title must be a string");
   return { subject: input["subject"], messages, ...(title === undefined ? {} : { title }) };
+}
+
+/** Contract §7 — an effect receipt: the subject that owns it (erase cascade +
+ *  anon adoption both key on it) and the recorded tool outcome. `at` is the
+ *  database's own timestamp; a caller-supplied one is ignored. */
+export function parseEffectData(value: unknown, id: string): { subject: string; outcome: Json } {
+  if (id === "") invalid("effect key must be a non-empty string");
+  const input = object(value, "effect data");
+  const subject = input["subject"];
+  if (typeof subject !== "string" || subject === "") {
+    invalid("effect subject must be a non-empty string");
+  }
+  return { subject, outcome: requireJson(input["outcome"], "effect outcome") };
+}
+
+/** Build contract §9.2 — one app-access grant. Re-checks the principal encoding
+ *  the `appAccess` door already checked, because a caller can reach the local
+ *  engine's row door directly (`records("vendo_app_grants").put()`) without
+ *  passing it. Belt and braces on purpose: this is the last place a doctored row
+ *  can be stopped from naming a shape `can()` cannot match (and from letting
+ *  `team:` smuggle a second slash) — but only for THIS engine. A hosted or BYO
+ *  records adapter never runs it, which is why the door checks too. */
+export function parseAppGrantData(value: unknown, id: string): {
+  appId: string;
+  orgId: string;
+  principal: string;
+  level: AccessLevel;
+  createdBy: string;
+} {
+  if (!/^ag_.+$/.test(id)) invalid(`app grant id must be "ag_<uuid>": ${id}`);
+  const input = object(value, "app grant data");
+  const appId = parseSchema(appIdSchema, input["appId"], "app grant appId");
+  const orgId = input["orgId"];
+  if (typeof orgId !== "string" || orgId === "") invalid("app grant orgId must be a non-empty string");
+  const principal = input["principal"];
+  if (typeof principal !== "string" || !isGrantPrincipal(principal)) {
+    invalid(`app grant principal must be "user:<subject>", "team:<orgId>/<teamId>", or "org:<orgId>": ${String(principal)}`);
+  }
+  const level = input["level"];
+  if (level !== "viewer" && level !== "editor" && level !== "owner") {
+    invalid("app grant level must be viewer, editor, or owner");
+  }
+  const createdBy = input["createdBy"];
+  if (typeof createdBy !== "string" || createdBy === "") {
+    invalid("app grant createdBy must be a non-empty string");
+  }
+  return { appId, orgId, principal, level, createdBy };
 }
 
 export function parseRunData(value: unknown, id: string): RunData {

@@ -47,13 +47,30 @@ the embeds: Vendo minus the conversation.
 ```ts
 // lib/vendo.ts: the same composition as any Vendo host
 import { createVendo } from "@vendoai/vendo/server";
-import { serverActions } from "./vendo-actions";
+
+export async function getWeather(city: string) { /* … */ }
+export async function sendTripReport(to: string, body: string) { /* … */ }
 
 export const vendo = createVendo({
   policy: "cautious",
-  serverActions, // the map vendo init generates from your host actions
+  // in-process dispatch for the actions declared in .vendo/tools.json
+  serverActions: {
+    "lib/vendo.ts#getWeather": getWeather,
+    "lib/vendo.ts#sendTripReport": sendTripReport,
+  },
 });
 ```
+
+Each key is `<declaring module>#<export name>` — the path of the file the
+action is *declared* in, relative to the project root, not the file that
+imports it. Move `getWeather` into `lib/actions.ts` and the key becomes
+`lib/actions.ts#getWeather`; get it wrong and dispatch fails closed with
+`not-implemented`.
+
+On a Next.js host that ran `vendo init`, this map is generated for you as
+`vendo-actions.ts` next to the route file and imported from there — the route
+module is the composition. Compose in `lib/` only if you are wiring by hand,
+as the BYO examples do.
 
 Then build the tool pack per framework and spread it into your agent:
 
@@ -102,7 +119,7 @@ same eventual consistency Vendo's own thread uses for abandoned approvals,
 in a new venue.
 
 See [Embeds and envelopes](/existing-agents/embeds) for the envelope
-contract and the three `@vendoai/ui` embed components that render it inside
+contract and the three embed components that render it inside
 your own chat.
 
 ## Two models, deliberately

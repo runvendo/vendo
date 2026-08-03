@@ -114,3 +114,26 @@ describe("printWire totality fallbacks", () => {
     expect(printed).toContain("broken={null}");
   });
 });
+
+describe("printWire computed values", () => {
+  it("round-trips a { $expr } prop as its own source", () => {
+    const wire = '<App><Query id="invoices" tool="invoices.list"/><Stat value={sum(invoices.amount_cents) / count(invoices)}/></App>';
+    const compiled = compileWire(wire);
+    expect(compiled.issues).toEqual([]);
+    expect(compiled.tree.nodes.find((node) => node.component === "Stat")?.props)
+      .toStrictEqual({ value: { $expr: "sum(invoices.amount_cents) / count(invoices)" } });
+    const printed = printWire(compiled, { includeIds: false });
+    expect(printed).toContain("value={sum(invoices.amount_cents) / count(invoices)}");
+    expect(compileWire(printed).tree).toStrictEqual(compiled.tree);
+  });
+
+  it("falls back to the object literal for an $expr source that no longer parses", () => {
+    const base = compileWire('<App><Query id="q" tool="t"/><Card v={q.rows}/></App>');
+    const tree = structuredClone(base.tree);
+    const card = tree.nodes.find((node) => node.id === "card-1");
+    (card as { props?: Record<string, unknown> }).props = { v: { $expr: "sum(" } };
+    const printed = printWire({ ...base, tree }, { includeIds: false });
+    expect(printed).toContain('"$expr"');
+    expect(compileWire(printed).tree).toStrictEqual(tree);
+  });
+});

@@ -10,8 +10,9 @@ generated UI in a sandboxed, brand-native surface.
   `vendoai` alias, built against the archived contracts in `docs/archive/contracts/`
   (read `00-overview.md` first); layering enforced by `scripts/dependency-guard.mjs`
   in `pnpm lint`
-- `apps/` — the two demo hosts, `demo-bank` (Maple) and `demo-accounting` (Cadence),
-  plus `demo-template` (the skeleton the demo-creator clones per prospect)
+- `examples/` — the two demo hosts, `demo-bank` (Maple) and `demo-accounting`
+  (Cadence), `demo-template` (the skeleton the demo-creator clones per prospect),
+  and the framework integration examples (`ai-sdk-agent`, `mastra-agent`)
 - `corpus/` — init-extraction corpus harness (`pnpm corpus`)
 - `docs/` — integration docs; `docs-site/` — the public docs site
 

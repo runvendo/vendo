@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-// Shelf Task 3 — Slot pin self-discovery: the slot resolves "the app pinned to
+// Shelf Task 3 — Slot self-discovery: the slot resolves "the app placed in
 // slot X" on its own (the polling dance demo-accounting's hero-slot used to
 // hand-roll), via the useSlotApp hook over the standard useResource lifecycle.
+// Since the 2026-08-02 pins/placements split, discovery reads `placements`
+// ONLY; `pins` is fork provenance and never places an app.
 import type { AppDocument } from "@vendoai/core";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +11,7 @@ import { VendoProvider, createVendoClient, useSlotApp, type VendoClient } from "
 import { VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
-/** The wire server's app_1 ("Invoices"), pinned to the hero slot. Keeping the
+/** The wire server's app_1 ("Invoices"), placed in the hero slot. Keeping the
  *  id real lets the slot's mount path open it over the same wire. */
 function pinnedApp(overrides: Partial<AppDocument> = {}): AppDocument {
   return {
@@ -22,7 +24,7 @@ function pinnedApp(overrides: Partial<AppDocument> = {}): AppDocument {
       root: "root",
       nodes: [{ id: "root", component: "Text", props: { text: "Invoices app surface" } }],
     },
-    pins: [{ slot: "hero", base: "sha256:abc123" }],
+    placements: ["hero"],
     ...overrides,
   };
 }
@@ -51,19 +53,27 @@ describe("Slot pin self-discovery (useSlotApp + VendoSlot)", () => {
     vi.spyOn(client.apps, "list").mockResolvedValue([
       pinnedApp(),
       pinnedApp({ id: "app_2", name: "Newer remix" }),
-      pinnedApp({ id: "app_other", pins: [{ slot: "sidebar", base: "sha256:def456" }] }),
+      pinnedApp({ id: "app_other", placements: ["sidebar"] }),
     ]);
     render(<VendoProvider client={client}><Probe slot="hero" /></VendoProvider>);
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("app_2"));
   });
 
-  it("reports no app when nothing is pinned to the slot", async () => {
-    vi.spyOn(client.apps, "list").mockResolvedValue([pinnedApp({ pins: [] })]);
+  it("reports no app when nothing is placed in the slot", async () => {
+    vi.spyOn(client.apps, "list").mockResolvedValue([pinnedApp({ placements: [] })]);
     render(<VendoProvider client={client}><Probe slot="hero" /></VendoProvider>);
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("none"));
   });
 
-  it("keeps polling on the configured interval so a new pin appears on its own", async () => {
+  it("ignores pins — fork provenance never places an app in a slot", async () => {
+    vi.spyOn(client.apps, "list").mockResolvedValue([
+      pinnedApp({ placements: [], pins: [{ slot: "hero", base: "sha256:abc123" }] }),
+    ]);
+    render(<VendoProvider client={client}><Probe slot="hero" /></VendoProvider>);
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("none"));
+  });
+
+  it("keeps polling on the configured interval so a new placement appears on its own", async () => {
     const list = vi.spyOn(client.apps, "list").mockResolvedValue([]);
     render(<VendoProvider client={client}><Probe slot="hero" pollMs={20} /></VendoProvider>);
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("none"));
@@ -72,7 +82,7 @@ describe("Slot pin self-discovery (useSlotApp + VendoSlot)", () => {
     expect(list.mock.calls.length).toBeGreaterThan(1);
   });
 
-  it("VendoSlot discovers its own pin when no appId/pin prop is passed", async () => {
+  it("VendoSlot discovers its own placement when no appId/pin prop is passed", async () => {
     vi.spyOn(client.apps, "list").mockResolvedValue([pinnedApp()]);
     render(
       <VendoProvider client={client}>
@@ -84,8 +94,8 @@ describe("Slot pin self-discovery (useSlotApp + VendoSlot)", () => {
     expect(await screen.findByText("Invoices app surface")).toBeTruthy();
   });
 
-  it("VendoSlot leaves children untouched when nothing is pinned", async () => {
-    vi.spyOn(client.apps, "list").mockResolvedValue([pinnedApp({ pins: [] })]);
+  it("VendoSlot leaves children untouched when nothing is placed", async () => {
+    vi.spyOn(client.apps, "list").mockResolvedValue([pinnedApp({ placements: [] })]);
     render(
       <VendoProvider client={client}>
         <VendoSlot id="hero"><span>Original hero</span></VendoSlot>

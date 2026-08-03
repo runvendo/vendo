@@ -10,7 +10,10 @@ afterEach(() => {
 });
 
 describe("decision pipeline conformance", () => {
-  const stages = ["critical", "grant", "rule", "code", "judge", "default"] as const;
+  // "org" (build contract §9.10) is not a pipeline stage but the strictness
+  // clamp OVER it: whatever the pipeline drafts, a matching org block wins,
+  // which is why it is pinned across every presence and risk here too.
+  const stages = ["critical", "grant", "rule", "code", "judge", "default", "org"] as const;
   const presences = ["present", "away"] as const;
   const risks: RiskLabel[] = ["read", "write", "destructive"];
 
@@ -59,6 +62,9 @@ describe("decision pipeline conformance", () => {
                   },
                 }
               : {}),
+            ...(stage === "org"
+              ? { orgPolicy: async () => [{ match: { tool: d.name }, action: "block" as const }] }
+              : {}),
           });
 
           const decision = await guard.check(toolCall, d, ctx);
@@ -75,6 +81,8 @@ describe("decision pipeline conformance", () => {
               presence === "away"
                 ? { action: "ask", decidedBy: "default" }
                 : { action: "run", decidedBy: "default" },
+            // The clamp outranks every draft the pipeline can reach here.
+            org: { action: "block", decidedBy: "org" },
           }[stage];
           expect(decision).toMatchObject(expected);
         });

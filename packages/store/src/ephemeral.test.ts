@@ -1,3 +1,4 @@
+import { storeFiles } from "./files-store.js";
 import { auditEventSchema, permissionGrantSchema, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
@@ -152,7 +153,7 @@ for (const backend of backends()) {
       expect((await threadStore(made.store).get(ephemeral, "thr_ephemeral"))?.subject).toBe(ephemeral.subject);
 
       // The sweep is what ends the session: every row of the idle subject goes.
-      const evicted = await sweepEphemeralSubjects(made.store, { idleMs: 1, now: Date.now() + 60_000 });
+      const evicted = await sweepEphemeralSubjects(made.store, { idleMs: 1, now: Date.now() + 60_000, files: storeFiles(made.store) });
       expect(evicted).toEqual([ephemeral.subject]);
       expect(await appStore(made.store).get("app_ephemeral")).toBeNull();
       expect(await grantStore(made.store).get("grt_ephemeral")).toBeNull();
@@ -168,7 +169,7 @@ for (const backend of backends()) {
 
     it("lists and claims stale sessions for a host-driven sweep (hosted-store seam)", async () => {
       const base = Date.parse("2026-01-01T00:00:00Z");
-      const opts = { idleMs: 30_000, now: base + 60_000 };
+      const opts = { idleMs: 30_000, now: base + 60_000, files: storeFiles(made.store) };
       await registerEphemeralSubject(made.store, "sess_stale", base);
       await registerEphemeralSubject(made.store, "sess_live", base + 60_000);
       const stale = await listStaleEphemeralSubjects(made.store, opts);
@@ -192,7 +193,7 @@ for (const backend of backends()) {
       // otherwise every future sweep is blind to the subject and its data is
       // stranded forever, while the callers log "will retry next interval".
       const base = Date.parse("2026-02-01T00:00:00Z");
-      const opts = { idleMs: 30_000, now: base + 60_000 };
+      const opts = { idleMs: 30_000, now: base + 60_000, files: storeFiles(made.store) };
       await registerEphemeralSubject(made.store, "sess_erase_fail", base);
       const db = dbFor(made.store);
       const original = db.query.bind(db);

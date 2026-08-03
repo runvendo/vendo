@@ -1,3 +1,4 @@
+import { storeFiles } from "./files-store.js";
 import type { Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
@@ -27,23 +28,23 @@ describe("ephemeral session registry (kill-list B3)", () => {
     await registerEphemeralSubject(store, "fresh", 1000);
 
     // old is 1000ms idle at now=1000 — swept; fresh is 0ms idle — kept.
-    expect(await sweepEphemeralSubjects(store, { idleMs: 500, now: 1000 })).toEqual(["old"]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 500, now: 1000, files: storeFiles(store) })).toEqual(["old"]);
 
     // A touch refreshes the clock: fresh re-registered at 1400 survives a sweep
     // at 1800 (400ms idle), then falls to one at 2000 (600ms idle).
     await registerEphemeralSubject(store, "fresh", 1400);
-    expect(await sweepEphemeralSubjects(store, { idleMs: 500, now: 1800 })).toEqual([]);
-    expect(await sweepEphemeralSubjects(store, { idleMs: 500, now: 2000 })).toEqual(["fresh"]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 500, now: 1800, files: storeFiles(store) })).toEqual([]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 500, now: 2000, files: storeFiles(store) })).toEqual(["fresh"]);
     await store.close();
   });
 
   it("a swept subject that returns gets a fresh registration", async () => {
     const store = await memoryStore();
     await registerEphemeralSubject(store, "revenant", 0);
-    expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1000 })).toEqual(["revenant"]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1000, files: storeFiles(store) })).toEqual(["revenant"]);
     await registerEphemeralSubject(store, "revenant", 1100);
-    expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1150 })).toEqual([]);
-    expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1300 })).toEqual(["revenant"]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1150, files: storeFiles(store) })).toEqual([]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 100, now: 1300, files: storeFiles(store) })).toEqual(["revenant"]);
     await store.close();
   });
 
@@ -66,7 +67,7 @@ describe("ephemeral session registry (kill-list B3)", () => {
     // now=10_000, idleMs=1_000); the sweep's claim must fail its idleness
     // predicate and skip the erase.
     const [swept] = await Promise.all([
-      sweepEphemeralSubjects(store, { idleMs: 1_000, now: 10_000 }),
+      sweepEphemeralSubjects(store, { idleMs: 1_000, now: 10_000, files: storeFiles(store) }),
       registerEphemeralSubject(store, LIVE.subject, 9_500),
     ]);
 
@@ -74,7 +75,7 @@ describe("ephemeral session registry (kill-list B3)", () => {
     expect((await appStore(store).get("app_touchy"))?.subject).toBe(LIVE.subject);
     expect((await store.records("app:app_touchy:notes").get("note_touchy"))?.data).toEqual({ keep: true });
     // The session is still registered and expires normally once truly idle.
-    expect(await sweepEphemeralSubjects(store, { idleMs: 1_000, now: 20_000 })).toEqual([LIVE.subject]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 1_000, now: 20_000, files: storeFiles(store) })).toEqual([LIVE.subject]);
     expect(await appStore(store).get("app_touchy")).toBeNull();
     await store.close();
   });
@@ -109,7 +110,7 @@ describe("the sweep erases every table for exactly the stale subject (kill-list 
     const s1 = await seed(store, "s1", 0);
     const s2 = await seed(store, "s2", 5000);
 
-    expect(await sweepEphemeralSubjects(store, { idleMs: 1000, now: 2000 })).toEqual([s1.subject]);
+    expect(await sweepEphemeralSubjects(store, { idleMs: 1000, now: 2000, files: storeFiles(store) })).toEqual([s1.subject]);
 
     // Exactly S1's data is gone…
     expect(await appStore(store).get("app_s1")).toBeNull();
@@ -162,7 +163,7 @@ for (const backend of backends()) {
       expect(await diskBlobs("app:app_leak:files")).toBe(1);
 
       // Session expires.
-      expect(await sweepEphemeralSubjects(made.store, { idleMs: 1, now: 10_000 })).toEqual([principal.subject]);
+      expect(await sweepEphemeralSubjects(made.store, { idleMs: 1, now: 10_000, files: storeFiles(made.store) })).toEqual([principal.subject]);
 
       // Stale writes refuse instead of recreating rows for a dead app.
       await expect(records.put({ id: "n2", data: { text: "stale" } })).rejects.toThrow(/session may have expired/);

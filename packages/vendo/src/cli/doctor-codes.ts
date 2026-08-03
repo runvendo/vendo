@@ -22,6 +22,7 @@ export const DOCTOR_ERROR_CODES = {
   "E-WIRE-006": "no visible agent surface is mounted (<VendoRoot> alone renders nothing)",
   "E-WIRE-007": "no createVendo server wiring found in an unknown-framework host",
   "E-WIRE-008": "no <VendoRoot> found in an unknown-framework host's source",
+  "E-WIRE-009": "detected \"use server\" actions are not registered or not wired into createVendo",
   "E-CFG-001": "a required .vendo/ config file is missing",
   "E-CFG-002": ".vendo/data/.gitignore is missing",
   "E-DEP-001": "the installed ai package is a major version @vendoai/vendo does not support",

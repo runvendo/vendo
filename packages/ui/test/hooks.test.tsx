@@ -266,14 +266,20 @@ describe("headless hooks", () => {
       return null;
     }
 
+    // `namesPeople` is §9.1's companion: the host wired `resolvePerson`, so the
+    // Share dialog may offer to share with one person. This wire asserts none,
+    // which is the single-player answer — false, exactly like an empty
+    // memberships list.
+    const offline = { posture: "unconfigured", connected: false, memberships: [], namesPeople: false };
     const view = render(<Probe value={client} />);
-    expect(latest).toEqual({ posture: "unconfigured", connected: false });
-    await waitFor(() => expect(latest).toEqual({ posture: "rules", connected: true }));
+    expect(latest).toEqual(offline);
+    await waitFor(() => expect(latest)
+      .toEqual({ posture: "rules", connected: true, memberships: [], namesPeople: false }));
 
     await wire.close();
     const disconnectedClient = createVendoClient({ baseUrl: wire.url });
     view.rerender(<Probe value={disconnectedClient} />);
-    await waitFor(() => expect(latest).toEqual({ posture: "unconfigured", connected: false }));
+    await waitFor(() => expect(latest).toEqual(offline));
   });
 
   it("resumes a thread and consumes a full ai-SDK turn with native and Vendo approvals", async () => {

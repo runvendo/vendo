@@ -194,7 +194,17 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
 
   return {
     registry: {
-      descriptors: () => tools.descriptors(),
+      // Forward the projection context. This decorator's whole job is PARKING an
+      // execute, and re-declaring `descriptors()` with no parameter silently
+      // disabled THE LAW's primary mechanism (design §12) on the public BYO door
+      // (`vendo.guardedTools`, which the ai-sdk and mastra packs hand straight
+      // to a foreign loop): `guard.bind` returns the FULL set when it is given no
+      // ctx, so every destructive tool stayed visible to an unattended run. The
+      // execute-time refusal still held, so this was never an escape — but "the
+      // model is never even offered it" is the property §12 buys. Identical to
+      // the connect gate's bug (`createConnectGate().bind`): a decorator with no
+      // opinion about projection must pass the argument straight through.
+      descriptors: (ctx) => tools.descriptors(ctx),
       async execute(call, ctx) {
         const outcome = await tools.execute(call, ctx);
         if (outcome.status === "pending-approval") {

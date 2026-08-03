@@ -258,7 +258,17 @@ describe("connect dock + tray (ENG-225)", () => {
     // 2026-07 demo feedback — the dock used to vanish whenever the auto
     // catalog came back empty, which also swallowed fetch failures. Only an
     // explicit connectors={[]} hides the entry point now.
+    // Both fixtures must be empty, not just the catalog. The tray reads two
+    // independent sources (`/connections/catalog` and `/connections`), and the
+    // fixture ships an active gmail account: once `/connections` lands, that
+    // account renders as connected — correctly, since "no tools available" is
+    // NOT the honest state for someone who has one — and the empty copy is
+    // gone. Emptying only the catalog left the copy on screen for the single
+    // event-loop turn between the two responses, so this assertion passed or
+    // failed on machine load (measured ~2/8 failures at HEAD and 3/8 at the
+    // pre-wave baseline, i.e. a flake that predates this wave).
     wire.state.catalog = [];
+    wire.state.connections = [];
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
     await screen.findByText("Existing thread");
     const dock = await screen.findByRole("button", { name: "Connect tools" });

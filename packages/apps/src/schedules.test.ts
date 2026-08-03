@@ -81,6 +81,9 @@ async function setup(handler: BoxHandler = defaultHandler, doc: AppDocument = ma
   const lifecycle = createMachineLifecycle({
     store,
     sandbox: adapter,
+    // These boxes make no outbound calls, so the policy is deny-all. Naming it
+    // is not optional: the seam reads an absent one as the whole internet.
+    allowedDomains: () => [],
     // Idle auto-sleep is irrelevant to these tests; a no-op clock keeps
     // machines awake until the test sleeps them explicitly.
     clock: { setTimeout: () => 0, clearTimeout: () => undefined },

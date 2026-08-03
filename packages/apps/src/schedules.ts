@@ -4,6 +4,8 @@ import {
   type AppId,
   type AuditEvent,
   type Json,
+  type Membership,
+  type Principal,
   type RunContext,
   type StoreAdapter,
   type ToolOutcome,
@@ -105,6 +107,10 @@ export interface ScheduleEngineConfig {
   audit?(event: AuditEvent): Promise<void>;
   /** Test seam: shrink the post-resume boot-retry so tick tests run instantly. */
   bootRetry?: import("./box-agent.js").BootRetryOptions;
+  /** Build contract §9.1 — the same host org query the wire resolves per
+   *  request, resolved here per fire. Keyed on Principal so an unattended
+   *  fire can call it with no session; unset ⇒ nothing asserted. */
+  memberships?(principal: Principal): Promise<Membership[]>;
 }
 
 export interface ScheduleEngine {
@@ -354,12 +360,17 @@ export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngi
       // The app's owner, away, in the app venue — the same authority a tree
       // action carries when the owner isn't looking; box callbacks during the
       // run ride the app token through the existing guard seams.
+      const principal: Principal = { kind: "user", subject: row.subject };
+      // §9.1 — a fire asserts the owner's orgs exactly as a request would, so
+      // `can()` sees the same world attended and unattended.
+      const memberships = await config.memberships?.(principal);
       const ctx: RunContext = {
-        principal: { kind: "user", subject: row.subject },
+        principal,
         venue: "app",
         presence: "away",
         sessionId: `schedule_${row.id}`,
         appId: row.id,
+        ...(memberships === undefined ? {} : { memberships }),
       };
       const outcome = await config.callFn(row.doc, fn, {}, ctx);
       const status = outcome.status === "ok" ? "ok" : "error";
@@ -373,7 +384,7 @@ export const createScheduleEngine = (config: ScheduleEngineConfig): ScheduleEngi
       });
       await recordOutcome(row.id, fn, cron, status);
       await config.audit?.(appLifecycleEvent(
-        { kind: "user", subject: row.subject },
+        principal,
         { venue: "app", presence: "away" },
         row.id,
         { operation: "schedule-fire", fn, cron, scheduledFor },

@@ -21,6 +21,78 @@ export const VENDO_APPS_TOOL_PREFIX = "vendo_apps_";
  *  partial views through the VENDO_VIEW_STREAM bridge seam (stream-parts). */
 export const VENDO_APPS_CREATE_TOOL = "vendo_apps_create";
 
+/** The create tool's twin: change an app that already exists. Named here for the
+ *  same reason its twin is — the apps runtime declares it, and a thinker has to
+ *  recognise it to route an edit ask at all (`instant()`'s router). Two sides
+ *  matching on the same identifier means the identifier is written once, here,
+ *  not string-matched from each side. */
+export const VENDO_APPS_EDIT_TOOL = "vendo_apps_edit";
+
+/**
+ * The consumer-voice titles for the tools VENDO ITSELF projects (design §3:
+ * "surfaces render tool titles and verbs, never names — rendering-layer law").
+ *
+ * ONE table, because two sides must say the same words and neither can read the
+ * other's copy. Server-side, each descriptor authors its `title` from here, so
+ * `ToolListing.title` stops falling back to the identifier and the model is
+ * never handed `vendo_apps_edit` as a tool's human label. Client-side, the
+ * render layer has no descriptor at all for a progress chip or an activity row —
+ * the wire tool part carries only a name — so it reads the same table rather
+ * than prettifying our own namespace into "Vendo apps edit…" (wave-1 live proof
+ * E1-5).
+ *
+ * Host tools are NOT here: a host authors its own titles (sync enrichment,
+ * `.vendo/overrides.json`), and inventing labels for someone else's API would be
+ * a guess. This table covers only what Vendo ships.
+ */
+export const VENDO_TOOL_TITLES: Readonly<Record<string, string>> = {
+  vendo_apps_create: "Build an app",
+  vendo_apps_edit: "Update the app",
+  vendo_apps_open: "Open the app",
+  vendo_apps_rebase_pin: "Refresh a remixed piece",
+  vendo_apps_data_list: "Read the app's saved items",
+  vendo_apps_data_put: "Save an item in the app",
+  vendo_apps_data_delete: "Remove an item from the app",
+  vendo_knowledge_search: "Look it up in the docs",
+  // The verbs and `ask_user` authored these titles inline first; they moved here
+  // verbatim so the CLIENT can say them too. A live browser proof caught the gap:
+  // `search_components` narrated "Search components…" — its identifier
+  // prettified — while its descriptor carried "Look up available components".
+  validate: "Check the app for mistakes",
+  search_components: "Look up available components",
+  schedule: "Set when this runs",
+  ask_user: "Ask you a question",
+  // Meta-tools: ai-SDK `dynamicTool`s with no descriptor at all, so the table is
+  // their ONLY title. The reporter fires on the honest-refusal path — the very
+  // turn the §3 leak was photographed on — and read "Vendo report capability
+  // miss…".
+  find_tools: "Look for the right tool",
+  vendo_report_capability_miss: "Note what I can't do",
+};
+
+/**
+ * The description a MODEL is given for one tool: its human title first, then the
+ * operational text.
+ *
+ * §3's voice law is a rendering-layer law, and a model is the surface that writes
+ * a refusal or an explanation — it can only say a title it was told. Handed only
+ * `description`, the identifier is the sole proper noun in its context, which is
+ * how a live refusal reached a user reading `` `host_transferMoney` `` (wave-1
+ * proof E1-5). The identifier stays the CALL name; this is the one place the
+ * human label enters the model's vocabulary.
+ *
+ * A title equal to the name adds nothing (`ToolListing.title` falls back to the
+ * name) and would teach exactly the wrong vocabulary, so it is dropped.
+ */
+export function modelToolDescription(
+  tool: { name: string; title?: string; description: string },
+): string {
+  const title = tool.title?.trim();
+  return title === undefined || title === "" || title === tool.name
+    ? tool.description
+    : `${title} — ${tool.description}`;
+}
+
 /** 0.4.4 cert defect B — the message prefix the apps runtime stamps on a
  *  terminally failed BUILD's error ("app build failed: <classified reason>").
  *  The agent loop reads it to end the turn and raise the failed-build banner;
@@ -28,6 +100,55 @@ export const VENDO_APPS_CREATE_TOOL = "vendo_apps_create";
  *  ends a turn — a cheap create error (input validation, feature-flag
  *  refusal) stays the model's to handle. */
 export const VENDO_APP_BUILD_FAILED_PREFIX = "app build failed";
+
+/** Design §4 — the one question door, any seat.
+ *
+ *  The name lives in core because two sides read it and a security-relevant
+ *  name with two definitions drifts silently (the lesson `DESTRUCTIVE_VERBS`
+ *  records): the registry that implements it, and the loop that ends a turn on
+ *  it. */
+export const ASK_USER_TOOL = "ask_user";
+
+/**
+ * Design §12 / build contract §8 (clarification 2026-07-31) — WHO wrote this
+ * tool's `risk` label, as a mark the tool itself carries.
+ *
+ * The second mechanical vote exists to catch an extractor or a connector
+ * mislabelling someone ELSE's API: eligibility "never rests on the *AI-assigned*
+ * risk label alone". A Vendo-authored tool's label was hand-written and reviewed
+ * in this repo, so there is no second author to disagree with — and the vote,
+ * calibrated for extracted `noun_verb` host names, only guesses wrong about
+ * names it was never calibrated for (`ask_user`, `validate`,
+ * `search_components` all voted `write` because their trailing token is a noun).
+ *
+ * It is a SYMBOL rather than a field, because that is what makes it unforgeable
+ * by data: JSON carries no symbols, so nothing arriving as data — `.vendo/tools.json`,
+ * a connector catalog, an override, the wire — can claim Vendo provenance, and
+ * every laundering path (zod's key rebuild, `structuredClone`, `descriptorOf`'s
+ * field whitelist, the descriptorHash preimage) drops it. Losing it therefore
+ * fails CLOSED, back to the mechanical vote. `Symbol.for` is deliberate: a
+ * bundler that ends up with two copies of this module must still agree on the
+ * brand, or the same descriptor would read as Vendo-authored in one and not the
+ * other. Enumerable (plain assignment) so an honest `{ ...descriptor }` copy —
+ * the guard's dynamic-risk path makes one — keeps it.
+ *
+ * It is not a defence against a host who imports this function and marks their
+ * own registry: a host owns their deployment and their policy already. The
+ * threat it answers is a label nobody in this repo wrote.
+ */
+const VENDO_AUTHORED: unique symbol = Symbol.for("vendoai.tool.authored");
+
+/** Mark a descriptor as carrying a hand-written, in-repo `risk` label. Only
+ *  Vendo's own tool definitions call this — the vendo verbs and `ask_user`. */
+export function vendoAuthored<T extends ToolDescriptor>(descriptor: T): T {
+  return { ...descriptor, [VENDO_AUTHORED]: true };
+}
+
+/** Whether this descriptor's `risk` was written in this repo (`resolvedRisk`
+ *  is the one reader that matters — it is where the two votes combine). */
+export function isVendoAuthored(descriptor: ToolDescriptor): boolean {
+  return (descriptor as { [VENDO_AUTHORED]?: unknown })[VENDO_AUTHORED] === true;
+}
 
 /** 01-core §4 */
 export type RiskLabel = "read" | "write" | "destructive";
@@ -48,6 +169,32 @@ export interface ToolDescriptor {
    *  `name`. Sync's AI enrichment proposes it; `.vendo/overrides.json`
    *  corrects it. */
   title?: string;
+  /**
+   * Design §12's second mechanical vote, METHOD axis: the risk this tool's
+   * EXECUTION SHAPE implies on its own — a DELETE route, a tRPC/GraphQL
+   * mutation, a server action — read without its name and without its declared
+   * `risk`.
+   *
+   * DERIVED wherever a binding exists: the actions registry computes it from
+   * `binding` while minting the descriptor (`descriptorOf`), so nothing a host
+   * authors in `.vendo/tools.json` or `overrides.json` — the files that can LOWER
+   * a declared `risk`, which is what the vote is the backstop for — decides it. A
+   * source with no binding at all (a connector, an MCP server, a hand-written
+   * `actions.add` registry) may state it, and that is safe for the reason below.
+   *
+   * It is a distilled label rather than the raw HTTP method for two reasons: a
+   * connector, an MCP server, or a workspace tool has no method at all, and —
+   * the reason it matters — there is deliberately NO `"read"` value, so nothing
+   * that arrives as data can use this field to make a tool look SAFER than its
+   * name. Absent means "no mutating evidence", which is exactly how the vote
+   * behaved before the field existed, so the only direction it can move a
+   * verdict is up.
+   *
+   * It is not in the {@link descriptorHash} preimage: it is a restatement of the
+   * binding, not something a person approved on a card, and hashing it would
+   * invalidate every grant minted before it existed.
+   */
+  bindingRisk?: "write" | "destructive";
   /** The connectable toolkit this tool belongs to (04-actions §3), present
    *  only on connector tools whose usefulness is gated by a per-user connected
    *  account (e.g. Composio's gmail/slack). Composition seams read it to skip
@@ -66,6 +213,10 @@ export const toolDescriptorSchema = z.object({
   risk: riskLabelSchema,
   critical: z.boolean().optional(),
   title: z.string().optional(),
+  // Declared so the only values that can travel are the two that ESCALATE. A
+  // source that sends anything else — `"read"` above all — fails validation
+  // loudly instead of passing through unchecked.
+  bindingRisk: z.enum(["write", "destructive"]).optional(),
   toolkit: z.string().optional(),
 }).passthrough() satisfies z.ZodType<ToolDescriptor>;
 
@@ -121,6 +272,13 @@ export const toolOutcomeSchema = z.discriminatedUnion("status", [
 
 /** 01-core §4 */
 export interface ToolRegistry {
-  descriptors(): Promise<ToolDescriptor[]>;
+  /** The tools available. Passing a run's venue/presence asks for the set that
+   *  may be PROJECTED into that run — the guard withholds destructive and
+   *  external tools from an unattended one (design §12's law, `projectableForRun`).
+   *
+   *  Optional so every existing registry stays a valid implementation: a
+   *  zero-parameter `descriptors()` is assignable here and simply ignores the
+   *  hint, which means only the guard-bound registry has to know the law. */
+  descriptors(ctx?: Pick<RunContext, "venue" | "presence">): Promise<ToolDescriptor[]>;
   execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
 }

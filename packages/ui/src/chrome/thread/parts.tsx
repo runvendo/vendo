@@ -1,4 +1,4 @@
-import type { ApprovalRequest, Json, RiskLabel, UIPayload, VendoAutomationPart, VendoBuildFailedPart, VendoGrantSetPart, VendoViewPart } from "@vendoai/core";
+import type { ApprovalRequest, Json, RiskLabel, UIPayload, VendoAutomationPart, VendoBuildFailedPart, VendoGrantSetPart, VendoTurnErrorPart, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useRef, useState } from "react";
 import { useVendoContext } from "../../context.js";
@@ -14,6 +14,7 @@ import { GrantSetCard, type GrantSetPermission } from "../grant-set-card.js";
 import { toolkitDisplayName, toolTitle } from "../humanize.js";
 import { Markdown } from "../markdown.js";
 import type { MorphToastProps } from "../morph-toast.js";
+import { usePinAction } from "../pin-ceremony.js";
 import { LONG_TEXT_CAP, truncateHead } from "../truncate.js";
 import { SentAttachment } from "./attachments.js";
 import {
@@ -22,6 +23,7 @@ import {
   preview,
   SYNTHESIZED_CREATED_AT,
   toolName,
+  VENDO_ERROR_PREFIX,
 } from "./message-data.js";
 
 /** ENG-218 — a plain user turn (rendered verbatim, not markdown) collapses when
@@ -157,6 +159,31 @@ export function ThreadPart({ part, partKey, role, restored, count = 1, risks, co
       </div>
     );
   }
+  if (part.type === "data-vendo-turn-error") {
+    // self-serve P — a turn whose stream errored is content, not progress: the
+    // reply never arrives, so without this the transcript held an empty
+    // assistant turn. Same beat vocabulary as a failed build, carrying the
+    // agent's gated wire string (its "Vendo: " prefix is the wire's marker for
+    // our OWN safe text — the reader gets the sentence, not the plumbing).
+    const data = partData(part) as Partial<VendoTurnErrorPart>;
+    if (typeof data.message !== "string" || data.message.length === 0) return null;
+    const message = data.message.startsWith(VENDO_ERROR_PREFIX)
+      ? data.message.slice(VENDO_ERROR_PREFIX.length)
+      : data.message;
+    return (
+      <div className="fl-buildfail" data-vendo-turn-error="">
+        <div className="fl-beat fl-beat-error">
+          <span className="fl-beat-ic fl-beat-x" aria-hidden="true">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </span>
+          <span className="fl-beat-label">The response didn&rsquo;t finish</span>
+        </div>
+        <div className="fl-approval-more" role="alert">{message}</div>
+      </div>
+    );
+  }
   if (part.type === "data-vendo-grant-set") {
     // demo-live-readiness 2026-07 — the grant-SET consent card renders at its
     // transcript position (like ConnectCard): actionable while its native
@@ -279,7 +306,8 @@ const PREVIEW_MAX_HEIGHT = 300;
     one exists) and, while the workspace is expanded, clicking the card
     features this app on the big stage. */
 function ThreadAppCard({ appId, payload, restored }: { appId: string; payload: UIPayload; restored: boolean }) {
-  const { client, components, onPin } = useVendoContext();
+  const { client, components } = useVendoContext();
+  const pin = usePinAction();
   const split = useSplitView();
   const streaming = (payload as { streaming?: boolean }).streaming === true;
   // When a LIVE build settles (streaming flips off), the full-size card
@@ -402,11 +430,11 @@ function ThreadAppCard({ appId, payload, restored }: { appId: string; payload: U
             the view is ready), replacing the old full-width footer row. The
             renderer lane's data-state/label/hairline markup above is the
             shared contract and stays untouched. */}
-        {!streaming && onPin ? (
+        {!streaming && pin ? (
           <button
             type="button"
             className="fl-barpin"
-            onClick={() => onPin({ appId, payload })}
+            onClick={() => pin({ appId, payload })}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3-1-7Z" />

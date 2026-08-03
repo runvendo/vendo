@@ -101,6 +101,20 @@ export function eventOutcomeLabel(
     if (detail.approved === false) return { label: "Denied", tone: "blocked" };
     if (typeof detail.grantRevoked === "string") return { label: "Grant revoked", tone: "ok" };
   }
+  if (event.outcome === undefined && event.kind === "run") {
+    const detail = (event.detail ?? {}) as { harness?: unknown; error?: unknown };
+    // The harness runtime stamps `harness` and writes this row from `onFinish`,
+    // so the row's EXISTENCE is its completion — showing it as in-flight (with a
+    // pulsing icon) told users a finished turn was still running, and told them
+    // a failed one was still running too. Automation-engine rows carry their own
+    // `status` in `detail` instead; what those should read is a separate, older
+    // question and this branch deliberately leaves them alone.
+    if (typeof detail.harness === "string") {
+      return detail.error === undefined
+        ? { label: "Succeeded", tone: "ok" }
+        : { label: "Failed", tone: "error" };
+    }
+  }
   return outcomeLabel(event.outcome);
 }
 
@@ -108,11 +122,27 @@ const KIND_LABEL: Record<AuditEvent["kind"], string> = {
   "tool-call": "Tool",
   approval: "Approval",
   "policy-decision": "Policy",
-  run: "Automation",
+  // Read on its own only for a venue outside the four doors (an older row) —
+  // otherwise a run row is named by the door it arrived through.
+  run: "Run",
   "app-lifecycle": "App",
   share: "Share",
   "door-auth": "Connection",
   principal: "Identity",
+};
+
+/**
+ * A run is the generic unit; the VENUE is which door it came through (01-core
+ * §7 carries `venue` on every row for exactly this). Calling every run an
+ * "Automation" was false on three of the four doors, and since the chat door
+ * started writing run rows it was false on the busiest one — seven rows on a
+ * user's own activity rail claiming automations had run when none had.
+ */
+const RUN_VENUE: Record<AuditEvent["venue"], { badge: string; action: string }> = {
+  chat: { badge: "Chat", action: "Chat turn" },
+  app: { badge: "App", action: "App run" },
+  automation: { badge: "Automation", action: "Automation run" },
+  mcp: { badge: "Agent", action: "Connected agent run" },
 };
 
 /** Turn an audit event into the two readable strings a row shows: a short kind
@@ -123,22 +153,28 @@ export function describeActivity(
   event: AuditEvent,
   tools?: ToolMetaMap,
 ): { kindLabel: string; action: string } {
-  const kindLabel = KIND_LABEL[event.kind];
+  const venue = RUN_VENUE[event.venue];
+  const kindLabel = event.kind === "run" && venue !== undefined ? venue.badge : KIND_LABEL[event.kind];
   const tool = event.tool ? toolTitle(event.tool, tools?.[event.tool]) : undefined;
-  const action = actionPhrase(event.kind, tool);
+  const action = actionPhrase(event, tool);
   return { kindLabel, action };
 }
 
-function actionPhrase(kind: AuditEvent["kind"], tool: string | undefined): string {
-  switch (kind) {
+function actionPhrase(event: AuditEvent, tool: string | undefined): string {
+  switch (event.kind) {
     case "tool-call":
       return tool ?? "Tool call";
     case "approval":
       return tool ? `Approval: ${tool}` : "Approval request";
     case "door-auth":
       return "Account connected";
-    case "run":
-      return "Automation run";
+    case "run": {
+      // A hire is staffing, not a run of the thread it happened inside — the
+      // runtime gives it its own row, so it gets its own sentence.
+      const detail = (event.detail ?? {}) as { subagent?: unknown };
+      if (typeof detail.subagent === "object" && detail.subagent !== null) return "Specialist hired";
+      return RUN_VENUE[event.venue]?.action ?? "Run";
+    }
     case "policy-decision":
       // A policy decision is ABOUT a tool call — name it so the row isn't a
       // mystery (and so a reader can tell which action was gated).

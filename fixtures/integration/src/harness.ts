@@ -25,10 +25,10 @@ import { inject } from "vitest";
 import { zipSync } from "fflate";
 import type { Connector } from "@vendoai/actions";
 import type { SandboxAdapter } from "@vendoai/apps";
-import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
+import type { AppDocument, PackProvider, Principal, ToolRegistry } from "@vendoai/core";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
-import { createVendo, type Vendo } from "@vendoai/vendo/server";
+import { createVendo, type PackContext, type Vendo } from "@vendoai/vendo/server";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModel } from "ai";
 
@@ -214,6 +214,14 @@ export interface StackOptions {
   /** A sandbox adapter composed into the umbrella (explicit adapter always
    * wins, the adapter rule) — the machine-skin journey passes a fake box. */
   sandbox?: SandboxAdapter;
+  /** Packs composed into the umbrella (architecture §5) — the external-pack
+   * journey passes a pack authored outside `packages/` through this one key,
+   * which is the whole install story. Unset keeps the default `[apps()]`. */
+  packs?: readonly PackProvider<PackContext>[];
+  /** `createVendo({ profileDir })` — the `.vendo` config root. Either the host
+   * root or the `.vendo` directory itself; the external-pack journey passes both
+   * forms to prove the boot gates resolve it the way the registry does. */
+  profileDir?: string;
 }
 
 /** The door mounted alongside the wire when `createStack({ mcp: true })`. */
@@ -275,6 +283,8 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     // Wave 9 — machine provisioning is flag-gated; a stack composed WITH a
     // sandbox is here to exercise the box machinery, so opt in.
     ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox, apps: { experimentalMachines: true } }),
+    ...(options.packs === undefined ? {} : { packs: options.packs }),
+    ...(options.profileDir === undefined ? {} : { profileDir: options.profileDir }),
   });
 
   // J6 — the MCP door, composed from the umbrella's OWN parts (the hookup note's
@@ -394,7 +404,22 @@ async function forwardToWire(
     const response = await handler(request);
     res.statusCode = response.status;
     response.headers.forEach((value, name) => res.setHeader(name, value));
-    res.end(Buffer.from(await response.arrayBuffer()));
+    // STREAM the body through as it arrives — buffering it whole via
+    // `arrayBuffer()` (the old shape) meant no real HTTP client could ever
+    // observe a still-open SSE turn's early chunks (the approval/connect
+    // cards §1.4 writes BEFORE a blocked call resolves); the whole response
+    // only ever reached the wire once the turn was completely finished.
+    if (response.body === null) {
+      res.end();
+      return;
+    }
+    const reader = response.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+    }
+    res.end();
   } catch (error) {
     res.statusCode = 500;
     res.setHeader("content-type", "text/plain");
@@ -436,55 +461,70 @@ export function vendoApprovalId(read: StreamRead): string {
 }
 
 // ---------------------------------------------------------------------------
-// Present-approval resume over the wire. A present chat approval pauses the
-// turn; resuming is client-driven (03 §agent): the client re-posts the thread
-// with the parked tool part flipped to `approval-responded`. This replays that
-// exactly through the public /threads route.
+// Mid-stream approval sync (build contract §1.4): an interactive harness turn
+// BLOCKS INSIDE the guarded call awaiting the tap, holding the SAME request
+// open rather than parking the turn for a client-driven resume (the pre-flip
+// `createAgent` shape, native `tool-approval-request` + a re-posted thread —
+// gone from this wire). A test that needs to decide, or merely observe, an
+// approval while its turn is still in flight reads the open response
+// progressively instead of draining it first.
 // ---------------------------------------------------------------------------
 
-interface WireMessage {
-  id: string;
-  role: string;
-  parts: Array<Record<string, unknown>>;
+/** The `data-vendo-approval` wire part's payload (01-core §16). */
+export interface VendoApprovalWireData {
+  toolCallId: string;
+  risk: string;
+  approvalId?: string;
+  invalidatedGrant?: { id: string; grantedAt: string };
 }
 
-interface WireThread {
-  id: string;
-  messages: WireMessage[];
+export interface MidStreamRead {
+  /** Resolves with the approval card's data the MOMENT it lands on the wire —
+   *  before the turn itself completes. The synchronization point a test acts
+   *  on: decide the approval, or just read pending state, while the guarded
+   *  call is still blocked awaiting it. */
+  approval: Promise<VendoApprovalWireData>;
+  /** Resolves with the fully drained stream once the turn ends: decided,
+   *  denied, or timed out at the frozen `APPROVAL_WAIT_MS` bound. */
+  done: Promise<StreamRead>;
 }
 
-export async function resumeApproval(
-  stack: Stack,
-  threadId: string,
-  toolCallId: string,
-  approved: boolean,
-  user: Principal,
-): Promise<Response> {
-  const thread = (await (await stack.wireFetch(`/threads/${threadId}`, {}, user)).json()) as WireThread;
-  const assistant = [...thread.messages].reverse().find((message) => message.role === "assistant");
-  if (assistant === undefined) throw new Error("thread has no assistant message to resume");
-  let flipped = false;
-  const parts = assistant.parts.map((part) => {
-    if (part.type !== "dynamic-tool" || part.toolCallId !== toolCallId) return part;
-    const approval = part.approval as { id?: unknown } | undefined;
-    if (approval === undefined || typeof approval.id !== "string") {
-      throw new Error("parked tool part carried no native approval id");
-    }
-    flipped = true;
-    return {
-      type: "dynamic-tool",
-      toolName: part.toolName,
-      toolCallId,
-      state: "approval-responded",
-      input: part.input,
-      approval: { id: approval.id, approved },
-    };
+/** Read a still-open `/threads` SSE response, exposing the approval card as
+ *  soon as it arrives rather than only once the whole turn finishes. */
+export function readSseMidStream(response: Response): MidStreamRead {
+  let resolveApproval!: (data: VendoApprovalWireData) => void;
+  const approval = new Promise<VendoApprovalWireData>((resolve) => {
+    resolveApproval = resolve;
   });
-  if (!flipped) throw new Error(`no parked tool part for toolCallId ${toolCallId}`);
-  return stack.wireFetch("/threads", {
-    method: "POST",
-    body: JSON.stringify({ threadId, message: { ...assistant, parts } }),
-  }, user);
+  const done = (async (): Promise<StreamRead> => {
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let raw = "";
+    const parts: Array<Record<string, unknown>> = [];
+    let notified = false;
+    for (;;) {
+      const { done: finished, value } = await reader.read();
+      if (finished) break;
+      const chunk = decoder.decode(value, { stream: true });
+      raw += chunk;
+      buffer += chunk;
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) {
+        const trimmed = block.trim();
+        if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") continue;
+        const part = JSON.parse(trimmed.slice("data: ".length)) as Record<string, unknown>;
+        parts.push(part);
+        if (!notified && part.type === "data-vendo-approval") {
+          notified = true;
+          resolveApproval(part.data as VendoApprovalWireData);
+        }
+      }
+    }
+    return { parts, raw };
+  })();
+  return { approval, done };
 }
 
 // ---------------------------------------------------------------------------

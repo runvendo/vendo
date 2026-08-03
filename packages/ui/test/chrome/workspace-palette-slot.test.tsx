@@ -106,7 +106,14 @@ describe("VendoPage, VendoPalette, and VendoSlot exports", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Describe a new app" }), { target: { value: "Build a report" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain("App creation unavailable");
+    // The failure is CONTAINED (an alert, no unhandled rejection) and it is
+    // contained in the CONSUMER's voice: the page used to render the wire's own
+    // sentence verbatim, which is how "app not found: app_1" and a sentence
+    // naming VENDO_API_KEY reached whoever was using the app (design §3). The
+    // developer sentence keeps its home in the server's error and the console.
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toContain("App creation unavailable");
+    expect(alert.textContent).toMatch(/didn’t go through/i);
     await new Promise(resolve => globalThis.setTimeout(resolve, 0));
     expect(unhandled).not.toHaveBeenCalled();
     window.removeEventListener("unhandledrejection", unhandled);

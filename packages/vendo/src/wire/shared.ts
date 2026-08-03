@@ -2,7 +2,9 @@ import type { AppsRuntime, AppTokens } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
 import {
   VendoError,
+  type Membership,
   type Principal,
+  type ResolvedPerson,
   type RunContext,
   type ToolOutcome,
   type ToolRegistry,
@@ -14,8 +16,8 @@ import type { SubjectMergeReport, VendoStore } from "@vendoai/store";
 import type { Telemetry } from "@vendoai/telemetry";
 import type { VendoAgent } from "@vendoai/agent";
 import type { ByoApprovalResolution } from "../byo-approvals.js";
+import type { HarnessTurns } from "../harness-turn.js";
 import type { ConnectionsService } from "../connections.js";
-import type { RuntimeCaptureHandler } from "../runtime-capture.js";
 
 /** The shared wire toolkit (kill-list B4): the route-table types and matcher,
     the JSON/error envelope helpers, and the param validators every wire area
@@ -23,7 +25,7 @@ import type { RuntimeCaptureHandler } from "../runtime-capture.js";
     wire/context.ts; server.ts assembles the table from the per-area modules
     under src/wire/. */
 
-export const VERSION = "0.6.1";
+export const VERSION = "0.7.0";
 export const BASE_PATH = "/api/vendo";
 
 export type SandboxVenue = "e2b" | "cloud" | "custom" | false;
@@ -38,6 +40,8 @@ const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,
   "not-found": 404,
   blocked: 403,
+  // Build contract §9.4 — the caller sees the thing but may not do this to it.
+  forbidden: 403,
   conflict: 409,
   "cloud-required": 402,
   "sandbox-unavailable": 501,
@@ -46,6 +50,16 @@ const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
 
 export interface WireDeps {
   principal: (req: Request) => Promise<Principal | null>;
+  /** Build contract §9.1 — the host's own org query, resolved once per context
+      resolution in createContextResolver and stashed on the ctx, so every door
+      downstream of one `context()` call reads the same answer. Unset → no orgs
+      asserted → `can()` degenerates to ownership. */
+  memberships?: (principal: Principal) => Promise<Membership[]>;
+  /** Build contract §9.1 companion — the host's own directory lookup, behind the
+      owner gate on the Share dialog's door. Takes the ASKER so the host can scope
+      its directory to them. Unset → /status says so and the dialog does not offer
+      to share with one person. */
+  resolvePerson?: (query: string, asker: Principal) => Promise<ResolvedPerson | null>;
   ready: () => Promise<void>;
   /** VENDO_BASE_URL is https → TLS terminates upstream; see secureRequest. */
   trustedBaseIsHttps: boolean;
@@ -53,6 +67,14 @@ export interface WireDeps {
   store: VendoStore;
   telemetry?: Telemetry;
   agent: VendoAgent;
+  /** Architecture §3 — turns through the composed `Harness`. Post-flip (wave 2)
+      `POST /threads` routes here for EVERY host: `harness:` when the host named
+      one, `vendo()` when they did not. What decides it is the STORE, not the
+      config — this is unset for exactly one reason, that the store has no SQL
+      handle and so cannot serve the transcript and workspace TABLES a harness
+      turn needs (build contract §3.3/§6). Those deployments keep `agent.stream`,
+      which needs neither table. */
+  harness?: Pick<HarnessTurns, "stream">;
   guard: VendoGuard;
   apps: AppsRuntime;
   /** execution-v2 Lane C — the guard-bound registry (the SAME binding chat and
@@ -80,7 +102,6 @@ export interface WireDeps {
   door?: McpDoor;
   /** True only in a development composition — gates the local injection seams. */
   development: boolean;
-  runtimeCapture?: RuntimeCaptureHandler;
   onRequestOrigin?: (origin: string) => void;
   /** 02-store §4 (kill-list B3) ephemeral-session policy. `now` reads the
       (possibly injected) session clock; `sweep` runs the store TTL sweep and
@@ -96,6 +117,12 @@ export interface WireDeps {
     adopt(from: string, to: string): Promise<SubjectMergeReport | null>;
   };
   sweep: () => Promise<void>;
+  /** True when the composed store carries the HOSTED session doors — the
+      authenticated /tick then drives `sweep` too. A serverless deployment
+      never fires the composition's interval timer, so the tick is the only
+      cadence its idle hosted sessions have. Safe against a timer that DOES
+      fire: the hosted claim leg is a single-winner election server-side. */
+  sweepOnTick: boolean;
 }
 
 /** The per-request view a route handler receives: the raw request, its parsed
@@ -115,6 +142,10 @@ export interface WireContext {
   params: Record<string, string>;
   /** Resolve this request's RunContext for a venue. */
   context(venue: RunContext["venue"]): Promise<RunContext>;
+  /** Run this request's TTL sweep pass, awaiting the one the handler may
+      already have started before routing — at most one pass per request. The
+      rejection is the caller's to answer with; the pre-routing leg only warns. */
+  sweep(): Promise<void>;
   deps: WireDeps;
 }
 

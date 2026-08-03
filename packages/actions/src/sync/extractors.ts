@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { SourcedExtractedTool } from "./common.js";
 import { detectGraphql, extractGraphql, graphqlEndpoints } from "./graphql.js";
-import { extractOpenApi } from "./openapi.js";
+import { extractOpenApi, openApiMountPath } from "./openapi.js";
 import { scanRoutes } from "./route-scan.js";
 import { detectServerActions, extractServerActions } from "./server-actions.js";
 import { detectTrpc, extractTrpc, trpcMounts } from "./trpc.js";
@@ -101,6 +101,38 @@ function withoutShadowedRoutes(tools: SourcedExtractedTool[]): SourcedExtractedT
   });
 }
 
+/**
+ * THE MOUNT POINT THE WHOLE HOST ANSWERS UNDER, ON EVERY HTTP BINDING.
+ *
+ * A host is not always at the root of its origin: a Next `basePath`, a reverse
+ * proxy, an app mounted inside a bigger one. The runtime does not know that —
+ * it joins `binding.path` straight onto the wire origin — so every tool call
+ * lands one prefix short of the real endpoint and 404s, while the host's own
+ * pages render perfectly because the framework rewrites THOSE for you. The
+ * result is a product that looks entirely correct and whose agent quietly has
+ * no data.
+ *
+ * Declared in ONE place — a relative `servers[0].url` in the OpenAPI document —
+ * and applied to EVERY http-shaped binding, including the ones route-scan
+ * found, because a mount point is a property of the host, not of one extractor.
+ * Uniform is also the only consistent choice: `dedupKey` is method+path, so
+ * prefixing one extractor's paths and not another's stops an OpenAPI operation
+ * and the route handler behind it from collapsing into a single tool and ships
+ * both, one of them broken.
+ *
+ * tRPC and GraphQL bindings address their mount/endpoint separately and are
+ * left alone; a subpath-mounted host that also speaks either would need the
+ * same treatment there.
+ */
+function mounted(tools: SourcedExtractedTool[], mount: string): SourcedExtractedTool[] {
+  if (mount === "") return tools;
+  return tools.map((tool) =>
+    tool.binding.kind === "openapi" || tool.binding.kind === "route"
+      ? { ...tool, binding: { ...tool.binding, path: `${mount}${tool.binding.path}` } }
+      : tool,
+  );
+}
+
 export async function runExtractors(
   root: string,
   registrations: readonly Extractor[] = extractorRegistrations,
@@ -113,5 +145,7 @@ export async function runExtractors(
     tools.push(...result.tools);
     warnings.push(...result.warnings);
   }
-  return { tools: withoutShadowedRoutes(tools), warnings };
+  const spec = await firstOpenApiSpec(root);
+  const mount = spec === null ? "" : await openApiMountPath(spec);
+  return { tools: mounted(withoutShadowedRoutes(tools), mount), warnings };
 }
