@@ -83,6 +83,39 @@ describe("selectMcpBroker (pure)", () => {
     expect(publicBaseUrl("https://[::ffff:8.8.8.8]")).toBe("https://[::ffff:8.8.8.8]");
     expect(publicBaseUrl("https://[2606:4700::1111]")).toBe("https://[2606:4700::1111]");
   });
+
+  // Checker round 2 (F1): the trailing-dot strip must be exhaustive, not
+  // dot-count-specific — `localhost..` names the same unreachable machine as
+  // `localhost.`, and URL percent-decodes `%2e` into those dots for http(s).
+  it("strips ALL trailing root-label dots — multi-dot and percent-encoded spellings stay private", () => {
+    for (const baseUrl of [
+      "https://localhost..",
+      "https://localhost...",
+      "https://foo.local..",
+      "https://127.0.0.1..",
+      "https://10.0.0.1..",
+      "https://192.168.1.5..",
+      "https://localhost%2e%2e",
+      "https://127.0.0.1%2e%2e",
+      "https://foo%2elocal%2e%2e",
+    ]) {
+      expect(selectMcpBroker({}, cloud, baseUrl, MOUNT), baseUrl).toEqual({ mode: "local" });
+    }
+  });
+
+  it("a hostname that normalizes to empty is never public", () => {
+    expect(publicBaseUrl("https://.")).toBeUndefined();
+    expect(publicBaseUrl("https://..")).toBeUndefined();
+    expect(publicBaseUrl("https://%2e%2e")).toBeUndefined();
+  });
+
+  it("the exhaustive strip keeps genuinely public hosts public, bytes preserved", () => {
+    expect(publicBaseUrl("https://app.maplebank.com..")).toBe("https://app.maplebank.com..");
+    expect(publicBaseUrl("https://localhost.example.com")).toBe("https://localhost.example.com");
+    expect(publicBaseUrl("https://my-local.com")).toBe("https://my-local.com");
+    expect(publicBaseUrl("https://10.example.com")).toBe("https://10.example.com");
+    expect(publicBaseUrl("https://172.32.0.1..")).toBe("https://172.32.0.1..");
+  });
 });
 
 // ---------------------------------------------------------------------------

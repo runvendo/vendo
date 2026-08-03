@@ -36,16 +36,28 @@ export function publicBaseUrl(baseUrl: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
-  if (isPrivateHost(normalizeHost(hostname))) return undefined;
+  const host = normalizeHost(hostname);
+  if (host === "" || isPrivateHost(host)) return undefined;
   return baseUrl;
 }
 
 /** Canonicalize the spellings URL leaves alone so the checks below see one
-    form per host: brackets off IPv6 ("[::1]"), one trailing root-label dot
-    off an FQDN ("localhost."), and an IPv4-mapped IPv6 address — which URL
-    serializes as hex groups ("::ffff:7f00:1") — back to its dotted quad. */
+    form per host: percent-escapes decoded (URL decodes them for http(s), but
+    the rule must not depend on that), EVERY trailing root-label dot off an
+    FQDN ("localhost..", however many — one strip per dot is how "localhost.."
+    slipped past a single-dot rule), brackets off IPv6 ("[::1]"), and an
+    IPv4-mapped IPv6 address — which URL serializes as hex groups
+    ("::ffff:7f00:1") — back to its dotted quad. A hostname that cannot be
+    decoded, or that normalizes to empty (".."), returns "" — the caller
+    treats that as never public. */
 const normalizeHost = (hostname: string): string => {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase().replace(/\.$/, "");
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(hostname);
+  } catch {
+    return "";
+  }
+  const host = decoded.replace(/\.+$/, "").replace(/^\[|\]$/g, "").toLowerCase();
   const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
   if (mapped === null) return host;
   const [high, low] = [parseInt(mapped[1]!, 16), parseInt(mapped[2]!, 16)];

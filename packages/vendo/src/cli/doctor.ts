@@ -627,17 +627,23 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   if (mcpPosture !== false) {
     const origin = new URL(statusUrl).origin;
     const mountPath = `${new URL(statusUrl).pathname.replace(/\/$/, "")}/mcp`;
-    const resolves = async (id: string, code: DoctorErrorCode, url: string, valid: (body: Record<string, unknown>) => boolean, label: string): Promise<void> => {
+    const resolves = async (id: string, code: DoctorErrorCode, url: string, valid: (body: Record<string, unknown>) => boolean, label: string): Promise<Record<string, unknown> | null> => {
+      let status: number | undefined;
       try {
         const response = await fetchImpl(url, { headers: { accept: "application/json" } });
+        status = response.status;
         const body = await response.json() as Record<string, unknown>;
-        if (response.ok && valid(body)) pass(id, label);
-        else fail(id, code, `${label} (${response.status})`);
+        if (response.ok && valid(body)) { pass(id, label); return body; }
+        fail(id, code, `${label} (${status})`);
       } catch {
-        fail(id, code, `${label} is unreachable`);
+        // A non-JSON error page still names its status; only a fetch that
+        // never answered is "unreachable".
+        if (status === undefined) fail(id, code, `${label} is unreachable`);
+        else fail(id, code, `${label} (${status})`);
       }
+      return null;
     };
-    await resolves(
+    const resource = await resolves(
       "mcp/protected-resource",
       "E-MCP-001",
       `${origin}/.well-known/oauth-protected-resource${mountPath}`,
@@ -646,19 +652,28 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     );
     if (mcpPosture === "broker") {
       // Remote-AS posture: the door deliberately 404s its own authorization-
-      // server metadata (an external AS fronts it) — requiring it here read
-      // every healthy broker-fronted door as broken. What that door MUST
-      // expose instead is a protected-resource document naming the external
-      // authorization server (RFC 9728 §2).
-      await resolves(
-        "mcp/authorization-server",
-        "E-MCP-002",
-        `${origin}/.well-known/oauth-protected-resource${mountPath}`,
-        (body) => Array.isArray(body.authorization_servers)
-          && body.authorization_servers.length > 0
-          && body.authorization_servers.every((entry) => typeof entry === "string"),
-        "MCP protected-resource metadata names the external authorization server",
-      );
+      // server metadata — an external AS fronts it, named in the protected-
+      // resource document (RFC 9728 §2). The contract still requires BOTH
+      // documents to resolve (10-mcp §5), and the runtime fetches the
+      // EXTERNAL issuer's metadata before it can verify a single token
+      // (remote-as.ts) — so doctor must resolve that document, not re-read
+      // the one it already validated.
+      const servers = resource?.authorization_servers;
+      const advertised = Array.isArray(servers) && typeof servers[0] === "string" ? servers[0] as string : undefined;
+      const parses = (value: string): boolean => { try { new URL(value); return true; } catch { return false; } };
+      if (advertised === undefined) {
+        fail("mcp/authorization-server", "E-MCP-002", "MCP protected-resource metadata does not name the external authorization server fronting the door");
+      } else if (!parses(advertised)) {
+        fail("mcp/authorization-server", "E-MCP-002", `the advertised authorization server "${advertised}" is not a valid URL — the runtime cannot resolve its metadata`);
+      } else {
+        await resolves(
+          "mcp/authorization-server",
+          "E-MCP-002",
+          `${advertised.replace(/\/+$/, "")}/.well-known/oauth-authorization-server`,
+          (body) => body.issuer === advertised,
+          `MCP authorization-server metadata at ${advertised} resolves`,
+        );
+      }
     } else {
       await resolves(
         "mcp/authorization-server",
