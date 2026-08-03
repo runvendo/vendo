@@ -62,6 +62,15 @@ function InitialsTile({
   )
 }
 
+/** The resolved logo URL for a client, or undefined for an initials tile —
+ *  the serializable form remixable views take (a logo crosses the fork
+ *  boundary as a plain URL, never as this module's component). */
+export function clientLogoSrc(clientId: string): string | undefined {
+  const domain = DOMAINS[clientId]
+  if (!domain) return undefined
+  return domain.startsWith("/") ? withBasePath(domain) : logoUrl(domain, 128)
+}
+
 export function ClientMark({
   clientId,
   name,

@@ -1,34 +1,25 @@
 "use client"
-import { Send, Download, ArrowLeftRight, Receipt, PlusCircle } from "lucide-react"
+import { Remixable } from "@vendoai/ui/chrome"
 import { useToast } from "@/components/ui/toast"
-import { Card } from "@/components/ui/card"
+import { QuickActionsView } from "./quick-actions-view"
 
-const ACTIONS = [
-  { label: "Send", Icon: Send },
-  { label: "Request", Icon: Download },
-  { label: "Move money", Icon: ArrowLeftRight },
-  { label: "Pay bill", Icon: Receipt },
-  { label: "Deposit", Icon: PlusCircle },
-]
-
+/**
+ * Container for the quick-actions strip. The toast plumbing lives HERE, on
+ * the host side of the fork boundary, and reaches the presentational view
+ * through a function prop — plumbing a fork cannot carry, so the surface is
+ * review-kind (2026-08-02 final shape): a remix shows the user nothing until
+ * a host reviewer approves it, and the approved version then mounts natively
+ * in the page.
+ */
 export function QuickActions() {
   const toast = useToast()
   return (
-    <Card className="grid grid-cols-5 divide-x divide-border">
-      {ACTIONS.map(({ label, Icon }) => (
-        <button
-          key={label}
-          onClick={() =>
-            toast({ title: "Demo only", description: "This action is presentational in the demo." })
-          }
-          className="flex flex-col items-center justify-center gap-2 py-5 transition-colors hover:bg-hover first:rounded-l-card last:rounded-r-card"
-        >
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-hover text-ink">
-            <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
-          </span>
-          <span className="text-[13px] font-medium text-ink">{label}</span>
-        </button>
-      ))}
-    </Card>
+    <Remixable review>
+      <QuickActionsView
+        onAction={() =>
+          toast({ title: "Demo only", description: "This action is presentational in the demo." })
+        }
+      />
+    </Remixable>
   )
 }
