@@ -129,19 +129,83 @@ describe("registered host component capture", () => {
     ]);
   });
 
-  it("stops at the package boundary silently and warns only on a broken host import", async () => {
+  it("refuses to capture a closure the jail cannot load, naming the specifiers", async () => {
     const root = await temporaryRoot();
     await writeRoot(
       root,
-      `import { Chart } from "recharts";\nimport { Gone } from "../components/gone";\n`
-      + `export function Packaged() { return <Chart><Gone /></Chart>; }\n`,
+      `import { Chart } from "recharts";\nexport function Packaged() { return <Chart />; }\n`,
       "Packaged: { component: Packaged }",
     );
 
     const { result } = await capture(root);
-    expect(result.captured).toEqual(["Packaged"]);
-    expect(result.warnings).toEqual([expect.stringContaining("../components/gone")]);
-    expect(result.warnings.join("\n")).not.toContain("recharts");
+    // Shipping this capture would put `require("recharts")` in front of the
+    // jail loader, which throws and error-boxes as a GENERATED-component
+    // failure — strictly worse than the placeholder it replaces.
+    expect(result.captured).toEqual([]);
+    expect(result.skipped).toEqual(["Packaged"]);
+    const stored = await record(root, "Packaged");
+    expect(stored.skipped?.reason).toBe("unsupported-imports");
+    expect(stored.skipped?.specifiers).toEqual(["recharts"]);
+    expect(stored.entry).toBeUndefined();
+  });
+
+  it("keeps a component whose only package imports are ones the jail resolves", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `import { useState } from "react";\nimport type { Ignored } from "../types";\n`
+      + `import { type AlsoIgnored } from "../types";\n`
+      + `export function Fine() { const [n] = useState(0); return <div>{n}</div>; }\n`,
+      "Fine: { component: Fine }",
+    );
+    await write(root, "src/types.ts", "export type Ignored = 1; export type AlsoIgnored = 2;");
+
+    const { result } = await capture(root);
+    // react is jail-resolvable; both type-only forms erase before the jail
+    // ever sees them, so neither counts as an unsupported import.
+    expect(result.captured).toEqual(["Fine"]);
+    expect(result.skipped).toEqual([]);
+    expect((await record(root, "Fine")).skipped).toBeUndefined();
+  });
+
+  it("records WHY for every uncapturable shape, so the console never shows a bare grey block", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(
+      root,
+      `import { helper } from "../lib/helper";\n`
+      + `export default function Owner() { return <div />; }\n`
+      + `export function Conflicted() { return <div>{helper()}</div>; }\n`,
+      "Conflicted: { component: Conflicted }",
+    );
+    await write(root, "src/lib/helper.ts", "export const helper = () => 1;");
+
+    const { result } = await capture(root);
+    expect(result.skipped).toEqual(["Conflicted"]);
+    const stored = await record(root, "Conflicted");
+    expect(stored.skipped?.reason).toBe("default-export-conflict");
+    expect(stored.skipped?.detail).toContain("Owner");
+  });
+
+  it("leaves a good capture alone when the module cannot be read this run", async () => {
+    const root = await temporaryRoot();
+    await writeRoot(root, "export function Card() { return <div>card</div>; }\n", "Card: { component: Card }");
+    const first = await capture(root);
+    expect(first.result.captured).toEqual(["Card"]);
+    const before = await record(root, "Card");
+
+    // A transient read failure is not a property of the source: the record
+    // must survive, and must NOT be pruned (which would delete its Cloud row).
+    const result = await captureHostComponents({
+      root,
+      out: path.join(root, ".vendo"),
+      sites: [{ name: "Card", file: path.join(root, "src/vendo/does-not-exist.tsx"), binding: "Card" }],
+      styles: [],
+      degraded: false,
+    });
+
+    expect(result.skipped).toEqual(["Card"]);
+    expect(result.pruned).toEqual([]);
+    expect(await record(root, "Card")).toEqual(before);
   });
 
   it("skips a component over the byte budget with a warning naming what blew it", async () => {

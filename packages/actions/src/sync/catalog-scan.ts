@@ -20,8 +20,11 @@ export interface HostComponentSite {
   /** Absolute path of the module that declares the component. */
   file: string;
   /** The declaration's own binding name, or "default" for an anonymous
-   *  `export default`. Capture turns it into the jail's default export. */
-  binding: string;
+   *  `export default`. Capture turns it into the jail's default export. Null
+   *  when the declaration has no name to re-export — carried through (rather
+   *  than dropped here) so capture records ONE explanation per uncapturable
+   *  component and the console can show it. */
+  binding: string | null;
 }
 
 export interface CatalogScanResult {
@@ -462,9 +465,10 @@ function exportedObjectCandidates(
   return candidates;
 }
 
-/** The module and binding a registered component's declaration names. Null when
- *  the declaration has no name to re-export (an anonymous non-default value),
- *  which capture cannot turn into a jail entry. */
+/** The module and binding a registered component's declaration names. A null
+ *  BINDING means the declaration has no name to re-export (an anonymous
+ *  non-default value); capture records that as the skip reason. A null SITE
+ *  means there is no declaration at all, so there is nothing to explain. */
 function componentSite(name: string, declaration: tsTypes.Declaration | undefined): HostComponentSite | null {
   if (declaration === undefined) return null;
   const file = declaration.getSourceFile().fileName;
@@ -476,7 +480,7 @@ function componentSite(name: string, declaration: tsTypes.Declaration | undefine
   if (named !== undefined) return { name, file, binding: named };
   const isDefault = ts.canHaveModifiers(declaration)
     && (ts.getModifiers(declaration) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
-  return isDefault ? { name, file, binding: "default" } : null;
+  return { name, file, binding: isDefault ? "default" : null };
 }
 
 function literalValue(type: tsTypes.Type): string | number | boolean | undefined {
@@ -750,9 +754,9 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
         continue;
       }
       seen.add(candidate.name);
-      if (candidate.site === null) {
-        warnings.push(`registered component ${candidate.name} has no named declaration to capture; name the component (or export it) so the console can render it instead of a placeholder`);
-      } else sites.push(candidate.site);
+      // A site with a null binding still travels: capture writes the one
+      // honest explanation, so this never warns in two places.
+      if (candidate.site !== null) sites.push(candidate.site);
       const converted = schemaForComponent(checker, candidate.declaration);
       scannedEntries.push({
         name: candidate.name,

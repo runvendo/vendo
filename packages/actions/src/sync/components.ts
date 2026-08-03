@@ -6,6 +6,7 @@ import {
   type CapturedHostComponent,
   type CapturedModule,
   type CapturedPinStyle,
+  type HostComponentSkip,
 } from "../formats.js";
 import { captureClosure, defaultExportOf, overBudgetWarning, portablePath } from "./capture.js";
 import type { HostComponentSite } from "./catalog-scan.js";
@@ -50,16 +51,21 @@ function entryExport(
   source: string,
   file: string,
   binding: string,
-): { export: string } | { error: string } {
+): { export: string } | { skip: HostComponentSkip } {
   const declared = defaultExportOf(source, file);
   if (binding === "default") {
     return declared === null
-      ? { error: "its module has no default export to render" }
+      ? { skip: { reason: "no-default-export", detail: "Its module has no default export to render." } }
       : { export: "default" };
   }
   if (declared === null) return { export: binding };
   if (declared.name === binding) return { export: "default" };
-  return { error: `its module already default-exports something else (${declared.name ?? "an anonymous value"}), so ${binding} cannot be given the default export the jail renders — export ${binding} from its own module and register that` };
+  return {
+    skip: {
+      reason: "default-export-conflict",
+      detail: `Its module already default-exports something else (${declared.name ?? "an anonymous value"}), so ${binding} cannot be given the default export the jail renders. Export ${binding} from its own module and register that.`,
+    },
+  };
 }
 
 /** The content address of one captured module: sha-256 hex over its canonical
@@ -119,7 +125,12 @@ export async function captureHostComponents(options: {
     path: style.path,
     ref: addModule(corpus, { source: style.css }),
   }));
-  const written = new Set<string>();
+  /** Every component the scan DISCOVERED, capture succeeded or not. Prune runs
+   *  against this, never against "what we managed to write": a transient
+   *  unreadable file must not delete a good record here and its row in Cloud
+   *  on the next push. (The pin capture has always pruned against discovery;
+   *  this is that rule, inherited properly.) */
+  const seen = new Set<string>();
 
   for (const site of [...sites].sort((left, right) => left.name.localeCompare(right.name))) {
     const label = `host component ${site.name}`;
@@ -128,73 +139,109 @@ export async function captureHostComponents(options: {
       result.warnings.push(`${label} is not a safe artifact filename; rename the component`);
       continue;
     }
+    seen.add(site.name);
     let realFile: string;
     let source: string;
     try {
+      // realpath BEFORE anything derives from the path: on a symlinked temp or
+      // project directory (/var -> /private/var) the raw path is not
+      // root-relative and `module` would come out as a ../../.. escape.
       realFile = await fs.realpath(site.file);
       source = await fs.readFile(realFile, "utf8");
     } catch {
-      result.warnings.push(`${label} was not captured: its module could not be read`);
+      // TRANSIENT, not a property of the source: write nothing, so an existing
+      // good capture survives an unlucky read. `seen` above already protects
+      // it from the prune (and so from a delete on the next Cloud push).
+      result.warnings.push(`${label} could not be read this run; its previous capture was left untouched`);
       result.skipped.push(site.name);
       continue;
     }
-    if (!isInside(realRoot, realFile) || realFile.split(path.sep).includes("node_modules")) {
-      result.warnings.push(`${label} was not captured: it is declared in a package, not in your source`);
-      result.skipped.push(site.name);
-      continue;
-    }
-    const entry = entryExport(source, realFile, site.binding);
-    if ("error" in entry) {
-      result.warnings.push(`${label} was not captured: ${entry.error}`);
-      result.skipped.push(site.name);
-      continue;
-    }
-    const walked = await captureClosure({
-      root,
-      realRoot,
-      label,
-      primaryFile: realFile,
-      primarySource: source,
-      ...(options.budgetBytes === undefined ? {} : { budgetBytes: options.budgetBytes }),
-      warnings: result.warnings,
-    });
     const module = portablePath(realRoot, realFile);
-    let record: Omit<CapturedHostComponent, "hash" | "capturedAt">;
-    if (!walked.ok) {
-      result.warnings.push(overBudgetWarning(label, walked.overBudget));
+    /** Record the reason on disk so the console can say WHY, not just show a
+     *  grey block. Only reached when the reason is a property of the SOURCE,
+     *  never for a transient failure. */
+    const skip = (reason: HostComponentSkip): Omit<CapturedHostComponent, "hash" | "capturedAt"> => {
+      result.warnings.push(`${label} was not captured: ${reason.detail}`);
       result.skipped.push(site.name);
-      // The record still lands, carrying WHY — the console shows an honest
-      // "too large to preview" tile instead of a silent placeholder.
-      record = {
-        name: site.name,
-        module,
-        skipped: { reason: "too-large", bytes: walked.overBudget.bytes, budgetBytes: walked.overBudget.budgetBytes, largest: walked.overBudget.largest },
-      };
+      return { name: site.name, module, skipped: reason };
+    };
+
+    let record: Omit<CapturedHostComponent, "hash" | "capturedAt">;
+    if (site.binding === null) {
+      record = skip({
+        reason: "no-named-declaration",
+        detail: "It has no named declaration to re-export. Name the component (or export it) so it can be rendered.",
+      });
     } else {
-      const { sourceImports, subSources, bytes } = walked.closure;
-      const modules: Record<string, string> = {};
-      for (const [id, sub] of Object.entries(subSources)) {
-        modules[id] = addModule(corpus, {
-          source: sub.source,
-          ...(Object.keys(sub.imports).length === 0 ? {} : { imports: sub.imports }),
+      if (!isInside(realRoot, realFile) || realFile.split(path.sep).includes("node_modules")) {
+        record = skip({
+          reason: "in-package",
+          detail: "It is declared inside a package, not in your source, so its code is not yours to capture.",
         });
+      } else {
+        const entry = entryExport(source, realFile, site.binding);
+        if ("skip" in entry) record = skip(entry.skip);
+        else {
+          const walked = await captureClosure({
+            root,
+            realRoot,
+            label,
+            primaryFile: realFile,
+            primarySource: source,
+            ...(options.budgetBytes === undefined ? {} : { budgetBytes: options.budgetBytes }),
+            warnings: result.warnings,
+          });
+          if (!walked.ok) {
+            result.warnings.push(overBudgetWarning(label, walked.overBudget));
+            result.skipped.push(site.name);
+            record = {
+              name: site.name,
+              module,
+              skipped: {
+                reason: "too-large",
+                detail: `Its import closure is ${Math.round(walked.overBudget.bytes / 1024)} KB, over the ${Math.round(walked.overBudget.budgetBytes / 1024)} KB per-component budget (largest: ${walked.overBudget.largest}).`,
+                bytes: walked.overBudget.bytes,
+                budgetBytes: walked.overBudget.budgetBytes,
+                largest: walked.overBudget.largest,
+              },
+            };
+          } else if (walked.closure.unsupported.length > 0) {
+            // The closure would LOAD as a crash. A named "cannot preview" tile
+            // beats a red error box mislabeled as a generated-component
+            // failure, which is what shipping this capture would produce.
+            record = skip({
+              reason: "unsupported-imports",
+              detail: `It imports ${walked.closure.unsupported.map((value) => `"${value}"`).join(", ")}, which the sandboxed preview cannot load.`,
+              specifiers: walked.closure.unsupported,
+            });
+          } else {
+            const { sourceImports, subSources, bytes } = walked.closure;
+            const modules: Record<string, string> = {};
+            for (const [id, sub] of Object.entries(subSources)) {
+              modules[id] = addModule(corpus, {
+                source: sub.source,
+                ...(Object.keys(sub.imports).length === 0 ? {} : { imports: sub.imports }),
+              });
+            }
+            record = {
+              name: site.name,
+              module,
+              ...(entry.export === "default" ? {} : { export: entry.export }),
+              entry: addModule(corpus, {
+                source,
+                ...(Object.keys(sourceImports).length === 0 ? {} : { imports: sourceImports }),
+              }),
+              ...(Object.keys(modules).length === 0 ? {} : { modules }),
+              ...(styles.length === 0 ? {} : { styles: styleRefs() }),
+              bytes,
+            };
+          }
+        }
       }
-      record = {
-        name: site.name,
-        module,
-        ...(entry.export === "default" ? {} : { export: entry.export }),
-        entry: addModule(corpus, {
-          source,
-          ...(Object.keys(sourceImports).length === 0 ? {} : { imports: sourceImports }),
-        }),
-        ...(Object.keys(modules).length === 0 ? {} : { modules }),
-        ...(styles.length === 0 ? {} : { styles: styleRefs() }),
-        bytes,
-      };
     }
+
     const hash = captureHash(record);
     const existing = await readRecord(recordFile);
-    written.add(site.name);
     if (existing?.hash === hash) continue;
     const complete: CapturedHostComponent = { ...record, hash, capturedAt: new Date().toISOString() };
     await fs.mkdir(dir, { recursive: true });
@@ -207,7 +254,7 @@ export async function captureHostComponents(options: {
   // Write the corpus before pruning it, so a shared module a still-referenced
   // record needs is never briefly absent.
   await writeCorpus(modulesDir, corpus);
-  if (!degraded) await prune(dir, modulesDir, written, result);
+  if (!degraded) await prune(dir, modulesDir, seen, result);
   result.captured.sort();
   result.drifted.sort();
   result.skipped.sort();
@@ -244,7 +291,7 @@ async function writeCorpus(modulesDir: string, corpus: Corpus): Promise<void> {
 async function prune(
   dir: string,
   modulesDir: string,
-  written: ReadonlySet<string>,
+  seen: ReadonlySet<string>,
   result: HostComponentCaptureResult,
 ): Promise<void> {
   const entries = await fs.readdir(dir).catch((error: NodeJS.ErrnoException) => {
@@ -253,12 +300,12 @@ async function prune(
   });
   for (const entry of entries.filter((name) => name.endsWith(".json")).sort()) {
     const name = entry.slice(0, -".json".length);
-    if (written.has(name)) continue;
+    if (seen.has(name)) continue;
     await fs.rm(path.join(dir, entry));
     result.pruned.push(name);
   }
   const referenced = new Set<string>();
-  for (const name of [...written].sort()) {
+  for (const name of [...seen].sort()) {
     const record = await readRecord(path.join(dir, `${name}.json`));
     if (record === null) continue;
     if (record.entry !== undefined) referenced.add(record.entry);

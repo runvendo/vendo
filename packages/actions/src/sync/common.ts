@@ -154,6 +154,10 @@ async function resolvedCandidate(base: string, realRoot: string): Promise<Resolv
     } catch {
       continue;
     }
+    // The pre-realpath check above is not enough: an in-project symlink
+    // pointing into node_modules resolves to a path inside the root and would
+    // otherwise be captured as if it were the host's own source.
+    if (realCandidate.split(path.sep).includes("node_modules")) continue;
     if (!isInside(realRoot, realCandidate)) continue;
     try {
       return { file: realCandidate, source: await fs.readFile(realCandidate, "utf8") };

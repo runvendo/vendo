@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { isStrippedIslandSpecifier } from "@vendoai/core";
 import type { CapturedPinSubSource } from "../formats.js";
 import {
   isInside,
@@ -29,19 +30,26 @@ import {
 export const DEFAULT_CAPTURE_BUDGET_BYTES = 256 * 1024;
 
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/u;
-const BLESSED_JAIL_MODULES = new Set([
-  "react",
-  "react-dom",
-  "react-dom/client",
-  "react/jsx-runtime",
-  "react/jsx-dev-runtime",
-]);
 
 export interface CapturedClosure {
   sourceImports: Record<string, string>;
   subSources: Record<string, CapturedPinSubSource>;
   /** Entry source plus every captured module, in UTF-8 bytes. */
   bytes: number;
+  /**
+   * Specifiers the jail will ask for and cannot answer: every import the walk
+   * did NOT capture and `isStrippedIslandSpecifier` does not resolve — package
+   * imports, component-local stylesheets, unresolvable host paths.
+   *
+   * This is the difference between a closure that renders and one that
+   * error-boxes. The jail compiles with sucrase's `imports` transform, so every
+   * surviving import becomes `require(specifier)`; a specifier that is neither
+   * in JAIL_MODULES nor in the module's captured import table THROWS
+   * (`module "zod" is not available in the Vendo jail`), which the host catches
+   * into a red "Generated component error" notice. Dropping these silently is
+   * how a grey placeholder becomes a mislabeled crash.
+   */
+  unsupported: string[];
 }
 
 export interface ClosureOverBudget {
@@ -67,7 +75,17 @@ export function importSpecifiers(source: string, fileName?: string): string[] {
   for (const statement of sf.statements) {
     if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)
       && statement.importClause?.isTypeOnly !== true) {
-      found.push({ at: statement.getStart(sf), specifier: statement.moduleSpecifier.text });
+      // `import { type A, type B } from "x"` erases completely, exactly like
+      // `import type`. A clause whose every named binding is inline-type (and
+      // which binds no default or namespace) leaves no runtime import behind.
+      const bindings = statement.importClause?.namedBindings;
+      const allInlineType = statement.importClause !== undefined
+        && statement.importClause.name === undefined
+        && bindings !== undefined
+        && ts.isNamedImports(bindings)
+        && bindings.elements.length > 0
+        && bindings.elements.every((element) => element.isTypeOnly);
+      if (!allInlineType) found.push({ at: statement.getStart(sf), specifier: statement.moduleSpecifier.text });
     }
     if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
       && !statement.isTypeOnly) {
@@ -136,6 +154,7 @@ export async function captureClosure(options: {
   const { root, realRoot, label, primaryFile, primarySource } = options;
   const budgetBytes = options.budgetBytes ?? DEFAULT_CAPTURE_BUDGET_BYTES;
   const missed: string[] = [];
+  const unsupported = new Set<string>();
   const sourceImports: Record<string, string> = {};
   const captured = new Map<string, CapturedPinSubSource>();
   const sizes = new Map<string, number>();
@@ -151,32 +170,42 @@ export async function captureClosure(options: {
     const task = queue.shift()!;
     const imports = task.id === null ? sourceImports : captured.get(task.id)!.imports;
     for (const specifier of importSpecifiers(task.source, task.file)) {
-      if (BLESSED_JAIL_MODULES.has(specifier)) continue;
+      // Resolvable inside the jail without capture (react, the kit names).
+      if (isStrippedIslandSpecifier(specifier)) continue;
       const importer = task.id ?? primaryId;
+      // Every path below leaves the specifier out of the import table, which
+      // means the jail will ask for it and throw. Record it once, here.
+      const drop = (why: string): void => {
+        unsupported.add(specifier);
+        missed.push(`${label} missed import ${specifier} from ${importer} (${why})`);
+      };
       if (/\.css(?:$|\?)/iu.test(specifier)) {
-        missed.push(`${label} missed import ${specifier} from ${importer} (component stylesheet imports are not captured; use an app-root stylesheet)`);
+        drop("component stylesheet imports are not captured; use an app-root stylesheet");
         continue;
       }
       // Package boundary: not the host's code, so not the host's capture.
-      if (await isPackageSpecifier(task.file, specifier, root)) continue;
+      if (await isPackageSpecifier(task.file, specifier, root)) {
+        unsupported.add(specifier);
+        continue;
+      }
       const resolved = await resolveImportSource(task.file, specifier, root);
       if (resolved === null) {
-        missed.push(`${label} missed import ${specifier} from ${importer} (could not be resolved)`);
+        drop("could not be resolved");
         continue;
       }
       let realFile: string;
       try {
         realFile = await fs.realpath(resolved.file);
       } catch {
-        missed.push(`${label} missed import ${specifier} from ${importer} (could not be resolved safely)`);
+        drop("could not be resolved safely");
         continue;
       }
       if (!isInside(realRoot, realFile)) {
-        missed.push(`${label} missed import ${specifier} from ${importer} (resolves outside the host root)`);
+        drop("resolves outside the host root");
         continue;
       }
       if (!SOURCE_FILE.test(realFile)) {
-        missed.push(`${label} missed import ${specifier} from ${importer} (not JavaScript/TypeScript source)`);
+        drop("not JavaScript/TypeScript source");
         continue;
       }
       const id = portablePath(realRoot, realFile);
@@ -203,6 +232,7 @@ export async function captureClosure(options: {
         imports: sorted(Object.entries(module.imports)),
       }])),
       bytes,
+      unsupported: [...unsupported].sort(),
     },
   };
 }

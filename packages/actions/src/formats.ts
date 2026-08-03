@@ -567,14 +567,41 @@ export const capturedModuleSchema = z.object({
   imports: z.record(z.string()).optional(),
 }).passthrough() satisfies z.ZodType<CapturedModule>;
 
-/** Why a registered component has no captured source. */
+/**
+ * Why a registered component has no captured source. Every reason is recorded,
+ * not just the one that is easy to explain: a console tile that says WHY it
+ * cannot preview a component is the difference between a bug report and a
+ * one-line fix. `detail` is a finished sentence a surface can show verbatim.
+ */
+export const HOST_COMPONENT_SKIP_REASONS = [
+  /** The import closure blew the per-component byte budget. */
+  "too-large",
+  /** The closure imports specifiers the jail cannot resolve (a package, a
+   *  component-local stylesheet), so loading it would throw. */
+  "unsupported-imports",
+  /** Registered as a module's default export, but the module has none. */
+  "no-default-export",
+  /** The module default-exports something ELSE, so the registered binding
+   *  cannot be given the default export the jail renders. */
+  "default-export-conflict",
+  /** Declared inside node_modules — package code is never captured. */
+  "in-package",
+  /** The registered value has no named declaration to re-export. */
+  "no-named-declaration",
+] as const;
+
+export type HostComponentSkipReason = (typeof HOST_COMPONENT_SKIP_REASONS)[number];
+
 export interface HostComponentSkip {
-  reason: "too-large";
-  /** Bytes the closure needed. */
-  bytes: number;
-  budgetBytes: number;
-  /** The single largest module in the closure — what to shrink. */
-  largest: string;
+  reason: HostComponentSkipReason;
+  /** One finished sentence, safe to render as-is. */
+  detail: string;
+  /** `too-large`: bytes the closure needed, the budget, and the biggest module. */
+  bytes?: number;
+  budgetBytes?: number;
+  largest?: string;
+  /** `unsupported-imports`: the specifiers the jail cannot resolve. */
+  specifiers?: string[];
 }
 
 /**
@@ -618,10 +645,12 @@ export const capturedHostComponentSchema = z.object({
   styles: z.array(z.object({ path: z.string(), ref: z.string().regex(/^[0-9a-f]{64}$/u) })).optional(),
   bytes: z.number().optional(),
   skipped: z.object({
-    reason: z.literal("too-large"),
-    bytes: z.number(),
-    budgetBytes: z.number(),
-    largest: z.string(),
+    reason: z.enum(HOST_COMPONENT_SKIP_REASONS),
+    detail: z.string(),
+    bytes: z.number().optional(),
+    budgetBytes: z.number().optional(),
+    largest: z.string().optional(),
+    specifiers: z.array(z.string()).optional(),
   }).passthrough().optional(),
 }).passthrough() satisfies z.ZodType<CapturedHostComponent>;
 

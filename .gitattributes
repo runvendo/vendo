@@ -1,0 +1,6 @@
+# Captured host-component source: a machine-written, content-addressed mirror
+# of code that already lives in the repo. Committed on purpose (the Cloud push
+# treats a missing local file as "still present, do not touch", so gitignoring
+# it is actively unsafe) — but it is generated, so collapse it in diffs and
+# keep it out of language stats.
+examples/*/.vendo/components/** linguist-generated=true

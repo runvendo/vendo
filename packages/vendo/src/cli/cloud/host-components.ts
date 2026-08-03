@@ -57,6 +57,11 @@ export async function writePushComponents(vendoDir: string, pushComponents: bool
  *  caller's warning rather than adding minutes to a `prebuild`. */
 const RECONCILE_BUDGET_MS = 30_000;
 
+/** The index rows are a few hundred bytes each; the store's default page is
+ *  100, which would make a 400-component registry four round trips for no
+ *  reason. */
+const RECORD_PAGE_SIZE = 1_000;
+
 export interface HostComponentPushResult {
   pushed: string[];
   /** Component records deleted from Cloud because no local FILE names them. */
@@ -196,7 +201,7 @@ export async function pushHostComponents(options: {
     const remote = new Map<string, unknown>();
     let cursor: string | undefined;
     do {
-      const page = await records.list(cursor === undefined ? {} : { cursor });
+      const page = await records.list({ limit: RECORD_PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) });
       for (const record of page.records) remote.set(record.id, record.data);
       if (page.cursor === undefined || page.cursor === cursor) break;
       cursor = page.cursor;
@@ -206,6 +211,9 @@ export async function pushHostComponents(options: {
       const parsed = capturedHostComponentSchema.safeParse(remote.get(name));
       if (parsed.success && parsed.data.hash === record.hash) continue;
       await records.put({ id: name, data: record as unknown as Json });
+      // `remote` tracks what Cloud HOLDS, so the blob keep-set below is
+      // computed against the post-reconcile truth, not the pre-push snapshot.
+      remote.set(name, record);
       pushed.push(name);
     }
     for (const name of [...remote.keys()].sort()) {
@@ -214,14 +222,38 @@ export async function pushHostComponents(options: {
       if (local.present.has(name)) continue;
       await records.delete(name);
       pruned.push(name);
+      remote.delete(name);
     }
 
-    // Prune blobs only once the record side is fully reconciled, so nothing is
-    // deleted out from under a record that failed to update.
-    for (const ref of [...remoteModules].sort()) {
-      if (local.modules.has(ref)) continue;
-      await blobs.delete(ref);
-      modules.deleted += 1;
+    // The blob keep-set is derived from the records that SURVIVE in Cloud, not
+    // from what parsed locally. A corrupt or half-written local file keeps its
+    // Cloud row (above) — so it must keep that row's blobs too, or the push
+    // gets to say "left untouched" while gutting the bytes underneath, with no
+    // self-heal: the hash still matches so nothing is ever re-put, and the
+    // module is not in local.modules so nothing is ever re-uploaded. Cloud
+    // would sit on records pointing at 404s. (This is the pin-baselines
+    // presence-not-parseability lesson, applied to the blob half.)
+    const keep = new Set<string>();
+    let keepIsComplete = true;
+    for (const [name, data] of remote) {
+      // Prefer the LOCAL record: it is what Cloud holds after the put above,
+      // and it is what the next retry will push if this one failed.
+      const record = local.records.get(name) ?? capturedHostComponentSchema.safeParse(data).data;
+      if (record === undefined) {
+        // A kept row this CLI cannot read has unknowable refs — only reachable
+        // when the local file is unreadable too, so there is nothing better to
+        // consult. Guessing here deletes live bytes; skip the prune instead.
+        keepIsComplete = false;
+        break;
+      }
+      for (const ref of referencedRefs(record)) keep.add(ref);
+    }
+    if (keepIsComplete) {
+      for (const ref of [...remoteModules].sort()) {
+        if (keep.has(ref)) continue;
+        await blobs.delete(ref);
+        modules.deleted += 1;
+      }
     }
     return done();
   } catch (error) {

@@ -50,10 +50,23 @@ async function corpus(): Promise<string> {
   return root;
 }
 
+/** A stored row as Cloud really holds it — refs included, because the blob
+ *  keep-set is derived from exactly these. A stub without them would let a
+ *  prune bug pass. `data: null` seeds a row this CLI cannot parse. */
+const remoteRow = (id: string, data?: unknown): [string, unknown] => [id, data !== undefined ? data : {
+  name: id,
+  hash: `sha256:${hex(id)}`,
+  capturedAt: "2026-08-02T00:00:00.000Z",
+  module: "src/vendo/registry.tsx",
+  export: id,
+  entry: hex("entry"),
+  modules: { "src/lib/format.ts": hex("shared") },
+}];
+
 /** The console store wire, as a fake: blob keys, blob bodies, and rows. */
-function fakeCloud(seed: { blobs?: string[]; records?: Array<{ id: string; hash: string }> } = {}) {
+function fakeCloud(seed: { blobs?: string[]; records?: Array<[string, unknown]> } = {}) {
   const blobs = new Set(seed.blobs ?? []);
-  const records = new Map((seed.records ?? []).map((row) => [row.id, row.hash]));
+  const records = new Map<string, unknown>(seed.records ?? []);
   const calls: string[] = [];
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -69,17 +82,17 @@ function fakeCloud(seed: { blobs?: string[]; records?: Array<{ id: string; hash:
     }
     if (url.pathname.endsWith("/records/vendo_host_components/list")) {
       return json({
-        records: [...records].map(([id, hash]) => ({
+        records: [...records].map(([id, data]) => ({
           id,
-          data: { name: id, hash, capturedAt: "2026-08-02T00:00:00.000Z", module: "src/vendo/registry.tsx" },
+          data,
           createdAt: "2026-08-02T00:00:00.000Z",
           updatedAt: "2026-08-02T00:00:00.000Z",
         })),
       });
     }
     if (url.pathname.endsWith("/records/vendo_host_components/put")) {
-      const record = (JSON.parse(String(init?.body)) as { record: { id: string; data: { hash: string } } }).record;
-      records.set(record.id, record.data.hash);
+      const record = (JSON.parse(String(init?.body)) as { record: { id: string; data: unknown } }).record;
+      records.set(record.id, record.data);
       return json({ record: { ...record, createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z" } });
     }
     if (url.pathname.endsWith("/records/vendo_host_components/delete")) {
@@ -113,7 +126,7 @@ describe("host component push", () => {
     const root = await corpus();
     const cloud = fakeCloud({
       blobs: [hex("shared"), hex("entry")],
-      records: [{ id: "Donut", hash: `sha256:${hex("Donut")}` }, { id: "Sparkline", hash: `sha256:${hex("Sparkline")}` }],
+      records: [remoteRow("Donut"), remoteRow("Sparkline")],
     });
 
     const result = await pushHostComponents({
@@ -138,7 +151,7 @@ describe("host component push", () => {
     const orphan = hex("orphan");
     const cloud = fakeCloud({
       blobs: [hex("shared"), hex("entry"), orphan],
-      records: [{ id: "Donut", hash: `sha256:${hex("Donut")}` }, { id: "Gone", hash: "sha256:x" }, { id: "Sparkline", hash: `sha256:${hex("Sparkline")}` }],
+      records: [remoteRow("Donut"), remoteRow("Gone", { name: "Gone", hash: "sha256:gone", capturedAt: "2026-08-02T00:00:00.000Z", module: "x.tsx", entry: hex("orphan") }), remoteRow("Sparkline")],
     });
 
     const result = await pushHostComponents({
@@ -152,6 +165,79 @@ describe("host component push", () => {
     expect(result.modules.deleted).toBe(1);
     // The helper Donut still imports survived its other importer's deletion.
     expect([...cloud.blobs].sort()).toEqual([hex("entry"), hex("shared")].sort());
+  });
+
+  it("a corrupt local record keeps its Cloud row AND the blobs that row points at", async () => {
+    const root = await corpus();
+    // A half-written capture on one machine must not gut Cloud. The row is
+    // kept (presence, not parseability) — so its bytes must be kept too, or
+    // the push reports "left untouched" while leaving a record pointing at a
+    // 404, with no path back: the hash still matches so nothing re-pushes, and
+    // the module is not readable locally so nothing re-uploads.
+    await writeFile(join(root, ".vendo/components/Donut.json"), "{ truncated", "utf8");
+    const cloud = fakeCloud({
+      blobs: [hex("shared"), hex("entry")],
+      records: [remoteRow("Donut"), remoteRow("Sparkline")],
+    });
+
+    const result = await pushHostComponents({
+      vendoDir: join(root, ".vendo"),
+      apiKey: "vendo_key",
+      baseUrl: "https://cloud.test",
+      fetchImpl: cloud.fetchImpl,
+    });
+
+    expect(result.unreadable).toEqual(["Donut"]);
+    expect(result.pruned).toEqual([]);
+    expect(result.modules.deleted).toBe(0);
+    expect([...cloud.records.keys()].sort()).toEqual(["Donut", "Sparkline"]);
+    expect([...cloud.blobs].sort()).toEqual([hex("entry"), hex("shared")].sort());
+  });
+
+  it("a missing local modules directory deletes nothing in Cloud", async () => {
+    const root = await corpus();
+    await rm(join(root, ".vendo/components/modules"), { recursive: true, force: true });
+    const cloud = fakeCloud({
+      blobs: [hex("shared"), hex("entry")],
+      records: [remoteRow("Donut"), remoteRow("Sparkline")],
+    });
+
+    const result = await pushHostComponents({
+      vendoDir: join(root, ".vendo"),
+      apiKey: "vendo_key",
+      baseUrl: "https://cloud.test",
+      fetchImpl: cloud.fetchImpl,
+    });
+
+    expect(result.unreadable).toEqual(["Donut", "Sparkline"]);
+    expect(result.modules.deleted).toBe(0);
+    expect([...cloud.blobs].sort()).toEqual([hex("entry"), hex("shared")].sort());
+  });
+
+  it("a kept row this CLI cannot read aborts the blob prune rather than guessing its refs", async () => {
+    const root = await corpus();
+    const orphan = hex("orphan");
+    // Both sides written by a half-broken run: the local file is unreadable
+    // (so the row is KEPT, not pruned) and the remote row does not parse (so
+    // its references are unknowable). Deleting on a guess here destroys live
+    // bytes; the conservative answer is to prune nothing this run.
+    await writeFile(join(root, ".vendo/components/Sparkline.json"), "{ truncated", "utf8");
+    const cloud = fakeCloud({
+      blobs: [hex("shared"), hex("entry"), orphan],
+      records: [remoteRow("Donut"), remoteRow("Sparkline", { unreadable: true })],
+    });
+
+    const result = await pushHostComponents({
+      vendoDir: join(root, ".vendo"),
+      apiKey: "vendo_key",
+      baseUrl: "https://cloud.test",
+      fetchImpl: cloud.fetchImpl,
+    });
+
+    expect(result.unreadable).toEqual(["Sparkline"]);
+    expect(result.pruned).toEqual([]);
+    expect(result.modules.deleted).toBe(0);
+    expect(cloud.blobs.has(orphan)).toBe(true);
   });
 });
 
