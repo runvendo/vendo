@@ -2,19 +2,22 @@
 
 import { useEffect, useState } from "react";
 import type { UIPayload } from "@vendoai/core";
-import { useSlotApp } from "@vendoai/ui";
-import { VendoSlot } from "@vendoai/ui/chrome";
+import { Remixable, VendoSlot } from "@vendoai/ui/chrome";
 import { MissingDocsHero } from "@/components/dashboard/missing-docs-hero";
 import { VendoRoot } from "./VendoRoot";
 
-/** The capture slot the dashboard hero was registered under (vendo sync). */
+/** The host-authored place the director build lands in — a slot NAME
+ *  (2026-08-02 pins/placements split), kept from the capture era so the
+ *  scripted demo keeps working unchanged. */
 const HERO_SLOT = "CadenceMissingDocsHero";
 
 /**
- * The dashboard hero, slot-wrapped (06-apps §8). A remix pinned to this slot
- * mounts in place of the original; the original stays the fallback. In
- * director mode the scripted build's final view swaps in here directly (no
- * wire round-trip) so the demo lands on the real dashboard.
+ * The dashboard hero (2026-08-02 final shape): the hero itself is remixable
+ * IN PLACE through the <Remixable> wrapper — a user's fork replaces the
+ * wrapped element right here, for that user only, no slot involved. The
+ * VendoSlot remains for director mode only, where the scripted build's final
+ * view swaps in directly (no wire round-trip) and takes over the whole stat
+ * row.
  */
 function HeroSlotBody({
   missingCount,
@@ -25,14 +28,8 @@ function HeroSlotBody({
 }) {
   const [directorSurface, setDirectorSurface] = useState<{ tree: unknown } | null>(null);
 
-  // One-liner replacement for the old SWR polling dance: the shared hook
-  // resolves the app pinned to this slot. Read here for the expand-to-full-row
-  // layout decision; the slot gets discover={false} so it never starts a
-  // second poll (a bare <VendoSlot id> would discover the pin itself).
-  const { appId } = useSlotApp(HERO_SLOT);
-
-  // The remixed app lands here ONLY when the user pins it — the preview in the
-  // overlay saves nothing to the dashboard until then.
+  // The scripted build lands here ONLY when the user pins it — the preview in
+  // the overlay saves nothing to the dashboard until then.
   useEffect(() => {
     const onPin = (event: Event) => {
       const payload = (event as CustomEvent<{ payload?: unknown }>).detail?.payload;
@@ -43,26 +40,28 @@ function HeroSlotBody({
   }, []);
 
   const original = <MissingDocsHero missingCount={missingCount} clientCount={clientCount} />;
-  // Once the card becomes a full app (director surface or a pinned remix), it
-  // takes over the whole stat row instead of staying crammed in one cell.
-  const expanded = directorSurface !== null || Boolean(appId);
+
+  if (directorSurface) {
+    // The director surface mounts as a pinned COMPONENT in the slot (ENG-223)
+    // — through the tree renderer + pin error boundary, so a broken view falls
+    // back to the original hero — and expands to the full stat row.
+    return (
+      <div
+        className="group/hero relative col-span-4 h-full"
+        style={{ ["--fl-slot-min-h" as string]: "0px" }}
+      >
+        <VendoSlot id={HERO_SLOT} pin={{ payload: directorSurface.tree as UIPayload }}>{original}</VendoSlot>
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={`group/hero relative h-full${expanded ? " col-span-4" : ""}`}
-      style={{ ["--fl-slot-min-h" as string]: "0px" }}
-    >
-      {/* A pinned remix (director surface or user pin) mounts as a pinned
-          COMPONENT in the slot (ENG-223) — through the tree renderer + pin
-          error boundary, so a broken remix falls back to the original hero
-          rather than blanking the cell; otherwise the whole app takes over.
-          (2026-08-02 final shape: the slot's remix flag is gone — the remix
-          gesture lives on <Remixable>; W1e converts this host to it.) */}
-      {directorSurface ? (
-        <VendoSlot id={HERO_SLOT} pin={{ payload: directorSurface.tree as UIPayload }}>{original}</VendoSlot>
-      ) : (
-        <VendoSlot id={HERO_SLOT} appId={appId ?? undefined} discover={false}>{original}</VendoSlot>
-      )}
+    <div className="group/hero relative h-full">
+      {/* The child stays a literal element (not {original}): sync's static
+          scan resolves the wrapped component through this exact JSX. */}
+      <Remixable>
+        <MissingDocsHero missingCount={missingCount} clientCount={clientCount} />
+      </Remixable>
     </div>
   );
 }
