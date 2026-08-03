@@ -200,6 +200,13 @@ selector — parked as structure candidates, not styled in).
 Hosts still re-theme everything via the existing VendoTheme tokens; S1 is
 the out-of-the-box feel, not a mandate.
 
+**Scope confirmed (2026-08-03): the S1 pass applies to EVERY surface** —
+the overlay panel, thread (bubbles/beats/app cards), approval and grant
+cards, toasts, waiting strip, launcher pill, share dialog — one re-token
+pass over `chrome-css.ts`. The frosted-glass identity is retired. Known
+consequence, accepted: every existing deployment visibly changes chrome on
+upgrade (brand tokens unchanged).
+
 ### 12. The center is a PAGE inside the host's app — and mobile (pick P1)
 
 Standing law from this round: **we never bring an app shell of our own.**
