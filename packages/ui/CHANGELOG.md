@@ -1,5 +1,115 @@
 # @vendoai/ui
 
+## 0.7.0
+
+### Minor Changes
+
+- ea3cb0b: A pin now has a payoff. Pinning a generated view used to be silent: the panel
+  stayed open over the page, and the slot showed the app whenever its next ≤5s
+  poll happened to fire — nothing connected the click to the result.
+
+  Every pin affordance (the in-thread card bar and the workspace stage) now runs
+  one sequence, graduated from the Keystone demo:
+
+  1. the panel dismisses first, because the payoff is on the page and the card
+     being pinned sits in a modal over a scrim;
+  2. a ghost of the card flies into the slot (300ms) and the slot takes a settle
+     pulse (180ms) — 480ms total, deterministic, and the slot is scrolled into
+     view first so the landing is actually watchable;
+  3. the slot re-reads on the pin event instead of waiting for the poll tick.
+
+  `prefers-reduced-motion` keeps the dismiss and the pulse and skips the flight.
+  The ceremony is presentation only — the pin is still whatever the host's
+  `onPin` writes — so a slot that is not mounted means no animation rather than a
+  stranded ghost.
+
+  New public surface, all optional:
+
+  - `usePinAction()` (`@vendoai/ui/chrome`) — what the built-in affordances call.
+  - `playPinCeremony({ appId, slot, dismiss })` — the same sequence for a host
+    running a pin from its own control.
+  - `announcePin(appId)` / `onPinAnnounced(listener)` (`@vendoai/ui`) — the bus
+    `useSlotApp` listens on, for hosts that pin outside a Vendo surface.
+  - `pinSlot` on `VendoRoot`/`VendoProvider` — the ceremony's destination. Only
+    needed by hosts mounting several slots; with one, the ceremony finds it.
+
+- 37ec12a: New `Remixable` chrome component: wrap any host element to mark it remixable.
+  At rest a small muted ✦ sits in the element's top-right corner; hovering (or
+  tabbing into) the element blooms it in place into a **✦ Remix** pill, held open
+  for a 200ms grace so the cursor can travel to it. Clicking opens the
+  conversation surface EMPTY with the element attached — a `Remixing · <name>`
+  chip in the panel chrome that rides with the next message and clears on send —
+  so the pill can never fire a turn on its own. Under `prefers-reduced-motion`
+  the bloom snaps.
+
+  ```tsx
+  <Remixable name="Rent Roll">
+    <RentRollTable units={units} />
+  </Remixable>
+  ```
+
+  `name` is the surface in the host's own words (the chip's label, and what the
+  agent is told); the optional `context` is one grounding line appended after the
+  user's message, exactly like `VendoTrigger`'s. Hosts wiring their own element
+  call `openVendoConversation({ remix: { name, context } })` — the same registry
+  seam, now carrying an attachment alongside a prompt.
+
+  Distinct from `VendoSlot`'s `remix` flag, which forks the component pinned in
+  that slot; `Remixable` attaches any element to the next ask and forks nothing.
+
+- 8f5a7c0: A failed turn now carries its own error, so the thread never shows a blank
+  reply.
+
+  When a turn's stream errored, the only trace on the wire was the ai-SDK `error`
+  chunk. That chunk belongs to no message: it sets `useChat`'s transient `error`
+  and nothing else. The turn itself persisted as an assistant message with **zero
+  parts**, so the moment the thread was re-read — a reload, a thread switch,
+  `VendoPage` refetching after the mint — the explanation was gone and the user's
+  question sat there answered by a blank bubble. On a keyless install that
+  blank bubble was the whole first experience: the server logged `Vendo found no
+model key…`, the panel showed nothing durable.
+
+  The agent now writes the same gated string (`wireErrorMessage` — Vendo's own
+  crafted text or the fixed generic line, never provider internals) into the turn
+  as a `data-vendo-turn-error` part beside the error chunk. It persists with the
+  turn, and the thread renders it inline where the reply would have been, in the
+  failed-beat vocabulary a failed app build already uses. The live banner keeps
+  its Retry but drops its detail line while the turn is already saying it, so the
+  same sentence is never printed twice.
+
+  Additive to the wire (§15 forward-compat): consumers that don't recognize the
+  part ignore it.
+
+### Patch Changes
+
+- dd73974: Three fixes the Keystone demo build turned up.
+
+  **ConnectCard hangs on "Connecting…" under React StrictMode.** The card's
+  cancel ref was only ever SET (by the effect's cleanup) and never reset on
+  setup, so dev-mode's mount → cleanup → re-mount latched it before the user
+  ever clicked: `completeConnection`'s poll loop saw "cancelled" on its first
+  check, returned without throwing, and the card sat on the spinner forever.
+  It now resets on setup, exactly like its sibling `ConnectedAccountsPanel`
+  already did. Hosts no longer need `reactStrictMode: false` to demo a connect.
+
+  **The composer centred its own text past one line.** `.fl-composer-row` was
+  `align-items: flex-end`, which is right for a one-line field and wrong for
+  every other: a textarea's text sits at ITS top, so as the field grew the row
+  pushed the icons and Send DOWN while the text stayed put — the input read as
+  mis-centred and Send moved under the cursor mid-sentence. The row is now
+  top-anchored, so the field grows downward and the controls hold still. At one
+  line the icon's 34px box and the text's 33px line box agree, so the collapsed
+  composer is unchanged.
+
+  **A single failed `apps.open` skeletoned a pinned app forever.** `useApp`
+  recorded the error and every mounted surface kept rendering "Loading app…"
+  until a full page reload. The load now retries three times with backoff
+  (300ms, 600ms), and a load that really is dead renders a terminal state with
+  a "Try again" button — in `VendoSlot` and in `VendoPage`'s app pane.
+
+- Updated dependencies [8f5a7c0]
+  - @vendoai/core@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes

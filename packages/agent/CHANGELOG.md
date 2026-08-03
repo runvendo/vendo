@@ -1,5 +1,107 @@
 # @vendoai/agent
 
+## 0.7.0
+
+### Minor Changes
+
+- 89b2455: Add tour mode: deterministic scripted responses in front of the live agent.
+
+  Every company that adopts Vendo has to demo it — to its own executives, to a
+  prospect, to a new user on day one — and a live agent is the wrong thing to put
+  in front of an audience. It is slow, it is different every time, and the one
+  run that matters is the run where it improvises. So every host builds the same
+  cache by hand, badly. This is that cache, supported.
+
+  `createVendo({ tours })` takes an ordered list of `{ prompt, respond }`
+  entries. `respond` is prose, a recorded app document, or a sequence of both,
+  replayed at a live turn's cadence. Everything a tour does not own — every
+  improvised question, every follow-up about what is on screen — reaches the real
+  agent untouched.
+
+  Two rules keep a tour from swallowing the demo it carries. An entry fires only
+  on a close variant of its own frozen prompt: matching is a normalized
+  similarity score over token sets and edit distance, not keyword presence, so a
+  typo still lands the entry while a different ask about the same subject does
+  not. And an entry fires at most once per thread, reconstructed from the
+  thread's own transcript rather than stored, so it survives the live turns in
+  between. Both rules exist because keyword matching cannot tell "ask for this"
+  from "change the thing you just made" — it replayed the recording on top of the
+  app the audience had just watched arrive, pin and all.
+
+  An app part is a real app: the recorded document is imported as an owned copy,
+  so it opens, pins, survives a reload, and can be edited by the next turn, which
+  is the live agent's. Pacing is measured against real turns and drawn from a
+  stream seeded by the entry's own prompt — uneven like a live provider, and the
+  same unevenness on every rehearsal. Nothing in a tour calls `Math.random`.
+
+  Plain OSS config with no Cloud dependency and no key-conditional branch: a tour
+  behaves identically with and without `VENDO_API_KEY`. A host that configures no
+  tours composes no seam at all.
+
+  `@vendoai/agent` gains the scripted-turn seam this rides on: an optional
+  `scripted` hook consulted after the thread resolves and before any model work.
+  It lives there because everything a scripted turn must share with a live one
+  lives there — the resolved thread, the persistence, the response contract — and
+  a seam in the wire route could only approximate all three. The umbrella owns
+  what a play is, because matching and replay need the apps runtime.
+
+- 8f5a7c0: A failed turn now carries its own error, so the thread never shows a blank
+  reply.
+
+  When a turn's stream errored, the only trace on the wire was the ai-SDK `error`
+  chunk. That chunk belongs to no message: it sets `useChat`'s transient `error`
+  and nothing else. The turn itself persisted as an assistant message with **zero
+  parts**, so the moment the thread was re-read — a reload, a thread switch,
+  `VendoPage` refetching after the mint — the explanation was gone and the user's
+  question sat there answered by a blank bubble. On a keyless install that
+  blank bubble was the whole first experience: the server logged `Vendo found no
+model key…`, the panel showed nothing durable.
+
+  The agent now writes the same gated string (`wireErrorMessage` — Vendo's own
+  crafted text or the fixed generic line, never provider internals) into the turn
+  as a `data-vendo-turn-error` part beside the error chunk. It persists with the
+  turn, and the thread renders it inline where the reply would have been, in the
+  failed-beat vocabulary a failed app build already uses. The live banner keeps
+  its Retry but drops its detail line while the turn is already saying it, so the
+  same sentence is never printed twice.
+
+  Additive to the wire (§15 forward-compat): consumers that don't recognize the
+  part ignore it.
+
+### Patch Changes
+
+- bcf8699: Turn-error notices now appear only when the turn actually failed, and never
+  outlive the failure.
+
+  Three fixes to the `data-vendo-turn-error` part shipped alongside it:
+
+  **Recoverable tool errors are not turn failures.** The notice was written from
+  `toUIMessageStream`'s `onError`, which is the ai-SDK's general error-TEXT
+  formatter — it also runs for the `tool-input-error` and `tool-output-error`
+  chunks a hallucinated tool name or a throwing tool produces. The SDK feeds those
+  back and the model routinely answers on the next step, so a turn that finished
+  fine persisted permanent failed-beat alerts above its own answer. The notice is
+  now tapped off the merged stream's fatal `error` chunk instead, and is
+  once-guarded — the SDK runs the gate a second time over its own error text while
+  assembling the message to persist.
+
+  **A retry no longer inherits the failed turn's notice.** When a thread's last
+  message is an assistant turn the SDK CONTINUES it, reusing its id and its parts,
+  so the flagship keyless → `vendo login` → Retry flow appended the real answer
+  underneath the stale "no model key" line and persisted both — wrong on every
+  reload, forever. A new turn now clears the trailing turn's notice; anything that
+  turn really produced (partial text, tool beats) stays, and a turn left with
+  nothing else is dropped so the reply starts clean.
+
+  **Failures thrown before the model stream exists are recorded too.** Tool
+  building, `descriptors()`, and history conversion fail before any model chunk
+  exists, so those turns still persisted blank — the exact defect the part was
+  added to end. They now carry the same gated string, making good the previous
+  changeset's claim that the thread never shows a blank reply.
+
+- Updated dependencies [8f5a7c0]
+  - @vendoai/core@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes
