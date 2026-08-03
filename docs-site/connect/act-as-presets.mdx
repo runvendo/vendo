@@ -36,8 +36,9 @@ name/email session-token claims:
 | `jwt({ secret })` | none (a host-owned scheme has no vendor env, so `secret` is required) | `Authorization: Bearer` |
 
 `jwt` shares the presets' options type, so `jwt()` type-checks — and then
-throws at construction telling you to pass `{ secret }`. A function-form
-`secret` that resolves empty throws on first use instead.
+throws at construction telling you to pass `{ secret }`. A `secret` that is
+present but resolves empty passes construction and throws later, on the first
+Bearer request it has to verify.
 
 Both options are shared across every preset: `secret` overrides the
 provider's env-read secret, and `user(subject, claims)` swaps in custom

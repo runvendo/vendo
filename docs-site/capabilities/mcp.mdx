@@ -12,8 +12,9 @@ weaker perimeter than your own conversation surface.
 
 Opening the door is a host decision, and entirely a manual one. It is off by
 default; `vendo init` never asks about it, never turns it on, and scaffolds
-none of its wiring. You set `mcp: true`, pass your own OAuth adapter, and add
-the discovery route yourself — all three steps are below.
+none of its wiring. You set `mcp: true`, make sure a `HostOAuthAdapter` is in
+the composition — any `auth` preset already carries one, so most hosts need
+nothing extra — and add the discovery route yourself. All three are below.
 
 **Status: experimental.** `mcp: true` is real, guard-bound, and covered by
 protocol-level e2e (`fixtures/mcp-e2e`), but it stays out of the main

@@ -60,7 +60,7 @@ each mount is detected independently.
 ```json
 {
   "name": "host_polls_delete",
-  "description": "polls.delete",
+  "description": "tRPC mutation polls.delete",
   "inputSchema": {
     "type": "object",
     "properties": { "id": { "type": "string" } },
@@ -143,8 +143,10 @@ up whichever your app uses:
 
 GraphQL has no namespace dot path, so the tool name is `host_` plus the
 word-split schema field name alone — colliding names fall back to
-`host_<name>_<type>`. The description is always
-`GraphQL <type> <operation>`. Each binding records the operation name, its
+`host_<name>_<type>`. Queries and mutations get the description
+`GraphQL <type> <operation>`; a subscription is emitted disabled, with a
+description saying it is not invokable over a single HTTP request. Each
+binding records the operation name, its
 `query` or `mutation` type, the endpoint, and a full executable `document`. The document declares variables
 for every argument, marks optional or defaulted arguments as nullable so the
 agent can omit them, and uses a depth-limited default selection set with a
@@ -186,8 +188,8 @@ tool.
 
 ```json
 {
-  "name": "host_actions_boards_delete_board",
-  "description": "actions/boards#deleteBoard",
+  "name": "host_delete_board",
+  "description": "server action app/actions/boards.ts#deleteBoard",
   "inputSchema": {
     "type": "object",
     "properties": { "id": { "type": "string" } },

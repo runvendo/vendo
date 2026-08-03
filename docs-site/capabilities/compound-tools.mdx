@@ -133,8 +133,15 @@ overrides apply. Under- or over-declaring risk quarantines the entry.
 ## Overrides
 
 The `tools` map of the same file applies to compounds by name, field by
-field, the same way it applies to extracted tools. Use it to tighten risk,
-mark a compound `critical`, or disable it without editing the compound entry.
+field, the same way it applies to extracted tools. Use it to mark a compound
+`critical`, or to disable it, without editing the compound entry.
+
+`risk` is the exception. Overrides merge *before* validation, and the rule
+above is equality, not a floor — so an override that changes a compound's
+risk in either direction quarantines it. Overriding a *step's* risk can
+quarantine the compound the same way, by moving the step maximum out from
+under the compound's declaration. To change a compound's risk, change the
+declaration and the steps together.
 
 ```json
 {

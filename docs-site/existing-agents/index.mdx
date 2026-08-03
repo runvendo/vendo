@@ -47,7 +47,9 @@ the embeds: Vendo minus the conversation.
 ```ts
 // lib/vendo.ts: the same composition as any Vendo host
 import { createVendo } from "@vendoai/vendo/server";
-import { getWeather, sendTripReport } from "./actions";
+
+export async function getWeather(city: string) { /* … */ }
+export async function sendTripReport(to: string, body: string) { /* … */ }
 
 export const vendo = createVendo({
   policy: "cautious",
@@ -58,6 +60,12 @@ export const vendo = createVendo({
   },
 });
 ```
+
+Each key is `<declaring module>#<export name>` — the path of the file the
+action is *declared* in, relative to the project root, not the file that
+imports it. Move `getWeather` into `lib/actions.ts` and the key becomes
+`lib/actions.ts#getWeather`; get it wrong and dispatch fails closed with
+`not-implemented`.
 
 On a Next.js host that ran `vendo init`, this map is generated for you as
 `vendo-actions.ts` next to the route file and imported from there — the route

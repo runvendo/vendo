@@ -76,18 +76,25 @@ stop it, give each server its own `dataDir`, or move to a Postgres `url`.
 Encryption covers exactly one column, `vendo_secrets.ciphertext`. Everything
 else stays host-queryable plaintext by design.
 
-Set a 32-byte base64 key at `VENDO_STORE_ENCRYPTION_KEY` in your host `.env`.
-The default composition reads it when no store is passed to `createVendo`.
-Without that key:
+What actually gates it is the store's own `allowUnencryptedSecrets` option:
+with no encryption key and no explicit opt-in to plaintext, every secret read
+*and* write throws. `createStore({})` by hand therefore refuses secrets even
+in development.
 
-- In dev (`NODE_ENV` is not `production`), secrets are written **unencrypted**
-  under the gitignored data dir, and the first plaintext write logs a warning.
-- In production, secret reads and writes **throw** rather than fall back to
-  plaintext. Set the key before you deploy anything that stores a secret.
+The default composition — no `store` passed to `createVendo` — supplies that
+opt-in for you from the environment. Set a 32-byte base64 key at
+`VENDO_STORE_ENCRYPTION_KEY` in your host `.env` and secrets encrypt. Without
+it, the composition passes `allowUnencryptedSecrets` when `NODE_ENV` is not
+`production`, so:
+
+- In dev, secrets are written **unencrypted** under the gitignored data dir,
+  and the first plaintext write logs a warning.
+- In production, secret reads and writes **throw**. Set the key before you
+  deploy anything that stores a secret.
 
 An explicitly configured store always wins. If you pass
 `store: createStore({ encryption: { key } })` to `createVendo`, the
-environment variable is ignored.
+environment variable is ignored — and so is the `NODE_ENV` convenience above.
 
 Ciphertext is AES-256-GCM and bound to the secret name as authenticated data,
 so a tampered or swapped row fails to decrypt. Do not rotate the key by hand:
@@ -133,5 +140,6 @@ handle: `records(name).claim(expected, replacement?)` returns `true` for the
 single caller whose read of `expected` still matched, and
 `records(name).atomic?.insertIfAbsent(record)` /
 `.compareAndSwap(record, expectedRevision)` return `null` when another caller
-won. Both are optional capabilities — check for them before use, and note
-that Vendo's own reserved collections do not expose them.
+won. Your own collections expose both. Vendo's internal tables vary — the
+routed reserved tables expose no `claim` at all — so feature-detect the
+method on the handle rather than assuming it is there.

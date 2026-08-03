@@ -92,6 +92,8 @@ parts, so match both:
 
 ```tsx
 // src/app/page.tsx
+import { VendoToolResult } from "@vendoai/vendo/react";
+
 type ToolLikePart = { type: string; toolName?: string; state?: string; output?: unknown };
 
 // inside your existing message-parts loop

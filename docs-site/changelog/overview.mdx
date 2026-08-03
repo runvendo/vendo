@@ -33,7 +33,7 @@ inside its own fields.
 friendly labels and readable argument previews instead of raw tool slugs,
 ai-SDK lifecycle strings, or raw JSON. `VendoProvider` accepts an optional
 `tools` prop (`ToolMetaMap`) with per-tool `label`, `description`, and
-`summarize(args)`; the new `useVendoTools()` hook exposes the same map to
+`formatField(key, value)`; the new `useVendoTools()` hook exposes the same map to
 custom surfaces. Chrome falls back to prettified ids and `Key: value`
 previews when no metadata is supplied, collapses consecutive identical
 chips into a single entry with an `×N` count, and no longer prints a
@@ -164,12 +164,12 @@ failing audit sink never blocks the host call. See the
 [CLI reference](/reference/cli#vendo-doctor-dir) and
 [Troubleshooting](/deploy/troubleshooting).
 
-**Atomic claims on the store contract.** `store.claim({ key, owner, ttlMs })`
-and `store.release(claim)` let concurrent workers coordinate on a shared
-key without external locks, with TTL-based expiry so a crashed owner never
-holds a key forever. The same compare-and-set machinery backs
-run-lifecycle transitions, so cancellations and scheduler ticks cannot
-race a run into a resurrected state. See [Persistence](/deploy/persistence).
+**Compare-and-set on the store contract.** Record stores can expose
+`records(name).claim(expected, replacement?)` — `true` for the single caller
+whose read of `expected` still matched — plus `atomic.insertIfAbsent` and
+`atomic.compareAndSwap`, so concurrent workers coordinate without external
+locks. Both are optional capabilities: check for the method before use. See
+[Persistence](/deploy/persistence).
 
 **Invisible graduation to rung 4.** Tree apps can now graduate to a
 machine-served HTTP app without a visible UI change. On graduation, the

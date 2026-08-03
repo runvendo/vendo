@@ -88,9 +88,9 @@ Vendo Cloud uploads capability misses when, and only when, both of these hold:
 - the environment does not trip a kill switch (see below)
 
 The non-empty API key is the host's explicit opt-in, so production runs upload
-misses by default once a key is present. The build-and-development-only
-`NODE_ENV=production` fail-close and the persisted `optedOut` flag in
-`~/.vendo/telemetry.json` do not gate this stream.
+misses by default once a key is present. Neither the `NODE_ENV` fail-close
+(which applies only to the dev-server runtime collector) nor the persisted
+`optedOut` flag in `~/.vendo/telemetry.json` gates this stream.
 
 Any of these environment values blocks upload for the current process:
 

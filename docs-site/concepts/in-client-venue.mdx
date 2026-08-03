@@ -126,8 +126,8 @@ jailed venue.
 | State | Field on `payload.inClient` | Rendering |
 | --- | --- | --- |
 | Approved | `{ granted: true, versionHash, approvedBy, at, review? }` | Host-page mount |
-| Approval exists but version changed | `{ granted: false, reason: "version-changed" }` | Jailed, with a loud in-surface notice |
-| Review-kind app not yet granted | `{ granted: false, reason: "pending-review", review }` | No source shipped; the review standing is rendered instead |
+| Approval exists but version changed | `{ granted: false, versionHash, reason: "version-changed" }` | Jailed, with a loud in-surface notice |
+| Review-kind app not yet granted | `{ granted: false, versionHash, reason: "pending-review", review }` | No source shipped; the review standing is rendered instead |
 | No approval ever recorded | field omitted | Jailed, silent (the default) |
 
 `review` is the standing: `{ status: "pending", versionHash }` or
