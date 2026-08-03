@@ -569,7 +569,12 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
   // create() dies on a missing module. Half a BYO sandbox is a MISCONFIG,
   // not a fallback: silently riding Cloud (or going dark) hides the missing
   // install until the first server-app build fails somewhere else entirely.
-  const e2bApiKey = environment("E2B_API_KEY");
+  // Trimmed, because a whitespace-only value is not a key: environment() only
+  // treats "" as unset, but doctor's E-LIVE-007 check trims before deciding one
+  // is present — and after the throw above, disagreeing with doctor about
+  // whether the operator set a key means one of them is lying to the operator.
+  const e2bKey = environment("E2B_API_KEY")?.trim();
+  const e2bApiKey = e2bKey === "" ? undefined : e2bKey;
   if (e2bApiKey !== undefined) {
     if (!e2bInstalled()) {
       throw new VendoError(

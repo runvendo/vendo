@@ -77,6 +77,16 @@ describe("venue ladder with an unloadable e2b SDK (0.4.4 defect C)", () => {
       .rejects.toThrow("install e2b, or unset E2B_API_KEY to use another sandbox");
   });
 
+  it("treats a whitespace-only E2B_API_KEY as unset, the way doctor's check reads it", async () => {
+    // environment() only strips "", so a stray-space value used to reach the
+    // throw above while `vendo doctor` (which trims) reported no key set.
+    expect(await venueFor({
+      E2B_API_KEY: "   ",
+      VENDO_API_KEY: "vnd_cloud_key",
+      ANTHROPIC_API_KEY: "sk-ant-byo",
+    })).toBe("cloud");
+  });
+
   it("still lets an explicit sandbox: adapter win before any env check", async () => {
     expect(await venueFor(
       { E2B_API_KEY: "e2b_leaked_from_shell" },
