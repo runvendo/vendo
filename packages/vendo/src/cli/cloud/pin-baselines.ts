@@ -25,26 +25,60 @@ import { hostedStore } from "../../hosted-store.js";
 
 export const PIN_BASELINES_COLLECTION = "vendo_pin_baselines";
 
+/** One wall-clock budget for the WHOLE reconcile. The per-request timeout in
+ *  hostedStore is 30s, so N slots could otherwise add minutes to a `prebuild`.
+ *  Blowing the budget aborts the in-flight request and degrades to the
+ *  caller's warning, exactly like any other Cloud hiccup. */
+const RECONCILE_BUDGET_MS = 20_000;
+
 export interface PinBaselinePushResult {
   pushed: string[];
-  /** Slots deleted from Cloud because no local baseline names them anymore. */
+  /** Slots deleted from Cloud because no local baseline FILE names them. */
   pruned: string[];
+  /** Baseline files that exist but could not be read as baselines. Never a
+   *  prune signal — reported so a half-written capture is visible. */
+  unreadable: string[];
+  /** Set when the reconcile did not finish. `pushed`/`pruned` still carry
+   *  whatever actually landed before it stopped (partial accounting). */
+  error?: string;
 }
 
-/** Every baseline on disk, slot-keyed. Unreadable or invalid files are simply
-    not baselines — capture already reported them; a push never fails a build
-    over one. */
-async function localBaselines(vendoDir: string): Promise<Map<string, PinBaseline>> {
+interface LocalBaselines {
+  /** Every slot with a FILE on disk, parseable or not. This — not the parsed
+   *  map — is the prune signal: a truncated or half-written capture must never
+   *  read as "this slot is gone" and delete the console's review baseline. */
+  present: Set<string>;
+  /** The parsed, valid baselines — the push payloads. */
+  valid: Map<string, PinBaseline>;
+  unreadable: string[];
+}
+
+async function localBaselines(vendoDir: string): Promise<LocalBaselines> {
   const dir = join(vendoDir, "remixable");
   const entries = await fs.readdir(dir).catch(() => [] as string[]);
-  const baselines = new Map<string, PinBaseline>();
+  const local: LocalBaselines = { present: new Set(), valid: new Map(), unreadable: [] };
   for (const entry of entries.filter((name) => name.endsWith(".json")).sort()) {
+    // The file stem IS the slot (capturePins writes `<slot>.json`), so presence
+    // is knowable without parsing — which is the whole point.
+    const slot = entry.slice(0, -".json".length);
+    local.present.add(slot);
     const raw = await fs.readFile(join(dir, entry), "utf8").catch(() => null);
-    if (raw === null) continue;
-    const parsed = pinBaselineSchema.safeParse(JSON.parse(raw) as unknown);
-    if (parsed.success) baselines.set(parsed.data.slot, parsed.data);
+    let parsed: PinBaseline | null = null;
+    if (raw !== null) {
+      try {
+        const candidate = pinBaselineSchema.safeParse(JSON.parse(raw) as unknown);
+        if (candidate.success) parsed = candidate.data;
+      } catch {
+        // Malformed JSON — a half-written capture, not a deletion.
+      }
+    }
+    // Keyed by the file stem, which capturePins guarantees equals `slot`: the
+    // push id and the prune signal must name the same thing or a run could
+    // push a row and then delete it.
+    if (parsed === null || parsed.slot !== slot) local.unreadable.push(slot);
+    else local.valid.set(slot, parsed);
   }
-  return baselines;
+  return local;
 }
 
 /** A remote row already carries this exact capture. `capturedAt` moves
@@ -61,43 +95,78 @@ function upToDate(remote: unknown, local: PinBaseline): boolean {
 
 /**
  * Reconcile Cloud with `.vendo/remixable/`: upload what is new or changed,
- * delete what no longer exists locally. Throws on transport failure — the
- * caller notes it and moves on (a Cloud hiccup must never fail a build).
+ * delete only slots whose file is GONE. Never throws — a Cloud hiccup returns
+ * the partial accounting plus `error`, so the caller can warn without losing
+ * track of what already landed.
  */
 export async function pushPinBaselines(options: {
   vendoDir: string;
   apiKey: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
+  budgetMs?: number;
 }): Promise<PinBaselinePushResult> {
   const local = await localBaselines(options.vendoDir);
-  const store = hostedStore({
-    apiKey: options.apiKey,
-    ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
-    ...(options.fetchImpl === undefined ? {} : { fetch: options.fetchImpl }),
-  });
-  const records = store.records(PIN_BASELINES_COLLECTION);
-
-  const remote = new Map<string, unknown>();
-  let cursor: string | undefined;
-  do {
-    const page = await records.list(cursor === undefined ? {} : { cursor });
-    for (const record of page.records) remote.set(record.id, record.data);
-    if (page.cursor === undefined || page.cursor === cursor) break;
-    cursor = page.cursor;
-  } while (cursor !== undefined);
-
   const pushed: string[] = [];
-  for (const [slot, baseline] of [...local.entries()].sort(([left], [right]) => left.localeCompare(right))) {
-    if (remote.has(slot) && upToDate(remote.get(slot), baseline)) continue;
-    await records.put({ id: slot, data: baseline as unknown as Json });
-    pushed.push(slot);
-  }
   const pruned: string[] = [];
-  for (const slot of [...remote.keys()].sort()) {
-    if (local.has(slot)) continue;
-    await records.delete(slot);
-    pruned.push(slot);
+  const budgetMs = options.budgetMs ?? RECONCILE_BUDGET_MS;
+  const budget = new AbortController();
+  const timer = setTimeout(() => budget.abort(), budgetMs);
+  timer.unref?.();
+  const done = (error?: unknown): PinBaselinePushResult => ({
+    pushed,
+    pruned,
+    unreadable: local.unreadable,
+    ...(error === undefined ? {} : {
+      error: budget.signal.aborted
+        ? `the reconcile passed its ${budgetMs / 1000}s budget`
+        : error instanceof Error ? error.message : "unknown error",
+    }),
+  });
+
+  // consoleSender sets its own per-request signal, so the overall budget rides
+  // a wrapped fetch instead of a request option.
+  const base = options.fetchImpl ?? fetch;
+  const fetchImpl: typeof fetch = (input, init) => base(input, {
+    ...init,
+    signal: init?.signal === undefined || init.signal === null
+      ? budget.signal
+      : AbortSignal.any([init.signal, budget.signal]),
+  });
+
+  try {
+    const store = hostedStore({
+      apiKey: options.apiKey,
+      ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+      fetch: fetchImpl,
+    });
+    const records = store.records(PIN_BASELINES_COLLECTION);
+
+    const remote = new Map<string, unknown>();
+    let cursor: string | undefined;
+    do {
+      const page = await records.list(cursor === undefined ? {} : { cursor });
+      for (const record of page.records) remote.set(record.id, record.data);
+      if (page.cursor === undefined || page.cursor === cursor) break;
+      cursor = page.cursor;
+    } while (cursor !== undefined);
+
+    for (const [slot, baseline] of [...local.valid].sort(([left], [right]) => left.localeCompare(right))) {
+      if (remote.has(slot) && upToDate(remote.get(slot), baseline)) continue;
+      await records.put({ id: slot, data: baseline as unknown as Json });
+      pushed.push(slot);
+    }
+    for (const slot of [...remote.keys()].sort()) {
+      // Presence on disk, not parseability: an unreadable file still means the
+      // host has this slot, so its Cloud row stays.
+      if (local.present.has(slot)) continue;
+      await records.delete(slot);
+      pruned.push(slot);
+    }
+    return done();
+  } catch (error) {
+    return done(error);
+  } finally {
+    clearTimeout(timer);
   }
-  return { pushed, pruned };
 }

@@ -43,6 +43,7 @@ import {
   envLocalValueSync,
   errorClass,
   exists,
+  invokedByPackageScript,
   readOptional,
   toolingTelemetry,
   type Output,
@@ -1015,7 +1016,8 @@ export async function runInit(options: InitOptions): Promise<number> {
   // Detect + confirm (interactive runs only): --yes and non-interactive runs
   // accept the detected default silently — the same interactivity posture as
   // the AI-polish consent.
-  const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+  const interactive = options.interactive
+    ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
   // An undetectable framework has NO safe default: a non-interactive run
   // (agents) errors with the exact flag instead of guessing the Next layout
   // into an unknown host. An interactive run keeps today's fall-through to the

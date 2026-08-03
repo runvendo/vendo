@@ -64,10 +64,9 @@ Options:
   `{ file, lines, why }`) plus the same lines in `manualSteps`, `extraction`
   (deterministic extraction runs first,
   against a throwaway directory, so the plan carries the extracted tools),
-  `riskRecommendations` (per-tool advice: destructive tools should be marked
-  critical, disabled tools reviewed before enabling), and an `aiPolish`
-  delegation contract. It is a read-only plan, not a scaffolding step; scaffold
-  with `--yes`.
+  and `riskRecommendations` (per-tool advice: destructive tools should be
+  marked critical, disabled tools reviewed before enabling). It is a read-only
+  plan, not a scaffolding step; scaffold with `--yes`.
 - `--yes` skips the interactive prompts (auth confirm, theme review, Cloud
   offer) and scaffolds non-interactively, ending with an `Agent tail:` block
   naming the files left to hand-edit.
@@ -291,21 +290,30 @@ sync. It mirrors the split `.vendo/` already lives by (`tools.json` is the
 machine layer, `overrides.json` is what a person decided), and it leaves
 `theme.json` exactly the frozen `VendoTheme` shape. Commit both. Per slot:
 
-- in the base and `theme.json` still equals it → machine-extracted; sync takes
+A slot is machine-owned **only** when the base records it and `theme.json`
+still holds exactly that value. Everything else is yours:
+
+- recorded, and `theme.json` still equals it → machine-extracted; sync takes
   the new value
-- in the base and `theme.json` differs → you edited it; pinned, and reported
-  as `theme: your brand changed but these slots are pinned to your edits (…)`
-- absent from the base (a token init never saw) → taken only while
-  `theme.json` still holds Vendo's neutral default, pinned otherwise
+- recorded, and `theme.json` differs → you edited it; pinned, and reported as
+  `theme: your brand changed but these slots are pinned to your edits (…)`
+- **not recorded at all** — no base file yet, or a token init never saw →
+  pinned. There is no evidence about who chose the value on disk, and Vendo
+  will not guess from "it looks like one of our defaults" (the neutral
+  defaults are ordinary Tailwind palette values — `#2563eb` is blue-600 — so
+  guessing would silently overwrite a real brand choice).
 
-`radius.small`/`radius.large` follow a `radius` update only while they still
-hold the values init derived from `radius.medium`.
+Values are compared by meaning, not bytes: `#FFFFFF` and `#ffffff` are the
+same color. `radius.small`/`radius.large` follow a `radius` update only while
+they still hold the values init derived from `radius.medium`.
 
-Installs from before the base existed have no recorded provenance, so nothing
-is machine-owned and nothing is touched: sync warns with the diff on every run
-until you either accept it with `--theme-refresh` (which takes every changed
-slot and records the base) or edit `theme.json` yourself. When the scan and
-`theme.json` already agree everywhere, the base bootstraps silently.
+The base only advances on an unambiguous run — one with no pinned slots. So an
+install from before the base existed touches nothing and warns with the diff on
+**every** sync until you either accept it with `--theme-refresh` (which takes
+every changed slot and records the base) or edit `theme.json` yourself. When
+the scan and `theme.json` already agree everywhere, the base bootstraps
+silently. The file has no timestamp and is rewritten only when its values
+change, so a no-op sync leaves your tree clean.
 
 ### Pin baselines reach Vendo Cloud
 
@@ -313,8 +321,15 @@ When a Vendo Cloud key resolves (`VENDO_API_KEY`, `.env.local`/`.env`, or
 `--key`), a normal sync also reconciles the captured baselines in
 `.vendo/remixable/` with the `vendo_pin_baselines` collection in your project's
 hosted store — the collection the console's Remix reviews screen reads. New and
-changed slots are uploaded, slots pruned locally are deleted remotely, and one
-line reports both. This does **not** require `--report`.
+changed slots are uploaded, slots whose baseline **file is gone** are deleted
+remotely, and one line reports both. This does **not** require `--report`.
+
+A baseline file that exists but cannot be read (a truncated or half-written
+capture) is skipped with a warning and its Cloud row is left alone — only an
+absent file is a deletion signal, so a bad file on one machine can never wipe
+the console's review baseline. The whole reconcile runs under one ~20s budget;
+if it runs out, whatever already landed is still reported and the rest retries
+on the next sync.
 
 What crosses the wire is the baseline file verbatim: the wrapped component's
 **source**, the source of every module it imports within the capture depth, and
@@ -343,11 +358,18 @@ Whether the pass runs at all follows the same rule as `vendo init`:
 | | no flag | `--ai` | `--no-ai` |
 | --- | --- | --- | --- |
 | Interactive (TTY) | asks, **every run** | runs | skipped |
-| Non-interactive (CI, pipe, `--json`, `--yes`) | skipped, with a note | runs | skipped |
+| Non-interactive | skipped, with a note | runs | skipped |
 
 Nothing is ever persisted, so an interactive run asks again every time. A
 non-interactive run with no flag stays deterministic and never spends —
-which is why the hooks init installs pass `--no-ai` explicitly. Engines resolve
+which is why the hooks init installs pass `--no-ai` explicitly.
+
+"Non-interactive" means CI, a pipe, `--json`, `--yes`, **or a run started by a
+package script** (`predev`, `prebuild`, any `npm run …` — detected via
+`npm_lifecycle_event`). A lifecycle hook inherits your terminal, so without
+that last rule an older install's bare `predev: vendo sync` would stop
+`npm run dev` on a prompt whose reflexive Enter starts spending. A run you did
+not invoke never gets a question. Engines resolve
 like init's ladder: a BYO model key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`),
 then `VENDO_API_KEY` managed inference, then none — keyless syncs stay
 structural-only, and the pass never fails a run.

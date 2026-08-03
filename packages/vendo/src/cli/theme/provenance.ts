@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { readOptional, writeText } from "../shared.js";
+import { normalizeColor } from "./color.js";
 import type { ThemeSlotValues, ThemeSummary } from "./extract-theme.js";
 
 /**
@@ -13,17 +14,23 @@ import type { ThemeSlotValues, ThemeSummary } from "./extract-theme.js";
  * `tools.json`/`judgments.json` are the machine layer, `overrides.json` is
  * "what a person decided" — instead of inventing a second convention.
  *
- * The law, per slot:
- *   • in the base and `theme.json` still equals it → machine-extracted; a new
- *     extraction updates it
- *   • in the base and `theme.json` differs → hand-edited; pinned and reported
- *   • not in the base (the host grew a token init never saw) → updated only
- *     while `theme.json` still holds Vendo's neutral default, else pinned
+ * The law is one line: a slot is machine-owned ONLY when the base records it
+ * and `theme.json` still holds exactly that value. Everything else is pinned.
+ *   • recorded and unchanged → machine-extracted; a new extraction updates it
+ *   • recorded and different → hand-edited; pinned and reported
+ *   • not recorded at all (no base file yet, or a token init never saw) →
+ *     pinned, because there is no evidence about who chose the value on disk
  *
- * No base file yet (installs from before this landed): nothing is machine-
- * owned, so nothing is touched. When the extraction agrees with `theme.json`
- * everywhere the base bootstraps silently; when it disagrees the run warns
- * with the diff every time until a human resolves it with `--theme-refresh`.
+ * That last rule is deliberately conservative. An earlier draft treated "the
+ * value equals Vendo's neutral default" as proof the machine wrote it — but
+ * the neutral defaults are ordinary Tailwind palette values (`#2563eb` is
+ * blue-600, the greys are the slate ramp), so a human who picks blue-600 would
+ * have had it silently overwritten. Unprovable ownership is never ownership.
+ *
+ * The base only advances on an unambiguous run (no pinned slots), so an
+ * install from before the base existed warns with the diff on every sync until
+ * a human resolves it with `--theme-refresh` — never quietly adopting a stale
+ * value as the new truth.
  */
 
 export const THEME_EXTRACTED_FILE = "theme.extracted.json";
@@ -31,10 +38,11 @@ const FORMAT = "vendo/theme-extracted@1";
 
 export interface ExtractedThemeBase {
   format: string;
-  at: string;
   /** Only the slots the deterministic scan had host evidence for (exact token
       reads, plus the values derived from them). Slots that fell back to a
-      neutral default are absent — Vendo never claims to have read them. */
+      neutral default are absent — Vendo never claims to have read them.
+      Deliberately the whole file: no timestamp, because a timestamp carries no
+      decision and would make the committed artifact churn on every sync. */
   slots: Partial<Record<keyof ThemeSlotValues, string>>;
 }
 
@@ -56,24 +64,14 @@ const SLOT_PATHS: ReadonlyArray<[keyof ThemeSlotValues, readonly string[]]> = [
   ["motion", ["motion"]],
 ];
 
-/** Vendo's brand-neutral fallbacks — the only values sync may overwrite when
-    it has no recorded provenance for a slot (they are demonstrably ours). */
-const NEUTRAL_DEFAULTS: Record<string, string> = {
-  accent: "#2563eb",
-  accentText: "#ffffff",
-  background: "#ffffff",
-  border: "#e2e8f0",
-  danger: "#dc2626",
-  surface: "#f8fafc",
-  text: "#0f172a",
-  mutedText: "#64748b",
-  radius: "8px",
-  fontFamily: "system-ui, sans-serif",
-  headingFamily: "system-ui, sans-serif",
-  baseSize: "16px",
-  density: "comfortable",
-  motion: "full",
-};
+/** Two slot values are "the same" when they mean the same thing: `#FFFFFF` and
+    `#ffffff` are one color, and reading a case difference as a hand edit would
+    pin the slot forever. Non-color slots compare trimmed. */
+function sameValue(left: string, right: string): boolean {
+  if (left.trim() === right.trim()) return true;
+  const [a, b] = [normalizeColor(left), normalizeColor(right)];
+  return a !== null && a === b;
+}
 
 function readPath(theme: unknown, path: readonly string[]): string | undefined {
   let cursor: unknown = theme;
@@ -104,11 +102,27 @@ export function baseFrom(summary: ThemeSummary): ExtractedThemeBase {
     if (defaulted.has(slot)) continue;
     slots[slot] = String(summary.slots[slot]);
   }
-  return { format: FORMAT, at: new Date().toISOString(), slots };
+  return { format: FORMAT, slots };
 }
 
-export async function writeBase(vendoDir: string, base: ExtractedThemeBase): Promise<void> {
+/** Write the base only when its slots actually changed. `.vendo/` is committed
+    and sync runs from `predev`, so a base that rewrote itself on every run
+    would dirty every contributor's tree on every `npm run dev` — the exact
+    churn the hookless `--no-ai` flag exists to prevent. */
+export async function writeBase(vendoDir: string, base: ExtractedThemeBase): Promise<boolean> {
+  const current = await readBase(vendoDir);
+  if (current !== null && sameSlots(current.slots, base.slots)) return false;
   await writeText(join(vendoDir, THEME_EXTRACTED_FILE), `${JSON.stringify(base, null, 2)}\n`);
+  return true;
+}
+
+function sameSlots(left: ExtractedThemeBase["slots"], right: ExtractedThemeBase["slots"]): boolean {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    const [a, b] = [left[key as keyof ThemeSlotValues], right[key as keyof ThemeSlotValues]];
+    if (a === undefined || b === undefined ? a !== b : !sameValue(a, b)) return false;
+  }
+  return true;
 }
 
 /** The recorded base, or null when absent/unreadable (both mean "no recorded
@@ -119,7 +133,7 @@ export async function readBase(vendoDir: string): Promise<ExtractedThemeBase | n
   try {
     const parsed = JSON.parse(raw) as Partial<ExtractedThemeBase>;
     if (typeof parsed.slots !== "object" || parsed.slots === null) return null;
-    return { format: FORMAT, at: String(parsed.at ?? ""), slots: parsed.slots };
+    return { format: FORMAT, slots: parsed.slots };
   } catch {
     return null;
   }
@@ -158,11 +172,12 @@ export function mergeExtraction(args: {
     if (defaulted.has(slot)) continue; // no host evidence — nothing to say
     const extracted = String(summary.slots[slot]);
     const current = readPath(args.theme, path);
-    if (current === undefined || current === extracted) continue;
+    if (current === undefined || sameValue(current, extracted)) continue;
+    // Machine-owned ONLY with recorded proof. No base entry means no evidence
+    // about who chose the value on disk, so it is the human's — never guessed
+    // from "it looks like our default".
     const recorded = base?.slots[slot];
-    const machineOwned = recorded === undefined
-      ? current === NEUTRAL_DEFAULTS[slot]
-      : current === recorded;
+    const machineOwned = recorded !== undefined && sameValue(current, recorded);
     if (!machineOwned && args.force !== true) {
       pinned.push(slot);
       continue;

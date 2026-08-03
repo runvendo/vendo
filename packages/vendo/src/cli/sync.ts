@@ -8,7 +8,7 @@ import { mergeEnvOverDotEnv, readDotEnvFallback } from "./doctor.js";
 import { runJudgmentPass, type JudgmentPassOptions } from "./judge/pass.js";
 import { extractTheme } from "./theme/extract-theme.js";
 import { baseFrom, mergeExtraction, readBase, writeBase } from "./theme/provenance.js";
-import { askYesNo, consoleOutput, exists, readOptional, withCommandRun, writeText, type Output, type TelemetryOptions } from "./shared.js";
+import { askYesNo, consoleOutput, exists, invokedByPackageScript, readOptional, withCommandRun, writeText, type Output, type TelemetryOptions } from "./shared.js";
 
 export interface SyncReportPayload {
   report: SyncReportWithWarnings;
@@ -49,6 +49,8 @@ export interface SyncOptions {
   /** Test seam: interactivity override for the AI question (default: TTY),
    *  mirroring init's. */
   interactive?: boolean;
+  /** Test seam: the wall-clock budget for the whole pin-baseline reconcile. */
+  baselineBudgetMs?: number;
   /** Judgment-pass seams (tests / init's chosen harness). */
   judge?: Pick<JudgmentPassOptions,
     "harness" | "harnesses" | "resolveCredential" | "confirm" | "onProgress">;
@@ -233,9 +235,12 @@ async function sync(options: SyncOptions): Promise<number> {
     // skips it, and with neither flag an interactive run ASKS — every run,
     // because no answer is ever persisted — while a non-interactive one skips,
     // so CI builds stay deterministic and never spend. `--json` and `--yes`
-    // are non-interactive by construction.
+    // are non-interactive by construction, and so is a run started by a
+    // package script: the `predev` hook an older init wrote has a TTY, but the
+    // human asked for a dev server, not a question (invokedByPackageScript).
     const interactive = options.interactive
-      ?? (options.yes !== true && !json && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+      ?? (options.yes !== true && !json && !invokedByPackageScript()
+        && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
     let runAi = options.ai;
     if (runAi === undefined) {
       runAi = interactive
@@ -302,23 +307,34 @@ async function sync(options: SyncOptions): Promise<number> {
     // nothing to push, and nothing Cloud could be holding to prune.
     let baselines: SyncJsonResult["baselines"] = null;
     if (await exists(join(vendoDir, "remixable")) && cloudKey !== undefined && cloudKey.trim() !== "") {
-      try {
-        baselines = await pushPinBaselines({
-          vendoDir,
-          apiKey: cloudKey,
-          ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
-          ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-        });
-        if (baselines.pushed.length > 0 || baselines.pruned.length > 0) {
-          note(`baselines → Vendo Cloud: ${baselines.pushed.length} pushed, ${baselines.pruned.length} pruned (component source crosses the wire so the console can review forks)`);
-        }
-      } catch (error) {
-        noteError(`warning: pin baselines did not reach Vendo Cloud: ${error instanceof Error ? error.message : "unknown error"} — they stay in .vendo/remixable/ and the next sync retries`);
+      // Never throws: whatever landed before a failure is still accounted for,
+      // so `--json` can't report `null` over rows that really did reach Cloud.
+      const result = await pushPinBaselines({
+        vendoDir,
+        apiKey: cloudKey,
+        ...(options.apiUrl === undefined ? {} : { baseUrl: options.apiUrl }),
+        ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+        ...(options.baselineBudgetMs === undefined ? {} : { budgetMs: options.baselineBudgetMs }),
+      });
+      baselines = { pushed: result.pushed, pruned: result.pruned };
+      if (result.unreadable.length > 0) {
+        // A file that exists but won't parse is a half-written capture, not a
+        // deleted slot — its Cloud row was deliberately left in place.
+        noteError(`warning: unreadable baselines left untouched in Vendo Cloud: ${result.unreadable.join(", ")} — re-run sync to recapture .vendo/remixable/<slot>.json`);
+      }
+      if (result.pushed.length > 0 || result.pruned.length > 0) {
+        note(`baselines → Vendo Cloud: ${result.pushed.length} pushed, ${result.pruned.length} pruned (component source crosses the wire so the console can review forks)`);
+      }
+      if (result.error !== undefined) {
+        noteError(`warning: pin baselines did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/remixable/ and the next sync retries`);
       }
     }
 
     if (options.report === true) {
-      const apiKey = options.apiKey ?? process.env.VENDO_API_KEY;
+      // The same resolved key the baseline push uses — a `--report` that saw a
+      // different env from the reconcile beside it was a trap (#567's fix
+      // applies to every keyed leg of a sync, not just the judgment pass).
+      const apiKey = cloudKey;
       if (!apiKey) {
         noteError("--report requires VENDO_API_KEY or --key");
       } else {

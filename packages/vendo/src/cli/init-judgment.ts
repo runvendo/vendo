@@ -18,7 +18,7 @@ import {
 import { selectJudgmentEngines, type ResolveEngineOptions } from "./judge/engine.js";
 import { runJudgmentPass } from "./judge/pass.js";
 import { plainSelect, type SelectOption } from "./pretty.js";
-import { askYesNo, readOptional, type Output } from "./shared.js";
+import { askYesNo, invokedByPackageScript, readOptional, type Output } from "./shared.js";
 import type { modelThemeSchema } from "./theme/extract-theme.js";
 
 /**
@@ -128,7 +128,8 @@ export async function runInitJudgment(options: InitJudgmentOptions): Promise<Ini
   const toolsAvailable = await readOptional(join(vendoDir, "tools.json")) !== null;
   if (!toolsAvailable && options.theme === undefined) return { ran: false };
 
-  const interactive = options.interactive ?? (Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
+  const interactive = options.interactive
+    ?? (!invokedByPackageScript() && Boolean(stdin.isTTY) && Boolean(stdout.isTTY));
   if (options.ai === false) {
     output.log("AI polish (descriptions, risk review, brief, theme): off (--no-ai) — extractor defaults stand.");
     return { ran: false };

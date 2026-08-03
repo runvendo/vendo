@@ -58,10 +58,10 @@ Init asks nothing on the happy path. It detects your framework and auth from
 - the client mount `vendo/vendo-root.tsx` — a `"use client"` wrapper that
   applies your registry and theme and mounts `<VendoOverlay />`, the visible
   launcher pill + panel
-- one bounded edit to `app/layout.tsx` wrapping `{children}` in that wrapper,
-  so the agent is actually on screen after init (skipped if you already mount
-  a Vendo surface; degraded to printed paste lines if your layout can't be
-  edited unambiguously)
+- one paste for you, printed in a framed block at the end of the run: the
+  import plus wrapping `{children}` in that wrapper in `app/layout.tsx`. Init
+  never edits a file you authored, and `vendo doctor` fails until this lands —
+  it is what puts the agent on screen
 - your API extracted into `.vendo/tools.json`, and any `"use server"` actions
   registered as agent tools through a generated `vendo-actions.ts` map (plain
   route scanning reads Next.js conventions today; on Express, Fastify, or

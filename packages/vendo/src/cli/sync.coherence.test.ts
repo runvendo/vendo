@@ -120,6 +120,33 @@ describe("the AI flag matrix on sync (identical to init's)", () => {
     expect(result.baselines).toBeNull();
   });
 
+  // I1 (review): existing installs have a bare `predev: vendo sync`. npm
+  // inherits the terminal, so without this exemption `npm run dev` blocks on a
+  // default-yes prompt and a reflexive Enter starts spending.
+  it("a package-script run is never interactive, even with a TTY", async () => {
+    vi.stubEnv("npm_lifecycle_event", "predev");
+    // A REAL TTY, or the assertion is vacuous: this is exactly the shape
+    // `npm run dev` hands its predev hook.
+    const tty = { in: process.stdin.isTTY, out: process.stdout.isTTY };
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    const messages = captureOutput();
+    expect(await runSync({
+      targetDir: await host(),
+      output: messages.output,
+      fetchImpl: offline,
+      sync: scan,
+      judge: {
+        harnesses: [forbidden],
+        confirm: async () => { throw new Error("prompted inside an npm lifecycle hook"); },
+      },
+    }).finally(() => {
+      process.stdin.isTTY = tty.in;
+      process.stdout.isTTY = tty.out;
+    })).toBe(0);
+    expect(messages.logs.join("\n")).toContain("judgment: skipped — this run cannot ask");
+  });
+
   it("--no-ai forces the pass off in an interactive run too", async () => {
     const messages = captureOutput();
     expect(await runSync({
@@ -215,6 +242,56 @@ describe("the theme re-scan (decision 3)", () => {
     expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
     expect((await read(dir)).colors.accent).toBe("#7c3bed");
     expect(messages.logs.join("\n")).toContain("pinned to your edits (accent → #0f766e)");
+  });
+
+  // BLOCKER 2 (review): the neutral defaults are ordinary Tailwind palette
+  // values — #2563eb is blue-600 — so "it equals our default" is NOT proof the
+  // machine wrote it. Every existing install takes this upgrade path.
+  it("a human value that happens to equal Vendo's neutral default is still pinned", async () => {
+    const dir = await themedHost("#0f766e");
+    await writeTheme(dir, themeJson("#2563eb")); // blue-600: our default AND a real brand choice
+    const messages = captureOutput();
+    expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
+    expect((await read(dir)).colors.accent).toBe("#2563eb");
+    const logs = messages.logs.join("\n");
+    expect(logs).toContain("pinned to your edits (accent → #0f766e)");
+    expect(logs).not.toContain("re-read from your app");
+    // And no base was written, so the warning repeats rather than baking in.
+    await expect(readFile(join(dir, ".vendo", "theme.extracted.json"), "utf8")).rejects.toThrow();
+  });
+
+  it("an unrecorded slot is pinned even when the base exists for other slots", async () => {
+    const dir = await themedHost("#7c3bed");
+    // The base knows accent; nothing was ever recorded for background.
+    await writeTheme(dir, { ...themeJson("#7c3bed"), colors: { ...themeJson("#7c3bed").colors, background: "#101010" } });
+    await writeBase(dir, { accent: "#7c3bed" });
+    const messages = captureOutput();
+    expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
+    expect((await read(dir)).colors.background).toBe("#101010");
+    expect(messages.logs.join("\n")).toContain("pinned to your edits (background → #ffffff)");
+  });
+
+  // BLOCKER 1 (review): .vendo/ is committed and predev runs sync, so a base
+  // that rewrites itself every run dirties every contributor's tree.
+  it("two consecutive no-op syncs leave theme.extracted.json byte-identical", async () => {
+    const dir = await themedHost("#7c3bed");
+    await writeTheme(dir, themeJson("#7c3bed"));
+    const basePath = join(dir, ".vendo", "theme.extracted.json");
+    expect(await runSync({ targetDir: dir, output: captureOutput().output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
+    const first = await readFile(basePath, "utf8");
+    expect(await runSync({ targetDir: dir, output: captureOutput().output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
+    expect(await readFile(basePath, "utf8")).toBe(first);
+    // No timestamp: the file carries decisions, nothing else.
+    expect(JSON.parse(first)).toEqual({ format: "vendo/theme-extracted@1", slots: expect.any(Object) });
+  });
+
+  // N1 (review): most of the demo-app noise was hex casing.
+  it("compares colors by meaning: #FFFFFF and #ffffff are not a hand edit", async () => {
+    const dir = await themedHost("#7C3BED");
+    await writeTheme(dir, themeJson("#7c3bed"));
+    const messages = captureOutput();
+    expect(await runSync({ targetDir: dir, output: messages.output, fetchImpl: offline, sync: scan, ai: false })).toBe(0);
+    expect(messages.logs.join("\n")).not.toContain("theme:");
   });
 
   it("bootstraps the base silently when the scan and theme.json already agree", async () => {
@@ -344,7 +421,69 @@ describe("pin baselines reach Vendo Cloud (decision 4)", () => {
       apiKey: "vnd_" + "a".repeat(40), apiUrl: "https://console.test",
       fetchImpl: (async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch,
     })).toBe(0);
-    expect(messages.errors.join("\n")).toContain("pin baselines did not reach Vendo Cloud");
+    expect(messages.errors.join("\n")).toContain("pin baselines did not fully reach Vendo Cloud");
     expect(messages.errors.join("\n")).toContain("the next sync retries");
+  });
+
+  // BLOCKER 3 (review): a half-written capture on one laptop must never wipe
+  // the console's review baseline. Presence of the FILE is the prune signal.
+  it("a corrupt local baseline is skipped and warned — never a delete", async () => {
+    const dir = await hostWithBaselines([{ slot: "NetWorthCard", hash: "aa" }]);
+    await writeFile(join(dir, ".vendo", "remixable", "SpendingDonut.json"), '{"slot":"SpendingD', "utf8");
+    const store = fakeStore({
+      NetWorthCard: baseline("NetWorthCard", "aa"),
+      SpendingDonut: baseline("SpendingDonut", "cc"),
+    });
+    const messages = captureOutput();
+    expect(await runSync({
+      targetDir: dir, output: messages.output, sync: scan, ai: false, json: true,
+      apiKey: "vnd_" + "a".repeat(40), apiUrl: "https://console.test", fetchImpl: store.fetchImpl,
+    })).toBe(0);
+    // The truncated slot's row survives untouched, and nothing was pruned.
+    expect([...store.rows.keys()].sort()).toEqual(["NetWorthCard", "SpendingDonut"]);
+    const corrupt = JSON.parse(messages.logs[0]!) as { baselines: unknown; notes: string[] };
+    expect(corrupt.baselines).toEqual({ pushed: [], pruned: [] });
+    expect(corrupt.notes.join("\n")).toContain("unreadable baselines left untouched in Vendo Cloud: SpendingDonut");
+  });
+
+  // N3 (review): a mid-loop transport failure must not report `null` over rows
+  // that really did land.
+  it("keeps partial accounting when the transport dies mid-reconcile", async () => {
+    const dir = await hostWithBaselines([
+      { slot: "AaaCard", hash: "aa" },
+      { slot: "BbbCard", hash: "bb" },
+    ]);
+    const store = fakeStore();
+    let puts = 0;
+    const flaky = (async (url: string | URL, init?: RequestInit) => {
+      if (String(url).endsWith("/put") && ++puts === 2) throw new Error("ECONNRESET");
+      return store.fetchImpl(url as never, init as never);
+    }) as unknown as typeof fetch;
+    const messages = captureOutput();
+    expect(await runSync({
+      targetDir: dir, output: messages.output, sync: scan, ai: false, json: true,
+      apiKey: "vnd_" + "a".repeat(40), apiUrl: "https://console.test", fetchImpl: flaky,
+    })).toBe(0);
+    // AaaCard landed and is still reported; BbbCard did not.
+    const partial = JSON.parse(messages.logs[0]!) as { baselines: unknown; notes: string[] };
+    expect(partial.baselines).toEqual({ pushed: ["AaaCard"], pruned: [] });
+    expect(partial.notes.join("\n")).toContain("did not fully reach Vendo Cloud");
+  });
+
+  // I2 (review): 30s per request x N slots could add minutes to a prebuild.
+  it("bails out on one overall budget instead of stalling a build", async () => {
+    const dir = await hostWithBaselines([{ slot: "NetWorthCard", hash: "aa" }]);
+    const messages = captureOutput();
+    const hang = (async (_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    })) as unknown as typeof fetch;
+    const started = Date.now();
+    expect(await runSync({
+      targetDir: dir, output: messages.output, sync: scan, ai: false,
+      apiKey: "vnd_" + "a".repeat(40), apiUrl: "https://console.test", fetchImpl: hang,
+      baselineBudgetMs: 150,
+    })).toBe(0);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(messages.errors.join("\n")).toContain("budget");
   });
 });
