@@ -241,6 +241,19 @@ were raised on. Discovery of the center is the host's navigation's job, not
 ours. (Rejected: the satellite arrow R2, the teaser auto-handoff R3 —
 the latter also violated G1's "nothing moves without the user".)
 
+### 14. Cold start: the ghost shelf (pick CS2)
+
+Day zero the home shows the shelf as **dashed ghost tiles** — named examples
+("Spending breakdown — see where July went · tap to build") that advertise
+what the product does before anything exists; tapping one runs the first
+build and the ghosts retire for good. Suggestions are generic starters on
+day zero (no history to notice from) and become personalized noticings
+later. Apps/Automations pages carry one honest empty line each ("Nothing
+yet — anything you build lands here, live"). The sidebar earns its first
+chat row with the first build. Ghost prompts are host-authorable (the
+existing starter-suggestion machinery). Rejected: empty-gap quiet start
+(CS1), self-destructing guide card (CS3).
+
 ## What this is NOT
 
 No new surfaces (no inbox, no notification center), no auto-folding panel,
