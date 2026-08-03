@@ -138,7 +138,7 @@
     "/api/clients/{id}/documents": {
       "get": {
         "operationId": "listClientDocuments",
-        "summary": "List one client's requested tax documents (their checklist) with per-document status, uploaded file and any rejection note.",
+        "summary": "List one client's requested tax documents (their checklist) with per-document status, uploaded file and any rejection note. Pass `to` to see it as it stood at a past instant: a document uploaded after `to` reads as missing. Verification and rejection are NOT timestamped, so verified/rejected state is always the current one — never state that a document was verified or rejected as of a past date.",
         "parameters": [
           {
             "name": "id",
@@ -148,6 +148,22 @@
               "type": "string"
             },
             "description": "Client id"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unused for this snapshot read; accepted so an automation rehearsal can pin its firing window. ISO 8601 instant."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "As-of instant (ISO 8601): return the checklist as it stood then. Only uploads are timestamped, so a document uploaded after this reads as missing; verified/rejected state is always the current one. Omit for live data."
           }
         ],
         "responses": {
@@ -403,7 +419,7 @@
     "/api/deadlines": {
       "get": {
         "operationId": "listDeadlines",
-        "summary": "All clients ordered by filing deadline (soonest first), each with document progress and the kinds of documents still missing. Use this to see who is at risk of missing their deadline.",
+        "summary": "All clients ordered by filing deadline (soonest first), each with document progress and the kinds of documents still missing. Use this to see who is at risk of missing their deadline. Pass `to` to see it as it stood at a past instant: a document uploaded after `to` reads as missing. Verification and rejection are NOT timestamped, so verified/rejected state is always the current one — never state that a document was verified or rejected as of a past date.",
         "x-vendo-formats": {
           "filingDeadline": "iso-datetime"
         },
@@ -426,13 +442,31 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unused for this snapshot read; accepted so an automation rehearsal can pin its firing window. ISO 8601 instant."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "As-of instant (ISO 8601): return the checklist as it stood then. Only uploads are timestamped, so a document uploaded after this reads as missing; verified/rejected state is always the current one. Omit for live data."
+          }
+        ]
       }
     },
     "/api/activity": {
       "get": {
         "operationId": "listActivity",
-        "summary": "Firm-wide activity feed, newest first: uploads received, documents verified or rejected, messages sent, deadlines approaching.",
+        "summary": "Firm-wide activity feed, newest first: uploads received, documents verified or rejected, messages sent, deadlines approaching. Pass `from`/`to` to bound the feed by event time; every event carries its own timestamp, so this window is exact rather than projected.",
         "parameters": [
           {
             "name": "limit",
@@ -441,6 +475,22 @@
               "type": "number"
             },
             "description": "Maximum number of events to return; omit for the full feed"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only events at or after this ISO 8601 instant."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only events at or before this ISO 8601 instant."
           }
         ],
         "responses": {

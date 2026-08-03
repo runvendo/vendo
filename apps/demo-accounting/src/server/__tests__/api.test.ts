@@ -224,7 +224,7 @@ describe("GET/POST /api/clients/:id/messages", () => {
 
 describe("GET /api/deadlines", () => {
   it("sorts clients by filing deadline ascending with missing doc kinds", async () => {
-    const res = await listDeadlines()
+    const res = await listDeadlines(new Request("http://x/api/deadlines"))
     const { data } = await res.json()
     expect(data.length).toBe(12)
     const deadlines = data.map((d: { filingDeadline: string }) => +new Date(d.filingDeadline))

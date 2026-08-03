@@ -1,4 +1,5 @@
 import { recordActivity } from "./activity"
+import { documentsAsOf } from "./asof"
 import { DomainError } from "./errors"
 import { getStore } from "./store"
 import type { DocumentRequest } from "./types"
@@ -118,9 +119,13 @@ export function receiveForReview(
   return doc
 }
 
-/** "3 of 6 received" — received counts every document that is no longer missing or rejected. */
-export function clientDocProgress(clientId: string): { received: number; total: number } {
-  const docs = getStore().documents.filter(d => d.clientId === clientId)
+/** "3 of 6 received" — received counts every document that is no longer missing
+ *  or rejected. `asOf` projects the checklist back (see ./asof). */
+export function clientDocProgress(
+  clientId: string,
+  asOf?: Date,
+): { received: number; total: number } {
+  const docs = documentsAsOf(asOf).filter(d => d.clientId === clientId)
   return {
     received: docs.filter(d => d.status !== "missing" && d.status !== "rejected").length,
     total: docs.length,

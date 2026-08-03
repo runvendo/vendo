@@ -26,7 +26,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_getClient",
@@ -129,7 +129,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_getDashboard",
@@ -204,17 +204,25 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_listActivity",
-      "description": "Firm-wide activity feed, newest first: uploads received, documents verified or rejected, messages sent, deadlines approaching.",
+      "description": "Firm-wide activity feed, newest first: uploads received, documents verified or rejected, messages sent, deadlines approaching. Pass `from`/`to` to bound the feed by event time; every event carries its own timestamp, so this window is exact rather than projected.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "limit": {
             "type": "number",
             "description": "Maximum number of events to return; omit for the full feed"
+          },
+          "from": {
+            "type": "string",
+            "description": "Only events at or after this ISO 8601 instant."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only events at or before this ISO 8601 instant."
           }
         }
       },
@@ -284,17 +292,25 @@
           "format": "iso"
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_listClientDocuments",
-      "description": "List one client's requested tax documents (their checklist) with per-document status, uploaded file and any rejection note.",
+      "description": "List one client's requested tax documents (their checklist) with per-document status, uploaded file and any rejection note. Pass `to` to see it as it stood at a past instant: a document uploaded after `to` reads as missing. Verification and rejection are NOT timestamped, so verified/rejected state is always the current one — never state that a document was verified or rejected as of a past date.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "description": "Client id"
+          },
+          "from": {
+            "type": "string",
+            "description": "Unused for this snapshot read; accepted so an automation rehearsal can pin its firing window. ISO 8601 instant."
+          },
+          "to": {
+            "type": "string",
+            "description": "As-of instant (ISO 8601): return the checklist as it stood then. Only uploads are timestamped, so a document uploaded after this reads as missing; verified/rejected state is always the current one. Omit for live data."
           }
         },
         "required": [
@@ -359,7 +375,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_listClientMessages",
@@ -420,7 +436,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_listClients",
@@ -563,14 +579,23 @@
           "kind": "id"
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_listDeadlines",
-      "description": "All clients ordered by filing deadline (soonest first), each with document progress and the kinds of documents still missing. Use this to see who is at risk of missing their deadline.",
+      "description": "All clients ordered by filing deadline (soonest first), each with document progress and the kinds of documents still missing. Use this to see who is at risk of missing their deadline. Pass `to` to see it as it stood at a past instant: a document uploaded after `to` reads as missing. Verification and rejection are NOT timestamped, so verified/rejected state is always the current one — never state that a document was verified or rejected as of a past date.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Unused for this snapshot read; accepted so an automation rehearsal can pin its firing window. ISO 8601 instant."
+          },
+          "to": {
+            "type": "string",
+            "description": "As-of instant (ISO 8601): return the checklist as it stood then. Only uploads are timestamped, so a document uploaded after this reads as missing; verified/rejected state is always the current one. Omit for live data."
+          }
+        }
       },
       "risk": "read",
       "binding": {
@@ -710,7 +735,7 @@
           "kind": "id"
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_listDemoChips",
@@ -757,7 +782,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_resetDemo",
@@ -819,7 +844,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_sendClientMessage",
@@ -894,7 +919,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_setDocumentStatus",
@@ -997,7 +1022,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     },
     {
       "name": "host_simulateClientUpload",
@@ -1129,7 +1154,7 @@
           }
         }
       },
-      "srcHash": "sha256:16b1366a315696207861f0805d15f24bdc265568f62ffdcaf6b740fa2a48edc1"
+      "srcHash": "sha256:ebe3ecb7444fd0a73d5814e9872056ce14fec236a4392e915a4ed3e1e463c98a"
     }
   ]
 }

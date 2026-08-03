@@ -23,6 +23,11 @@
  *   - step.args values are JSONata expressions evaluated against
  *     { event, steps, item }, so string literals are quoted INSIDE the
  *     expression ("'cl_rivera'", not "cl_rivera").
+ *
+ * The reads here all accept `from`/`to`, so the engine pins each firing's
+ * window onto them and a replayed firing sees the firm as it stood at its own
+ * scheduled time (src/server/asof.ts). That is what makes the firings differ
+ * from one another rather than four identical replays of today.
  */
 import type { AppDocument } from "@vendoai/core"
 
