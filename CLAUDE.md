@@ -21,13 +21,15 @@ generated UI in a sandboxed, brand-native surface.
 - Demos: `pnpm --filter demo-bank dev` (Maple) · `pnpm --filter demo-accounting dev` (Cadence)
 - Both demo `dev` scripts run `scripts/dev-with-port-fallback.mjs`, which probes
   for the first free port from 3000 upward (bounded to 3000-3010), then launches
-  `next dev -p <that port>`. When `VENDO_BASE_URL` isn't already operator-set —
-  in the shell or any of the demo's `.env*` files, which the wrapper loads the
-  way Next does — it exports `VENDO_BASE_URL=http://localhost:<that port>` so the
-  credential-trusted origin stays in sync with the bound port by construction (no
-  drift, no manual step); an operator-set value (e.g. the Tailscale funnel origin
-  in `.env.local`) is left untouched. A fallback prints one line and only
-  3000-3010 exhausted is a loud failure.
+  `next dev -p <that port>`. When `VENDO_BASE_URL` is unset or a localhost origin
+  (the `.env.example` default `http://localhost:3000`), it exports
+  `VENDO_BASE_URL=http://localhost:<that port>` so the credential-trusted origin
+  stays in sync with the bound port by construction (no drift, no manual step).
+  Only a NON-LOCAL origin — a funnel/tunnel/deployed host set in the shell or any
+  of the demo's `.env*` files, which the wrapper loads the way Next does (e.g.
+  the Tailscale funnel origin the demo-bank README pins in `.env.local`) — is a
+  deliberate operator setting and is left untouched. A fallback prints one line
+  and only 3000-3010 exhausted is a loud failure.
 
 ## Vendo Cloud
 

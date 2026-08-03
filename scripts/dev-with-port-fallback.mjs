@@ -17,11 +17,14 @@
  *  then launch `next dev -p <that exact port>` with `VENDO_BASE_URL` already
  *  set to the same port. No manual step, no drift, by construction.
  *
- *  This auto-sync only kicks in when `VENDO_BASE_URL` isn't already
- *  operator-set. We first load the demo's own `.env*` files the way Next does,
- *  so a value set in the shell or in `.env`/`.env.local` (e.g. the Tailscale
- *  funnel origin the demo-bank README pins for HTTPS iteration) is detected and
- *  passed through to the child untouched — never clobbered with localhost.
+ *  Auto-sync applies when `VENDO_BASE_URL` is unset or points at localhost —
+ *  the `.env.example` default is `http://localhost:3000`, which is exactly the
+ *  value that must track the bound port. Only a NON-LOCAL origin (a Tailscale
+ *  funnel, tunnel, or deployed host — e.g. the funnel origin the demo-bank
+ *  README pins for HTTPS iteration) is a deliberate operator setting we leave
+ *  untouched. We first load the demo's own `.env*` files the way Next does, so
+ *  a value set in the shell or in `.env`/`.env.local` is visible here (the
+ *  parent process would not otherwise read them) before we decide.
  *
  *  Both demos' `dev` script invokes this from their own directory:
  *    "dev": "node ../../scripts/dev-with-port-fallback.mjs"
@@ -77,12 +80,35 @@ function loadDemoEnv() {
   }
 }
 
+/** True when `value` is a localhost origin (the kind we auto-sync to the bound
+ *  port), false for a non-local origin we must preserve, and false for anything
+ *  that does not parse — an unrecognized value is treated as a deliberate
+ *  operator setting and left alone rather than clobbered. */
+function isLocalOrigin(value) {
+  try {
+    const { hostname } = new URL(value);
+    return (
+      hostname === "localhost"
+      || hostname === "127.0.0.1"
+      || hostname === "::1"
+      || hostname === "[::1]"
+      || hostname === "0.0.0.0"
+    );
+  } catch {
+    return false;
+  }
+}
+
 loadDemoEnv();
-// `VENDO_BASE_URL` set in the shell or any loaded `.env*` file is operator-set:
-// pass it through untouched rather than syncing it to the bound port.
-const operatorBaseUrl = process.env.VENDO_BASE_URL;
-const operatorSet =
-  typeof operatorBaseUrl === "string" && operatorBaseUrl.length > 0;
+// Preserve `VENDO_BASE_URL` only when it points somewhere NON-LOCAL (a funnel,
+// tunnel, or deployed origin) — that is a deliberate operator choice. An unset
+// value or a plain localhost origin (the `.env.example` default) is synced to
+// the bound port instead, so a busy 3000 never leaves the origin behind.
+const presetBaseUrl = process.env.VENDO_BASE_URL;
+const preserveOperatorUrl =
+  typeof presetBaseUrl === "string"
+  && presetBaseUrl.length > 0
+  && !isLocalOrigin(presetBaseUrl);
 
 const port = await firstFreePort();
 if (port === null) {
@@ -97,17 +123,17 @@ if (port === null) {
 const baseUrl = `http://localhost:${port}`;
 if (port !== START_PORT) {
   console.log(
-    operatorSet
+    preserveOperatorUrl
       ? `[dev] port ${START_PORT} busy, using ${port} — VENDO_BASE_URL left as `
-          + `operator-set ${operatorBaseUrl} (not synced)`
+          + `operator-set ${presetBaseUrl} (not synced)`
       : `[dev] port ${START_PORT} busy, using ${port} — VENDO_BASE_URL synced `
           + `automatically to ${baseUrl}`,
   );
 }
 
-// Only sync the port-matched origin when the operator hasn't pinned one; an
-// operator-set value already lives in `process.env` and is inherited as-is.
-const childEnv = operatorSet
+// Only preserve a non-local operator origin (already in `process.env`, inherited
+// as-is); otherwise sync the port-matched localhost origin so it never drifts.
+const childEnv = preserveOperatorUrl
   ? { ...process.env }
   : { ...process.env, VENDO_BASE_URL: baseUrl };
 
