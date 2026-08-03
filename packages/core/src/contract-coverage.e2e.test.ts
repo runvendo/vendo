@@ -586,8 +586,15 @@ describe("amended public export surface — root utilities and /conformance inve
     expect(Object.keys(conformance).sort()).toEqual([
       "actAsConformance",
       "agentRunnerConformance",
+      // Build contract §9.2–§9.4: the app-access rule, mounted by BOTH
+      // implementations (@vendoai/store's real one and the apps runtime's
+      // memory-store stand-in) so they cannot drift.
+      "appAccessConformance",
       "guardConformance",
       "knowledgeAdapterConformance",
+      // The reference each kit ships with, so core can mount its own kit and
+      // prove it executable before a host wires a real store to it.
+      "memoryAppAccess",
       "memoryKnowledgeAdapter",
       "memoryStoreAdapter",
       "runConformance",

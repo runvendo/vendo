@@ -11,7 +11,14 @@ interface ParkedSetup {
   approvalId: string;
 }
 
-async function createParked(suffix: string): Promise<ParkedSetup> {
+/** The step tool that parks. Defaults to `host_invoices_send` — an EXTERNAL
+ *  action, so THE LAW (design §12) governs what may happen after the resume;
+ *  pass `host_invoices_update` (a non-destructive write, PATCH) for the runs
+ *  where the law is not the subject and the grant machinery is. */
+async function createParked(
+  suffix: string,
+  tool = "host_invoices_send",
+): Promise<ParkedSetup> {
   const stack = await createStack();
   const appId = `app_park_${suffix}`;
   const ctx = ownerCtx(ADA.subject, appId);
@@ -23,7 +30,7 @@ async function createParked(suffix: string): Promise<ParkedSetup> {
         kind: "steps",
         steps: [
           { id: "list", tool: "host_invoices_list" },
-          { id: "send", tool: "host_invoices_send", args: { id: "event.id" } },
+          { id: "send", tool, args: { id: "event.id" } },
         ],
       },
     },
@@ -35,7 +42,7 @@ async function createParked(suffix: string): Promise<ParkedSetup> {
   if (!runId) throw new Error("emit did not return a run id");
   const pending = await stack.guard.approvals.pending(ADA);
   const parked = pending.find((request) =>
-    request.call.tool === "host_invoices_send"
+    request.call.tool === tool
     && request.ctx.venue === "automation"
     && request.ctx.presence === "away"
     && request.ctx.appId === appId
@@ -47,7 +54,7 @@ async function createParked(suffix: string): Promise<ParkedSetup> {
 describe("away run park and resume", () => {
   beforeEach(resetFixture);
 
-  it("parks an ungranted write, resumes after approval, mints an app grant, and reuses it", async () => {
+  it("parks an ungranted external step, resumes after approval, mints an app grant — but THE LAW refuses the next unattended run (§12)", async () => {
     const setup = await createParked("approve");
     try {
       expect(await setup.stack.automations.runs.get(setup.runId, setup.ctx)).toMatchObject({
@@ -90,10 +97,66 @@ describe("away run park and resume", () => {
         duration: "standing",
       }]);
 
+      // THE LAW (design §12): the resume above was legitimate because a person
+      // saw THIS call's real arguments and tapped approve — attended
+      // irreversibility, exactly the pattern the law prescribes. The standing
+      // app-bound grant it minted is a different thing: reusing it would let an
+      // EXTERNAL action run with nobody watching, which the law refuses "not
+      // with a limit, not with a condition, not with an admin override".
+      // So the next firing fails LOUDLY instead of silently sending again.
       const nextIds = await setup.stack.automations.emit("invoice.park", { id: "inv_0003" }, ADA);
       const nextId = nextIds[0];
       if (!nextId) throw new Error("second emit did not return a run id");
-      expect(await setup.stack.automations.runs.get(nextId, setup.ctx)).toMatchObject({ status: "ok" });
+      const refused = await setup.stack.automations.runs.get(nextId, setup.ctx);
+      expect(refused?.status).toBe("error");
+      const sendStep = refused?.steps.find((step) => step.tool === "host_invoices_send");
+      expect(sendStep?.outcome).toBe("blocked");
+      expect(sendStep?.detail).toContain("destructive or external");
+      // The read before it still ran — automations are not crippled, only
+      // stopped short of irreversibility.
+      expect(refused?.steps.find((step) => step.tool === "host_invoices_list")?.outcome).toBe("ok");
+    } finally {
+      await setup.stack.close();
+    }
+  });
+
+  /** The machinery the scenario above can no longer prove past its resume:
+   *  park an ungranted away write → approve → an app-bound automation grant is
+   *  minted → the NEXT away run reuses it and runs without asking. It rides a
+   *  non-destructive write (PATCH `host_invoices_update`) because THE LAW makes
+   *  standing-grant reuse unreachable for anything destructive or external. */
+  it("reuses the minted app grant on the next away run for a NON-destructive write", async () => {
+    const setup = await createParked("reuse", "host_invoices_update");
+    try {
+      expect(await setup.stack.automations.runs.get(setup.runId, setup.ctx)).toMatchObject({
+        status: "pending-approval",
+        steps: [
+          { id: "list", outcome: "ok" },
+          { id: "send", outcome: "pending-approval" },
+        ],
+      });
+
+      await setup.stack.guard.approvals.decide(setup.approvalId, { approve: true }, ADA);
+      expect((await waitForRun(setup.stack, setup.runId, setup.ctx, "ok")).status).toBe("ok");
+      expect(await setup.stack.sql(
+        `SELECT tool, app_id, source, duration
+           FROM vendo_grants
+          WHERE subject = $1 AND tool = 'host_invoices_update' AND app_id = $2`,
+        [ADA.subject, setup.appId],
+      )).toEqual([{
+        tool: "host_invoices_update",
+        app_id: setup.appId,
+        source: "automation",
+        duration: "standing",
+      }]);
+
+      // The grant authorizes the next unattended firing outright: no new park.
+      const nextIds = await setup.stack.automations.emit("invoice.park", { id: "inv_0003" }, ADA);
+      const nextId = nextIds[0];
+      if (!nextId) throw new Error("second emit did not return a run id");
+      const reused = await waitForRun(setup.stack, nextId, setup.ctx, "ok");
+      expect(reused.status).toBe("ok");
+      expect(reused.steps.find((step) => step.tool === "host_invoices_update")?.outcome).toBe("ok");
     } finally {
       await setup.stack.close();
     }

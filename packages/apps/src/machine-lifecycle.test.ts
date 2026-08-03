@@ -52,7 +52,7 @@ const setup = async (options: {
   template?: string;
   idleMs?: number;
   withAdapter?: boolean;
-  allowedDomains?: (doc: AppDocument) => Promise<string[] | undefined> | string[] | undefined;
+  allowedDomains?: (doc: AppDocument) => Promise<string[]> | string[];
 } = {}) => {
   const store = memoryStore();
   const sandbox = fakeStatefulSandbox();
@@ -63,7 +63,9 @@ const setup = async (options: {
     store,
     sandbox: options.withAdapter === false ? undefined : sandbox,
     buildEnv: () => options.env ?? { PORT: "8080" },
-    allowedDomains: options.allowedDomains,
+    // Deny-all when a case names no policy: the seam requires one, and the
+    // fixture must not be the one place that can still say "unrestricted".
+    allowedDomains: options.allowedDomains ?? (() => []),
     template: options.template,
     idleMs: options.idleMs,
     clock: timers.clock,
@@ -589,10 +591,15 @@ describe("machine lifecycle: egress allowlist policy (Lane E)", () => {
     expect(sandbox.machines[0]?.allowedDomains).toEqual(["api.example.com", "host.vendo.test"]);
   });
 
-  it("provision without a policy callback creates unrestricted (pre-Lane-E behavior)", async () => {
+  // This assertion used to read `toBeUndefined()` — "provision without a policy
+  // callback creates unrestricted (pre-Lane-E behavior)". That is the fail-open
+  // itself, pinned as intended behavior: the seam reads an absent
+  // `allowedDomains` as the whole internet. A policy that resolves to nothing
+  // now sends an empty list on every path into the provider, never an absent one.
+  it("provision with a policy that names nothing sends an empty list, never unrestricted", async () => {
     const { sandbox, lifecycle, doc } = await setup();
     await lifecycle.provision(doc);
-    expect(sandbox.machines[0]?.allowedDomains).toBeUndefined();
+    expect(sandbox.machines[0]?.allowedDomains).toEqual([]);
   });
 
   it("wake applies the CURRENT policy over the snapshot-time allowlist", async () => {

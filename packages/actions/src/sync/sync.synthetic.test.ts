@@ -7,6 +7,12 @@ import type { ExtractedTool } from "../formats.js";
 import { routeToolFullName, withUniqueNames } from "./common.js";
 import { inputNarrowed, mergeOverrides, vendoSync } from "./index.js";
 
+/** The proven wrapper-import specifier fixtures write to disk. Assembled at
+ *  runtime because the dependency guard's static text scan reads
+ *  import-shaped strings even inside fixtures, and actions may not import
+ *  @vendoai/ui. */
+const UI_CHROME = ["@vendoai", "ui", "chrome"].join("/");
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -180,54 +186,52 @@ describe("validation and route classification", () => {
     expect(report.warnings.some((warning) => warning.includes("connector_missing"))).toBe(false);
   });
 
-  it("returns machine-readable unresolved pins and honors the per-slot ignore list", async () => {
-    const unresolvedHost = await temporaryHost();
+  it("reports loud wrapper errors and honors the per-slot ignore list", async () => {
+    const inlineHost = await temporaryHost();
     await writeFile(
-      unresolvedHost.root,
-      "src/vendo/components.tsx",
-      // A local re-export stands in for the umbrella helper: the dependency
-      // guard reads literal specifiers, and pins.ts keys on the remixable( call.
-      `import { remixable } from "./vendo-remix-helper";\n` +
-      `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
+      inlineHost.root,
+      "src/app/page.tsx",
+      `import { Remixable } from "${UI_CHROME}";\n` +
+      `export default function Page() { return <Remixable><div>inline</div></Remixable>; }\n`,
     );
-    const unresolved = await vendoSync(unresolvedHost);
-    expect(unresolved.unresolvedPins).toEqual([expect.objectContaining({
-      slot: "InlineCard",
-      reason: "inline-component",
-    })]);
-    expect(unresolved.unresolvedPins[0]?.hint).toContain("run the host in dev with Vendo mounted");
+    const inline = await vendoSync(inlineHost);
+    expect(inline.remixableErrors).toEqual([
+      expect.stringContaining("src/app/page.tsx:2"),
+    ]);
+    expect(inline.remixableErrors[0]).toContain("extract it into a component and wrap that");
 
     const ignoredHost = await temporaryHost();
+    await writeFile(ignoredHost.root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }\n");
     await writeFile(
       ignoredHost.root,
-      "src/vendo/components.tsx",
-      `import { remixable } from "./vendo-remix-helper";\n` +
-      `export const components = [remixable({ name: "InlineCard", component: () => null }, import.meta.url)];\n`,
+      "src/app/page.tsx",
+      `import { Remixable } from "${UI_CHROME}";\n` +
+      `import { Card } from "../components/Card";\n` +
+      `export default function Page() { return <Remixable><Card /></Remixable>; }\n`,
     );
     await writeFile(ignoredHost.out, "overrides.json", JSON.stringify({
       format: "vendo/overrides@3",
       tools: {},
-      remix: { ignoreSlots: ["InlineCard"] },
+      remix: { ignoreSlots: ["Card"] },
     }));
-    expect((await vendoSync(ignoredHost)).unresolvedPins).toEqual([]);
+    const ignored = await vendoSync(ignoredHost);
+    expect(ignored.remixableErrors).toEqual([]);
+    expect(ignored.pins.captured).toEqual([]);
   });
 
-  it("accepts a schema-valid runtime baseline for a statically unresolved slot", async () => {
+  it("no longer captures registry remixable: true registrations", async () => {
     const host = await temporaryHost();
+    await writeFile(host.root, "src/components/Card.tsx", "export function Card() { return <div>card</div>; }\n");
     await writeFile(
       host.root,
       "src/vendo/components.tsx",
-      `import { remixable } from "./vendo-remix-helper";\n` +
-      `export const components = [remixable({ name: "RuntimeCard", component: () => null }, import.meta.url)];\n`,
+      `import { Card } from "../components/Card";\n` +
+      `export const components = [{ name: "Card", component: Card, remixable: true }];\n`,
     );
-    await writeFile(host.out, "remixable/RuntimeCard.json", JSON.stringify({
-      slot: "RuntimeCard",
-      source: "export function RuntimeCard() { return null; }",
-      hash: `sha256:${"a".repeat(64)}`,
-      exportable: false,
-      capturedAt: new Date().toISOString(),
-    }));
-    expect((await vendoSync(host)).unresolvedPins).toEqual([]);
+    const report = await vendoSync(host);
+    expect(report.remixableErrors).toEqual([]);
+    expect(report.pins.captured).toEqual([]);
+    await expect(fs.access(path.join(host.out, "remixable", "Card.json"))).rejects.toThrow();
   });
 
   it("allocates colliding sanitized names independently of OpenAPI declaration order", async () => {

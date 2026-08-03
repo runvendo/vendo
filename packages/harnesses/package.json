@@ -1,0 +1,73 @@
+{
+  "name": "@vendoai/harnesses",
+  "version": "0.5.0",
+  "description": "The harness runtime: runs any Harness safely, and vendo() \u2014 the default in-process thinker.",
+  "keywords": [
+    "ai",
+    "agent",
+    "harness",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/harnesses"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./claude-code": {
+      "types": "./dist/claude-code/index.d.ts",
+      "default": "./dist/claude-code/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@vendoai/agent": "workspace:*",
+    "@vendoai/apps": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/guard": "workspace:*",
+    "zod": "^3.25.0"
+  },
+  "peerDependencies": {
+    "ai": ">=6.0.0 <7",
+    "zod": ">=3.25.0 <5",
+    "@anthropic-ai/claude-agent-sdk": ">=0.3.0 <1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ai": "6.0.28",
+    "just-bash": "^3.1.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/claude-agent-sdk": {
+      "optional": true
+    }
+  }
+}

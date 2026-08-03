@@ -121,6 +121,14 @@ export interface AppDocument {
   egressApproved?: string[];
   secrets?: string[];
   pins?: Pin[];
+  /**
+   * Remix final shape (2026-08-02) — "show this app in that slot". A placement
+   * is a host-authored slot name (a `VendoSlot` id) and feeds slot discovery
+   * ONLY; `pins` records fork provenance ONLY (drift, ship-diff, rebase). The
+   * pre-split rows that fabricated `Pin.base` hashes to land an app in a slot
+   * are classified into this field on read and normalized on the next write.
+   */
+  placements?: string[];
   forkedFrom?: AppId;
   /**
    * A terminal build failure. Present only on a record the runtime persisted
@@ -156,6 +164,7 @@ export const appDocumentSchema = z.object({
   egressApproved: z.array(z.string()).optional(),
   secrets: z.array(z.string()).optional(),
   pins: z.array(pinSchema).optional(),
+  placements: z.array(z.string()).optional(),
   forkedFrom: appIdSchema.optional(),
   buildFailed: appBuildFailureSchema.optional(),
 }).passthrough() satisfies z.ZodType<AppDocument>;
@@ -300,6 +309,11 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     }
     if (!pin.base.startsWith("sha256:")) {
       return fail("validation", `pin base "${pin.base}" must start with "sha256:"`);
+    }
+  }
+  for (const placement of app.placements ?? []) {
+    if (placement.length === 0) {
+      return fail("validation", "placement slot must be non-empty");
     }
   }
 

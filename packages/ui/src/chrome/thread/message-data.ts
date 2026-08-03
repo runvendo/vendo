@@ -7,6 +7,13 @@ export function partData(part: UIMessage["parts"][number]): unknown {
   return "data" in part ? part.data : part;
 }
 
+/** ENG-214 — the marker the agent's `wireErrorMessage` puts on its OWN safe
+ * error text (VendoError code + operator-crafted message). Only prefixed
+ * strings may be shown in detail to an end user; raw transport/provider
+ * strings never carry it. Read by both error surfaces (the banner and the
+ * in-thread turn-error part). */
+export const VENDO_ERROR_PREFIX = "Vendo: ";
+
 // ENG-216 — a stable placeholder for the in-thread synthesized ApprovalRequest's
 // required `createdAt`. The wire approval part carries no timestamp; this value
 // is never displayed (the card hides the context byline in-thread) and a fixed

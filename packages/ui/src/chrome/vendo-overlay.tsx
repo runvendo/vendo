@@ -8,6 +8,7 @@ import { PayloadView } from "../tree/renderer.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { hasSeen, markSeen, type VendoDiscoverability, type VendoGreeting } from "./discoverability.js";
 import { deliverPrefill, PrefillScopeContext, registerOverlayOpener } from "./overlay-registry.js";
+import { usePinAction } from "./pin-ceremony.js";
 import {
   escapeIntent,
   expandedStageRect,
@@ -217,7 +218,8 @@ export function VendoOverlay({
   const [conversationEpoch, setConversationEpoch] = useState(0);
   const theme = useVendoTheme();
   const takeover = useMobileTakeover();
-  const { client, components, onPin } = useVendoContext();
+  const { client, components } = useVendoContext();
+  const pin = usePinAction();
 
   // 2026-07 demo feedback — the expandable split-view workspace (split-view.tsx
   // owns the pure state machine). Expanded, the featured microapp renders
@@ -494,7 +496,7 @@ export function VendoOverlay({
   // VendoThread/VendoPage composer that happened to register later.
   const prefillScope = useRef(Symbol("vendo-overlay-prefill"));
 
-  // Registry opener (ui-usage-dx §2): lets slot remix / trigger / palette
+  // Registry opener (ui-usage-dx §2): lets trigger / palette / remix-popover
   // affordances open this overlay — optionally preloading a prompt or starting
   // fresh — without a ref. The prompt goes through the registry's scoped
   // prefill hand-off, which parks it until the thread's composer mounts
@@ -516,9 +518,10 @@ export function VendoOverlay({
     setOpen(true);
     const fresh = options?.newConversation === true;
     if (fresh) setConversationEpoch(epoch => epoch + 1);
-    if (typeof options?.prompt === "string" && options.prompt.length > 0) {
+    const prompt = typeof options?.prompt === "string" ? options.prompt : "";
+    if (prompt.length > 0) {
       deliverPrefill(
-        { prompt: options.prompt, send: options.send === true },
+        { prompt, send: options?.send === true },
         { scope: prefillScope.current, defer: fresh },
       );
     }
@@ -651,12 +654,12 @@ export function VendoOverlay({
                           host onPin seam the in-thread card bar uses. A pin
                           from the stage CLOSES the whole overlay — the user
                           lands back in the product with the app pinned. */}
-                      {onPin ? (
+                      {pin ? (
                         <button
                           type="button"
                           className="fl-barpin fl-stage-pin"
                           onClick={() => {
-                            onPin({ appId: featured.appId, payload: featured.payload });
+                            pin({ appId: featured.appId, payload: featured.payload });
                             dispatchSplit({ type: "collapse" });
                             setOpen(false);
                           }}

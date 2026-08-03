@@ -1,8 +1,6 @@
 import {
-  compileWirePatch,
   compileWire,
   deriveShapeCard,
-  printWire,
   type ApprovalDecision,
   type ApprovalRequest,
   type Json,
@@ -727,6 +725,54 @@ function InClientScenario() {
   );
 }
 
+/** Remix final shape (2026-08-02) — the review-kind standing scenario: the
+ *  payload the server ships for an unapproved review-kind version (venue
+ *  `pending-review`, NO component source travels), once awaiting review and
+ *  once carrying the reviewer's rejection note. Neither may jail-render. */
+function reviewStandingTree(review: Record<string, unknown>): UIPayload {
+  return {
+    formatVersion: "vendo-genui/v2",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", children: ["fork"] },
+      { id: "fork", component: "RemixedPanel", source: "generated" },
+    ],
+    ...({ inClient: { granted: false, versionHash: "sha256:under-review", reason: "pending-review", review } } as object),
+  } as UIPayload;
+}
+
+function ReviewStandingScenario() {
+  const onAction = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
+  return (
+    <TreeThemeBoundary>
+      <div className="inclient-grid">
+        <section aria-label="Remix sent for review">
+          <h2>Pending — sent for review</h2>
+          <TreeView
+            tree={reviewStandingTree({ status: "pending", versionHash: "sha256:under-review" })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+        <section aria-label="Remix rejected with a note">
+          <h2>Rejected — the reviewer&apos;s note comes back</h2>
+          <TreeView
+            tree={reviewStandingTree({
+              status: "rejected",
+              versionHash: "sha256:under-review",
+              note: "Keep the original balance label.",
+              by: "host_reviewer",
+              at: NOW,
+            })}
+            components={components}
+            onAction={onAction}
+          />
+        </section>
+      </div>
+    </TreeThemeBoundary>
+  );
+}
+
 /** 06-apps §8 — the drift notice scenario: the host updated the component a
  *  pin was remixed from, so the payload carries a server-written `pinDrift`
  *  report. The surface says so loudly ABOVE the tree while the remixed fork
@@ -845,7 +891,7 @@ function noApprovalsClient(client: VendoClient): VendoClient {
   return { ...client, approvals: { ...client.approvals, pending: async () => [] } };
 }
 
-/** Reproduces apps/demo-bank/src/app/vendo/page.tsx: VendoThread and VendoStage
+/** Reproduces examples/demo-bank/src/app/vendo/page.tsx: VendoThread and VendoStage
  *  mount as siblings under one bounded, scrollable flex column (Maple's /vendo
  *  tab) — the composition where the docs/verification/simplify-v2-wave2
  *  browser smoke found the voice widget could crowd out the in-conversation
@@ -1308,66 +1354,6 @@ function TreeWireShapeScenario() {
           <output className="recorder" data-testid="shape-error-recorder">
             {JSON.stringify(broken.bindingErrors, null, 1)}
           </output>
-        </section>
-      </div>
-    </TreeThemeBoundary>
-  );
-}
-
-/** WAVE 4 GATE (v2 spec §§5,8): the ONE edit dialect live — the app prints
- *  with id anchors, an <Edit> wire patch applies deterministically, and the
- *  surface re-renders in place. */
-const EDIT_BASE_WIRE = `<App name="Cash overview">
-  <Stack gap={14}>
-    <Text text="Cash overview" variant="heading"/>
-    <Grid columns={2}>
-      <Stat label="Revenue" value="$42k"/>
-      <Card title="Notes">
-        Send the March reminders.
-      </Card>
-    </Grid>
-    <Button label="Remind" onClick="fn:send_reminder"/>
-  </Stack>
-</App>`;
-
-const EDIT_PATCH = `<Edit>
-  <Set id="stat-1" label="Revenue (Q1)" value="$61k" tone="accent"/>
-  <Insert into="grid-1" at={1}><Stat label="Overdue" value="3"/></Insert>
-  <Remove id="button-1"/>
-  <SetName name="Cash overview (edited)"/>
-</Edit>`;
-
-function TreeWireEditScenario() {
-  const noop = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
-  const base = useMemo(() => compileWire(EDIT_BASE_WIRE), []);
-  const [patched, setPatched] = useState<ReturnType<typeof compileWirePatch>>();
-  const shown = patched ?? base;
-  const payload = useMemo(
-    () => ({ ...shown.tree, components: shown.components }) as unknown as UIPayload,
-    [shown],
-  );
-  return (
-    <TreeThemeBoundary>
-      <div className="format-drill-grid">
-        <section aria-label="Edited surface">
-          <h2>{patched === undefined ? "Base app (compiled from the wire)" : `After the <Edit> patch — ${patched.name}`}</h2>
-          <PayloadView payload={payload} components={components} onAction={noop} />
-          <button
-            type="button"
-            data-testid="apply-edit"
-            onClick={() => setPatched(compileWirePatch(EDIT_PATCH, base))}
-          >
-            Apply the &lt;Edit&gt; patch
-          </button>
-          <output className="recorder" data-testid="edit-recorder">
-            {patched === undefined
-              ? "No patch applied"
-              : `patch: complete=${patched.complete} issues=${patched.issues.length} appliedOps=${patched.appliedOps}`}
-          </output>
-        </section>
-        <section aria-label="Model edit context">
-          <h2>The model's edit context (printWire, id anchors)</h2>
-          <pre className="recorder" data-testid="edit-context">{printWire(base, { includeIds: true })}</pre>
         </section>
       </div>
     </TreeThemeBoundary>
@@ -1889,12 +1875,12 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
+    case "/tree-review": return { title: "Review-kind standing (pending / rejected)", content: <ReviewStandingScenario /> };
     case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/tree-wire": return { title: "vendo-genui/v2 — wire compile + stored render", content: <TreeWireScenario /> };
     case "/tree-wire-shape": return { title: "vendo-genui/v2 — shape-aware binding (wave 3)", content: <TreeWireShapeScenario /> };
-    case "/tree-wire-edit": return { title: "vendo-genui/v2 — one-dialect edit (wave 4)", content: <TreeWireEditScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };
     case "/build-failed": return { title: "Failed app build — turn ends with the reason", content: <BuildFailedScenario />, ownProvider: true };
     case "/slot": return { title: "Inline app slot", content: <VendoSlot id="hero" appId="app_1"><section aria-label="Original host component"><h2>Original host hero</h2></section></VendoSlot> };

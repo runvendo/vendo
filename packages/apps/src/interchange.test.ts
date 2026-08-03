@@ -3,6 +3,7 @@ import { VENDO_APP_FORMAT, validateAppDocument } from "@vendoai/core";
 import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { createApps, type SandboxAdapter } from "./index.js";
+import { pinComponentName } from "./pins.js";
 import {
   fakeSandbox,
   guardFixture,
@@ -138,7 +139,16 @@ describe(".vendoapp interchange through createApps", () => {
   it("fails export for forbidden or missing pin baselines and preserves allowed pins", async () => {
     const ctx = context("user_ada");
     const pin = { slot: "invoice-card", base: "sha256:x" };
-    const cases = [
+    // The mismatched-hash case carries its forked component: that is what
+    // keeps the row a pin under the pins/placements split (a bare row whose
+    // base matches no baseline hash is a placement now — checker round-1
+    // ruling 2026-08-02), so the export gate still sees the mismatch.
+    const forkedComponent = { [pinComponentName("invoice-card")]: "source" };
+    const cases: Array<{
+      baselines: Parameters<typeof createApps>[0]["pinBaselines"];
+      allowed: boolean;
+      components?: Record<string, string>;
+    }> = [
       { baselines: [], allowed: false },
       {
         baselines: [{
@@ -153,6 +163,7 @@ describe(".vendoapp interchange through createApps", () => {
           capturedAt: "2026-07-11T12:00:00.000Z",
         }],
         allowed: false,
+        components: forkedComponent,
       },
       {
         baselines: [{
@@ -171,7 +182,10 @@ describe(".vendoapp interchange through createApps", () => {
         catalog: [],
         pinBaselines: testCase.baselines,
       });
-      const app = await runtime.importApp(document({ pins: [pin] }), ctx);
+      const app = await runtime.importApp(document({
+        pins: [pin],
+        ...(testCase.components === undefined ? {} : { components: testCase.components }),
+      }), ctx);
       if (!testCase.allowed) {
         await expect(runtime.exportApp(app.id, ctx)).rejects.toMatchObject({
           code: "blocked",

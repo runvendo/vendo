@@ -62,8 +62,12 @@ describe("createVendoClient", () => {
     expect(imported.id).toBe("app_imported");
     expect((await client.apps.fork("app_1")).forkedFrom).toBe("app_1");
     // Gesture-owned forking: appId routes to /apps/:id/fork-pin, none to /apps/fork-pin.
+    // (Fixture-shape update, 2026-08-02: the wire fixture now mints with the
+    // runtime's REAL pinComponentName — hash-suffixed — and the appId-less
+    // call carries the wrapper's serializable live props.)
     expect((await client.apps.forkPin({ appId: "app_1", slot: "hero", instruction: "make it blue" })).slot).toBe("hero");
-    expect((await client.apps.forkPin({ slot: "hero" })).componentName).toBe("Pinnedhero");
+    expect((await client.apps.forkPin({ slot: "hero" })).componentName).toMatch(/^PinnedHero[0-9a-f]{8}$/);
+    expect((await client.apps.forkPin({ slot: "hero2", props: { title: "Mine" } })).slot).toBe("hero2");
     expect(await client.apps.pingMachine("app_1")).toEqual({ state: "awake" });
     await client.apps.delete(created.id);
 
@@ -110,6 +114,7 @@ describe("createVendoClient", () => {
     exact("POST", "/apps/app_1/fork", {});
     exact("POST", "/apps/app_1/fork-pin", { slot: "hero", instruction: "make it blue" });
     exact("POST", "/apps/fork-pin", { slot: "hero" });
+    exact("POST", "/apps/fork-pin", { slot: "hero2", props: { title: "Mine" } });
     exact("POST", "/apps/app_1/machine/ping", {});
     exact("GET", "/automations", undefined);
     exact("POST", "/automations/app_auto/enable", {});

@@ -10,7 +10,8 @@ import type { NormalizedCatalog } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { modelEngine } from "./generation/engine.js";
+import { runBrainTurn } from "./generation/brain.js";
+import type { GenerationDependencies } from "./generation/engine.js";
 import {
   UNKNOWN_MODEL_MAX_OUTPUT_TOKENS,
   acceptsSamplingParams,
@@ -192,10 +193,13 @@ const recordingModel = (modelId: string): { model: LanguageModel; calls: Recorde
   return { model: model as unknown as LanguageModel, calls };
 };
 
+/** One brain turn is the smallest real generation call there is: the model
+ *  answers with the finished app, so the params under test are the ones a
+ *  create actually sends. */
 const createWith = async (model: LanguageModel): Promise<void> => {
-  await modelEngine.create(
-    { prompt: "Show my account balances at a glance" },
-    { model, catalog } as unknown as Parameters<typeof modelEngine.create>[1],
+  await runBrainTurn(
+    { instruction: "Show my account balances at a glance" },
+    { model, catalog } as unknown as GenerationDependencies,
   );
 };
 

@@ -226,7 +226,13 @@ function delegateTool(registry: ToolRegistry, runner: AgentRunner): VendoPackToo
       );
       descriptorsByName.catch(() => undefined);
       const capturing: ToolRegistry = {
-        descriptors: () => registry.descriptors(),
+        // Forward the projection context: the delegated run gets the toolset THE
+        // LAW allows it (design §12), not the full one. A decorator that
+        // re-declares `descriptors()` with no parameter swallows the ctx, and
+        // `guard.bind` answers a ctx-less call with everything — so delegating
+        // from an unattended run would have handed the sub-run every destructive
+        // tool the outer run was denied.
+        descriptors: (ctx) => registry.descriptors(ctx),
         async execute(call, runCtx) {
           const outcome = await registry.execute(call, runCtx);
           if (call.tool === VENDO_APPS_CREATE_TOOL && outcome.status === "ok") {

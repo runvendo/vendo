@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
 import { ConnectCard, ConnectedAccountsPanel } from "../../src/chrome/index.js";
@@ -101,6 +102,26 @@ describe("ConnectCard and ConnectedAccountsPanel", () => {
     // Give the one-shot /connections read time to settle: still nothing.
     await waitFor(() => expect(wire.requests.some(r => r.method === "GET" && r.path === "/connections")).toBe(true));
     expect(container.querySelector(".fl-approval")).toBeNull();
+  });
+
+  it("still completes after a StrictMode remount (the cancel latch resets)", async () => {
+    // React's dev StrictMode mounts, tears down, and re-mounts every effect.
+    // A cancel ref that is only ever SET by the cleanup stays latched through
+    // the second mount, so the poll loop in completeConnection exits on its
+    // first check and the card sits on "Connecting…" forever (the demo host
+    // had to ship reactStrictMode:false because of this).
+    vi.stubGlobal("open", vi.fn());
+    const onConnected = vi.fn();
+    render(
+      <StrictMode>
+        <VendoProvider client={client}>
+          <ConnectCard connector="composio" toolkit="gmail" message="Connect gmail." onConnected={onConnected} />
+        </VendoProvider>
+      </StrictMode>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connect Gmail" }));
+    await waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("status")).textContent).toContain("Connected");
   });
 
   it("surfaces an initiation failure inline and stays retryable", async () => {

@@ -393,7 +393,7 @@ export const smokeRenderIslands = async (options: SmokeRenderOptions): Promise<s
         toolResults[tool] = shape === undefined ? {} : sampleFromShape(shape);
       }
     }
-    const key = `${island} ${source} ${JSON.stringify(toolResults)}`;
+    const key = `${island}\0${source}\0${JSON.stringify(toolResults)}`;
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
     let compiled: string;

@@ -1,6 +1,5 @@
-import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
-import { jsonPost, partsOfType, readSse, respondToApproval, scriptedModel, startTestHost, textTurn, toolCallTurn, userMessage } from "./harness.js";
+import { jsonPost, partsOfType, readSseMidStream, scriptedModel, startTestHost, textTurn, toolCallTurn, userMessage } from "./harness.js";
 
 describe("Relay destructive approval round-trip", () => {
   it("asks, decides over the wire, resumes, and deletes exactly once", async () => {
@@ -10,15 +9,22 @@ describe("Relay destructive approval round-trip", () => {
       textTurn("The task was deleted."),
     ]));
     try {
-      const paused = await readSse(await fetch(`${host.baseUrl}/api/vendo/threads`, jsonPost({
+      // Build contract §1.4: the guarded call blocks INSIDE the tool call
+      // awaiting the tap, holding this one request open — decide against the
+      // still-open stream rather than a later, separately-posted resume (the
+      // pre-flip `respondToApproval` two-turn dance this replaces).
+      const paused = readSseMidStream(await fetch(`${host.baseUrl}/api/vendo/threads`, jsonPost({
         threadId,
         message: userMessage("msg_delete", "Delete the mobile empty states task"),
       })));
-      const approvalPart = partsOfType(paused, "data-vendo-approval")[0];
-      expect(approvalPart).toMatchObject({ data: { toolCallId: "call_delete", risk: "destructive" } });
+      // Build contract §1.5: tool calls are mirrored by the RUNTIME on its own
+      // freshly-minted id — never the scripted model's own toolCallId
+      // ("call_delete" never reaches this wire).
+      const approvalCard = await paused.approval;
+      expect(approvalCard).toMatchObject({ toolCallId: expect.any(String), risk: "destructive" });
       expect(host.tasks.deleteCalls).toBe(0);
 
-      const approvalId = (approvalPart?.data as { approvalId?: unknown }).approvalId;
+      const approvalId = approvalCard.approvalId;
       expect(approvalId).toEqual(expect.stringMatching(/^apr_/));
       const decision = await fetch(`${host.baseUrl}/api/vendo/approvals/decide`, jsonPost({
         ids: [approvalId],
@@ -26,20 +32,17 @@ describe("Relay destructive approval round-trip", () => {
       }));
       expect(decision.status).toBe(200);
 
-      const threadResponse = await fetch(`${host.baseUrl}/api/vendo/threads/${threadId}`);
-      expect(threadResponse.status).toBe(200);
-      const thread = await threadResponse.json() as { messages: UIMessage[] };
-      const assistant = [...thread.messages].reverse().find((message) => message.role === "assistant");
-      expect(assistant).toBeDefined();
-
-      const resumed = await readSse(await fetch(`${host.baseUrl}/api/vendo/threads`, jsonPost({
-        threadId,
-        message: respondToApproval(assistant!, "call_delete", true),
-      })));
+      // The decision above unblocks the still-open call: the real DELETE runs
+      // against the host, and the SAME stream carries the reply.
+      const resumed = await paused.done;
+      // Build contract §1.1: `output` is the tool's OWN return value
+      // (`outcome.output`) — no second `status` wrapper.
       expect(partsOfType(resumed, "tool-output-available")[0]).toMatchObject({
-        toolCallId: "call_delete",
-        output: { status: "ok", output: { deleted: true, id: "task-102" } },
+        toolCallId: approvalCard.toolCallId,
+        output: { deleted: true, id: "task-102" },
       });
+      // Exactly once: the guarded call ran the real DELETE a single time —
+      // never on the preview, never twice for one decision.
       expect(host.tasks.deleteCalls).toBe(1);
       const missing = await fetch(`${host.baseUrl}/api/tasks/task-102`);
       expect(missing.status).toBe(404);

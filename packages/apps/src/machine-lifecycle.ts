@@ -45,20 +45,36 @@ export interface MachineEnvGrants {
  * boxAllowlist in egress-approval.ts, where the list is assembled). Consulted
  * on every provision AND every wake, so a grant decided while the machine
  * slept applies at the next resume; it throws to refuse the operation (an
- * unapproved declared domain must never reach the provider). `undefined`
- * result means unrestricted egress (no policy for this app). No callback →
- * pre-Lane-E behavior: create unrestricted, resume with the snapshot ref's
- * stored policy.
+ * unapproved declared domain must never reach the provider).
+ *
+ * It answers with a LIST, never with `undefined`. It used to be allowed to mean
+ * "no policy for this app", and the seam read that as UNRESTRICTED internet
+ * (`SandboxAdapter.create` treats an absent `allowedDomains` as
+ * `allowInternetAccess: true`) — so the one value a policy function produces by
+ * accident was the one that removed the filter. An app with nothing to reach
+ * gets `[]`, the strictest policy this seam can express.
+ *
+ * How strong that actually is: `docs/verification/box-egress/README.md`. Short
+ * version — the provider filters by DOMAIN, which holds against ordinary
+ * clients and not against one that omits SNI.
  */
 export type BuildMachineAllowlist = (
   app: AppDocument,
-) => Promise<string[] | undefined> | string[] | undefined;
+) => Promise<string[]> | string[];
 
 export interface MachineLifecycleConfig {
   store: StoreAdapter;
   sandbox?: SandboxAdapter;
   buildEnv?: BuildMachineEnv;
-  allowedDomains?: BuildMachineAllowlist;
+  /**
+   * Required, and never optional: an omitted policy used to mean UNRESTRICTED
+   * egress, so a caller who simply forgot handed a machine an unfiltered
+   * internet and the call site read as complete. Unnamed must mean denied — the
+   * same law `boxPermission` states for tools and `BoxMachineOptions.allowedDomains`
+   * states for the conversational box. A deployment with nothing to allow says
+   * so with a function returning `[]`.
+   */
+  allowedDomains: BuildMachineAllowlist;
   /**
    * Wave 7 — push a freshly assembled boundary env into a LIVE machine (the
    * runtime wires the box control port's env door, which restarts the app).
@@ -142,6 +158,19 @@ interface LiveEntry {
 export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineLifecycle => {
   const records = config.store.records("vendo_apps");
   const buildEnv: BuildMachineEnv = config.buildEnv ?? (() => ({}));
+
+  /**
+   * THE egress policy, for every provider call that takes one.
+   *
+   * The `?? []` is the floor under the required type, not a second mechanism:
+   * TypeScript stops a caller omitting the policy, and this stops an untyped
+   * one (or a policy function that answers with nothing) from reaching the
+   * provider with no `allowedDomains` at all — which the seam reads as an
+   * unfiltered internet. An empty list is the only safe thing an absent answer
+   * can mean.
+   */
+  const allowlistFor = async (app: AppDocument): Promise<string[]> =>
+    (await config.allowedDomains?.(app)) ?? [];
   const idleMs = config.idleMs ?? DEFAULT_IDLE_MS;
   const clock: LifecycleClock = config.clock ?? {
     setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
@@ -323,13 +352,16 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       const adapter = requireAdapter();
       // Lane E — the egress policy gates provisioning BEFORE any provider
       // call: an unapproved declared domain throws here and no machine exists.
-      const allowlist = await config.allowedDomains?.(doc);
+      const allowlist = await allowlistFor(doc);
       const env = await buildEnv(doc);
       rememberInjected(doc, env);
       const machine = await adapter.create({
         ...(config.template === undefined ? {} : { template: config.template }),
         env,
-        ...(allowlist === undefined ? {} : { allowedDomains: allowlist }),
+        // ALWAYS present. Dropping the key on an empty list would ask the
+        // provider for unrestricted egress, which is the opposite of what an
+        // empty allowlist means.
+        allowedDomains: allowlist,
       });
       try {
         const snapshotRef = await machine.snapshot();
@@ -404,9 +436,9 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       // sleep is the containment; the next wake re-applies the policy.)
       // Evaluated over the authoritative row, not the caller's copy — a
       // grant committed since the caller loaded its document must count.
-      if (config.allowedDomains !== undefined || config.injectEnv !== undefined) {
+      {
         const doc = await currentDocument(appId);
-        if (config.allowedDomains !== undefined) await config.allowedDomains(doc);
+        await allowlistFor(doc);
         // Wave 7 — a durable env-stale marker written by ANOTHER process
         // (whose grant commit cannot reach this process's live entry to
         // sleep it) must not ride the warm entry until the idle sweep.
@@ -432,11 +464,12 @@ export const createMachineLifecycle = (config: MachineLifecycleConfig): MachineL
       // Lane E — a wake applies the CURRENT egress policy over the snapshot's
       // stored one (grants may have changed while the machine slept); it also
       // refuses loudly when a declared domain lost or never had approval.
-      const raw = config.allowedDomains === undefined
-        ? await adapter.resume(doc.machine.snapshotRef)
-        : await adapter.resume(doc.machine.snapshotRef, {
-          allowedDomains: await config.allowedDomains(doc),
-        });
+      // A wake NEVER falls back to the snapshot's stored policy: that policy is
+      // whatever was current when the machine was last provisioned, and the
+      // grant state may have loosened or tightened since.
+      const raw = await adapter.resume(doc.machine.snapshotRef, {
+        allowedDomains: await allowlistFor(doc),
+      });
       // Wave 7 — a grant changed while the machine slept: the resumed snapshot
       // carries the OLD env (every provider restores snapshot env), so rebuild
       // the boundary env through the control port before anything rides this

@@ -439,6 +439,57 @@ function applyThemeVars(vars: unknown): void {
   document.body.style.fontSize = "var(--vendo-font-size, 15px)";
 }
 
+/** Captured host CSS arrives verbatim, `@import` lines included (a Tailwind v4
+ *  root ships `@import "tailwindcss"`). The jail CSP has no style network
+ *  source, so every `@import` is a guaranteed-refused fetch that logs a CSP
+ *  violation on each render — drop the statements before injection; nothing
+ *  the jail could ever load is lost. Quote-, escape-, and comment-aware: a
+ *  `;` inside a quoted URL must not terminate the statement (it would leave
+ *  malformed residue the parser rejects, dropping every later rule), and an
+ *  `@import` inside a string or comment is content, not a statement. */
+const stripCssImports = (css: string): string => {
+  // Copies a quoted string or comment verbatim starting at `i`; returns the
+  // index just past it, or `i` when neither starts there.
+  const skipToken = (from: number): number => {
+    const quote = css[from];
+    if (quote === '"' || quote === "'") {
+      let i = from + 1;
+      while (i < css.length && css[i] !== quote) i += css[i] === "\\" ? 2 : 1;
+      return Math.min(i + 1, css.length);
+    }
+    if (quote === "/" && css[from + 1] === "*") {
+      const end = css.indexOf("*/", from + 2);
+      return end === -1 ? css.length : end + 2;
+    }
+    return from;
+  };
+  let out = "";
+  for (let i = 0; i < css.length; ) {
+    const token = skipToken(i);
+    if (token > i) {
+      out += css.slice(i, token);
+      i = token;
+      continue;
+    }
+    if (css.startsWith("@import", i)) {
+      i += "@import".length;
+      while (i < css.length) {
+        const inner = skipToken(i);
+        if (inner > i) {
+          i = inner;
+          continue;
+        }
+        i += 1;
+        if (css[i - 1] === ";") break;
+      }
+      continue;
+    }
+    out += css[i];
+    i += 1;
+  }
+  return out;
+};
+
 function applyHostStyles(styles: unknown): void {
   document.querySelectorAll("style[data-vendo-host-style]").forEach((element) => element.remove());
   if (!Array.isArray(styles)) return;
@@ -448,7 +499,7 @@ function applyHostStyles(styles: unknown): void {
     style.dataset.vendoHostStyle = typeof candidate.path === "string" ? candidate.path : "captured";
     // textContent keeps captured CSS as inert data at the postMessage boundary;
     // the unchanged CSP still refuses every non-data network source it names.
-    style.textContent = candidate.css;
+    style.textContent = stripCssImports(candidate.css);
     document.head.appendChild(style);
   }
 }

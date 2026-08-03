@@ -76,6 +76,10 @@ class FakeBoxMachine implements SandboxMachine {
     return Number.isInteger(port) && port > 0 ? port : 8080;
   }
 
+  /** Every request that actually crossed into this box, in order — what a
+   *  payload-only assertion has to read (build contract §9.8). */
+  readonly received: Array<{ method: string; path: string; headers: Record<string, string> }> = [];
+
   async request(req: {
     method: string;
     path: string;
@@ -84,6 +88,7 @@ class FakeBoxMachine implements SandboxMachine {
     body?: Uint8Array | string;
   }): Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }> {
     if (this.destroyed || this.stopped) throw new Error(`box ${this.id} is not running`);
+    this.received.push({ method: req.method, path: req.path, headers: { ...req.headers } });
     const bodyText = req.body === undefined ? "" : typeof req.body === "string" ? req.body : decoder.decode(req.body);
     const port = req.port ?? this.appPort();
     const json = (status: number, value: unknown) => ({

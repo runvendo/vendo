@@ -410,7 +410,7 @@ export interface ConfigCaptureResult {
  * auto-approved and counted) rather than a UI generation. */
 export async function runConfigCapture(args: ConfigCaptureArgs): Promise<ConfigCaptureResult> {
   // The pnpm-filtered script runs with cwd bench/, while the documented
-  // invocation passes repo-root-relative paths (apps/demo-template) — so a
+  // invocation passes repo-root-relative paths (examples/demo-template) — so a
   // relative --host-config is anchored at the repo root, never the cwd.
   const appDir = path.resolve(repoRoot, args.hostConfig);
   const { host, config } = await configDemoHost(appDir);

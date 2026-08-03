@@ -130,9 +130,13 @@ export function fakeConsole() {
         const idleMs = typeof body.idleMs === "number" ? body.idleMs : 0;
         const cutoff = now - idleMs;
         switch (rest[1]) {
-          case "register":
-            sessions.set(body.subject as string, now);
+          case "register": {
+            // Mirrors the console's clamp (vendo-web session-registry.ts):
+            // touch never moves a subject's stamp BACKWARD.
+            const subject = body.subject as string;
+            sessions.set(subject, Math.max(sessions.get(subject) ?? now, now));
             return json({ ok: true });
+          }
           case "adopt": {
             const from = body.from as string;
             if (!sessions.has(from)) return json({ report: null });

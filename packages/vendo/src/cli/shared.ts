@@ -5,7 +5,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { initTelemetry, repoHost, type Telemetry } from "@vendoai/telemetry";
 
-export const CLI_VERSION = "0.6.1";
+export const CLI_VERSION = "0.7.0";
 
 export interface Output {
   log(message: string): void;
@@ -27,6 +27,16 @@ export async function askYesNo(question: string, defaultYes = false): Promise<bo
   } finally {
     prompt.close();
   }
+}
+
+/** True when this process was started by a package-manager lifecycle script
+    (`predev`, `prebuild`, any `npm run …`). Such a run is NOT interactive, even
+    on a TTY: npm inherits the terminal, so a command that stops to ask would
+    block what the human thinks is a dev-server start — and a reflexive Enter on
+    a default-yes prompt would spend money. A run the human did not invoke never
+    gets a question. */
+export function invokedByPackageScript(env: Record<string, string | undefined> = process.env): boolean {
+  return (env.npm_lifecycle_event ?? "").trim() !== "";
 }
 
 export async function exists(path: string): Promise<boolean> {

@@ -77,8 +77,12 @@ export function ConnectCard({ connector, toolkit, message, onConnected, live = t
   // branding after the prop changes.
   const [logoFailedFor, setLogoFailedFor] = useState<string>();
   const cancelled = useRef(false);
-  useEffect(() => () => {
-    cancelled.current = true;
+  useEffect(() => {
+    // cancelled persists across effects; reset for StrictMode remounts.
+    cancelled.current = false;
+    return () => {
+      cancelled.current = true;
+    };
   }, []);
 
   // The host's catalog label wins when it named this toolkit (same rule as

@@ -63,6 +63,31 @@ describe("public routes", () => {
     assert.equal(registry.get("acme").hits, 1);
   });
 
+  it("GET /:id forwards the visitor's query to the demo", async () => {
+    const { request } = await boot({ seed: [liveRow] });
+    const response = await request("/acme?view=rent-roll&unit=12B");
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), "https://demo-acme.up.railway.app/?view=rent-roll&unit=12B");
+  });
+
+  it("GET /:id keeps the registry url's own query and appends the visitor's", async () => {
+    const { request } = await boot({ seed: [{ ...liveRow, url: "https://demo-acme.up.railway.app/app?tenant=acme" }] });
+    const response = await request("/acme?view=rent-roll");
+    assert.equal(response.status, 302);
+    assert.equal(
+      response.headers.get("location"),
+      "https://demo-acme.up.railway.app/app?tenant=acme&view=rent-roll",
+    );
+  });
+
+  it("GET /:id re-encodes the query, so it cannot smuggle a header", async () => {
+    const { request } = await boot({ seed: [liveRow] });
+    const response = await request("/acme?view=a%0d%0aX-Injected:%201");
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), "https://demo-acme.up.railway.app/?view=a%0D%0AX-Injected%3A+1");
+    assert.equal(response.headers.get("x-injected"), null);
+  });
+
   it("GET /:id for an expired demo returns the branded 410 page", async () => {
     const { request } = await boot({ seed: [{ ...liveRow, id: "old", expiresAt: "2020-01-01T00:00:00Z" }] });
     const response = await request("/old");

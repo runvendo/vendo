@@ -183,3 +183,15 @@ describe("discovery budget", () => {
     expect(defaulted).not.toContain("Discovery budget");
   });
 });
+
+describe("§3's consumer-voice register rides the operating prompt", () => {
+  // Wave-1 live proof E1-5: an honest refusal named `host_transferMoney` in a
+  // code span to an end user. The model wrote it, and nothing in its prompt told
+  // it not to — the register the spec calls mandatory ("every skill and prompt
+  // carries the register") was in no prompt at all.
+  it("forbids identifiers in what the user reads and names the title as the vocabulary", async () => {
+    const prompt = await assembleSystemPrompt(testGuard({}, []), ctx());
+    expect(prompt).toMatch(/never .*identifier|identifier.*never/i);
+    expect(prompt).toContain("title");
+  });
+});

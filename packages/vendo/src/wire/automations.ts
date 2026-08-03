@@ -29,6 +29,10 @@ export const automationRoutes: RouteEntry[] = [
       const body = await requestJson(request);
       return json(await deps.automations.rehearse(appId, ctx, rehearsalWindowDays(body["windowDays"])));
     }
+    // Build contract §9.9 — take on a stopped automation. Editor gating and
+    // the CAS live in the engine; the door just carries the caller's context,
+    // because the grants minted here are the CALLER's own.
+    if (segments[2] === "adopt") return json(await deps.automations.adopt(appId, ctx));
     return undefined;
   }),
 ];

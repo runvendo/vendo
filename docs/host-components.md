@@ -34,57 +34,31 @@ descriptors extracted by sync.
 export interface RegisteredComponent {
   name: string;
   description: string;
-  propsSchema: StandardSchema;
-  remixable?: boolean;
+  propsSchema?: StandardSchema;
+  examples?: string[];
 }
 
 export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 ```
 
 Names are PascalCase and unique. `propsSchema` uses the Standard Schema
-interface. Set `remixable` only when sync may capture the component's real
-source as a pin baseline. A remixable component's module must carry a
-**default export** of the component — the jail's and the in-client mount's
-module loaders render the captured entry module's default export (a named-only
-export captures fine but fails at render with "must have a React default
-export"). A remixable registration may also declare a static,
-JSON-compatible `sampleProps` object: sync captures it into the baseline and
-both venues use it as stubbed data when a fork renders without live props
-(the sandboxed jail and, for an approved version, the in-client host-page
-mount — promotion never changes what props the component sees). Sync
-also follows the component's local imports for two hops and snapshots direct
-`.css` imports from canonical app roots (`app/layout.*`, `app/root.*`,
-`pages/_app.*`, and `src/` variants) so forks render furnished — with the
-host's sub-components and styles — instead of bare React. The prewired
-primitives are reserved and do not appear in the catalog: `Stack`, `Row`,
-`Grid`, `Text`, `Skeleton`, `Surface`, and `Divider`.
+interface. The prewired primitives are reserved and do not appear in the
+catalog: `Stack`, `Row`, `Grid`, `Text`, `Skeleton`, `Surface`, and
+`Divider`.
 
-When a component cannot be followed through a static import, use the umbrella
-helper with the registration module URL:
-
-```ts
-import { remixable } from "@vendoai/vendo/react";
-
-const invoiceCard = remixable({
-  name: "InvoiceCard",
-  component: InvoiceCard,
-  exportable: true,
-}, import.meta.url);
-```
-
-In development the helper reports the module to the Vendo wire, which captures
-the source only when no valid static baseline exists. The capture route is not
-mounted in production. Remix is experimental: `vendo sync` warns for any
-unresolved slot (the component cannot be forked until resolved) but never
-fails the run; a slot that is intentionally never capturable can be
-acknowledged in the human-owned `.vendo/overrides.json`:
-
-`vendo init` offers remix wrapping: every statically capturable
-`{ name, component }` registration that is not yet remixable becomes a
-proposed, permission-gated code change inserting `remixable: true` into the
-registration literal (router tables with a `path` field are never offered).
-Approved wraps are captured by an immediate re-sync so remix works right after
-init.
+Remix is not a catalog concern: wrapping a component in `<Remixable>` is the
+whole registration (see "Remixable surfaces" below). `vendo sync` scans for
+the wrappers and captures each wrapped component into
+`.vendo/remixable/<slot>.json` — its source, local imports for two hops, and
+direct `.css` imports from canonical app roots (`app/layout.*`, `app/root.*`,
+`pages/_app.*`, and `src/` variants) — so forks render furnished, with the
+host's sub-components and styles, instead of bare React. The slot is the
+component's own exported identifier. A wrapper sync cannot capture (inline
+JSX, a child that is not statically imported, an anonymous default export)
+fails the run loudly with a file:line error; a component that is
+intentionally never capturable is acknowledged in the human-owned
+`.vendo/overrides.json`, and baselines no wrapper names anymore are pruned on
+the next clean sync:
 
 ```json
 {
@@ -127,6 +101,7 @@ each a one-liner:
 | `VendoSlot` | A region of the host page the user can replace with their own generated view. |
 | `VendoActivities` | Drop-in feed of what the agent did + pending approvals, placeable in any host page. |
 | `VendoTrigger` | A button that opens the chat preloaded with a prompt and context. |
+| `Remixable` | Marks a host component forkable: a quiet ✦ that blooms on hover into a Remix pill; the fork renders in place. |
 
 `VendoPalette` is an optional extra, not part of the default story. Without an
 `onCommand` router its conversation commands open the mounted overlay on their
@@ -139,7 +114,8 @@ Customization is a ladder, not a cliff — four rungs, no cliff between them:
 
 1. **Theme tokens** — brand via `VendoTheme`; most hosts stop here.
 2. **Props** — the small behavioral options on each piece (launcher
-   placement, remix flag, trigger prompt). Deliberately no render-prop API.
+   placement, `Remixable`'s `review` flag, trigger prompt). Deliberately no
+   render-prop API.
 3. **Eject** — `npx vendo eject <surface>` copies a surface's presentation
    source into your repo as files you own. See below.
 4. **Raw hooks** — full custom UI on the headless hooks.
@@ -183,6 +159,37 @@ Two shelf pieces are placeable anywhere in host pages:
   call `openVendoConversation({ prompt })` from it directly — the same
   registry seam described under "Overlay entry" below.
 
+### Remixable surfaces
+
+Wrap a component the user should be able to reshape — the wrapper is the
+whole registration; `vendo sync` finds it and captures the baseline:
+
+```tsx
+import { Remixable } from "@vendoai/ui/chrome";
+
+<Remixable>
+  <RentRollTable units={units} />
+</Remixable>
+```
+
+At rest a small muted ✦ sits in the element's top-right corner. Hovering (or
+tabbing into) the element blooms it in place into a **✦ Remix** pill, held
+open for a grace period so the cursor can travel to it. Clicking executes the
+deterministic fork through the wire (`POST /apps/fork-pin`, engine-copied
+from the captured baseline, no model call; the server dedupes per user and
+slot) and the fork mounts **in place of the wrapped child**, jailed, for that
+user only. The wrapper's JSON-serializable live props flow into the fork on
+every render; function props never cross the frame boundary. On a remixed
+surface the pill opens the management popover (status, open in panel, revert)
+instead. Under `prefers-reduced-motion` the bloom snaps.
+
+The one prop is `review`: a review-kind component's remix stays invisible to
+its owner until a host reviewer approves the ship-diff, then renders in place
+natively; an instant-kind (default) remix renders immediately and stays
+sandboxed forever. The wrapped child must be a single, statically importable
+component — inline JSX is a loud sync-time error, and at runtime such a
+wrapper simply renders its children with no affordance.
+
 Chrome derives all styling from `VendoTheme` tokens. The required bar is WCAG
 2.1 AA, complete keyboard access, screen-reader testing, and mobile web.
 Every piece is mobile-friendly by requirement; the overlay becomes a
@@ -213,10 +220,10 @@ hosts managing their own state can bump the `conversationKey` prop.
 Any affordance can open the mounted overlay without a ref through the
 registry: `openVendoConversation({ prompt, send, newConversation })` opens
 the most recently mounted overlay, optionally preloading (and sending) a
-prompt into its composer — always the opened overlay's own composer, never
-an embedded thread's. The slot remix flag and the palette defaults route
-through it; it returns `false` when no overlay is mounted so callers can
-fall back.
+prompt into its composer — always the opened overlay's own composer, never an
+embedded thread's. `Remixable`'s "Open in panel" and the palette defaults
+route through it; it returns `false` when no overlay is mounted so callers
+can fall back.
 
 ### Discoverability
 
@@ -274,12 +281,9 @@ hood, so hosts never write that dance). An explicit `appId` or `pin` prop
 takes over and stands discovery down; `useSlotApp(slotId)` exposes the same
 resolution for hosts that need the id (layout decisions).
 
-Set `remix` to show the hover Remix affordance on the slot's content. It
-opens the overlay preloaded with a remix request for the slot's registered
-component (`remixPrompt` overrides the default text). The slot id must match
-a `remixable` catalog registration so the agent can fork the captured source;
-init verifies the flag against registrations, and the slot warns in
-development when the name is not registered at all.
+`VendoSlot` has no remix affordance: remix lives entirely on `<Remixable>`,
+which forks the component it wraps in place. A slot's one job is mounting
+brand-new generated apps.
 
 ## Tree rendering
 
@@ -296,9 +300,9 @@ export function TreeView(props: {
 `$state` against the per-user, per-app state singleton. Host components render
 by registered name. Generated components always run inside the iframe jail
 with `connect-src 'none'`. Pin forks carry their captured furnishing —
-sub-component sources, app-root stylesheets, and `sampleProps` stubs — into
-the jail as inert data; captured CSS is applied only inside the jailed
-document, never in the host page.
+sub-component sources and app-root stylesheets — into the jail as inert
+data; captured CSS is applied only inside the jailed document, never in the
+host page.
 
 Actions leave the renderer through `onAction`, then cross the wire and guard.
 Tool names and `fn:` references are opaque to the renderer. Erroring nodes are

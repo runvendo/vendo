@@ -127,7 +127,7 @@ export interface AppInterchangeDependencies {
   store: StoreAdapter;
   guard: Guard;
   pinBaselines?: readonly PinBaseline[];
-  requireOwned(appId: AppId, subject: string): Promise<AppDocument>;
+  requireOwned(appId: AppId, ctx: RunContext): Promise<AppDocument>;
 }
 
 /** Public interchange methods wired into AppsRuntime. */
@@ -153,7 +153,7 @@ export const createAppInterchange = (
 
   return {
     async exportApp(appId, ctx) {
-      const app = await dependencies.requireOwned(appId, ctx.principal.subject);
+      const app = await dependencies.requireOwned(appId, ctx);
       assertPinsExportable(app.pins ?? [], dependencies.pinBaselines ?? []);
       const archive: Zippable = {
         "app.json": encoder.encode(JSON.stringify(withoutExportIdentity(app))),

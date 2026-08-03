@@ -1,7 +1,6 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { capturedPinBaselineSchema } from "@vendoai/actions";
 import {
   VENDO_APP_FORMAT,
   VENDO_POLICY_FORMAT,
@@ -101,8 +100,36 @@ function request(method: string, path: string, body?: unknown, headers: Record<s
   });
 }
 
+/**
+ * The same request arriving from a chosen ORIGIN — which is to say, carrying a
+ * chosen Host header. The wire learns its same-origin base from exactly this,
+ * so it is also how the poisoning attack is expressed.
+ */
+function requestFrom(
+  origin: string,
+  method: string,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Request {
+  return new Request(`${origin}/api/vendo${path}`, {
+    method,
+    headers: {
+      ...(["POST", "PUT", "PATCH", "DELETE"].includes(method) ? { "content-type": "application/json" } : {}),
+      ...headers,
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
 function stubRouteBlocks(vendo: Vendo): void {
   vi.spyOn(vendo.agent, "stream").mockResolvedValue(new Response("event: done\n\n", {
+    headers: { "content-type": "text/event-stream" },
+  }));
+  // Wave 2 flipped `POST /threads` onto the harness runtime for every host, so
+  // the chat door these route tests drive is `harness.stream`. Both are stubbed:
+  // the agent door still serves the thread list/get/delete routes below.
+  vi.spyOn(vendo.harness, "stream").mockResolvedValue(new Response("event: done\n\n", {
     headers: { "content-type": "text/event-stream" },
   }));
   vi.spyOn(vendo.agent.threads, "list").mockResolvedValue([]);
@@ -210,7 +237,7 @@ describe("09 §3 public wire", () => {
     expect(await windowFor({})).toBe(30);
   });
 
-  it("wires client disconnect to the agent turn: POST /threads hands the request signal to agent.stream (AGENT-3)", async () => {
+  it("wires client disconnect to the chat turn: POST /threads hands the request signal to the served turn (AGENT-3)", async () => {
     const { vendo } = await setup();
     stubRouteBlocks(vendo);
     const controller = new AbortController();
@@ -221,7 +248,9 @@ describe("09 §3 public wire", () => {
       signal: controller.signal,
     });
     await vendo.handler(disconnectable);
-    const streamInput = vi.mocked(vendo.agent.stream).mock.calls[0]?.[0];
+    // The served door, post-flip. The invariant is unchanged: whoever runs the
+    // turn is handed a signal live-wired to the request.
+    const streamInput = vi.mocked(vendo.harness.stream).mock.calls[0]?.[0];
     expect(streamInput?.signal).toBeInstanceOf(AbortSignal);
     expect(streamInput?.signal?.aborted).toBe(false);
     // The handed signal is live-wired to the request: a client disconnect
@@ -295,13 +324,15 @@ describe("09 §3 public wire", () => {
     expect(await flagged.json()).toEqual({ kind: "failed", reason: "quota exhausted", retryable: false });
   });
 
-  it("open?pending=1 answers {kind:'failed'} — not pending — when the record exists under another principal (0.4.1 E2E cert B4)", async () => {
-    // Principal mismatch (wire principal ≠ chat principal): the record
-    // EXISTS, just not for this caller, and it never will — masking that
-    // owner-scoped not-found as {kind:"pending"} was the infinite skeleton.
-    // The flag now answers the terminal failed vocabulary with the diagnosis
-    // so the embed resolves promptly. A genuinely absent record (the build
-    // window) keeps answering pending, covered above.
+  it("open?pending=1 keeps the principal-mismatch diagnosis for the HOST, and stays masked to the caller (0.4.1 E2E cert B4 · §9.4)", async () => {
+    // Principal mismatch (wire principal ≠ chat principal): the record EXISTS,
+    // just not for this caller. That diagnosis is a HOST wiring problem in a
+    // developer's voice, and serving it made ?pending=1 an existence oracle —
+    // a stranger with an app id learned a team app was real, at HTTP 200, while
+    // the same request without the flag correctly 404'd (wave-3 finding F3).
+    // So the signal stays, in the server log, and the caller hears exactly what
+    // a caller of a non-existent app hears.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const store = await tempStore("vendo-wire-b4-");
     const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
     stubRouteBlocks(vendo);
@@ -311,22 +342,22 @@ describe("09 §3 public wire", () => {
 
     const flagged = await vendo.handler(request("GET", "/apps/app_foreign/open?pending=1"));
     expect(flagged.status).toBe(200);
-    const body = await flagged.json() as { kind: string; reason?: string; retryable?: boolean };
-    expect(body.kind).toBe("failed");
-    expect(body.retryable).toBe(false);
-    expect(body.reason).toContain("principal");
+    expect(await flagged.json()).toEqual({ kind: "pending" });
+    expect(warn.mock.calls.flat().join(" ")).toContain("principal");
 
     // Unflagged callers keep the contracted 404 envelope.
     const bare = await vendo.handler(request("GET", "/apps/app_foreign/open"));
     expect(bare.status).toBe(404);
   });
 
-  it("open?pending=1 passes a TERMINAL failed record through with its server-written reason when open() refuses the caller (0.4.6 cert defect D2)", async () => {
-    // A terminal build failure is terminal for EVERY caller: a subject the
-    // owner-scoped open() refuses must still see {kind:"failed"} with the
-    // persisted reason — masking it as {kind:"pending"} is the D2 infinite
-    // skeleton. The record shape mirrors the runtime's #532 write exactly
-    // (records-door put; a failed doc has no ui payload).
+  it("open?pending=1 masks a TERMINAL failed record from a caller who cannot see the app (0.4.6 cert defect D2 · §9.4)", async () => {
+    // A terminal build failure is terminal for every caller who can SEE the
+    // app — and a failed build is still an existence proof, so a caller who
+    // cannot view it hears pending like anyone asking after an app that isn't
+    // there (wave-3 finding F3). The owner-side half of D2 is unchanged and is
+    // pinned in wire/apps.grants.test.ts. The record shape mirrors the
+    // runtime's #532 write exactly (records-door put; a failed doc has no ui
+    // payload).
     const store = await tempStore("vendo-wire-d2-");
     const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
     stubRouteBlocks(vendo);
@@ -349,7 +380,60 @@ describe("09 §3 public wire", () => {
 
     const flagged = await vendo.handler(request("GET", "/apps/app_dead/open?pending=1"));
     expect(flagged.status).toBe(200);
-    expect(await flagged.json()).toEqual({ kind: "failed", reason: "quota exhausted", retryable: false });
+    expect(await flagged.json()).toEqual({ kind: "pending" });
+  });
+
+  it("open?pending=1 answers a REAL-STORE failed record to a real VIEWER: {kind:'failed'} with the server-written reason (#532 · D2)", async () => {
+    // The cross-seam pin this file lost. Both real-store cases above were
+    // correctly re-pointed to `pending` because their caller is a non-viewer, so
+    // the only test left asserting `{kind:"failed"}` hand-stubs
+    // `store.records().get()` (wire/apps.grants.test.ts) — nothing proved that a
+    // REAL row's `doc.buildFailed` still reaches the embed. Renaming that field
+    // would have broken every failed build's surface with the suite green.
+    //
+    // A §9.2 viewer GRANT is what makes the caller a viewer here, which is also
+    // the first time this path is proven for someone who is not the owner.
+    const store = await tempStore("vendo-wire-viewer-failed-");
+    vi.stubEnv("VENDO_API_KEY", "vnd_viewer_failed");
+    const vendo = createVendo({ model: {} as LanguageModel, principal: async () => principal, store });
+    stubRouteBlocks(vendo);
+    await store.ensureSchema();
+    await store.records("vendo_apps").put({
+      id: "app_team_dead",
+      data: {
+        subject: "team_org",
+        enabled: false,
+        doc: {
+          format: VENDO_APP_FORMAT,
+          id: "app_team_dead",
+          name: "Dead team app",
+          buildFailed: { reason: "the build timed out", retryable: true, at: new Date().toISOString() },
+        },
+      },
+      refs: { subject: "team_org" },
+    });
+    await store.records("vendo_app_grants").put({
+      id: "ag_viewer_failed",
+      data: {
+        appId: "app_team_dead",
+        orgId: "team_org",
+        principal: `user:${principal.subject}`,
+        level: "viewer",
+        createdBy: "someone_else",
+      },
+      refs: { app_id: "app_team_dead", principal: `user:${principal.subject}`, level: "viewer" },
+    });
+    // A failed app has no servable document, so open() refuses — which is
+    // exactly the case the probe exists for.
+    vi.spyOn(vendo.apps, "open").mockRejectedValue(new VendoError("not-found", "app not found: app_team_dead"));
+
+    const flagged = await vendo.handler(request("GET", "/apps/app_team_dead/open?pending=1"));
+    expect(flagged.status).toBe(200);
+    expect(await flagged.json()).toEqual({
+      kind: "failed",
+      reason: "the build timed out",
+      retryable: true,
+    });
   });
 
   it("open?pending=1 disambiguates on a HOSTED wire-door store: pending only while no record exists, terminal failures and principal mismatches resolve (defect D2)", async () => {
@@ -374,7 +458,9 @@ describe("09 §3 public wire", () => {
     const building = await vendo.handler(request("GET", "/apps/app_building/open?pending=1"));
     expect(await building.json()).toEqual({ kind: "pending" });
 
-    // (b) a terminal failed record resolves with its reason for any caller.
+    // (b) a terminal failed record: the probe reaches it through the adapter on
+    // a hosted store (the D2 fix), and §9.4 then masks the answer because this
+    // caller cannot see the app at all.
     await store.records("vendo_apps").put({
       id: "app_dead",
       data: {
@@ -390,19 +476,25 @@ describe("09 §3 public wire", () => {
       refs: { subject: "someone_else" },
     });
     const dead = await vendo.handler(request("GET", "/apps/app_dead/open?pending=1"));
-    expect(await dead.json()).toEqual({ kind: "failed", reason: "the build never finished", retryable: true });
+    expect(await dead.json()).toEqual({ kind: "pending" });
 
-    // (c) a live record under another subject answers the B4 principal-
-    // mismatch diagnosis — reachable on hosted stores for the first time.
+    // (c) a live record under another subject: the B4 diagnosis is logged for
+    // the host (reachable on hosted stores for the first time) and the caller
+    // stays masked.
+    //
+    // The spy is CLEARED first: it was installed once at the top of this case
+    // and (b) already logged through it, so the assertion below read accumulated
+    // calls and would have passed even if (c) logged nothing at all — the same
+    // vacuous shape this wave fixed elsewhere.
+    vi.mocked(console.warn).mockClear();
     await store.records("vendo_apps").put({
       id: "app_foreign",
       data: { subject: "someone_else", enabled: true, doc: app("app_foreign") },
       refs: { subject: "someone_else" },
     });
     const foreign = await vendo.handler(request("GET", "/apps/app_foreign/open?pending=1"));
-    const body = await foreign.json() as { kind: string; reason?: string };
-    expect(body.kind).toBe("failed");
-    expect(body.reason).toContain("principal");
+    expect(await foreign.json()).toEqual({ kind: "pending" });
+    expect(vi.mocked(console.warn).mock.calls.flat().join(" ")).toContain("principal");
   });
 
   it("does not read history for an unowned app on GET or undo", async () => {
@@ -425,9 +517,10 @@ describe("09 §3 public wire", () => {
   });
 
   it("enforces history() ownership at the wire: cross-principal reads and undo are denied for real", async () => {
-    // 06-apps: history(appId) is ownership-blind by frozen signature; THIS route
-    // is the enforcement boundary. No mocks — a real store row, a real history
-    // entry, and the real apps runtime behind the handler.
+    // Build contract §9.3: the LEVEL lives in the apps runtime (`history` takes
+    // the ctx — list needs viewer, undo needs editor) and this route masks what
+    // the caller cannot see. No mocks — a real store row, a real history entry,
+    // and the real apps runtime behind the handler, so both halves are proven.
     let current: Principal = { kind: "user", subject: "user_owner" };
     const { vendo } = await setup(vi.fn(async () => current));
     expect((await vendo.handler(request("GET", "/status"))).status).toBe(200); // migrate the store
@@ -1035,106 +1128,6 @@ describe("09 §3 public wire", () => {
   });
 });
 
-describe("development runtime source capture", () => {
-  async function captureRoot(): Promise<string> {
-    const root = await mkdtemp(join(tmpdir(), "vendo-runtime-capture-"));
-    cleanups.push(async () => { await rm(root, { recursive: true, force: true }); });
-    return root;
-  }
-
-  it("writes a schema-valid baseline for a runtime-only registration", async () => {
-    const root = await captureRoot();
-    const sourceFile = join(root, "src", "runtime-card.tsx");
-    await mkdir(join(root, "src"), { recursive: true });
-    await writeFile(sourceFile, "export const RuntimeCard = () => <article>runtime</article>;\n", "utf8");
-    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
-
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "RuntimeCard",
-      source: new URL(`file://${sourceFile}`).href,
-      exportable: true,
-    }));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ slot: "RuntimeCard", status: "captured" });
-    const baseline = JSON.parse(await readFile(join(root, ".vendo", "remixable", "RuntimeCard.json"), "utf8"));
-    expect(capturedPinBaselineSchema.safeParse(baseline).success).toBe(true);
-    expect(baseline).toMatchObject({ slot: "RuntimeCard", exportable: true });
-  });
-
-  it("rejects capture from an anonymous session without touching disk", async () => {
-    const root = await captureRoot();
-    const sourceFile = join(root, "src", "runtime-card.tsx");
-    await mkdir(join(root, "src"), { recursive: true });
-    await writeFile(sourceFile, "export const RuntimeCard = () => null;\n", "utf8");
-    const { vendo } = await setup(vi.fn(async () => null), { development: { root } });
-
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "RuntimeCard",
-      source: sourceFile,
-      exportable: false,
-    }));
-    expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({
-      error: { code: "blocked", message: "runtime capture requires a host-resolved principal" },
-    });
-    await expect(access(join(root, ".vendo", "remixable", "RuntimeCard.json"))).rejects.toThrow();
-  });
-
-  it("does not mount the route outside development", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    const { vendo } = await setup();
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "Absent",
-      source: "/tmp/absent.tsx",
-      exportable: false,
-    }));
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: { code: "not-found", message: "unknown Vendo route" } });
-  });
-
-  it("refuses sources outside the host root", async () => {
-    const root = await captureRoot();
-    const outside = await mkdtemp(join(tmpdir(), "vendo-runtime-outside-"));
-    cleanups.push(async () => { await rm(outside, { recursive: true, force: true }); });
-    const outsideFile = join(outside, "outside.tsx");
-    await writeFile(outsideFile, "export const Outside = () => null;\n", "utf8");
-    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
-
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "Outside",
-      source: outsideFile,
-      exportable: false,
-    }));
-    expect(response.status).toBe(400);
-    await expect(access(join(root, ".vendo", "remixable", "Outside.json"))).rejects.toThrow();
-  });
-
-  it("preserves an existing static baseline", async () => {
-    const root = await captureRoot();
-    const sourceFile = join(root, "runtime-card.tsx");
-    const baselineFile = join(root, ".vendo", "remixable", "RuntimeCard.json");
-    await writeFile(sourceFile, "export const RuntimeCard = () => null;\n", "utf8");
-    await mkdir(join(root, ".vendo", "remixable"), { recursive: true });
-    const existing = {
-      slot: "RuntimeCard",
-      source: "export const RuntimeCard = () => <strong>static</strong>;",
-      hash: `sha256:${"b".repeat(64)}`,
-      exportable: true,
-      capturedAt: new Date(Date.now() + 60_000).toISOString(),
-    };
-    await writeFile(baselineFile, `${JSON.stringify(existing, null, 2)}\n`, "utf8");
-    const { vendo } = await setup(vi.fn(async () => principal), { development: { root } });
-
-    const response = await vendo.handler(request("POST", "/dev/remixable-source", {
-      slot: "RuntimeCard",
-      source: sourceFile,
-      exportable: false,
-    }));
-    expect(await response.json()).toMatchObject({ status: "preserved", hash: existing.hash });
-    expect(JSON.parse(await readFile(baselineFile, "utf8"))).toEqual(existing);
-  });
-});
-
 describe("06-apps §9 in-client venue over the wire", () => {
   const seedApp = async (vendo: Vendo, doc: AppDocument, subject = principal.subject) => {
     await vendo.store.ensureSchema();
@@ -1167,7 +1160,7 @@ describe("06-apps §9 in-client venue over the wire", () => {
   });
 
   it("injects an approval in development and open() rides the hash-pinned verdict end to end", async () => {
-    const { vendo } = await setup(vi.fn(async () => principal), { development: {} });
+    const { vendo } = await setup(vi.fn(async () => principal), { development: true });
     const doc = app("app_venue");
     await seedApp(vendo, doc);
 
@@ -1205,7 +1198,7 @@ describe("06-apps §9 in-client venue over the wire", () => {
   });
 
   it("rejects approval injection from an anonymous session", async () => {
-    const { vendo } = await setup(vi.fn(async () => null), { development: {} });
+    const { vendo } = await setup(vi.fn(async () => null), { development: true });
     const response = await vendo.handler(request("POST", "/dev/inclient-approval", {
       appId: "app_venue",
     }));
@@ -1266,7 +1259,7 @@ describe("09 §2 composition", () => {
     });
   });
 
-  it("09-vendo §2 install-dx wave 1.1: NODE_ENV=development trusts its own learned origin — present credentials forward with zero VENDO_BASE_URL", async () => {
+  it("09-vendo §2 install-dx wave 1.1: NODE_ENV=development trusts its own learned LOOPBACK origin — present credentials forward with zero VENDO_BASE_URL", async () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("VENDO_BASE_URL", "");
     const { vendo } = await setup();
@@ -1278,8 +1271,15 @@ describe("09 §2 composition", () => {
     // Teach the zero-config route origin, then run the real present-forward
     // branch: unlike the untrusted-origin case above, the credentials MUST
     // reach the doctor's own echo route.
-    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
-    const probe = await vendo.handler(request("POST", "/doctor/present", {}, {
+    //
+    // The origin moved from `https://host.test` to loopback when the poisoning
+    // fence landed, and the promise this test exists for is unchanged: in
+    // development, with zero VENDO_BASE_URL, the wire trusts the origin it was
+    // actually reached at. `next dev` serves localhost, which is that origin.
+    // A non-loopback learned origin is now untrusted in every environment,
+    // because a request origin is the Host header (see the SECURITY pins below).
+    expect((await vendo.handler(requestFrom("http://localhost:3000", "GET", "/status"))).status).toBe(200);
+    const probe = await vendo.handler(requestFrom("http://localhost:3000", "POST", "/doctor/present", {}, {
       authorization: "Bearer vendo-doctor-present",
       cookie: "vendo_doctor_present=1",
     }));
@@ -1293,6 +1293,81 @@ describe("09 §2 composition", () => {
       && event.detail !== null
       && "warning" in event.detail);
     expect(warnings).toHaveLength(0);
+  });
+
+  /**
+   * THE POISONING ATTACK on route binding's learned base.
+   *
+   * `install-dx wave 1.1` made a DEV-learned origin trusted, so present-mode
+   * calls forward the caller's `cookie` and `authorization` to it. The learner
+   * had no restriction on WHICH origin it would learn, and a request origin is
+   * the Host header. One request carrying `Host: attacker.evil` therefore fixed
+   * the base process-wide and sent the caller's real session cookie and bearer
+   * to the attacker on every present-mode host tool call after it.
+   *
+   * Measured by the independent checker, then reproduced here RED before the
+   * fence. Closed with the same rule the tool door uses: loopback only, first
+   * qualifying request wins.
+   */
+  it("SECURITY: a spoofed non-loopback Host never becomes the learned base, so present credentials cannot ride it", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const { vendo } = await setup();
+    const reached: Array<{ url: string; cookie: string | null; authorization: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      reached.push({
+        url: target.url,
+        cookie: target.headers.get("cookie"),
+        authorization: target.headers.get("authorization"),
+      });
+      return vendo.handler(target);
+    }));
+
+    // The attacker's Host arrives FIRST — this is the whole attack.
+    expect((await vendo.handler(requestFrom("https://attacker.evil", "GET", "/status"))).status).toBe(200);
+    await vendo.handler(requestFrom("https://attacker.evil", "POST", "/doctor/present", {}, {
+      authorization: "Bearer the-callers-real-token",
+      cookie: "session=the-callers-real-session",
+    }));
+
+    // Nothing that reached the attacker's origin carried the caller's identity.
+    const toAttacker = reached.filter((entry) => entry.url.startsWith("https://attacker.evil"));
+    expect(toAttacker.every((entry) => entry.cookie === null && entry.authorization === null)).toBe(true);
+
+    // And the withholding was audited, exactly as an untrusted origin should be.
+    const events = await vendo.guard.audit.query({ principal });
+    const warnings = events.events.filter((event) =>
+      event.detail !== undefined
+      && typeof event.detail === "object"
+      && event.detail !== null
+      && "warning" in event.detail);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      detail: { warning: { code: "present-credentials-not-forwarded", reason: "untrusted-host-origin" } },
+    });
+  });
+
+  it("SECURITY: a loopback origin already learned cannot be REPLACED by a later spoofed Host", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const { vendo } = await setup();
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      return vendo.handler(target);
+    }));
+
+    // The real origin is learned first, then the attacker tries to move it.
+    expect((await vendo.handler(requestFrom("http://localhost:3000", "GET", "/status"))).status).toBe(200);
+    expect((await vendo.handler(requestFrom("https://attacker.evil", "GET", "/status"))).status).toBe(200);
+
+    // The base is still loopback, so the doctor's own echo route still answers
+    // and the credentials still reach it — the latch held.
+    const probe = await vendo.handler(requestFrom("http://localhost:3000", "POST", "/doctor/present", {}, {
+      authorization: "Bearer vendo-doctor-present",
+      cookie: "vendo_doctor_present=1",
+    }));
+    expect(await probe.json()).toEqual({ ok: true });
   });
 
   it("09-vendo §2 install-dx wave 1.1: logs one loud console.error at composition when NODE_ENV=production and VENDO_BASE_URL is unset", async () => {
@@ -1365,7 +1440,7 @@ describe("09 §2 composition", () => {
     expect(events.events.some((event) => event.kind === "tool-call" && event.tool === "vendo_apps_open")).toBe(true);
   });
 
-  it("projects rung-1 app risk consistently across chat and MCP venues", async () => {
+  it("projects app-edit risk consistently across chat and MCP venues", async () => {
     const { vendo } = await setup(vi.fn(async () => principal), {
       policy: {
         rules: [
@@ -1391,34 +1466,36 @@ describe("09 §2 composition", () => {
     });
     const byName = new Map((await vendo.actions.descriptors()).map((descriptor) => [descriptor.name, descriptor]));
     expect(byName.get("vendo_apps_create")?.risk).toBe("read");
-    expect(byName.get("vendo_apps_edit")?.risk).toBe("write");
+    // Yousef's ruling (2026-07-28): an app edit does not need approval. Editing
+    // your own view is the same act as creating it, so it runs — in EVERY venue,
+    // which is what this test is really about: one answer per act, not per door.
+    expect(byName.get("vendo_apps_edit")?.risk).toBe("read");
     const edit = byName.get("vendo_apps_edit")!;
     const chat = { ...ctx, venue: "chat" as const };
     const mcp = { ...ctx, venue: "mcp" as const };
-    const treeCall = {
-      id: "call_tree_chat",
-      tool: edit.name,
-      args: { appId: "app_wire", instruction: "Make the heading blue" },
-    };
-
-    await expect(vendo.guard.check(treeCall, edit, chat)).resolves.toMatchObject({ action: "run" });
-    await expect(vendo.guard.check({ ...treeCall, id: "call_tree_mcp" }, edit, mcp))
-      .resolves.toMatchObject({ action: "run" });
-    await expect(vendo.guard.check({
-      id: "call_server_chat",
-      tool: edit.name,
-      args: { appId: "app_wire", instruction: "Persist this to the database" },
-    }, edit, chat)).resolves.toMatchObject({ action: "ask" });
-    await expect(vendo.guard.check({
-      id: "call_server_mcp",
-      tool: edit.name,
-      args: { appId: "app_wire", instruction: "Persist this to the database" },
-    }, edit, mcp)).resolves.toMatchObject({ action: "ask" });
+    for (const [id, venue] of [["call_chat", chat], ["call_mcp", mcp]] as const) {
+      await expect(vendo.guard.check({
+        id,
+        tool: edit.name,
+        args: { appId: "app_wire", instruction: "Persist this to the database" },
+      }, edit, venue)).resolves.toMatchObject({ action: "run" });
+    }
+    // Including an edit of an already-served app: the instruction rides the box,
+    // and what the BOX then does is gated on its own terms (egress approval,
+    // per-tool risk), never by a prompt about rearranging a view.
     await expect(vendo.guard.check({
       id: "call_http",
       tool: edit.name,
       args: { appId: "app_http", instruction: "Make the heading blue" },
-    }, edit, chat)).resolves.toMatchObject({ action: "ask" });
+    }, edit, chat)).resolves.toMatchObject({ action: "run" });
+    // The ceremony stays where it belongs: writing the app's stored rows asks.
+    const dataPut = byName.get("vendo_apps_data_put")!;
+    expect(dataPut.risk).toBe("write");
+    await expect(vendo.guard.check({
+      id: "call_data_put",
+      tool: dataPut.name,
+      args: { appId: "app_wire", collection: "notes", id: "n1", data: {} },
+    }, dataPut, chat)).resolves.toMatchObject({ action: "ask" });
   });
 
   it("uses per-client session-scoped ephemeral principals when the resolver returns null", async () => {
@@ -2017,18 +2094,77 @@ describe("app design rules (spec 2026-07-20)", () => {
     const store = await tempStore("vendo-cloud-overrides-store-");
     await store.ensureSchema();
     const prompts: string[] = [];
+    // The semantics annotations live in the FILL WORKER's query brief now (the
+    // brain plans off tool names; shape cards travel with the query to the
+    // worker that binds against them), so the fake model must walk the whole
+    // conduction: a plan with a query on host_ledger, a worker fill, and an
+    // empty reviewer pass.
+    const planModel = ((): LanguageModel => {
+      const reply = (flat: string): string => {
+        if (flat.includes("THEY ARE ASKING NOW:")) {
+          return `<Plan name="Ledger">
+  <Query id="ledger" tool="host_ledger"/>
+  <Group>
+    <Leaf component="Text" query="ledger" purpose="Ledger rows at a glance"/>
+  </Group>
+</Plan>`;
+        }
+        if (flat.includes("YOUR SECTION")) return '<Text text="ok"/>';
+        return "";
+      };
+      const capture = (call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }): string => {
+        const flat = flatPrompt(call.prompt);
+        prompts.push(flat);
+        return reply(flat);
+      };
+      return {
+        specificationVersion: "v2" as const,
+        provider: "vendo-test",
+        modelId: "vendo-test-plan",
+        supportedUrls: {},
+        async doGenerate(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+          return {
+            content: [{ type: "text" as const, text: capture(call) }],
+            finishReason: "stop" as const,
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+        async doStream(call: { prompt: Array<{ content: string | Array<{ text?: string }> }> }) {
+          const text = capture(call);
+          return {
+            stream: new ReadableStream({
+              start(controller) {
+                controller.enqueue({ type: "stream-start", warnings: [] });
+                controller.enqueue({ type: "text-start", id: "text_1" });
+                controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
+                controller.enqueue({ type: "text-end", id: "text_1" });
+                controller.enqueue({
+                  type: "finish",
+                  finishReason: "stop",
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                });
+                controller.close();
+              },
+            }),
+          };
+        },
+      } as unknown as LanguageModel;
+    })();
     // Explicit store wins over the key (BYO); connectors:[] avoids the cloud
     // tools connector's descriptor fetch — the ONLY config fetch is /api/v1/config.
     const vendo = createVendo({
-      model: appGenModel(prompts),
+      model: planModel,
       principal: async () => principal,
       store,
       connectors: [],
     });
     cleanups.push(async () => { await vendo.store.close(); });
 
+    // The worker's query brief carries the shape card ("shape: { amount:
+    // number:money.cents, … }") — that line is where a generation actually
+    // reads the merged semantics.
     const shapeCard = (all: string[]): string =>
-      all.filter((p) => p.includes("TOOL RESPONSE SHAPES")).join("\n");
+      all.filter((p) => p.includes("shape: ")).join("\n");
 
     // First generation: local semantics always apply; this generation's own
     // descriptors() read also resolves the cloud-owned overrides (enablement,
@@ -2314,28 +2450,34 @@ describe("09 §3 conversational turn against the real composed store", () => {
       outputTokens: { total: 0, text: 0, reasoning: 0 },
     } as const;
     let agentCalls = 0;
+    // A plan — the ask is normal, so the brain plans it and fast workers write
+    // the groups. That is what makes the create arrive in pieces: the plan IS
+    // the layout, on screen before a single group has been written, and each
+    // group lands as its own view.
+    const generation = (delta: string) => ({
+      stream: simulateReadableStream({ chunks: [
+        { type: "text-start" as const, id: "generation" },
+        { type: "text-delta" as const, id: "generation", delta },
+        { type: "text-end" as const, id: "generation" },
+        { type: "finish" as const, usage, finishReason: { unified: "stop" as const, raw: undefined } },
+      ] }),
+    });
     const model = new MockLanguageModelV3({
       doStream: async ({ prompt }) => {
         const serialized = JSON.stringify(prompt);
-        if (serialized.includes("TASK: CREATE_APP")) {
-          return {
-            stream: simulateReadableStream({ chunks: [
-              { type: "text-start", id: "generation" },
-              {
-                type: "text-delta",
-                id: "generation",
-                delta: '<App name="SSE app"><Stack>',
-              },
-              {
-                type: "text-delta",
-                id: "generation",
-                delta: '<Text text="Ready"/><Disclaimer reason="Fixture app."/></Stack></App>',
-              },
-              { type: "text-end", id: "generation" },
-              { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
-            ] }),
-          };
+        if (serialized.includes("THEY ARE ASKING NOW:")) {
+          return generation(`<Plan name="SSE app">
+  <Group>
+    <Leaf component="Text" purpose="A one-line status for the first section"/>
+  </Group>
+  <Group>
+    <Leaf component="Text" purpose="A one-line status for the second section"/>
+  </Group>
+</Plan>`);
         }
+        // One fill worker per group, and the AI reviewer, all ride this model.
+        if (serialized.includes("YOUR SECTION")) return generation('<Text text="Ready"/>');
+        if (serialized.includes("You are the last reader")) return generation("");
 
         agentCalls += 1;
         if (agentCalls === 1) {
@@ -2389,9 +2531,22 @@ describe("09 §3 conversational turn against the real composed store", () => {
 
     expect(response.status).toBe(200);
     expect(views.length).toBeGreaterThanOrEqual(3);
-    expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }, { id: "stack-1" }] });
+    // The first view IS the plan's geometry, every leaf still pending.
+    expect(views[0]?.data.payload).toMatchObject({
+      streaming: true,
+      nodes: [
+        { id: "app" },
+        { id: "group-0" },
+        { id: "group-0-body" },
+        { id: "group-0-leaf-0" },
+        { id: "group-1" },
+        { id: "group-1-body" },
+        { id: "group-1-leaf-0" },
+      ],
+    });
     expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
-    expect(views.at(-1)?.data.payload.nodes).toHaveLength(4);
+    // Both placeholders are gone, replaced by what their workers wrote.
+    expect(views.at(-1)?.data.payload.nodes).toHaveLength(7);
     expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
   });
 });
@@ -2447,11 +2602,11 @@ describe("ENG-252 agent.loadout through createVendo", () => {
     await turn.text();
 
     // The curated loadout gates the host surface: only the named tool is
-    // offered; the rest stay discoverable via vendo_tools_search.
+    // offered; the rest stay discoverable via find_tools.
     expect(toolNamesPerCall).toHaveLength(1);
     expect(toolNamesPerCall[0]).toContain("host_beta");
     expect(toolNamesPerCall[0]).not.toContain("host_alpha");
-    expect(toolNamesPerCall[0]).toContain("vendo_tools_search");
+    expect(toolNamesPerCall[0]).toContain("find_tools");
   });
 });
 
@@ -2510,7 +2665,7 @@ describe("surfaces.agent through createVendo", () => {
                   {
                     type: "tool-call" as const,
                     toolCallId: "call_search",
-                    toolName: "vendo_tools_search",
+                    toolName: "find_tools",
                     input: JSON.stringify({ query: "export the raw ledger" }),
                   },
                   finish,
@@ -2546,7 +2701,7 @@ describe("surfaces.agent through createVendo", () => {
 
     expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
     expect(recorder.toolNamesPerCall[0]).not.toContain("host_exportLedger");
-    expect(recorder.toolNamesPerCall[0]).toContain("vendo_tools_search");
+    expect(recorder.toolNamesPerCall[0]).toContain("find_tools");
     // The registry itself is untouched — the door and the host's own code still
     // see the whole surface; only what the AGENT is offered is curated.
     expect((await vendo.actions.descriptors()).map((entry) => entry.name)).toContain("host_exportLedger");
@@ -2594,7 +2749,7 @@ describe("surfaces.agent through createVendo", () => {
 
     expect(recorder.toolNamesPerCall[0]).toContain("host_listAccounts");
     expect(recorder.toolNamesPerCall[0]).not.toContain("host_exportLedger");
-    expect(recorder.toolNamesPerCall[0]).toContain("vendo_tools_search");
+    expect(recorder.toolNamesPerCall[0]).toContain("find_tools");
   });
 
   it("without a surfaces block the agent surface is unchanged", async () => {
@@ -3191,11 +3346,13 @@ describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects 
   // milliseconds, and a spurious idle-abort here would flake the suite.
   const IDLE_MS = 1_000;
 
-  /** agent.stream stub whose SSE body stays open until the handed signal
-   *  aborts — a long-generating turn. */
+  /** A stub of the served chat door (post-flip: `harness.stream`) whose SSE body
+   *  stays open until the handed signal aborts — a long-generating turn.
+   *  Liveness is the wire route's, not the thinker's, so what runs the turn is
+   *  incidental here; it just has to be the door `POST /threads` actually calls. */
   function streamingTurnStub(vendo: Vendo, threadId = "thr_live"): { signals: AbortSignal[] } {
     const signals: AbortSignal[] = [];
-    vi.spyOn(vendo.agent, "stream").mockImplementation(async (input: { signal?: AbortSignal }) => {
+    vi.spyOn(vendo.harness, "stream").mockImplementation(async (input: { signal?: AbortSignal }) => {
       signals.push(input.signal!);
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -3297,7 +3454,7 @@ describe("ENG-353 — turn liveness: heartbeat-armed idle abort for disconnects 
 
   it("a completed turn unregisters: beats after the stream drained report inactive", async () => {
     const { vendo } = await setup();
-    vi.spyOn(vendo.agent, "stream").mockResolvedValue(new Response(
+    vi.spyOn(vendo.harness, "stream").mockResolvedValue(new Response(
       new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));

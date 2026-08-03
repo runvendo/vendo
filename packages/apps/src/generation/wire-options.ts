@@ -1,18 +1,12 @@
-import {
-  compileWire,
-  printWire,
-  type Tree,
-  type WireCompileResult,
-} from "@vendoai/core";
-import type { GenerationDependencies, PipelineContext } from "./engine.js";
+import type { compileWire } from "@vendoai/core";
+import type { GenerationDependencies } from "./engine.js";
 
-/** The production compile options: inline tool refs ON everywhere model wire
- *  is compiled (the registry names enable single-segment production tool
- *  heads); `<Query>` declarations stay accepted unchanged. Owned HERE so the
- *  stages' own compiles (region-parallel assembly, repair/end-pass
- *  recompiles) use the exact options the engine's streaming lanes use —
- *  live 2026-07-23: the assembly recompile lacked them, so EVERY app built
- *  on inline references failed region-parallel with "unknown-reference". */
+/** The production compile options: inline tool refs ON everywhere model wire is
+ *  compiled (the registry names enable single-segment production tool heads);
+ *  `<Query>` declarations stay accepted unchanged. Owned HERE so every compile
+ *  of model wire — a whole app, one fill fragment, an edited app's text —
+ *  speaks the exact same dialect. Live 2026-07-23: one recompile that lacked
+ *  these options failed EVERY app built on inline references. */
 export const wireCompileOptionsFor = (
   deps: GenerationDependencies,
   hostComponents: readonly string[],
@@ -22,17 +16,3 @@ export const wireCompileOptionsFor = (
   ...(deps.tools === undefined ? {} : { inlineTools: deps.tools.map(({ name }) => name) }),
   ...(deps.toolShapes === undefined ? {} : { toolShapes: deps.toolShapes }),
 });
-
-/** Re-print then re-compile a patched/spliced tree so it goes back through
- *  the ONE create validator exactly as model wire would. Owned here (not in
- *  a stage) so verify and repair can both use it without importing each
- *  other — the verify→repair→verify cycle is a TDZ crash under bundlers. */
-export const recompile = (
-  base: { tree: Tree; components: Record<string, string>; name?: string },
-  context: PipelineContext,
-): WireCompileResult => compileWire(
-  printWire(base, { includeIds: false }),
-  // The production compile options (inline tool refs included) — a patched
-  // tree must recompile in the exact dialect the streaming lanes used.
-  wireCompileOptionsFor(context.deps, context.hostComponents),
-);

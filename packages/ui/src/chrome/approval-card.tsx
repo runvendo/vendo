@@ -1,10 +1,17 @@
-import { canonicalJson, sha256Hex, type ApprovalDecision, type ApprovalRequest, type Json } from "@vendoai/core";
+import {
+  canonicalJson,
+  sha256Hex,
+  type ApprovalDecision,
+  type ApprovalRequest,
+  type Json,
+  type JsonSchema,
+} from "@vendoai/core";
 import { useState } from "react";
 import { useVendoTools } from "../context.js";
 import { ContainedNotice } from "../tree/notice.js";
 import { toolPresentation } from "./build-beat.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { humanizeToolName, type ToolMeta } from "./humanize.js";
+import { argProperties, argValue, humanizeToolName, type ToolMeta } from "./humanize.js";
 
 /** The wire risk slugs, in the user's language (the raw slug stays available
     on the chip's tooltip via the tool name; end users never read jargon). */
@@ -17,16 +24,29 @@ const RISK_LABEL: Record<string, string> = {
 /** Flat, primitive-valued args render as aligned field rows — humanized label,
     host-formatted value (ToolMeta.formatField), raw value on the tooltip so
     the real input stays one hover away; anything nested falls back to the raw
-    JSON preview (real inputs, always). */
-function flatFields(args: unknown, meta?: ToolMeta): Array<[string, string, string]> | undefined {
+    JSON preview (real inputs, always).
+
+    With no host formatter, the value still goes through `argValue`, so a
+    declared money amount reads as money and never as the raw integer a person
+    misreads by 100×. */
+function flatFields(
+  args: unknown,
+  inputSchema: JsonSchema | undefined,
+  meta?: ToolMeta,
+): Array<[string, string, string]> | undefined {
   if (typeof args !== "object" || args === null || Array.isArray(args)) return undefined;
   const entries = Object.entries(args as Record<string, unknown>);
   if (entries.length === 0 || entries.length > 8) return undefined;
+  const properties = argProperties(inputSchema);
   const rows: Array<[string, string, string]> = [];
   for (const [key, value] of entries) {
     if (value !== null && typeof value === "object") return undefined;
     const raw = String(value);
-    rows.push([humanizeToolName(key), meta?.formatField?.(key, value as Json) ?? raw, raw]);
+    rows.push([
+      humanizeToolName(key),
+      meta?.formatField?.(key, value as Json) ?? argValue(key, value, properties),
+      raw,
+    ]);
   }
   return rows;
 }
@@ -87,7 +107,7 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true, showCon
   );
   const title = presentation.title;
   const description = (presentation.description ?? approval.descriptor.description).trim();
-  const fields = flatFields(approval.call.args, meta);
+  const fields = flatFields(approval.call.args, approval.descriptor.inputSchema, meta);
   // Lane pick 1-A — consequence-first: when the presentation can truthfully
   // say what approving does in one sentence, that sentence leads and the raw
   // fields fold behind a "Details" disclosure (still the same real inputs,

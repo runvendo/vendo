@@ -99,6 +99,40 @@ describe("visible error surface + retry (ENG-214)", () => {
     expect(banner?.textContent).not.toContain("connection reset");
   });
 
+  it("renders a failed turn's error INLINE where the reply would be, and survives a reload", async () => {
+    // self-serve P — the transient error chunk is gone on the next mount, so a
+    // reloaded thread used to show the question answered by a blank assistant
+    // turn. The agent now writes the same gated string into the turn, and the
+    // transcript renders it in the failed-beat vocabulary.
+    wire.state.threads.set("thr_failed", {
+      id: "thr_failed",
+      subject: "user_1",
+      messages: [
+        { id: "msg_ask", role: "user", parts: [{ type: "text", text: "Show me a dashboard" }] },
+        {
+          id: "msg_failed",
+          role: "assistant",
+          parts: [{
+            type: "data-vendo-turn-error",
+            data: { message: "Vendo: Vendo found no model key. Run `vendo login` for a free dev key. (validation)" },
+          }],
+        },
+      ],
+      createdAt: "2026-07-11T12:00:00.000Z",
+      updatedAt: "2026-07-11T12:00:00.000Z",
+    } as never);
+    render(<VendoProvider client={client}><VendoThread threadId="thr_failed" /></VendoProvider>);
+
+    // The user's message stays, and the failure reads where the answer would be
+    // — with no live thread.error, so nothing but the turn itself is saying it.
+    expect(await screen.findByText("Show me a dashboard")).toBeTruthy();
+    const notice = await screen.findByText(/Vendo found no model key/);
+    expect(notice.closest("[data-vendo-turn-error]")).toBeTruthy();
+    // The wire's "Vendo: " marker is plumbing, never shown to the reader.
+    expect(notice.textContent).not.toContain("Vendo: ");
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
   it("retries a mid-stream failure without duplicating messages", async () => {
     wire.state.streamFailures = 1;
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);

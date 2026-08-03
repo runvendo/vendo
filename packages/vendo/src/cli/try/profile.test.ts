@@ -11,7 +11,7 @@ import {
 } from "./profile.js";
 
 /** The committed real extraction profile — the assembler's happy path. */
-const demoBankRoot = fileURLToPath(new URL("../../../../../apps/demo-bank", import.meta.url));
+const demoBankRoot = fileURLToPath(new URL("../../../../../examples/demo-bank", import.meta.url));
 
 const cleanup: string[] = [];
 

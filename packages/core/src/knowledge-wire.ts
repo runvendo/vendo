@@ -137,6 +137,7 @@ export const KNOWLEDGE_WIRE_STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,
   "not-found": 404,
   blocked: 403,
+  forbidden: 403,
   conflict: 409,
   "cloud-required": 402,
   "sandbox-unavailable": 501,

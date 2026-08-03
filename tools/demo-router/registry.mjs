@@ -3,7 +3,7 @@ import path from "node:path";
 
 /**
  * The demo registry — a single atomic JSON file (temp write + rename, the
- * caps-guard pattern from apps/demo-template/src/server/caps.ts) on a Railway
+ * caps-guard pattern from examples/demo-template/src/server/caps.ts) on a Railway
  * volume. One always-on router instance owns it, so plain synchronous fs is
  * both sufficient and race-free.
  *

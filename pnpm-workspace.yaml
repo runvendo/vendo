@@ -4,14 +4,14 @@ packages:
   - "examples/*"
   - "corpus/harness"
   - "corpus/hosts/*"
-  - "apps/*"
   - "bench"
   - "spikes/*"
   # tools/ is NOT globbed: tools/demo-router is deliberately standalone (its own
-  # zero-dependency deploy). The video harness is listed explicitly instead — it
-  # renders the real @vendoai/* components, so it must resolve them through the
-  # workspace rather than a published range.
+  # zero-dependency deploy). The video harness and genui-bench are listed
+  # explicitly instead — they render the real @vendoai/* components, so they
+  # must resolve them through the workspace rather than a published range.
   - "tools/video-studio"
+  - "tools/genui-bench"
   # install-dx-creds is evidence-only and needs zod ^4 (Claude Agent SDK peer);
   # keeping it in the workspace flips zod peer resolution to 4.x for every
   # ai-SDK consumer (packages/agent, packages/ui, fixtures, ...). It installs
@@ -23,11 +23,21 @@ packages:
 # tree — all allowed, preserving pnpm 9 behavior. workerd is miniflare's
 # runtime for the portability gate (scripts/portability-gate.mjs).
 allowBuilds:
+  # zstd + lzma are just-bash's OPTIONAL native backends for its compressed-tar
+  # commands. just-bash is a devDependency (the workspace's bash tests) and
+  # nothing in the tree compresses an archive through it, so the native builds
+  # are denied rather than compiled — running two build scripts would widen the
+  # supply-chain surface for a code path with no caller. Kept rather than
+  # dropped because the packages remain in the install graph and strictDepBuilds
+  # fails a cold install that merely ignores them. Flip to true the day a
+  # bash-native harness needs `tar -z`.
+  '@mongodb-js/zstd': false
   # Scarf is install telemetry riding in via @copilotkit/runtime (genui-bench
   # only); its postinstall phones home, so it stays denied.
   '@scarf/scarf': false
   cbor-extract: true
   esbuild: true
+  node-liblzma: false
   protobufjs: true
   sharp: true
   unrs-resolver: true

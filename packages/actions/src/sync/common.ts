@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { sha256Hex } from "@vendoai/core";
+import { DESTRUCTIVE_VERBS, READ_VERBS, sha256Hex } from "@vendoai/core";
 import type TS from "typescript";
 import { noteRejectedCompiler, unsupportedCompiler } from "./compiler-gate.js";
 import type { ExtractedTool, HttpMethod, PrimitiveToolBinding } from "../formats.js";
@@ -456,11 +456,25 @@ export function withUniqueNames<T extends ExtractedTool>(tools: T[]): T[] {
  *  the tool's `srcHash` (content hash) in the v3 write. */
 export type SourcedExtractedTool = ExtractedTool & { srcPath?: string };
 
-const DESTRUCTIVE_WORDS = new Set([
-  "delete", "remove", "destroy", "cancel", "close", "reset", "revoke", "purge", "wipe", "archive",
-  "unpause", "transfer", "send", "invite",
-]);
-const READ_WORDS = new Set(["get", "list", "fetch", "search", "find", "read", "show", "query", "describe", "count"]);
+/**
+ * The destructive/read vocabulary is CORE's, imported rather than restated.
+ *
+ * It lived here as a second, narrower copy until 2026-07-30. One safety word
+ * list with two definitions drifts silently in the dangerous direction: every
+ * verb core carried and this copy lacked (`pay`, `refund`, `withdraw`,
+ * `terminate`, `suspend`, `notify`, `deploy`, …) extracted as a plain `write`,
+ * and `.vendo/tools.json` is what the consent cards and the unattended-run
+ * projection are built from.
+ *
+ * The VOTES stay separate. Core discriminates noun-from-verb by POSITION, which
+ * it can afford because it always has a tool name in `subject_verb` shape and
+ * often an HTTP method. Extraction has neither for tRPC procedures and server
+ * actions, so it matches membership ANYWHERE — the fail-toward-destructive
+ * direction, which is the right default for a build-time guess a human reviews.
+ * Deduplicating the data does not merge the algorithms.
+ */
+const DESTRUCTIVE_WORDS = DESTRUCTIVE_VERBS;
+const READ_WORDS = READ_VERBS;
 
 function words(value: string): string[] {
   return value

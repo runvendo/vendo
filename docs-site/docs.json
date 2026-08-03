@@ -48,7 +48,6 @@
         "group": "Start here",
         "pages": [
           "index",
-          "try",
           "concepts/architecture",
           "concepts/tools-and-safety"
         ]
@@ -96,6 +95,7 @@
           "capabilities/mcp",
           "capabilities/mcp-registry",
           "capabilities/compound-tools",
+          "capabilities/tours",
           "concepts/generated-ui",
           "concepts/in-client-venue"
         ]
@@ -145,6 +145,11 @@
   "redirects": [
     {
       "source": "/quickstart-node",
+      "destination": "/quickstart",
+      "permanent": true
+    },
+    {
+      "source": "/try",
       "destination": "/quickstart",
       "permanent": true
     },

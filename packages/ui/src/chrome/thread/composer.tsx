@@ -167,19 +167,21 @@ export function useComposer({ busy, sendMessage }: {
   // registry-delivered prompts are directed at one overlay's composer.
   const prefillScope = useContext(PrefillScopeContext);
   // The listeners below register once but must send with CURRENT composer
-  // state: a first-render `send` closure sees busy=false forever, so a remix
+  // state: a first-render `send` closure sees busy=false forever, so a prompt
   // fired mid-stream would dispatch concurrently instead of parking in the
   // queued slot (the single-in-flight contract).
   const sendRef = useRef(send);
   sendRef.current = send;
-  // Remix bridge: a host affordance (slot remix, a trigger button, the legacy
-  // `vendo:prefill` event) opens this surface and hands it the request to
-  // type + send, so the whole build happens here — the one conversational
-  // place (08-ui §4). The registry consumer also drains a prompt parked while
-  // this composer was still mounting (overlay first open / fresh conversation).
+  // Prefill bridge: a host affordance (a trigger button, the legacy
+  // `vendo:prefill` event, the ✦ remix popover) opens this surface and hands
+  // it the request to type + send, so the whole build happens here — the one
+  // conversational place (08-ui §4). The registry consumer also drains a
+  // prompt parked while this composer was still mounting (overlay first open /
+  // fresh conversation).
   useEffect(() => {
     const prefill = (prompt: string, sendNow: boolean) => {
-      setDraft(prompt);
+      // An empty hand-off must not wipe a draft in progress.
+      if (prompt.length > 0) setDraft(prompt);
       if (sendNow) queueMicrotask(() => sendRef.current(prompt));
     };
     const onPrefill = (event: Event) => {
@@ -188,7 +190,9 @@ export function useComposer({ busy, sendMessage }: {
       prefill(detail.prompt, detail.send === true);
     };
     window.addEventListener("vendo:prefill", onPrefill);
-    const unregister = registerPrefillConsumer(parked => prefill(parked.prompt, parked.send), prefillScope);
+    const unregister = registerPrefillConsumer(parked => {
+      prefill(parked.prompt, parked.send);
+    }, prefillScope);
     return () => {
       window.removeEventListener("vendo:prefill", onPrefill);
       unregister();

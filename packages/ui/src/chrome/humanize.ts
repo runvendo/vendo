@@ -6,7 +6,8 @@
     site: a host-supplied `ToolMeta` (VendoProvider `tools` prop) wins, and when
     it is absent these pure fallbacks prettify the raw id and args so end users
     never read a raw slug, a lifecycle string, or raw JSON. */
-import type { Json } from "@vendoai/core";
+import { declaredMoneyUnit, VENDO_TOOL_TITLES, type Json, type JsonSchema } from "@vendoai/core";
+import { currencyMinorUnits, formatMoney, getKitIntl } from "../kit/format.js";
 
 /** Optional host-supplied friendly metadata for one tool (08-ui provider seam).
     Purely UI-side and additive — the host describes its own tools so chips and
@@ -53,13 +54,20 @@ export function humanizeToolName(raw: string): string {
  * in-code `ToolMeta.label`, then the descriptor's authored `title` (written by
  * sync's enrichment into `.vendo/tools.json`, correctable in
  * `.vendo/overrides.json` — the same label the MCP door puts on the wire), then
- * the prettified id. A raw slug is never shown.
+ * Vendo's own title for its own tools, then the prettified id.
+ *
+ * That third step exists because most surfaces have NO descriptor: the wire tool
+ * part carries only a name, so a progress chip or an activity row prettified
+ * `vendo_apps_edit` into "Vendo apps edit" — our namespace read out as words, the
+ * §3 leak wave-1 proof E1-5 caught. The table is core's, the same one the
+ * descriptors author from, so the two can never disagree.
  */
 export function toolTitle(name: string, meta?: ToolMeta, descriptorTitle?: string): string {
   const label = meta?.label?.trim();
   if (label) return label;
   const authored = descriptorTitle?.trim();
-  return authored ? authored : humanizeToolName(name);
+  if (authored) return authored;
+  return VENDO_TOOL_TITLES[name] ?? humanizeToolName(name);
 }
 
 /** Well-known toolkit slugs whose display name is not just proper-casing
@@ -90,6 +98,42 @@ export function toolkitDisplayName(toolkit: string): string {
     .filter(word => word.length > 0)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ") || toolkit;
+}
+
+/** A tool's declared input properties, when the caller holds the descriptor. */
+export type ArgProperties = Record<string, JsonSchema> | undefined;
+
+/** Read `inputSchema.properties` off a descriptor, or undefined when the surface
+    has no schema to consult (the in-thread card synthesizes an empty one). */
+export function argProperties(inputSchema: JsonSchema | undefined): ArgProperties {
+  const declared = inputSchema?.properties;
+  return typeof declared === "object" && declared !== null ? declared as Record<string, JsonSchema> : undefined;
+}
+
+/**
+ * One argument value, as a person must read it — the consent surfaces' rule.
+ *
+ * Money is the only value whose raw form reads as a DIFFERENT number: a $47.50
+ * payment arrives as `4750` and reads as $4,750 (wave-1 live proof E2c, on the
+ * one surface that gates irreversible money movement). The unit comes from the
+ * HOST'S DECLARATION over the tool's own input schema, never from the value's
+ * magnitude — dressing a non-money integer as currency would be the same defect
+ * pointing the other way. Undeclared money says so out loud rather than looking
+ * like dollars.
+ */
+export function argValue(field: string, value: unknown, properties: ArgProperties): string {
+  const raw = String(value);
+  if (typeof value !== "number" || !Number.isFinite(value)) return raw;
+  const unit = declaredMoneyUnit(field, properties?.[field]);
+  if (unit === undefined) return raw;
+  // Fractional "cents" is not cents at all (the contradiction `amountUnitIssue`
+  // refuses at the call seam) — undeclared, rather than round someone's money.
+  if (unit === "cents" && Number.isInteger(value)) return formatMoney(value) ?? raw;
+  if (unit === "dollars") {
+    const minor = Math.round(value * 10 ** currencyMinorUnits(getKitIntl().currency));
+    return formatMoney(minor) ?? raw;
+  }
+  return `${raw} (unit not specified)`;
 }
 
 function formatValue(value: unknown): string {

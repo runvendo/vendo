@@ -157,6 +157,33 @@ if (!existsSync(STORE_POSTGRES_ENTRY)) {
   }
 }
 
+// ---- Leg A3: @vendoai/harnesses bundles for a Worker target ----
+// Its own leg because the harness runtime is NOT yet imported by the server
+// entry (composition wires it at integration), so Leg A would pass vacuously
+// while the package rotted. The runtime does use `node:async_hooks`
+// (AsyncLocalStorage, to attribute a subagent hire to the right concurrent
+// turn), which nodejs_compat provides and NODE_BUILTIN_EXTERNALS allows —
+// this leg is what keeps that true.
+const HARNESSES_ENTRY = join(root, "packages/harnesses/dist/index.js");
+if (!existsSync(HARNESSES_ENTRY)) {
+  fail("packages/harnesses/dist/index.js missing — run `pnpm build` first");
+} else {
+  try {
+    const result = await bundle(HARNESSES_ENTRY);
+    const inputs = Object.keys(result.metafile.inputs);
+    const hit = inputs.find((input) => FORBIDDEN_INPUTS.some(({ fragment }) => input.includes(fragment)));
+    if (hit !== undefined) {
+      const { seam } = FORBIDDEN_INPUTS.find(({ fragment }) => hit.includes(fragment));
+      fail(`Node-only leg reached the harness runtime graph: ${hit}\n    containment seam: ${seam}`);
+    } else {
+      ok(`@vendoai/harnesses bundles for a Worker target (${inputs.length} modules checked)`);
+    }
+  } catch (error) {
+    const messages = (error.errors ?? []).slice(0, 8).map((e) => `\n    ${e.text} (${e.location?.file ?? "?"})`).join("");
+    fail(`@vendoai/harnesses does not bundle for a Worker target:${messages || `\n    ${error.message}`}`);
+  }
+}
+
 // ---- Leg C: raw hazard patterns in source ----
 async function* sourceFiles(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {

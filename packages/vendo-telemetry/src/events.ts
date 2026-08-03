@@ -67,13 +67,6 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
     // Which command drove the run (always "init" since the bin's only writer
     // is init; kept so historical rows stay distinguishable).
     "command",
-    // Catalog picker: offered = componentsOffered, accepted = componentCount.
-    "componentsOffered",
-    "componentCount",
-    // Remix picker anchor counts (TELEMETRY.md table).
-    "remixOffered",
-    "remixWrapped",
-    "remixSkipped",
     "toolCount",
     "durationMs",
     // What kind of project init ran against — bools and closed enums only.

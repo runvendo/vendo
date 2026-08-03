@@ -10,7 +10,7 @@ import { MorphToast, type MorphToastProps } from "../morph-toast.js";
 import { Composer, dragHasFiles, useComposer } from "./composer.js";
 import { MessageList } from "./message-list.js";
 import { useMessageWindow, useStickToBottom } from "./scrolling.js";
-import { approvalByCall, grantSetByCall, riskByCall, userText } from "./message-data.js";
+import { approvalByCall, grantSetByCall, riskByCall, userText, VENDO_ERROR_PREFIX } from "./message-data.js";
 
 /** Lane pick 4B — a rich landing suggestion: two-line starter card. */
 export interface VendoSuggestionCard {
@@ -273,8 +273,13 @@ export function VendoThread({
   // code + operator-crafted text, wireErrorMessage in @vendoai/agent) — the
   // ONE error shape end users may see in detail. Raw transport/provider
   // strings never match the prefix and stay hidden (ENG-214 policy).
-  const errorDetail = thread.error?.message?.startsWith("Vendo: ") === true
-    ? thread.error.message.slice("Vendo: ".length)
+  // self-serve P — a live turn error now ALSO lands in the turn itself (the
+  // data-vendo-turn-error part, which survives reload); when that part is
+  // already saying it, the banner keeps only its headline + Retry so the same
+  // sentence isn't printed twice.
+  const turnErrorInThread = activeAssistant?.parts.some(part => part.type === "data-vendo-turn-error") ?? false;
+  const errorDetail = !turnErrorInThread && thread.error?.message?.startsWith(VENDO_ERROR_PREFIX) === true
+    ? thread.error.message.slice(VENDO_ERROR_PREFIX.length)
     : null;
   const errorBanner = thread.error ? (
     <div className="fl-error">

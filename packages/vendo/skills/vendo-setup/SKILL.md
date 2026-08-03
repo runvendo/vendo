@@ -23,7 +23,7 @@ fetch it when you need more detail than this skill carries.
 2. Run init. As an agent, plan first, then apply:
 
    ```bash
-   npx vendo init --agent   # read-only JSON plan: framework, code diffs, extracted tools, risk recommendations, aiPolish delegation contract
+   npx vendo init --agent   # read-only JSON plan: framework, code diffs, the `mount` paste, extracted tools, risk recommendations
    npx vendo init --yes
    ```
 
@@ -32,9 +32,16 @@ fetch it when you need more detail than this skill carries.
    review of uncertain theme slots, and the end-of-init cloud-login offer
    (`--yes` skips it). Each question has a non-interactive answer flag:
    `--auth <preset>`, `--framework <name>`, `--theme <slot=value>`
-   (repeatable), `--cloud-key <key>` or `--byo`, and `--ai-polish` to consent
-   to the AI extraction pass. Prefer the interactive run when a human is
-   present.
+   (repeatable), `--cloud-key <key>` or `--byo`, and `--ai` / `--no-ai` to
+   force the AI judgment pass on or off. Prefer the interactive run when a
+   human is present.
+
+   **Init never edits a file a human wrote.** Every file it writes is new and
+   Vendo-owned, plus its own `package.json` hooks. Mounting the visible
+   surface is a paste YOU must apply — the plan carries it as
+   `mount: { file, lines, why }` and the run prints it in a framed
+   "ONE STEP LEFT" block. Apply it before calling the install done; `vendo
+   doctor` fails with `E-WIRE-004` until it lands.
 
 3. What init does (framework detected from `package.json`, `next` beats
    `express`; anything else is treated as Next):
@@ -43,9 +50,11 @@ fetch it when you need more detail than this skill carries.
      `brief.md`, `theme.json` (brand extracted from the host CSS), and a
      gitignored `.vendo/data/` for the PGlite store. Commit `.vendo/`,
      never `.vendo/data/`.
-   - Next.js: proposes `app/api/vendo/[...vendo]/route.ts` (or under
-     `src/app`), wraps the root layout in `<VendoRoot theme={...}>`, and
-     scaffolds a starter model module when the import cannot resolve.
+   - Next.js: writes `app/api/vendo/[...vendo]/route.ts` (or under
+     `src/app`), an empty `vendo/registry.tsx`, and the `vendo/vendo-root.tsx`
+     client mount that renders `<VendoOverlay />`. It does NOT touch your
+     layout: mounting `<VendoRoot>` around `{children}` is your paste (see
+     the `mount` step above).
    - Express: proposes `vendo/server.ts` (`.mjs` without a tsconfig) plus a
      starter `vendo/ai.ts`; you must still mount
      `app.use("/api/vendo", mountVendo())` and wrap the client in
@@ -75,31 +84,31 @@ fetch it when you need more detail than this skill carries.
    `http://localhost:3000/api/vendo` (override with `--url` or `VENDO_URL`).
    Exit 0 = green; exit 1 prints each `broken:` line. Fix and re-run until 0.
    Common fixes: dev server not running (start it), missing `.vendo/*` file
-   (re-run `npx vendo init`), layout not wrapped (apply the skipped diff by
-   re-running init and approving it).
+   (re-run `npx vendo init`), layout not wrapped (`E-WIRE-004` — paste the
+   exact import + wrap lines doctor prints into the named file; init will
+   never make that edit for you).
 
 ## Stage 2 — review and keep extraction fresh
 
-- AI polish, delegated to you: the `--agent` plan's `aiPolish` object is a
-  contract you can execute yourself. Read the codebase per
-  `aiPolish.instructions` (task-oriented tool descriptions, risk review,
-  wakes with reasoning, the product brief), write one JSON draft matching
-  `aiPolish.draftSchema` to a file, then:
-
-  ```bash
-  npx vendo extract --apply draft.json
-  ```
-
-  Vendo runs the same deterministic guards as init's built-in pass (only
-  extracted tool names accepted, risk raised never lowered, wakes need
-  reasoning plus a grade, human decisions win), writes
-  `.vendo/overrides.json` and `.vendo/brief.md`, and re-syncs. Non-zero exit
-  means the draft was rejected with the reason printed; fix and re-apply.
-  `--force` replaces a hand-edited brief; leave it off otherwise.
-- Re-extract after API changes: `npx vendo sync` (fail-soft). In CI use
-  `npx vendo sync --strict` — exit 2 on breaking tool changes, 3 when saved
-  apps/automations/grants are impacted. `--json` emits one machine-readable
-  report object on stdout.
+- AI judgment: run it in-band with `npx vendo sync --ai`. A coding agent
+  grades the extracted catalog with a verbatim source quote behind every
+  proposal, an independent skeptic checks each one, and the result lands in
+  `.vendo/judgments.json`. Loosenings wait for a human (`--review` asks
+  inline). `overrides.json` stays read-only prompt context meaning "what a
+  person decided". There is no draft-delegation path — the judgment needs
+  quoted evidence a handed-off draft cannot carry.
+- Consent rule, on both `init` and `sync`: `--ai` runs the pass with no
+  prompt, `--no-ai` forces it off, and with neither flag an interactive run
+  asks EVERY time (nothing is saved) while a non-interactive run — CI, a
+  pipe, `--json`, `--yes`, or any `npm run` lifecycle hook — skips it. As an
+  agent you are non-interactive: pass the flag you mean.
+- Re-extract after API changes: `npx vendo sync` (fail-soft). Sync owns the
+  whole scan — tools, remix baselines, the component catalog, AND the theme
+  (a rebrand in your CSS reaches `.vendo/theme.json`; slots a human edited
+  are pinned and reported, `--theme-refresh` overrides). In CI use
+  `npx vendo sync --strict --no-ai` — exit 2 on breaking tool changes, 3 when
+  saved apps/automations/grants are impacted. `--json` emits one
+  machine-readable report object on stdout.
 - Review `.vendo/tools.json`; put corrections in `.vendo/overrides.json`
   (`{"tools": {"host_invoices_delete": {"critical": true}}}`) — never edit
   `tools.json` by hand, sync regenerates it.

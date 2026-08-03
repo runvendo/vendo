@@ -28,6 +28,11 @@ export interface VendoContextValue {
    * saved to the host surface until the user invokes it.
    */
   onPin?(app: { appId: string; payload: unknown }): void;
+  /** Which VendoSlot a pin lands in — the pin ceremony's destination. Only
+   *  needed by hosts mounting SEVERAL slots: with one, the ceremony finds it,
+   *  and with none there is nothing to fly to. Presentation only; the pin
+   *  itself is whatever `onPin` writes. */
+  pinSlot?: string;
   /** Optional host-supplied friendly tool metadata, keyed by tool name/id
       (ENG-216 humanization seam — additive, UI-side, no wire/contract change). */
   tools: ToolMetaMap;
@@ -76,7 +81,7 @@ function isRegistryEntry(value: ComponentType | ComponentRegistryEntry): value i
 }
 
 /** Extract the name→component map from either components-input form. Registry
- * data fields (description, props schema, examples, remixable) are server-side
+ * data fields (description, props schema, examples) are server-side
  * concerns the client ignores (01 §14). */
 export function hostComponentMap(components: HostComponentsInput | undefined): Record<string, ComponentType> {
   if (components === undefined) return {};
@@ -94,6 +99,8 @@ export function VendoProvider(props: {
   voice?: { driver: VoiceDriver };
   transport?: ChatTransport<UIMessage>;
   onPin?(app: { appId: string; payload: unknown }): void;
+  /** The slot pins land in — see VendoContextValue.pinSlot. */
+  pinSlot?: string;
   tools?: ToolMetaMap;
   connectors?: ConnectorOption[];
   discoverability?: VendoDiscoverability;
@@ -103,7 +110,7 @@ export function VendoProvider(props: {
   intl?: Partial<KitIntl>;
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting, intl, children } = props;
+  const { client, components, theme, voice, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, intl, children } = props;
   const currency = intl?.currency;
   const locale = intl?.locale;
   // Installed during RENDER, not in an effect: the formatters are called while
@@ -121,13 +128,14 @@ export function VendoProvider(props: {
       voice,
       transport,
       onPin,
+      pinSlot,
       tools: tools ?? {},
       connectors: connectors ?? "auto",
       discoverability: discoverability ?? "default",
       greeting,
       intl: resolvedIntl,
     }),
-    [client, components, theme, voice, transport, onPin, tools, connectors, discoverability, greeting, resolvedIntl],
+    [client, components, theme, voice, transport, onPin, pinSlot, tools, connectors, discoverability, greeting, resolvedIntl],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }

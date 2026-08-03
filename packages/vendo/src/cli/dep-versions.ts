@@ -92,6 +92,51 @@ function versionOf(manifestSource: string): string | null {
 }
 
 /**
+ * npm's dist-tag document for one package — the smallest request that answers
+ * "what is latest". Fail-soft to null on ANY problem (offline, proxy, 404,
+ * slow registry, non-JSON): a version hint must never slow doctor down, break
+ * an air-gapped run, or invent a skew it could not verify.
+ */
+export async function npmLatestVersion(
+  name: string,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = 2_000,
+): Promise<string | null> {
+  try {
+    const response = await fetchImpl(`https://registry.npmjs.org/-/package/${name}/dist-tags`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) return null;
+    const tags = await response.json() as { latest?: unknown };
+    return typeof tags.latest === "string" ? tags.latest : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Plain numeric "is `version` older than `other`". Prereleases are compared on
+    their numeric head only — Vendo publishes none to `latest`, and a guess is
+    worse than silence here, so anything unparseable answers false. */
+export function isOlderVersion(version: string, other: string): boolean {
+  const parts = (value: string): number[] | null => {
+    const bare = bareVersion(value);
+    if (bare === undefined) return null;
+    return bare.split(/[.\-+]/).slice(0, 3).map((part) => Number.parseInt(part, 10));
+  };
+  const left = parts(version);
+  const right = parts(other);
+  if (left === null || right === null) return false;
+  for (let index = 0; index < 3; index += 1) {
+    const a = left[index] ?? 0;
+    const b = right[index] ?? 0;
+    if (Number.isNaN(a) || Number.isNaN(b)) return false;
+    if (a !== b) return a < b;
+  }
+  return false;
+}
+
+/**
  * Read the host project's dependency versions (deps + devDeps) for telemetry.
  * Non-throwing: a missing or malformed package.json returns {}.
  */

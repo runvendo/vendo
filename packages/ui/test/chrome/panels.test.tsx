@@ -311,9 +311,57 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     });
 
     fireEvent.click(toggle);
-    expect((await screen.findByRole("alert")).textContent).toContain("Automation unavailable");
+    // Contained and SHOWN — but in the consumer's voice, so the assertion is
+    // that an alert appeared carrying no developer sentence (the voice itself
+    // is pinned below).
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toContain("Automation unavailable");
+    expect(alert.textContent?.length).toBeGreaterThan(0);
     await new Promise(resolve => globalThis.setTimeout(resolve, 0));
     expect(unhandled).not.toHaveBeenCalled();
     window.removeEventListener("unhandledrejection", unhandled);
+  });
+
+  /** Design §3, the consumer-voice law. Every sentence the wire throws is
+   *  written for the HOST DEVELOPER — one names an environment variable,
+   *  another carries an app id — and this panel rendered `reason.message`
+   *  verbatim, so all of them reached whoever was using the product. The Share
+   *  dialog and the apps page were given this treatment in the same wave; the
+   *  panel was missed. */
+  it("answers a refusal in the CONSUMER's voice, never the developer's sentence", async () => {
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    wire.state.failures.push({
+      method: "POST",
+      path: "/automations/app_auto/enable",
+      code: "cloud-required",
+      message: "automations need Vendo Cloud: set VENDO_API_KEY (or pass a hosted store)",
+      status: 402,
+    });
+
+    fireEvent.click(toggle);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toMatch(/VENDO_API_KEY|Vendo Cloud|hosted store/);
+    expect(alert.textContent).toMatch(/isn’t turned on/i);
+  });
+
+  it("offers a viewer the truth rather than an access-level sentence", async () => {
+    render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
+    wire.state.failures.push({
+      method: "POST",
+      path: "/automations/app_auto/enable",
+      code: "forbidden",
+      message: "editor access is required for app_auto",
+      status: 403,
+    });
+
+    fireEvent.click(toggle);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toContain("app_auto");
+    expect(alert.textContent).not.toMatch(/editor access is required/);
+    expect(alert.textContent).toMatch(/not change it/i);
   });
 });

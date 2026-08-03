@@ -157,7 +157,7 @@ because the scene's camera is zoomed in, exactly as a screen recording would be;
 no value is inflated for the camera.
 
 `SceneProofC` is the Cadence console. Its hero stat is the real
-`MissingDocsHero` component imported from `apps/demo-accounting`; the rest of
+`MissingDocsHero` component imported from `examples/demo-accounting`; the rest of
 the console is composed from `src/cadence/tokens.ts`, which quotes Cadence's
 own `globals.css` and `.vendo/theme.json` verbatim. Nothing there is eyeballed.
 Most of Cadence's other components are Next.js-coupled (`next/link`,

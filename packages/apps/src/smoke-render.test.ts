@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { NormalizedCatalog } from "@vendoai/core";
+import { VENDO_APP_FORMAT, type AppPlan, type NormalizedCatalog } from "@vendoai/core";
 import { isWorkerLoadablePath, resolveWorkerModulePaths, sampleFromShape, smokeRenderIslands } from "./generation/validation/smoke-render.js";
-import { modelEngine } from "./engine.js";
+import type { GeneratedAppDocument } from "./generation/engine.js";
+import { runIslandLane, type IslandLaneDeps } from "./generation/lanes.js";
 import { scriptedLanguageModel, type ScriptedModelCall } from "./testing/index.js";
 
 /**
@@ -316,7 +317,8 @@ describe("sampleFromShape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration: the gate runs inside create's validation and routes to repair.
+// Integration: the gate screens the island the plan declared, and a crash it
+// alone can see drives the lane's fix-it retry.
 // ---------------------------------------------------------------------------
 
 const promptText = (call: ScriptedModelCall): string => call.prompt.map((message) => {
@@ -324,44 +326,67 @@ const promptText = (call: ScriptedModelCall): string => call.prompt.map((message
   return message.content.map((part) => part.text ?? "").join("");
 }).join("\n");
 
-const deps = (model: unknown, extra: Record<string, unknown> = {}) => ({
+const ISLAND = "ClientContactCards";
+
+const cardsPlan = (): AppPlan => ({
+  name: "Cards",
+  queries: [{ id: "clients", tool: "host_listClients", input: {} }],
+  groups: [{
+    tab: "Overview",
+    leaves: [{ component: ISLAND, query: "clients", purpose: "A card per client with a quick message button" }],
+  }],
+  island: { name: ISLAND, purpose: "A card per client with a quick message button" },
+  cannot: [],
+});
+
+const emptyDocument = (): GeneratedAppDocument => ({
+  format: VENDO_APP_FORMAT,
+  name: "Cards",
+  ui: "tree",
+  tree: {
+    formatVersion: "vendo-genui/v2",
+    root: "app",
+    nodes: [{ id: "app", component: "Stack", source: "prewired", children: [] }],
+  } as GeneratedAppDocument["tree"],
+});
+
+const deps = (model: unknown, extra: Record<string, unknown> = {}): IslandLaneDeps => ({
   model,
   catalog: [] as unknown as NormalizedCatalog,
   tools,
   toolShapes,
   ...extra,
-}) as unknown as Parameters<typeof modelEngine.create>[1];
+}) as unknown as IslandLaneDeps;
 
-describe("smoke-render gate inside create validation", () => {
+describe("smoke-render gate inside the island lane", () => {
   it("routes a hooks-in-map island to repair and ships the repaired app", async () => {
-    const broken = `<App name="Cards"><Island name="ClientContactCards">${HOOKS_IN_MAP}</Island><ClientContactCards/></App>`;
-    const fixed = `<App name="Cards"><Island name="ClientContactCards">${HEALTHY.replace("ClientList", "ClientContactCards")}</Island><ClientContactCards/></App>`;
+    const broken = `<App name="Cards"><Island name="${ISLAND}">${HOOKS_IN_MAP}</Island><${ISLAND}/></App>`;
+    const fixed = `<App name="Cards"><Island name="${ISLAND}">${HEALTHY.replace("ClientList", ISLAND)}</Island><${ISLAND}/></App>`;
     const prompts: string[] = [];
     const model = scriptedLanguageModel((call) => {
       prompts.push(promptText(call));
       return prompts.length === 1 ? broken : fixed;
     });
-    const document = await modelEngine.create(
-      { prompt: "contact cards with a quick message button" },
-      deps(model, { pipeline: { structuredRepair: false } }),
-    );
+    const lane = await runIslandLane(cardsPlan(), emptyDocument(), deps(model, {
+      request: "contact cards with a quick message button",
+    }));
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain("never inside .map(), loops, or conditions");
-    expect(document.components?.ClientContactCards).not.toContain("clients.map((client) => {");
+    expect(lane.document.components?.[ISLAND]).not.toContain("clients.map((client) => {");
   }, 60_000);
 
   it("can be disabled with pipeline.smokeRender: false", async () => {
-    const broken = `<App name="Cards"><Island name="ClientContactCards">${HOOKS_IN_MAP}</Island><ClientContactCards/></App>`;
+    const broken = `<App name="Cards"><Island name="${ISLAND}">${HOOKS_IN_MAP}</Island><${ISLAND}/></App>`;
     let calls = 0;
     const model = scriptedLanguageModel(() => {
       calls += 1;
       return broken;
     });
-    const document = await modelEngine.create(
-      { prompt: "contact cards" },
-      deps(model, { pipeline: { structuredRepair: false, smokeRender: false } }),
-    );
+    const lane = await runIslandLane(cardsPlan(), emptyDocument(), deps(model, {
+      request: "contact cards",
+      pipeline: { smokeRender: false },
+    }));
     expect(calls).toBe(1);
-    expect(document.components?.ClientContactCards).toBeDefined();
+    expect(lane.document.components?.[ISLAND]).toBeDefined();
   }, 60_000);
 });

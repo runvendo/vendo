@@ -1,440 +1,43 @@
 /**
- * Create/edit validation — everything ENFORCED on a compiled document: the
- * compile must be complete and clean, the tree catalog-consistent and
- * renderable, islands syntactically sound, queries aimed at real host tools,
- * bindings shape-checked, and the assembled document valid.
+ * Create/edit validation — the FACTS enforced on a compiled document before it
+ * can become an app: the compile is complete and clean, the tree is
+ * catalog-consistent, its islands are syntactically sound and render without
+ * crashing, its queries name real host tools, and its bindings fit the shapes
+ * those tools actually return.
+ *
+ * Judgment is not here and never was checkable here. Whether a number is
+ * invented, a button dead, or a section beside the point is the AI reviewer's
+ * call (../../checking/reviewer.ts) — the deterministic gates that used to guess
+ * at it are gone.
  */
 import {
-  KIT_WIRE_COMPONENT_NAMES,
-  WIRE_COMPONENT_NAMES,
   VENDO_APP_FORMAT,
   VENDO_TREE_FORMAT,
-  kitSpec,
-  shapeAtPointer,
-  isPathBinding,
-  isStateBinding,
   validateAppDocument,
   validateTree,
   type AppDocument,
-  type NormalizedCatalog,
-  type ShapeType,
-  type TreeNode,
-  type Tree,
   type WireCompileResult,
 } from "@vendoai/core";
-import { prewiredPropNames } from "../../prewired-schema.js";
+import {
+  bindingKindIssues,
+  catalogIssues,
+  exprIssues,
+  factIssueLine,
+  hostReshapeIssues,
+  interpolationIssues,
+  kitSlotIssues,
+  queryInputIssues,
+  unknownToolIssues,
+} from "../../checking/facts.js";
+import { pinComponentName } from "../../pins.js";
 import { APP_NAME_MAX_CHARS } from "../contracts/sections.js";
-import type {
-  GeneratedAppDocument,
-  GenerationDependencies,
+import {
+  asPayload,
+  type GeneratedAppDocument,
+  type GenerationDependencies,
 } from "../engine.js";
-import { actionIssues } from "./actions.js";
-import { capabilitySubstitutionIssues } from "./capability-substitution.js";
-import { DISCLAIMER_TEXT } from "./disclaimer.js";
-import { literalDataIssues } from "./literals.js";
 import { prepareIslands } from "./islands.js";
 import { smokeRenderIslands } from "./smoke-render.js";
-
-const reserved = new Set<string>(WIRE_COMPONENT_NAMES);
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-/** Conservative kind check between a bound field's shape and the host prop's
- *  declared JSON-schema type: only CLEAR mismatches flag (an array of objects
- *  where number[] is expected renders an empty chart — the silent-breakage
- *  class); unknown shapes/schemas stay silent. */
-const shapeSchemaMismatch = (shape: ShapeType, schema: Record<string, unknown>): string | null => {
-  const type = typeof schema.type === "string" ? schema.type : undefined;
-  if (type === undefined || shape.kind === "json") return null;
-  if (type === "array") {
-    if (shape.kind !== "array") return `expected an array, the bound field is ${shape.kind}`;
-    const items = schema.items;
-    return isRecord(items) ? shapeSchemaMismatch(shape.items, items) : null;
-  }
-  if (type === "number" || type === "integer") {
-    return shape.kind === "number" ? null : `expected a number, the bound field is ${shape.kind}`;
-  }
-  if (type === "string") return shape.kind === "string" ? null : `expected a string, the bound field is ${shape.kind}`;
-  if (type === "boolean") return shape.kind === "boolean" ? null : `expected a boolean, the bound field is ${shape.kind}`;
-  if (type === "object") return shape.kind === "object" ? null : `expected an object, the bound field is ${shape.kind}`;
-  return null;
-};
-
-/** With tool shapes AND the catalog's prop schemas both in hand, a top-level
- *  `$path` prop on a host node can be kind-checked end to end. Existence is
- *  shape-check.ts's job; this catches the type mismatches that render
- *  silently broken (empty chart, blank stat). */
-const bindingKindIssues = (
-  compiled: WireCompileResult,
-  deps: GenerationDependencies,
-): string[] => {
-  if (deps.toolShapes === undefined) return [];
-  const issues: string[] = [];
-  const queryTool = new Map((compiled.tree.queries ?? []).map((query) => [query.name, query.tool]));
-  const hostSchemas = new Map(deps.catalog.map((component) => [component.name, component.propsJsonSchema]));
-  for (const node of compiled.tree.nodes) {
-    if (node.source !== "host" || node.props === undefined) continue;
-    const schema = hostSchemas.get(node.component);
-    const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
-    if (properties === undefined) continue;
-    for (const [prop, value] of Object.entries(node.props)) {
-      if (!isPathBinding(value)) continue;
-      const [, queryName = "", ...rest] = value.$path.split("/");
-      const tool = queryTool.get(queryName);
-      const toolShape = tool === undefined ? undefined : deps.toolShapes[tool];
-      if (toolShape === undefined) continue;
-      const bound = shapeAtPointer(toolShape, rest.length === 0 ? "" : `/${rest.join("/")}`);
-      if (bound === undefined) continue;
-      const propSchema = properties[prop];
-      if (!isRecord(propSchema)) continue;
-      const mismatch = shapeSchemaMismatch(bound, propSchema);
-      if (mismatch !== null) {
-        issues.push(`node "${node.id}" prop "${prop}" binds ${value.$path}: ${mismatch} — bind a field whose shape matches the component's prop type`);
-      }
-    }
-  }
-  return issues;
-};
-
-/** asPoints/asOptions produce generic {label,value}/{value,label} items; a
- *  HOST prop whose schema declares its OWN item field names cannot read them
- *  (live finding: the Maple donut drew $NaN). The raw rows are the legal
- *  binding — reject the reshape at compile. */
-const GENERIC_ITEM_RESHAPES = new Set(["asPoints", "asOptions"]);
-const hostReshapeIssues = (compiled: WireCompileResult, deps: GenerationDependencies): string[] => {
-  const issues: string[] = [];
-  const hostSchemas = new Map(deps.catalog.map((component) => [component.name, component.propsJsonSchema]));
-  for (const node of compiled.tree.nodes) {
-    if (node.source !== "host" || node.props === undefined) continue;
-    const schema = hostSchemas.get(node.component);
-    const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
-    if (properties === undefined) continue;
-    for (const [prop, value] of Object.entries(node.props)) {
-      if (!isPathBinding(value)) continue;
-      const reshape = (value as unknown as { $reshape?: Array<{ op?: string }> }).$reshape;
-      if (!Array.isArray(reshape) || !reshape.some((step) => GENERIC_ITEM_RESHAPES.has(step?.op ?? ""))) continue;
-      const propSchema = properties[prop];
-      const items = isRecord(propSchema) && isRecord(propSchema.items) ? propSchema.items : undefined;
-      const itemProperties = items !== undefined && isRecord(items.properties) ? Object.keys(items.properties) : [];
-      if (itemProperties.length === 0) continue;
-      if (itemProperties.includes("label") && itemProperties.includes("value")) continue;
-      issues.push(`node "${node.id}" prop "${prop}" reshapes with asPoints/asOptions, but host component "${node.component}" declares its own item fields (${itemProperties.join(", ")}) — it cannot read generic {label, value} items. Bind the RAW rows (drop the reshape) so the component receives the fields its schema names.`);
-    }
-  }
-  return issues;
-};
-
-/** Law 2 — a query input executes as LITERAL JSON: the runtime never
- *  resolves bindings inside it, so a dependent call
- *  (`accountId: accounts.data.0.id`) reaches the tool as an unresolved
- *  binding object and the app ships broken. Reject at compile → repair. */
-const queryInputIssues = (tree: Tree): string[] => {
-  const issues: string[] = [];
-  const findBinding = (value: unknown): boolean => {
-    if (isPathBinding(value) || isStateBinding(value)) return true;
-    if (Array.isArray(value)) return value.some(findBinding);
-    if (isRecord(value)) return Object.values(value).some(findBinding);
-    return false;
-  };
-  for (const query of tree.queries ?? []) {
-    if (query.input !== undefined && findBinding(query.input)) {
-      issues.push(`query "${query.name}" (tool "${query.tool}") embeds a binding in its input — query inputs must be LITERAL JSON the tool can execute directly; another query's result can never feed a query input. Use a literal value (or drop the optional input), or build the dependent lookup inside an <Island> with ambient tools.`);
-    }
-  }
-  return issues;
-};
-
-/** Law 1 raw typing — probe values per shape kind, parsed against the Kit
- *  prop's zod schema. Kind-level only: a string-shaped field bound into
- *  Money.cents fails (pre-formatted money strings never reach a numeric
- *  slot); unknown shapes stay silent. */
-const KIND_PROBES: Partial<Record<ShapeType["kind"], unknown>> = {
-  string: "probe",
-  number: 1,
-  boolean: true,
-  array: [],
-  object: {},
-};
-
-const KIT_WIRE_SET: ReadonlySet<string> = new Set(KIT_WIRE_COMPONENT_NAMES);
-
-const kitSlotIssues = (compiled: WireCompileResult, deps: GenerationDependencies): string[] => {
-  if (deps.toolShapes === undefined) return [];
-  const issues: string[] = [];
-  const queryTool = new Map((compiled.tree.queries ?? []).map((query) => [query.name, query.tool]));
-  for (const node of compiled.tree.nodes) {
-    if (node.source === "host" || node.source === "generated" || node.props === undefined) continue;
-    if (!KIT_WIRE_SET.has(node.component)) continue;
-    const spec = kitSpec(node.component);
-    if (spec === undefined) continue;
-    for (const [prop, value] of Object.entries(node.props)) {
-      if (!isPathBinding(value) || "$reshape" in (value as unknown as Record<string, unknown>)) continue;
-      const propSpec = spec.props[prop];
-      if (propSpec === undefined) continue;
-      const [, queryName = "", ...rest] = value.$path.split("/");
-      const tool = queryTool.get(queryName);
-      const shape = tool === undefined ? undefined : deps.toolShapes[tool];
-      if (shape === undefined) continue;
-      const bound = shapeAtPointer(shape, rest.length === 0 ? "" : `/${rest.join("/")}`);
-      if (bound === undefined || bound.kind === "json" || bound.kind === "null") continue;
-      const probe = KIND_PROBES[bound.kind];
-      if (probe === undefined) continue;
-      if (!propSpec.schema.safeParse(probe).success) {
-        issues.push(`node "${node.id}" prop "${prop}" on <${node.component}> binds ${value.$path}, a ${bound.kind} field, but this slot takes a different RAW type (${propSpec.doc}) — bind the raw field with that type (e.g. the integer-cents field, not a pre-formatted display string).`);
-      }
-    }
-  }
-  return issues;
-};
-
-/** Models write "Total: {metric.total}" inside STRING attributes; the wire
- *  has no string interpolation, so the braces render literally. Any string
- *  prop embedding a declared query reference is a repair-routed error. */
-const interpolationIssues = (compiled: WireCompileResult): string[] => {
-  const queryNames = (compiled.tree.queries ?? []).map((query) => query.name);
-  if (queryNames.length === 0) return [];
-  const pattern = new RegExp(`\\{(?:${queryNames.join("|")})(?:\\.[A-Za-z0-9_]+)*\\}`);
-  const issues: string[] = [];
-  const walk = (nodeId: string, prop: string, value: unknown): void => {
-    if (typeof value === "string") {
-      if (pattern.test(value)) {
-        issues.push(`node "${nodeId}" prop "${prop}" embeds a binding inside a string — string interpolation is unsupported; bind the prop to a single {reference} or split the text into separate Text nodes`);
-      }
-      return;
-    }
-    if (Array.isArray(value)) {
-      for (const item of value) walk(nodeId, prop, item);
-      return;
-    }
-    if (isRecord(value)) {
-      for (const child of Object.values(value)) walk(nodeId, prop, child);
-    }
-  };
-  for (const node of compiled.tree.nodes) {
-    for (const [prop, value] of Object.entries(node.props ?? {})) walk(node.id, prop, value);
-  }
-  return issues;
-};
-
-const standardIssuePath = (issue: unknown): Array<string | number> => {
-  if (!isRecord(issue) || !Array.isArray(issue.path)) return [];
-  return issue.path.flatMap((segment) => {
-    const key = isRecord(segment) && "key" in segment ? segment.key : segment;
-    return typeof key === "string" || typeof key === "number" ? [key] : [];
-  });
-};
-
-const isActionBinding = (value: unknown): boolean =>
-  isRecord(value) && typeof value.action === "string";
-
-const isRuntimeBound = (value: unknown): boolean =>
-  isPathBinding(value) || isStateBinding(value) || isActionBinding(value);
-
-const pathTargetsRuntimeBinding = (value: unknown, path: Array<string | number>): boolean => {
-  let current = value;
-  if (isRuntimeBound(current)) return true;
-  for (const segment of path) {
-    if (Array.isArray(current) && typeof segment === "number") {
-      current = current[segment];
-    } else if (isRecord(current)) {
-      current = current[String(segment)];
-    } else {
-      return false;
-    }
-    if (isRuntimeBound(current)) return true;
-  }
-  return false;
-};
-
-const issueMessage = (issue: unknown): string => {
-  if (isRecord(issue) && typeof issue.message === "string") return issue.message;
-  return "props did not match the registered schema";
-};
-
-const hostPropsIssues = async (
-  node: TreeNode,
-  component: NormalizedCatalog[number],
-): Promise<string[]> => {
-  // 01 §14: schema-less entries validate permissively by design — the model
-  // infers props and the entry carries no validator.
-  if (component.propsSchema === undefined) return [];
-  const props = node.props ?? {};
-  try {
-    const result = await component.propsSchema["~standard"].validate(props);
-    if (!isRecord(result) || !Array.isArray(result.issues)) return [];
-    return result.issues.flatMap((issue) => {
-      const path = standardIssuePath(issue);
-      if (pathTargetsRuntimeBinding(props, path)) return [];
-      const location = path.length === 0 ? "" : ` at props.${path.join(".")}`;
-      return [`node "${node.id}" props invalid for host component "${component.name}"${location}: ${issueMessage(issue)}`];
-    });
-  } catch (error) {
-    return [`node "${node.id}" props validation failed for host component "${component.name}": ${error instanceof Error ? error.message : "unknown schema error"}`];
-  }
-};
-
-/** Prewired primitives are handed to the model by name plus an exact prop
- *  signature (prewired-schema.ts). The compiler keeps any attribute the model
- *  writes, so a wrong name (`data` for Table's `rows`, `onPress` for Button's
- *  `onClick`) survives into props and the renderer silently ignores it — the
- *  "valid table, empty rows" class. Reject unknown prop names so the model
- *  repairs to the real one instead of shipping a dead component. */
-const prewiredPropsIssues = (node: TreeNode): string[] => {
-  const allowed = prewiredPropNames.get(node.component);
-  const props = node.props;
-  if (allowed === undefined || props === undefined) return [];
-  return Object.keys(props)
-    .filter((name) => !allowed.has(name))
-    .map((name) => `node "${node.id}" sets unknown prop "${name}" on prewired component "${node.component}"; the renderer drops it. Allowed props: ${[...allowed].join(", ") || "(none)"}`);
-};
-
-const catalogIssues = async (
-  tree: Tree,
-  components: Record<string, string> | undefined,
-  catalog: NormalizedCatalog,
-): Promise<string[]> => {
-  const hostCatalog = new Map(catalog.map((component) => [component.name, component]));
-  const hostNames = new Set(hostCatalog.keys());
-  const generatedNames = new Set(Object.keys(components ?? {}));
-  const issues: string[] = [];
-  for (const node of tree.nodes) {
-    if (node.source === "host") {
-      const component = hostCatalog.get(node.component);
-      if (component === undefined) {
-        issues.push(`node "${node.id}" references host component "${node.component}" absent from the catalog`);
-      } else {
-        issues.push(...await hostPropsIssues(node, component));
-      }
-    } else if (node.source === "prewired") {
-      if (!reserved.has(node.component)) {
-        issues.push(`node "${node.id}" references unknown prewired component "${node.component}"`);
-      } else {
-        issues.push(...prewiredPropsIssues(node));
-      }
-    } else if (node.source === "generated" && !generatedNames.has(node.component)) {
-      issues.push(`node "${node.id}" references generated component "${node.component}" without source`);
-    } else if (node.source === undefined) {
-      // Legacy/direct trees can omit source; the renderer resolves the name to
-      // a prewired primitive first, so a reserved name here gets the same
-      // prop-name gate as an explicit source:"prewired" node — otherwise a
-      // stored tree could still ship an ignored prop (e.g. Table.data).
-      if (reserved.has(node.component)) {
-        issues.push(...prewiredPropsIssues(node));
-      } else if (!hostNames.has(node.component) && !generatedNames.has(node.component)) {
-        issues.push(`node "${node.id}" references unknown component "${node.component}"`);
-      }
-    }
-  }
-  return issues;
-};
-
-/** The per-region unavailability line the repair stage substitutes for a node
- *  it cannot fix (stages/repair.ts disclaims through it). Lives in
- *  ./disclaimer.js so the empty-document gate below and the
- *  capability-substitution gate can both quote it without an import cycle;
- *  re-exported here, and by repair, for their existing importers. */
-export { DISCLAIMER_TEXT };
-
-/** Re-gate 2026-07-26 finding 3 — the title-only empty app (12 across arms
- *  A/B, reproducing on re-open): a document whose rooted tree renders nothing
- *  data-bearing or interactive beyond headings/copy in layout containers.
- *  Content is any generated island, host component, node with a data/state/
- *  action binding, or Kit/prewired component beyond the copy-only set below.
- *  An honest `Disclaimer` IS content — it is the legal move when no tool
- *  backs the ask — so a title+Disclaimer app passes untouched. So does the
- *  repair stage's DISCLAIMER_TEXT region substitution: disclaimed regions are
- *  a deliberate repair outcome, and the runtime's disclaimer-only gate
- *  (isDisclaimerOnlyTree, 0.4.5 defect D) already fails a build whose EVERY
- *  region was disclaimed away with the sharper host-capability reason —
- *  bouncing those trees back to repair here would fight that mechanism.
- *
- *  Text is variant-aware: the shell class this gate targets is the bare
- *  heading (sometimes plus a caption/label) — so only the heading/caption/
- *  label variants count as shell material. A static Text carrying real BODY
- *  copy (default variant, non-empty string) IS content: purely informational
- *  apps are legitimate, and the @vendoai-corpus/express-host e2e's scripted
- *  body-copy app 400'ing at create was this gate's first false positive. */
-const COPY_ONLY_COMPONENTS: ReadonlySet<string> = new Set([
-  "Stack", "Row", "Grid", "Surface", "Divider", "Skeleton", "Card", "Text", "Badge",
-]);
-
-/** Text variants that read as chrome, not body copy. */
-const SHELL_TEXT_VARIANTS: ReadonlySet<string> = new Set(["heading", "caption", "label"]);
-
-/** A Text node whose static string is real body copy (default/body variant,
- *  non-empty text). Bound values are handled by the binding check instead. */
-const isBodyCopyText = (node: Tree["nodes"][number]): boolean => {
-  if (node.component !== "Text") return false;
-  const variant = node.props?.["variant"];
-  if (typeof variant === "string" && SHELL_TEXT_VARIANTS.has(variant)) return false;
-  const text = node.props?.["text"];
-  return typeof text === "string" && text.trim().length > 0;
-};
-
-/** Any data/state/action binding reachable in a props value. */
-const hasRuntimeBinding = (value: unknown): boolean => {
-  if (isRuntimeBound(value)) return true;
-  if (Array.isArray(value)) return value.some(hasRuntimeBinding);
-  if (isRecord(value)) return Object.values(value).some(hasRuntimeBinding);
-  return false;
-};
-
-const emptyDocumentIssues = (tree: Tree): string[] => {
-  const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
-  const pending = [tree.root];
-  const visited = new Set<string>();
-  while (pending.length > 0) {
-    const id = pending.pop();
-    if (id === undefined || visited.has(id)) continue;
-    visited.add(id);
-    const node = nodes.get(id);
-    if (node === undefined) continue;
-    pending.push(...(node.children ?? []));
-    if (node.source === "generated" || node.source === "host") return [];
-    if (!COPY_ONLY_COMPONENTS.has(node.component)) return [];
-    // Containment, not equality: the repair recompile merges adjacent Text
-    // nodes, so a disclaimed region can arrive embedded in a longer string.
-    if (node.component === "Text" && typeof node.props?.["text"] === "string"
-      && node.props["text"].includes(DISCLAIMER_TEXT)) return [];
-    if (isBodyCopyText(node)) return [];
-    if (node.props !== undefined && Object.values(node.props).some(hasRuntimeBinding)) return [];
-  }
-  return [
-    "the app has a title and no content — every rooted node is a heading, static copy, or an empty layout container. Add the sections that answer the ask (tables, stats, charts, forms, or islands over real tool data), or an honest Disclaimer stating why the data can't be shown if nothing can.",
-  ];
-};
-
-const rootedRenderIssues = (tree: Tree): string[] => {
-  const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
-  const pending = [tree.root];
-  const visited = new Set<string>();
-  const issues: string[] = [];
-  let hasRenderableContent = false;
-  while (pending.length > 0) {
-    const id = pending.pop();
-    if (id === undefined || visited.has(id)) continue;
-    visited.add(id);
-    const node = nodes.get(id);
-    if (node === undefined) {
-      issues.push(`rooted node "${id}" is missing; persisted edits cannot rely on streaming placeholders`);
-      continue;
-    }
-    if (node.source === "generated" || node.source === "host") {
-      hasRenderableContent = true;
-    } else if (node.component === "Text") {
-      const text = node.props?.text;
-      if (text !== undefined && text !== null && String(text).trim() !== "") hasRenderableContent = true;
-    } else if (!new Set(["Stack", "Row", "Grid"]).has(node.component)) {
-      hasRenderableContent = true;
-    }
-    pending.push(...(node.children ?? []));
-  }
-  if (!hasRenderableContent) {
-    issues.push(`tree root "${tree.root}" renders an empty layout; keep at least one attached, visible node`);
-  }
-  return issues;
-};
 
 /** Create validation: the compile must be complete and clean, the tree
  *  catalog-consistent and renderable, islands syntactically sound, queries
@@ -460,34 +63,16 @@ export const validateCompiledCreate = async (
   const prepared = await prepareIslands(compiled.components, deps.tools, deps.catalog.map(({ name: componentName }) => componentName), requestText);
   const components = Object.keys(prepared.components).length === 0 ? undefined : prepared.components;
   issues.push(...prepared.issues);
-  if (deps.tools !== undefined) {
-    const known = new Set(deps.tools.map((tool) => tool.name));
-    for (const query of compiled.tree.queries ?? []) {
-      if (!query.tool.startsWith("fn:") && !known.has(query.tool)) {
-        issues.push(`query "${query.name}" names unknown tool "${query.tool}"; the host tools are: ${[...known].join(", ")}`);
-      }
-    }
-  }
+  issues.push(...unknownToolIssues(compiled.tree, deps.tools).map(factIssueLine));
   issues.push(...compiled.bindingErrors.map((error) =>
     `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`));
-  issues.push(...bindingKindIssues(compiled, deps));
-  issues.push(...kitSlotIssues(compiled, deps));
-  issues.push(...hostReshapeIssues(compiled, deps));
-  issues.push(...queryInputIssues(compiled.tree));
-  issues.push(...interpolationIssues(compiled));
-  issues.push(...await catalogIssues(compiled.tree, components, deps.catalog));
-  // Law 1 is checkable only when a tool surface exists to trace data to —
-  // a tool-less composition (fresh init, bare tests) has nothing to bind.
-  if (deps.tools !== undefined && deps.tools.length > 0) {
-    issues.push(...literalDataIssues(compiled.tree, deps.catalog));
-  }
-  issues.push(...actionIssues(compiled.tree, deps.tools));
-  // D5 — a mutating action whose target/amount is hand-typed is a write tool
-  // repurposed for a capability the host lacks (the island half of the same
-  // gate runs inside prepareIslands).
-  issues.push(...capabilitySubstitutionIssues(compiled.tree, deps.tools, requestText));
-  issues.push(...rootedRenderIssues(compiled.tree));
-  issues.push(...emptyDocumentIssues(compiled.tree));
+  issues.push(...bindingKindIssues(compiled.tree, deps).map(factIssueLine));
+  issues.push(...kitSlotIssues(compiled.tree, deps).map(factIssueLine));
+  issues.push(...hostReshapeIssues(compiled.tree, deps).map(factIssueLine));
+  issues.push(...exprIssues(compiled.tree, deps).map(factIssueLine));
+  issues.push(...queryInputIssues(compiled.tree).map(factIssueLine));
+  issues.push(...interpolationIssues(compiled.tree).map(factIssueLine));
+  issues.push(...(await catalogIssues(compiled.tree, components, deps.catalog)).map(factIssueLine));
   if (issues.length > 0) return { issues };
   // The smoke-render gate (crash classes the 2026-07-21 gate shipped: React
   // #310 hooks-in-map, undefined names, unguarded-data throws). Runs LAST,
@@ -507,7 +92,7 @@ export const validateCompiledCreate = async (
     format: VENDO_APP_FORMAT,
     name,
     ui: "tree",
-    tree: structuredClone(compiled.tree) as unknown as NonNullable<AppDocument["tree"]>,
+    tree: asPayload(structuredClone(compiled.tree)),
     ...(components === undefined ? {} : {
       components: structuredClone(components),
       // The compiler-stamped per-island tool manifest (least privilege: an
@@ -529,9 +114,9 @@ export const validateEditedApp = async (
   app: AppDocument,
   deps: GenerationDependencies,
   source: AppDocument,
-  /** The edit instruction — the user text in scope, threaded into the
-   *  capability-substitution gate the same way create threads its request, so
-   *  a value the user themselves named is never read as a fabrication. */
+  /** The edit instruction — the user text in scope, threaded into the island
+   *  law-1 scan the same way create threads its request, so a value the user
+   *  themselves named is never read as a fabrication. */
   requestText?: string,
 ): Promise<string[]> => {
   const validation = validateAppDocument(app);
@@ -540,22 +125,65 @@ export const validateEditedApp = async (
   const treeValidation = validateTree(app.tree);
   if (!treeValidation.ok) return [treeValidation.error.message];
   const sourceTreeValidation = validateTree(source.tree);
-  const sourceRenderIssues = sourceTreeValidation.ok
-    ? new Set(rootedRenderIssues(sourceTreeValidation.tree))
+  const carried = sourceTreeValidation.ok
+    ? new Set((await catalogIssues(sourceTreeValidation.tree, source.components, deps.catalog)).map(factIssueLine))
     : new Set<string>();
-  const sourceCatalogIssues = sourceTreeValidation.ok
-    ? new Set([
-      ...await catalogIssues(sourceTreeValidation.tree, source.components, deps.catalog),
-      ...literalDataIssues(sourceTreeValidation.tree, deps.catalog),
-      ...actionIssues(sourceTreeValidation.tree, deps.tools),
-      ...capabilitySubstitutionIssues(sourceTreeValidation.tree, deps.tools, requestText),
-    ])
-    : new Set<string>();
-  return [
-    ...rootedRenderIssues(treeValidation.tree).filter((issue) => !sourceRenderIssues.has(issue)),
-    ...(await catalogIssues(treeValidation.tree, app.components, deps.catalog)).filter((issue) => !sourceCatalogIssues.has(issue)),
-    ...literalDataIssues(treeValidation.tree, deps.catalog).filter((issue) => !sourceCatalogIssues.has(issue)),
-    ...actionIssues(treeValidation.tree, deps.tools).filter((issue) => !sourceCatalogIssues.has(issue)),
-    ...capabilitySubstitutionIssues(treeValidation.tree, deps.tools, requestText).filter((issue) => !sourceCatalogIssues.has(issue)),
+  void requestText;
+  return (await catalogIssues(treeValidation.tree, app.components, deps.catalog))
+    .map(factIssueLine)
+    .filter((issue) => !carried.has(issue));
+};
+
+/**
+ * A compiled edit as the NEXT version of a stored app. The tree and its islands
+ * are the model's; everything else on the document — trigger, storage, machine,
+ * pins, description — is the app's own history and survives untouched. Model
+ * islands go through the same ambient contract create screens them with;
+ * PINNED components are captured host source on the furnishing trust path, so
+ * they are neither stripped nor scanned.
+ */
+export const documentFromEdit = async (
+  previous: AppDocument,
+  compiled: WireCompileResult,
+  deps: GenerationDependencies,
+  instruction: string,
+): Promise<{ document?: AppDocument; issues: string[] }> => {
+  const structural = [
+    ...(compiled.complete ? [] : ["the edited app did not parse to a complete <App> document; the change was dropped."]),
+    ...compiled.issues.map(({ code, message }) => `wire ${code}: ${message}`),
+    ...compiled.bindingErrors.map((error) =>
+      `binding ${error.path} on node "${error.nodeId}" prop "${error.prop}": ${error.message}${error.available === undefined ? "" : ` (available: ${error.available.join(", ")})`}`),
   ];
+  if (structural.length > 0) return { issues: structural };
+  const app: AppDocument = {
+    ...structuredClone(previous),
+    ...(compiled.name === undefined ? {} : { name: compiled.name }),
+    tree: asPayload(structuredClone(compiled.tree)),
+  };
+  const pinned = new Set((previous.pins ?? []).map((pin) => pinComponentName(pin.slot)));
+  const split = (all: Record<string, string>): { pinned: Record<string, string>; model: Record<string, string> } => ({
+    pinned: Object.fromEntries(Object.entries(all).filter(([name]) => pinned.has(name))),
+    model: Object.fromEntries(Object.entries(all).filter(([name]) => !pinned.has(name))),
+  });
+  const hostComponents = deps.catalog.map(({ name }) => name);
+  const parts = split(compiled.components);
+  const prepared = await prepareIslands(parts.model, deps.tools, hostComponents, instruction);
+  // A pre-existing island issue never blocks an unrelated edit: both prepares
+  // see the SAME instruction text, so a carried-over issue stays byte-identical.
+  const before = await prepareIslands(split(previous.components ?? {}).model, deps.tools, hostComponents, instruction);
+  const carried = new Set(before.issues);
+  const islandIssues = prepared.issues.filter((issue) => !carried.has(issue));
+  const components = { ...parts.pinned, ...prepared.components };
+  if (Object.keys(components).length === 0) {
+    delete app.components;
+    delete app.componentTools;
+  } else {
+    app.components = structuredClone(components);
+    // componentTools stays DEFINED whenever components exist, so the renderer's
+    // stamped-era rule (missing key = zero tools) applies instead of its
+    // source-scan fallback.
+    app.componentTools = structuredClone(prepared.componentTools);
+  }
+  const issues = [...islandIssues, ...await validateEditedApp(app, deps, previous, instruction)];
+  return issues.length > 0 ? { issues } : { document: app, issues: [] };
 };

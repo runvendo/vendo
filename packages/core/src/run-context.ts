@@ -13,11 +13,42 @@ export interface McpConsent {
   scopes: string[];
 }
 
+/** The doors a run can arrive through. ONE list: the type, the schema, and the
+ *  security tests that sweep every venue all derive from it, so a fifth venue
+ *  cannot be added in one place and silently escape the others. THE LAW's
+ *  predicate is presence, never the venue (grant-sets `isUnattended`) — the
+ *  sweeps exist to keep it that way for venues nobody has thought of yet. */
+export const VENUES = ["chat", "app", "automation", "mcp", "rehearsal"] as const;
+export type Venue = (typeof VENUES)[number];
+
 /** CORE-2 */
 const mcpConsentSchema = z.object({
   clientId: z.string(),
   scopes: z.array(z.string()),
 }).passthrough() satisfies z.ZodType<McpConsent>;
+
+/** Build contract §9.1 — one org the caller belongs to, ASSERTED by the host's
+    own identity system per request/run (the `memberships` auth-preset seam),
+    never a Vendo row. `org` is the host-issued id VERBATIM: it becomes the
+    workspace owner for `/orgs/<org>/**` and the row subject of an org-owned
+    app, so it must be stable in the host's tables. `admin: true` makes the
+    member an implicit owner of every app the org holds. */
+export interface Membership {
+  org: string;
+  /** Consumer-voice org name (what the Share dialog shows). */
+  display?: string;
+  /** Host-issued team ids within this org (grant principal `team:<org>/<id>`). */
+  teams?: string[];
+  admin?: boolean;
+}
+
+/** Build contract §9.1 */
+export const membershipSchema = z.object({
+  org: z.string().min(1),
+  display: z.string().optional(),
+  teams: z.array(z.string()).optional(),
+  admin: z.boolean().optional(),
+}).passthrough() satisfies z.ZodType<Membership>;
 
 /** 01-core §3. `actor` (block-actions design §C) is a generic audit-enrichment
     field: the human principal behind a request made under a different
@@ -38,7 +69,7 @@ const mcpConsentSchema = z.object({
     parking approvals and never requiring grants. */
 export interface RunContext {
   principal: Principal;
-  venue: "chat" | "app" | "automation" | "mcp" | "rehearsal";
+  venue: Venue;
   presence: "present" | "away";
   sessionId: string;
   appId?: AppId;
@@ -47,12 +78,15 @@ export interface RunContext {
   actor?: Principal;
   grant?: PermissionGrant;
   mcpConsent?: McpConsent;
+  /** Build contract §9.1 — the orgs/teams the host asserted for this principal.
+      Absent ⇒ nothing asserted ⇒ `can()` degenerates to ownership. */
+  memberships?: Membership[];
 }
 
 /** 01-core §3 */
 export const runContextSchema = z.object({
   principal: principalSchema,
-  venue: z.enum(["chat", "app", "automation", "mcp", "rehearsal"]),
+  venue: z.enum(VENUES),
   presence: z.enum(["present", "away"]),
   sessionId: z.string(),
   appId: appIdSchema.optional(),
@@ -61,4 +95,5 @@ export const runContextSchema = z.object({
   actor: principalSchema.optional(),
   grant: permissionGrantSchema.optional(),
   mcpConsent: mcpConsentSchema.optional(),
+  memberships: z.array(membershipSchema).optional(),
 }).passthrough() satisfies z.ZodType<RunContext>;

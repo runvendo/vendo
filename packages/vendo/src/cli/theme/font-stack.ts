@@ -19,8 +19,11 @@ import type TS from "typescript";
  * from "tailwindcss/defaultTheme"; a font is "applied" only when the JSX
  * reference's symbol IS the font's declaration; the config's sans array is
  * located through the exported config object, never by scanning for a
- * `fontFamily` key anywhere in the file. Anything unprovable — including an
- * unavailable compiler — fails CLOSED to the staged model pass.
+ * `fontFamily` key anywhere in the file. Anything unprovable fails CLOSED to
+ * the staged model pass. The one exception is an unavailable compiler, where
+ * a text scan (`scanFontBindings`) still names each next/font variable's
+ * family but can never mark a font applied — see its comment for why that
+ * keeps every proof-requiring rule fail-closed.
  *
  * Precision boundary (Yousef ruling 2026-07-26): symbol-correct import +
  * direct JSX usage is the required depth. Documented limitations, out of
@@ -134,6 +137,84 @@ const GEIST_FONTS = [
   { importName: "GeistMono", specifier: "geist/font/mono", family: "Geist Mono", variable: "--font-geist-mono" },
 ] as const;
 
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/** Comments are not code: a commented-out `import { GeistSans } …` or a
+ *  migration note quoting a loader call must never register as a font. Block
+ *  comments go entirely; a line comment goes from `//` to end of line unless
+ *  the slashes are a URL's `://`. */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+/** Every `import { A, B as C } from "<module>"` binding in the source, as
+ *  imported/local pairs. */
+function importedNames(source: string, module: string): Array<{ imported: string; local: string }> {
+  const imports = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*["']${module}["']`, "g");
+  const names: Array<{ imported: string; local: string }> = [];
+  for (const match of source.matchAll(imports)) {
+    for (const specifier of match[1]!.split(",")) {
+      const [imported, alias] = specifier.split(/\bas\b/).map((part) => part.trim());
+      const local = alias ?? imported;
+      if (imported === undefined || local === undefined) continue;
+      if (!IDENTIFIER.test(imported) || !IDENTIFIER.test(local)) continue;
+      names.push({ imported, local });
+    }
+  }
+  return names;
+}
+
+/** The `variable: "--font-x"` option of a loader call. The call must be a
+ *  declaration's initializer — `const inter = Inter({ … })`, the shape the
+ *  compiler path requires too — so an example inside a string or doc text is
+ *  never read as configuration. Options are taken up to the call's first `)`:
+ *  every documented next/font option list is paren-free, and anything fancier
+ *  resolves to null and fails closed. */
+function scannedLoaderVariable(source: string, callee: string): string | null {
+  const declaration = new RegExp(
+    `\\b(?:const|let|var)\\s+[A-Za-z_$][\\w$]*\\s*=\\s*${callee}\\s*\\(([^)]*)\\)`,
+  ).exec(source);
+  return declaration?.[1]?.match(/\bvariable\s*:\s*["']([^"']+)["']/)?.[1] ?? null;
+}
+
+/**
+ * Compiler-free fallback for `layoutFontBindings`. `typescript` is an OPTIONAL
+ * resolution here (loadCompiler): a JS-only Next host, a strict pnpm tree, or
+ * an npx-run CLI simply doesn't have one, and without it every next/font
+ * derivation went dark — the standard `--font-sans: var(--font-inter)` layout
+ * pattern fell all the way through to neutral defaults ("No host evidence for
+ * fontFamily"), which is exactly what the Keystone stub hit.
+ *
+ * This scan answers one narrow question — which family does a given next/font
+ * CSS variable NAME denote — for a variable the host's own CSS has already
+ * named as its body font. It reports `applied: false` because text cannot
+ * prove a font reaches the markup: every derivation that requires proof of
+ * application (the single-applied-font rules) still fails closed, and only
+ * var() resolution, where the CSS is the authority, gains an answer.
+ *
+ * `next/font/local` is deliberately absent: its loader declares a variable but
+ * no family name, so there is nothing to resolve a var() to.
+ */
+function scanFontBindings(rawSource: string): FontBinding[] {
+  const source = withoutComments(rawSource);
+  const bindings: FontBinding[] = [];
+  for (const font of GEIST_FONTS) {
+    for (const { imported } of importedNames(source, font.specifier)) {
+      if (imported === font.importName) {
+        bindings.push({ variable: font.variable, family: font.family, applied: false });
+      }
+    }
+  }
+  for (const { imported, local } of importedNames(source, "next/font/google")) {
+    bindings.push({
+      variable: scannedLoaderVariable(source, local),
+      family: imported.replace(/_/g, " "),
+      applied: false,
+    });
+  }
+  return bindings;
+}
+
 interface NamedImportLocal {
   local: string;
   /** The ImportSpecifier node — the symbol-comparison anchor. */
@@ -190,7 +271,7 @@ function appliedToJsx(mod: BoundModule, local: string, declaration: TS.Declarati
  *  derivation simply doesn't fire, leaving the slot to the model pass). */
 export function layoutFontBindings(source: string): FontBinding[] {
   const mod = boundModule(source, "layout.tsx");
-  if (mod === null) return [];
+  if (mod === null) return scanFontBindings(source);
   const { ts, sf } = mod;
   const bindings: FontBinding[] = [];
 
