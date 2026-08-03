@@ -566,9 +566,17 @@ function selectSandbox(configured: SandboxAdapter | undefined): {
 
   // An env key only lights a venue when its optional SDK is actually
   // installed; otherwise /status would report a venue whose first
-  // create() dies on a missing module.
+  // create() dies on a missing module. Half a BYO sandbox is a MISCONFIG,
+  // not a fallback: silently riding Cloud (or going dark) hides the missing
+  // install until the first server-app build fails somewhere else entirely.
   const e2bApiKey = environment("E2B_API_KEY");
-  if (e2bApiKey !== undefined && e2bInstalled()) {
+  if (e2bApiKey !== undefined) {
+    if (!e2bInstalled()) {
+      throw new VendoError(
+        "validation",
+        "E2B_API_KEY is set but the e2b package is not installed — install e2b, or unset E2B_API_KEY to use another sandbox",
+      );
+    }
     // Wave 4 — operator knob for the provider machine lifetime. The default
     // 5-minute TTL kills a box mid-way through a long in-box agent build
     // (the box agent loop runs for minutes). Explicit VENDO_E2B_TIMEOUT_MS
