@@ -865,13 +865,29 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
     // claim each (the wire claim repeats the idleness predicate — a re-touch
     // defeats it, same serialization as sweepEphemeralSubjects), and finish
     // every claimed subject through the erase cascade.
+    //
+    // Claim stays BEFORE erase: it is the single-winner election AND the
+    // re-check that a subject touched since the stale scan is spared. Erasing
+    // first would race a visitor who came back mid-sweep and delete a live
+    // session's data. The cost is that a claim commits by deleting the
+    // registry row, so a failed erase would leave the subject's rows
+    // unreachable by every later stale scan — compensated below.
     async sweep(idleMs, now) {
       if (doorsMissing) return [];
       const evicted: string[] = [];
       try {
         for (const subject of await store.sessions.stale(idleMs, now)) {
           if (!(await store.sessions.claim(subject, idleMs, now))) continue;
-          await store.erase.bySubject(subject);
+          try {
+            await store.erase.bySubject(subject);
+          } catch (error) {
+            // Put the claimed row back, stamped one tick past the idleness
+            // cutoff so the very next sweep re-claims it instead of waiting
+            // out another TTL. Best-effort: if the console is down for this
+            // too, the erase failure is the one worth reporting.
+            await store.sessions.register(subject, now - idleMs - 1).catch(() => undefined);
+            throw error;
+          }
           wireTouched.delete(subject);
           evicted.push(subject);
         }
@@ -1127,16 +1143,16 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   // request that triggered it (same posture as the background timer leg) — a
   // failed sweep just means idle sessions live until the next interval.
   let lastSweepAt = deps.sessions.now();
-  const maybeSweep = async (): Promise<void> => {
-    if (!deps.sweepEnabled) return;
+  /** Starts a sweep pass and books the cadence, or answers undefined when the
+      interval has not elapsed. `force` is for a route that ASKED for the sweep
+      (POST /tick): a serverless process re-seeds lastSweepAt on every
+      invocation, so the interval gate would never let one of those through. */
+  const startSweep = (force: boolean): Promise<void> | undefined => {
+    if (!deps.sweepEnabled) return undefined;
     const now = deps.sessions.now();
-    if (now - lastSweepAt < deps.sessions.sweepIntervalMs) return;
+    if (!force && now - lastSweepAt < deps.sessions.sweepIntervalMs) return undefined;
     lastSweepAt = now;
-    try {
-      await deps.sweep();
-    } catch (error) {
-      console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    return deps.sweep();
   };
   // LOAD-BEARING per-request ordering relative to routing (kill-list B4 kept
   // it byte-identical to the old chain):
@@ -1155,7 +1171,15 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
   //   9. withAnonCookie at the single exit — the minted Set-Cookie rides
   //      every response shape (JSON, error, SSE/stream).
   return async (request) => {
-    await maybeSweep();
+    // ONE sweep pass per request, shared with any route that drives the sweep
+    // itself (POST /tick) so a tick can never run two scans of the same
+    // registry. The amortized leg only WARNS — an innocent request must not
+    // 500 for a sweep it merely happened to trigger — but the pass keeps its
+    // rejection, so a route that asked for the sweep still answers with it.
+    let sweepPass = startSweep(false);
+    await sweepPass?.catch((error: unknown) => {
+      console.warn(`[vendo] session sweep failed; will retry next interval: ${error instanceof Error ? error.message : String(error)}`);
+    });
     // Per-request anonymous-session state + the one shared context-resolution
     // pass (see wire/shared.ts). Both MUST be minted per-invocation — the
     // handler closure is shared across requests.
@@ -1201,6 +1225,7 @@ function createWireHandler(deps: WireDeps): (request: Request) => Promise<Respon
         },
         params: {},
         context: (venue) => context(request, venue),
+        sweep: () => (sweepPass ??= startSweep(true) ?? Promise.resolve()),
         deps,
       };
 

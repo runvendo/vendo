@@ -119,6 +119,10 @@ export interface WireContext {
   params: Record<string, string>;
   /** Resolve this request's RunContext for a venue. */
   context(venue: RunContext["venue"]): Promise<RunContext>;
+  /** Run this request's TTL sweep pass, awaiting the one the handler may
+      already have started before routing — at most one pass per request. The
+      rejection is the caller's to answer with; the pre-routing leg only warns. */
+  sweep(): Promise<void>;
   deps: WireDeps;
 }
 

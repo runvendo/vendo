@@ -95,7 +95,7 @@ export const systemRoutes: RouteEntry[] = [
   prefixRoute("POST", "/webhooks/", async ({ request, deps }) => {
     return await deps.automations.webhook(request);
   }),
-  route("POST", "/tick", async ({ request, deps }) => {
+  route("POST", "/tick", async ({ request, deps, sweep }) => {
     if (!await tickAuthorized(request)) {
       return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
     }
@@ -105,11 +105,14 @@ export const systemRoutes: RouteEntry[] = [
     // external cron here (Vercel cron, GitHub Actions, crontab); the Cloud
     // broker calls this same surface. The legs settle independently so one
     // failing can never suppress the others; any failure still answers 500 so
-    // a retrying cron comes back (all three are idempotent within their windows).
+    // a retrying cron comes back (all three are idempotent within their
+    // windows). `sweep()` is the REQUEST's one pass — if the amortized
+    // pre-routing leg already ran it, this awaits that same pass rather than
+    // scanning the registry twice, and inherits its failure.
     const [runs, schedules, sessions] = await Promise.allSettled([
       deps.automations.tick(),
       deps.apps.schedules.tick(),
-      deps.sweepOnTick ? deps.sweep() : Promise.resolve(),
+      deps.sweepOnTick ? sweep() : Promise.resolve(),
     ]);
     const errors = [
       ...(runs.status === "rejected" ? [`automations: ${runs.reason instanceof Error ? runs.reason.message : "tick failed"}`] : []),
