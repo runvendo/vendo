@@ -130,7 +130,17 @@ function remixStatus(review: boolean, surface: OpenSurface | undefined): string 
   if (surface?.kind !== "tree") return "Waiting for review";
   const venue = (surface.payload as { inClient?: InClientVenue }).inClient;
   if (venue?.granted === true) return `Approved by ${venue.approvedBy} — runs in the page`;
-  if (venue?.granted === false) return "Changed since approval — sandboxed until re-approved";
+  if (venue?.granted === false) {
+    // Review-kind's pending state carries the standing (W1c): the reviewer's
+    // rejection note is exactly what the panel must surface.
+    if (venue.reason === "pending-review") {
+      if (venue.review.status === "rejected") {
+        return `Rejected by ${venue.review.by} — "${venue.review.note}". Edit the remix to resubmit it.`;
+      }
+      return "Sent for review — the original stays until a reviewer approves";
+    }
+    return "Changed since approval — sandboxed until re-approved";
+  }
   return "Waiting for review";
 }
 
@@ -207,9 +217,14 @@ function RemixedFork({ appId, slot, review, liveProps, menuOpen, onMenuToggle, o
   // is the honest content — the wrapper never trades working host markup for
   // a skeleton, and a crashing fork drops back to it (PinMount).
   const Original = () => <>{original}</>;
+  // Review-kind, unapproved (wire contract on InClientVenue): the page keeps
+  // the ORIGINAL host component — the standing ("sent for review", or the
+  // reviewer's note) lives on the popover's status line, never in the page.
+  const venue = staged?.kind === "tree" ? (staged.payload as { inClient?: InClientVenue }).inClient : undefined;
+  const pendingReview = venue?.granted === false && venue.reason === "pending-review";
   return (
     <>
-      {staged?.kind === "tree" ? (
+      {staged?.kind === "tree" && !pendingReview ? (
         <ChromeRoot automaticPolicyNotice={false}>
           <FluidReveal stateKey={`fork:${appId}`} initialExit={original}>
             <PinMount slot={slot} fallback={Original}>

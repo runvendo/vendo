@@ -226,6 +226,44 @@ describe("Remixable — the wrapper fork gesture + in-place jailed mount", () =>
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Approved by host-admin — runs in the page"));
   });
 
+  it("pending-review keeps the ORIGINAL in the page; the popover says sent-for-review", async () => {
+    // The wire contract on InClientVenue: `reason: "pending-review"` must
+    // render the original host component — the server ships no executable
+    // fork source with it, and the standing lives on the popover, not the page.
+    const forked = await client.apps.forkPin({ slot: SLOT, props: {} });
+    const stored = wire.state.apps.find(app => app.id === forked.app.id)!;
+    (stored.tree as unknown as { inClient: unknown }).inClient = {
+      granted: false, versionHash: "sha256:v1", reason: "pending-review",
+      review: { status: "pending", versionHash: "sha256:v1" },
+    };
+    mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
+    await waitFor(() => expect(screen.queryByRole("button", { name: `Manage the ${SLOT} remix` })).toBeTruthy());
+    expect(screen.getByText("Blue Bottle")).toBeTruthy();
+    expect(forkIframe()).toBeNull();
+    fireEvent.click(managePill());
+    await waitFor(() => expect(screen.getByRole("status").textContent)
+      .toBe("Sent for review — the original stays until a reviewer approves"));
+    // Still the original, even with the popover open and the payload settled.
+    expect(screen.getByText("Blue Bottle")).toBeTruthy();
+    expect(forkIframe()).toBeNull();
+  });
+
+  it("a reviewer's rejection note reaches the popover; the page keeps the original", async () => {
+    const forked = await client.apps.forkPin({ slot: SLOT, props: {} });
+    const stored = wire.state.apps.find(app => app.id === forked.app.id)!;
+    (stored.tree as unknown as { inClient: unknown }).inClient = {
+      granted: false, versionHash: "sha256:v2", reason: "pending-review",
+      review: { status: "rejected", versionHash: "sha256:v2", note: "Keep the brand palette", by: "host-admin", at: "2026-08-02T00:00:00.000Z" },
+    };
+    mount(<Remixable review><TopMerchants title="Top merchants" /></Remixable>);
+    await waitFor(() => expect(screen.queryByRole("button", { name: `Manage the ${SLOT} remix` })).toBeTruthy());
+    fireEvent.click(managePill());
+    await waitFor(() => expect(screen.getByRole("status").textContent)
+      .toBe('Rejected by host-admin — "Keep the brand palette". Edit the remix to resubmit it.'));
+    expect(screen.getByText("Blue Bottle")).toBeTruthy();
+    expect(forkIframe()).toBeNull();
+  });
+
   it("\"Open in panel\" opens the conversation scoped to the remix — prefilled, never sent", async () => {
     mount();
     fireEvent.click(forkPill());
