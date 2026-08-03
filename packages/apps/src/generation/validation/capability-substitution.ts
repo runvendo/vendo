@@ -184,9 +184,25 @@ const fabricatedOperands = (
 
 /** The one repair-facing message, shared by both surfaces: name the fabricated
  *  operands, name the real cause (the host lacks the capability), and name the
- *  only honest answer. `lead` is the caller's clause up to the verb. */
-const substitutionMessage = (lead: string, toolName: string, operands: readonly FabricatedOperand[]): string =>
-  `${lead} MUTATING tool "${toolName}" with hand-typed operand(s) ${operands.map(({ path, literal }) => `${path}=${literal}`).join(", ")} — a write tool's TARGET and AMOUNT must come from tool data, the user's own input, or the row the user acted on. Hand-typing them means this tool is being REPURPOSED to fake a capability this host does not have (sending money to deliver a message is a real side effect, not a workaround). The host lacks the tool this part of the ask needs: drop the call and say so — render an honest <Disclaimer reason="..."/> or text stating "${DISCLAIMER_TEXT}". Never substitute an unrelated write tool.`;
+ *  only honest answer. `lead` is the caller's clause up to the verb.
+ *
+ *  The tool is named by what is actually known about it. Calling an `ungraded`
+ *  tool "MUTATING" would be the same guess this whole redesign deleted — nobody
+ *  has graded it, which is precisely why hand-typing its operands is reckless
+ *  rather than merely wrong. */
+const substitutionMessage = (
+  lead: string,
+  toolName: string,
+  operands: readonly FabricatedOperand[],
+  risk: string | undefined,
+): string => {
+  const ungraded = risk === "ungraded";
+  const noun = ungraded ? "UNGRADED tool" : "MUTATING tool";
+  const rule = ungraded
+    ? "nobody has graded this tool — no human, no judge, no protocol fact — so its effect is unknown, and an unknown effect's TARGET and AMOUNT"
+    : "a write tool's TARGET and AMOUNT";
+  return `${lead} ${noun} "${toolName}" with hand-typed operand(s) ${operands.map(({ path, literal }) => `${path}=${literal}`).join(", ")} — ${rule} must come from tool data, the user's own input, or the row the user acted on. Hand-typing them means this tool is being REPURPOSED to fake a capability this host does not have (sending money to deliver a message is a real side effect, not a workaround). The host lacks the tool this part of the ask needs: drop the call and say so — render an honest <Disclaimer reason="..."/> or text stating "${DISCLAIMER_TEXT}". Never substitute an unrelated write tool.`;
+};
 
 // ---------------------------------------------------------------------------
 // Surface 1 — declarative {action, payload} bindings in the tree
@@ -219,7 +235,7 @@ export const capabilitySubstitutionIssues = (
       if (tool === undefined || !isMutatingRisk(tool.risk)) continue;
       const operands = fabricatedOperands(treeArgValue(payload), tool, requestText);
       if (operands.length === 0) continue;
-      issues.push(substitutionMessage(`node "${node.id}" prop "${prop}" invokes`, action, operands));
+      issues.push(substitutionMessage(`node "${node.id}" prop "${prop}" invokes`, action, operands, tool.risk));
     }
   }
   return issues;
@@ -418,7 +434,7 @@ export const islandSubstitutionViolations = (
     const key = `${toolName}:${operands.map(({ path, literal }) => `${path}=${literal}`).join(",")}`;
     if (reported.has(key)) continue;
     reported.add(key);
-    violations.push(substitutionMessage("calls", toolName, operands));
+    violations.push(substitutionMessage("calls", toolName, operands, tool.risk));
   }
   return violations;
 };

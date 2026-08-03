@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
-import { FixtureTools, alice, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
+import { FixtureTools, alice, bob, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
 
 /**
  * Risk-grading redesign D3 — `ungraded` is a first-class state that ASKS.
@@ -108,6 +108,111 @@ describe("ungraded asks by default (D3)", () => {
       action: "run",
       decidedBy: "grant",
     });
+  });
+});
+
+/**
+ * Checker round 2, finding A — a no has to STAY no. A caller that re-issues a
+ * stable call id (the apps runtime derives a query's id from app+tool+args, so
+ * its refetch is byte-identical) would otherwise mint a fresh approval on every
+ * retry: deny, reopen, new card, forever.
+ */
+describe("a denial answers the identical re-issue instead of re-parking", () => {
+  const ungraded = descriptor("ungraded", { name: "host_pay_invoice" });
+  const stable = () => call(ungraded.name, { invoiceId: "inv_1" }, "call_stable");
+
+  it("blocks the re-issue, attributes it to the person, and mints no second card", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: false }, alice);
+
+    await expect(guard.check(stable(), ungraded, context())).resolves.toMatchObject({
+      action: "block",
+      decidedBy: "denied",
+    });
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "blocked" });
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "blocked" });
+    expect(await guard.approvals.pending(alice)).toHaveLength(0);
+    expect(tools.executions).toHaveLength(0);
+  });
+
+  it("keeps standing until the QUESTION changes — different inputs still get their own ask", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: false }, alice);
+
+    const other = call(ungraded.name, { invoiceId: "inv_2" }, "call_other");
+    expect(await bound.execute(other, context())).toMatchObject({ status: "pending-approval" });
+  });
+
+  it("does not leak across subjects — Bob's call is never answered by Alice's no", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: false }, alice);
+
+    expect(await bound.execute(stable(), context({ principal: bob }))).toMatchObject({
+      status: "pending-approval",
+    });
+  });
+});
+
+/**
+ * Checker round 2, finding C — a DELIBERATE choice, pinned so it never becomes
+ * an accident: an approved replay is scoped to the SUBJECT, not the session.
+ * One person approving on their phone and seeing the result render on their
+ * laptop is the same person answering the same question.
+ */
+describe("an approved replay crosses the same user's sessions on purpose", () => {
+  it("lets a laptop session spend an approval the phone session parked — exactly once", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const ungraded = descriptor("ungraded", { name: "host_spending" });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+    const phone = context({ sessionId: "session_phone" });
+    const laptop = context({ sessionId: "session_laptop" });
+    const query = () => call(ungraded.name, { window: "30d" }, "call_q_stable");
+
+    const parked = await bound.execute(query(), phone);
+    if (parked.status !== "pending-approval") throw new Error("expected the query to park");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    // The other session of the SAME person renders.
+    expect(await bound.execute(query(), laptop)).toMatchObject({ status: "ok" });
+    // Still single-use: the crossing spends the one approval, never multiplies it.
+    expect(await bound.execute(query(), phone)).toMatchObject({ status: "pending-approval" });
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("never crosses to a DIFFERENT user, however identical the call", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const ungraded = descriptor("ungraded", { name: "host_spending" });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+    const query = () => call(ungraded.name, { window: "30d" }, "call_q_stable");
+
+    const parked = await bound.execute(query(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the query to park");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    expect(await bound.execute(query(), context({ principal: bob }))).toMatchObject({
+      status: "pending-approval",
+    });
+    expect(tools.executions).toHaveLength(0);
   });
 });
 

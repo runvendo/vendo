@@ -338,9 +338,13 @@ describe("approval park and resume over the real SQL mapping", () => {
     guard.onApprovalDecision(callback);
     await guard.approvals.decide(first.approvalId, { approve: false }, alice);
     expect(callback).toHaveBeenCalledWith(first.approvalId, false);
+    // The no STANDS: re-issuing the identical call is answered by the denial,
+    // never by a fresh card. (A caller with a stable call id — the apps
+    // runtime's derived query ids — would otherwise re-park forever.)
     await expect(bound.execute(call("host_destructive", {}, "deny_1"), context())).resolves.toMatchObject({
-      status: "pending-approval",
+      status: "blocked",
     });
+    expect(tools.executions).toHaveLength(0);
 
     await expect(
       guard.approvals.decide(second.approvalId as ApprovalId, { approve: true }, bob),

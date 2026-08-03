@@ -200,6 +200,30 @@ function neverParkAppRead(descriptor: ToolDescriptor, ctx: RunContext): boolean 
   return descriptor.risk === "read" && ctx.venue === "app" && ctx.presence === "present";
 }
 
+/** The identity a parked approval answers for: the exact call the user saw, in
+ *  exactly the context they saw it. Beyond subject + call identity this pins
+ *  (a) the inputs — a replay with tampered args never rides the decision — (b)
+ *  the frozen descriptor — flipping the same tool from read to destructive
+ *  after parking can't ride it either — and (c) the parked venue/presence/app,
+ *  so a present chat decision can't answer an away, app-bound automation call.
+ *  Shared by the approved-replay and standing-denial lookups so a yes and a no
+ *  can never come to mean different calls. */
+function sameParkedCall(
+  request: ApprovalRequest,
+  call: ToolCall,
+  ctx: RunContext,
+  descriptorFingerprint: string,
+): boolean {
+  return request.ctx.principal.subject === ctx.principal.subject
+    && request.call.id === call.id
+    && request.call.tool === call.tool
+    && exactInputHash(request.call.args) === exactInputHash(call.args)
+    && descriptorHash(request.descriptor) === descriptorFingerprint
+    && request.ctx.venue === ctx.venue
+    && request.ctx.presence === ctx.presence
+    && request.ctx.appId === ctx.appId;
+}
+
 function normalizeCodeDecision(decision: GuardDecision): DraftDecision {
   // The policy-code stage cannot self-attribute its provenance. `policy.code` is
   // deploy-time host code, not the user's real-time consent, so it must never be
@@ -557,6 +581,10 @@ class GuardImplementation implements VendoGuard {
       }
     }
 
+    if (draft.action === "ask" && await this.#standingDenial(call, effectiveDescriptor, ctx)) {
+      draft = { action: "block", reason: "you denied this", decidedBy: "denied" };
+    }
+
     if (draft.action === "ask") {
       const invalidated = metadata.invalidatedGrants ?? [];
       const approval = await this.#parkApproval(call, effectiveDescriptor, ctx, invalidated[0]);
@@ -882,6 +910,36 @@ class GuardImplementation implements VendoGuard {
     }
   }
 
+  /**
+   * Has the user already said no to exactly this call?
+   *
+   * A caller that re-issues a STABLE call id — the apps runtime derives a
+   * query's id from (app, tool, args), so its refetch is byte-identical — would
+   * otherwise mint a fresh approval on every retry: deny, reopen, new card,
+   * forever. The denial answers the re-issue instead.
+   *
+   * Unlike an approval this is NOT consumed. A yes is spent because it
+   * authorizes one act; a no is a standing answer about a question, and it
+   * keeps standing until the question changes — different inputs, or a tool
+   * whose descriptor moved (a re-grade rehashes it) both miss this match and
+   * ask again. That is strictly more durable than the TTL sweep, which only
+   * ever touches PENDING rows and would leave the re-park loop running.
+   */
+  async #standingDenial(
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<boolean> {
+    const fingerprint = descriptorHash(descriptor);
+    const records = await listAll(this.#store.records(APPROVALS_COLLECTION), {
+      refs: { subject: ctx.principal.subject, status: "denied" },
+    });
+    return records.some((record) => {
+      const data = approvalData(record);
+      return data.status === "denied" && sameParkedCall(data.request, call, ctx, fingerprint);
+    });
+  }
+
   async #consumeApprovedCall(
     call: ToolCall,
     descriptor: ToolDescriptor,
@@ -902,18 +960,14 @@ class GuardImplementation implements VendoGuard {
       // read to destructive after parking can't ride it either — and (c) the
       // parked venue/presence/app — a present chat approval can't be replayed
       // to satisfy an away, app-bound automation call.
-      if (
-        data.status !== "approved" ||
-        data.consumedAt !== undefined ||
-        request.ctx.principal.subject !== ctx.principal.subject ||
-        request.call.id !== call.id ||
-        request.call.tool !== call.tool ||
-        exactInputHash(request.call.args) !== exactInputHash(call.args) ||
-        descriptorHash(request.descriptor) !== fingerprint ||
-        request.ctx.venue !== ctx.venue ||
-        request.ctx.presence !== ctx.presence ||
-        request.ctx.appId !== ctx.appId
-      ) {
+      // Sessions are DELIBERATELY not pinned. One person approving on their
+      // phone and seeing the result render on their laptop is the same person
+      // answering the same question — the identity that matters is the subject,
+      // and everything that could change what they said yes to (inputs, frozen
+      // descriptor, venue/presence/app) is pinned above. Single-use is enforced
+      // by the CAS receipt below, so a cross-session replay still spends the one
+      // approval rather than multiplying it. Documented so it stays a choice.
+      if (data.status !== "approved" || data.consumedAt !== undefined || !sameParkedCall(request, call, ctx, fingerprint)) {
         continue;
       }
       // Single-use is enforced by the receipt, not by the consumedAt read

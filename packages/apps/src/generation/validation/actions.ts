@@ -26,6 +26,17 @@ export const SUBMIT_LABEL = /\b(submit|save|create|add|send|remind|reminder|tran
 export const isMutatingRisk = (risk: string | undefined): boolean =>
   risk !== undefined && risk !== "read";
 
+/** Could this tool accept a payload at all? Only a schema that DECLARES zero
+ *  properties and does not open itself is exempt — that tool has nothing to
+ *  bind, so demanding a payload would make it unbindable and push the model to
+ *  disclaim a perfectly good "Refresh" button. An ABSENT schema is not the same
+ *  claim: it says nothing, so the check stays on. */
+export const takesInput = (tool: { inputSchema?: Record<string, unknown> }): boolean => {
+  const schema = tool.inputSchema;
+  if (!isRecord(schema) || !isRecord(schema.properties)) return true;
+  return schema.additionalProperties === true || Object.keys(schema.properties).length > 0;
+};
+
 export const hasPayload = (payload: unknown): boolean =>
   isRecord(payload) ? Object.keys(payload).length > 0 : payload !== undefined && payload !== null;
 
@@ -102,7 +113,11 @@ export const actionFaults = (
         if (byName.size > 0) faults.push({ nodeId: node.id, kind: "unknown-tool", prop, action, label });
         continue;
       }
-      if (isMutatingRisk(tool.risk) && !hasPayload(payload)) {
+      // A zero-argument tool has nothing to bind, so demanding a payload would
+      // make it unbindable — the model's only way out is a disclaimer, and a
+      // "Refresh" button would disappear off every unjudged catalog. Ask for
+      // context only where the tool actually declares some.
+      if (isMutatingRisk(tool.risk) && !hasPayload(payload) && takesInput(tool)) {
         faults.push({ nodeId: node.id, kind: "missing-payload", prop, action });
       }
       if (submitLike && tool.risk === "read") {

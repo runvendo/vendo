@@ -130,13 +130,19 @@ describe.sequential("an ungraded app query parks, and the owner's yes actually l
     expect(host.reads()).toBe(1);
   });
 
-  it("a denied query never reads the host and keeps the region empty", async () => {
+  it("a denied query never reads the host, and the no is DURABLE across reopens", async () => {
     const { guard, apps, host, appId } = await harness();
 
     expect(await renderedInsights(apps, appId)).toBeUndefined();
     await guard.approvals.decide(await onlyPendingApproval(guard), { approve: false }, principal);
 
-    expect(await renderedInsights(apps, appId)).toBeUndefined();
+    // Checker round 2, finding A: the stable query id used to mint a FRESH card
+    // on every reopen — deny, reopen, new card, forever. The no now answers the
+    // re-issue, so the region stays honestly empty and the queue stays clean.
+    for (let reopen = 0; reopen < 3; reopen += 1) {
+      expect(await renderedInsights(apps, appId)).toBeUndefined();
+      expect(await guard.approvals.pending(principal)).toHaveLength(0);
+    }
     expect(host.reads()).toBe(0);
   });
 
