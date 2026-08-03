@@ -25,7 +25,7 @@ export function ActivityPanel() {
 
   return (
     <ChromeRoot>
-      <section className="fl-act" aria-labelledby="vendo-activity-heading">
+      <section className="fl-act fl-act--scroll" aria-labelledby="vendo-activity-heading">
         <header className="fl-act-head">
           <span className="fl-act-ic fl-act-tick" aria-hidden="true">✓</span>
           <h2 id="vendo-activity-heading" className="fl-act-head-lbl" style={{ margin: 0 }}>Activity</h2>

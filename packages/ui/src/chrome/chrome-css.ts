@@ -661,6 +661,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-btn-quiet { border-color: transparent; background: transparent; box-shadow: none;
   color: var(--vendo-fg-muted); padding: 8px 10px; }
 .fl-btn-quiet:hover { background: var(--vendo-accent-soft); border-color: transparent; color: var(--vendo-fg); }
+/* Conversation-rail item: hold the button inside the rail track (min-width:0 so
+   the flex item may shrink below its content, max-width so it never bleeds past
+   the panel edge) and truncate a long title to one ellipsised line. */
+.fl-convo-item { min-width: 0; max-width: 100%; overflow: hidden; justify-content: flex-start; text-align: left; }
+.fl-convo-title { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Inline button spinner (Reconnect) — tinted for a filled primary button. */
 .fl-btn-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid color-mix(in srgb, var(--vendo-accent-fg) 35%, transparent);
@@ -725,8 +730,11 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 
 /* ---------- composer ---------- */
 /* Column so attachment chips / drop zone stack above the input row. */
+/* Horizontal margin matches .fl-msglist's 16px side padding so the bar's edges
+   line up with the message column; symmetric internal padding keeps the icon
+   row balanced within the pill instead of listing to one side. */
 .fl-composer { position: relative; display: flex; flex-direction: column; gap: 8px; margin: 10px 16px 16px;
-  padding: 7px 8px 7px 14px;
+  padding: 7px 10px;
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
   border: 1px solid var(--vendo-border); border-radius: 14px;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--vendo-fg) 5%, transparent),
@@ -802,6 +810,13 @@ export const CHROME_CSS = ONEST_FONT_CSS + `/* @vendoai/ui chrome — the wave-2
 .fl-act { align-self: flex-start; width: 100%; max-width: 92%; border: 1px solid var(--vendo-border);
   border-radius: 13px; background: var(--vendo-glass-strong); box-shadow: 0 1px 2px light-dark(rgba(20,21,26,.04), rgba(0,0,0,.35));
   -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur); overflow: hidden; }
+/* Full Activity tab: cap the card and let its ledger scroll internally (same
+   flex:1 + min-height:0 + overflow-y:auto region pattern as .fl-msglist /
+   .fl-waiting). The .vendo-root block between the tabpanel and this card is not
+   a flex parent, so the cap is viewport-relative rather than inherited. Scoped
+   to the panel modifier so the short VendoActivities shelf feed is unchanged. */
+.fl-act--scroll { display: flex; flex-direction: column; min-height: 0; max-height: min(72vh, 680px); }
+.fl-act--scroll > .fl-act-led { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .fl-act-head { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 13px; cursor: pointer;
   border: 0; background: transparent; font: 600 12.5px/1.2 var(--vendo-font); color: var(--vendo-fg); text-align: left; }
 .fl-act-head:hover { background: var(--vendo-accent-soft); }

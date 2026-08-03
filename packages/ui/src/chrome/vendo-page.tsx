@@ -92,12 +92,11 @@ function ChatWorkspace({ thread }: { thread?: VendoPageProps["thread"] }) {
         {threads.map(thread => (
           <button
             type="button"
-            className={`fl-btn${activeId === thread.id ? " fl-btn-primary" : ""}`}
+            className={`fl-btn fl-convo-item${activeId === thread.id ? " fl-btn-primary" : ""}`}
             aria-current={activeId === thread.id ? "page" : undefined}
             key={thread.id}
             onClick={() => { userChose.current = true; setSelected(thread.id); setMinted(undefined); }}
-            style={{ justifyContent: "flex-start", textAlign: "left" }}
-          >{thread.title}</button>
+          ><span className="fl-convo-title">{thread.title}</span></button>
         ))}
       </nav>
       {/* ENG-225 — the waiting-on-you strip parks above the live conversation;
