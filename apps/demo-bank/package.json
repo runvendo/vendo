@@ -53,6 +53,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "jsdom": "^29.1.1",
+    "jsonata": "^2.0.5",
     "tailwindcss": "^4",
     "tsx": "^4.19.0",
     "typescript": "^5",
