@@ -4,9 +4,9 @@
 // "Loading app…", and only a full page reload got the user out. The load now
 // retries with backoff, and a load that really is dead offers a way back in.
 import type { AppDocument } from "@vendoai/core";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
+import { VendoProvider, createVendoClient, type VendoClient, useApp } from "../../src/index.js";
 import { VendoSlot } from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
@@ -76,4 +76,19 @@ describe("useApp load retry (Keystone graduates A5)", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Loading app…"));
     expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
   });
+
+  it("keeps the last app surface while a later refresh fails", async () => {
+    const { result } = renderHook(() => useApp("app_1"), {
+      wrapper: ({ children }) => <VendoProvider client={client}>{children}</VendoProvider>,
+    });
+    await waitFor(() => expect(result.current.surface).toBeDefined());
+    const previous = result.current.surface;
+    vi.spyOn(client.apps, "open").mockRejectedValue(new Error("reopen failed"));
+
+    await act(() => result.current.refresh());
+
+    expect(result.current.surface).toBe(previous);
+    expect(result.current.error?.message).toBe("reopen failed");
+  });
+
 });

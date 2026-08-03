@@ -5,6 +5,7 @@ import { useApp } from "../hooks/use-app.js";
 import { useSlotApp } from "../hooks/use-slot-app.js";
 import { FluidReveal } from "../tree/fluid-reveal.js";
 import { AppFrame, PinMount } from "../tree/frames.js";
+import { AppStaleNotice } from "./app-stale-notice.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { defaultSlotSuggestions } from "./discoverability.js";
 import { developmentMode } from "./dev-mode.js";
@@ -71,7 +72,12 @@ function MountedApp({ appId }: { appId: string }) {
     if (error && !isLoading) return <SlotLoadFailed reason={error} onRetry={() => void refresh()} />;
     return <SlotGhost label="Loading app…" loading />;
   }
-  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return (
+    <>
+      <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />
+      {error && !isLoading ? <AppStaleNotice error={error} onRetry={() => void refresh()} /> : null}
+    </>
+  );
 }
 
 /** A generated view pinned into a slot (08-ui §4 — "or a pinned component").

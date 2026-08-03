@@ -7,6 +7,7 @@ import { useThreads } from "../hooks/use-threads.js";
 import { AppFrame } from "../tree/frames.js";
 import { ActivityPanel } from "./activity-panel.js";
 import { AutomationsPanel } from "./automations-panel.js";
+import { AppStaleNotice } from "./app-stale-notice.js";
 import { ChromeRoot } from "./chrome-root.js";
 import { ACTIVITY_ANCHOR_ATTRIBUTE, ACTIVITY_BUMP_EVENT } from "./morph-toast.js";
 import { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
@@ -153,7 +154,12 @@ function OpenApp({ appId }: { appId: string }) {
     }
     return <div role="status">Opening app…</div>;
   }
-  return <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return (
+    <>
+      <AppFrame key={appId} surface={surface} components={components} keepalive={keepalive} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />
+      {error && !isLoading ? <AppStaleNotice error={error} onRetry={() => void refresh()} /> : null}
+    </>
+  );
 }
 
 function AppsWorkspace() {
