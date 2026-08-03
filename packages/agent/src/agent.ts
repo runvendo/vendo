@@ -615,7 +615,16 @@ export function createAgent(config: AgentConfig): VendoAgent {
             originalMessages: thread.messages,
             // Raw provider/model error strings never reach the wire (they can
             // carry request internals); the error part is a fixed generic message.
-            onError: (error) => wireErrorMessage(error),
+            onError: (error) => {
+              const message = wireErrorMessage(error);
+              // self-serve P: the ai-SDK error chunk is TRANSIENT — it sets the
+              // client's `error` and belongs to no message, so the failed turn
+              // persisted (and reloaded) as a blank assistant reply. Write the
+              // same gated string into the turn as well, so the thread keeps a
+              // record of why the answer never came.
+              writer.write(toVendoWirePart({ type: "data-vendo-turn-error", message }) as never);
+              return message;
+            },
           }));
           // AGENT-7: exhausting the step cap is VISIBLE. A run that still wants
           // tool calls after its final permitted step ended because of the cap,

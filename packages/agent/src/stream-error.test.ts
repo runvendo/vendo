@@ -86,6 +86,26 @@ describe("mid-stream turn errors", () => {
     expect(errorPart?.errorText).toBe("An error occurred while generating the response.");
   });
 
+  it("the failed turn CARRIES the error: a data-vendo-turn-error part beside the transient error chunk", async () => {
+    // self-serve P — the ai-SDK error chunk belongs to no message, so a
+    // reloaded thread showed the question answered by a blank assistant turn.
+    // The same gated string rides the turn as a part, which persists.
+    const { parts } = await streamWithThrowingModel(
+      new VendoError("validation", "Vendo found no model key. Run `vendo login` for a free dev key."),
+    );
+    const notice = parts.find((part) => part.type === "data-vendo-turn-error");
+    expect(notice).toBeDefined();
+    expect((notice?.data as { message?: string }).message)
+      .toBe("Vendo: Vendo found no model key. Run `vendo login` for a free dev key. (validation)");
+  });
+
+  it("an unknown error's turn part stays the fixed generic string too (no internals in the persisted turn)", async () => {
+    const { parts } = await streamWithThrowingModel(new Error("ECONNRESET at https://provider.internal/key=sk-123"));
+    const notice = parts.find((part) => part.type === "data-vendo-turn-error");
+    expect((notice?.data as { message?: string }).message).toBe("An error occurred while generating the response.");
+    expect(JSON.stringify(notice)).not.toContain("sk-123");
+  });
+
   it("an unknown error stays the fixed generic string (raw internals never reach the wire) but still logs", async () => {
     const { parts, logged } = await streamWithThrowingModel(new Error("ECONNRESET at https://provider.internal/key=sk-123"));
     const errorPart = parts.find((part) => part.type === "error");
