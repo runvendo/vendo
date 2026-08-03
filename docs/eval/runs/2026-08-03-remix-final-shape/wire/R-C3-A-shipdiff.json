@@ -1,0 +1,15 @@
+{
+  "appId": "app_f06856a6-be29-4136-84f9-1b074e87a9eb",
+  "versionHash": "sha256:871b0e87879e3411de0b8bdaf631d1ee4c522900c48de20401b1fbcca8d6070a",
+  "pins": [
+    {
+      "slot": "MissingDocsHero",
+      "component": "PinnedMissingDocsHero9380a4f2",
+      "baseHash": "sha256:b129041125772145d059e2ef0703bbd3849428f928b08646bda806b43720ecda",
+      "baselineHash": "sha256:b129041125772145d059e2ef0703bbd3849428f928b08646bda806b43720ecda",
+      "drifted": false,
+      "diff": "--- a/MissingDocsHero/PinnedMissingDocsHero9380a4f2.tsx\n+++ b/MissingDocsHero/PinnedMissingDocsHero9380a4f2.tsx\n@@ -31,7 +31,7 @@\n export function MissingDocsHero({\n   missingCount,\n   clientCount,\n-  badgeLabel = \"Action needed\",\n+  badgeLabel = \"Chase these\",\n }: MissingDocsHeroProps) {\n   return (\n     <article\n"
+    }
+  ],
+  "generated": []
+}

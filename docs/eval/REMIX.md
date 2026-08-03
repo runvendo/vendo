@@ -263,6 +263,7 @@ discussion; the asks and bar substance are unchanged, so the set stays live.)
 | Date | Set | Score | Main @ | Evidence |
 |---|---|---|---|---|
 | 2026-07-21 | frozen 12 (baseline, pre-restatement) | **2/12** | 4cb6cdb6 | `docs/eval/runs/2026-07-21-remix-baseline/` |
+| 2026-08-03 | frozen 12 (final wrapper shape) | **9/12** | 4f64c01e | `docs/eval/runs/2026-08-03-remix-final-shape/` |
 
 Baseline headline (pre-redesign semantics): the drift→rebase machinery is
 solid end-to-end, but the headline "remix X so that Y" journey failed 6/8

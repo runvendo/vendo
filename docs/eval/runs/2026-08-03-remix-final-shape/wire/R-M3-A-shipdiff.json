@@ -1,0 +1,15 @@
+{
+  "appId": "app_883b41e9-f912-4d4a-a969-a2da86d46f44",
+  "versionHash": "sha256:2fcabcb3d8a6212345705265013334bda4b701c608235e28baf850b1368352d9",
+  "pins": [
+    {
+      "slot": "NetWorthView",
+      "component": "PinnedNetWorthView965099a8",
+      "baseHash": "sha256:52ce29c1d026e0a7679cb1ecac764ade84ee5d50b8af374580347db23a729592",
+      "baselineHash": "sha256:52ce29c1d026e0a7679cb1ecac764ade84ee5d50b8af374580347db23a729592",
+      "drifted": false,
+      "diff": "--- a/NetWorthView/PinnedNetWorthView965099a8.tsx\n+++ b/NetWorthView/PinnedNetWorthView965099a8.tsx\n@@ -14,7 +14,7 @@\n \n export type NetWorthRange = \"1W\" | \"1M\" | \"3M\" | \"1Y\" | \"All\"\n \n-const RANGE_OPTIONS: NetWorthRange[] = [\"1W\", \"1M\", \"3M\", \"1Y\", \"All\"]\n+const RANGE_OPTIONS: NetWorthRange[] = [\"1M\", \"1Y\"]\n const TAIL: Record<NetWorthRange, number> = {\n   \"1W\": 4,\n   \"1M\": 8,\n@@ -178,10 +178,14 @@\n   valueCents,\n   series,\n   changeLabel = \"▲ 2.3% this month\",\n-  initialRange = \"3M\",\n+  initialRange = \"1M\",\n   chartHeight = 220,\n }: NetWorthViewProps) {\n-  const [range, setRange] = useState<NetWorthRange>(initialRange)\n+  const [range, setRange] = useState<NetWorthRange>(\n+    RANGE_OPTIONS.includes(initialRange as typeof RANGE_OPTIONS[number])\n+      ? initialRange\n+      : \"1M\"\n+  )\n   const animated = useCountUp(valueCents)\n   // Mid-stream renders can mount the card before its `$path`-bound props bind\n   // — `series` is then undefined and slicing it throws. Render nothing until\n"
+    }
+  ],
+  "generated": []
+}

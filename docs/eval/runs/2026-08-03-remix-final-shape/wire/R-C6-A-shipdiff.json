@@ -1,0 +1,15 @@
+{
+  "appId": "app_a38ec75f-d2d7-440a-81e6-588da5cef65d",
+  "versionHash": "sha256:441fd3dbfcdc9038b2aea77c0b416334b13b1541e50e100dcdd0529e7010b890",
+  "pins": [
+    {
+      "slot": "MissingDocsHero",
+      "component": "PinnedMissingDocsHero9380a4f2",
+      "baseHash": "sha256:b129041125772145d059e2ef0703bbd3849428f928b08646bda806b43720ecda",
+      "baselineHash": "sha256:b129041125772145d059e2ef0703bbd3849428f928b08646bda806b43720ecda",
+      "drifted": false,
+      "diff": "--- a/MissingDocsHero/PinnedMissingDocsHero9380a4f2.tsx\n+++ b/MissingDocsHero/PinnedMissingDocsHero9380a4f2.tsx\n@@ -53,7 +53,7 @@\n           color: INK_SOFT,\n         }}\n       >\n-        Clients missing documents\n+        Clients still owing documents\n       </p>\n       <div\n         style={{\n"
+    }
+  ],
+  "generated": []
+}
