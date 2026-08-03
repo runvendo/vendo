@@ -1,3 +1,4 @@
+import type { RecordQuery, StoreAdapter } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
@@ -372,5 +373,164 @@ describe("payInvoice, before and after the judge (AC3)", () => {
     // And the very next identical call asks again — every call, its own consent.
     expect(await bound.execute(payCall, context())).toMatchObject({ status: "pending-approval" });
     expect(tools.executions).toHaveLength(1);
+  });
+});
+
+/**
+ * Checker round 4, finding 1 — voiding and replaying a yes are the SAME
+ * one-time transition. Both claim `consumed:<id>`, so exactly one of them can
+ * happen: a take-back can never be erased by a replay that read the row before
+ * it, and a replay can never spend a yes the person has taken back. Both
+ * interleavings are pinned here, driven through a store that lets the test run
+ * code at a chosen moment INSIDE a guard operation.
+ */
+describe("a void and a replay can never both win", () => {
+  const ungraded = descriptor("ungraded", { name: "host_pay_invoice" });
+  const stable = () => call(ungraded.name, { invoiceId: "inv_1" }, "call_stable");
+
+  type Interleave =
+    | { op: "list"; collection: string; query: RecordQuery }
+    | { op: "put"; collection: string; record: { id: string; data: unknown } };
+
+  /** Runs `hook` just AFTER each read and just BEFORE each write, so a test can
+   *  land a second operation in the window where the first is holding a copy it
+   *  has not written back yet — the only way to reproduce the orderings by
+   *  hand. */
+  function interleavedStore(
+    base: StoreAdapter,
+    hook: (event: Interleave) => Promise<void>,
+  ): StoreAdapter {
+    return {
+      ...base,
+      records(collection) {
+        const records = base.records(collection);
+        return {
+          ...records,
+          async list(query = {}) {
+            const page = await records.list(query);
+            await hook({ op: "list", collection, query });
+            return page;
+          },
+          async put(input) {
+            await hook({ op: "put", collection, record: input });
+            return records.put(input);
+          },
+        };
+      },
+    };
+  }
+
+  /** A one-shot interleaving: fires once, and never re-enters from the work it
+   *  triggers. */
+  function once(): { arm(fn: () => Promise<void>): void; hook(when: (event: Interleave) => boolean): (event: Interleave) => Promise<void> } {
+    let pending: (() => Promise<void>) | undefined;
+    return {
+      arm(fn) {
+        pending = fn;
+      },
+      hook: (when) => async (event) => {
+        if (pending === undefined || !when(event)) return;
+        const run = pending;
+        pending = undefined;
+        await run();
+      },
+    };
+  }
+
+  it("refuses the replay when the no lands first: the voided yes is never spent", async () => {
+    const gate = once();
+    const store = interleavedStore(
+      createMemoryStore(),
+      // The moment the replay lookup reads the approved rows.
+      gate.hook((event) => event.op === "list" && event.query?.refs?.["status"] === "approved"),
+    );
+    const guard = createGuard({ store });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+
+    const first = await bound.execute(stable(), context());
+    const second = await bound.execute(stable(), context());
+    if (first.status !== "pending-approval" || second.status !== "pending-approval") {
+      throw new Error("expected two parks on the same call id");
+    }
+    await guard.approvals.decide(first.approvalId, { approve: true }, alice);
+
+    // The person's no lands with the replay lookup already holding an un-voided
+    // copy of the yes. Before this fix the replay's own write erased the void.
+    gate.arm(async () => {
+      await guard.approvals.decide(second.approvalId, { approve: false }, alice);
+    });
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "blocked" });
+    expect(tools.executions).toHaveLength(0);
+  });
+
+  it("says the take-back came too late when the replay wins: the call ran, and the trail says so", async () => {
+    const gate = once();
+    const store = interleavedStore(
+      createMemoryStore(),
+      // The moment the replay has WON the transition and is marking the row.
+      gate.hook((event) =>
+        event.op === "put"
+        && event.collection === "vendo_approvals"
+        && (event.record.data as { consumedAt?: string }).consumedAt !== undefined),
+    );
+    const guard = createGuard({ store });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+
+    const first = await bound.execute(stable(), context());
+    const second = await bound.execute(stable(), context());
+    if (first.status !== "pending-approval" || second.status !== "pending-approval") {
+      throw new Error("expected two parks on the same call id");
+    }
+    await guard.approvals.decide(first.approvalId, { approve: true }, alice);
+
+    gate.arm(async () => {
+      await guard.approvals.decide(second.approvalId, { approve: false }, alice);
+    });
+    // The yes was already spent, so the call runs — the honest outcome. What
+    // must NOT happen is the no reading as if it stopped anything.
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "ok" });
+    expect(tools.executions).toHaveLength(1);
+    const { events } = await guard.audit.query({ principal: alice });
+    expect(events.some((event) =>
+      (event.detail as { supersedeTooLate?: string } | undefined)?.supersedeTooLate === first.approvalId,
+    )).toBe(true);
+
+    // …and the no still stands for every later issue of the same call.
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "blocked" });
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("cannot take back a yes the call already spent — revoke says so instead of reporting success", async () => {
+    const guard = createGuard({ store: createMemoryStore() });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "ok" });
+
+    await expect(guard.approvals.revoke(parked.approvalId, alice)).rejects.toMatchObject({
+      code: "conflict",
+    });
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("takes a decision back exactly once — a second revoke adds no second audit line", async () => {
+    const guard = createGuard({ store: createMemoryStore() });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: false }, alice);
+
+    await guard.approvals.revoke(parked.approvalId, alice);
+    await expect(guard.approvals.revoke(parked.approvalId, alice)).resolves.toBeUndefined();
+    const { events } = await guard.audit.query({ principal: alice });
+    expect(events.filter((event) =>
+      (event.detail as { approvalRevoked?: string } | undefined)?.approvalRevoked === parked.approvalId,
+    )).toHaveLength(1);
   });
 });

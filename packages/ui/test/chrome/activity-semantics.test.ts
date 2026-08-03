@@ -162,4 +162,12 @@ describe("eventOutcomeLabel — taking a decision back", () => {
       detail: { approvalRevoked: "apr_1", priorStatus: "denied" },
     })).toEqual({ label: "Decision taken back", tone: "ok" });
   });
+
+  it("says a no that arrived mid-replay came too late — never a row still Running", () => {
+    expect(eventOutcomeLabel({
+      kind: "approval",
+      outcome: undefined,
+      detail: { supersedeTooLate: "apr_1" },
+    })).toEqual({ label: "Ran before the no landed", tone: "error" });
+  });
 });

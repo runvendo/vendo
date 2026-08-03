@@ -57,6 +57,17 @@ a read alias indefinitely; every writer emits `confirmEach`. In TypeScript,
 `ToolDescriptor.critical` becomes `ToolDescriptor.confirmEach` and
 `decidedBy: "critical"` becomes `decidedBy: "confirmEach"`.
 
+**A standing denial means a person said no.** An ask that re-issues the same
+call id is answered by the user's earlier no instead of minting a new card — but
+only when a *human* wrote it: an abandoned chat turn, a timed-out embed, and the
+TTL sweep reap the pending row and let the next issue ask again. A person's no
+also voids any unconsumed yes still sitting on the same call, and a decision can
+be taken back with `guard.approvals.revoke(id, principal)` / `DELETE
+/approvals/:id` (the mirror of `grants.revoke`). Taking a decision back and
+replaying an approval are the same one-time transition, so a call can never both
+run and be voided — a take-back that arrives after the call was already
+authorized answers `conflict` rather than reporting success.
+
 One consequence worth knowing: `descriptorHash` follows the field rename, so
 approvals and grants persisted before the upgrade no longer match their tool's
 new hash. They lapse into a re-ask, which is the fail-closed direction.

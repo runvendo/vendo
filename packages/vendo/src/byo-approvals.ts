@@ -186,6 +186,14 @@ export function createByoApprovals({ guard, tools, store }: ByoApprovalsConfig):
     }
     try {
       await guard.approvals.decide(approvalId, { approve: false }, ctx.principal);
+      // An embed that timed out is NOT the user saying no, and `decide` is the
+      // human-consent verb — the only one on the public surface, which must not
+      // grow a provenance argument. So the fallback takes its own no back
+      // immediately: the row stays in the audit trail, but it stops standing,
+      // and the next issue of the same call id asks again instead of inheriting
+      // a refusal nobody made. `abandonApprovals` does this natively (it denies
+      // with system provenance); this is the same outcome through two verbs.
+      await guard.approvals.revoke(approvalId, ctx.principal);
     } catch (error) {
       if (error instanceof VendoError && (error.code === "conflict" || error.code === "not-found")) return;
       throw error;

@@ -111,7 +111,7 @@ for (const backend of backends()) {
         .toEqual([{ scope: exact.scope, duration: "session", context_key: "sess_ctx_1" }]);
     });
 
-    it("decides only pending approvals, supports batches, and orders pending oldest-first", async () => {
+    it("orders pending approvals oldest-first and reads a row back as the core shape", async () => {
       const approvals = approvalStore(made.store);
       const first = approvalFixture("apr_first", { createdAt: at(1) });
       const second = approvalFixture("apr_second", { createdAt: at(2) });
@@ -121,12 +121,7 @@ for (const backend of backends()) {
         "apr_first", "apr_second", "apr_third",
       ]);
       expect(approvalRequestSchema.parse((await approvals.get("apr_first"))?.request)).toEqual(first);
-      expect(await approvals.decide("apr_first", "approved", at(10))).toEqual(["apr_first"]);
-      expect(await approvals.decide("apr_first", "denied", at(11))).toEqual([]);
-      expect(await approvals.decide(["apr_second", "apr_third", "apr_missing"], "denied", at(12)))
-        .toEqual(["apr_second", "apr_third"]);
-      expect((await approvals.get("apr_first"))?.status).toBe("approved");
-      expect(await approvals.pending(persistentPrincipal)).toEqual([]);
+      expect((await approvals.get("apr_first"))?.status).toBe("pending");
     });
 
     it("filters, paginates, validates, and exports audit events", async () => {

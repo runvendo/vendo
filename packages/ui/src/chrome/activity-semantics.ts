@@ -103,6 +103,11 @@ export function eventOutcomeLabel(
     if (typeof (detail as { approvalRevoked?: unknown }).approvalRevoked === "string") {
       return { label: "Decision taken back", tone: "ok" };
     }
+    // The no arrived while an earlier yes on the same call was already being
+    // spent: it ran. Reads as an outcome, not as a row still in flight.
+    if (typeof (detail as { supersedeTooLate?: unknown }).supersedeTooLate === "string") {
+      return { label: "Ran before the no landed", tone: "error" };
+    }
   }
   return outcomeLabel(event.outcome);
 }

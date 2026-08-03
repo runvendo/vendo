@@ -113,7 +113,7 @@ function approvalRecord(row: ApprovalRow): VendoRecord {
     data,
     refs: { subject: row.subject, status: row.status, call: row.callId ?? row.request.call.id },
     createdAt: row.request.createdAt,
-    updatedAt: row.consumedAt ?? row.decidedAt ?? row.request.createdAt,
+    updatedAt: row.voidedAt ?? row.consumedAt ?? row.decidedAt ?? row.request.createdAt,
   };
 }
 

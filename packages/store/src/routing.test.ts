@@ -42,6 +42,15 @@ for (const backend of backends()) {
       await approvals.put({ id: request.id, data: { request, status: "approved", decidedAt } });
       expect((await approvals.get(request.id))?.data).toEqual({ request, status: "approved", decidedAt });
       expect((await approvals.list({ refs: { status: "approved" } })).records.map((r) => r.id)).toContain(request.id);
+
+      // Taking the decision back is the row's newest transition, so it is what
+      // `updatedAt` reports (the memory adapter derives it the same way).
+      const voidedAt = at(50);
+      await approvals.put({ id: request.id, data: { request, status: "approved", decidedAt, voidedAt } });
+      expect(await approvals.get(request.id)).toMatchObject({
+        data: { request, status: "approved", decidedAt, voidedAt },
+        updatedAt: voidedAt,
+      });
     });
 
     it("routes audit events and supports refs-filtered lists", async () => {
