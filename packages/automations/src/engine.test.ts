@@ -1115,6 +1115,68 @@ describe("localTriggerKinds: deferring schedule/external firing to another autho
     expect(ids).toHaveLength(1);
     expect((await store.records("vendo_runs").list()).records).toHaveLength(1);
   });
+
+  // Cloud-audit fix 3. A fn: step is an HTTP call into the APP's own sandbox
+  // machine (packages/apps/src/fn.ts POSTs /fn/<name>), so the authority that
+  // fires the trigger is the one that has to wake and reach that machine. When
+  // this engine defers firing to Cloud, whether Cloud can do that is not
+  // knowable here — so the operator hears about it at the arming point, which
+  // is the only place that sees both the trigger kind and the steps.
+  describe("fn: steps deferred to another firing authority warn at enable()", () => {
+    const enableWithWarn = async (
+      doc: AppDocument,
+      localTriggerKinds?: ReadonlySet<"schedule" | "external">,
+    ): Promise<string[]> => {
+      const store = memoryStoreAdapter();
+      await seedApp(store, doc);
+      const engine = createAutomations({
+        apps: appsDouble(), tools: registry([readTool]), guard: new GuardDouble(), store, now: () => NOW,
+        ...(localTriggerKinds === undefined ? {} : { localTriggerKinds }),
+      });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      try {
+        await engine.enable(doc.id, ctx());
+        return warn.mock.calls
+          .map(([message]) => (typeof message === "string" ? message : ""))
+          .filter((message) => message.includes("fn: steps"));
+      } finally {
+        warn.mockRestore();
+      }
+    };
+
+    it("warns, naming the app and the deferred trigger kind", async () => {
+      const warns = await enableWithWarn(app("app_fn_cloud", {
+        on: { kind: "schedule", every: "15m" },
+        run: { kind: "steps", steps: [{ id: "run", tool: "fn:main" }] },
+      }, "Weekly digest"), new Set());
+
+      expect(warns).toHaveLength(1);
+      expect(warns[0]).toContain("Weekly digest");
+      expect(warns[0]).toContain("schedule");
+      expect(warns[0]).toContain("sandbox machine");
+    });
+
+    it("stays silent for a deferred automation whose steps are all host tools", async () => {
+      expect(await enableWithWarn(app("app_tools_cloud", {
+        on: { kind: "external", connector: "github", event: "push" },
+        run: { kind: "steps", steps: [{ id: "handle", tool: readTool.name }] },
+      }), new Set())).toEqual([]);
+    });
+
+    it("stays silent when this engine fires the trigger itself — the machine is one it wakes", async () => {
+      expect(await enableWithWarn(app("app_fn_local", {
+        on: { kind: "schedule", every: "15m" },
+        run: { kind: "steps", steps: [{ id: "run", tool: "fn:main" }] },
+      }))).toEqual([]);
+    });
+
+    it("stays silent for host-event automations, which are never deferred", async () => {
+      expect(await enableWithWarn(app("app_fn_host", {
+        on: { kind: "host-event", event: "invoice.paid" },
+        run: { kind: "steps", steps: [{ id: "run", tool: "fn:main" }] },
+      }), new Set())).toEqual([]);
+    });
+  });
 });
 
 describe("dry runs, run visibility, agentic execution, and stopping", () => {

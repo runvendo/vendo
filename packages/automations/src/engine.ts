@@ -1065,6 +1065,21 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     const found = await ownedApp(appId, ctx.principal.subject);
     if (found.row.doc.trigger === undefined) throw new VendoError("validation", "app has no trigger");
     const trigger = validateTrigger(found.row.doc.trigger);
+    // fn: steps run in the APP's own sandbox machine (packages/apps/src/fn.ts
+    // POSTs /fn/<name> to it), not in this process — so when some other
+    // authority fires this trigger, that authority is the one that has to wake
+    // and reach the machine, and in v1 it may not be able to. Arming is the
+    // only point that sees both the trigger kind and the steps.
+    if (trigger.on.kind !== "host-event" && !firesLocally(trigger.on.kind)
+      && trigger.run.kind === "steps"
+      && trigger.run.steps.some((step) => step.tool.startsWith("fn:"))) {
+      console.warn(
+        `[vendo] automation "${found.row.doc.name}" has fn: steps but its ${trigger.on.kind} trigger fires on Vendo Cloud, `
+        + "not in this process: fn: steps run in the app's own sandbox machine, which the Cloud runner may not be able to "
+        + "wake or reach in v1 (those steps then settle as an error outcome). Replace them with host tools, or pass an "
+        + "explicit local `store:` to createVendo to keep this composition firing its own schedule and external triggers.",
+      );
+    }
     const byName = await descriptors();
     const surface = trigger.run.kind === "steps"
       ? [...new Set(trigger.run.steps.map((step) => step.tool).filter((tool) => !tool.startsWith("fn:")))]
