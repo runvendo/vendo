@@ -123,7 +123,8 @@ hand-write one.
 ### The catch-all route — the composition
 
 ```ts
-// app/api/vendo/[...vendo]/route.ts — exactly what `vendo init` scaffolds
+// app/api/vendo/[...vendo]/route.ts — equivalent to what `vendo init` scaffolds
+// (init writes a relative registry import; the `@/*` alias reads better here)
 import { authJs } from "@vendoai/vendo/auth/auth-js";
 import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
 import { registry } from "@/vendo/registry";
@@ -236,10 +237,11 @@ TypeScript's widened JSON-module string literals.
 `<VendoClientRoot>` is a context provider and renders nothing by itself,
 which is why the generated wrapper mounts `<VendoOverlay />` inside it. Swap
 that for `<VendoThread />`, `<VendoPage />`, `<VendoPalette />`, or the
-headless hooks — they all speak to the same wire. Those all live in
-`@vendoai/ui/chrome` and need `@vendoai/ui` as a direct dependency;
-`@vendoai/vendo/react` re-exports `<VendoOverlay />` and the hooks, not the
-other surfaces.
+headless hooks — they all speak to the same wire. The hooks and the BYO embeds
+are re-exported from `@vendoai/vendo/react`, so they cost you nothing extra.
+The other chrome surfaces live in `@vendoai/ui/chrome` and need `@vendoai/ui`
+as a direct dependency; of the standalone surfaces, only `<VendoOverlay />` is
+re-exported.
 
 The paste init prints:
 

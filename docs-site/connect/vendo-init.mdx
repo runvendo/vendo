@@ -12,10 +12,12 @@ npx vendo init
 
 Init is a one-command scaffold. It scans the app with deterministic analysis,
 then writes everything it can and tells you the little that is left. There is
-no interview: an interactive run stops only for a few Enter-to-accept
+no interview: an interactive run stops only for seven Enter-to-accept
 decisions (the detected auth preset, the Vendo Cloud starter-key offer,
-consent for the AI judgment pass, an uncertain theme slot, and a closing "star
-the repo?"), and `--yes` answers all of them. Theme is
+consent for the AI judgment pass, one aggregated review if that pass proposes
+a loosening, a `zod` bump when your pin is below 3.25, an uncertain theme
+slot, and a closing "star the repo?"), and `--yes` answers all of them. Theme
+is
 extracted automatically, auth is detected from `package.json`, and every file
 init writes is either generated (safe to regenerate) or a stub it never
 clobbers once you edit it. **Init never writes to a file you authored**: every
