@@ -84,6 +84,33 @@ describe("vendo mcp server-json", () => {
     await expect(readFile(join(root, "server.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  // A flag present but blank is an answer nobody gave: `option()` returns ""
+  // for both `--domain=` and `--domain ""`, which used to satisfy the presence
+  // check and reach the generator as `Invalid registry domain: `.
+  it("treats blank flag values as missing rather than as answers", async () => {
+    const messages = output();
+    expect(await runServerJson({
+      targetDir: await fixture(),
+      domain: "",
+      url: "",
+      isTty: false,
+      output: messages.sink,
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("--domain and --url are required non-interactively");
+    expect(messages.errors.join("\n")).not.toContain("Invalid registry domain");
+  });
+
+  it("a blank flag on a TTY asks the question instead of accepting the blank", async () => {
+    const root = await fixture();
+    const prompt = vi.fn()
+      .mockResolvedValueOnce("example.com")
+      .mockResolvedValueOnce("https://example.com/api/vendo/mcp");
+
+    expect(await runServerJson({ targetDir: root, domain: "", url: "  ", prompt, isTty: true, output: output().sink })).toBe(0);
+    expect(prompt).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(await readFile(join(root, "server.json"), "utf8"))).toMatchObject({ name: "com.example/maple" });
+  });
+
   it("half the flags is still not enough non-interactively", async () => {
     const messages = output();
     expect(await runServerJson({
