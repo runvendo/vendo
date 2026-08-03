@@ -26,17 +26,32 @@ const MAX_JAIL_HEIGHT = 8_192;
  * runs no untrusted code; it is a message relay, so the host's postMessage
  * identity check (source === iframe.contentWindow) still holds end to end.
  *
- * `'unsafe-eval'` is deliberate: evaluation is the jail's job (generated code
- * loads through the runtime's controlled `require`, which exposes only React,
- * so no import form can reach the module loader). NETWORK is what the jail
- * forbids, and `blob:` is banned from script-src because blob-ESM made the
- * loader reachable.
+ * `'unsafe-eval'` is deliberate: evaluation is the jail's job. What the jail
+ * forbids is NETWORK — and `script-src` is the only directive that governs the
+ * one channel `connect-src` misses, a SCRIPT the realm loads and runs. Its
+ * source list is empty, so that channel is shut.
+ *
+ * `'unsafe-inline'` rather than a nonce, and that is the security property, not
+ * a relaxation. A nonce is worthless against code running INSIDE the document
+ * that carries it, which is exactly what this document is: CSP blanks a nonce's
+ * content attribute but not its IDL property, so
+ * `document.querySelector("script").nonce` hands generated code the jail's own
+ * nonce, and a `<script src>` it stamps with that nonce is allowed from any
+ * origin. Browser-verified against the old `script-src 'nonce-N' 'unsafe-eval'`:
+ * the request COMPLETED, foreign code ran here, and the data in its URL left
+ * the browser. (A nonce also propagates to modules `import()`ed by the script
+ * that carries it, and it makes `'unsafe-inline'` be ignored — so the nonce was
+ * costing the source list its authority and buying nothing: the srcdoc is
+ * entirely ours, generated source arrives over postMessage rather than in the
+ * HTML, so there is no injection here for a nonce to stop, and the realm may
+ * already evaluate anything it composes.) With no nonce, the SOURCE LIST
+ * governs, and it is empty. `blob:` and `data:` stay out of it for the same
+ * reason: both are transports that reach the loader.
  */
 function buildJailSrcdoc(): string {
-  const nonce = jailNonce();
   const csp = [
     "default-src 'none'",
-    `script-src 'nonce-${nonce}' 'unsafe-eval'`,
+    "script-src 'unsafe-inline' 'unsafe-eval'",
     "style-src 'unsafe-inline'",
     "img-src data:",
     "font-src data:",
@@ -54,7 +69,7 @@ function buildJailSrcdoc(): string {
     "<!doctype html><html lang=\"en\"><head>",
     head,
     "<title>Generated Vendo component</title></head><body>",
-    `<script nonce="${nonce}">${safeRuntime}<\/script>`,
+    `<script>${safeRuntime}<\/script>`,
     "</body></html>",
   ].join("");
 
@@ -75,17 +90,9 @@ window.addEventListener("message", function (event) {
     "<!doctype html><html lang=\"en\"><head>",
     head,
     "<title>Vendo jail</title></head><body>",
-    `<script nonce="${nonce}">${relay}<\/script>`,
+    `<script>${relay}<\/script>`,
     "</body></html>",
   ].join("");
-}
-
-/** A per-mount nonce. Not a secret: the srcdoc is fully ours (generated source
- *  never enters the HTML — it arrives over postMessage), so a non-crypto
- *  fallback keeps the jail working in non-secure contexts. */
-function jailNonce(): string {
-  const random = globalThis.crypto?.randomUUID?.();
-  return (random ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`).replaceAll("-", "");
 }
 
 export interface JailedComponentProps {

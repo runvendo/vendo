@@ -212,11 +212,18 @@ const KIT_MODULE_EXPORTS = {
 
 /**
  * The ONLY modules generated code can reach. Sucrase's `imports` transform
- * rewrites every static AND dynamic `import` into a call to this `require`,
- * so no module-loader network fetch can ever be expressed — the browser-
- * verified escape (a blob-ESM `import("https://…")` initiating a request
- * despite `script-src`) is closed at the loader itself, and `script-src`
- * carries no `blob:`/host sources as the second wall.
+ * rewrites every static AND dynamic `import` in the SOURCE into a call to this
+ * `require`, so no import form a component writes can express a network fetch.
+ *
+ * That rewrite is a source-level gate, not a security boundary: code the
+ * transform cannot see — `new Function("u", "return import(u)")`, or an
+ * injected `<script src>` — walks straight past it. The boundary is
+ * `script-src`, which names no source expression (no host, no `blob:`, no
+ * `data:`), so nothing here can fetch a script from anywhere. It only became
+ * one when the nonce came out of that directive: a nonce is readable from the
+ * DOM by the very code it is meant to constrain, so generated code could stamp
+ * its own remote `<script>` with it (browser-verified — see
+ * e2e/exfil-probe.spec.ts).
  *
  * Keyed by `IslandResolvableModule` (the shared allowlist in @vendoai/core —
  * react, the kit-ish specifiers the engine strips, and the bundled third-party

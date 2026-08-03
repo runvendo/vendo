@@ -18,7 +18,10 @@ test("generated components stay in the opaque-origin CSP jail and actions cross 
   await jail.getByRole("button", { name: "Probe fetch" }).click();
   await expect(jail.locator("#fetch-status")).toHaveText("fetch: FAILURE (CSP)");
   await jail.getByRole("button", { name: "Probe import" }).click();
-  await expect(jail.locator("#import-status")).toHaveText("import: FAILURE (CSP)");
+  // Not CSP: sucrase rewrote the written import into the jail's own require.
+  // The directive that stops an import CSP alone must catch is proven in
+  // exfil-probe.spec.ts.
+  await expect(jail.locator("#import-status")).toHaveText("import: FAILURE (jail require)");
   await jail.getByRole("button", { name: "Probe parent DOM" }).click();
   await expect(jail.locator("#parent-status")).toHaveText("parent: FAILURE (opaque origin)");
   expect(escapedRequests, "CSP must stop example.com before a browser request leaves").toEqual([]);
