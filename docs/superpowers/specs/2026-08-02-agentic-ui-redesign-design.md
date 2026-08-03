@@ -254,6 +254,20 @@ chat row with the first build. Ghost prompts are host-authorable (the
 existing starter-suggestion machinery). Rejected: empty-gap quiet start
 (CS1), self-destructing guide card (CS3).
 
+### 15. Failure is conversation — no failure components (the Claude Code way)
+
+There is NO failure UI. The errored beat (existing ✕ vocabulary) stays in
+the record, and the agent handles its own failure in its own voice: one
+silent self-retry (possibly a different approach — "let me pull the month
+in smaller pieces"), narrated as new beats. If it still can't, it says so
+in prose under a standing copy law: **what happened · nothing was changed ·
+what happens next** — and may offer a partial path. Retry affordance = the
+composer and the existing Regenerate turn action; no buttons, no chips, no
+cards. Automations: a failed run shows on the automation card's sub-line
+("failed Friday"); permission failures keep the settled Grant & re-run
+card. Rejected along the way: structured failure cards (three stylings),
+inline retry line, composer retry chip — all read as furniture.
+
 ## What this is NOT
 
 No new surfaces (no inbox, no notification center), no auto-folding panel,
