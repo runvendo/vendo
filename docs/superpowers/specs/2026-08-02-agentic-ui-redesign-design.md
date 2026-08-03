@@ -222,6 +222,18 @@ Consequences:
   app that has one), our own hamburger-with-brand app header, and
   center-less mobile.
 
+### 13. Panel and center are strangers (pick R1)
+
+The overlay panel and the center page are **independent interfaces over one
+shared thread store** — the host composes whichever it wants into its app.
+No cross-navigation affordances in either direction: no "Open in Assistant"
+in the panel, no auto-handoff of big work. The panel keeps its full
+capability everywhere (V4's in-panel split stage stands); the center is
+simply another mount. Completion toasts and badges open the surface they
+were raised on. Discovery of the center is the host's navigation's job, not
+ours. (Rejected: the satellite arrow R2, the teaser auto-handoff R3 —
+the latter also violated G1's "nothing moves without the user".)
+
 ## What this is NOT
 
 No new surfaces (no inbox, no notification center), no auto-folding panel,
