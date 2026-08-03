@@ -146,6 +146,25 @@ describe.sequential("an ungraded app query parks, and the owner's yes actually l
     expect(host.reads()).toBe(0);
   });
 
+  it("a misclicked no is recoverable: revoke the decision and the region asks again", async () => {
+    const { guard, apps, host, appId } = await harness();
+
+    expect(await renderedInsights(apps, appId)).toBeUndefined();
+    const denied = await onlyPendingApproval(guard);
+    await guard.approvals.decide(denied, { approve: false }, principal);
+    expect(await renderedInsights(apps, appId)).toBeUndefined();
+    expect(await guard.approvals.pending(principal)).toHaveLength(0);
+
+    // Checker round 3, finding 6 — without this the app's query is dead for
+    // good, because its descriptor and call id never change.
+    await guard.approvals.revoke(denied, principal);
+    expect(await renderedInsights(apps, appId)).toBeUndefined();
+    const reasked = await onlyPendingApproval(guard);
+    await guard.approvals.decide(reasked, { approve: true }, principal);
+    expect(await renderedInsights(apps, appId)).toEqual({ dining: 41_200, groceries: 23_300 });
+    expect(host.reads()).toBe(1);
+  });
+
   it("a standing grant is the durable answer — the surface stops asking entirely", async () => {
     const { guard, apps, host, appId } = await harness();
 

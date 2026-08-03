@@ -52,6 +52,18 @@ interface ApprovalRecordData {
   decidedAt?: IsoDateTime;
   sessionId: string;
   consumedAt?: IsoDateTime;
+  /** WHO decided, and it is only ever a standing answer when it was a person.
+   *  Every denial converges on the same row — a real "no", the chat turn the
+   *  user walked away from, a BYO embed timing out, the 60-minute TTL sweep —
+   *  and only the first of those is the user telling us something. Absent on
+   *  rows written before this field existed, which read as `system`: the
+   *  fail-safe direction is to ask again, never to enforce a no nobody said. */
+  deniedBy?: "human" | "system";
+  /** This decision no longer stands: the person took it back
+   *  (`approvals.revoke`), or a newer human decision on the same call
+   *  superseded it. A voided row is inert for replay and for standing denial,
+   *  and is kept rather than deleted so the audit trail stays whole. */
+  voidedAt?: IsoDateTime;
 }
 
 type DraftDecision =
@@ -200,6 +212,17 @@ function neverParkAppRead(descriptor: ToolDescriptor, ctx: RunContext): boolean 
   return descriptor.risk === "read" && ctx.venue === "app" && ctx.presence === "present";
 }
 
+/** Every write of an approval row derives its refs here, so the index can
+ *  never drift from the data. `call` is what keeps the standing-denial lookup
+ *  off a subject's whole approval history: chat's random ids simply miss it. */
+function approvalRefs(data: ApprovalRecordData): Record<string, string> {
+  return {
+    subject: data.request.ctx.principal.subject,
+    status: data.status,
+    call: data.request.call.id,
+  };
+}
+
 /** The identity a parked approval answers for: the exact call the user saw, in
  *  exactly the context they saw it. Beyond subject + call identity this pins
  *  (a) the inputs — a replay with tampered args never rides the decision — (b)
@@ -271,7 +294,9 @@ class GuardImplementation implements VendoGuard {
       ids: ApprovalId | ApprovalId[],
       decision: ApprovalDecision,
       principal: Principal,
-    ): Promise<void> => this.#decideApprovals(ids, decision, principal),
+    ): Promise<void> => this.#decideApprovals(ids, decision, principal, "human"),
+    revoke: (id: ApprovalId, principal: Principal): Promise<void> =>
+      this.#revokeApproval(id, principal),
   };
 
   readonly grants = {
@@ -363,7 +388,7 @@ class GuardImplementation implements VendoGuard {
   async abandonApprovals(ids: ApprovalId[], ctx: RunContext): Promise<void> {
     for (const id of ids) {
       try {
-        await this.#decideApprovals(id, { approve: false }, ctx.principal);
+        await this.#decideApprovals(id, { approve: false }, ctx.principal, "system");
       } catch (error) {
         if (error instanceof VendoError && (error.code === "conflict" || error.code === "not-found")) {
           continue;
@@ -393,7 +418,7 @@ class GuardImplementation implements VendoGuard {
       if (!Number.isFinite(parkedAt) || parkedAt + ttlMs > at) continue;
       try {
         // Deny as the approval's OWN principal — a foreign subject would 404.
-        await this.#decideApprovals(record.id, { approve: false }, data.request.ctx.principal);
+        await this.#decideApprovals(record.id, { approve: false }, data.request.ctx.principal, "system");
         swept += 1;
       } catch (error) {
         // Already decided (conflict) or gone (not-found): the queue already
@@ -922,8 +947,22 @@ class GuardImplementation implements VendoGuard {
    * authorizes one act; a no is a standing answer about a question, and it
    * keeps standing until the question changes — different inputs, or a tool
    * whose descriptor moved (a re-grade rehashes it) both miss this match and
-   * ask again. That is strictly more durable than the TTL sweep, which only
-   * ever touches PENDING rows and would leave the re-park loop running.
+   * ask again.
+   *
+   * ONLY A PERSON'S NO STANDS. Four different things write a denied row — a
+   * real decision, the chat turn the user walked away from, a BYO embed timing
+   * out, the 60-minute TTL sweep — and three of them are housekeeping, not an
+   * answer. Enforcing those would let an hour of inattention permanently brick
+   * a ceremony that re-issues a stable call id (the apps runtime's secret and
+   * egress approvals do exactly that behind frozen descriptors). A system
+   * denial reaps the pending row and nothing more: the next issue asks again.
+   *
+   * KNOWN LIMIT: `descriptorHash` covers name, description, inputSchema, risk
+   * and confirmEach — NOT the binding. A host that re-points a route behind a
+   * byte-identical descriptor inherits the old denial, because from the user's
+   * side nothing they were shown has changed. Re-pointing a live route under
+   * an unchanged descriptor is already indistinguishable at the consent
+   * surface; `approvals.revoke` is the way out.
    */
   async #standingDenial(
     call: ToolCall,
@@ -931,12 +970,17 @@ class GuardImplementation implements VendoGuard {
     ctx: RunContext,
   ): Promise<boolean> {
     const fingerprint = descriptorHash(descriptor);
+    // Indexed on the call id: chat's random ids miss here and never pay for a
+    // scan of the subject's history.
     const records = await listAll(this.#store.records(APPROVALS_COLLECTION), {
-      refs: { subject: ctx.principal.subject, status: "denied" },
+      refs: { subject: ctx.principal.subject, status: "denied", call: call.id },
     });
     return records.some((record) => {
       const data = approvalData(record);
-      return data.status === "denied" && sameParkedCall(data.request, call, ctx, fingerprint);
+      return data.status === "denied"
+        && data.deniedBy === "human"
+        && data.voidedAt === undefined
+        && sameParkedCall(data.request, call, ctx, fingerprint);
     });
   }
 
@@ -948,7 +992,7 @@ class GuardImplementation implements VendoGuard {
     const fingerprint = descriptorHash(descriptor);
     const store = this.#store.records(APPROVALS_COLLECTION);
     const records = await listAll(store, {
-      refs: { subject: ctx.principal.subject, status: "approved" },
+      refs: { subject: ctx.principal.subject, status: "approved", call: call.id },
     });
     for (const record of records) {
       const data = approvalData(record);
@@ -967,7 +1011,16 @@ class GuardImplementation implements VendoGuard {
       // descriptor, venue/presence/app) is pinned above. Single-use is enforced
       // by the CAS receipt below, so a cross-session replay still spends the one
       // approval rather than multiplying it. Documented so it stays a choice.
-      if (data.status !== "approved" || data.consumedAt !== undefined || !sameParkedCall(request, call, ctx, fingerprint)) {
+      if (
+        data.status !== "approved"
+        || data.consumedAt !== undefined
+        // Voided: the person took this yes back, or their later no on the same
+        // call superseded it. Parking never dedupes, so a stable call id can
+        // hold both an older approved row and a newer denied one — without
+        // this, the stale yes would run right after the fresh no.
+        || data.voidedAt !== undefined
+        || !sameParkedCall(request, call, ctx, fingerprint)
+      ) {
         continue;
       }
       // Single-use is enforced by the receipt, not by the consumedAt read
@@ -981,11 +1034,8 @@ class GuardImplementation implements VendoGuard {
       // Observability marker on the row itself; the receipt is the source of
       // truth, so a crash between the two writes fails closed (the approval
       // reads un-consumed but can never be claimed again).
-      await store.put({
-        id: record.id,
-        data: { ...data, consumedAt: now() },
-        refs: { subject: ctx.principal.subject, status: "approved" },
-      });
+      const spent: ApprovalRecordData = { ...data, consumedAt: now() };
+      await store.put({ id: record.id, data: spent, refs: approvalRefs(spent) });
       return true;
     }
     return false;
@@ -1054,11 +1104,7 @@ class GuardImplementation implements VendoGuard {
       status: "pending",
       sessionId: ctx.sessionId,
     };
-    await this.#store.records(APPROVALS_COLLECTION).put({
-      id: request.id,
-      data,
-      refs: { subject: ctx.principal.subject, status: "pending" },
-    });
+    await this.#store.records(APPROVALS_COLLECTION).put({ id: request.id, data, refs: approvalRefs(data) });
     return request;
   }
 
@@ -1079,6 +1125,7 @@ class GuardImplementation implements VendoGuard {
     ids: ApprovalId | ApprovalId[],
     decision: ApprovalDecision,
     principal: Principal,
+    provenance: "human" | "system",
   ): Promise<void> {
     const normalizedIds = [...new Set(Array.isArray(ids) ? ids : [ids])];
     const store = this.#store.records(APPROVALS_COLLECTION);
@@ -1145,7 +1192,7 @@ class GuardImplementation implements VendoGuard {
     const applied: Array<{ id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId }> = [];
     try {
       for (const { id, data } of toDecide) {
-        await this.#commitDecidedMember(id, data, decision, normalizedIds.length > 1, principal, applied);
+        await this.#commitDecidedMember(id, data, decision, normalizedIds.length > 1, principal, provenance, applied);
       }
     } catch (error) {
       await this.#compensateDecidedMembers(applied, claimed, principal, error);
@@ -1167,6 +1214,34 @@ class GuardImplementation implements VendoGuard {
     }
   }
 
+  /**
+   * A person's no also voids any UNCONSUMED yes still sitting on the same
+   * call. Parking never dedupes, so one stable call id can hold an older
+   * approved row and a newer denied one; without this the replay lookup would
+   * find the stale approval and run the very thing that was just refused.
+   * Voided rather than deleted — the audit trail keeps both answers, in order.
+   */
+  async #supersedeApprovedSiblings(denied: ApprovalRecordData): Promise<void> {
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const fingerprint = descriptorHash(denied.request.descriptor);
+    const siblings = await listAll(store, {
+      refs: {
+        subject: denied.request.ctx.principal.subject,
+        status: "approved",
+        call: denied.request.call.id,
+      },
+    });
+    const at = now();
+    for (const record of siblings) {
+      const data = approvalData(record);
+      if (data.consumedAt !== undefined || data.voidedAt !== undefined) continue;
+      if (descriptorHash(data.request.descriptor) !== fingerprint) continue;
+      if (exactInputHash(data.request.call.args) !== exactInputHash(denied.request.call.args)) continue;
+      const voided: ApprovalRecordData = { ...data, voidedAt: at };
+      await store.put({ id: record.id, data: voided, refs: approvalRefs(voided) });
+    }
+  }
+
   /** One member's committed writes: the decided approval row, the optional
    *  remembered grant, and the audit record. Every landed write is pushed
    *  onto `applied` FIRST, so a failure anywhere leaves an exact rollback
@@ -1177,18 +1252,22 @@ class GuardImplementation implements VendoGuard {
     decision: ApprovalDecision,
     batch: boolean,
     principal: Principal,
+    provenance: "human" | "system",
     applied: Array<{ id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId }>,
   ): Promise<void> {
     const store = this.#store.records(APPROVALS_COLLECTION);
     const decidedAt = now();
     const status = decision.approve ? "approved" : "denied";
     const entry: { id: string; prior: ReturnType<typeof approvalData>; grantId?: GrantId } = { id, prior: data };
-    await store.put({
-      id,
-      data: { ...data, status, decidedAt },
-      refs: { subject: principal.subject, status },
-    });
+    const decided: ApprovalRecordData = {
+      ...data,
+      status,
+      decidedAt,
+      ...(decision.approve ? {} : { deniedBy: provenance }),
+    };
+    await store.put({ id, data: decided, refs: approvalRefs(decided) });
     applied.push(entry);
+    if (!decision.approve && provenance === "human") await this.#supersedeApprovedSiblings(decided);
 
     let grant: PermissionGrant | undefined;
     if (decision.approve && decision.remember !== undefined) {
@@ -1261,11 +1340,7 @@ class GuardImplementation implements VendoGuard {
         if (member.grantId !== undefined) {
           await this.#store.records(GRANTS_COLLECTION).delete(member.grantId);
         }
-        await store.put({
-          id: member.id,
-          data: member.prior,
-          refs: { subject: principal.subject, status: "pending" },
-        });
+        await store.put({ id: member.id, data: member.prior, refs: approvalRefs(member.prior) });
         const requestCtx = member.prior.request.ctx;
         try {
           await this.report({
@@ -1325,6 +1400,39 @@ class GuardImplementation implements VendoGuard {
     return records
       .map(grantData)
       .filter((grant) => grant.subject === principal.subject);
+  }
+
+  /**
+   * "I take that back." The mirror of {@link #revokeGrant}, for the other
+   * durable answer a person can give: a decided approval stops standing, so a
+   * denial no longer answers its call and an unconsumed approval can no longer
+   * replay. Without it a misclicked no on a frozen-descriptor ceremony (the
+   * apps runtime's secret and egress approvals re-issue a stable call id) would
+   * have no undo at all. Owner-scoped like every approval read: a foreign or
+   * unknown id is not-found, never a hint that it exists. Idempotent, and a
+   * still-pending approval is nothing to take back — deny it instead.
+   */
+  async #revokeApproval(id: ApprovalId, principal: Principal): Promise<void> {
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const record = await store.get(id);
+    if (record === null) throw new VendoError("not-found", `Approval ${id} was not found`);
+    const data = approvalData(record);
+    if (data.request.ctx.principal.subject !== principal.subject) {
+      throw new VendoError("not-found", `Approval ${id} was not found`);
+    }
+    if (data.status === "pending") {
+      throw new VendoError("conflict", `Approval ${id} has not been decided yet`);
+    }
+    const voided: ApprovalRecordData = { ...data, voidedAt: data.voidedAt ?? now() };
+    await store.put({ id, data: voided, refs: approvalRefs(voided) });
+    await this.report(
+      eventFromContext(data.request.ctx as RunContext, {
+        kind: "approval",
+        tool: data.request.call.tool,
+        inputPreview: data.request.inputPreview,
+        detail: { approvalRevoked: id, priorStatus: data.status },
+      }),
+    );
   }
 
   async #revokeGrant(id: GrantId, principal: Principal): Promise<void> {

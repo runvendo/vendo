@@ -127,6 +127,19 @@ describe("a zero-argument tool is bindable, ungraded or not (finding B(i))", () 
     expect(faults).toContainEqual(expect.objectContaining({ kind: "missing-payload" }));
   });
 
+  it("reads a SCHEMA-valued additionalProperties as open, not as zero-arg", () => {
+    // catalog-scan emits `additionalProperties: { type: "string" }`; that tool
+    // takes input, it just describes the values rather than naming the keys.
+    const open: HostToolInfo[] = [{
+      name: "host_openTool",
+      description: "Takes anything stringy",
+      risk: "ungraded",
+      inputSchema: { type: "object", properties: {}, additionalProperties: { type: "string" } },
+    }];
+    const faults = actionFaults(treeWith({ label: "Send", onPress: { action: "host_openTool" } }), open);
+    expect(faults).toContainEqual(expect.objectContaining({ kind: "missing-payload" }));
+  });
+
   it("still demands one when the tool declares NO schema — silence is not a claim", () => {
     const undeclared: HostToolInfo[] = [
       { name: "host_remind", description: "Send a reminder", risk: "ungraded" },

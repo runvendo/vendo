@@ -47,6 +47,13 @@ export interface ApprovalRow {
   decidedAt?: IsoDateTime;
   sessionId?: string;
   consumedAt?: IsoDateTime;
+  /** Whether a PERSON decided, or housekeeping did (abandonment, TTL sweep). */
+  deniedBy?: "human" | "system";
+  /** The decision no longer stands — taken back, or superseded by a later one. */
+  voidedAt?: IsoDateTime;
+  /** `request.call.id`, denormalized so the guard can look a decision up by
+   *  the call it answers instead of scanning the subject's history. */
+  callId?: string;
   createdAt: IsoDateTime;
 }
 

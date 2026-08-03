@@ -105,11 +105,13 @@ function approvalRecord(row: ApprovalRow): VendoRecord {
     ...(row.decidedAt === undefined ? {} : { decidedAt: row.decidedAt }),
     ...(row.sessionId === undefined ? {} : { sessionId: row.sessionId }),
     ...(row.consumedAt === undefined ? {} : { consumedAt: row.consumedAt }),
+    ...(row.deniedBy === undefined ? {} : { deniedBy: row.deniedBy }),
+    ...(row.voidedAt === undefined ? {} : { voidedAt: row.voidedAt }),
   };
   return {
     id: row.id,
     data,
-    refs: { subject: row.subject, status: row.status },
+    refs: { subject: row.subject, status: row.status, call: row.callId ?? row.request.call.id },
     createdAt: row.request.createdAt,
     updatedAt: row.consumedAt ?? row.decidedAt ?? row.request.createdAt,
   };
@@ -297,7 +299,7 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
         table: collection,
         select: "SELECT * FROM vendo_approvals",
         cursorColumn: "created_at",
-        refs: { subject: "subject", status: "status" },
+        refs: { subject: "subject", status: "status", call: "call_id" },
         fromDb: (row) => approvalRecord(approvalFromRow(row)),
         async put(record) {
           const data = parseApprovalData(record.data, record.id);
@@ -309,6 +311,9 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
             ...(data.decidedAt === undefined ? {} : { decidedAt: data.decidedAt }),
             ...(data.sessionId === undefined ? {} : { sessionId: data.sessionId }),
             ...(data.consumedAt === undefined ? {} : { consumedAt: data.consumedAt }),
+            ...(data.deniedBy === undefined ? {} : { deniedBy: data.deniedBy }),
+            ...(data.voidedAt === undefined ? {} : { voidedAt: data.voidedAt }),
+            callId: data.request.call.id,
             createdAt: data.request.createdAt,
           };
           await putApprovalRow(db, row);

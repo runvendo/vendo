@@ -1,6 +1,7 @@
 import type { AuditEvent } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
+  decidedByLabel,
   describeActivity,
   eventOutcomeLabel,
   formatAuditTime,
@@ -131,5 +132,34 @@ describe("describeActivity", () => {
 
   it("falls back to a readable phrase for a tool call with no tool id", () => {
     expect(describeActivity(event({ kind: "tool-call", tool: undefined })).action).toBe("Tool call");
+  });
+});
+
+describe("decidedByLabel", () => {
+  it("says what actually happened: an older no is still standing", () => {
+    // Raw, the ledger read "blocked by denied", which sounds like a fresh
+    // refusal. It is the user's OWN no from earlier doing the blocking.
+    expect(decidedByLabel("denied")).toBe("previously denied");
+  });
+
+  it("humanizes the other slugs a person would stumble over", () => {
+    expect(decidedByLabel("confirmEach")).toBe("confirm-each");
+    expect(decidedByLabel("default")).toBe("the default posture");
+  });
+
+  it("passes through the ones that already read as English", () => {
+    for (const slug of ["grant", "rule", "judge", "breaker"]) {
+      expect(decidedByLabel(slug)).toBe(slug);
+    }
+  });
+});
+
+describe("eventOutcomeLabel — taking a decision back", () => {
+  it("names an approval revoke instead of leaving it Running forever", () => {
+    expect(eventOutcomeLabel({
+      kind: "approval",
+      outcome: undefined,
+      detail: { approvalRevoked: "apr_1", priorStatus: "denied" },
+    })).toEqual({ label: "Decision taken back", tone: "ok" });
   });
 });

@@ -100,8 +100,25 @@ export function eventOutcomeLabel(
     if (detail.approved === true) return { label: "Approved", tone: "ok" };
     if (detail.approved === false) return { label: "Denied", tone: "blocked" };
     if (typeof detail.grantRevoked === "string") return { label: "Grant revoked", tone: "ok" };
+    if (typeof (detail as { approvalRevoked?: unknown }).approvalRevoked === "string") {
+      return { label: "Decision taken back", tone: "ok" };
+    }
   }
   return outcomeLabel(event.outcome);
+}
+
+/** The `decidedBy` slug in the words a person would use. Only the ones that
+    would read wrong raw are mapped — `grant`, `rule`, `judge` already say
+    what they mean. "denied" alone reads as a fresh refusal; what actually
+    happened is that an earlier no is still standing. */
+const DECIDED_BY_LABEL: Record<string, string> = {
+  denied: "previously denied",
+  confirmEach: "confirm-each",
+  default: "the default posture",
+};
+
+export function decidedByLabel(decidedBy: string): string {
+  return DECIDED_BY_LABEL[decidedBy] ?? decidedBy;
 }
 
 const KIND_LABEL: Record<AuditEvent["kind"], string> = {

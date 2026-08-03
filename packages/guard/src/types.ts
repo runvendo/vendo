@@ -118,6 +118,11 @@ export interface VendoGuard extends Guard {
       decision: ApprovalDecision,
       principal: Principal,
     ): Promise<void>;
+    /** "I take that back" — the mirror of `grants.revoke` for a DECIDED
+     *  approval. A revoked denial stops answering its call (the next issue
+     *  asks again); a revoked, unconsumed approval can no longer replay.
+     *  Owner-scoped; a pending approval conflicts (deny it instead). */
+    revoke(id: ApprovalId, principal: Principal): Promise<void>;
   };
 
   /** Spec 2026-07-20 (#5): TTL backstop over the general approvals collection —

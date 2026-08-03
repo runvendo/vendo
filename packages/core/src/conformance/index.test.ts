@@ -362,7 +362,7 @@ describe("memoryStoreAdapter reserved routing", () => {
         collection: "vendo_approvals",
         id: approval.id,
         data: { request: approval, status: "pending", ignored: true },
-        refs: { subject: principal.subject, status: "pending" },
+        refs: { subject: principal.subject, status: "pending", call: approval.call.id },
         createdAt: at,
       },
       {
@@ -459,8 +459,32 @@ describe("memoryStoreAdapter reserved routing", () => {
       sessionId: "session_conformance",
       consumedAt: "2026-07-11T16:03:00.000Z",
     });
-    expect(stored.refs).toEqual({ subject: principal.subject, status: "approved" });
+    expect(stored.refs).toEqual({
+      subject: principal.subject,
+      status: "approved",
+      // Derived so a decision is findable by the call it answers.
+      call: approval.call.id,
+    });
     expect(stored.updatedAt).toBe("2026-07-11T16:03:00.000Z");
+  });
+
+  it("round-trips a denial's provenance and its taken-back marker", async () => {
+    const adapter = memoryStoreAdapter();
+    const stored = await adapter.records("vendo_approvals").put({
+      id: approval.id,
+      data: {
+        request: approval,
+        status: "denied",
+        decidedAt: "2026-07-11T16:02:00.000Z",
+        sessionId: "session_conformance",
+        // Only a PERSON's no stands; housekeeping denials must stay
+        // distinguishable, so the field has to survive the round trip.
+        deniedBy: "human",
+        voidedAt: "2026-07-11T16:05:00.000Z",
+      },
+    });
+    expect(stored.data).toMatchObject({ deniedBy: "human", voidedAt: "2026-07-11T16:05:00.000Z" });
+    expect(stored.updatedAt).toBe("2026-07-11T16:05:00.000Z");
   });
 
   it("rejects field-level shape violations behind each reserved door", async () => {
@@ -475,6 +499,7 @@ describe("memoryStoreAdapter reserved routing", () => {
     await rejects("vendo_approvals", approval.id, { request: approval, status: "consumed" });
     await rejects("vendo_approvals", approval.id, { request: approval, status: "pending", sessionId: 5 });
     await rejects("vendo_approvals", approval.id, { request: approval, status: "pending", decidedAt: "yesterday" });
+    await rejects("vendo_approvals", approval.id, { request: approval, status: "denied", deniedBy: "somebody" });
     await rejects("vendo_approvals", "apr_other_id", { request: approval, status: "pending" });
     await rejects("vendo_threads", "thr_shape", { subject: 5, messages: [] });
     await rejects("vendo_threads", "thr_shape", { subject: principal.subject, messages: "not an array" });

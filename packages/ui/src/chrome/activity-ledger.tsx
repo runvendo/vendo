@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import type { ToolMetaMap } from "./humanize.js";
 import {
   describeActivity,
+  decidedByLabel,
   eventOutcomeLabel,
   formatAuditTime,
   formatRelativeAuditTime,
@@ -82,7 +83,7 @@ export function ActivityLedger({ events, tools }: { events: AuditEvent[]; tools?
                 <OutcomeIcon tone={tone} />
                 <span>
                   {label}
-                  {event.decidedBy ? <span className="fl-act-led-by"> by {event.decidedBy}</span> : null}
+                  {event.decidedBy ? <span className="fl-act-led-by"> by {decidedByLabel(event.decidedBy)}</span> : null}
                 </span>
               </span>
             </span>

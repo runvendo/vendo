@@ -124,6 +124,9 @@ export class PGliteStore implements StoreAdapter {
         session_id text,
         decided_at timestamptz,
         consumed_at timestamptz,
+        denied_by text,
+        voided_at timestamptz,
+        call_id text,
         created_at timestamptz not null default now(),
         updated_at timestamptz not null default now()
       );
@@ -228,20 +231,25 @@ class ReservedSqlRecordStore implements RecordStore {
       );
     } else if (this.collection === "vendo_approvals") {
       const data = record.data as {
-        request: { id: string; ctx: { principal: { subject: string } } };
+        request: { id: string; call: { id: string }; ctx: { principal: { subject: string } } };
         status: string;
         sessionId: string;
         decidedAt?: string;
         consumedAt?: string;
+        deniedBy?: string;
+        voidedAt?: string;
       };
       await this.db.query(
         `INSERT INTO vendo_approvals
-          (id, subject, request, status, session_id, decided_at, consumed_at, created_at, updated_at)
-         VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$8)
+          (id, subject, request, status, session_id, decided_at, consumed_at,
+           denied_by, voided_at, call_id, created_at, updated_at)
+         VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10,$11,$11)
          ON CONFLICT (id) DO UPDATE SET
           subject=EXCLUDED.subject, request=EXCLUDED.request, status=EXCLUDED.status,
           session_id=EXCLUDED.session_id, decided_at=EXCLUDED.decided_at,
-          consumed_at=EXCLUDED.consumed_at, updated_at=EXCLUDED.updated_at`,
+          consumed_at=EXCLUDED.consumed_at, denied_by=EXCLUDED.denied_by,
+          voided_at=EXCLUDED.voided_at, call_id=EXCLUDED.call_id,
+          updated_at=EXCLUDED.updated_at`,
         [
           record.id,
           data.request.ctx.principal.subject,
@@ -250,6 +258,9 @@ class ReservedSqlRecordStore implements RecordStore {
           data.sessionId,
           data.decidedAt ?? null,
           data.consumedAt ?? null,
+          data.deniedBy ?? null,
+          data.voidedAt ?? null,
+          data.request.call.id,
           now,
         ],
       );
@@ -306,7 +317,7 @@ class ReservedSqlRecordStore implements RecordStore {
     }
     const refColumns: Record<ReservedCollection, Record<string, string>> = {
       vendo_grants: { subject: "subject", tool: "tool", app_id: "app_id" },
-      vendo_approvals: { subject: "subject", status: "status" },
+      vendo_approvals: { subject: "subject", status: "status", call: "call_id" },
       vendo_audit: { subject: "subject", kind: "kind", app_id: "app_id", tool: "tool" },
     };
     for (const [key, value] of Object.entries(query.refs ?? {})) {
@@ -367,7 +378,7 @@ class ReservedSqlRecordStore implements RecordStore {
       };
     }
     if (this.collection === "vendo_approvals") {
-      const request = row.request as { ctx: { principal: { subject: string } } };
+      const request = row.request as { call: { id: string }; ctx: { principal: { subject: string } } };
       return {
         id: String(row.id),
         data: {
@@ -376,8 +387,14 @@ class ReservedSqlRecordStore implements RecordStore {
           sessionId: String(row.session_id),
           ...(row.decided_at == null ? {} : { decidedAt: iso(row.decided_at) }),
           ...(row.consumed_at == null ? {} : { consumedAt: iso(row.consumed_at) }),
+          ...(row.denied_by == null ? {} : { deniedBy: String(row.denied_by) }),
+          ...(row.voided_at == null ? {} : { voidedAt: iso(row.voided_at) }),
         },
-        refs: { subject: request.ctx.principal.subject, status: String(row.status) },
+        refs: {
+          subject: request.ctx.principal.subject,
+          status: String(row.status),
+          call: row.call_id == null ? request.call.id : String(row.call_id),
+        },
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),
       };

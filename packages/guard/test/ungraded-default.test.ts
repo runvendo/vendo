@@ -154,6 +154,60 @@ describe("a denial answers the identical re-issue instead of re-parking", () => 
     expect(await bound.execute(other, context())).toMatchObject({ status: "pending-approval" });
   });
 
+  it("does NOT stand when housekeeping wrote it — the TTL sweep is not an answer", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    // An hour of inattention. The sweep denies the row to reap the queue; it is
+    // not the user saying no, and must never brick the next ask.
+    expect(await guard.sweepExpiredApprovals!(60 * 60_000, Date.now() + 61 * 60_000)).toBe(1);
+
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "pending-approval" });
+  });
+
+  it("does NOT stand when the conversation walked away — abandonment is not an answer", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.abandonApprovals!([parked.approvalId], context());
+
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "pending-approval" });
+  });
+
+  it("takes a human no back through approvals.revoke, and the next issue asks again", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: false }, alice);
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "blocked" });
+
+    // The undo: a misclicked no on a frozen-descriptor ceremony is recoverable.
+    await guard.approvals.revoke(parked.approvalId, alice);
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "pending-approval" });
+  });
+
+  it("guards revoke like every approval read: foreign not-found, pending conflicts", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const bound = guard.bind(new FixtureTools([ungraded]));
+
+    const parked = await bound.execute(stable(), context());
+    if (parked.status !== "pending-approval") throw new Error("expected the ungraded call to park");
+    // Nothing to take back yet — deny it instead.
+    await expect(guard.approvals.revoke(parked.approvalId, alice)).rejects.toMatchObject({ code: "conflict" });
+    await guard.approvals.decide(parked.approvalId, { approve: false }, alice);
+    await expect(guard.approvals.revoke(parked.approvalId, bob)).rejects.toMatchObject({ code: "not-found" });
+  });
+
   it("does not leak across subjects — Bob's call is never answered by Alice's no", async () => {
     const store = createMemoryStore();
     const guard = createGuard({ store });
@@ -166,6 +220,59 @@ describe("a denial answers the identical re-issue instead of re-parking", () => 
     expect(await bound.execute(stable(), context({ principal: bob }))).toMatchObject({
       status: "pending-approval",
     });
+  });
+});
+
+/**
+ * Checker round 3, finding 2 — parking never dedupes, so ONE stable call id can
+ * hold an approved row and a denied row at once. The person's latest word has
+ * to win, whichever order they arrive in.
+ */
+describe("the newest human decision on a call wins", () => {
+  const ungraded = descriptor("ungraded", { name: "host_pay_invoice" });
+  const stable = () => call(ungraded.name, { invoiceId: "inv_1" }, "call_stable");
+
+  it("approve THEN deny: the stale yes is voided, not replayed after the no", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+
+    // Two asks on the same call id — the second parks because the first is
+    // still pending, exactly as it does today.
+    const first = await bound.execute(stable(), context());
+    if (first.status !== "pending-approval") throw new Error("expected a park");
+    const second = await bound.execute(stable(), context());
+    if (second.status !== "pending-approval") throw new Error("expected a second park");
+
+    await guard.approvals.decide(first.approvalId, { approve: true }, alice);
+    await guard.approvals.decide(second.approvalId, { approve: false }, alice);
+
+    // Without the supersede, the older approval would run the very thing the
+    // user just refused.
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "blocked" });
+    expect(tools.executions).toHaveLength(0);
+  });
+
+  it("deny THEN approve: the approval was minted after the no, so it wins", async () => {
+    const store = createMemoryStore();
+    const guard = createGuard({ store });
+    const tools = new FixtureTools([ungraded]);
+    const bound = guard.bind(tools);
+
+    const first = await bound.execute(stable(), context());
+    if (first.status !== "pending-approval") throw new Error("expected a park");
+    const second = await bound.execute(stable(), context());
+    if (second.status !== "pending-approval") throw new Error("expected a second park");
+
+    await guard.approvals.decide(first.approvalId, { approve: false }, alice);
+    await guard.approvals.decide(second.approvalId, { approve: true }, alice);
+
+    // The yes came second and was never superseded, so the call runs once.
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "ok" });
+    expect(tools.executions).toHaveLength(1);
+    // …and the standing no is back in charge for the next issue.
+    expect(await bound.execute(stable(), context())).toMatchObject({ status: "blocked" });
   });
 });
 

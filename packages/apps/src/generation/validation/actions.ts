@@ -34,7 +34,10 @@ export const isMutatingRisk = (risk: string | undefined): boolean =>
 export const takesInput = (tool: { inputSchema?: Record<string, unknown> }): boolean => {
   const schema = tool.inputSchema;
   if (!isRecord(schema) || !isRecord(schema.properties)) return true;
-  return schema.additionalProperties === true || Object.keys(schema.properties).length > 0;
+  // `additionalProperties` opens the schema whether it is `true` or a SCHEMA
+  // describing the allowed values — catalog-scan emits the latter.
+  if (schema.additionalProperties === true || isRecord(schema.additionalProperties)) return true;
+  return Object.keys(schema.properties).length > 0;
 };
 
 export const hasPayload = (payload: unknown): boolean =>
