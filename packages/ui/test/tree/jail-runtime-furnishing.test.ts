@@ -82,17 +82,25 @@ describe("generated component jail furnishing runtime", () => {
         props: {},
         styles: [{
           path: "src/app/globals.css",
-          css: '@import "tailwindcss";\n@import url("./theme.css") layer(base);\n.captured-card { color: rgb(12, 34, 56); }',
+          // The quoted-semicolon URL and the string-literal decoy pin the
+          // scanner behavior: a ; inside a quoted URL must not end the
+          // statement, and an @import inside a string is content to keep.
+          css: '@import "tailwindcss";\n@import url("https://fonts.example.test/a;b.css");\n@import url("./theme.css") layer(base);\n.captured-card { color: rgb(12, 34, 56); }\n.decoy::after { content: "@import fake;"; }',
         }],
       },
     }));
 
     await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({ vendo: true, kind: "ready" }, "*"));
     const style = document.head.querySelector<HTMLStyleElement>('style[data-vendo-host-style="src/app/globals.css"]');
-    // No @import may reach the jailed document: the CSP has no style network
-    // source, so an injected @import is a guaranteed-refused fetch (eval F5).
-    expect(style?.textContent).not.toContain("@import");
+    // No @import statement may reach the jailed document: the CSP has no
+    // style network source, so an injected @import is a guaranteed-refused
+    // fetch (eval F5). The rules around the statements survive intact —
+    // including one AFTER the quoted-semicolon URL — and the string-literal
+    // decoy is content, not a statement.
+    expect(style?.textContent).not.toMatch(/@import\s+(?:url|")/u);
+    expect(style?.textContent).not.toContain("b.css");
     expect(style?.textContent).toContain(".captured-card { color: rgb(12, 34, 56); }");
+    expect(style?.textContent).toContain('content: "@import fake;"');
     expect(consoleError).not.toHaveBeenCalled();
   }, 15_000);
 
