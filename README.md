@@ -156,3 +156,4 @@ Cloud-gated sharing, publishing, org overlays, and pinning activate with
     <img src="assets/footer.svg" alt="Shaped to every customer. Star runvendo/vendo. Apache-2.0, docs.vendo.run, vendo.run, backed by Y Combinator" width="100%">
   </a>
 </p>
+
