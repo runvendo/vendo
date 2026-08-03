@@ -56,17 +56,55 @@ describe("vendo mcp server-json", () => {
     expect(messages.errors).toEqual([]);
   });
 
-  it("prompts for domain and public URL when flags are missing", async () => {
+  it("prompts for domain and public URL when flags are missing on a TTY", async () => {
     const root = await fixture();
     const prompt = vi.fn()
       .mockResolvedValueOnce("example.com")
       .mockResolvedValueOnce("https://example.com/api/vendo/mcp");
 
-    expect(await runServerJson({ targetDir: root, prompt, output: output().sink })).toBe(0);
+    expect(await runServerJson({ targetDir: root, prompt, isTty: true, output: output().sink })).toBe(0);
     expect(prompt.mock.calls.map(([question]) => question)).toEqual([
       "Registry domain (for example example.com): ",
       "Public MCP URL: ",
     ]);
+  });
+
+  // Self-serve audit B6: the prompts used to fire on a piped stdin too, so a
+  // CI job or an agent hung forever on a question nobody could answer.
+  it("fails loudly instead of prompting when stdin is not a TTY", async () => {
+    const root = await fixture();
+    const prompt = vi.fn();
+    const messages = output();
+
+    expect(await runServerJson({ targetDir: root, prompt, isTty: false, output: messages.sink })).toBe(1);
+    expect(prompt).not.toHaveBeenCalled();
+    expect(messages.errors).toEqual([
+      "vendo mcp server-json: --domain and --url are required non-interactively (example: vendo mcp server-json --domain example.com --url https://example.com/api/vendo/mcp)",
+    ]);
+    await expect(readFile(join(root, "server.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("half the flags is still not enough non-interactively", async () => {
+    const messages = output();
+    expect(await runServerJson({
+      targetDir: await fixture(),
+      domain: "example.com",
+      isTty: false,
+      output: messages.sink,
+    })).toBe(1);
+    expect(messages.errors.join("\n")).toContain("--domain and --url are required non-interactively");
+  });
+
+  it("both flags need no TTY at all", async () => {
+    const messages = output();
+    expect(await runServerJson({
+      targetDir: await fixture(),
+      domain: "example.com",
+      url: "https://example.com/api/vendo/mcp",
+      isTty: false,
+      output: messages.sink,
+    })).toBe(0);
+    expect(messages.errors).toEqual([]);
   });
 
   it("validates namespace and remote URL binding before writing", async () => {

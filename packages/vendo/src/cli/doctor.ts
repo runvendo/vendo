@@ -10,7 +10,7 @@ import {
   type CloudDoctorResult,
   type LiveTurnResult,
 } from "./doctor-live.js";
-import { installedAiVersion, installedZodVersion } from "./dep-versions.js";
+import { installedAiVersion, installedZodVersion, isOlderVersion, npmLatestVersion } from "./dep-versions.js";
 import { zodBelowAiSdkFloor, zodBumpInvocation } from "./provider-deps.js";
 import { describeDevCredential, resolveDevCredential } from "../dev-creds/resolve.js";
 // Relative (not the #dev-creds condition): the CLI is Node-only and the edge
@@ -51,6 +51,9 @@ export interface DoctorOptions {
   cloudProbe?: (options: { env?: Record<string, string | undefined> }) => Promise<CloudDoctorResult>;
   startDevServer?: (options: { root: string; statusUrl: string; env?: Record<string, string | undefined>; fetchImpl?: typeof fetch }) => Promise<{ ok: boolean; stop: () => void }>;
   e2bResolvable?: (root: string) => boolean;
+  /** The npm `latest` lookup behind the version-skew line — its own seam, not
+      fetchImpl, so a scripted wire probe never doubles as a registry answer. */
+  npmLatest?: () => Promise<string | null>;
 }
 
 type CheckStatus = "ok" | "broken" | "warning";
@@ -323,6 +326,16 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     fail("deps/zod-floor", "E-DEP-003", `installed zod@${zodVersion} predates the zod/v3 + zod/v4 subpaths the AI SDK imports (needs >=3.25) — the app build fails inside ai@6; bump within zod 3: ${await zodBumpInvocation(root)}`);
   } else if (zodVersion !== null) {
     pass("deps/zod-floor", `installed zod@${zodVersion} exposes the AI SDK's zod/v3 + zod/v4 subpaths (>=3.25)`);
+  }
+
+  // Self-serve audit F1 — npm release-cooldown configs (`min-release-age`)
+  // resolve an old @vendoai/vendo silently, and Vendo ships often enough that
+  // those users stay permanently behind with nothing ever saying so. A hint,
+  // not a check: it has no fix_ref registry code and never changes the exit
+  // code, and an unreachable registry says nothing at all.
+  const latestPublished = await (options.npmLatest ?? (() => npmLatestVersion("@vendoai/vendo")))();
+  if (latestPublished !== null && isOlderVersion(CLI_VERSION, latestPublished) && !json) {
+    output.error(`warning: installed @vendoai/vendo ${CLI_VERSION} is behind latest ${latestPublished} — npm install @vendoai/vendo@latest (release-cooldown npm configs like min-release-age resolve old versions silently)`);
   }
 
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {

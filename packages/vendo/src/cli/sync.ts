@@ -59,9 +59,10 @@ export interface SyncOptions {
 /** `sync --json` — the one machine-readable object printed on stdout. */
 export interface SyncJsonResult {
   ok: boolean;                       // exitCode === 0
-  /** 2 = uncapturable `<Remixable>` wrapper, or breaking changes under
+  /** 1 = the run could not do what was asked (`--report` with no Cloud key);
+   *  2 = uncapturable `<Remixable>` wrapper, or breaking changes under
    *  --strict; 3 = breaking changes with saved references. */
-  exitCode: 0 | 2 | 3;
+  exitCode: 0 | 1 | 2 | 3;
   report: SyncReportWithWarnings;
   /** [] = nothing referenced the changed tools; null = impact unknown (dev server unreachable). */
   impact: ToolImpact[] | null;
@@ -334,13 +335,17 @@ async function sync(options: SyncOptions): Promise<number> {
       }
     }
 
+    let reportUnkeyed = false;
     if (options.report === true) {
       // The same resolved key the baseline push uses — a `--report` that saw a
       // different env from the reconcile beside it was a trap (#567's fix
       // applies to every keyed leg of a sync, not just the judgment pass).
       const apiKey = cloudKey;
       if (!apiKey) {
-        noteError("--report requires VENDO_API_KEY or --key");
+        // Self-serve audit B6: this used to complain and exit 0, so a CI
+        // reporting lane stayed green for as long as it never reported.
+        reportUnkeyed = true;
+        noteError("vendo sync: --report needs a Vendo Cloud key — run `vendo login`, set VENDO_API_KEY, or pass --key.");
       } else {
         const payload: SyncReportPayload = {
           report,
@@ -366,6 +371,9 @@ async function sync(options: SyncOptions): Promise<number> {
       const breakingTools = new Set(report.breaking.map((breaking) => breaking.tool));
       exitCode = impact?.some((entry) => breakingTools.has(entry.tool) && nonzero(entry)) === true ? 3 : 2;
     }
+    // A --report that never reported is a failed run, whatever the catalog
+    // said; the --strict codes are more specific, so they keep their meaning.
+    if (reportUnkeyed && exitCode === 0) exitCode = 1;
     if (json) {
       const result: SyncJsonResult = {
         ok: exitCode === 0,

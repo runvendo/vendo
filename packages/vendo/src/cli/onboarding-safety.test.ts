@@ -45,6 +45,17 @@ async function pagesHost(): Promise<string> {
   return root;
 }
 
+/** The same host with the surface ALREADY mounted — nothing left to paste, so
+    the closing line about the model key is the run's own last word. */
+async function mountedPagesHost(): Promise<string> {
+  const root = await pagesHost();
+  await writeFile(join(root, "pages", "_app.tsx"),
+    'import { VendoRoot } from "@vendoai/vendo/react";\n' +
+    "export default function App({ Component, pageProps }) {\n" +
+    "  return <VendoRoot><Component {...pageProps} /><VendoOverlay /></VendoRoot>;\n}\n");
+  return root;
+}
+
 function run(root: string, sink: { output: Output }, extra: Partial<Parameters<typeof runInit>[0]> = {}): Promise<number> {
   return runInit({
     targetDir: root,
@@ -192,7 +203,7 @@ describe("the closing line tells the truth about the model key", () => {
     ];
     for (const extra of keyless) {
       const sink = output();
-      expect(await run(await pagesHost(), sink, extra)).toBe(0);
+      expect(await run(await mountedPagesHost(), sink, extra)).toBe(0);
       expect(sink.logs.join("\n")).toContain(PENDING);
       expect(sink.logs.join("\n")).not.toContain(LIVE);
     }
@@ -200,14 +211,14 @@ describe("the closing line tells the truth about the model key", () => {
 
   it("keyed: live in your app", async () => {
     const sink = output();
-    expect(await run(await pagesHost(), sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
+    expect(await run(await mountedPagesHost(), sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
     expect(sink.logs.join("\n")).toContain(LIVE);
   });
 
   it("a re-run over an existing composition states the condition — it may pass its own model", async () => {
     // createVendo({ model }) needs no env key, so a keyless re-run over a
     // composition init did not write must claim neither "live" nor "not live".
-    const root = await pagesHost();
+    const root = await mountedPagesHost();
     expect(await run(root, output())).toBe(0);
     const sink = output();
     expect(await run(root, sink)).toBe(0);
@@ -218,7 +229,7 @@ describe("the closing line tells the truth about the model key", () => {
   });
 
   it("a key minted mid-run IS live", async () => {
-    const root = await pagesHost();
+    const root = await mountedPagesHost();
     const sink = output();
     expect(await run(root, sink, {
       cloud: {
@@ -231,6 +242,19 @@ describe("the closing line tells the truth about the model key", () => {
       },
     })).toBe(0);
     expect(sink.logs.join("\n")).toContain(LIVE);
+  });
+
+  // Self-serve audit F5: with a paste still outstanding, "the agent is live in
+  // your app" contradicted the frame two lines above it, which had just said
+  // Vendo stays invisible until that paste lands.
+  it("says nothing about being live while a paste is still pending", async () => {
+    const sink = output();
+    expect(await run(await pagesHost(), sink, { env: { ANTHROPIC_API_KEY: "sk-a" } })).toBe(0);
+    const logs = sink.logs.join("\n");
+    expect(logs).toContain("ONE STEP LEFT");
+    expect(logs).not.toContain("Then start your dev server");
+    // …and the outstanding paste is the run's very last word.
+    expect(sink.logs[sink.logs.length - 1]).toBe(`\n→ Don't forget the paste in ${join("pages", "_app.tsx")} (frame above)`);
   });
 });
 

@@ -572,10 +572,13 @@ describe("vendo init (zero-question)", () => {
     expect(tail).toContain(`edit ${join("vendo", "registry.tsx")} — `);
     expect(tail).toContain(`edit ${join("app", "layout.tsx")} — wrap the app in the <VendoRoot> lines above`);
     expect(tail).toContain(`edit ${join(".vendo", "brief.md")} — `);
-    // …and the machine gate, as the run's FINAL line.
+    // …and the machine gate, closing the tail block.
     expect(tail).toContain("vendo doctor --json");
-    expect(sink.logs[sink.logs.length - 1]).toContain("vendo doctor --json");
-    expect(sink.logs[sink.logs.length - 1]).toContain("green");
+    expect(sink.logs[sink.logs.length - 2]).toContain("vendo doctor --json");
+    expect(sink.logs[sink.logs.length - 2]).toContain("green");
+    // The one line after it is the outstanding-paste echo: with a mount still
+    // pending, the run's LAST word is the step the human owns (audit F5).
+    expect(sink.logs[sink.logs.length - 1]).toBe(`\n→ Don't forget the paste in ${join("app", "layout.tsx")} (frame above)`);
   });
 
   // Agent-install-dx Layer 2 (key-mint integration): a keyless run's tail

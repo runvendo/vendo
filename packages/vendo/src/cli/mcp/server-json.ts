@@ -17,6 +17,8 @@ export interface ServerJsonOptions {
   force?: boolean;
   prompt?: (question: string) => Promise<string>;
   output?: Output;
+  /** TTY seam (tests pin both sides). */
+  isTty?: boolean;
 }
 
 interface HostIdentity {
@@ -58,6 +60,15 @@ export async function runServerJson(options: ServerJsonOptions): Promise<number>
 
   if (!options.force && await exists(path)) {
     output.error("server.json already exists; pass --force to overwrite it");
+    return 1;
+  }
+
+  // Self-serve audit B6: the two questions below used to fire on a piped stdin
+  // too, so a CI job or an agent wedged on a prompt nobody could ever answer.
+  // Ask only where an answer can arrive; everywhere else, name both flags.
+  const tty = options.isTty ?? stdin.isTTY === true;
+  if (!tty && (options.domain === undefined || options.url === undefined)) {
+    output.error("vendo mcp server-json: --domain and --url are required non-interactively (example: vendo mcp server-json --domain example.com --url https://example.com/api/vendo/mcp)");
     return 1;
   }
 

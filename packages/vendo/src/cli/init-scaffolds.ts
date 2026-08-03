@@ -64,12 +64,16 @@ export function registrySource(variant: "tsx" | "mjs"): string {
     the embeds, which call this route directly (0.4.1 E2E cert blocker B4:
     a `() => null` wire against a demo-user chat route rendered an infinite
     skeleton). Replaced wholesale when an auth preset is wired. */
-export function anonymousPrincipalLines(): string {
+export function anonymousPrincipalLines(typescript: boolean): string {
+  // `as const` narrows kind to the Principal literal in TypeScript and is a
+  // SyntaxError in a .mjs file (self-serve audit B2: every plain-JS host died on
+  // its first `node server.js`), so the annotation rides the host's language.
+  const kind = typescript ? `"user" as const` : `"user"`;
   return `  // Who the wire's callers act as. This must resolve the SAME subject your\n` +
     `  // agent loop uses (the docs' chat routes set this demo principal), or apps\n` +
     `  // and approvals created in chat are invisible to the embeds, which call\n` +
     `  // this route directly. Replace both sides with your real session lookup.\n` +
-    `  principal: async () => ({ kind: "user" as const, subject: "demo-user" }),\n`;
+    `  principal: async () => ({ kind: ${kind}, subject: "demo-user" }),\n`;
 }
 
 /**
@@ -127,7 +131,8 @@ export function routeSource(options: { serverActions: boolean; auth: AuthMatch |
     (options.serverActions ? `import { serverActions } from "./vendo-actions";\n` : "") +
     `import { registry } from ${JSON.stringify(options.registrySpecifier)};\n` +
     `\nconst vendo = createVendo({\n` +
-    (options.auth === null ? anonymousPrincipalLines() : authConfigLines(options.auth)) +
+    // The Next route is always TypeScript (app/api/vendo/[...vendo]/route.ts).
+    (options.auth === null ? anonymousPrincipalLines(true) : authConfigLines(options.auth)) +
     `  catalog: registry,\n` +
     (options.serverActions ? `  serverActions,\n` : "") +
     `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
@@ -345,7 +350,7 @@ export function customServerSource(typescript: boolean, auth: AuthMatch | null =
     `    const baseUrl = (env.VENDO_CLOUD_URL ?? processEnv.VENDO_CLOUD_URL ?? "https://console.vendo.run").replace(/\\/+$/, "");\n` +
     `    const cloud = apiKey === undefined || apiKey === "" ? undefined : { apiKey, baseUrl };\n` +
     `    vendo = createVendo({\n` +
-    (auth === null ? anonymousPrincipalLines() : authConfigLines(auth))
+    (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth))
       .split("\n").map((line) => (line === "" ? line : `    ${line}`)).join("\n") +
     `      catalog: registry,\n` +
     `      policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
@@ -389,6 +394,13 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
         mountReturn: `: (request: ExpressRequest, response: ServerResponse, next: ExpressNext) => void`,
       }
     : { requestHeaders: "(headers)", absoluteUrl: "(request)", sendResponse: "(source, target)", handle: "(request, response)", mountReturn: "" };
+  // getSetCookie is the only correct way to read multiple Set-Cookie headers,
+  // but it is missing from older lib.dom Headers types — the TS variant casts,
+  // and the JS variant must not (a cast is a SyntaxError in .mjs; self-serve
+  // audit B2).
+  const getSetCookieExpression = typescript
+    ? `(source.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie`
+    : `source.headers.getSetCookie`;
   const requestInit = typescript
     ? `  const init: RequestInit & { duplex?: "half" } = { method, headers: requestHeaders(request.headers) };\n`
     : `  const init = { method, headers: requestHeaders(request.headers) };\n`;
@@ -426,7 +438,7 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     `import { registry } from ${JSON.stringify(registrySpecifier)};\n` +
     types +
     `\nconst vendo = createVendo({\n` +
-    (auth === null ? anonymousPrincipalLines() : authConfigLines(auth)) +
+    (auth === null ? anonymousPrincipalLines(typescript) : authConfigLines(auth)) +
     `  catalog: registry,\n` +
     `  policy: {}, // .vendo/policy.json: destructive asks, reads run\n` +
     `});\n\n` +
@@ -450,7 +462,7 @@ export function expressServerSource(typescript: boolean, auth: AuthMatch | null 
     `  source.headers.forEach((value, name) => {\n` +
     `    if (name.toLowerCase() !== "set-cookie") target.setHeader(name, value);\n` +
     `  });\n` +
-    `  const getSetCookie = (source.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;\n` +
+    `  const getSetCookie = ${getSetCookieExpression};\n` +
     `  const fallbackCookie = source.headers.get("set-cookie");\n` +
     `  const cookies = typeof getSetCookie === "function"\n` +
     `    ? getSetCookie.call(source.headers)\n` +

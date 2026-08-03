@@ -37,6 +37,9 @@ async function doctor(options: Parameters<typeof runDoctor>[0]): Promise<number>
       elapsedMs: 1,
     }),
     cloudProbe: async () => ({ present: false, ok: false, unlocks: ["a starter allowance"] }),
+    // No registry round-trip from the suite: the npm-latest hint is its own
+    // test (doctor-version-skew.test.ts).
+    npmLatest: async () => null,
     ...options,
   });
 }
@@ -758,6 +761,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      npmLatest: async () => null,
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -773,6 +777,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       env: { ANTHROPIC_API_KEY: "sk-test" },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      npmLatest: async () => null,
       output: bare.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -789,6 +794,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       env: { ANTHROPIC_API_KEY: "sk-test" },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      npmLatest: async () => null,
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -806,6 +812,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       env: { ANTHROPIC_API_KEY: "sk-test" },
       interactive: false,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      npmLatest: async () => null,
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(1);
@@ -920,6 +927,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       confirm,
       startDevServer,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      npmLatest: async () => null,
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);
@@ -960,6 +968,7 @@ describe("vendo doctor v2 (live turn + --json + cloud + dev-server probe)", () =
       confirm,
       startDevServer,
       cloudProbe: async () => ({ present: false, ok: false, unlocks: ["x"] }),
+      npmLatest: async () => null,
       output: messages.sink,
       telemetry: { env: { VENDO_TELEMETRY_DISABLED: "1" } },
     })).toBe(0);

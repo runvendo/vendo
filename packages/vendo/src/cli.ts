@@ -18,7 +18,6 @@ const HELP = `vendo — install your product's agent
 Usage: vendo <command> [dir] [options]
 
 Commands:
-  try             See your product's agent before installing: profile this repo read-only, serve a live local demo
   init [dir]      Set up Vendo: wire the handler, extract tools + theme, resolve a model key
   login           Claim a Vendo Cloud key: approve in the browser; the key lands in .env.local
   doctor [dir]    Verify the install: wiring, live probes, and one real model turn (--json for agents)
@@ -41,7 +40,7 @@ Options:
   --wait <seconds>           Login only: bound this call's polling to N seconds (agents loop re-runs; each resumes the same request), then exit resumably
   --byo                      Init only: decline the Vendo Cloud offer (bring your own model key)
   --ai                       Init/sync: run the AI judgment pass without asking (works non-interactively)
-  --engine <name>            Init/try/sync: pin the AI engine (claude, codex, npx) instead of first-available
+  --engine <name>            Init/sync: pin the AI engine (claude, codex, npx) instead of first-available
   --theme <slot=value>       Init only: override a theme slot value directly (repeatable)
   --list                     Eject only: show the ejectable surfaces
   --url <url>                Doctor/server-json: mounted wire base or public MCP URL
@@ -49,9 +48,7 @@ Options:
   --review                   Sync only: show the queued + new loosenings and confirm before writing
   --full                     Sync only: judge the whole catalog instead of only what moved
   --theme-refresh            Sync only: take the theme scan's values even for slots you hand-edited
-  --port <port>              Try only: listen on a fixed port (default: any free port)
-  --no-open                  Try only: print the URL without opening the browser
-  --no-ai                    Init/sync: force the AI judgment pass off; try: skip the background AI deepening
+  --no-ai                    Init/sync: force the AI judgment pass off
   --json                     Sync/doctor: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
   --key <key>                Sync/cloud: override VENDO_API_KEY
@@ -279,9 +276,13 @@ export async function main(argv: string[]): Promise<number> {
     // .vendo (compounds/briefs live in .vendo/overrides.json), and the try
     // surface's refine panel carries the conversational-correction loop —
     // the refine ENGINE lives on there (src/refine.ts).
-    console.error("vendo refine was retired — `vendo sync` AI-enriches .vendo now (compounds and briefs live in .vendo/overrides.json), and `vendo try` offers conversational corrections in its refine panel. Run: vendo sync");
+    console.error("vendo refine was retired — `vendo sync` AI-enriches .vendo now (compounds and briefs live in .vendo/overrides.json). Run: vendo sync");
     return 1;
   }
+  // UNLISTED (self-serve audit B1): `try` still runs for anyone who already
+  // invokes it, but HELP no longer advertises it — the pre-install pitch it
+  // fronted (`npx vendo try`) resolves no npm package, so naming it here sends
+  // strangers to a 404 or, worse, a same-named binary already on their PATH.
   if (command === "try") {
     const { errors, port, engine } = tryOptionErrors(args);
     if (errors.length > 0) {
@@ -296,10 +297,10 @@ export async function main(argv: string[]): Promise<number> {
     });
   }
   if (command === "playground") {
-    // Retired: `vendo try` absorbed the playground's job (the scripted
-    // surfaces still serve when try runs keyless or outside a repo). The
-    // bundle machinery lives on in cli/playground.ts and cli/playground/.
-    console.error("vendo playground was retired — `vendo try` does the same job (and more): scripted surfaces with no model key, plus a live profile of your repo when run inside one. Run: vendo try");
+    // Retired: the playground's job moved into the try surface (unlisted —
+    // see the `try` branch below). The bundle machinery lives on in
+    // cli/playground.ts and cli/playground/.
+    console.error("vendo playground was retired — set Vendo up in your own repo instead: `vendo init`, then `vendo doctor`. Docs: https://vendo.run/quickstart");
     return 1;
   }
   if (command === "sync") {

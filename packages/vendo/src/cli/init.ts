@@ -1446,14 +1446,20 @@ export async function runInit(options: InitOptions): Promise<number> {
     // key" is the whole story, while one init did not write may pass its own
     // `model` to createVendo — nothing here can see that, so state the
     // condition rather than guess either way.
+    // …and it only gets to speak at all once nothing is outstanding: a paste
+    // still pending means the frame above just said Vendo is invisible until
+    // it lands, so "the agent is live in your app" would contradict it in the
+    // same breath (self-serve audit F5).
     const modelReady = credential.rung === "env-key"
       || (credential.rung === "vendo-cloud" && cloud.keyValid);
-    output.log(`\nThen start your dev server — ${modelReady
-      ? "the agent is live in your app."
-      : compositionPath !== null
-        ? "the agent is live once you add a model key."
-        : "no model key resolved here, so the agent is live only if your composition passes its own model."}`);
-    output.log("Verify everything: `npx vendo doctor` (it can start the server and run a live turn).");
+    if (handSteps.length === 0) {
+      output.log(`\nThen start your dev server — ${modelReady
+        ? "the agent is live in your app."
+        : compositionPath !== null
+          ? "the agent is live once you add a model key."
+          : "no model key resolved here, so the agent is live only if your composition passes its own model."}`);
+    }
+    output.log(`${handSteps.length === 0 ? "" : "\n"}Verify everything: \`npx vendo doctor\` (it can start the server and run a live turn).`);
 
     // Agent tail (agent-install-dx): the --yes-or-non-TTY path is agent-driven
     // — the run's FINAL block is the repo-specific pointers an agent parses.
@@ -1495,6 +1501,16 @@ export async function runInit(options: InitOptions): Promise<number> {
       } catch {
         // The ask is best-effort by design; init already succeeded.
       }
+    }
+    // The run's LAST word is the outstanding paste, on both paths (self-serve
+    // audit F5: interactive installs used to end on the star ask with the one
+    // step that matters scrolled off-screen). The frame itself stays up-screen
+    // — the agent tail's "the lines above" pointers depend on that order — so
+    // the closer is a one-line echo of it, not a second copy.
+    if (handSteps.length > 0) {
+      output.log(handSteps.length === 1
+        ? `\n→ Don't forget the paste in ${handSteps[0]!.file} (frame above)`
+        : `\n→ Don't forget the ${handSteps.length} pastes above (frame above)`);
     }
     pretty?.done(Date.now() - started, true);
     return 0;
