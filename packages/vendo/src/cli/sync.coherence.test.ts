@@ -468,6 +468,14 @@ describe("pin baselines reach Vendo Cloud (decision 4)", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("keyless with captures SAYS the baselines stayed local", async () => {
+    vi.stubEnv("VENDO_API_KEY", "");
+    const dir = await hostWithBaselines([{ slot: "NetWorthCard", hash: "aa" }]);
+    const messages = captureOutput();
+    expect(await runSync({ targetDir: dir, output: messages.output, sync: scan, ai: false })).toBe(0);
+    expect(messages.logs.join("\n")).toContain("baselines stay local");
+  });
+
   it("a Cloud hiccup is a warning, never a failed build", async () => {
     const dir = await hostWithBaselines([{ slot: "NetWorthCard", hash: "aa" }]);
     const messages = captureOutput();

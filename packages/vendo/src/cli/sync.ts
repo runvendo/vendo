@@ -333,6 +333,12 @@ async function sync(options: SyncOptions): Promise<number> {
       if (result.error !== undefined) {
         noteError(`warning: pin baselines did not fully reach Vendo Cloud: ${result.error} — the rest stay in .vendo/remixable/ and the next sync retries`);
       }
+    } else if (await exists(join(vendoDir, "remixable"))) {
+      // Captures exist but this environment has no key. Keyless is a supported
+      // path (BYO), so this is a statement of fact rather than a warning — but
+      // it must be SAID: a build env that lacks the key the runtime has pushes
+      // nothing, and the console then shows a fork it cannot diff.
+      note("baselines stay local — no Vendo Cloud key in this environment; Cloud's Remix reviews screen needs a keyed sync to diff forks");
     }
 
     let reportUnkeyed = false;
