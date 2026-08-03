@@ -278,6 +278,38 @@ cards. Automations: a failed run shows on the automation card's sub-line
 card. Rejected along the way: structured failure cards (three stylings),
 inline retry line, composer retry chip — all read as furniture.
 
+### 16. One card shell, three laws (the card audit)
+
+Audit finding: cards look different in use because there is no designed
+reference (the gallery contains zero cards; the only isolated render is one
+perfect-data test fixture), the card's body is chosen by its DATA (three
+mutually exclusive layouts; empty in-thread schema degrades $47.50 to
+"4750 (unit not specified)" and drops the description), and the "same"
+card is re-implemented at least four times (thread card, waiting-queue
+row, voice strip, embed resolved-card) with six hardcoded eyebrows, five
+icon-well sizes, three primary-button variants, ancestor CSS that strips
+card chrome in the mobile sheet, unmatched class names (Share dialog), a
+no-fallback logo CDN, and a developer-voice policy banner auto-prepending
+on BYO surfaces.
+
+The fix, decided:
+
+1. **One shell component** — eyebrow · one-size icon well · title ·
+   MANDATORY plain-words line · field rows / list body · actions · byline
+   — built once in the S1 recipe; approval, connect, standing-access,
+   automation, and paused/adoption are contents only. Every surface
+   (thread, queue, activities, sheet, voice, embeds, center) renders the
+   same shell; the queue's WaitingRow and voice's consent strip become
+   thin wrappers around it. Ancestors may size it, never undress it.
+2. **Data hardening** — the descriptor (schema + title + description)
+   travels with the approval to every surface, so money always formats
+   and titles never fall to prettified slugs; raw server previews
+   (tool slug + canonical JSON) are never rendered to end users.
+3. **Consumer-voice guarantees** — the policy notice and any
+   developer-voiced error never render on end-user surfaces; remote
+   logos always carry an onError fallback glyph; the dead/duplicate card
+   CSS and unmatched class names are removed in the S1 pass.
+
 ## What this is NOT
 
 No new surfaces (no inbox, no notification center), no auto-folding panel,
