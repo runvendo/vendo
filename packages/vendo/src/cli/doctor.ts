@@ -332,10 +332,13 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   // resolve an old @vendoai/vendo silently, and Vendo ships often enough that
   // those users stay permanently behind with nothing ever saying so. A hint,
   // not a check: it has no fix_ref registry code and never changes the exit
-  // code, and an unreachable registry says nothing at all.
-  const latestPublished = await (options.npmLatest ?? (() => npmLatestVersion("@vendoai/vendo")))();
-  if (latestPublished !== null && isOlderVersion(CLI_VERSION, latestPublished) && !json) {
-    output.error(`warning: installed @vendoai/vendo ${CLI_VERSION} is behind latest ${latestPublished} — npm install @vendoai/vendo@latest (release-cooldown npm configs like min-release-age resolve old versions silently)`);
+  // code, and an unreachable registry says nothing at all. Skipped outright
+  // under --json, so an agent run never pays for a lookup it cannot see.
+  if (!json) {
+    const latestPublished = await (options.npmLatest ?? (() => npmLatestVersion("@vendoai/vendo")))();
+    if (latestPublished !== null && isOlderVersion(CLI_VERSION, latestPublished)) {
+      output.error(`warning: installed @vendoai/vendo ${CLI_VERSION} is behind latest ${latestPublished} — npm install @vendoai/vendo@latest (release-cooldown npm configs like min-release-age resolve old versions silently)`);
+    }
   }
 
   for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
