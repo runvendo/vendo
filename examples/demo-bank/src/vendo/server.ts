@@ -66,6 +66,13 @@ export const vendo = createVendo({
     experimentalServedApps: process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
     experimentalMachines: process.env.VENDO_EXPERIMENTAL_MACHINES === "1"
       || process.env.VENDO_EXPERIMENTAL_SERVED_APPS === "1",
+    // Remix review (round-2 hardening 2026-08-02): Mia is Maple's host
+    // reviewer — this assertion is what lets her read the full review queue,
+    // reject, and approve review-kind remixes; a user can never approve
+    // their own, so the two-user demo demonstrates the real boundary.
+    review: {
+      reviewer: (ctx) => resolveMapleSubject(ctx.principal.subject)?.email === "mia@maple.com",
+    },
     // speed-core ruling (2026-07-26, supersedes demo-refresh Part 5):
     // regionParallel is OFF for the demos — live evidence
     // (docs/verification/demo-live-readiness/speed-core/after.md) showed its

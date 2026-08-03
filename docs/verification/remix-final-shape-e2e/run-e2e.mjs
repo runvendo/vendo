@@ -43,6 +43,12 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const consoleLog = [];
 page.on("console", (message) => consoleLog.push(`[${message.type()}] ${message.text()}`));
 
+// The host reviewer's own seat (round-2 hardening: a user can never approve
+// their own review-kind remix; Maple asserts Mia as the reviewer via
+// apps.review.reviewer). Separate cookie jar, same browser.
+const reviewer = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const reviewerPage = await reviewer.newPage();
+
 const shot = async (name) => {
   await page.screenshot({ path: path.join(DIR, `${name}.png`), fullPage: false });
   log(`📸 ${name}.png`);
@@ -98,6 +104,13 @@ try {
   await page.waitForSelector("text=Total balance", { timeout: 30_000 });
   await shot("00-signed-in-home");
   log("signed in; home rendered");
+
+  // Mia signs in on her own seat — the reviewer for steps b and c.
+  await reviewerPage.goto(`${BASE}/login`);
+  await reviewerPage.fill('input[name="email"]', "mia@maple.com");
+  await reviewerPage.fill('input[name="password"]', process.env.MAPLE_DEMO_PASSWORD ?? "maple-demo");
+  await Promise.all([reviewerPage.waitForURL(/\/maple\/?$/), reviewerPage.click('button[type="submit"]')]);
+  log("reviewer (mia@maple.com) signed in on a second seat");
 
   // ---- (a) instant-kind: fork in place, edit via panel, revert, re-fork --
   {
@@ -182,27 +195,29 @@ try {
     await (await managePill("QuickActionsView")).waitFor({ timeout: 60_000 });
     await page.waitForTimeout(3_000);
     const status = await popoverStatus("QuickActionsView");
-    const sent = (await status.innerText()).includes("Sent for review");
+    const sent = (await status.innerText()).includes("Waiting for review");
     const stillOriginal = (await page.locator('button:has-text("Move money")').count()) > 0;
     const jailed = await jailCount(FORK_QUICKACTIONS);
     await shot("b1-sent-for-review-original-stays");
     await closePopover();
-    if (sent && stillOriginal && jailed === 0) pass("b1", "review-kind remix reports “Sent for review” in the ✦ popover; the original stays in the page; nothing jailed");
-    else fail("b1", `sent=${sent} originalStays=${stillOriginal} jailedFrames=${jailed}`);
+    if (sent && stillOriginal && jailed === 0) pass("b1", "review-kind remix reports “Waiting for review” in the ✦ popover; the original stays in the page; nothing jailed");
+    else fail("b1", `waiting=${sent} originalStays=${stillOriginal} jailedFrames=${jailed}`);
 
-    // The REAL review seam (wire, dev-composition scoped): queue → approve.
-    const queueResponse = await page.request.get(`${BASE}/api/vendo/apps/review-queue`);
+    // The REAL review seam, from the REVIEWER'S seat (round-2 hardening: a
+    // user can never approve their own remix — Mia holds the reviewer
+    // assertion): full queue → approve.
+    const queueResponse = await reviewerPage.request.get(`${BASE}/api/vendo/apps/review-queue`);
     const queue = await queueResponse.json();
     await writeFile(path.join(DIR, "b2-review-queue.json"), JSON.stringify(queue, null, 2));
     const entry = queue.find((candidate) => candidate.slot === "QuickActionsView");
     if (!entry || !entry.shipDiff) fail("b2", `review queue did not list the fork (${JSON.stringify(queue).slice(0, 200)})`);
     else {
-      log(`review queue lists ${entry.appId} @ ${entry.versionHash} with the ship-diff review artifact`);
-      const approve = await page.request.post(`${BASE}/api/vendo/dev/inclient-approval`, {
-        data: { appId: entry.appId, approvedBy: "host-reviewer (dev seam)" },
+      log(`reviewer's queue lists ${entry.appId} @ ${entry.versionHash} with the ship-diff review artifact`);
+      const approve = await reviewerPage.request.post(`${BASE}/api/vendo/dev/inclient-approval`, {
+        data: { appId: entry.appId, approvedBy: "mia@maple.com" },
       });
-      if (!approve.ok()) fail("b2", `approval door answered ${approve.status()}`);
-      else pass("b2", "approved through the REAL wire seam (GET /apps/review-queue → POST /dev/inclient-approval)");
+      if (!approve.ok()) fail("b2", `approval door answered ${approve.status()} — ${await approve.text()}`);
+      else pass("b2", "approved from the reviewer's seat through the REAL wire seam (GET /apps/review-queue → POST /dev/inclient-approval as Mia; the owner cannot self-approve)");
     }
 
     // The venue verdict is served on open(): re-open the page (same session).
@@ -240,14 +255,14 @@ try {
     await (await managePill("QuickActionsView")).waitFor({ timeout: 60_000 });
     await closePopover();
 
-    const queue = await (await page.request.get(`${BASE}/api/vendo/apps/review-queue`)).json();
+    const queue = await (await reviewerPage.request.get(`${BASE}/api/vendo/apps/review-queue`)).json();
     const entry = queue.find((candidate) => candidate.slot === "QuickActionsView");
     const NOTE = "Keep the Maple icon tint — resubmit with brand colors.";
-    const reject = await page.request.post(`${BASE}/api/vendo/apps/${entry.appId}/reject-review`, {
+    const reject = await reviewerPage.request.post(`${BASE}/api/vendo/apps/${entry.appId}/reject-review`, {
       data: { note: NOTE },
     });
-    if (!reject.ok()) fail("c1", `reject-review answered ${reject.status()}`);
-    else log(`rejected ${entry.appId} with a note through the wire seam`);
+    if (!reject.ok()) fail("c1", `reject-review answered ${reject.status()} — ${await reject.text()}`);
+    else log(`reviewer rejected ${entry.appId} with a note through the wire seam`);
 
     await page.reload();
     await page.waitForSelector("text=Total balance", { timeout: 30_000 });
@@ -257,7 +272,7 @@ try {
     const mounted = (await jailCount(FORK_QUICKACTIONS)) + (await nativeCount(FORK_QUICKACTIONS));
     await shot("c1-rejection-note-in-panel");
     await closePopover();
-    if (line.includes(NOTE) && stillOriginal && mounted === 0) {
+    if (line.includes(`Rejected — "${NOTE}"`) && stillOriginal && mounted === 0) {
       pass("c1", `reviewer's note is in the ✦ panel (“${line}”); the original still renders, nothing mounted`);
     } else {
       fail("c1", `noteShown=${line.includes(NOTE)} originalStays=${stillOriginal} mounted=${mounted} (“${line}”)`);
@@ -307,6 +322,7 @@ try {
 } finally {
   await writeFile(path.join(DIR, "console.log.txt"), consoleLog.join("\n"));
   await writeFile(path.join(DIR, "results.json"), JSON.stringify(results, null, 2));
+  await reviewer.close();
   await browser.close();
   console.log("\n==== VERDICTS ====");
   for (const { step, verdict, note } of results) console.log(`${verdict === "PASS" ? "PASS" : "FAIL"}  ${step} — ${note}`);

@@ -1,13 +1,13 @@
 [
   {
-    "appId": "app_86ebf6b1-75ae-49fd-a537-6a6478a421fb",
+    "appId": "app_25d3b603-49bd-4289-8f6e-5ff204954a62",
     "requester": "vendo-demo",
     "slot": "QuickActionsView",
     "versionHash": "sha256:2f052ae11f552fe13ca9505a8716019fce59fd91d1083ff405786e8f76e804b5",
-    "submittedAt": "2026-08-03T01:07:59.715Z",
+    "submittedAt": "2026-08-03T02:57:33.403Z",
     "resubmissions": 0,
     "shipDiff": {
-      "appId": "app_86ebf6b1-75ae-49fd-a537-6a6478a421fb",
+      "appId": "app_25d3b603-49bd-4289-8f6e-5ff204954a62",
       "versionHash": "sha256:2f052ae11f552fe13ca9505a8716019fce59fd91d1083ff405786e8f76e804b5",
       "pins": [
         {

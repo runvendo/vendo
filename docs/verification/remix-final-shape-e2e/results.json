@@ -2,7 +2,7 @@
   {
     "step": "a1",
     "verdict": "PASS",
-    "note": "✦ fork mounted sandboxed IN PLACE (iframe at the wrapper boundary); server recorded pin {slot: NetWorthView, base: sha256:52ce29c1d02…} on app_6445bef6-54c6-4bef-a894-d6c636b74380"
+    "note": "✦ fork mounted sandboxed IN PLACE (iframe at the wrapper boundary); server recorded pin {slot: NetWorthView, base: sha256:52ce29c1d02…} on app_b1559503-7102-4435-85a9-cf60fcbc99bb"
   },
   {
     "step": "a2",
@@ -22,26 +22,26 @@
   {
     "step": "b1",
     "verdict": "PASS",
-    "note": "review-kind remix reports “Sent for review” in the ✦ popover; the original stays in the page; nothing jailed"
+    "note": "review-kind remix reports “Waiting for review” in the ✦ popover; the original stays in the page; nothing jailed"
   },
   {
     "step": "b2",
     "verdict": "PASS",
-    "note": "approved through the REAL wire seam (GET /apps/review-queue → POST /dev/inclient-approval)"
+    "note": "approved from the reviewer's seat through the REAL wire seam (GET /apps/review-queue → POST /dev/inclient-approval as Mia; the owner cannot self-approve)"
   },
   {
     "step": "b3",
     "verdict": "PASS",
-    "note": "approved fork mounts NATIVE in place — real DOM (5 action buttons), no iframe; popover: “Approved by host-reviewer (dev seam) — runs in the page”"
+    "note": "approved fork mounts NATIVE in place — real DOM (5 action buttons), no iframe; popover: “Approved by mia@maple.com — runs in the page”"
   },
   {
     "step": "c1",
     "verdict": "PASS",
-    "note": "reviewer's note is in the ✦ panel (“Rejected by vendo-demo — \"Keep the Maple icon tint — resubmit with brand colors.\". Edit the remix to resubmit it.”); the original still renders, nothing mounted"
+    "note": "reviewer's note is in the ✦ panel (“Rejected — \"Keep the Maple icon tint — resubmit with brand colors.\". Edit the remix to resubmit it for review.”); the original still renders, nothing mounted"
   },
   {
     "step": "d",
     "verdict": "PASS",
-    "note": "placement written (app app_777e390c-6321-4c37-b076-6d494c18e288 → placements [\"home-hero\"], no fabricated home-hero pin); no drift warning anywhere"
+    "note": "placement written (app app_c56d1e6a-2c42-425c-8d5d-4d440533f59f → placements [\"home-hero\"], no fabricated home-hero pin); no drift warning anywhere"
   }
 ]

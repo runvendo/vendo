@@ -1,7 +1,7 @@
 [
   {
     "format": "vendo/app@1",
-    "id": "app_777e390c-6321-4c37-b076-6d494c18e288",
+    "id": "app_c56d1e6a-2c42-425c-8d5d-4d440533f59f",
     "name": "Spending by Category",
     "ui": "tree",
     "tree": {
@@ -24,7 +24,7 @@
           "source": "prewired",
           "children": [
             "stack-2",
-            "maplespendingdonut-1"
+            "surface-1"
           ],
           "component": "Stack"
         },
@@ -59,15 +59,58 @@
           "component": "Text"
         },
         {
+          "id": "surface-1",
+          "source": "prewired",
+          "children": [
+            "stack-3"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-3",
+          "props": {
+            "gap": 6
+          },
+          "source": "prewired",
+          "children": [
+            "maplespendingdonut-1",
+            "datatable-1"
+          ],
+          "component": "Stack"
+        },
+        {
           "id": "maplespendingdonut-1",
           "props": {
-            "size": 240,
+            "size": 220,
             "slices": {
               "$path": "/hostGetSpendingInsights/data"
             }
           },
           "source": "host",
           "component": "MapleSpendingDonut"
+        },
+        {
+          "id": "datatable-1",
+          "props": {
+            "rows": {
+              "$path": "/hostGetSpendingInsights/data"
+            },
+            "columns": [
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amount",
+                "align": "end",
+                "label": "Amount",
+                "format": "money"
+              }
+            ],
+            "emptyState": "No spending data for this period"
+          },
+          "source": "prewired",
+          "component": "DataTable"
         }
       ],
       "queries": [
@@ -84,7 +127,7 @@
   },
   {
     "format": "vendo/app@1",
-    "id": "app_31bb559b-0b57-453b-8724-fd4cb139d44d",
+    "id": "app_ed72b466-15b5-49cb-b4e5-2e7377bd6f2a",
     "name": "QuickActionsView remix",
     "ui": "tree",
     "tree": {
@@ -122,7 +165,7 @@
   },
   {
     "format": "vendo/app@1",
-    "id": "app_ea3a1da9-cbc0-486c-9f3d-db7799620be7",
+    "id": "app_0576a453-be6c-4b94-a546-2d603e82ddae",
     "name": "NetWorthView remix",
     "ui": "tree",
     "tree": {
@@ -189,7 +232,7 @@
   },
   {
     "format": "vendo/app@1",
-    "id": "app_b21608c8-894a-48fa-8852-984e5d34b2e7",
+    "id": "app_8c169277-e44d-46ec-9fc4-c85769641ba0",
     "name": "Card spend breakdown",
     "ui": "tree",
     "tree": {
@@ -249,7 +292,7 @@
                 "format": "money"
               }
             ],
-            "emptyState": "No card spend recorded yet — transactions will appear here once you make purchases."
+            "emptyState": "No card spend recorded yet — make a purchase to see your breakdown."
           },
           "source": "prewired",
           "component": "DataTable"
@@ -320,7 +363,7 @@
   },
   {
     "format": "vendo/app@1",
-    "id": "app_deb336ca-b277-4e25-9573-0207704611bd",
+    "id": "app_cfab7b93-52e6-4ec4-9d11-b01bb5d17641",
     "name": "Lisbon savings goal",
     "ui": "tree",
     "tree": {
@@ -343,7 +386,7 @@
           "source": "prewired",
           "children": [
             "surface-1",
-            "surface-2"
+            "lisbongoaltracker-1"
           ],
           "component": "Stack"
         },
@@ -363,7 +406,7 @@
           "source": "prewired",
           "children": [
             "text-1",
-            "lisbongoaltracker-1"
+            "datatable-1"
           ],
           "component": "Stack"
         },
@@ -387,68 +430,13 @@
           "component": "Text"
         },
         {
-          "id": "lisbongoaltracker-1",
-          "props": {
-            "name": {
-              "$path": "/profile/data/name"
-            },
-            "goals": {
-              "$path": "/goals/data"
-            }
-          },
-          "source": "generated",
-          "component": "LisbonGoalTracker"
-        },
-        {
-          "id": "surface-2",
-          "source": "prewired",
-          "children": [
-            "stack-3"
-          ],
-          "component": "Surface"
-        },
-        {
-          "id": "stack-3",
-          "props": {
-            "gap": 2
-          },
-          "source": "prewired",
-          "children": [
-            "text-3",
-            "datatable-1"
-          ],
-          "component": "Stack"
-        },
-        {
-          "id": "text-3",
-          "props": {
-            "variant": "heading"
-          },
-          "source": "prewired",
-          "children": [
-            "text-4"
-          ],
-          "component": "Text"
-        },
-        {
-          "id": "text-4",
-          "props": {
-            "text": "All savings goals"
-          },
-          "source": "prewired",
-          "component": "Text"
-        },
-        {
           "id": "datatable-1",
           "props": {
             "rows": {
-              "$path": "/goals/data"
+              "$path": "/hostListGoals/data"
             },
+            "limit": 10,
             "columns": [
-              {
-                "key": "icon",
-                "label": ""
-              },
               {
                 "key": "name",
                 "label": "Goal"
@@ -464,27 +452,33 @@
                 "format": "money"
               }
             ],
-            "emptyState": "No savings goals yet — add one to get started"
+            "emptyState": "No savings goals found. Create a goal to get started."
           },
           "source": "prewired",
           "component": "DataTable"
+        },
+        {
+          "id": "lisbongoaltracker-1",
+          "props": {
+            "goals": {
+              "$path": "/hostListGoals/data"
+            },
+            "label": "No Lisbon goal found"
+          },
+          "source": "generated",
+          "component": "LisbonGoalTracker"
         }
       ],
       "queries": [
         {
-          "name": "goals",
+          "name": "hostListGoals",
           "tool": "host_listGoals",
-          "input": {}
-        },
-        {
-          "name": "profile",
-          "tool": "host_getProfile",
           "input": {}
         }
       ]
     },
     "components": {
-      "LisbonGoalTracker": "export default function LisbonGoalTracker({ goals, name }) {\n  const [depositDollars, setDepositDollars] = React.useState(\"\");\n  const [status, setStatus] = React.useState(null);\n  const [localSaved, setLocalSaved] = React.useState(null);\n\n  const rows = Array.isArray(goals) ? goals : [];\n  const goal = rows.find(g => g.name && g.name.toLowerCase().includes(\"lisbon\")) || null;\n\n  const savedCents = localSaved !== null ? localSaved : (goal ? goal.saved : 0);\n  const targetCents = goal ? goal.target : 0;\n  const ratio = targetCents > 0 ? Math.min(savedCents / targetCents, 1) : 0;\n  const remainingCents = Math.max(targetCents - savedCents, 0);\n\n  async function handleDeposit() {\n    const dollars = parseFloat(depositDollars);\n    if (!dollars || dollars <= 0) {\n      setStatus({ kind: \"error\", message: \"Enter a valid amount.\" });\n      return;\n    }\n    const cents = Math.round(dollars * 100);\n    setStatus({ kind: \"pending\", message: \"Awaiting approval...\" });\n    try {\n      const result = await tools.host_transferMoney({\n        amount: cents,\n        recipient_name: \"Lisbon Savings\",\n        memo: \"Lisbon savings goal deposit\"\n      });\n      if (result && result.status === \"pending-approval\") {\n        setLocalSaved(savedCents + cents);\n        setStatus({ kind: \"success\", message: \"Transfer submitted — pending approval.\" });\n        setDepositDollars(\"\");\n      } else {\n        setStatus({ kind: \"success\", message: \"Transfer submitted.\" });\n        setLocalSaved(savedCents + cents);\n        setDepositDollars(\"\");\n      }\n    } catch (e) {\n      setStatus({ kind: \"error\", message: \"Transfer failed. Please try again.\" });\n    }\n  }\n\n  if (!goal) {\n    return (\n      <Stack gap={3}>\n        <Callout tone=\"info\" title=\"No Lisbon goal found\">\n          No savings goal named \"Lisbon\" was found. Create one in the Maple app to track it here.\n        </Callout>\n      </Stack>\n    );\n  }\n\n  return (\n    <Stack gap={4}>\n      <Stack gap={1}>\n        <Text variant=\"caption\" text=\"Saved so far\"/>\n        <Text variant=\"heading\">\n          {fmt.money(savedCents)}\n        </Text>\n        <Text variant=\"caption\">\n          {\"of \" + fmt.money(targetCents) + \" target\"}\n        </Text>\n      </Stack>\n\n      <Progress value={ratio} label=\"Progress\" showValue/>\n\n      <Row gap={4}>\n        <Stack gap={1}>\n          <Text variant=\"caption\" text=\"Remaining\"/>\n          <Text>{fmt.money(remainingCents)}</Text>\n        </Stack>\n        <Stack gap={1}>\n          <Text variant=\"caption\" text=\"Progress\"/>\n          <Text>{fmt.percent(ratio)}</Text>\n        </Stack>\n      </Row>\n\n      <Divider/>\n\n      <Stack gap={2}>\n        <Text variant=\"heading\">Add to goal</Text>\n        <Input\n          label=\"Amount (USD)\"\n          type=\"number\"\n          placeholder=\"0.00\"\n          value={depositDollars}\n          onChange={e => setDepositDollars(e.target.value)}\n        />\n        <Button\n          label=\"Transfer to Lisbon goal\"\n          variant=\"primary\"\n          onClick={handleDeposit}\n        />\n        {status && (\n          <Text variant=\"caption\" style={{ color: status.kind === \"error\" ? \"var(--vendo-color-danger)\" : \"var(--vendo-color-muted)\" }}>\n            {status.message}\n          </Text>\n        )}\n      </Stack>\n    </Stack>\n  );\n}"
+      "LisbonGoalTracker": "export default function LisbonGoalTracker({ goals }) {\n      const rows = Array.isArray(goals) ? goals : [];\n      const lisbon = rows.find(g => g.name && g.name.toLowerCase().includes(\"lisbon\")) || null;\n\n      const [depositAmount, setDepositAmount] = React.useState(\"\");\n      const [status, setStatus] = React.useState(null);\n\n      const saved = lisbon ? lisbon.saved : 0;\n      const target = lisbon ? lisbon.target : 0;\n      const ratio = target > 0 ? Math.min(saved / target, 1) : 0;\n      const remaining = Math.max(target - saved, 0);\n\n      async function handleDeposit() {\n        const dollars = parseFloat(depositAmount);\n        if (!dollars || dollars <= 0) {\n          setStatus({ kind: \"error\", message: \"Enter a valid amount.\" });\n          return;\n        }\n        const cents = Math.round(dollars * 100);\n        setStatus({ kind: \"pending\", message: \"Submitting transfer...\" });\n        try {\n          const result = await tools.host_transferMoney({\n            amount: cents,\n            recipient_name: lisbon ? lisbon.name : \"Lisbon savings goal\",\n            memo: \"Lisbon savings goal deposit\"\n          });\n          if (result && result.status === \"pending-approval\") {\n            setStatus({ kind: \"awaiting\", message: \"Awaiting your approval to complete the transfer.\" });\n          } else {\n            setStatus({ kind: \"success\", message: \"Transfer submitted successfully.\" });\n          }\n          setDepositAmount(\"\");\n        } catch (e) {\n          setStatus({ kind: \"error\", message: \"Transfer could not be submitted. Please try again.\" });\n        }\n      }\n\n      const borderColor = \"var(--vendo-color-border)\";\n      const textColor = \"var(--vendo-color-text)\";\n      const mutedColor = \"var(--vendo-color-muted)\";\n      const accentColor = \"var(--vendo-color-accent)\";\n      const surfaceColor = \"var(--vendo-color-surface)\";\n      const radius = \"var(--vendo-radius-medium)\";\n      const fontFamily = \"var(--vendo-font-family)\";\n\n      if (!lisbon) {\n        return (\n          <div style={{\n            background: surfaceColor,\n            border: `1px solid ${borderColor}`,\n            borderRadius: radius,\n            padding: \"32px 24px\",\n            fontFamily,\n            color: mutedColor,\n            textAlign: \"center\"\n          }}>\n            <div style={{ fontSize: \"15px\" }}>No Lisbon goal found. Create a savings goal named \"Lisbon\" to track it here.</div>\n          </div>\n        );\n      }\n\n      return (\n        <div style={{ fontFamily, color: textColor, display: \"flex\", flexDirection: \"column\", gap: \"20px\" }}>\n          {/* Hero card */}\n          <div style={{\n            background: surfaceColor,\n            border: `1px solid ${borderColor}`,\n            borderRadius: radius,\n            padding: \"32px 28px\",\n            display: \"flex\",\n            flexDirection: \"column\",\n            gap: \"20px\"\n          }}>\n            <div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"flex-start\" }}>\n              <div>\n                <div style={{ fontSize: \"13px\", color: mutedColor, marginBottom: \"6px\", letterSpacing: \"0.02em\" }}>Saved so far</div>\n                <div style={{ fontSize: \"40px\", fontWeight: \"700\", letterSpacing: \"-0.02em\", lineHeight: 1 }}>\n                  {fmt.money(saved)}\n                </div>\n              </div>\n              <div style={{ textAlign: \"right\" }}>\n                <div style={{ fontSize: \"13px\", color: mutedColor, marginBottom: \"6px\" }}>Target</div>\n                <div style={{ fontSize: \"22px\", fontWeight: \"600\" }}>{fmt.money(target)}</div>\n              </div>\n            </div>\n\n            {/* Progress bar */}\n            <div>\n              <div style={{\n                height: \"8px\",\n                background: \"var(--vendo-color-border)\",\n                borderRadius: \"99px\",\n                overflow: \"hidden\"\n              }}>\n                <div style={{\n                  height: \"100%\",\n                  width: `${Math.round(ratio * 100)}%`,\n                  background: accentColor,\n                  borderRadius: \"99px\",\n                  transition: \"width 0.6s cubic-bezier(0.4,0,0.2,1)\"\n                }} />\n              </div>\n              <div style={{ display: \"flex\", justifyContent: \"space-between\", marginTop: \"8px\" }}>\n                <span style={{ fontSize: \"13px\", color: mutedColor }}>{Math.round(ratio * 100)}% complete</span>\n                <span style={{ fontSize: \"13px\", color: mutedColor }}>{fmt.money(remaining)} to go</span>\n              </div>\n            </div>\n          </div>\n\n          {/* Deposit card */}\n          <div style={{\n            background: surfaceColor,\n            border: `1px solid ${borderColor}`,\n            borderRadius: radius,\n            padding: \"24px 28px\",\n            display: \"flex\",\n            flexDirection: \"column\",\n            gap: \"16px\"\n          }}>\n            <div style={{ fontSize: \"15px\", fontWeight: \"600\" }}>Add to goal</div>\n            <div style={{ display: \"flex\", gap: \"12px\", alignItems: \"flex-end\" }}>\n              <div style={{ flex: 1 }}>\n                <label style={{ display: \"block\", fontSize: \"13px\", color: mutedColor, marginBottom: \"6px\" }}>Amount (USD)</label>\n                <input\n                  type=\"number\"\n                  min=\"1\"\n                  step=\"0.01\"\n                  placeholder=\"0.00\"\n                  value={depositAmount}\n                  onChange={e => { setDepositAmount(e.target.value); setStatus(null); }}\n                  style={{\n                    width: \"100%\",\n                    padding: \"10px 14px\",\n                    fontSize: \"15px\",\n                    border: `1px solid ${borderColor}`,\n                    borderRadius: \"var(--vendo-radius-small)\",\n                    fontFamily,\n                    color: textColor,\n                    background: surfaceColor,\n                    outline: \"none\",\n                    boxSizing: \"border-box\"\n                  }}\n                />\n              </div>\n              <button\n                onClick={handleDeposit}\n                disabled={!depositAmount || status?.kind === \"pending\" || status?.kind === \"awaiting\"}\n                style={{\n                  padding: \"10px 22px\",\n                  background: accentColor,\n                  color: \"var(--vendo-color-accent-text)\",\n                  border: \"none\",\n                  borderRadius: \"var(--vendo-radius-small)\",\n                  fontSize: \"15px\",\n                  fontWeight: \"600\",\n                  cursor: \"pointer\",\n                  fontFamily,\n                  opacity: (!depositAmount || status?.kind === \"pending\" || status?.kind === \"awaiting\") ? 0.5 : 1,\n                  transition: \"opacity 0.2s\"\n                }}\n              >\n                {status?.kind === \"pending\" ? \"Sending...\" : \"Transfer\"}\n              </button>\n            </div>\n\n            {status && (\n              <div style={{\n                fontSize: \"13px\",\n                color: status.kind === \"error\" ? \"var(--vendo-color-danger)\" : status.kind === \"success\" ? \"#1a7f4b\" : mutedColor,\n                padding: \"10px 14px\",\n                background: status.kind === \"error\" ? \"#fff1f0\" : status.kind === \"success\" ? \"#f0faf4\" : \"#f5f5f3\",\n                borderRadius: \"var(--vendo-radius-small)\",\n                border: `1px solid ${borderColor}`\n              }}>\n                {status.message}\n              </div>\n            )}\n          </div>\n\n          {/* Stats row */}\n          <div style={{ display: \"grid\", gridTemplateColumns: \"1fr 1fr\", gap: \"12px\" }}>\n            <div style={{\n              background: surfaceColor,\n              border: `1px solid ${borderColor}`,\n              borderRadius: radius,\n              padding: \"20px 20px\"\n            }}>\n              <div style={{ fontSize: \"13px\", color: mutedColor, marginBottom: \"6px\" }}>Remaining</div>\n              <div style={{ fontSize: \"22px\", fontWeight: \"700\" }}>{fmt.money(remaining)}</div>\n            </div>\n            <div style={{\n              background: surfaceColor,\n              border: `1px solid ${borderColor}`,\n              borderRadius: radius,\n              padding: \"20px 20px\"\n            }}>\n              <div style={{ fontSize: \"13px\", color: mutedColor, marginBottom: \"6px\" }}>Progress</div>\n              <div style={{ fontSize: \"22px\", fontWeight: \"700\" }}>{Math.round(ratio * 100)}%</div>\n            </div>\n          </div>\n        </div>\n      );\n    }"
     },
     "componentTools": {
       "LisbonGoalTracker": [
@@ -494,7 +488,7 @@
   },
   {
     "format": "vendo/app@1",
-    "id": "app_bb57dfa2-0361-4bd0-9bb6-4dec27f156f1",
+    "id": "app_5935da61-5cee-4e8c-8adc-f1c8ad32d02a",
     "name": "Bills due next week",
     "ui": "tree",
     "tree": {
@@ -588,7 +582,7 @@
                 "format": "money"
               }
             ],
-            "emptyState": "No payments scheduled for next week — you are all clear."
+            "emptyState": "No bills scheduled for next week — you are all clear."
           },
           "source": "prewired",
           "component": "DataTable"
@@ -605,7 +599,7 @@
   },
   {
     "format": "vendo/app@1",
-    "id": "app_284f1772-a512-40a6-a66d-5afdd3ebd013",
+    "id": "app_fdfdcd1a-5961-4f3a-8a67-c1a0e86805d9",
     "name": "Dining budget breakdown",
     "ui": "tree",
     "tree": {
@@ -623,13 +617,14 @@
         {
           "id": "stack-1",
           "props": {
-            "gap": 6
+            "gap": 4
           },
           "source": "prewired",
           "children": [
             "surface-1",
             "surface-2",
-            "surface-3"
+            "surface-3",
+            "surface-4"
           ],
           "component": "Stack"
         },
@@ -644,13 +639,12 @@
         {
           "id": "stack-2",
           "props": {
-            "gap": 4
+            "gap": 3
           },
           "source": "prewired",
           "children": [
             "text-1",
-            "grid-1",
-            "progress-1"
+            "grid-1"
           ],
           "component": "Stack"
         },
@@ -688,9 +682,17 @@
         {
           "id": "stat-1",
           "props": {
-            "label": "Budget limit",
+            "label": "Spent",
             "value": {
-              "$path": "/hostGetBudgets/data/0/limit"
+              "$path": "/hostGetBudgets/data",
+              "$reshape": [
+                {
+                  "op": "sum",
+                  "args": [
+                    "spent"
+                  ]
+                }
+              ]
             },
             "format": "money"
           },
@@ -700,29 +702,22 @@
         {
           "id": "stat-2",
           "props": {
-            "label": "Spent so far",
+            "label": "Budget limit",
             "value": {
-              "$path": "/hostGetBudgets/data/0/spent"
+              "$path": "/hostGetBudgets/data",
+              "$reshape": [
+                {
+                  "op": "sum",
+                  "args": [
+                    "limit"
+                  ]
+                }
+              ]
             },
             "format": "money"
           },
           "source": "prewired",
           "component": "Stat"
-        },
-        {
-          "id": "progress-1",
-          "props": {
-            "max": {
-              "$path": "/hostGetBudgets/data/0/limit"
-            },
-            "label": "Dining spend",
-            "value": {
-              "$path": "/hostGetBudgets/data/0/spent"
-            },
-            "showValue": true
-          },
-          "source": "prewired",
-          "component": "Progress"
         },
         {
           "id": "surface-2",
@@ -735,7 +730,7 @@
         {
           "id": "stack-3",
           "props": {
-            "gap": 4
+            "gap": 3
           },
           "source": "prewired",
           "children": [
@@ -766,7 +761,7 @@
         {
           "id": "maplespendingdonut-1",
           "props": {
-            "size": 200,
+            "size": 220,
             "slices": {
               "$path": "/hostGetSpendingInsights/data"
             }
@@ -785,7 +780,7 @@
         {
           "id": "stack-4",
           "props": {
-            "gap": 4
+            "gap": 3
           },
           "source": "prewired",
           "children": [
@@ -808,7 +803,7 @@
         {
           "id": "text-6",
           "props": {
-            "text": "Recent dining transactions"
+            "text": "Dining transactions"
           },
           "source": "prewired",
           "component": "Text"
@@ -841,11 +836,61 @@
                 "label": "Status"
               }
             ],
-            "emptyState": "No dining transactions found for this period",
+            "paginate": 10,
+            "emptyState": "No dining transactions found. Eat out and they will appear here.",
             "searchable": true
           },
           "source": "prewired",
           "component": "DataTable"
+        },
+        {
+          "id": "surface-4",
+          "source": "prewired",
+          "children": [
+            "stack-5"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-5",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-7",
+            "budgetdiningprogress-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-7",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-8"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-8",
+          "props": {
+            "text": "Budget progress"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "budgetdiningprogress-1",
+          "props": {
+            "budgets": {
+              "$path": "/hostGetBudgets/data"
+            }
+          },
+          "source": "generated",
+          "component": "BudgetDiningProgress"
         }
       ],
       "queries": [
@@ -863,16 +908,22 @@
           "name": "hostListTransactions",
           "tool": "host_listTransactions",
           "input": {
-            "limit": 25,
+            "limit": 50,
             "category": "dining"
           }
         }
       ]
+    },
+    "components": {
+      "BudgetDiningProgress": "export default function BudgetDiningProgress({ budgets }) {\n      const rows = Array.isArray(budgets) ? budgets : [];\n      const dining = rows.find(b => b.category === \"dining\");\n\n      if (!dining) {\n        return (\n          <Text variant=\"caption\" text=\"No dining budget configured. Set one up in your budget settings.\"/>\n        );\n      }\n\n      const { limit, spent, category } = dining;\n      const ratio = limit > 0 ? Math.min(spent / limit, 1) : 0;\n      const remaining = limit - spent;\n      const overBudget = spent > limit;\n\n      return (\n        <Stack gap={3}>\n          <Row gap={4}>\n            <Stack gap={1}>\n              <Text variant=\"caption\" text=\"Spent\"/>\n              <Text variant=\"heading\" text={fmt.money(spent)}/>\n            </Stack>\n            <Stack gap={1}>\n              <Text variant=\"caption\" text=\"Limit\"/>\n              <Text variant=\"heading\" text={fmt.money(limit)}/>\n            </Stack>\n            <Stack gap={1}>\n              <Text variant=\"caption\" text={overBudget ? \"Over by\" : \"Remaining\"}/>\n              <Text\n                variant=\"heading\"\n                text={overBudget ? fmt.money(Math.abs(remaining)) : fmt.money(remaining)}\n              />\n            </Stack>\n          </Row>\n          <Progress\n            value={ratio}\n            label=\"Dining budget used\"\n            showValue\n            tone={overBudget ? \"danger\" : ratio > 0.8 ? \"warning\" : \"default\"}\n          />\n          {overBudget && (\n            <Callout tone=\"warning\" title=\"Over budget\">\n              You have exceeded your dining budget this period.\n            </Callout>\n          )}\n        </Stack>\n      );\n    }"
+    },
+    "componentTools": {
+      "BudgetDiningProgress": []
     }
   },
   {
     "format": "vendo/app@1",
-    "id": "app_0462defe-371b-46b6-bbbe-0680df8f5952",
+    "id": "app_b087964a-35df-4919-960c-4e57c4420585",
     "name": "Subscriptions tracker",
     "ui": "tree",
     "tree": {
@@ -894,71 +945,11 @@
           },
           "source": "prewired",
           "children": [
-            "surface-1",
             "grid-1",
-            "surface-2",
-            "surface-3",
-            "surface-4"
+            "surface-1",
+            "grid-2"
           ],
           "component": "Stack"
-        },
-        {
-          "id": "surface-1",
-          "source": "prewired",
-          "children": [
-            "stack-2"
-          ],
-          "component": "Surface"
-        },
-        {
-          "id": "stack-2",
-          "props": {
-            "gap": 2
-          },
-          "source": "prewired",
-          "children": [
-            "text-1",
-            "text-3"
-          ],
-          "component": "Stack"
-        },
-        {
-          "id": "text-1",
-          "props": {
-            "variant": "heading"
-          },
-          "source": "prewired",
-          "children": [
-            "text-2"
-          ],
-          "component": "Text"
-        },
-        {
-          "id": "text-2",
-          "props": {
-            "text": "Recurring subscriptions"
-          },
-          "source": "prewired",
-          "component": "Text"
-        },
-        {
-          "id": "text-3",
-          "props": {
-            "variant": "caption"
-          },
-          "source": "prewired",
-          "children": [
-            "text-4"
-          ],
-          "component": "Text"
-        },
-        {
-          "id": "text-4",
-          "props": {
-            "text": "Detected active subscriptions and recurring charges"
-          },
-          "source": "prewired",
-          "component": "Text"
         },
         {
           "id": "grid-1",
@@ -976,25 +967,7 @@
         {
           "id": "stat-1",
           "props": {
-            "label": "Active subscriptions",
-            "value": {
-              "$path": "/hostGetRecurringInsights/data",
-              "$reshape": [
-                {
-                  "op": "count",
-                  "args": []
-                }
-              ]
-            },
-            "format": "number"
-          },
-          "source": "prewired",
-          "component": "Stat"
-        },
-        {
-          "id": "stat-2",
-          "props": {
-            "label": "Monthly total",
+            "label": "Total monthly",
             "value": {
               "$path": "/hostGetRecurringInsights/data",
               "$reshape": [
@@ -1012,25 +985,134 @@
           "component": "Stat"
         },
         {
-          "id": "stat-3",
+          "id": "stat-2",
           "props": {
-            "label": "Annual estimate (× 12)",
+            "label": "Active subscriptions",
             "value": {
               "$path": "/hostGetRecurringInsights/data",
               "$reshape": [
                 {
-                  "op": "sum",
+                  "op": "count",
+                  "args": []
+                }
+              ]
+            }
+          },
+          "source": "prewired",
+          "component": "Stat"
+        },
+        {
+          "id": "stat-3",
+          "props": {
+            "label": "Avg per subscription",
+            "value": {
+              "$path": "/hostGetRecurringInsights/data",
+              "$reshape": [
+                {
+                  "op": "avg",
                   "args": [
                     "amount"
                   ]
                 }
               ]
             },
-            "format": "money",
-            "suffix": "× 12 est."
+            "format": "money"
           },
           "source": "prewired",
           "component": "Stat"
+        },
+        {
+          "id": "surface-1",
+          "source": "prewired",
+          "children": [
+            "stack-2"
+          ],
+          "component": "Surface"
+        },
+        {
+          "id": "stack-2",
+          "props": {
+            "gap": 3
+          },
+          "source": "prewired",
+          "children": [
+            "text-1",
+            "datatable-1"
+          ],
+          "component": "Stack"
+        },
+        {
+          "id": "text-1",
+          "props": {
+            "variant": "heading"
+          },
+          "source": "prewired",
+          "children": [
+            "text-2"
+          ],
+          "component": "Text"
+        },
+        {
+          "id": "text-2",
+          "props": {
+            "text": "All subscriptions"
+          },
+          "source": "prewired",
+          "component": "Text"
+        },
+        {
+          "id": "datatable-1",
+          "props": {
+            "rows": {
+              "$path": "/hostGetRecurringInsights/data"
+            },
+            "sortBy": "amount asc",
+            "columns": [
+              {
+                "key": "merchant",
+                "label": "Merchant"
+              },
+              {
+                "key": "category",
+                "label": "Category"
+              },
+              {
+                "key": "amount",
+                "align": "end",
+                "label": "Monthly amount",
+                "format": "money"
+              },
+              {
+                "key": "cadence",
+                "label": "Cadence"
+              },
+              {
+                "key": "nextDate",
+                "label": "Next charge",
+                "format": "date"
+              }
+            ],
+            "emptyState": "No recurring charges detected yet. Transactions will appear here once patterns are identified.",
+            "searchable": true,
+            "filterableBy": [
+              "category",
+              "cadence"
+            ]
+          },
+          "source": "prewired",
+          "component": "DataTable"
+        },
+        {
+          "id": "grid-2",
+          "props": {
+            "columns": 2
+          },
+          "source": "prewired",
+          "children": [
+            "surface-2",
+            "surface-3"
+          ],
+          "component": "Grid"
         },
         {
           "id": "surface-2",
@@ -1043,30 +1125,30 @@
         {
           "id": "stack-3",
           "props": {
-            "gap": 3
+            "gap": 2
           },
           "source": "prewired",
           "children": [
-            "text-5",
+            "text-3",
             "maplespendingdonut-1"
           ],
           "component": "Stack"
         },
         {
-          "id": "text-5",
+          "id": "text-3",
           "props": {
             "variant": "heading"
           },
           "source": "prewired",
           "children": [
-            "text-6"
+            "text-4"
           ],
           "component": "Text"
         },
         {
-          "id": "text-6",
+          "id": "text-4",
           "props": {
-            "text": "Spending by category"
+            "text": "Spend by category"
           },
           "source": "prewired",
           "component": "Text"
@@ -1093,109 +1175,28 @@
         {
           "id": "stack-4",
           "props": {
-            "gap": 3
+            "gap": 2
           },
           "source": "prewired",
           "children": [
-            "text-7",
-            "datatable-1"
-          ],
-          "component": "Stack"
-        },
-        {
-          "id": "text-7",
-          "props": {
-            "variant": "heading"
-          },
-          "source": "prewired",
-          "children": [
-            "text-8"
-          ],
-          "component": "Text"
-        },
-        {
-          "id": "text-8",
-          "props": {
-            "text": "All subscriptions"
-          },
-          "source": "prewired",
-          "component": "Text"
-        },
-        {
-          "id": "datatable-1",
-          "props": {
-            "rows": {
-              "$path": "/hostGetRecurringInsights/data"
-            },
-            "sortBy": "amount desc",
-            "columns": [
-              {
-                "key": "merchant",
-                "label": "Merchant"
-              },
-              {
-                "key": "category",
-                "label": "Category"
-              },
-              {
-                "key": "amount",
-                "align": "end",
-                "label": "Amount",
-                "format": "money"
-              },
-              {
-                "key": "cadence",
-                "label": "Frequency"
-              },
-              {
-                "key": "nextDate",
-                "label": "Next charge",
-                "format": "date"
-              }
-            ],
-            "emptyState": "No recurring charges detected yet. Subscriptions appear after your first billing cycle.",
-            "searchable": true,
-            "filterableBy": [
-              "category",
-              "cadence"
-            ]
-          },
-          "source": "prewired",
-          "component": "DataTable"
-        },
-        {
-          "id": "surface-4",
-          "source": "prewired",
-          "children": [
-            "stack-5"
-          ],
-          "component": "Surface"
-        },
-        {
-          "id": "stack-5",
-          "props": {
-            "gap": 3
-          },
-          "source": "prewired",
-          "children": [
-            "text-9",
+            "text-5",
             "datatable-2"
           ],
           "component": "Stack"
         },
         {
-          "id": "text-9",
+          "id": "text-5",
           "props": {
             "variant": "heading"
           },
           "source": "prewired",
           "children": [
-            "text-10"
+            "text-6"
           ],
           "component": "Text"
         },
         {
-          "id": "text-10",
+          "id": "text-6",
           "props": {
             "text": "Upcoming charges"
           },
@@ -1206,13 +1207,14 @@
           "id": "datatable-2",
           "props": {
             "rows": {
-              "$path": "/hostListScheduledPayments/data"
+              "$path": "/hostGetRecurringInsights/data"
             },
+            "limit": 5,
             "sortBy": "nextDate asc",
             "columns": [
               {
-                "key": "payeeName",
-                "label": "Payee"
+                "key": "merchant",
+                "label": "Merchant"
               },
               {
                 "key": "amount",
@@ -1224,13 +1226,9 @@
                 "key": "nextDate",
                 "label": "Next date",
                 "format": "date"
-              },
-              {
-                "key": "cadence",
-                "label": "Frequency"
               }
             ],
-            "emptyState": "No scheduled payments found."
+            "emptyState": "No upcoming charges found."
           },
           "source": "prewired",
           "component": "DataTable"
@@ -1245,11 +1243,6 @@
         {
           "name": "hostGetSpendingInsights",
           "tool": "host_getSpendingInsights",
-          "input": {}
-        },
-        {
-          "name": "hostListScheduledPayments",
-          "tool": "host_listScheduledPayments",
           "input": {}
         }
       ]
