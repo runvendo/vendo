@@ -31,7 +31,7 @@ export const isMutatingRisk = (risk: string | undefined): boolean =>
  *  bind, so demanding a payload would make it unbindable and push the model to
  *  disclaim a perfectly good "Refresh" button. An ABSENT schema is not the same
  *  claim: it says nothing, so the check stays on. */
-export const takesInput = (tool: { inputSchema?: Record<string, unknown> }): boolean => {
+const takesInput = (tool: { inputSchema?: Record<string, unknown> }): boolean => {
   const schema = tool.inputSchema;
   if (!isRecord(schema) || !isRecord(schema.properties)) return true;
   // `additionalProperties` opens the schema whether it is `true` or a SCHEMA
@@ -116,10 +116,8 @@ export const actionFaults = (
         if (byName.size > 0) faults.push({ nodeId: node.id, kind: "unknown-tool", prop, action, label });
         continue;
       }
-      // A zero-argument tool has nothing to bind, so demanding a payload would
-      // make it unbindable — the model's only way out is a disclaimer, and a
-      // "Refresh" button would disappear off every unjudged catalog. Ask for
-      // context only where the tool actually declares some.
+      // Ask for operands only where the tool actually declares some (see
+      // `takesInput`).
       if (isMutatingRisk(tool.risk) && !hasPayload(payload) && takesInput(tool)) {
         faults.push({ nodeId: node.id, kind: "missing-payload", prop, action });
       }

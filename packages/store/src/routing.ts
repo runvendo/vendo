@@ -111,7 +111,7 @@ function approvalRecord(row: ApprovalRow): VendoRecord {
   return {
     id: row.id,
     data,
-    refs: { subject: row.subject, status: row.status, call: row.callId ?? row.request.call.id },
+    refs: { subject: row.subject, status: row.status, call: row.request.call.id },
     createdAt: row.request.createdAt,
     updatedAt: row.voidedAt ?? row.consumedAt ?? row.decidedAt ?? row.request.createdAt,
   };
@@ -313,7 +313,6 @@ function configFor(db: Db, collection: ReservedCollection): RoutedConfig {
             ...(data.consumedAt === undefined ? {} : { consumedAt: data.consumedAt }),
             ...(data.deniedBy === undefined ? {} : { deniedBy: data.deniedBy }),
             ...(data.voidedAt === undefined ? {} : { voidedAt: data.voidedAt }),
-            callId: data.request.call.id,
             createdAt: data.request.createdAt,
           };
           await putApprovalRow(db, row);

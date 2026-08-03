@@ -185,7 +185,6 @@ export function approvalFromRow(row: Record<string, unknown>): ApprovalRow {
     ...(consumedAt === undefined ? {} : { consumedAt }),
     ...(row["denied_by"] == null ? {} : { deniedBy: text(row["denied_by"]) as ApprovalRow["deniedBy"] }),
     ...(voidedAt === undefined ? {} : { voidedAt }),
-    ...(row["call_id"] == null ? {} : { callId: text(row["call_id"]) }),
     createdAt: iso(row["created_at"]),
   };
 }
@@ -202,7 +201,9 @@ export async function putApprovalRow(db: Db, row: ApprovalRow, upsert = true): P
        created_at = EXCLUDED.created_at` : ""}`,
     [row.id, row.subject, JSON.stringify(row.request), row.status, row.decidedAt ?? null,
       row.sessionId ?? null, row.consumedAt ?? null, row.deniedBy ?? null, row.voidedAt ?? null,
-      row.callId ?? row.request.call.id, row.createdAt],
+      // `call_id` is a denormalized index column, always the request's own call
+      // id — the guard looks a decision up by the call it answers.
+      row.request.call.id, row.createdAt],
   );
 }
 

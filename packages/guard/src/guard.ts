@@ -426,25 +426,13 @@ class GuardImplementation implements VendoGuard {
     id: ApprovalId,
     principal: Principal,
   ): Promise<"spent" | "already-spent" | "taken-back"> {
-    const store = this.#store.records(APPROVALS_COLLECTION);
-    const record = await store.get(id);
+    const record = await this.#store.records(APPROVALS_COLLECTION).get(id);
     if (record === null) return "already-spent";
     const data = approvalData(record);
     if (data.request.ctx.principal.subject !== principal.subject) return "already-spent";
     if (data.status !== "approved" || data.consumedAt !== undefined) return "already-spent";
     if (data.voidedAt !== undefined) return "taken-back";
-    if (!(await this.#claimApprovalTransition("consumed", id, principal.subject, "replay"))) {
-      return (await this.#consumedTransitionClaimant(id)) === "void" ? "taken-back" : "already-spent";
-    }
-    // Same re-read law as the replay path: the claim is the gate, a gone row was
-    // erased and is never re-created, and a void that beat the claim wins.
-    const current = await store.get(id);
-    if (current === null) return "already-spent";
-    const fresh = approvalData(current);
-    if (fresh.voidedAt !== undefined) return "taken-back";
-    const spent: ApprovalRecordData = { ...fresh, consumedAt: now() };
-    await store.put({ id, data: spent, refs: approvalRefs(spent) });
-    return "spent";
+    return await this.#spendConsumedTransition(id, principal.subject);
   }
 
   /** Spec 2026-07-20 (#5): the TTL backstop over the general approvals
@@ -984,6 +972,37 @@ class GuardImplementation implements VendoGuard {
   }
 
   /**
+   * Spends an approval as a REPLAY would: claim the one-time `consumed`
+   * transition, then mark the row. Shared by the replay lookup and the
+   * automations engine's {@link spendApproval} seam so the two can never
+   * disagree about what spending means.
+   *
+   * The claim is the gate; the marker is observability, so a crash between them
+   * fails closed (the row reads un-consumed but can never be claimed again).
+   * Two things can still cost the spend after a won claim: a GONE row — subject
+   * erasure (02-store §5) and anonymous-subject adoption both DELETE approval
+   * rows, and re-putting the caller's stale copy would resurrect an erased
+   * subject's approval AND run the tool as them — and a void that beat the
+   * claim, which must not be overwritten. Hence the re-read.
+   */
+  async #spendConsumedTransition(
+    id: string,
+    subject: string,
+  ): Promise<"spent" | "already-spent" | "taken-back"> {
+    if (!(await this.#claimApprovalTransition("consumed", id, subject, "replay"))) {
+      return (await this.#consumedTransitionClaimant(id)) === "void" ? "taken-back" : "already-spent";
+    }
+    const store = this.#store.records(APPROVALS_COLLECTION);
+    const current = await store.get(id);
+    if (current === null) return "already-spent";
+    const fresh = approvalData(current);
+    if (fresh.voidedAt !== undefined) return "taken-back";
+    const spent: ApprovalRecordData = { ...fresh, consumedAt: now() };
+    await store.put({ id, data: spent, refs: approvalRefs(spent) });
+    return "spent";
+  }
+
+  /**
    * Takes a decision back, SPENDING the approval's one-time transition to do
    * it. Voiding and replaying claim the SAME `consumed:<id>` receipt, so they
    * linearize: without that, a void's plain put could land on a row a replay
@@ -1007,28 +1026,23 @@ class GuardImplementation implements VendoGuard {
       data.request.ctx.principal.subject,
       "void",
     );
-    // The receipt is durable BEFORE the row write, so losing it to another VOID
-    // does not prove the marker landed: a take-back whose put failed leaves the
-    // receipt claimed and the row still standing. Re-assert it here — otherwise
-    // the retry would report success while a human denial kept blocking.
-    if (!claimed) {
-      if ((await this.#consumedTransitionClaimant(id)) !== "void") return "spent";
-      const held = await store.get(id);
-      if (held === null) return "already-void";
-      const priorAttempt = approvalData(held);
-      if (priorAttempt.voidedAt !== undefined) return "already-void";
-      const asserted: ApprovalRecordData = { ...priorAttempt, voidedAt: now() };
-      await store.put({ id, data: asserted, refs: approvalRefs(asserted) });
-      return "voided";
-    }
-    // Re-read AFTER winning: the caller's copy may predate a decide landing on
-    // the same row, and the receipt — not that copy — is the gate. A row that is
-    // GONE was erased (02-store §5) or dropped by anon-adoption while this was
-    // in flight; re-putting it would resurrect erased data, so there is nothing
-    // left to void.
+    // A REPLAY holding the receipt means the call already ran. Losing it to
+    // another VOID does not prove that void's marker landed, though: the receipt
+    // is durable BEFORE the row write, so a take-back whose put failed leaves
+    // the receipt claimed and the row still standing. Fall through and re-assert
+    // it — otherwise the retry would report success while a human denial kept
+    // blocking.
+    if (!claimed && (await this.#consumedTransitionClaimant(id)) !== "void") return "spent";
+    // Re-read rather than trusting the caller's copy, which may predate a decide
+    // landing on the same row: the receipt, not that copy, is the gate. A row
+    // that is GONE was erased (02-store §5) or dropped by anon-adoption while
+    // this was in flight; re-putting it would resurrect erased data, so there is
+    // nothing left to void.
     const current = await store.get(id);
     if (current === null) return "already-void";
     const fresh = approvalData(current);
+    // The take-back this call is retrying already landed: nothing to say twice.
+    if (!claimed && fresh.voidedAt !== undefined) return "already-void";
     const voided: ApprovalRecordData = { ...fresh, voidedAt: fresh.voidedAt ?? now() };
     await store.put({ id, data: voided, refs: approvalRefs(voided) });
     return "voided";
@@ -1116,20 +1130,14 @@ class GuardImplementation implements VendoGuard {
     for (const record of records) {
       const data = approvalData(record);
       const request = data.request;
-      // A single-use approval re-authorizes exactly the call the user saw, in
-      // exactly the context they saw it. Beyond subject + call identity this
-      // pins (a) the approved inputs — a replay with tampered args never rides
-      // the approval — (b) the frozen descriptor — flipping the same tool from
-      // read to destructive after parking can't ride it either — and (c) the
-      // parked venue/presence/app — a present chat approval can't be replayed
-      // to satisfy an away, app-bound automation call.
-      // Sessions are DELIBERATELY not pinned. One person approving on their
-      // phone and seeing the result render on their laptop is the same person
-      // answering the same question — the identity that matters is the subject,
-      // and everything that could change what they said yes to (inputs, frozen
-      // descriptor, venue/presence/app) is pinned above. Single-use is enforced
-      // by the CAS receipt below, so a cross-session replay still spends the one
-      // approval rather than multiplying it. Documented so it stays a choice.
+      // Sessions are DELIBERATELY not among the things `sameParkedCall` pins.
+      // One person approving on their phone and seeing the result render on
+      // their laptop is the same person answering the same question — the
+      // identity that matters is the subject, and everything that could change
+      // what they said yes to (inputs, frozen descriptor, venue/presence/app) is
+      // pinned there. Single-use is enforced by the CAS receipt below, so a
+      // cross-session replay still spends the one approval rather than
+      // multiplying it. Documented so it stays a choice.
       if (
         data.status !== "approved"
         || data.consumedAt !== undefined
@@ -1142,35 +1150,13 @@ class GuardImplementation implements VendoGuard {
       ) {
         continue;
       }
-      // Single-use is enforced by the receipt, not by the consumedAt read
-      // above (that check is only a fast path): the atomic insert has exactly
-      // one winner across processes. A loser falls through to the next
-      // candidate — the same approved call parked twice yields two approvals,
-      // each replayable once, exactly as before. A void claims this SAME
-      // receipt, so losing it can also mean the person took the yes back
-      // between the list and here; either way this yes is not spendable.
-      if (
-        !(await this.#claimApprovalTransition("consumed", record.id, ctx.principal.subject, "replay"))
-      ) {
-        continue;
-      }
-      // Re-read after winning, so the marker lands on the CURRENT row: writing
-      // the listed copy back would erase whatever else moved on it (a void
-      // that beat the claim is the case that matters — it must not be lost).
-      const current = await store.get(record.id);
-      // GONE, not unchanged. Subject erasure (02-store §5) and anonymous-subject
-      // adoption both DELETE approval rows, so a replay that fell back to its
-      // listed copy here would re-create an erased subject's approval AND run
-      // the tool as them. No row, no authority: the receipt is already spent,
-      // which is the fail-closed direction.
-      if (current === null) continue;
-      const fresh = approvalData(current);
-      if (fresh.voidedAt !== undefined) continue;
-      // Observability marker on the row itself; the receipt is the source of
-      // truth, so a crash between the two writes fails closed (the approval
-      // reads un-consumed but can never be claimed again).
-      const spent: ApprovalRecordData = { ...fresh, consumedAt: now() };
-      await store.put({ id: record.id, data: spent, refs: approvalRefs(spent) });
+      // Single-use is enforced by the receipt, not by the consumedAt read above
+      // (that check is only a fast path): the atomic insert has exactly one
+      // winner across processes. Anything short of `spent` falls through to the
+      // next candidate — the same approved call parked twice yields two
+      // approvals, each replayable once, exactly as before, and a lost claim can
+      // also mean the person took the yes back between the list and here.
+      if (await this.#spendConsumedTransition(record.id, ctx.principal.subject) !== "spent") continue;
       return true;
     }
     return false;
