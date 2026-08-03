@@ -65,6 +65,10 @@ describe("apps agent tools", () => {
       "read", "write", "write", "read", "read", "write", "write",
     ]);
     expect(descriptors.find(({ name }) => name === "vendo_apps_edit")?.description).toMatch(/retry.*same app/i);
+    // my changes
+    expect(descriptors.find(({ name }) => name === "vendo_apps_create")?.description).toMatch(/invent arbitrary/i);
+    expect(descriptors.find(({ name }) => name === "vendo_apps_edit")?.description).toMatch(/change colors/i);
+    // my changes
   });
 
   it("classifies only provable tree edits as read-class", async () => {
