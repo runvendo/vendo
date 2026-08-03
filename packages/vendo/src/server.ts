@@ -790,22 +790,21 @@ function hostedSessionOps(store: HostedStore, touchDebounceMs: number): SessionO
   // registered on the console; entries retire with the session (adopt/sweep),
   // so the map tracks at most the live anonymous sessions of this process.
   const wireTouched = new Map<string, number>();
-  // vendo-web@7cd0a02 (2026-07-19) removed the console's session doors per a
-  // newer spec (anonymous visitor = end_user row; adoption = PUT
-  // /users/{externalId}); against that console every door op meets a bare
-  // 404. The doors then go quiet for the process — one warn, no per-request
-  // failures, no per-interval sweep retries — because anonymous traffic must
-  // keep serving and there is nothing to retry INTO. The full contract catch-
-  // up (merge + TTL lifecycle on the new surface) is the vendo-web follow-up
-  // tracked in docs/verification/existing-agents/polish/hosted-sessions-404.md.
+  // A console that answers a BARE 404 (no error envelope) on a session door is
+  // not serving that surface at all. The doors then go quiet for the process —
+  // one warn, no per-request failures, no per-interval sweep retries — because
+  // anonymous traffic must keep serving and there is nothing to retry INTO.
+  // The latch is per-process and re-arms on the next composition, so a console
+  // that grows the doors back needs no client change (history:
+  // docs/verification/existing-agents/polish/hosted-sessions-404.md).
   let doorsMissing = false;
   const disableDoors = (): void => {
     if (doorsMissing) return;
     doorsMissing = true;
     console.warn(
-      "[vendo] Vendo Cloud console does not serve the hosted session doors (/api/v1/store/sessions/* was removed in vendo-web@7cd0a02): "
+      "[vendo] Vendo Cloud console did not serve the hosted session doors (/api/v1/store/sessions/* answered a bare 404): "
       + "anonymous-session registration, the anonymous→signed-in merge, and the hosted TTL sweep are disabled for this process. "
-      + "Hosted anonymous sessions will not be swept until the console grows a replacement surface.",
+      + "Hosted anonymous sessions will not be swept until the console serves those doors again.",
     );
   };
   return {
