@@ -66,7 +66,12 @@ be taken back with `guard.approvals.revoke(id, principal)` / `DELETE
 /approvals/:id` (the mirror of `grants.revoke`). Taking a decision back and
 replaying an approval are the same one-time transition, so a call can never both
 run and be voided — a take-back that arrives after the call was already
-authorized answers `conflict` rather than reporting success.
+authorized answers `conflict` rather than reporting success. `Guard` grows one
+optional method for the block that spends a yes WITHOUT replaying its call
+(automations arms a standing grant from it): `spendApproval(id, principal)`
+contends on that same transition and answers `spent` / `already-spent` /
+`taken-back`. Custom Guards are unaffected — callers feature-detect it, exactly
+like `abandonApprovals`.
 
 One consequence worth knowing: `descriptorHash` follows the field rename, so
 approvals and grants persisted before the upgrade no longer match their tool's
