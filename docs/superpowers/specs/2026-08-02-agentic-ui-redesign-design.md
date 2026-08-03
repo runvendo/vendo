@@ -162,9 +162,15 @@ replaced by the ChatGPT shape, worn by the host's brand:
 - Codex-style task-list sidebar (X2) rejected as the default; its status
   language (running/needs-you/done) survives on the chat rows.
 
-Open detail from this round: where automations live in the center (the
-sidebar library was rejected; candidates: a quiet "running for you" line
-under the app shelf, or conversation-only).
+**Apps & automations placement (pick T4 + named doors):** the home stays
+pure (greeting · suggestion rows · app shelf · composer). The sidebar gets
+two nav rows under New chat — **Apps** and **Automations** — each opening
+its own page in the main column: Apps = the live-tile grid with room to
+breathe ("ask below to build a new one"); Automations = status cards
+carrying schedule, last-result receipt ("sent Friday · $840, 12% under your
+usual pace"), and Pause/Resume. Rejected: running-line under the shelf
+(T1), mixed widget grid (T2), two shelves on the home (T3), the combined
+"Your stuff" page (T4 as first drafted).
 
 ### 11. The design language: neutral (pick S1)
 
@@ -182,9 +188,9 @@ adopts the neutral language:
 - Airy: sidebar rows ~14.5px with comfortable padding; generous column
   margins; the centered column caps at ~660px.
 
-Final center structure as styled (the stripped skeleton): sidebar = New
-chat · Needs-you (only while non-empty, numbered badge) · chats grouped by
-recency (running rows pulse) · user row. Main = greeting, two personalized
+Final center structure as styled: sidebar = New chat · **Apps** ·
+**Automations** (the two named doors) · Needs-you (only while non-empty,
+numbered badge) · chats grouped by recency (running rows pulse) · user row. Main = greeting, two personalized
 suggestion ROWS (noticings with icons — never generic chips), the live app
 shelf (HB), the composer card. Rejected in this round: S2 warm-serif
 (Anthropic register), S3 crisp-editorial (Linear register), and the
