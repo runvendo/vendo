@@ -1,6 +1,7 @@
 # Agentic UI redesign — design decisions
 
-**Date:** 2026-08-02 · **Status:** decided with Yousef, awaiting spec review
+**Date:** 2026-08-02 (amended 2026-08-03 with the polish + AI-center rounds)
+**Status:** decided with Yousef, awaiting spec review
 **Method:** live design canvas (interactive HTML replicas on the real
 `@vendoai/ui` chrome stylesheet + Maple theme, one decision at a time).
 The canvas itself is throwaway (`design-canvas/`, gitignored); this document
@@ -115,6 +116,55 @@ stay data-live but never change shape or speak uninvited.
   are parked, not rejected.** P3 is explicitly future work that composes
   two planned pieces: an automation whose job is maintaining a pinned app
   (automations pack) + user-memory/personalization. Revisit when those land.
+
+## Decisions — 2026-08-03 polish + AI-center rounds
+
+### 8. The build animates ONE thing (picks A2 + D1)
+
+Today a build runs four loops at once (pulsing beat orb, pulsing card dot,
+sweeping hairline, skeleton shimmer). Now: **the hairline gliding across the
+card bar is the only moving element** during a build — beat orbs go static
+(the "…" carries the working state), the card dot stops pulsing, the
+skeleton stops shimmering.
+
+And the build step narrates ONCE: **the build gets no beat line — the card
+IS the step** (D1). The card bar reads "Building your view…" + hairline,
+flips to the app name when live; the settled "Did N things" summary still
+counts it.
+
+### 9. The composer stays exactly as shipped
+
+Furniture unchanged (dock · attach · field · mic · accent send; Stop
+appears mid-turn). Explored and REJECTED for now: plus-menu consolidation,
+two-row layout, quiet-until-touched, ghost autocomplete, page-context chip,
+intent preview, instant answers, slash verbs. (E2 context-chip and E3
+intent-preview were noted as the strongest future candidates — parked, not
+scheduled.)
+
+### 10. The AI center is the ChatGPT shell (pick X1)
+
+The full-page workspace (VendoPage's five tabs + button-stack sidebar) is
+replaced by the ChatGPT shape, worn by the host's brand:
+
+- **Sidebar:** New chat · a pinned **"Needs you" section** that exists only
+  while asks are waiting (badge; settle → it disappears) · conversations
+  grouped by recency; a running background turn shows a quiet pulse on its
+  row; user row at the bottom. No apps/automations lists in the sidebar
+  (the Y3 library and its declutter variants were rejected as clutter).
+- **Main:** one centered column; the thread uses everything already decided
+  (B beats, D1 card-is-the-step, A2 hairline, M2 motion).
+- **Home / empty state (pick HB):** the hero composer ("What can I help
+  with?") with **your apps as LIVE tiles directly beneath it** — real
+  rendered views, not names. Tap a tile → the app opens full in the column
+  and you change it by asking. Apps are the marquee; asking stays first.
+  (HC "home IS the dashboard" was the runner-up; HA pure-ChatGPT the
+  control.)
+- Codex-style task-list sidebar (X2) rejected as the default; its status
+  language (running/needs-you/done) survives on the chat rows.
+
+Open detail from this round: where automations live in the center (the
+sidebar library was rejected; candidates: a quiet "running for you" line
+under the app shelf, or conversation-only).
 
 ## What this is NOT
 
